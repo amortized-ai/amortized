@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -13,11 +14,27 @@ class Settings(BaseSettings):
     db_path: Path = Path("./data/amortized.db")
     data_dir: Path = Path("./data")
 
-    claude_command: str = "claude"
-    claude_model: str = "sonnet"
-    claude_max_turns: int = 10
+    openai_api_key: str = Field(
+        default="",
+        description="OpenAI API key (reads AMORTIZED_OPENAI_API_KEY or OPENAI_API_KEY)",
+    )
+    openai_model: str = "gpt-5-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
 
-    model_config = {"env_prefix": "AMORTIZED_"}
+    model_config = {
+        "env_prefix": "AMORTIZED_",
+        "extra": "ignore",
+    }
 
 
-settings = Settings()
+def _load_settings() -> Settings:
+    """Load settings, falling back OPENAI_API_KEY if AMORTIZED_OPENAI_API_KEY is unset."""
+    import os
+
+    s = Settings()
+    if not s.openai_api_key:
+        s.openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    return s
+
+
+settings = _load_settings()

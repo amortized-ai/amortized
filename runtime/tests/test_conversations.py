@@ -1,10 +1,12 @@
 """Tests for conversation CRUD via the agent chat API."""
 
 import os
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
+from amortized_runtime.agent import AgentResult
 from amortized_runtime.main import app
 
 
@@ -33,9 +35,18 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         yield c  # type: ignore[misc]
 
 
+def _mock_process() -> AsyncMock:
+    """Create a mock for process_message that returns an AgentResult."""
+    mock = AsyncMock(return_value=AgentResult(text="Hello! I can help you."))
+    return mock
+
+
 class TestChatEndpoint:
     @pytest.mark.asyncio
-    async def test_chat_creates_conversation(self, client: httpx.AsyncClient) -> None:
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    async def test_chat_creates_conversation(
+        self, _mock: AsyncMock, client: httpx.AsyncClient
+    ) -> None:
         resp = await client.post(
             "/api/v1/agent/chat",
             json={"message": "Hello!"},
@@ -47,8 +58,9 @@ class TestChatEndpoint:
         assert len(data["message"]) > 0
 
     @pytest.mark.asyncio
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
     async def test_chat_with_existing_conversation(
-        self, client: httpx.AsyncClient
+        self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
         # Create conversation
         resp1 = await client.post(
@@ -66,16 +78,15 @@ class TestChatEndpoint:
         assert resp2.json()["conversation_id"] == conv_id
 
     @pytest.mark.asyncio
-    async def test_chat_returns_message_when_cli_missing(
-        self, client: httpx.AsyncClient
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    async def test_chat_returns_message(
+        self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
-        """When the claude CLI is not installed, the agent returns a helpful error."""
         resp = await client.post(
             "/api/v1/agent/chat",
             json={"message": "I want to train a model"},
         )
         data = resp.json()
-        # Claude CLI is not installed in test env, so we get an error or empty response
         assert isinstance(data["message"], str)
         assert data["suggested_action"] is None
 
@@ -98,7 +109,10 @@ class TestConversationsList:
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    async def test_list_after_chat(self, client: httpx.AsyncClient) -> None:
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    async def test_list_after_chat(
+        self, _mock: AsyncMock, client: httpx.AsyncClient
+    ) -> None:
         await client.post(
             "/api/v1/agent/chat",
             json={"message": "Hello!"},
@@ -110,8 +124,9 @@ class TestConversationsList:
         assert convs[0]["title"] == "Hello!"
 
     @pytest.mark.asyncio
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
     async def test_list_multiple_conversations(
-        self, client: httpx.AsyncClient
+        self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
         await client.post(
             "/api/v1/agent/chat", json={"message": "First conversation"}
@@ -126,8 +141,9 @@ class TestConversationsList:
 
 class TestConversationDetail:
     @pytest.mark.asyncio
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
     async def test_get_conversation_with_messages(
-        self, client: httpx.AsyncClient
+        self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
         # Create a conversation with messages
         chat_resp = await client.post(
@@ -153,8 +169,9 @@ class TestConversationDetail:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
+    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
     async def test_conversation_accumulates_messages(
-        self, client: httpx.AsyncClient
+        self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
         resp1 = await client.post(
             "/api/v1/agent/chat", json={"message": "Hello!"}
