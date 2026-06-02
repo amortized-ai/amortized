@@ -1,0 +1,37 @@
+# Amortized — Development Docker Compose (no GPU required)
+#
+# Usage:
+#   docker compose -f docker/docker-compose.dev.yml up --build
+#
+# Mounts source code as volumes for hot-reload during development.
+
+services:
+  runtime:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev.runtime
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../runtime/src:/app/runtime/src:ro
+      - amortized-data:/app/data
+    environment:
+      - AMORTIZED_DATA_DIR=/app/data
+    restart: unless-stopped
+
+  studio:
+    build:
+      context: ../studio
+      dockerfile: ../docker/Dockerfile.dev.studio
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../studio/src:/app/src:ro
+    environment:
+      - NEXT_PUBLIC_API_URL=http://runtime:8000
+    depends_on:
+      - runtime
+    restart: unless-stopped
+
+volumes:
+  amortized-data:
