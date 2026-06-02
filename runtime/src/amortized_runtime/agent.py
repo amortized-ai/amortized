@@ -84,7 +84,7 @@ def process_message(
             capture_output=True,
             text=True,
             cwd=cwd,
-            timeout=120,
+            timeout=300,
         )
     except FileNotFoundError:
         logger.error("claude CLI not found at %r", settings.claude_command)
@@ -93,7 +93,7 @@ def process_message(
             "Please install Claude Code and try again."
         )
     except subprocess.TimeoutExpired:
-        logger.error("claude CLI timed out after 120s")
+        logger.error("claude CLI timed out after 300s")
         return "The request timed out. Please try again with a simpler question."
 
     if result.returncode != 0:
