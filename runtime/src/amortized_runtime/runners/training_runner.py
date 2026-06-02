@@ -18,7 +18,10 @@ def run_training(config: dict[str, Any]) -> None:
 
     try:
         from training_hub import lora_sft
+    except ImportError:
+        lora_sft = None
 
+    if lora_sft is not None:
         kwargs = {
             "model_path": config["model_path"],
             "data_path": config["data_path"],
@@ -38,8 +41,7 @@ def run_training(config: dict[str, Any]) -> None:
                 kwargs[key] = config[key]
 
         lora_sft(**kwargs)
-
-    except ImportError:
+    else:
         _simulate_training(config, output_dir)
 
 
@@ -51,7 +53,7 @@ def _simulate_training(config: dict[str, Any], output_dir: str) -> None:
 
     with open(metrics_path, "w") as f:
         for step in range(1, max_steps + 1):
-            loss = 3.5 * (0.95 ** step)
+            loss = 3.5 * (0.95**step)
             lr = float(config.get("learning_rate", 2e-4) or 2e-4)
             epoch = step / 100.0
             metric = {
