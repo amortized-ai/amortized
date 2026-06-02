@@ -142,37 +142,58 @@ async def chat_stream(
         yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
 
         full_text = ""
+        saved = False
         try:
-            async for event in stream_message(request.message, history=history):
-                if event.type == "delta":
-                    full_text += event.data.get("text", "")
-                    yield {"event": "delta", "data": json.dumps(event.data)}
-                elif event.type == "thinking":
-                    yield {"event": "thinking", "data": json.dumps(event.data)}
-                elif event.type == "tool_result":
-                    yield {"event": "tool_result", "data": json.dumps(event.data)}
-                elif event.type == "action":
-                    yield {"event": "action", "data": json.dumps(event.data)}
-                elif event.type == "done":
-                    full_text = event.data.get("full_text", full_text)
-                    yield {"event": "done", "data": json.dumps({"full_text": full_text})}
-                elif event.type == "error":
-                    yield {"event": "error", "data": json.dumps(event.data)}
-        except Exception:
-            logger.exception("Streaming error")
-            error_msg = "Sorry, something went wrong. Please try again."
-            yield {"event": "error", "data": json.dumps({"error": error_msg})}
-            full_text = full_text or error_msg
+            try:
+                async for event in stream_message(request.message, history=history):
+                    if event.type == "delta":
+                        full_text += event.data.get("text", "")
+                        yield {"event": "delta", "data": json.dumps(event.data)}
+                    elif event.type == "thinking":
+                        yield {"event": "thinking", "data": json.dumps(event.data)}
+                    elif event.type == "tool_result":
+                        yield {"event": "tool_result", "data": json.dumps(event.data)}
+                    elif event.type == "action":
+                        yield {"event": "action", "data": json.dumps(event.data)}
+                    elif event.type == "done":
+                        full_text = event.data.get("full_text", full_text)
+                        yield {"event": "done", "data": json.dumps({"full_text": full_text})}
+                    elif event.type == "error":
+                        yield {"event": "error", "data": json.dumps(event.data)}
+            except Exception:
+                logger.exception("Streaming error")
+                error_msg = "Sorry, something went wrong. Please try again."
+                yield {"event": "error", "data": json.dumps({"error": error_msg})}
+                full_text = full_text or error_msg
 
-        # Save assistant response
-        await create_message(
-            db,
-            message_id=str(uuid.uuid4()),
-            conversation_id=conversation_id,
-            role=MessageRole.assistant.value,
-            content=full_text,
-            created_at=datetime.now(UTC).isoformat(),
-        )
+            # Save assistant response
+            await create_message(
+                db,
+                message_id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                role=MessageRole.assistant.value,
+                content=full_text,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+            saved = True
+        finally:
+            # If the client disconnected before we could save, persist whatever
+            # text we accumulated so the response is not lost.
+            if not saved and full_text:
+                try:
+                    await create_message(
+                        db,
+                        message_id=str(uuid.uuid4()),
+                        conversation_id=conversation_id,
+                        role=MessageRole.assistant.value,
+                        content=full_text,
+                        created_at=datetime.now(UTC).isoformat(),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to save assistant message on disconnect for conversation %s",
+                        conversation_id,
+                    )
 
     return EventSourceResponse(event_generator())
 

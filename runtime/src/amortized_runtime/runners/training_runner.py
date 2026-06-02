@@ -21,6 +21,11 @@ def run_training(config: dict[str, Any]) -> None:
     except ImportError:
         lora_sft = None
 
+    # Clear stale metrics from any previous run to avoid appending to old data
+    metrics_path = os.path.join(output_dir, "training_metrics.jsonl")
+    if os.path.exists(metrics_path):
+        os.remove(metrics_path)
+
     if lora_sft is not None:
         kwargs = {
             "model_path": config["model_path"],

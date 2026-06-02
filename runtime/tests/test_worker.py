@@ -82,8 +82,8 @@ class TestWorkerJobExecution:
             assert "training_metrics" in artifact_types
             assert "adapter_config" in artifact_types
 
-            # Verify metrics file was created
-            metrics_path = os.path.join(tmpdir, "training_metrics.jsonl")
+            # Verify metrics file was created (under job_id subdirectory)
+            metrics_path = os.path.join(tmpdir, job_id, "training_metrics.jsonl")
             assert os.path.exists(metrics_path)
             with open(metrics_path) as f:
                 lines = f.readlines()
