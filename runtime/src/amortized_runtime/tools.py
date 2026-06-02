@@ -244,6 +244,64 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "create_dataset",
+            "description": (
+                "Create a JSONL dataset file on disk. Use this to prepare seed "
+                "data for SDG flows. Each row should be a JSON object with the "
+                "columns required by the target SDG flow. Returns the file path "
+                "that can be used as dataset_path in submit_sdg_job."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "Filename for the dataset (e.g. pokemon_seed.jsonl). "
+                            "Will be saved in the datasets/ directory."
+                        ),
+                    },
+                    "rows": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": (
+                            "Array of JSON objects, each representing one row of "
+                            "the dataset. Must include the columns required by "
+                            "the target SDG flow."
+                        ),
+                    },
+                },
+                "required": ["filename", "rows"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "preview_dataset",
+            "description": (
+                "Preview the first few rows of a dataset file. Use this to "
+                "verify seed data before submitting an SDG job."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the dataset file",
+                    },
+                    "rows": {
+                        "type": "integer",
+                        "description": "Number of rows to preview (default 3, max 10)",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_action",
             "description": (
                 "Propose an action for the user to confirm before executing. "
@@ -359,6 +417,24 @@ async def _call_api(
         estimate_data: dict[str, Any] = r.json()
         return estimate_data
 
+    if name == "create_dataset":
+        r = await client.post("/api/v1/datasets", json=args)
+        r.raise_for_status()
+        create_data: dict[str, Any] = r.json()
+        return create_data
+
+    if name == "preview_dataset":
+        path = args["path"]
+        preview_params2: dict[str, Any] = {}
+        if "rows" in args:
+            preview_params2["rows"] = args["rows"]
+        r = await client.get(
+            f"/api/v1/datasets/{path}/preview", params=preview_params2
+        )
+        r.raise_for_status()
+        preview_result: dict[str, Any] = r.json()
+        return preview_result
+
     if name == "read_artifact_preview":
         job_id = args["job_id"]
         artifact_id = args.get("artifact_id")
@@ -417,6 +493,16 @@ def tool_result_summary(name: str, result: dict[str, Any]) -> str:
     if name == "estimate_vram":
         vram = result.get("estimated_vram_gb", "?")
         return f"Estimated VRAM: {vram} GB"
+
+    if name == "create_dataset":
+        path = result.get("path", "unknown")
+        rows_written = result.get("rows_written", 0)
+        return f"Created dataset: {path} ({rows_written} rows)"
+
+    if name == "preview_dataset":
+        path = result.get("path", "unknown")
+        count = result.get("total_rows_previewed", 0)
+        return f"Preview: {path} ({count} rows)"
 
     if name == "read_artifact_preview":
         fmt = result.get("format", "unknown")
