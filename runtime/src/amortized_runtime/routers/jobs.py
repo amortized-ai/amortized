@@ -7,9 +7,11 @@ from typing import Any
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from amortized_runtime.db import (
     create_job,
+    get_artifact,
     get_job,
     list_artifacts,
     list_jobs,
@@ -135,6 +137,32 @@ async def get_job_artifacts(
 
     rows = await list_artifacts(db, job_id)
     return [Artifact(**r) for r in rows]
+
+
+@router.get("/{job_id}/artifacts/{artifact_id}/download")
+async def download_artifact(
+    job_id: str,
+    artifact_id: str,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> FileResponse:
+    """Download a specific artifact file."""
+    row = await get_job(db, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    artifact = await get_artifact(db, artifact_id)
+    if artifact is None or artifact["job_id"] != job_id:
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+
+    file_path = Path(artifact["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Artifact file not found on disk")
+
+    return FileResponse(
+        path=file_path,
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )
 
 
 @router.delete("/{job_id}", response_model=Job)

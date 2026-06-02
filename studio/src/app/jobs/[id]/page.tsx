@@ -20,6 +20,7 @@ import {
   getJob,
   getJobMetrics,
   getJobArtifacts,
+  getArtifactDownloadUrl,
   cancelJob,
   type Job,
   type TrainingMetric,
@@ -294,9 +295,14 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                         {formatBytes(artifact.size)}
                       </td>
                       <td className="px-4 py-3">
-                        <Button variant="ghost" size="sm">
-                          Download
-                        </Button>
+                        <a
+                          href={getArtifactDownloadUrl(id, artifact.id)}
+                          download
+                        >
+                          <Button variant="ghost" size="sm">
+                            Download
+                          </Button>
+                        </a>
                       </td>
                     </tr>
                   ))}
