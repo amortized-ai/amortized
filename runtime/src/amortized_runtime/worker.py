@@ -24,6 +24,9 @@ logger = logging.getLogger("amortized_runtime.worker")
 _current_process: subprocess.Popen[bytes] | None = None
 _current_job_id: str | None = None
 
+# Keep references to background monitor tasks so they aren't garbage-collected
+_monitor_tasks: set[asyncio.Task[None]] = set()
+
 
 def get_current_process() -> tuple[subprocess.Popen[bytes] | None, str | None]:
     """Return the currently running subprocess and its job ID."""
@@ -38,12 +41,103 @@ async def _get_db() -> aiosqlite.Connection:
     return db
 
 
+def _find_runner_pid(job_id: str) -> int | None:
+    """Scan /proc for a running runner subprocess matching a job config containing job_id."""
+    proc_path = Path("/proc")
+    if not proc_path.exists():
+        return None
+
+    for entry in proc_path.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            cmdline_path = entry / "cmdline"
+            cmdline = cmdline_path.read_bytes().decode("utf-8", errors="replace")
+            # Runner commands contain the module name and job config as JSON
+            if "amortized_runtime.runners." in cmdline and job_id in cmdline:
+                return int(entry.name)
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+async def _monitor_adopted_process(pid: int, job_id: str, output_dir: str) -> None:
+    """Monitor an adopted process until it exits, then update job status."""
+    global _current_process, _current_job_id
+
+    logger.info("Monitoring adopted process pid=%d for job %s", pid, job_id)
+    loop = asyncio.get_event_loop()
+
+    def _wait_for_exit() -> int | None:
+        """Poll until the process exits, return exit code or None."""
+        while True:
+            try:
+                # Try to reap the process if we're the parent
+                wpid, wstatus = os.waitpid(pid, os.WNOHANG)
+                if wpid != 0:
+                    if os.WIFEXITED(wstatus):
+                        return os.WEXITSTATUS(wstatus)
+                    return 1  # killed by signal
+            except ChildProcessError:
+                # Not our child — poll with kill(0)
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    # Process is gone; we can't get the exit code
+                    return None
+                import time
+
+                time.sleep(2)
+                continue
+            import time
+
+            time.sleep(2)
+
+    exit_code = await loop.run_in_executor(None, _wait_for_exit)
+
+    _current_process = None
+    _current_job_id = None
+
+    completed_at = datetime.now(UTC).isoformat()
+
+    if exit_code == 0:
+        await _update_job(job_id, status=JobStatus.completed, completed_at=completed_at)
+        await _register_artifacts(job_id, output_dir)
+        logger.info("Adopted job %s completed successfully", job_id)
+    elif exit_code is None:
+        # Process disappeared, we don't know the exit code — assume success if artifacts exist
+        output_path = Path(output_dir)
+        has_artifacts = output_path.exists() and any(output_path.iterdir())
+        if has_artifacts:
+            await _update_job(job_id, status=JobStatus.completed, completed_at=completed_at)
+            await _register_artifacts(job_id, output_dir)
+            logger.info("Adopted job %s finished (artifacts found, assuming success)", job_id)
+        else:
+            await _update_job(
+                job_id,
+                status=JobStatus.failed,
+                completed_at=completed_at,
+                error="Adopted process exited with unknown status and no artifacts found",
+            )
+            logger.warning("Adopted job %s finished with unknown status", job_id)
+    else:
+        await _update_job(
+            job_id,
+            status=JobStatus.failed,
+            completed_at=completed_at,
+            error=f"Adopted process exited with code {exit_code}",
+        )
+        logger.error("Adopted job %s failed with code %d", job_id, exit_code)
+
+
 async def cleanup_orphaned_jobs() -> None:
-    """Mark any 'running' jobs as 'failed' if their PID no longer exists."""
+    """Handle 'running' jobs on startup: re-adopt live processes, fail dead ones."""
+    global _current_process, _current_job_id
+
     db = await _get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, pid FROM jobs WHERE status = ?",
+            "SELECT id, pid, type, output_dir, config FROM jobs WHERE status = ?",
             (JobStatus.running.value,),
         )
         rows = await cursor.fetchall()
@@ -52,6 +146,16 @@ async def cleanup_orphaned_jobs() -> None:
         for row in rows:
             job_id = row["id"]
             pid = row["pid"]
+            job_type = row["type"]
+            output_dir = row["output_dir"]
+
+            # Determine output_dir if not stored
+            if not output_dir:
+                if job_type == JobType.training.value:
+                    output_dir = str(config_mod.settings.data_dir / "training_output" / job_id)
+                else:
+                    output_dir = str(config_mod.settings.data_dir / "sdg_output" / job_id)
+
             alive = False
             if pid is not None:
                 try:
@@ -59,8 +163,29 @@ async def cleanup_orphaned_jobs() -> None:
                     alive = True
                 except OSError:
                     alive = False
+            else:
+                # No PID stored — try to find the process via /proc
+                found_pid = _find_runner_pid(job_id)
+                if found_pid is not None:
+                    pid = found_pid
+                    alive = True
+                    await db.execute(
+                        "UPDATE jobs SET pid = ?, updated_at = ? WHERE id = ?",
+                        (pid, now, job_id),
+                    )
+                    logger.info(
+                        "Found orphaned process pid=%d for job %s via /proc scan", pid, job_id
+                    )
 
-            if not alive:
+            if alive and pid is not None:
+                # Re-adopt: set module-level tracking and spawn monitor
+                _current_job_id = job_id
+                _current_process = None  # We don't have a Popen object, but pid is tracked in DB
+                logger.info("Re-adopted running job %s with pid %d", job_id, pid)
+                task = asyncio.create_task(_monitor_adopted_process(pid, job_id, output_dir))
+                _monitor_tasks.add(task)
+                task.add_done_callback(_monitor_tasks.discard)
+            else:
                 await db.execute(
                     """UPDATE jobs SET status = ?, updated_at = ?, completed_at = ?,
                        error = ? WHERE id = ?""",

@@ -201,6 +201,91 @@ class TestOrphanedJobCleanup:
         assert data["status"] == "failed"
         assert "Orphaned" in (data.get("error") or "")
 
+    @pytest.mark.asyncio
+    async def test_cleanup_readopts_live_pid(self, client: httpx.AsyncClient) -> None:
+        """Jobs with status=running and a live PID should be re-adopted, not failed."""
+        import subprocess
+
+        import aiosqlite
+
+        from amortized_runtime.config import settings
+        from amortized_runtime.worker import cleanup_orphaned_jobs
+
+        # Create a job
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "model_path": "test/model",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "/tmp/test-readopt",
+            },
+        )
+        job_id = response.json()["id"]
+
+        # Start a real long-running process we can use as a live PID
+        proc = subprocess.Popen(
+            ["sleep", "300"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        live_pid = proc.pid
+
+        try:
+            # Set job to running with the live PID
+            async with aiosqlite.connect(str(settings.db_path)) as db:
+                await db.execute(
+                    "UPDATE jobs SET status = ?, pid = ?, output_dir = ? WHERE id = ?",
+                    ("running", live_pid, "/tmp/test-readopt", job_id),
+                )
+                await db.commit()
+
+            # Run cleanup — should re-adopt, not mark as failed
+            await cleanup_orphaned_jobs()
+
+            # Verify job is still running (not failed)
+            response = await client.get(f"/api/v1/jobs/{job_id}")
+            data = response.json()
+            assert data["status"] == "running", (
+                f"Expected 'running' but got '{data['status']}' — "
+                "live process should be re-adopted, not marked failed"
+            )
+        finally:
+            proc.terminate()
+            proc.wait()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_finds_pid_none_dead(self, client: httpx.AsyncClient) -> None:
+        """Jobs with pid=None and no matching /proc entry should be marked failed."""
+        import aiosqlite
+
+        from amortized_runtime.config import settings
+        from amortized_runtime.worker import cleanup_orphaned_jobs
+
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "model_path": "test/model",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "/tmp/test-no-pid",
+            },
+        )
+        job_id = response.json()["id"]
+
+        # Set to running with no PID
+        async with aiosqlite.connect(str(settings.db_path)) as db:
+            await db.execute(
+                "UPDATE jobs SET status = ?, pid = NULL WHERE id = ?",
+                ("running", job_id),
+            )
+            await db.commit()
+
+        await cleanup_orphaned_jobs()
+
+        response = await client.get(f"/api/v1/jobs/{job_id}")
+        data = response.json()
+        assert data["status"] == "failed"
+        assert "Orphaned" in (data.get("error") or "")
+
 
 class TestCancelRunningJob:
     """Test enhanced cancel behavior with subprocess kill."""
