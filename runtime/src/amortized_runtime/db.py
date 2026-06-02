@@ -1,5 +1,6 @@
 """SQLite database layer for job and artifact persistence."""
 
+import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -40,6 +41,26 @@ CREATE TABLE IF NOT EXISTS artifacts (
 )
 """
 
+_CREATE_CONVERSATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+_CREATE_MESSAGES_TABLE = """
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+)
+"""
+
 
 async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """Get a database connection (FastAPI dependency)."""
@@ -58,6 +79,8 @@ async def init_db() -> None:
     async with aiosqlite.connect(str(settings.db_path)) as db:
         await db.execute(_CREATE_JOBS_TABLE)
         await db.execute(_CREATE_ARTIFACTS_TABLE)
+        await db.execute(_CREATE_CONVERSATIONS_TABLE)
+        await db.execute(_CREATE_MESSAGES_TABLE)
         await db.commit()
     logger.info("Database initialized at %s", settings.db_path)
 
@@ -196,6 +219,115 @@ async def list_artifacts(
     )
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+async def create_conversation(
+    db: aiosqlite.Connection,
+    *,
+    conversation_id: str,
+    title: str,
+    created_at: str,
+) -> dict[str, Any]:
+    """Insert a new conversation record."""
+    await db.execute(
+        """INSERT INTO conversations (id, title, created_at, updated_at)
+           VALUES (?, ?, ?, ?)""",
+        (conversation_id, title, created_at, created_at),
+    )
+    await db.commit()
+    cursor = await db.execute(
+        "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+    )
+    row = await cursor.fetchone()
+    assert row is not None
+    return dict(row)
+
+
+async def get_conversation(
+    db: aiosqlite.Connection, conversation_id: str
+) -> dict[str, Any] | None:
+    """Fetch a single conversation by ID."""
+    cursor = await db.execute(
+        "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def list_conversations(
+    db: aiosqlite.Connection,
+) -> list[dict[str, Any]]:
+    """List all conversations ordered by most recent."""
+    cursor = await db.execute(
+        "SELECT * FROM conversations ORDER BY updated_at DESC"
+    )
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def update_conversation(
+    db: aiosqlite.Connection,
+    conversation_id: str,
+    *,
+    updated_at: str,
+    title: str | None = None,
+) -> dict[str, Any] | None:
+    """Update conversation metadata."""
+    fields = ["updated_at = ?"]
+    params: list[Any] = [updated_at]
+    if title is not None:
+        fields.append("title = ?")
+        params.append(title)
+    params.append(conversation_id)
+    await db.execute(
+        f"UPDATE conversations SET {', '.join(fields)} WHERE id = ?",
+        params,
+    )
+    await db.commit()
+    return await get_conversation(db, conversation_id)
+
+
+async def create_message(
+    db: aiosqlite.Connection,
+    *,
+    message_id: str,
+    conversation_id: str,
+    role: str,
+    content: str,
+    created_at: str,
+) -> dict[str, Any]:
+    """Insert a new message record."""
+    await db.execute(
+        """INSERT INTO messages (id, conversation_id, role, content, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (message_id, conversation_id, role, content, created_at),
+    )
+    await db.commit()
+    cursor = await db.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
+    row = await cursor.fetchone()
+    assert row is not None
+    return _row_to_message(row)
+
+
+async def list_messages(
+    db: aiosqlite.Connection, conversation_id: str
+) -> list[dict[str, Any]]:
+    """List messages for a conversation ordered by creation time."""
+    cursor = await db.execute(
+        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at",
+        (conversation_id,),
+    )
+    rows = await cursor.fetchall()
+    return [_row_to_message(row) for row in rows]
+
+
+def _row_to_message(row: Any) -> dict[str, Any]:
+    """Convert a database row to a message dict with parsed content."""
+    d = dict(row)
+    if isinstance(d["content"], str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["content"] = json.loads(d["content"])
+    return d
 
 
 def _row_to_job(row: Any) -> dict[str, Any]:

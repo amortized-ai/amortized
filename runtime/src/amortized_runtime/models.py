@@ -123,3 +123,76 @@ class TrainingMetric(BaseModel):
     epoch: float | None = None
     learning_rate: float | None = None
     max_steps: int | None = None
+
+
+# --- Agent / Chat models ---
+
+
+class MessageRole(StrEnum):
+    """Role of a chat message."""
+
+    user = "user"
+    assistant = "assistant"
+
+
+class SuggestedAction(BaseModel):
+    """An action the agent suggests the user take."""
+
+    type: str = Field(..., description="Action type (e.g. create_training_job)")
+    config: dict[str, Any] = Field(default_factory=dict)
+    label: str = Field("", description="Human-readable label for the action")
+
+
+class AgentResponse(BaseModel):
+    """Response from the agent."""
+
+    message: str
+    suggested_action: SuggestedAction | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatRequest(BaseModel):
+    """Request to send a message to the agent."""
+
+    message: str = Field(..., min_length=1, description="User message")
+    conversation_id: str | None = Field(
+        None, description="Existing conversation ID (creates new if omitted)"
+    )
+
+
+class ChatResponse(BaseModel):
+    """Response from the agent chat endpoint."""
+
+    conversation_id: str
+    message: str
+    suggested_action: SuggestedAction | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class Message(BaseModel):
+    """A chat message."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    conversation_id: str
+    role: MessageRole
+    content: AgentResponse | str
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+
+class Conversation(BaseModel):
+    """A chat conversation."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+
+
+class ConversationDetail(BaseModel):
+    """A conversation with its messages."""
+
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+    messages: list[Message] = Field(default_factory=list)
