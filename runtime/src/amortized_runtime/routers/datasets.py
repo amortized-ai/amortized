@@ -19,8 +19,10 @@ DATASETS_DIR = Path("datasets")
 # Column patterns that can be auto-detected and converted to messages format
 _COLUMN_PATTERNS: list[tuple[str, str]] = [
     ("question", "answer"),
+    ("question", "response"),
     ("input", "output"),
     ("prompt", "response"),
+    ("prompt", "completion"),
 ]
 
 
