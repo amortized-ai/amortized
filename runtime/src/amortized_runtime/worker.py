@@ -364,6 +364,32 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     return [sys.executable, "-m", module, json.dumps(config)]
 
 
+async def _register_log_artifacts(job_id: str, output_dir: str) -> None:
+    """Register stdout.log and stderr.log as log-type artifacts."""
+    db = await _get_db()
+    try:
+        now = datetime.now(UTC).isoformat()
+        for log_name in ("stdout.log", "stderr.log"):
+            log_path = Path(output_dir) / log_name
+            if log_path.is_file() and log_path.stat().st_size > 0:
+                await db.execute(
+                    """INSERT INTO artifacts
+                       (id, job_id, artifact_type, path, size, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(uuid.uuid4()),
+                        job_id,
+                        "log",
+                        str(log_path),
+                        log_path.stat().st_size,
+                        now,
+                    ),
+                )
+        await db.commit()
+    finally:
+        await db.close()
+
+
 async def _run_job(job: dict[str, Any]) -> None:
     """Spawn a subprocess to execute the job and monitor it."""
     global _current_process, _current_job_id
@@ -401,11 +427,24 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     logger.info("Starting job %s: %s", job_id, " ".join(cmd[:3]))
 
+    stdout_file = None
+    stderr_file = None
     try:
+        # Redirect stdout/stderr to log files instead of pipes to avoid deadlock.
+        # When using subprocess.PIPE, the pipe buffer (typically 64KB) can fill up
+        # if the subprocess produces large output. The subprocess then blocks on
+        # write while proc.wait() blocks waiting for exit — a classic deadlock.
+        # See: https://docs.python.org/3/library/subprocess.html#subprocess.Popen.wait
+        os.makedirs(output_dir, exist_ok=True)
+        stdout_path = os.path.join(output_dir, "stdout.log")
+        stderr_path = os.path.join(output_dir, "stderr.log")
+        stdout_file = open(stdout_path, "w")  # noqa: SIM115
+        stderr_file = open(stderr_path, "w")  # noqa: SIM115
+
         proc = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
         )
         _current_process = proc
         _current_job_id = job_id
@@ -425,7 +464,16 @@ async def _run_job(job: dict[str, Any]) -> None:
         _current_process = None
         _current_job_id = None
 
+        # Close log files now that the process has exited
+        stdout_file.close()
+        stderr_file.close()
+        stdout_file = None
+        stderr_file = None
+
         completed_at = datetime.now(UTC).isoformat()
+
+        # Register log files as artifacts
+        await _register_log_artifacts(job_id, output_dir)
 
         if returncode == 0:
             await _update_job(
@@ -446,9 +494,11 @@ async def _run_job(job: dict[str, Any]) -> None:
             logger.info("Job %s was cancelled", job_id)
         else:
             stderr_output = ""
-            if proc.stderr:
-                stderr_bytes = proc.stderr.read()
-                stderr_output = stderr_bytes.decode("utf-8", errors="replace")[-2000:]
+            try:
+                with open(stderr_path) as f:
+                    stderr_output = f.read()[-2000:]
+            except OSError:
+                pass
             await _update_job(
                 job_id,
                 status=JobStatus.failed,
@@ -460,6 +510,10 @@ async def _run_job(job: dict[str, Any]) -> None:
     except Exception as exc:
         _current_process = None
         _current_job_id = None
+        if stdout_file is not None:
+            stdout_file.close()
+        if stderr_file is not None:
+            stderr_file.close()
         await _update_job(
             job_id,
             status=JobStatus.failed,
