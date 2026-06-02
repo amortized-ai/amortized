@@ -64,6 +64,8 @@ def _build_cmd(
     ]
     if verbose:
         cmd.append("--verbose")
+    if output_format == "stream-json":
+        cmd.append("--include-partial-messages")
     cmd.append(message)
     return cmd
 

@@ -176,16 +176,18 @@ async def chat_stream(
                 except json.JSONDecodeError:
                     continue
 
-                if event.get("type") == "assistant":
-                    content = event.get("message", {}).get("content", [])
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block["text"]
-                            full_text += text
-                            yield {
-                                "event": "delta",
-                                "data": json.dumps({"text": text}),
-                            }
+                if event.get("type") == "stream_event":
+                    inner = event.get("event", {})
+                    if inner.get("type") == "content_block_delta":
+                        delta = inner.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text", "")
+                            if text:
+                                full_text += text
+                                yield {
+                                    "event": "delta",
+                                    "data": json.dumps({"text": text}),
+                                }
                 elif event.get("type") == "result":
                     result_text = event.get("result", "")
                     if result_text:
@@ -195,6 +197,17 @@ async def chat_stream(
                         "event": "done",
                         "data": json.dumps({"full_text": full_text or result_text}),
                     }
+                elif event.get("type") == "assistant":
+                    # Fallback: old format without --include-partial-messages
+                    content = event.get("message", {}).get("content", [])
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block["text"]
+                            full_text += text
+                            yield {
+                                "event": "delta",
+                                "data": json.dumps({"text": text}),
+                            }
 
             await proc.wait()
 
