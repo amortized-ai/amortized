@@ -158,6 +158,14 @@ async def cancel_job(
 
     from datetime import UTC, datetime
 
+    # Kill the subprocess if the job is running and has a PID
+    pid = row.get("pid")
+    if current_status == JobStatus.running.value and pid is not None:
+        from amortized_runtime.worker import kill_job_process
+
+        await kill_job_process(pid)
+        logger.info("Killed process %d for job %s", pid, job_id)
+
     updated = await update_job_status(
         db,
         job_id,

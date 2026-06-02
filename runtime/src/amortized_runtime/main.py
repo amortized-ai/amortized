@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+import asyncio
+import contextlib
 import logging
 import shutil
 from collections.abc import AsyncIterator
@@ -9,7 +11,8 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 
 from amortized_runtime.db import init_db
-from amortized_runtime.routers import estimate, flows, jobs
+from amortized_runtime.routers import estimate, flows, jobs, ws
+from amortized_runtime.worker import cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,10 +23,20 @@ logger = logging.getLogger("amortized_runtime")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize database on startup."""
+    """Initialize database and start background worker on startup."""
     await init_db()
+    await cleanup_orphaned_jobs()
     logger.info("Amortized runtime started")
+
+    # Start background worker
+    worker_task = asyncio.create_task(worker_loop())
+
     yield
+
+    # Shutdown worker
+    worker_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await worker_task
     logger.info("Amortized runtime shutting down")
 
 
@@ -37,6 +50,7 @@ app = FastAPI(
 app.include_router(jobs.router)
 app.include_router(flows.router)
 app.include_router(estimate.router)
+app.include_router(ws.router)
 
 
 def _detect_gpu() -> dict[str, object]:
