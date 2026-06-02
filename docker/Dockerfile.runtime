@@ -1,0 +1,33 @@
+# Amortized Runtime — GPU-enabled container image
+#
+# This Dockerfile is a placeholder for the full CUDA + Training Hub + SDG Hub
+# runtime image. It will be built out properly in H6.
+#
+# Production build will use:
+#   Base: nvidia/cuda:12.6.0-devel-ubuntu22.04 (builder stage)
+#         nvidia/cuda:12.6.0-runtime-ubuntu22.04 (runtime stage)
+#   Python: 3.11+
+#   GPU libs: Training Hub[lora,cuda], Flash Attention 2, bitsandbytes
+#   SDG libs: SDG Hub
+#   Runtime: FastAPI + uvicorn
+#
+# Install order matters:
+#   1. pip install training-hub[lora]
+#   2. pip install training-hub[cuda] --no-build-isolation
+#   3. pip install sdg-hub
+#
+# Requires on host:
+#   - NVIDIA GPU (Ampere+ for Flash Attention 2)
+#   - NVIDIA Container Toolkit
+#   - docker run --gpus all
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY runtime/ ./runtime/
+RUN pip install --no-cache-dir ./runtime/
+
+EXPOSE 8000
+
+CMD ["uvicorn", "amortized_runtime.main:app", "--host", "0.0.0.0", "--port", "8000"]
