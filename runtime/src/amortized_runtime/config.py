@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     db_path: Path = Path("./data/amortized.db")
     data_dir: Path = Path("./data")
 
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    claude_command: str = "claude"
+    claude_model: str = "sonnet"
+    claude_max_turns: int = 1
 
     model_config = {"env_prefix": "AMORTIZED_"}
 
