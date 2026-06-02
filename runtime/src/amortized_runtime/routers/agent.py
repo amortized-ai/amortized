@@ -121,7 +121,13 @@ async def chat_stream(
     request: ChatRequest,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> EventSourceResponse:
-    """Send a message to the agent and stream the response via SSE."""
+    """Send a message to the agent and stream the response via SSE.
+
+    Agent execution is decoupled from SSE streaming: the full agent loop runs
+    first, the response is persisted to the DB, and only then are the collected
+    events replayed to the client.  This guarantees the assistant response is
+    always saved regardless of whether the client disconnects mid-stream.
+    """
     conversation_id = await _ensure_conversation(
         db, request.conversation_id, request.message[:50]
     )
@@ -138,64 +144,41 @@ async def chat_stream(
         created_at=datetime.now(UTC).isoformat(),
     )
 
-    async def event_generator() -> AsyncIterator[dict[str, str]]:
+    # 1. Run the full agent loop and collect all events
+    events: list[dict[str, object]] = []
+    full_text = ""
+
+    try:
+        async for event in stream_message(request.message, history=history):
+            events.append({"type": event.type, "data": event.data})
+            if event.type == "delta":
+                full_text += event.data.get("text", "")
+            elif event.type == "done":
+                full_text = event.data.get("full_text", full_text)
+    except Exception:
+        logger.exception("Agent execution error")
+        error_msg = "Sorry, something went wrong. Please try again."
+        events.append({"type": "error", "data": {"error": error_msg}})
+        full_text = full_text or error_msg
+
+    # 2. Save assistant response BEFORE streaming to client
+    if full_text:
+        await create_message(
+            db,
+            message_id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            role=MessageRole.assistant.value,
+            content=full_text,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+
+    # 3. Replay collected events to the client via SSE
+    async def replay_events() -> AsyncIterator[dict[str, str]]:
         yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
+        for evt in events:
+            yield {"event": str(evt["type"]), "data": json.dumps(evt["data"])}
 
-        full_text = ""
-        saved = False
-        try:
-            try:
-                async for event in stream_message(request.message, history=history):
-                    if event.type == "delta":
-                        full_text += event.data.get("text", "")
-                        yield {"event": "delta", "data": json.dumps(event.data)}
-                    elif event.type == "thinking":
-                        yield {"event": "thinking", "data": json.dumps(event.data)}
-                    elif event.type == "tool_result":
-                        yield {"event": "tool_result", "data": json.dumps(event.data)}
-                    elif event.type == "action":
-                        yield {"event": "action", "data": json.dumps(event.data)}
-                    elif event.type == "done":
-                        full_text = event.data.get("full_text", full_text)
-                        yield {"event": "done", "data": json.dumps({"full_text": full_text})}
-                    elif event.type == "error":
-                        yield {"event": "error", "data": json.dumps(event.data)}
-            except Exception:
-                logger.exception("Streaming error")
-                error_msg = "Sorry, something went wrong. Please try again."
-                yield {"event": "error", "data": json.dumps({"error": error_msg})}
-                full_text = full_text or error_msg
-
-            # Save assistant response
-            await create_message(
-                db,
-                message_id=str(uuid.uuid4()),
-                conversation_id=conversation_id,
-                role=MessageRole.assistant.value,
-                content=full_text,
-                created_at=datetime.now(UTC).isoformat(),
-            )
-            saved = True
-        finally:
-            # If the client disconnected before we could save, persist whatever
-            # text we accumulated so the response is not lost.
-            if not saved and full_text:
-                try:
-                    await create_message(
-                        db,
-                        message_id=str(uuid.uuid4()),
-                        conversation_id=conversation_id,
-                        role=MessageRole.assistant.value,
-                        content=full_text,
-                        created_at=datetime.now(UTC).isoformat(),
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to save assistant message on disconnect for conversation %s",
-                        conversation_id,
-                    )
-
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(replay_events())
 
 
 @router.get("/conversations", response_model=list[Conversation])
