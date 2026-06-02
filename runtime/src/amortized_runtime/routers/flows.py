@@ -1,6 +1,8 @@
 """SDG flow discovery endpoints."""
 
+import io
 import logging
+import sys
 
 from fastapi import APIRouter
 
@@ -10,59 +12,69 @@ logger = logging.getLogger("amortized_runtime.routers.flows")
 
 router = APIRouter(prefix="/api/v1/flows", tags=["flows"])
 
-# Mock flow data — replaced by FlowRegistry.discover_flows() when sdg_hub is installed
-_MOCK_FLOWS: list[FlowInfo] = [
-    FlowInfo(
-        id="knowledge-qa",
-        name="Knowledge Q&A Generation",
-        description="Generate question-answer pairs from knowledge documents",
-        category="knowledge_infusion",
-    ),
-    FlowInfo(
-        id="rag-eval",
-        name="RAG Evaluation Dataset",
-        description="Generate evaluation datasets for RAG pipelines",
-        category="evaluation",
-    ),
-    FlowInfo(
-        id="mcp-distillation",
-        name="MCP Agent Distillation",
-        description="Distill MCP agent tool-use behavior into training data",
-        category="agentic",
-    ),
-    FlowInfo(
-        id="text-summarization",
-        name="Text Summarization",
-        description="Generate extractive and abstractive summaries from documents",
-        category="text_analysis",
-    ),
-]
+# Tag-to-category mapping for SDG flows
+_TAG_CATEGORY_MAP: dict[str, str] = {
+    "knowledge": "knowledge_infusion",
+    "qa": "knowledge_infusion",
+    "summary": "knowledge_infusion",
+    "evaluation": "evaluation",
+    "eval": "evaluation",
+    "rag": "evaluation",
+    "agent": "agentic",
+    "agentic": "agentic",
+    "mcp": "agentic",
+    "red_team": "red_team",
+    "adversarial": "red_team",
+    "text": "text_analysis",
+    "classification": "text_analysis",
+    "sentiment": "text_analysis",
+    "code": "code_evaluation",
+}
+
+
+def _tags_to_category(tags: list[str]) -> str:
+    """Map a list of tags to a single category string."""
+    for tag in tags:
+        tag_lower = tag.lower()
+        if tag_lower in _TAG_CATEGORY_MAP:
+            return _TAG_CATEGORY_MAP[tag_lower]
+    return "unknown"
 
 
 def _discover_flows() -> list[FlowInfo]:
     """Discover available SDG flows.
 
-    Uses sdg_hub FlowRegistry when available, falls back to mock data.
+    Uses sdg_hub FlowRegistry when available, falls back to empty list.
     """
     try:
         from sdg_hub import FlowRegistry
 
-        FlowRegistry.discover_flows()
+        # discover_flows() prints a Rich table to stdout — suppress it
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            FlowRegistry.discover_flows()
+        finally:
+            sys.stdout = old_stdout
+
         flows: list[FlowInfo] = []
-        for flow_id in FlowRegistry.list_flows():
-            info = FlowRegistry.get_flow_info(flow_id)
+        for flow_id, entry in FlowRegistry._entries.items():
+            tags = getattr(entry, "tags", []) or []
             flows.append(
                 FlowInfo(
                     id=flow_id,
-                    name=info.get("name", flow_id),
-                    description=info.get("description", ""),
-                    category=info.get("category", "unknown"),
+                    name=getattr(entry, "name", flow_id),
+                    description=getattr(entry, "description", ""),
+                    category=_tags_to_category(tags),
                 )
             )
         return flows
     except ImportError:
-        logger.debug("sdg_hub not installed, using mock flow data")
-        return _MOCK_FLOWS
+        logger.debug("sdg_hub not installed, no flows available")
+        return []
+    except Exception:
+        logger.exception("Failed to discover SDG flows")
+        return []
 
 
 @router.get("", response_model=list[FlowInfo])

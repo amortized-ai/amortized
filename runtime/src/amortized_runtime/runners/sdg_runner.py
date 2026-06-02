@@ -17,19 +17,34 @@ def run_sdg(config: dict[str, Any]) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     try:
+        import io
+
         from datasets import Dataset
         from sdg_hub import Flow, FlowRegistry
 
-        FlowRegistry.discover_flows()
+        # discover_flows() prints a Rich table to stdout — suppress it
+        old_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            FlowRegistry.discover_flows()
+        finally:
+            sys.stdout = old_stdout
+
         flow_path = FlowRegistry.get_flow_path(str(config["flow_id"]))
         flow = Flow.from_yaml(flow_path)
         flow.set_model_config(
             model=str(config["model"]),
-            api_base=str(config.get("api_base", "")),
-            api_key=str(config.get("api_key", "")),
+            api_base=config.get("api_base"),
+            api_key=config.get("api_key"),
         )
 
-        dataset = Dataset.from_json(str(config["dataset_path"]))
+        # Some flows generate data from scratch without an input dataset
+        dataset_path = config.get("dataset_path")
+        if dataset_path:
+            dataset = Dataset.from_json(str(dataset_path))
+        else:
+            dataset = Dataset.from_dict({"input": [""]})
+
         checkpoint_dir = os.path.join(output_dir, "checkpoints")
         result = flow.generate(
             dataset,
