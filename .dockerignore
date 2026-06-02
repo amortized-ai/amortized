@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Factory
+.factory
+
+# Node.js
+node_modules
+.next
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+*.egg-info
+.mypy_cache
+.ruff_cache
+.pytest_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose*.yml
