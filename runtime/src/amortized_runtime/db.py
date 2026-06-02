@@ -210,6 +210,15 @@ async def create_artifact(
     return dict(row)
 
 
+async def get_artifact(
+    db: aiosqlite.Connection, artifact_id: str
+) -> dict[str, Any] | None:
+    """Get a single artifact by ID."""
+    cursor = await db.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
 async def list_artifacts(
     db: aiosqlite.Connection, job_id: str
 ) -> list[dict[str, Any]]:

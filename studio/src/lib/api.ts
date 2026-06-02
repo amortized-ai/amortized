@@ -112,6 +112,10 @@ export async function getJobArtifacts(id: string): Promise<Artifact[]> {
   return apiFetch<Artifact[]>(`/jobs/${id}/artifacts`);
 }
 
+export function getArtifactDownloadUrl(jobId: string, artifactId: string): string {
+  return `${RUNTIME_URL}/api/v1/jobs/${jobId}/artifacts/${artifactId}/download`;
+}
+
 export async function createTrainingJob(config: TrainingJobConfig): Promise<Job> {
   return apiFetch<Job>("/jobs/training", {
     method: "POST",

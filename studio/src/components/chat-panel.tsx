@@ -431,19 +431,25 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
             {/* Action button rendered after the assistant message */}
             {msg.role === "assistant" && msg.action && pendingAction === msg.action && (
               <div className="flex justify-start mt-2">
-                <button
-                  onClick={() => handleActionClick(msg.action!)}
-                  disabled={loading}
-                  className={cn(
-                    "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium",
-                    "bg-primary text-primary-foreground",
-                    "hover:bg-primary/90 transition-colors",
-                    "disabled:opacity-50 disabled:cursor-not-allowed"
-                  )}
-                >
-                  <Play className="h-4 w-4" />
-                  {msg.action.label}
-                </button>
+                <div className="bg-muted rounded-lg p-3 text-sm">
+                  <div className="font-medium mb-1">{msg.action.label}</div>
+                  <pre className="text-xs text-muted-foreground overflow-x-auto mb-3">
+                    {JSON.stringify(msg.action.config, null, 2)}
+                  </pre>
+                  <button
+                    onClick={() => handleActionClick(msg.action!)}
+                    disabled={loading}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium",
+                      "bg-primary text-primary-foreground",
+                      "hover:bg-primary/90 transition-colors",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    <Play className="h-4 w-4" />
+                    Confirm & Submit
+                  </button>
+                </div>
               </div>
             )}
           </div>
