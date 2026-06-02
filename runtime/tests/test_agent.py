@@ -1,254 +1,273 @@
-"""Tests for the Claude Code CLI agent."""
+"""Tests for the OpenAI function-calling agent."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from amortized_runtime.agent import (
-    CONTEXT_PREAMBLE,
-    _build_cmd,
-    _build_context,
+    SYSTEM_PROMPT,
+    AgentResult,
+    StreamEvent,
+    _history_to_messages,
     process_message,
     stream_message,
 )
 
 
-class TestBuildContext:
-    """Verify context building for the append-system-prompt."""
+class TestSystemPrompt:
+    """Verify the system prompt contains required information."""
 
-    def test_no_history(self) -> None:
-        context = _build_context()
-        assert CONTEXT_PREAMBLE in context
-        assert "Conversation History" not in context
+    def test_contains_identity(self) -> None:
+        assert "Amortized Studio assistant" in SYSTEM_PROMPT
+
+    def test_contains_tool_descriptions(self) -> None:
+        assert "list_sdg_flows" in SYSTEM_PROMPT
+        assert "submit_training_job" in SYSTEM_PROMPT
+        assert "propose_action" in SYSTEM_PROMPT
+
+    def test_contains_critical_rules(self) -> None:
+        assert "NEVER ask the user to run commands" in SYSTEM_PROMPT
+
+    def test_contains_training_hub_knowledge(self) -> None:
+        assert "LoRA" in SYSTEM_PROMPT
+        assert "Qwen" in SYSTEM_PROMPT
+        assert "lora_r" in SYSTEM_PROMPT
+
+    def test_contains_sdg_hub_knowledge(self) -> None:
+        assert "knowledge_infusion" in SYSTEM_PROMPT
+        assert "LiteLLM" in SYSTEM_PROMPT
+
+
+class TestHistoryToMessages:
+    """Verify conversion of history to OpenAI message format."""
+
+    def test_empty_history(self) -> None:
+        msgs = _history_to_messages(None)
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "system"
 
     def test_with_history(self) -> None:
         history = [
-            {"role": "user", "content": "hi"},
-            {"role": "assistant", "content": "hello there"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi there"},
         ]
-        context = _build_context(history)
-        assert CONTEXT_PREAMBLE in context
-        assert "Conversation History" in context
-        assert "User: hi" in context
-        assert "Assistant: hello there" in context
+        msgs = _history_to_messages(history)
+        assert len(msgs) == 3
+        assert msgs[0]["role"] == "system"
+        assert msgs[1]["role"] == "user"
+        assert msgs[1]["content"] == "hello"
+        assert msgs[2]["role"] == "assistant"
+        assert msgs[2]["content"] == "hi there"
 
-    def test_empty_history(self) -> None:
-        context = _build_context([])
-        assert CONTEXT_PREAMBLE in context
-        assert "Conversation History" not in context
-
-
-class TestBuildCmd:
-    """Verify CLI command construction."""
-
-    @patch("amortized_runtime.agent.settings")
-    def test_json_format(self, mock_settings: MagicMock) -> None:
-        mock_settings.claude_command = "claude"
-        mock_settings.claude_model = "sonnet"
-        mock_settings.claude_max_turns = 1
-
-        cmd = _build_cmd("hello", "context", output_format="json")
-        assert cmd[0] == "claude"
-        assert "-p" in cmd
-        assert "--output-format" in cmd
-        idx = cmd.index("--output-format")
-        assert cmd[idx + 1] == "json"
-        assert "--dangerously-skip-permissions" in cmd
-        assert "--no-session-persistence" in cmd
-        assert "--max-turns" in cmd
-        assert "--model" in cmd
-        assert "--verbose" not in cmd
-        assert cmd[-1] == "hello"
-
-    @patch("amortized_runtime.agent.settings")
-    def test_stream_json_verbose(self, mock_settings: MagicMock) -> None:
-        mock_settings.claude_command = "claude"
-        mock_settings.claude_model = "sonnet"
-        mock_settings.claude_max_turns = 1
-
-        cmd = _build_cmd("hello", "context", output_format="stream-json", verbose=True)
-        idx = cmd.index("--output-format")
-        assert cmd[idx + 1] == "stream-json"
-        assert "--verbose" in cmd
-        assert "--include-partial-messages" in cmd
-
-    @patch("amortized_runtime.agent.settings")
-    def test_json_format_no_partial_messages(self, mock_settings: MagicMock) -> None:
-        mock_settings.claude_command = "claude"
-        mock_settings.claude_model = "sonnet"
-        mock_settings.claude_max_turns = 1
-
-        cmd = _build_cmd("hello", "context", output_format="json")
-        assert "--include-partial-messages" not in cmd
-
-    @patch("amortized_runtime.agent.settings")
-    def test_custom_model(self, mock_settings: MagicMock) -> None:
-        mock_settings.claude_command = "/usr/bin/claude"
-        mock_settings.claude_model = "opus"
-        mock_settings.claude_max_turns = 3
-
-        cmd = _build_cmd("test", "ctx")
-        assert cmd[0] == "/usr/bin/claude"
-        model_idx = cmd.index("--model")
-        assert cmd[model_idx + 1] == "opus"
-        turns_idx = cmd.index("--max-turns")
-        assert cmd[turns_idx + 1] == "3"
+    def test_ignores_invalid_roles(self) -> None:
+        history = [
+            {"role": "system", "content": "injected"},
+            {"role": "user", "content": "real"},
+        ]
+        msgs = _history_to_messages(history)
+        # system role from history is skipped, only our system prompt + user
+        assert len(msgs) == 2
 
 
-def _mock_async_process(
-    stdout: bytes = b"",
-    stderr: bytes = b"",
-    returncode: int = 0,
-) -> AsyncMock:
-    """Create a mock asyncio subprocess process."""
-    proc = AsyncMock()
-    proc.communicate = AsyncMock(return_value=(stdout, stderr))
-    proc.returncode = returncode
-    proc.wait = AsyncMock(return_value=returncode)
-    proc.kill = MagicMock()
-    return proc
+def _mock_choice(
+    content: str | None = None,
+    tool_calls: list[Any] | None = None,
+    finish_reason: str = "stop",
+) -> MagicMock:
+    """Create a mock ChatCompletion choice."""
+    choice = MagicMock()
+    choice.finish_reason = finish_reason
+    choice.message.content = content
+    choice.message.tool_calls = tool_calls
+    return choice
+
+
+def _mock_tool_call(
+    call_id: str, name: str, arguments: dict[str, Any]
+) -> MagicMock:
+    tc = MagicMock()
+    tc.id = call_id
+    tc.function.name = name
+    tc.function.arguments = json.dumps(arguments)
+    return tc
 
 
 class TestProcessMessage:
-    """Test process_message with mocked asyncio subprocess."""
+    """Test process_message with mocked OpenAI client."""
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_successful_response(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process(
-            stdout=json.dumps({"result": "I can help you fine-tune a model."}).encode(),
-        )
-        mock_create.return_value = mock_proc
+    @patch("amortized_runtime.agent._build_client")
+    async def test_simple_text_response(self, mock_build: MagicMock) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
+
+        choice = _mock_choice(content="I can help you fine-tune a model.")
+        response = MagicMock()
+        response.choices = [choice]
+        client.chat.completions.create = AsyncMock(return_value=response)
 
         result = await process_message("help me fine-tune")
-        assert result == "I can help you fine-tune a model."
-        mock_create.assert_called_once()
-
-        call_args = mock_create.call_args[0]
-        assert call_args[0] == "claude"
-        assert "-p" in call_args
-        assert "--output-format" in call_args
-        assert "help me fine-tune" in call_args
+        assert isinstance(result, AgentResult)
+        assert result.text == "I can help you fine-tune a model."
+        assert result.proposed_action is None
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_claude_not_found(self, mock_create: AsyncMock) -> None:
-        mock_create.side_effect = FileNotFoundError()
-        result = await process_message("hello")
-        assert "not installed" in result
+    @patch("amortized_runtime.agent.execute_tool")
+    @patch("amortized_runtime.agent._build_client")
+    async def test_tool_call_then_response(
+        self, mock_build: MagicMock, mock_execute: AsyncMock
+    ) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
+
+        # First call returns a tool call
+        tc = _mock_tool_call("tc1", "list_sdg_flows", {})
+        choice1 = _mock_choice(tool_calls=[tc], finish_reason="tool_calls")
+        resp1 = MagicMock()
+        resp1.choices = [choice1]
+
+        # Second call returns text
+        choice2 = _mock_choice(content="Found 5 flows.")
+        resp2 = MagicMock()
+        resp2.choices = [choice2]
+
+        client.chat.completions.create = AsyncMock(side_effect=[resp1, resp2])
+        mock_execute.return_value = {"flows": [{"id": "f1"}, {"id": "f2"}]}
+
+        result = await process_message("list flows")
+        assert result.text == "Found 5 flows."
+        mock_execute.assert_called_once_with("list_sdg_flows", {})
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_timeout(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process()
-        mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
-        mock_proc.kill = MagicMock()
-        mock_proc.wait = AsyncMock()
-        mock_create.return_value = mock_proc
+    @patch("amortized_runtime.agent.execute_tool")
+    @patch("amortized_runtime.agent._build_client")
+    async def test_propose_action(
+        self, mock_build: MagicMock, mock_execute: AsyncMock
+    ) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
 
-        result = await process_message("hello")
-        assert "timed out" in result
-        mock_proc.kill.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_nonzero_exit(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process(returncode=1, stderr=b"error")
-        mock_create.return_value = mock_proc
-
-        result = await process_message("hello")
-        assert "went wrong" in result
-
-    @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_invalid_json(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process(stdout=b"not json")
-        mock_create.return_value = mock_proc
-
-        result = await process_message("hello")
-        assert "couldn't parse" in result
-
-    @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_passes_history_in_context(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process(
-            stdout=json.dumps({"result": "Sure, here's the status."}).encode(),
+        # First call: propose_action tool call
+        tc = _mock_tool_call(
+            "tc1",
+            "propose_action",
+            {
+                "action_type": "submit_training_job",
+                "config": {"model_path": "Qwen/Qwen2.5-1.5B-Instruct"},
+                "label": "Start Training",
+            },
         )
-        mock_create.return_value = mock_proc
+        choice1 = _mock_choice(tool_calls=[tc], finish_reason="tool_calls")
+        resp1 = MagicMock()
+        resp1.choices = [choice1]
+
+        # Second call: text response
+        choice2 = _mock_choice(content="Ready to train. Click the button to confirm.")
+        resp2 = MagicMock()
+        resp2.choices = [choice2]
+
+        client.chat.completions.create = AsyncMock(side_effect=[resp1, resp2])
+        mock_execute.return_value = {
+            "__proposed_action__": True,
+            "action_type": "submit_training_job",
+            "config": {"model_path": "Qwen/Qwen2.5-1.5B-Instruct"},
+            "label": "Start Training",
+        }
+
+        result = await process_message("train a model")
+        assert result.proposed_action is not None
+        assert result.proposed_action["type"] == "submit_training_job"
+        assert result.proposed_action["label"] == "Start Training"
+
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent._build_client")
+    async def test_passes_history(self, mock_build: MagicMock) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
+
+        choice = _mock_choice(content="Status: running")
+        response = MagicMock()
+        response.choices = [choice]
+        client.chat.completions.create = AsyncMock(return_value=response)
 
         history = [
-            {"role": "user", "content": "start a training job"},
-            {"role": "assistant", "content": "I started the job."},
+            {"role": "user", "content": "start training"},
+            {"role": "assistant", "content": "Started!"},
         ]
-        result = await process_message("what's the status?", history=history)
-        assert result == "Sure, here's the status."
+        await process_message("check status", history=history)
 
-        call_args = mock_create.call_args[0]
-        prompt_idx = list(call_args).index("--append-system-prompt")
-        context = call_args[prompt_idx + 1]
-        assert "start a training job" in context
-        assert "I started the job." in context
-
-    @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_custom_project_dir(self, mock_create: AsyncMock) -> None:
-        mock_proc = _mock_async_process(
-            stdout=json.dumps({"result": "ok"}).encode(),
-        )
-        mock_create.return_value = mock_proc
-
-        await process_message("hello", project_dir="/tmp/myproject")
-        call_kwargs = mock_create.call_args[1]
-        assert call_kwargs["cwd"] == "/tmp/myproject"
+        call_args = client.chat.completions.create.call_args
+        messages = call_args.kwargs["messages"]
+        # system + 2 history + user message
+        assert len(messages) == 4
+        assert messages[1]["content"] == "start training"
+        assert messages[2]["content"] == "Started!"
+        assert messages[3]["content"] == "check status"
 
 
 class TestStreamMessage:
-    """Test stream_message spawns async subprocess correctly."""
+    """Test stream_message yields correct events."""
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_returns_process(self, mock_create: AsyncMock) -> None:
-        mock_proc = AsyncMock()
-        mock_create.return_value = mock_proc
+    @patch("amortized_runtime.agent._build_client")
+    async def test_simple_text_streaming(self, mock_build: MagicMock) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
 
-        result = await stream_message("hello")
-        assert result is mock_proc
-        mock_create.assert_called_once()
+        # Create mock streaming chunks
+        chunk1 = MagicMock()
+        chunk1.choices = [MagicMock()]
+        chunk1.choices[0].delta.content = "Hello "
+        chunk1.choices[0].delta.tool_calls = None
+        chunk1.choices[0].finish_reason = None
 
-        call_args = mock_create.call_args[0]
-        assert call_args[0] == "claude"
-        assert "-p" in call_args
-        assert "--output-format" in call_args
-        idx = list(call_args).index("--output-format")
-        assert call_args[idx + 1] == "stream-json"
-        assert "--verbose" in call_args
-        assert "--include-partial-messages" in call_args
-        assert "hello" in call_args
+        chunk2 = MagicMock()
+        chunk2.choices = [MagicMock()]
+        chunk2.choices[0].delta.content = "world"
+        chunk2.choices[0].delta.tool_calls = None
+        chunk2.choices[0].finish_reason = None
+
+        chunk3 = MagicMock()
+        chunk3.choices = [MagicMock()]
+        chunk3.choices[0].delta.content = None
+        chunk3.choices[0].delta.tool_calls = None
+        chunk3.choices[0].finish_reason = "stop"
+
+        async def mock_stream() -> Any:
+            for c in [chunk1, chunk2, chunk3]:
+                yield c
+
+        client.chat.completions.create = AsyncMock(return_value=mock_stream())
+
+        events: list[StreamEvent] = []
+        async for event in stream_message("hello"):
+            events.append(event)
+
+        deltas = [e for e in events if e.type == "delta"]
+        assert len(deltas) == 2
+        assert deltas[0].data["text"] == "Hello "
+        assert deltas[1].data["text"] == "world"
+
+        done_events = [e for e in events if e.type == "done"]
+        assert len(done_events) == 1
+        assert done_events[0].data["full_text"] == "Hello world"
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
-    async def test_stream_with_history(self, mock_create: AsyncMock) -> None:
-        mock_proc = AsyncMock()
-        mock_create.return_value = mock_proc
+    @patch("amortized_runtime.agent._build_client")
+    async def test_streaming_error_handling(self, mock_build: MagicMock) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
 
-        history = [{"role": "user", "content": "prior message"}]
-        await stream_message("follow up", history=history)
+        client.chat.completions.create = AsyncMock(
+            side_effect=Exception("API error")
+        )
 
-        call_args = mock_create.call_args[0]
-        prompt_idx = list(call_args).index("--append-system-prompt")
-        context = call_args[prompt_idx + 1]
-        assert "prior message" in context
+        events: list[StreamEvent] = []
+        async for event in stream_message("hello"):
+            events.append(event)
 
-
-class TestContextPreamble:
-    """Verify the context preamble contains required information."""
-
-    def test_contains_identity(self) -> None:
-        assert "Amortized Studio assistant" in CONTEXT_PREAMBLE
-
-    def test_contains_api_reference(self) -> None:
-        assert "localhost:8000" in CONTEXT_PREAMBLE
-
-    def test_contains_critical_rules(self) -> None:
-        assert "NEVER ask the user to run commands" in CONTEXT_PREAMBLE
+        error_events = [e for e in events if e.type == "error"]
+        assert len(error_events) == 1
+        assert "API error" in error_events[0].data["error"]

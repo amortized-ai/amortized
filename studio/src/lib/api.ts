@@ -196,13 +196,43 @@ export async function sendChatMessage(
   });
 }
 
+export interface ThinkingEvent {
+  tool: string;
+}
+
+export interface ToolResultEvent {
+  tool: string;
+  summary: string;
+}
+
+export interface ActionEvent {
+  type: string;
+  config: Record<string, unknown>;
+  label: string;
+}
+
+export interface StreamCallbacks {
+  onDelta: (text: string) => void;
+  onDone: (fullText: string) => void;
+  onMetadata: (data: { conversation_id: string }) => void;
+  onError: (error: string) => void;
+  onThinking?: (data: ThinkingEvent) => void;
+  onToolResult?: (data: ToolResultEvent) => void;
+  onAction?: (data: ActionEvent) => void;
+}
+
 export async function streamChatMessage(
   message: string,
   conversationId: string | undefined,
   onDelta: (text: string) => void,
   onDone: (fullText: string) => void,
   onMetadata: (data: { conversation_id: string }) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  extra?: {
+    onThinking?: (data: ThinkingEvent) => void;
+    onToolResult?: (data: ToolResultEvent) => void;
+    onAction?: (data: ActionEvent) => void;
+  }
 ): Promise<void> {
   const res = await fetch(`${RUNTIME_URL}/api/v1/agent/chat/stream`, {
     method: "POST",
@@ -251,6 +281,15 @@ export async function streamChatMessage(
               break;
             case "delta":
               onDelta(parsed.text);
+              break;
+            case "thinking":
+              extra?.onThinking?.(parsed);
+              break;
+            case "tool_result":
+              extra?.onToolResult?.(parsed);
+              break;
+            case "action":
+              extra?.onAction?.(parsed);
               break;
             case "done":
               onDone(parsed.full_text);
