@@ -75,6 +75,9 @@ export interface SDGFlow {
 
 const API_BASE = "/api/v1";
 
+// Direct runtime URL for SSE streaming (bypasses Next.js proxy which buffers SSE)
+const RUNTIME_URL = process.env.NEXT_PUBLIC_RUNTIME_URL || "http://localhost:8000";
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -201,7 +204,7 @@ export async function streamChatMessage(
   onMetadata: (data: { conversation_id: string }) => void,
   onError: (error: string) => void
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/agent/chat/stream`, {
+  const res = await fetch(`${RUNTIME_URL}/api/v1/agent/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

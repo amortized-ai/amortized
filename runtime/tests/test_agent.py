@@ -245,10 +245,10 @@ class TestContextPreamble:
     """Verify the context preamble contains required information."""
 
     def test_contains_identity(self) -> None:
-        assert "Amortized assistant" in CONTEXT_PREAMBLE
+        assert "Amortized Studio assistant" in CONTEXT_PREAMBLE
 
     def test_contains_api_reference(self) -> None:
         assert "localhost:8000" in CONTEXT_PREAMBLE
 
-    def test_contains_skills_reference(self) -> None:
-        assert ".claude/skills/" in CONTEXT_PREAMBLE
+    def test_contains_critical_rules(self) -> None:
+        assert "NEVER ask the user to run commands" in CONTEXT_PREAMBLE
