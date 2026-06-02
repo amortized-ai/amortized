@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Briefcase, Workflow, Settings } from "lucide-react";
+import { useState } from "react";
+import { LayoutDashboard, Briefcase, Workflow, Settings, MessageCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChatPanel } from "@/components/chat-panel";
 import "./globals.css";
@@ -20,6 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [chatOpen, setChatOpen] = useState(false);
+  const isDashboard = pathname === "/";
 
   return (
     <html lang="en" className="dark">
@@ -53,9 +56,9 @@ export default function RootLayout({
           </nav>
         </aside>
         <div className="flex-1 flex flex-col min-h-screen">
-          <header className="h-14 border-b border-border bg-sidebar flex items-center px-6 md:hidden">
-            <span className="text-lg font-semibold text-foreground">Amortized</span>
-            <nav className="ml-8 flex gap-4">
+          <header className="h-14 border-b border-border bg-sidebar flex items-center px-6">
+            <span className="text-lg font-semibold text-foreground md:hidden">Amortized</span>
+            <nav className="ml-8 flex gap-4 md:hidden">
               {navItems.map((item) => {
                 const isActive =
                   item.href === "/"
@@ -77,10 +80,37 @@ export default function RootLayout({
                 );
               })}
             </nav>
+            {!isDashboard && (
+              <button
+                onClick={() => setChatOpen(!chatOpen)}
+                className={cn(
+                  "ml-auto flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
+                  "text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                )}
+                aria-label={chatOpen ? "Close chat" : "Open chat"}
+              >
+                {chatOpen ? (
+                  <X className="h-4 w-4" />
+                ) : (
+                  <MessageCircle className="h-4 w-4" />
+                )}
+                <span className="hidden sm:inline">
+                  {chatOpen ? "Close" : "Assistant"}
+                </span>
+              </button>
+            )}
           </header>
-          <main className="flex-1 p-8">{children}</main>
+          <div className="flex-1 flex overflow-hidden">
+            <main className={cn("flex-1 p-8 overflow-y-auto", !isDashboard && chatOpen && "mr-0")}>
+              {children}
+            </main>
+            {!isDashboard && chatOpen && (
+              <aside className="w-96 max-w-full border-l border-border bg-background flex flex-col">
+                <ChatPanel mode="panel" />
+              </aside>
+            )}
+          </div>
         </div>
-        <ChatPanel />
       </body>
     </html>
   );

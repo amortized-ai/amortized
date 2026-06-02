@@ -1,211 +1,172 @@
-"""Rule-based agent for guiding users through model customization workflows."""
+"""Claude-powered agent for guiding users through model customization workflows."""
 
-import re
-from collections.abc import Callable
+from __future__ import annotations
 
-from amortized_runtime.models import AgentResponse, SuggestedAction
+import logging
+from typing import Any
+
+import anthropic
+from anthropic.types import MessageParam
+
+from amortized_runtime.config import settings
+
+logger = logging.getLogger("amortized_runtime.agent")
+
+SYSTEM_PROMPT = """\
+You are the Amortized assistant — an AI guide that helps users optimize their \
+AI agent workflows by replacing expensive frontier model calls with smaller, \
+customized models.
+
+You have deep knowledge of the Amortized platform, which consists of:
+
+## Runtime API Endpoints
+
+- POST /api/v1/jobs/training — Create a LoRA SFT training job
+- POST /api/v1/jobs/sdg — Create a synthetic data generation job
+- GET /api/v1/jobs — List all jobs (optional filters: status, type)
+- GET /api/v1/jobs/{id} — Get job details
+- GET /api/v1/jobs/{id}/metrics — Get training metrics (loss, LR, epoch per step)
+- GET /api/v1/jobs/{id}/artifacts — List job output artifacts
+- DELETE /api/v1/jobs/{id} — Cancel a job
+- GET /api/v1/flows — List available SDG flows
+- POST /api/v1/estimate — Estimate GPU VRAM requirements
+- GET /api/v1/health — Health check
+
+## Training Hub (LoRA Fine-Tuning)
+
+The platform uses Training Hub for LoRA SFT fine-tuning:
+
+```python
+from training_hub import lora_sft
+
+result = lora_sft(
+    model_path="Qwen/Qwen2.5-1.5B-Instruct",  # required
+    data_path="./data.jsonl",                    # required
+    ckpt_output_dir="./outputs",                 # required
+    # Optional hyperparameters:
+    learning_rate=2e-4,
+    num_epochs=3,
+    lora_r=16,
+    lora_alpha=32,
+    load_in_4bit=False,  # QLoRA for reduced VRAM
+    micro_batch_size=2,
+    max_seq_len=2048,
+)
+```
+
+Key defaults: lora_r=16, lora_alpha=32, learning_rate=2e-4, num_epochs=3, bf16=True.
+
+Memory estimation is available via LoRAEstimator and QLoRAEstimator — users can \
+check GPU VRAM requirements before starting a job.
+
+Recommended models:
+- Qwen/Qwen2.5-1.5B-Instruct — small, fast, good default for most tasks
+- For larger models (7B+), recommend QLoRA (load_in_4bit=True) to fit in VRAM
+
+## SDG Hub (Synthetic Data Generation)
+
+The platform uses SDG Hub for generating training data:
+
+```python
+from sdg_hub import FlowRegistry, Flow
+
+FlowRegistry.discover_flows()
+flow_path = FlowRegistry.get_flow_path("flow-id")
+flow = Flow.from_yaml(flow_path)
+flow.set_model_config(model="openai/gpt-4o", api_base="...", api_key="...")
+result = flow.generate(dataset, checkpoint_dir="./checkpoints")
+```
+
+SDG flows define data generation pipelines. Categories include: \
+knowledge_infusion, evaluation, agentic, red_team, text_analysis, code_evaluation.
+
+Teacher model supports 100+ providers via LiteLLM (OpenAI, Anthropic, vLLM, etc.).
+
+## The Amortization Workflow
+
+The core workflow to replace expensive frontier model calls:
+1. **Analyze** — Understand the user's agent task and requirements
+2. **Generate data (SDG)** — Use a teacher model to generate training data
+3. **Fine-tune (LoRA SFT)** — Train a small model on the generated data
+4. **Evaluate** — Compare the fine-tuned model against the original
+5. **Deploy** — Use the smaller, cheaper model in production
+
+## Guidelines
+
+- Be concise and helpful. Use markdown formatting.
+- When users want to train, help them choose a model and configure hyperparameters.
+- When users want to generate data, help them select an SDG flow and teacher model.
+- Proactively suggest VRAM estimation before training.
+- Guide users through the full amortization loop when appropriate.
+- If asked about job status, explain they can check the Jobs page or API.
+"""
 
 
-class AmortizedAgent:
-    """Rule-based agent that matches user intents and returns structured responses."""
+def _build_messages(
+    history: list[dict[str, str]], user_message: str
+) -> list[MessageParam]:
+    """Build the messages list for the Anthropic API from conversation history."""
+    messages: list[MessageParam] = []
+    for entry in history:
+        if entry["role"] == "user":
+            messages.append({"role": "user", "content": entry["content"]})
+        elif entry["role"] == "assistant":
+            messages.append({"role": "assistant", "content": entry["content"]})
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
-    def __init__(self) -> None:
-        _c = re.compile
-        _i = re.IGNORECASE
-        # Order matters: SDG before training so "generate data" matches SDG
-        self._intents: list[
-            tuple[re.Pattern[str], Callable[[str], AgentResponse]]
-        ] = [
-            (_c(r"(?:generat|synthe|sdg|data\s*gen)", _i), self._handle_sdg),
-            (_c(r"(?:fine[- ]?tun|train|lora|sft|custom)", _i), self._handle_training),
-            (_c(r"(?:status|progress|running|check\s*(?:on|my))", _i), self._handle_status),
-            (_c(r"(?:vram|memory|gpu|ram|estimate|how\s*much)", _i), self._handle_estimation),
-            (_c(r"(?:flow|pipeline|available|capabilit|feature)", _i), self._handle_flows),
-            (_c(r"(?:artifact|output|result|download|adapter)", _i), self._handle_artifacts),
-            (_c(r"(?:help|hello|hi|hey|who|how\s*do)", _i), self._handle_help),
-        ]
 
-    def _handle_training(self, message: str) -> AgentResponse:
-        model = "Qwen/Qwen2.5-1.5B-Instruct"
-        if "llama" in message.lower():
-            model = "meta-llama/Llama-3.1-8B-Instruct"
-        elif "mistral" in message.lower():
-            model = "mistralai/Mistral-7B-Instruct-v0.3"
+def get_client() -> anthropic.Anthropic:
+    """Create an Anthropic client using the configured API key."""
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-        return AgentResponse(
-            message=(
-                f"I recommend using **LoRA SFT** with `{model}`. "
-                "Here's a suggested configuration:\n\n"
-                f"- **Model**: `{model}`\n"
-                "- **LoRA rank**: 16\n"
-                "- **Learning rate**: 2e-4\n"
-                "- **Epochs**: 3\n\n"
-                "You can adjust these parameters based on your dataset size "
-                "and quality requirements. Would you like me to estimate the "
-                "VRAM requirements first?"
-            ),
-            suggested_action=SuggestedAction(
-                type="create_training_job",
-                label="Create Training Job",
-                config={
-                    "model_path": model,
-                    "data_path": "",
-                    "ckpt_output_dir": "./outputs",
-                    "learning_rate": 2e-4,
-                    "num_epochs": 3,
-                    "lora_r": 16,
-                    "lora_alpha": 32,
-                },
-            ),
-            context={
-                "model_info": {
-                    "name": model,
-                    "type": "causal_lm",
-                    "recommended_for": "general fine-tuning",
-                }
-            },
+
+def process_message(
+    message: str,
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """Send a message to Claude and return the response text."""
+    if not settings.anthropic_api_key:
+        return (
+            "The Amortized assistant requires an Anthropic API key to function. "
+            "Please set the `AMORTIZED_ANTHROPIC_API_KEY` environment variable "
+            "and restart the runtime."
         )
 
-    def _handle_sdg(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "I can help you generate synthetic training data using SDG Hub. "
-                "Here's what I recommend:\n\n"
-                "1. **Choose a flow** — SDG flows define the data generation pipeline\n"
-                "2. **Provide seed data** — A small dataset of examples to build from\n"
-                "3. **Configure the teacher model** — The LLM that generates new samples\n\n"
-                "Would you like to see the available SDG flows?"
-            ),
-            suggested_action=SuggestedAction(
-                type="create_sdg_job",
-                label="Create SDG Job",
-                config={
-                    "flow_id": "",
-                    "dataset_path": "",
-                    "model": "openai/gpt-4o",
-                },
-            ),
-            context={
-                "workflow": "sdg",
-                "next_step": "Select an SDG flow from the Flows page",
-            },
-        )
+    client = get_client()
+    messages = _build_messages(history or [], message)
 
-    def _handle_status(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "You can check the status of your jobs on the **Jobs** page. "
-                "Each job shows its current state (pending, running, completed, "
-                "or failed) along with real-time metrics.\n\n"
-                "For training jobs, you'll see loss and learning rate curves. "
-                "For SDG jobs, you'll see generation progress."
-            ),
-            suggested_action=SuggestedAction(
-                type="view_jobs",
-                label="View Jobs",
-                config={},
-            ),
-        )
+    response = client.messages.create(
+        model=settings.anthropic_model,
+        max_tokens=2048,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
 
-    def _handle_estimation(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "I can estimate the GPU VRAM requirements for your training run. "
-                "The estimate depends on:\n\n"
-                "- **Model size** — larger models need more VRAM\n"
-                "- **LoRA rank** — higher rank = more trainable parameters\n"
-                "- **Batch size** — larger batches need more memory\n"
-                "- **Sequence length** — longer sequences use more memory\n"
-                "- **QLoRA** — 4-bit quantization reduces VRAM by ~60%\n\n"
-                "Go to **New Job → Estimate VRAM** to run a pre-flight check."
-            ),
-            suggested_action=SuggestedAction(
-                type="estimate_memory",
-                label="Estimate VRAM",
-                config={
-                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
-                    "lora_r": 16,
-                    "batch_size": 2,
-                    "max_seq_len": 2048,
-                    "load_in_4bit": False,
-                },
-            ),
-        )
-
-    def _handle_flows(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "Amortized supports two main workflows:\n\n"
-                "### Synthetic Data Generation (SDG)\n"
-                "Generate training data from seed examples using a teacher model. "
-                "Multiple flow templates are available for different use cases.\n\n"
-                "### LoRA Fine-Tuning\n"
-                "Fine-tune models with LoRA adapters for efficient customization. "
-                "Supports QLoRA for reduced VRAM usage.\n\n"
-                "### Full Amortization Loop\n"
-                "1. Generate synthetic data with SDG\n"
-                "2. Fine-tune a small model on the generated data\n"
-                "3. Replace expensive frontier model calls with your custom model\n\n"
-                "Check the **Flows** page to see available SDG flow templates."
-            ),
-            suggested_action=SuggestedAction(
-                type="view_flows",
-                label="View Flows",
-                config={},
-            ),
-        )
-
-    def _handle_artifacts(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "Job outputs are registered as **artifacts** when a job completes. "
-                "For training jobs, artifacts include:\n\n"
-                "- **Adapter weights** — LoRA adapter files\n"
-                "- **Tokenizer** — Saved tokenizer configuration\n"
-                "- **Training metrics** — Per-step loss and learning rate data\n\n"
-                "For SDG jobs:\n"
-                "- **Generated dataset** — The synthetic training data (JSONL)\n"
-                "- **Checkpoints** — Intermediate generation state\n\n"
-                "View artifacts on the **Artifacts** tab of any completed job."
-            ),
-            suggested_action=SuggestedAction(
-                type="view_jobs",
-                label="View Jobs",
-                config={},
-            ),
-        )
-
-    def _handle_help(self, message: str) -> AgentResponse:
-        return AgentResponse(
-            message=(
-                "Hi! I'm the Amortized assistant. I can help you with:\n\n"
-                "- **Fine-tuning models** — Set up LoRA SFT training jobs\n"
-                "- **Generating training data** — Configure SDG pipelines\n"
-                "- **Estimating VRAM** — Check GPU memory requirements\n"
-                "- **Checking job status** — Monitor running jobs\n"
-                "- **Understanding outputs** — Navigate job artifacts\n\n"
-                "What would you like to do?"
-            ),
-        )
-
-    def process_message(self, message: str) -> AgentResponse:
-        """Match user message against intents and return a response."""
-        for pattern, handler in self._intents:
-            if pattern.search(message):
-                return handler(message)
-
-        return AgentResponse(
-            message=(
-                "I'm not sure I understand. I can help with:\n\n"
-                "- **Fine-tuning** — \"I want to fine-tune a model\"\n"
-                "- **Data generation** — \"Generate training data for X\"\n"
-                "- **VRAM estimation** — \"How much VRAM do I need?\"\n"
-                "- **Job status** — \"What's the status of my job?\"\n"
-                "- **Available flows** — \"What flows are available?\"\n\n"
-                "Try asking about one of these topics!"
-            ),
-        )
+    text_parts: list[str] = []
+    for block in response.content:
+        if block.type == "text":
+            text_parts.append(block.text)
+    return "\n".join(text_parts) or "I'm sorry, I couldn't generate a response."
 
 
-# Singleton agent instance
-agent = AmortizedAgent()
+def stream_message(
+    message: str,
+    history: list[dict[str, str]] | None = None,
+) -> Any:
+    """Stream a message to Claude and return the streaming response.
+
+    Returns an anthropic MessageStream context manager that yields text delta events.
+    """
+    if not settings.anthropic_api_key:
+        return None
+
+    client = get_client()
+    messages = _build_messages(history or [], message)
+
+    return client.messages.stream(
+        model=settings.anthropic_model,
+        max_tokens=2048,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
