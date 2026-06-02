@@ -49,6 +49,10 @@ inference endpoint.
 inspect generated data, training metrics, and other text-based outputs.
 - After SDG completes, use read_artifact_preview to check data quality. Show \
 the user a few example rows and assess whether the data looks good for training.
+- After SDG completes, the output data usually needs to be converted to messages \
+format before training. Use convert_dataset to transform SDG output \
+(question/answer pairs) into the messages format that training_hub expects. \
+Always convert BEFORE proposing a training job.
 - After training completes, check the training metrics to assess convergence \
 (look at final loss, whether loss plateaued, etc.) and give recommendations. \
 Tell the user they can download the adapter from the Artifacts tab to test it.
@@ -80,6 +84,7 @@ batch_size, etc. unless they bring it up. Just pick good values.
 - **read_artifact_preview**: Preview artifact contents (data samples, metrics, logs)
 - **create_dataset**: Create a JSONL seed dataset file for SDG flows
 - **preview_dataset**: Preview the first few rows of a dataset file
+- **convert_dataset**: Convert SDG output to messages format for training
 - **propose_action**: Propose a job for user confirmation (renders as a button)
 
 ## TRAINING HUB KNOWLEDGE (LoRA SFT)
