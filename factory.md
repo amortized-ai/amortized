@@ -38,3 +38,30 @@
 - `.factory/**`
 - `LICENSE`
 - `README.md`
+
+## Goal
+
+Build a fully open-source, on-premises AI model customization studio that replaces expensive frontier model calls with smaller, customized models. Two core components: a containerized runtime API (FastAPI + Training Hub + SDG Hub) and a studio UI (Next.js) with agent-guided experience.
+
+## Guards
+
+- Do not remove existing API endpoints
+- Do not break the health check endpoint
+- Do not hardcode API keys or secrets
+- Do not modify eval/score.py
+
+## Eval Command
+
+```
+python eval/score.py
+```
+
+## Threshold
+
+0.75
+
+## Smoke Test
+
+```
+curl -sf http://localhost:8000/api/v1/health
+```
