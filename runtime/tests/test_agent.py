@@ -1,126 +1,148 @@
-"""Tests for the Claude-powered agent."""
+"""Tests for the Claude Code CLI agent."""
 
+import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
-from amortized_runtime.agent import SYSTEM_PROMPT, _build_messages, process_message
+from amortized_runtime.agent import (
+    CONTEXT_PREAMBLE,
+    _build_cmd,
+    _build_context,
+    process_message,
+    stream_message,
+)
 
 
-class TestSystemPrompt:
-    """Verify system prompt contains required knowledge."""
+class TestBuildContext:
+    """Verify context building for the append-system-prompt."""
 
-    def test_contains_training_hub_info(self) -> None:
-        assert "lora_sft" in SYSTEM_PROMPT
-        assert "LoRAEstimator" in SYSTEM_PROMPT
-        assert "QLoRAEstimator" in SYSTEM_PROMPT
-
-    def test_contains_sdg_hub_info(self) -> None:
-        assert "FlowRegistry" in SYSTEM_PROMPT
-        assert "Flow.from_yaml" in SYSTEM_PROMPT
-        assert "set_model_config" in SYSTEM_PROMPT
-
-    def test_contains_api_endpoints(self) -> None:
-        assert "POST /api/v1/jobs/training" in SYSTEM_PROMPT
-        assert "POST /api/v1/jobs/sdg" in SYSTEM_PROMPT
-        assert "GET /api/v1/jobs" in SYSTEM_PROMPT
-        assert "GET /api/v1/flows" in SYSTEM_PROMPT
-        assert "POST /api/v1/estimate" in SYSTEM_PROMPT
-
-    def test_contains_amortization_workflow(self) -> None:
-        assert "Generate data" in SYSTEM_PROMPT or "Generate" in SYSTEM_PROMPT
-        assert "Fine-tune" in SYSTEM_PROMPT
-        assert "Deploy" in SYSTEM_PROMPT
-
-    def test_contains_default_model(self) -> None:
-        assert "Qwen/Qwen2.5-1.5B-Instruct" in SYSTEM_PROMPT
-
-
-class TestBuildMessages:
-    """Verify conversation history is passed correctly."""
-
-    def test_empty_history(self) -> None:
-        messages = _build_messages([], "hello")
-        assert messages == [{"role": "user", "content": "hello"}]
+    def test_no_history(self) -> None:
+        context = _build_context()
+        assert CONTEXT_PREAMBLE in context
+        assert "Conversation History" not in context
 
     def test_with_history(self) -> None:
         history = [
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": "hello there"},
         ]
-        messages = _build_messages(history, "how are you")
-        assert len(messages) == 3
-        assert messages[0] == {"role": "user", "content": "hi"}
-        assert messages[1] == {"role": "assistant", "content": "hello there"}
-        assert messages[2] == {"role": "user", "content": "how are you"}
+        context = _build_context(history)
+        assert CONTEXT_PREAMBLE in context
+        assert "Conversation History" in context
+        assert "User: hi" in context
+        assert "Assistant: hello there" in context
 
-    def test_preserves_order(self) -> None:
-        history = [
-            {"role": "user", "content": "first"},
-            {"role": "assistant", "content": "response1"},
-            {"role": "user", "content": "second"},
-            {"role": "assistant", "content": "response2"},
-        ]
-        messages = _build_messages(history, "third")
-        assert len(messages) == 5
-        assert messages[-1]["content"] == "third"
+    def test_empty_history(self) -> None:
+        context = _build_context([])
+        assert CONTEXT_PREAMBLE in context
+        assert "Conversation History" not in context
+
+
+class TestBuildCmd:
+    """Verify CLI command construction."""
+
+    @patch("amortized_runtime.agent.settings")
+    def test_json_format(self, mock_settings: MagicMock) -> None:
+        mock_settings.claude_command = "claude"
+        mock_settings.claude_model = "sonnet"
+        mock_settings.claude_max_turns = 1
+
+        cmd = _build_cmd("hello", "context", output_format="json")
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "--output-format" in cmd
+        idx = cmd.index("--output-format")
+        assert cmd[idx + 1] == "json"
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--no-session-persistence" in cmd
+        assert "--max-turns" in cmd
+        assert "--model" in cmd
+        assert "--verbose" not in cmd
+        assert cmd[-1] == "hello"
+
+    @patch("amortized_runtime.agent.settings")
+    def test_stream_json_verbose(self, mock_settings: MagicMock) -> None:
+        mock_settings.claude_command = "claude"
+        mock_settings.claude_model = "sonnet"
+        mock_settings.claude_max_turns = 1
+
+        cmd = _build_cmd("hello", "context", output_format="stream-json", verbose=True)
+        idx = cmd.index("--output-format")
+        assert cmd[idx + 1] == "stream-json"
+        assert "--verbose" in cmd
+
+    @patch("amortized_runtime.agent.settings")
+    def test_custom_model(self, mock_settings: MagicMock) -> None:
+        mock_settings.claude_command = "/usr/bin/claude"
+        mock_settings.claude_model = "opus"
+        mock_settings.claude_max_turns = 3
+
+        cmd = _build_cmd("test", "ctx")
+        assert cmd[0] == "/usr/bin/claude"
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "opus"
+        turns_idx = cmd.index("--max-turns")
+        assert cmd[turns_idx + 1] == "3"
 
 
 class TestProcessMessage:
-    """Test the process_message function with mocked Anthropic client."""
+    """Test process_message with mocked subprocess."""
 
-    @patch("amortized_runtime.agent.settings")
-    def test_no_api_key_returns_error(self, mock_settings: MagicMock) -> None:
-        mock_settings.anthropic_api_key = ""
-        result = process_message("hello")
-        assert "API key" in result
-        assert "AMORTIZED_ANTHROPIC_API_KEY" in result
-
-    @patch("amortized_runtime.agent.get_client")
-    @patch("amortized_runtime.agent.settings")
-    def test_calls_claude_api(
-        self, mock_settings: MagicMock, mock_get_client: MagicMock
-    ) -> None:
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
-
-        mock_block = MagicMock()
-        mock_block.type = "text"
-        mock_block.text = "I can help you fine-tune a model."
-
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
-
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mock_get_client.return_value = mock_client
-
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_successful_response(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"result": "I can help you fine-tune a model."}),
+            stderr="",
+        )
         result = process_message("help me fine-tune")
         assert result == "I can help you fine-tune a model."
+        mock_run.assert_called_once()
 
-        mock_client.messages.create.assert_called_once()
-        call_kwargs = mock_client.messages.create.call_args[1]
-        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
-        assert call_kwargs["system"] == SYSTEM_PROMPT
-        assert call_kwargs["messages"] == [{"role": "user", "content": "help me fine-tune"}]
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "--output-format" in cmd
+        assert "help me fine-tune" in cmd
 
-    @patch("amortized_runtime.agent.get_client")
-    @patch("amortized_runtime.agent.settings")
-    def test_passes_conversation_history(
-        self, mock_settings: MagicMock, mock_get_client: MagicMock
-    ) -> None:
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_claude_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError()
+        result = process_message("hello")
+        assert "not installed" in result
 
-        mock_block = MagicMock()
-        mock_block.type = "text"
-        mock_block.text = "Sure, here's the status."
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_timeout(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=120)
+        result = process_message("hello")
+        assert "timed out" in result
 
-        mock_response = MagicMock()
-        mock_response.content = [mock_block]
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_nonzero_exit(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="error"
+        )
+        result = process_message("hello")
+        assert "went wrong" in result
 
-        mock_client = MagicMock()
-        mock_client.messages.create.return_value = mock_response
-        mock_get_client.return_value = mock_client
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_invalid_json(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not json", stderr=""
+        )
+        result = process_message("hello")
+        assert "couldn't parse" in result
 
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_passes_history_in_context(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"result": "Sure, here's the status."}),
+            stderr="",
+        )
         history = [
             {"role": "user", "content": "start a training job"},
             {"role": "assistant", "content": "I started the job."},
@@ -128,40 +150,72 @@ class TestProcessMessage:
         result = process_message("what's the status?", history=history)
         assert result == "Sure, here's the status."
 
-        call_kwargs = mock_client.messages.create.call_args[1]
-        assert len(call_kwargs["messages"]) == 3
-        assert call_kwargs["messages"][0]["content"] == "start a training job"
-        assert call_kwargs["messages"][2]["content"] == "what's the status?"
+        call_args = mock_run.call_args
+        cmd = call_args[0][0]
+        # The append-system-prompt should contain history
+        prompt_idx = cmd.index("--append-system-prompt")
+        context = cmd[prompt_idx + 1]
+        assert "start a training job" in context
+        assert "I started the job." in context
+
+    @patch("amortized_runtime.agent.subprocess.run")
+    def test_custom_project_dir(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"result": "ok"}),
+            stderr="",
+        )
+        process_message("hello", project_dir="/tmp/myproject")
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["cwd"] == "/tmp/myproject"
 
 
 class TestStreamMessage:
-    """Test the stream_message function."""
+    """Test stream_message spawns subprocess correctly."""
 
-    @patch("amortized_runtime.agent.settings")
-    def test_no_api_key_returns_none(self, mock_settings: MagicMock) -> None:
-        from amortized_runtime.agent import stream_message
-
-        mock_settings.anthropic_api_key = ""
-        result = stream_message("hello")
-        assert result is None
-
-    @patch("amortized_runtime.agent.get_client")
-    @patch("amortized_runtime.agent.settings")
-    def test_returns_stream_context(
-        self, mock_settings: MagicMock, mock_get_client: MagicMock
-    ) -> None:
-        from amortized_runtime.agent import stream_message
-
-        mock_settings.anthropic_api_key = "test-key"
-        mock_settings.anthropic_model = "claude-sonnet-4-20250514"
-
-        mock_stream = MagicMock()
-        mock_client = MagicMock()
-        mock_client.messages.stream.return_value = mock_stream
-        mock_get_client.return_value = mock_client
+    @patch("amortized_runtime.agent.subprocess.Popen")
+    def test_returns_popen(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_popen.return_value = mock_proc
 
         result = stream_message("hello")
-        assert result is not None
-        mock_client.messages.stream.assert_called_once()
-        call_kwargs = mock_client.messages.stream.call_args[1]
-        assert call_kwargs["system"] == SYSTEM_PROMPT
+        assert result is mock_proc
+        mock_popen.assert_called_once()
+
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "--output-format" in cmd
+        idx = cmd.index("--output-format")
+        assert cmd[idx + 1] == "stream-json"
+        assert "--verbose" in cmd
+        assert "hello" in cmd
+
+    @patch("amortized_runtime.agent.subprocess.Popen")
+    def test_stream_with_history(self, mock_popen: MagicMock) -> None:
+        mock_proc = MagicMock()
+        mock_popen.return_value = mock_proc
+
+        history = [{"role": "user", "content": "prior message"}]
+        stream_message("follow up", history=history)
+
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
+        prompt_idx = cmd.index("--append-system-prompt")
+        context = cmd[prompt_idx + 1]
+        assert "prior message" in context
+
+
+class TestContextPreamble:
+    """Verify the context preamble contains required information."""
+
+    def test_contains_identity(self) -> None:
+        assert "Amortized assistant" in CONTEXT_PREAMBLE
+
+    def test_contains_api_reference(self) -> None:
+        assert "localhost:8000" in CONTEXT_PREAMBLE
+
+    def test_contains_skills_reference(self) -> None:
+        assert ".claude/skills/" in CONTEXT_PREAMBLE

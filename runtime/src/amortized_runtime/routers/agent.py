@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from amortized_runtime.agent import process_message, stream_message
-from amortized_runtime.config import settings
 from amortized_runtime.db import (
     create_conversation,
     create_message,
@@ -92,7 +91,7 @@ async def chat(
         created_at=now,
     )
 
-    # Process with Claude-powered agent
+    # Process with Claude Code CLI agent
     response_text = process_message(request.message, history=history)
 
     # Save assistant message
@@ -161,37 +160,52 @@ async def chat_stream(
         # Send conversation_id first
         yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
 
-        if not settings.anthropic_api_key:
-            error_msg = (
-                "The Amortized assistant requires an Anthropic API key. "
-                "Set AMORTIZED_ANTHROPIC_API_KEY and restart."
-            )
-            yield {"event": "delta", "data": json.dumps({"text": error_msg})}
-            yield {"event": "done", "data": json.dumps({"full_text": error_msg})}
-            # Save error message
-            await create_message(
-                db,
-                message_id=str(uuid.uuid4()),
-                conversation_id=conversation_id,
-                role=MessageRole.assistant.value,
-                content=error_msg,
-                created_at=datetime.now(UTC).isoformat(),
-            )
-            return
-
         full_text = ""
         try:
-            stream_ctx = stream_message(request.message, history=history)
-            if stream_ctx is None:
-                yield {"event": "done", "data": json.dumps({"full_text": ""})}
-                return
+            proc = stream_message(request.message, history=history)
+            assert proc.stdout is not None
 
-            with stream_ctx as stream:
-                for text in stream.text_stream:
-                    full_text += text
-                    yield {"event": "delta", "data": json.dumps({"text": text})}
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
-            yield {"event": "done", "data": json.dumps({"full_text": full_text})}
+                if event.get("type") == "assistant":
+                    content = event.get("message", {}).get("content", [])
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block["text"]
+                            full_text += text
+                            yield {
+                                "event": "delta",
+                                "data": json.dumps({"text": text}),
+                            }
+                elif event.get("type") == "result":
+                    result_text = event.get("result", "")
+                    if result_text and not full_text:
+                        full_text = result_text
+                    yield {
+                        "event": "done",
+                        "data": json.dumps({"full_text": full_text or result_text}),
+                    }
+
+            proc.wait()
+
+            # If we never got a result event, send done with what we have
+            if not full_text:
+                yield {
+                    "event": "done",
+                    "data": json.dumps({"full_text": ""}),
+                }
+
+        except FileNotFoundError:
+            error_msg = "The Claude CLI is not installed or not in PATH."
+            yield {"event": "error", "data": json.dumps({"error": error_msg})}
+            full_text = full_text or error_msg
         except Exception:
             logger.exception("Streaming error")
             error_msg = "Sorry, something went wrong. Please try again."
