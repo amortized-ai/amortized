@@ -1,14 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Loader2, Wrench, Play } from "lucide-react";
+import { Send, Loader2, Wrench, Play, MessageSquarePlus, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   streamChatMessage,
   ActionEvent,
   createTrainingJob,
   createSDGJob,
+  ConversationSummary,
+  ChatMessage,
 } from "@/lib/api";
+import {
+  getSavedConversationId,
+  saveConversationId,
+  clearConversationId,
+  loadConversation,
+  loadRecentConversations,
+} from "@/lib/chat-store";
 
 interface DisplayMessage {
   role: "user" | "assistant";
@@ -35,6 +44,27 @@ const TOOL_LABELS: Record<string, string> = {
   propose_action: "Preparing action",
 };
 
+function parseMessageContent(msg: ChatMessage): string {
+  if (typeof msg.content === "string") return msg.content;
+  if (msg.content && typeof msg.content === "object" && "message" in msg.content) {
+    return msg.content.message;
+  }
+  return String(msg.content);
+}
+
+function formatTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -43,15 +73,88 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
   const [streamingText, setStreamingText] = useState("");
   const [thinkingTool, setThinkingTool] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<ActionEvent | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [restoringChat, setRestoringChat] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // Restore conversation on mount
+  useEffect(() => {
+    const savedId = getSavedConversationId();
+    if (savedId) {
+      loadConversation(savedId).then((msgs) => {
+        if (msgs && msgs.length > 0) {
+          setConversationId(savedId);
+          setMessages(
+            msgs.map((m) => ({
+              role: m.role,
+              content: parseMessageContent(m),
+            }))
+          );
+        }
+        setRestoringChat(false);
+      });
+    } else {
+      setRestoringChat(false);
+    }
+  }, []);
+
+  // Save conversation_id whenever it changes
+  useEffect(() => {
+    if (conversationId) {
+      saveConversationId(conversationId);
+    }
+  }, [conversationId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText, thinkingTool]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!restoringChat) {
+      inputRef.current?.focus();
+    }
+  }, [restoringChat]);
+
+  // Close history dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    }
+    if (showHistory) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showHistory]);
+
+  const handleToggleHistory = useCallback(async () => {
+    if (!showHistory) {
+      const convos = await loadRecentConversations();
+      setConversations(convos);
+    }
+    setShowHistory((prev) => !prev);
+  }, [showHistory]);
+
+  const handleLoadConversation = useCallback(async (id: string) => {
+    setShowHistory(false);
+    const msgs = await loadConversation(id);
+    if (msgs && msgs.length > 0) {
+      setConversationId(id);
+      saveConversationId(id);
+      setMessages(
+        msgs.map((m) => ({
+          role: m.role,
+          content: parseMessageContent(m),
+        }))
+      );
+      setStreamingText("");
+      setThinkingTool(null);
+      setPendingAction(null);
+    }
   }, []);
 
   const handleActionClick = useCallback(
@@ -64,12 +167,10 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
         } else if (action.type === "submit_sdg_job") {
           await createSDGJob(action.config as never);
         }
-        // Send a confirmation message through the chat
         setMessages((prev) => [
           ...prev,
           { role: "user", content: `Yes, ${action.label.toLowerCase()}` },
         ]);
-        // Let the agent know the user confirmed
         let accumulated = "";
         await streamChatMessage(
           `The user confirmed: "${action.label}". The job has been submitted with config: ${JSON.stringify(action.config)}. Let them know it's been submitted and how to check status.`,
@@ -197,9 +298,21 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
     setStreamingText("");
     setThinkingTool(null);
     setPendingAction(null);
+    clearConversationId();
   }, []);
 
   const isCenter = mode === "center";
+
+  // Derive title from first user message
+  const conversationTitle = messages.find((m) => m.role === "user")?.content.slice(0, 40);
+
+  if (restoringChat) {
+    return (
+      <div className={cn("flex flex-col items-center justify-center", isCenter ? "h-full" : "h-full")}>
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -210,22 +323,68 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
-        <h2
-          className={cn(
-            "font-semibold text-foreground",
-            isCenter ? "text-lg" : "text-sm"
-          )}
-        >
-          Amortized Assistant
-        </h2>
-        {messages.length > 0 && (
+        <div className="flex items-center gap-2 min-w-0">
+          <h2
+            className={cn(
+              "font-semibold text-foreground truncate",
+              isCenter ? "text-lg" : "text-sm"
+            )}
+          >
+            {conversationTitle || "Amortized Assistant"}
+          </h2>
+        </div>
+        <div className="flex items-center gap-1 relative" ref={historyRef}>
+          <button
+            onClick={handleToggleHistory}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            title="Chat history"
+          >
+            <History className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">History</span>
+          </button>
           <button
             onClick={handleNewChat}
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted transition-colors"
+            title="New chat"
           >
-            New chat
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">New</span>
           </button>
-        )}
+
+          {/* History dropdown */}
+          {showHistory && (
+            <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-md border border-border bg-popover shadow-lg">
+              <div className="px-3 py-2 border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground">Recent conversations</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {conversations.length === 0 ? (
+                  <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+                    No conversations yet
+                  </div>
+                ) : (
+                  conversations.map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() => handleLoadConversation(conv.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors flex items-center justify-between gap-2",
+                        conv.id === conversationId && "bg-muted"
+                      )}
+                    >
+                      <span className="truncate text-foreground">
+                        {conv.title || "Untitled"}
+                      </span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatTime(conv.updated_at)}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
