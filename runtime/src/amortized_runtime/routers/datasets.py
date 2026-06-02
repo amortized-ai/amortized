@@ -1,4 +1,4 @@
-"""Dataset creation and preview endpoints."""
+"""Dataset creation, preview, and conversion endpoints."""
 
 from __future__ import annotations
 
@@ -16,6 +16,13 @@ router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
 
 DATASETS_DIR = Path("datasets")
 
+# Column patterns that can be auto-detected and converted to messages format
+_COLUMN_PATTERNS: list[tuple[str, str]] = [
+    ("question", "answer"),
+    ("input", "output"),
+    ("prompt", "response"),
+]
+
 
 class CreateDatasetRequest(BaseModel):
     filename: str
@@ -26,6 +33,18 @@ class CreateDatasetResponse(BaseModel):
     path: str
     rows_written: int
     columns: list[str]
+
+
+class ConvertDatasetRequest(BaseModel):
+    source_path: str
+    output_filename: str
+    input_format: str | None = None
+
+
+class ConvertDatasetResponse(BaseModel):
+    path: str
+    rows_converted: int
+    sample_row: dict[str, Any]
 
 
 class PreviewDatasetResponse(BaseModel):
@@ -83,9 +102,7 @@ async def preview_dataset(
                 if line:
                     parsed_rows.append(json.loads(line))
     except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid JSON in dataset: {exc}"
-        ) from exc
+        raise HTTPException(status_code=400, detail=f"Invalid JSON in dataset: {exc}") from exc
 
     columns = list(parsed_rows[0].keys()) if parsed_rows else []
 
@@ -94,4 +111,91 @@ async def preview_dataset(
         rows=parsed_rows,
         columns=columns,
         total_rows_previewed=len(parsed_rows),
+    )
+
+
+def _detect_format(row: dict[str, Any], hint: str | None) -> tuple[str, str] | None:
+    """Detect the user/assistant column pair in a row.
+
+    Returns ``(user_col, assistant_col)`` or ``None`` if undetectable.
+    """
+    if hint:
+        for user_col, asst_col in _COLUMN_PATTERNS:
+            if hint == f"{user_col}/{asst_col}" and user_col in row and asst_col in row:
+                return user_col, asst_col
+    # Auto-detect
+    for user_col, asst_col in _COLUMN_PATTERNS:
+        if user_col in row and asst_col in row:
+            return user_col, asst_col
+    return None
+
+
+def _row_to_messages(row: dict[str, Any], user_col: str, asst_col: str) -> dict[str, Any]:
+    """Convert a single row to messages format."""
+    return {
+        "messages": [
+            {"role": "user", "content": str(row[user_col])},
+            {"role": "assistant", "content": str(row[asst_col])},
+        ]
+    }
+
+
+@router.post("/convert", response_model=ConvertDatasetResponse)
+async def convert_dataset(req: ConvertDatasetRequest) -> ConvertDatasetResponse:
+    """Convert an SDG output dataset to messages format for training."""
+    source = Path(req.source_path)
+    if not source.exists():
+        raise HTTPException(status_code=404, detail=f"Source dataset not found: {req.source_path}")
+
+    # Read all rows
+    rows: list[dict[str, Any]] = []
+    try:
+        with open(source) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(json.loads(line))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON in source: {exc}") from exc
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="Source dataset is empty")
+
+    first_row = rows[0]
+
+    # Check if already in messages format
+    if "messages" in first_row:
+        converted = rows
+    else:
+        fmt = _detect_format(first_row, req.input_format)
+        if fmt is None:
+            known = [f"{u}/{a}" for u, a in _COLUMN_PATTERNS]
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot detect input format. Columns found: {list(first_row.keys())}. "
+                    f"Expected one of: {known}, or a 'messages' column."
+                ),
+            )
+        user_col, asst_col = fmt
+        converted = [_row_to_messages(r, user_col, asst_col) for r in rows]
+
+    # Write output
+    output_filename = Path(req.output_filename).name
+    if not output_filename.endswith(".jsonl"):
+        output_filename += ".jsonl"
+
+    DATASETS_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = DATASETS_DIR / output_filename
+
+    with open(output_path, "w") as f:
+        for row in converted:
+            f.write(json.dumps(row) + "\n")
+
+    logger.info("Converted %d rows from %s to %s", len(converted), source, output_path)
+
+    return ConvertDatasetResponse(
+        path=str(output_path),
+        rows_converted=len(converted),
+        sample_row=converted[0],
     )

@@ -302,6 +302,32 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "convert_dataset",
+            "description": (
+                "Convert an SDG output dataset to messages format for training. "
+                "Auto-detects the input format (question/answer, input/output, "
+                "prompt/response) and converts to the messages format required "
+                "by training_hub."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_path": {
+                        "type": "string",
+                        "description": "Path to the SDG output dataset",
+                    },
+                    "output_filename": {
+                        "type": "string",
+                        "description": "Filename for the converted dataset",
+                    },
+                },
+                "required": ["source_path", "output_filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_action",
             "description": (
                 "Propose an action for the user to confirm before executing. "
@@ -428,12 +454,16 @@ async def _call_api(
         preview_params2: dict[str, Any] = {}
         if "rows" in args:
             preview_params2["rows"] = args["rows"]
-        r = await client.get(
-            f"/api/v1/datasets/{path}/preview", params=preview_params2
-        )
+        r = await client.get(f"/api/v1/datasets/{path}/preview", params=preview_params2)
         r.raise_for_status()
         preview_result: dict[str, Any] = r.json()
         return preview_result
+
+    if name == "convert_dataset":
+        r = await client.post("/api/v1/datasets/convert", json=args)
+        r.raise_for_status()
+        convert_data: dict[str, Any] = r.json()
+        return convert_data
 
     if name == "read_artifact_preview":
         job_id = args["job_id"]
@@ -498,6 +528,11 @@ def tool_result_summary(name: str, result: dict[str, Any]) -> str:
         path = result.get("path", "unknown")
         rows_written = result.get("rows_written", 0)
         return f"Created dataset: {path} ({rows_written} rows)"
+
+    if name == "convert_dataset":
+        path = result.get("path", "unknown")
+        count = result.get("rows_converted", 0)
+        return f"Converted dataset: {path} ({count} rows)"
 
     if name == "preview_dataset":
         path = result.get("path", "unknown")
