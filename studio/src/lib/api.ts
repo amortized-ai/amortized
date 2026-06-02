@@ -143,3 +143,60 @@ export async function estimateMemory(config: {
     body: JSON.stringify(config),
   });
 }
+
+// --- Agent / Chat types ---
+
+export interface SuggestedAction {
+  type: string;
+  config: Record<string, unknown>;
+  label: string;
+}
+
+export interface ChatResponse {
+  conversation_id: string;
+  message: string;
+  suggested_action?: SuggestedAction | null;
+  context?: Record<string, unknown>;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: string | { message: string; suggested_action?: SuggestedAction | null };
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: ChatMessage[];
+}
+
+// --- Agent API functions ---
+
+export async function sendChatMessage(
+  message: string,
+  conversationId?: string
+): Promise<ChatResponse> {
+  return apiFetch<ChatResponse>("/agent/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+    }),
+  });
+}
+
+export async function listConversations(): Promise<ConversationSummary[]> {
+  return apiFetch<ConversationSummary[]>("/agent/conversations");
+}
+
+export async function getConversation(id: string): Promise<ConversationDetail> {
+  return apiFetch<ConversationDetail>(`/agent/conversations/${id}`);
+}

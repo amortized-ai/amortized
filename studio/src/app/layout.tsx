@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Briefcase, Workflow, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ChatPanel } from "@/components/chat-panel";
 import "./globals.css";
 
 const navItems = [
@@ -79,6 +80,7 @@ export default function RootLayout({
           </header>
           <main className="flex-1 p-8">{children}</main>
         </div>
+        <ChatPanel />
       </body>
     </html>
   );
