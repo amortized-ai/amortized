@@ -35,10 +35,17 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/amortized_runtime/routers/*.py" = ["B008"]
+
 [tool.mypy]
 strict = true
 python_version = "3.11"
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "training_hub", "training_hub.*", "sdg_hub", "sdg_hub.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
