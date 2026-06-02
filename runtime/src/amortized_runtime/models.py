@@ -113,6 +113,8 @@ class FlowInfo(BaseModel):
     name: str
     description: str
     category: str
+    required_columns: list[str] = Field(default_factory=list)
+    dataset_description: str = ""
 
 
 class TrainingMetric(BaseModel):

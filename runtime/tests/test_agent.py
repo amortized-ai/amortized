@@ -36,7 +36,8 @@ class TestSystemPrompt:
         assert "lora_r" in SYSTEM_PROMPT
 
     def test_contains_sdg_hub_knowledge(self) -> None:
-        assert "knowledge_infusion" in SYSTEM_PROMPT
+        assert "input dataset" in SYSTEM_PROMPT
+        assert "required columns" in SYSTEM_PROMPT
         assert "LiteLLM" in SYSTEM_PROMPT
 
 
