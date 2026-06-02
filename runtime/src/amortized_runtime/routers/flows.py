@@ -60,12 +60,22 @@ def _discover_flows() -> list[FlowInfo]:
         flows: list[FlowInfo] = []
         for flow_id, entry in FlowRegistry._entries.items():
             tags = getattr(entry, "tags", []) or []
+            meta = getattr(entry, "metadata", None)
+            ds_req = getattr(meta, "dataset_requirements", None) if meta else None
+            required_columns: list[str] = []
+            dataset_description = ""
+            if ds_req:
+                required_columns = getattr(ds_req, "required_columns", []) or []
+                dataset_description = getattr(ds_req, "description", "") or ""
+            flow_name = getattr(entry, "name", flow_id)
             flows.append(
                 FlowInfo(
-                    id=flow_id,
-                    name=getattr(entry, "name", flow_id),
+                    id=flow_name,
+                    name=flow_name,
                     description=getattr(entry, "description", ""),
                     category=_tags_to_category(tags),
+                    required_columns=required_columns,
+                    dataset_description=dataset_description,
                 )
             )
         return flows

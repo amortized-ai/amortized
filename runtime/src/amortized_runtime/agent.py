@@ -92,13 +92,28 @@ Metrics written as training_metrics.jsonl with per-step loss, LR, epoch.
 
 ## SDG HUB KNOWLEDGE (Synthetic Data Generation)
 
-SDG Hub generates training data using teacher models. Flow categories:
-- **knowledge_infusion**: Q&A generation, summaries, knowledge extraction
-- **evaluation**: RAG evaluation, answer quality assessment
-- **agentic**: MCP distillation, agent behavior datasets
-- **red_team**: Adversarial prompt generation
-- **text_analysis**: Classification, sentiment, text transformation
-- **code_evaluation**: Code quality, bug detection datasets
+SDG Hub flows transform an input dataset into training data using a teacher model.
+CRITICAL: Every flow requires an input dataset with specific columns. Use list_sdg_flows \
+to see what columns each flow needs.
+
+Workflow for SDG:
+1. Call list_sdg_flows to see available flows and their required input columns
+2. Help the user prepare an input dataset (JSONL file with the required columns)
+   - For knowledge tuning flows: the user needs to provide documents to generate Q&A from
+   - For code evaluation: domain specs and function specifications
+   - For MCP distillation: tool definitions from an MCP server
+3. Once the input dataset exists, propose an SDG job with the correct flow_id and dataset_path
+4. The flow will use the teacher model (e.g. gpt-5-mini) to generate enriched training data
+
+Common flows for knowledge tasks:
+- 'Key Facts Knowledge Tuning Dataset Generation Flow': Needs document, document_outline, \
+domain columns. Good for factual Q&A.
+- 'Document Based Knowledge Tuning Dataset Generation Flow': Needs document, \
+document_outline, domain, icl_document, icl_query_1-3. Best quality.
+
+The user may need help creating the seed dataset. You can suggest formats and examples, \
+but remember you cannot create files yourself. Guide them to prepare the JSONL and \
+provide the path.
 
 Teacher model support: 100+ providers via LiteLLM — OpenAI, Anthropic, Google, \
 vLLM (hosted_vllm/), Ollama (ollama/), Azure, and more.

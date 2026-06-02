@@ -30,7 +30,8 @@ def run_sdg(config: dict[str, Any]) -> None:
         finally:
             sys.stdout = old_stdout
 
-        flow_path = FlowRegistry.get_flow_path(str(config["flow_id"]))
+        flow_id = str(config["flow_id"])
+        flow_path = FlowRegistry.get_flow_path(flow_id)
         flow = Flow.from_yaml(flow_path)
         flow.set_model_config(
             model=str(config["model"]),
@@ -38,12 +39,14 @@ def run_sdg(config: dict[str, Any]) -> None:
             api_key=config.get("api_key"),
         )
 
-        # Some flows generate data from scratch without an input dataset
         dataset_path = config.get("dataset_path")
-        if dataset_path:
-            dataset = Dataset.from_json(str(dataset_path))
-        else:
-            dataset = Dataset.from_dict({"input": [""]})
+        if not dataset_path:
+            raise ValueError(
+                "An input dataset is required for SDG flows. "
+                "Each flow expects specific columns in the dataset. "
+                "Use the /api/v1/flows endpoint to see required columns for each flow."
+            )
+        dataset = Dataset.from_json(str(dataset_path))
 
         checkpoint_dir = os.path.join(output_dir, "checkpoints")
         result = flow.generate(
