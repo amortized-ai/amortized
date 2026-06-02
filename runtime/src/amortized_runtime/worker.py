@@ -397,15 +397,17 @@ async def _run_job(job: dict[str, Any]) -> None:
     job_id = job["id"]
     now = datetime.now(UTC).isoformat()
 
-    # Determine output_dir
+    # Determine output_dir — always include job_id to avoid collisions
     if job["type"] == JobType.training.value:
-        output_dir = job.get("output_dir") or str(
-            config_mod.settings.data_dir / "training_output" / job_id
+        base_dir = job.get("output_dir") or str(
+            config_mod.settings.data_dir / "training_output"
         )
+        output_dir = os.path.join(base_dir, job_id)
     else:
-        output_dir = job.get("output_dir") or str(
-            config_mod.settings.data_dir / "sdg_output" / job_id
+        base_dir = job.get("output_dir") or str(
+            config_mod.settings.data_dir / "sdg_output"
         )
+        output_dir = os.path.join(base_dir, job_id)
 
     # Ensure output_dir is set in DB
     db = await _get_db()
@@ -418,9 +420,11 @@ async def _run_job(job: dict[str, Any]) -> None:
     finally:
         await db.close()
 
-    # Update config with output_dir for SDG jobs
+    # Update config with the resolved output_dir so runners use the correct path
     config = job["config"]
-    if job["type"] == JobType.sdg.value and "output_dir" not in config:
+    if job["type"] == JobType.training.value:
+        config = {**config, "ckpt_output_dir": output_dir}
+    elif "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
 
     cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
