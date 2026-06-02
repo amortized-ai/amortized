@@ -213,6 +213,37 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "read_artifact_preview",
+            "description": (
+                "Preview the contents of a job artifact (first few lines of "
+                "generated data, metrics, etc). Use this to assess data quality, "
+                "check training metrics, or show the user a sample of generated data."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job ID",
+                    },
+                    "artifact_id": {
+                        "type": "string",
+                        "description": (
+                            "Artifact ID (optional — if omitted, previews the main output file)"
+                        ),
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "Number of lines to preview (default 5, max 50)",
+                    },
+                },
+                "required": ["job_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_action",
             "description": (
                 "Propose an action for the user to confirm before executing. "
@@ -328,6 +359,33 @@ async def _call_api(
         estimate_data: dict[str, Any] = r.json()
         return estimate_data
 
+    if name == "read_artifact_preview":
+        job_id = args["job_id"]
+        artifact_id = args.get("artifact_id")
+        preview_params: dict[str, Any] = {}
+        if "lines" in args:
+            preview_params["lines"] = args["lines"]
+        if artifact_id:
+            r = await client.get(
+                f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
+                params=preview_params,
+            )
+        else:
+            # No artifact_id — list artifacts and preview the first one
+            r = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
+            r.raise_for_status()
+            artifacts = r.json()
+            if not artifacts:
+                return {"error": "No artifacts found for this job"}
+            artifact_id = artifacts[0]["id"]
+            r = await client.get(
+                f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
+                params=preview_params,
+            )
+        r.raise_for_status()
+        preview_data: dict[str, Any] = r.json()
+        return preview_data
+
     return {"error": f"Unknown tool: {name}"}
 
 
@@ -359,5 +417,14 @@ def tool_result_summary(name: str, result: dict[str, Any]) -> str:
     if name == "estimate_vram":
         vram = result.get("estimated_vram_gb", "?")
         return f"Estimated VRAM: {vram} GB"
+
+    if name == "read_artifact_preview":
+        fmt = result.get("format", "unknown")
+        filename = result.get("filename", "unknown")
+        if result.get("type") == "binary":
+            size = result.get("size", 0)
+            return f"Binary file: {filename} ({fmt}, {size} bytes)"
+        line_count = len(result.get("lines", []))
+        return f"Preview: {filename} ({line_count} lines)"
 
     return json.dumps(result)[:120]

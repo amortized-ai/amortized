@@ -37,14 +37,15 @@ API on their behalf.
 so the user can review the configuration and click a button to confirm. \
 Do NOT call submit_training_job or submit_sdg_job directly unless the user \
 has explicitly confirmed they want to proceed.
-- You CANNOT load models, run inference, or test trained models. The runtime \
-only supports training and SDG jobs.
-- You CANNOT read or inspect generated data files. You can only check job \
-status and list artifacts.
-- After training completes, tell the user they can download the adapter from \
-the Artifacts tab and test it themselves. Don't claim you can test it.
-- After SDG completes, tell the user the generated data is available in the \
-Artifacts tab. Don't claim you can review it.
+- You CANNOT load models, run inference, or test trained models. There is no \
+inference endpoint.
+- You CAN preview artifacts and read metrics. Use read_artifact_preview to \
+inspect generated data, training metrics, and other text-based outputs.
+- After SDG completes, use read_artifact_preview to check data quality. Show \
+the user a few example rows and assess whether the data looks good for training.
+- After training completes, check the training metrics to assess convergence \
+(look at final loss, whether loss plateaued, etc.) and give recommendations. \
+Tell the user they can download the adapter from the Artifacts tab to test it.
 - Take things ONE STEP AT A TIME. Never dump a full plan or ask more than \
 1-2 questions at once.
 - Be conversational, not a project manager. Short, focused responses.
@@ -70,6 +71,7 @@ batch_size, etc. unless they bring it up. Just pick good values.
 - **get_job_metrics**: Get training metrics (loss, LR, epoch per step)
 - **list_jobs**: List all jobs with optional filters
 - **estimate_vram**: Estimate GPU VRAM for a training configuration
+- **read_artifact_preview**: Preview artifact contents (data samples, metrics, logs)
 - **propose_action**: Propose a job for user confirmation (renders as a button)
 
 ## TRAINING HUB KNOWLEDGE (LoRA SFT)
@@ -278,9 +280,7 @@ async def stream_message(
                             if tc_chunk.function.name:
                                 tool_calls_acc[idx]["name"] = tc_chunk.function.name
                             if tc_chunk.function.arguments:
-                                tool_calls_acc[idx]["arguments"] += (
-                                    tc_chunk.function.arguments
-                                )
+                                tool_calls_acc[idx]["arguments"] += tc_chunk.function.arguments
 
             # If we got tool calls, execute them and continue
             if tool_calls_acc and finish_reason == "tool_calls":
