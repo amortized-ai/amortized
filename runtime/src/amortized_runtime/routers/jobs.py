@@ -120,8 +120,11 @@ async def get_job_metrics(
     metrics: list[TrainingMetric] = []
     for line in metrics_path.read_text().strip().splitlines():
         if line.strip():
-            data = json.loads(line)
-            metrics.append(TrainingMetric(**data))
+            try:
+                data = json.loads(line)
+                metrics.append(TrainingMetric(**data))
+            except (json.JSONDecodeError, Exception):
+                continue  # skip malformed or summary lines
     return metrics
 
 

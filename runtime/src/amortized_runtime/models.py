@@ -123,7 +123,7 @@ class TrainingMetric(BaseModel):
     model_config = {"extra": "ignore"}
 
     step: int
-    loss: float
+    loss: float | None = None
     epoch: float | None = None
     learning_rate: float | None = None
     max_steps: int | None = None
