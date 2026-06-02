@@ -441,7 +441,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     db = await _get_db()
     try:
         await db.execute(
-            "UPDATE jobs SET output_dir = ? WHERE id = ? AND output_dir IS NULL",
+            "UPDATE jobs SET output_dir = ? WHERE id = ?",
             (output_dir, job_id),
         )
         await db.commit()
