@@ -1,0 +1,50 @@
+# Amortized — Production Docker Compose
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Requires:
+#   - NVIDIA Container Toolkit installed on host
+#   - NVIDIA GPU with Ampere+ architecture (for Flash Attention 2)
+
+services:
+  runtime:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runtime
+    ports:
+      - "8000:8000"
+    volumes:
+      - amortized-data:/app/data
+    environment:
+      - AMORTIZED_DATA_DIR=/app/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  studio:
+    build:
+      context: ../studio
+      dockerfile: ../docker/Dockerfile.studio
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://runtime:8000
+    depends_on:
+      runtime:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  amortized-data:

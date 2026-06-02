@@ -1,0 +1,176 @@
+{
+  "name": "amortized-runtime",
+  "description": "MCP tool manifest for the Amortized runtime API. Describes available tools for Claude Code integration.",
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "submit_training_job",
+      "description": "Submit a LoRA SFT training job. Creates a new training job with the specified configuration and returns the job ID.",
+      "parameters": {
+        "type": "object",
+        "required": ["model_path", "data_path", "ckpt_output_dir"],
+        "properties": {
+          "model_path": {
+            "type": "string",
+            "description": "HuggingFace model path or local path (e.g. Qwen/Qwen2.5-1.5B-Instruct)"
+          },
+          "data_path": {
+            "type": "string",
+            "description": "Path to training data in JSONL format"
+          },
+          "ckpt_output_dir": {
+            "type": "string",
+            "description": "Directory for checkpoints and output artifacts"
+          },
+          "learning_rate": {
+            "type": "number",
+            "description": "Learning rate (default: 2e-4)"
+          },
+          "num_epochs": {
+            "type": "integer",
+            "description": "Number of training epochs (default: 3)"
+          },
+          "lora_r": {
+            "type": "integer",
+            "description": "LoRA rank (default: 16)"
+          },
+          "lora_alpha": {
+            "type": "integer",
+            "description": "LoRA alpha scaling factor (default: 32)"
+          },
+          "load_in_4bit": {
+            "type": "boolean",
+            "description": "Enable QLoRA 4-bit quantization (default: false)"
+          },
+          "micro_batch_size": {
+            "type": "integer",
+            "description": "Micro batch size for training"
+          },
+          "max_seq_len": {
+            "type": "integer",
+            "description": "Maximum sequence length"
+          }
+        }
+      }
+    },
+    {
+      "name": "submit_sdg_job",
+      "description": "Submit a synthetic data generation job. Uses SDG Hub flows to generate training data from seed examples.",
+      "parameters": {
+        "type": "object",
+        "required": ["flow_id", "dataset_path", "model"],
+        "properties": {
+          "flow_id": {
+            "type": "string",
+            "description": "SDG flow identifier from the flow registry"
+          },
+          "dataset_path": {
+            "type": "string",
+            "description": "Path to input seed dataset"
+          },
+          "model": {
+            "type": "string",
+            "description": "Teacher model name (e.g. openai/gpt-4o)"
+          },
+          "api_base": {
+            "type": "string",
+            "description": "Teacher model API base URL"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "Teacher model API key"
+          },
+          "runtime_params": {
+            "type": "object",
+            "description": "Per-block runtime parameter overrides"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_job_status",
+      "description": "Get the current status and details of a job by its ID.",
+      "parameters": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "The job ID to check"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_jobs",
+      "description": "List all jobs with optional status and type filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "completed", "failed", "cancelled"],
+            "description": "Filter by job status"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["training", "sdg"],
+            "description": "Filter by job type"
+          }
+        }
+      }
+    },
+    {
+      "name": "estimate_memory",
+      "description": "Estimate GPU VRAM requirements for a LoRA training configuration.",
+      "parameters": {
+        "type": "object",
+        "required": ["model_path"],
+        "properties": {
+          "model_path": {
+            "type": "string",
+            "description": "HuggingFace model path to estimate VRAM for"
+          },
+          "lora_r": {
+            "type": "integer",
+            "description": "LoRA rank (default: 16)"
+          },
+          "batch_size": {
+            "type": "integer",
+            "description": "Batch size (default: 2)"
+          },
+          "max_seq_len": {
+            "type": "integer",
+            "description": "Maximum sequence length (default: 2048)"
+          },
+          "load_in_4bit": {
+            "type": "boolean",
+            "description": "Use QLoRA 4-bit quantization (default: false)"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_flows",
+      "description": "List available SDG flows from the flow registry with their descriptions and categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_job_artifacts",
+      "description": "List output artifacts for a completed job (adapter weights, generated datasets, checkpoints, metrics).",
+      "parameters": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "The job ID to get artifacts for"
+          }
+        }
+      }
+    }
+  ]
+}

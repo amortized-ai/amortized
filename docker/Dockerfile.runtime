@@ -1,0 +1,96 @@
+# Amortized Runtime — GPU-enabled container image
+# Multi-stage build: CUDA devel (builder) → CUDA runtime (slim)
+#
+# Build: docker build -f docker/Dockerfile.runtime -t amortized-runtime .
+# Run:   docker run --gpus all -p 8000:8000 amortized-runtime
+#
+# Requires on host:
+#   - NVIDIA GPU (Ampere+ for Flash Attention 2)
+#   - NVIDIA Container Toolkit
+#   - docker run --gpus all
+
+# =============================================================================
+# Stage 1: Builder — install Python deps with full build toolchain
+# =============================================================================
+FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install Python 3.11 via deadsnakes PPA
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gnupg2 \
+        curl \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-dev \
+        python3.11-venv \
+        python3.11-distutils \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
+    && python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build essentials for native extensions (flash-attn, bitsandbytes, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        ninja-build \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Install Training Hub — order matters per research:
+# 1. Install training-hub[lora] first (includes unsloth, trl, xformers)
+# 2. Install training-hub[cuda] with --no-build-isolation (flash-attn, bitsandbytes)
+RUN python3.11 -m pip install --no-cache-dir "training-hub[lora]"
+RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
+
+# Install SDG Hub
+RUN python3.11 -m pip install --no-cache-dir "sdg-hub"
+
+# Copy and install the amortized-runtime package
+COPY runtime/ /build/runtime/
+RUN python3.11 -m pip install --no-cache-dir /build/runtime/
+
+# =============================================================================
+# Stage 2: Runtime — slim image with only runtime dependencies
+# =============================================================================
+FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install Python 3.11 runtime only (no dev headers)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common \
+        gnupg2 \
+        curl \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy runtime source
+COPY runtime/ /app/runtime/
+
+WORKDIR /app
+
+# Create data directory for job artifacts
+RUN mkdir -p /app/data
+
+ENV AMORTIZED_DATA_DIR=/app/data
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+
+CMD ["python3.11", "-m", "uvicorn", "amortized_runtime.main:app", "--host", "0.0.0.0", "--port", "8000"]
