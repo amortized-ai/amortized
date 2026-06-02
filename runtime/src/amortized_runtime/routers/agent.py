@@ -1,13 +1,17 @@
 """Agent chat API endpoints."""
 
 import json
+import logging
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
+from sse_starlette.sse import EventSourceResponse
 
-from amortized_runtime.agent import agent
+from amortized_runtime.agent import process_message, stream_message
+from amortized_runtime.config import settings
 from amortized_runtime.db import (
     create_conversation,
     create_message,
@@ -26,7 +30,20 @@ from amortized_runtime.models import (
     MessageRole,
 )
 
+logger = logging.getLogger("amortized_runtime.agent_router")
+
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
+
+
+def _history_from_messages(msgs: list[dict[str, object]]) -> list[dict[str, str]]:
+    """Convert stored messages into the history format expected by the agent."""
+    history: list[dict[str, str]] = []
+    for m in msgs:
+        role = str(m["role"])
+        content = m["content"]
+        text = str(content.get("message", content)) if isinstance(content, dict) else str(content)
+        history.append({"role": role, "content": text})
+    return history
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -61,6 +78,10 @@ async def chat(
             created_at=now,
         )
 
+    # Load conversation history for multi-turn
+    existing_msgs = await list_messages(db, conversation_id)
+    history = _history_from_messages(existing_msgs)
+
     # Save user message
     await create_message(
         db,
@@ -71,8 +92,8 @@ async def chat(
         created_at=now,
     )
 
-    # Process with agent
-    response = agent.process_message(request.message)
+    # Process with Claude-powered agent
+    response_text = process_message(request.message, history=history)
 
     # Save assistant message
     await create_message(
@@ -80,16 +101,114 @@ async def chat(
         message_id=str(uuid.uuid4()),
         conversation_id=conversation_id,
         role=MessageRole.assistant.value,
-        content=json.dumps(response.model_dump()),
+        content=response_text,
         created_at=datetime.now(UTC).isoformat(),
     )
 
     return ChatResponse(
         conversation_id=conversation_id,
-        message=response.message,
-        suggested_action=response.suggested_action,
-        context=response.context,
+        message=response_text,
     )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> EventSourceResponse:
+    """Send a message to the agent and stream the response via SSE."""
+    now = datetime.now(UTC).isoformat()
+
+    # Create or fetch conversation
+    if request.conversation_id:
+        conv = await get_conversation(db, request.conversation_id)
+        if conv is None:
+            await create_conversation(
+                db,
+                conversation_id=request.conversation_id,
+                title=request.message[:50],
+                created_at=now,
+            )
+        else:
+            await update_conversation(
+                db, request.conversation_id, updated_at=now
+            )
+        conversation_id = request.conversation_id
+    else:
+        conversation_id = str(uuid.uuid4())
+        await create_conversation(
+            db,
+            conversation_id=conversation_id,
+            title=request.message[:50],
+            created_at=now,
+        )
+
+    # Load conversation history
+    existing_msgs = await list_messages(db, conversation_id)
+    history = _history_from_messages(existing_msgs)
+
+    # Save user message
+    await create_message(
+        db,
+        message_id=str(uuid.uuid4()),
+        conversation_id=conversation_id,
+        role=MessageRole.user.value,
+        content=request.message,
+        created_at=now,
+    )
+
+    async def event_generator() -> AsyncIterator[dict[str, str]]:
+        # Send conversation_id first
+        yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
+
+        if not settings.anthropic_api_key:
+            error_msg = (
+                "The Amortized assistant requires an Anthropic API key. "
+                "Set AMORTIZED_ANTHROPIC_API_KEY and restart."
+            )
+            yield {"event": "delta", "data": json.dumps({"text": error_msg})}
+            yield {"event": "done", "data": json.dumps({"full_text": error_msg})}
+            # Save error message
+            await create_message(
+                db,
+                message_id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                role=MessageRole.assistant.value,
+                content=error_msg,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+            return
+
+        full_text = ""
+        try:
+            stream_ctx = stream_message(request.message, history=history)
+            if stream_ctx is None:
+                yield {"event": "done", "data": json.dumps({"full_text": ""})}
+                return
+
+            with stream_ctx as stream:
+                for text in stream.text_stream:
+                    full_text += text
+                    yield {"event": "delta", "data": json.dumps({"text": text})}
+
+            yield {"event": "done", "data": json.dumps({"full_text": full_text})}
+        except Exception:
+            logger.exception("Streaming error")
+            error_msg = "Sorry, something went wrong. Please try again."
+            yield {"event": "error", "data": json.dumps({"error": error_msg})}
+            full_text = full_text or error_msg
+
+        # Save assistant response
+        await create_message(
+            db,
+            message_id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            role=MessageRole.assistant.value,
+            content=full_text,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+
+    return EventSourceResponse(event_generator())
 
 
 @router.get("/conversations", response_model=list[Conversation])

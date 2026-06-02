@@ -66,7 +66,7 @@ class TestChatEndpoint:
         assert resp2.json()["conversation_id"] == conv_id
 
     @pytest.mark.asyncio
-    async def test_chat_returns_suggested_action(
+    async def test_chat_returns_message_without_api_key(
         self, client: httpx.AsyncClient
     ) -> None:
         resp = await client.post(
@@ -74,8 +74,8 @@ class TestChatEndpoint:
             json={"message": "I want to train a model"},
         )
         data = resp.json()
-        assert data["suggested_action"] is not None
-        assert data["suggested_action"]["type"] == "create_training_job"
+        assert "API key" in data["message"]
+        assert data["suggested_action"] is None
 
     @pytest.mark.asyncio
     async def test_chat_empty_message_rejected(

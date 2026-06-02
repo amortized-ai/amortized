@@ -193,6 +193,77 @@ export async function sendChatMessage(
   });
 }
 
+export async function streamChatMessage(
+  message: string,
+  conversationId: string | undefined,
+  onDelta: (text: string) => void,
+  onDone: (fullText: string) => void,
+  onMetadata: (data: { conversation_id: string }) => void,
+  onError: (error: string) => void
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/agent/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    onError(`API error ${res.status}: ${text}`);
+    return;
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) {
+    onError("No response body");
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    let eventType = "";
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const data = line.slice(5).trim();
+        if (!data) continue;
+        try {
+          const parsed = JSON.parse(data);
+          switch (eventType) {
+            case "metadata":
+              onMetadata(parsed);
+              break;
+            case "delta":
+              onDelta(parsed.text);
+              break;
+            case "done":
+              onDone(parsed.full_text);
+              break;
+            case "error":
+              onError(parsed.error);
+              break;
+          }
+        } catch {
+          // skip malformed SSE data
+        }
+      }
+    }
+  }
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   return apiFetch<ConversationSummary[]>("/agent/conversations");
 }
