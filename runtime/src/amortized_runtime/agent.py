@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +68,7 @@ def _build_cmd(
     return cmd
 
 
-def process_message(
+async def process_message(
     message: str,
     history: list[dict[str, str]] | None = None,
     project_dir: str | None = None,
@@ -79,53 +79,59 @@ def process_message(
     cwd = project_dir or str(PROJECT_ROOT)
 
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
-            timeout=300,
         )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
     except FileNotFoundError:
         logger.error("claude CLI not found at %r", settings.claude_command)
         return (
             "The Claude CLI is not installed or not in PATH. "
             "Please install Claude Code and try again."
         )
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         logger.error("claude CLI timed out after 300s")
+        proc.kill()
+        await proc.wait()
         return "The request timed out. Please try again with a simpler question."
 
-    if result.returncode != 0:
-        logger.error("claude CLI exited with code %d: %s", result.returncode, result.stderr)
+    if proc.returncode != 0:
+        logger.error(
+            "claude CLI exited with code %d: %s",
+            proc.returncode,
+            stderr.decode() if stderr else "",
+        )
         return "Sorry, something went wrong processing your request. Please try again."
 
     try:
-        data: dict[str, Any] = json.loads(result.stdout)
+        data: dict[str, Any] = json.loads(stdout.decode())
         return str(data.get("result", ""))
     except json.JSONDecodeError:
-        logger.error("Failed to parse claude CLI JSON output: %s", result.stdout[:500])
+        output = stdout.decode() if stdout else ""
+        logger.error("Failed to parse claude CLI JSON output: %s", output[:500])
         return "Sorry, I couldn't parse the response. Please try again."
 
 
-def stream_message(
+async def stream_message(
     message: str,
     history: list[dict[str, str]] | None = None,
     project_dir: str | None = None,
-) -> subprocess.Popen[str]:
-    """Spawn claude CLI with stream-json output and return the Popen handle.
+) -> asyncio.subprocess.Process:
+    """Spawn claude CLI with stream-json output and return the async Process.
 
-    The caller reads proc.stdout line by line, parsing JSON events.
+    The caller reads proc.stdout line by line using ``async for line in proc.stdout``.
     """
     context = _build_context(history)
     cmd = _build_cmd(message, context, output_format="stream-json", verbose=True)
     cwd = project_dir or str(PROJECT_ROOT)
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
     )
     return proc
