@@ -321,6 +321,34 @@ async def _register_artifacts(job_id: str, output_dir: str) -> None:
                             ),
                         )
 
+        # Scan checkpoint-N/ subdirectories (e.g. checkpoint-500/, checkpoint-546/)
+        # These contain adapter weights, configs, and tokenizer files from training
+        for subdir in sorted(output_path.iterdir()):
+            if not subdir.is_dir() or not subdir.name.startswith("checkpoint-"):
+                continue
+            for artifact_type, patterns in artifact_patterns.items():
+                # Skip generated_data glob patterns for checkpoint subdirs
+                if artifact_type == "generated_data":
+                    continue
+                for pattern in patterns:
+                    if "*" in pattern:
+                        continue
+                    sub_file = subdir / pattern
+                    if sub_file.is_file():
+                        await db.execute(
+                            """INSERT INTO artifacts
+                               (id, job_id, artifact_type, path, size, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            (
+                                str(uuid.uuid4()),
+                                job_id,
+                                artifact_type,
+                                str(sub_file),
+                                sub_file.stat().st_size,
+                                now,
+                            ),
+                        )
+
         # Also check checkpoints subdirectory for SDG output
         checkpoint_dir = output_path / "checkpoints"
         if checkpoint_dir.exists():

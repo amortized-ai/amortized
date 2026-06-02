@@ -120,11 +120,14 @@ class FlowInfo(BaseModel):
 class TrainingMetric(BaseModel):
     """A single training metrics data point."""
 
+    model_config = {"extra": "ignore"}
+
     step: int
     loss: float
     epoch: float | None = None
     learning_rate: float | None = None
     max_steps: int | None = None
+    grad_norm: float | None = None
 
 
 # --- Agent / Chat models ---

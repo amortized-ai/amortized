@@ -80,19 +80,31 @@ export function ChatPanel({ mode = "panel" }: ChatPanelProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
-  // Restore conversation on mount
+  // Restore conversation on mount — load ALL messages including any
+  // that arrived while the user was on another page
   useEffect(() => {
     const savedId = getSavedConversationId();
     if (savedId) {
       loadConversation(savedId).then((msgs) => {
         if (msgs && msgs.length > 0) {
           setConversationId(savedId);
-          setMessages(
-            msgs.map((m) => ({
-              role: m.role,
-              content: parseMessageContent(m),
-            }))
-          );
+          const restored: DisplayMessage[] = msgs.map((m) => ({
+            role: m.role,
+            content: parseMessageContent(m),
+          }));
+          // If the last message is from the user, the assistant response
+          // was lost (e.g. stream disconnected while on another page).
+          // Show the messages and add a note so the user can resend.
+          const lastMsg = restored[restored.length - 1];
+          if (lastMsg && lastMsg.role === "user") {
+            restored.push({
+              role: "assistant",
+              content:
+                "It looks like my previous response didn\u2019t come through. " +
+                "Could you resend your last message?",
+            });
+          }
+          setMessages(restored);
         }
         setRestoringChat(false);
       });
