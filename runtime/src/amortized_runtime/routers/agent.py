@@ -92,7 +92,7 @@ async def chat(
     )
 
     # Process with Claude Code CLI agent
-    response_text = process_message(request.message, history=history)
+    response_text = await process_message(request.message, history=history)
 
     # Save assistant message
     await create_message(
@@ -161,11 +161,13 @@ async def chat_stream(
         yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
 
         full_text = ""
+        got_done = False
         try:
-            proc = stream_message(request.message, history=history)
+            proc = await stream_message(request.message, history=history)
             assert proc.stdout is not None
 
-            for line in proc.stdout:
+            async for raw_line in proc.stdout:
+                line = raw_line.decode() if isinstance(raw_line, bytes) else raw_line
                 line = line.strip()
                 if not line:
                     continue
@@ -186,20 +188,21 @@ async def chat_stream(
                             }
                 elif event.get("type") == "result":
                     result_text = event.get("result", "")
-                    if result_text and not full_text:
+                    if result_text:
                         full_text = result_text
+                    got_done = True
                     yield {
                         "event": "done",
                         "data": json.dumps({"full_text": full_text or result_text}),
                     }
 
-            proc.wait()
+            await proc.wait()
 
             # If we never got a result event, send done with what we have
-            if not full_text:
+            if not got_done:
                 yield {
                     "event": "done",
-                    "data": json.dumps({"full_text": ""}),
+                    "data": json.dumps({"full_text": full_text}),
                 }
 
         except FileNotFoundError:

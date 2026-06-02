@@ -1,8 +1,9 @@
 """Tests for the Claude Code CLI agent."""
 
 import json
-import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from amortized_runtime.agent import (
     CONTEXT_PREAMBLE,
@@ -85,126 +86,147 @@ class TestBuildCmd:
         assert cmd[turns_idx + 1] == "3"
 
 
+def _mock_async_process(
+    stdout: bytes = b"",
+    stderr: bytes = b"",
+    returncode: int = 0,
+) -> AsyncMock:
+    """Create a mock asyncio subprocess process."""
+    proc = AsyncMock()
+    proc.communicate = AsyncMock(return_value=(stdout, stderr))
+    proc.returncode = returncode
+    proc.wait = AsyncMock(return_value=returncode)
+    proc.kill = MagicMock()
+    return proc
+
+
 class TestProcessMessage:
-    """Test process_message with mocked subprocess."""
+    """Test process_message with mocked asyncio subprocess."""
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_successful_response(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=json.dumps({"result": "I can help you fine-tune a model."}),
-            stderr="",
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_successful_response(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process(
+            stdout=json.dumps({"result": "I can help you fine-tune a model."}).encode(),
         )
-        result = process_message("help me fine-tune")
+        mock_create.return_value = mock_proc
+
+        result = await process_message("help me fine-tune")
         assert result == "I can help you fine-tune a model."
-        mock_run.assert_called_once()
+        mock_create.assert_called_once()
 
-        call_args = mock_run.call_args
-        cmd = call_args[0][0]
-        assert cmd[0] == "claude"
-        assert "-p" in cmd
-        assert "--output-format" in cmd
-        assert "help me fine-tune" in cmd
+        call_args = mock_create.call_args[0]
+        assert call_args[0] == "claude"
+        assert "-p" in call_args
+        assert "--output-format" in call_args
+        assert "help me fine-tune" in call_args
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_claude_not_found(self, mock_run: MagicMock) -> None:
-        mock_run.side_effect = FileNotFoundError()
-        result = process_message("hello")
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_claude_not_found(self, mock_create: AsyncMock) -> None:
+        mock_create.side_effect = FileNotFoundError()
+        result = await process_message("hello")
         assert "not installed" in result
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_timeout(self, mock_run: MagicMock) -> None:
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=120)
-        result = process_message("hello")
-        assert "timed out" in result
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_timeout(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process()
+        mock_proc.communicate = AsyncMock(side_effect=TimeoutError())
+        mock_proc.kill = MagicMock()
+        mock_proc.wait = AsyncMock()
+        mock_create.return_value = mock_proc
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_nonzero_exit(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="error"
-        )
-        result = process_message("hello")
+        result = await process_message("hello")
+        assert "timed out" in result
+        mock_proc.kill.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_nonzero_exit(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process(returncode=1, stderr=b"error")
+        mock_create.return_value = mock_proc
+
+        result = await process_message("hello")
         assert "went wrong" in result
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_invalid_json(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="not json", stderr=""
-        )
-        result = process_message("hello")
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_invalid_json(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process(stdout=b"not json")
+        mock_create.return_value = mock_proc
+
+        result = await process_message("hello")
         assert "couldn't parse" in result
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_passes_history_in_context(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=json.dumps({"result": "Sure, here's the status."}),
-            stderr="",
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_passes_history_in_context(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process(
+            stdout=json.dumps({"result": "Sure, here's the status."}).encode(),
         )
+        mock_create.return_value = mock_proc
+
         history = [
             {"role": "user", "content": "start a training job"},
             {"role": "assistant", "content": "I started the job."},
         ]
-        result = process_message("what's the status?", history=history)
+        result = await process_message("what's the status?", history=history)
         assert result == "Sure, here's the status."
 
-        call_args = mock_run.call_args
-        cmd = call_args[0][0]
-        # The append-system-prompt should contain history
-        prompt_idx = cmd.index("--append-system-prompt")
-        context = cmd[prompt_idx + 1]
+        call_args = mock_create.call_args[0]
+        prompt_idx = list(call_args).index("--append-system-prompt")
+        context = call_args[prompt_idx + 1]
         assert "start a training job" in context
         assert "I started the job." in context
 
-    @patch("amortized_runtime.agent.subprocess.run")
-    def test_custom_project_dir(self, mock_run: MagicMock) -> None:
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=json.dumps({"result": "ok"}),
-            stderr="",
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_custom_project_dir(self, mock_create: AsyncMock) -> None:
+        mock_proc = _mock_async_process(
+            stdout=json.dumps({"result": "ok"}).encode(),
         )
-        process_message("hello", project_dir="/tmp/myproject")
-        call_kwargs = mock_run.call_args[1]
+        mock_create.return_value = mock_proc
+
+        await process_message("hello", project_dir="/tmp/myproject")
+        call_kwargs = mock_create.call_args[1]
         assert call_kwargs["cwd"] == "/tmp/myproject"
 
 
 class TestStreamMessage:
-    """Test stream_message spawns subprocess correctly."""
+    """Test stream_message spawns async subprocess correctly."""
 
-    @patch("amortized_runtime.agent.subprocess.Popen")
-    def test_returns_popen(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_popen.return_value = mock_proc
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_returns_process(self, mock_create: AsyncMock) -> None:
+        mock_proc = AsyncMock()
+        mock_create.return_value = mock_proc
 
-        result = stream_message("hello")
+        result = await stream_message("hello")
         assert result is mock_proc
-        mock_popen.assert_called_once()
+        mock_create.assert_called_once()
 
-        call_args = mock_popen.call_args
-        cmd = call_args[0][0]
-        assert cmd[0] == "claude"
-        assert "-p" in cmd
-        assert "--output-format" in cmd
-        idx = cmd.index("--output-format")
-        assert cmd[idx + 1] == "stream-json"
-        assert "--verbose" in cmd
-        assert "hello" in cmd
+        call_args = mock_create.call_args[0]
+        assert call_args[0] == "claude"
+        assert "-p" in call_args
+        assert "--output-format" in call_args
+        idx = list(call_args).index("--output-format")
+        assert call_args[idx + 1] == "stream-json"
+        assert "--verbose" in call_args
+        assert "hello" in call_args
 
-    @patch("amortized_runtime.agent.subprocess.Popen")
-    def test_stream_with_history(self, mock_popen: MagicMock) -> None:
-        mock_proc = MagicMock()
-        mock_popen.return_value = mock_proc
+    @pytest.mark.asyncio
+    @patch("amortized_runtime.agent.asyncio.create_subprocess_exec")
+    async def test_stream_with_history(self, mock_create: AsyncMock) -> None:
+        mock_proc = AsyncMock()
+        mock_create.return_value = mock_proc
 
         history = [{"role": "user", "content": "prior message"}]
-        stream_message("follow up", history=history)
+        await stream_message("follow up", history=history)
 
-        call_args = mock_popen.call_args
-        cmd = call_args[0][0]
-        prompt_idx = cmd.index("--append-system-prompt")
-        context = cmd[prompt_idx + 1]
+        call_args = mock_create.call_args[0]
+        prompt_idx = list(call_args).index("--append-system-prompt")
+        context = call_args[prompt_idx + 1]
         assert "prior message" in context
 
 
