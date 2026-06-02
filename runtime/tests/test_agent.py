@@ -71,6 +71,16 @@ class TestBuildCmd:
         idx = cmd.index("--output-format")
         assert cmd[idx + 1] == "stream-json"
         assert "--verbose" in cmd
+        assert "--include-partial-messages" in cmd
+
+    @patch("amortized_runtime.agent.settings")
+    def test_json_format_no_partial_messages(self, mock_settings: MagicMock) -> None:
+        mock_settings.claude_command = "claude"
+        mock_settings.claude_model = "sonnet"
+        mock_settings.claude_max_turns = 1
+
+        cmd = _build_cmd("hello", "context", output_format="json")
+        assert "--include-partial-messages" not in cmd
 
     @patch("amortized_runtime.agent.settings")
     def test_custom_model(self, mock_settings: MagicMock) -> None:
@@ -213,6 +223,7 @@ class TestStreamMessage:
         idx = list(call_args).index("--output-format")
         assert call_args[idx + 1] == "stream-json"
         assert "--verbose" in call_args
+        assert "--include-partial-messages" in call_args
         assert "hello" in call_args
 
     @pytest.mark.asyncio
