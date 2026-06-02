@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     claude_command: str = "claude"
     claude_model: str = "sonnet"
-    claude_max_turns: int = 1
+    claude_max_turns: int = 10
 
     model_config = {"env_prefix": "AMORTIZED_"}
 
