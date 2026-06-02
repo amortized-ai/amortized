@@ -139,6 +139,62 @@ async def get_job_artifacts(
     return [Artifact(**r) for r in rows]
 
 
+@router.get("/{job_id}/artifacts/{artifact_id}/preview")
+async def preview_artifact(
+    job_id: str,
+    artifact_id: str,
+    lines: int = 5,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> dict[str, Any]:
+    """Preview the contents of an artifact file.
+
+    For text-based files (.jsonl, .json, .csv, .txt, .log, .md), returns
+    the first N lines.  For binary files (.safetensors, .bin, .model, .pt),
+    returns file size and type information instead.
+    """
+    lines = max(1, min(lines, 50))
+
+    row = await get_job(db, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    artifact = await get_artifact(db, artifact_id)
+    if artifact is None or artifact["job_id"] != job_id:
+        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
+
+    file_path = Path(artifact["path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Artifact file not found on disk")
+
+    binary_exts = {".safetensors", ".bin", ".model", ".pt", ".gguf"}
+    if file_path.suffix.lower() in binary_exts:
+        return {
+            "type": "binary",
+            "format": file_path.suffix.lstrip("."),
+            "size": file_path.stat().st_size,
+            "filename": file_path.name,
+        }
+
+    # Text-based file — read first N lines
+    preview_lines: list[str] = []
+    try:
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= lines:
+                    break
+                preview_lines.append(line.rstrip("\n"))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read artifact: {exc}") from exc
+
+    return {
+        "type": "text",
+        "format": file_path.suffix.lstrip("."),
+        "filename": file_path.name,
+        "lines": preview_lines,
+        "total_size": file_path.stat().st_size,
+    }
+
+
 @router.get("/{job_id}/artifacts/{artifact_id}/download")
 async def download_artifact(
     job_id: str,
