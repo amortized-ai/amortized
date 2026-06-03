@@ -4,6 +4,7 @@ Receives job config as a JSON string argument. Imports sdg_hub and runs
 Flow.generate(). Falls back to a simulated run if sdg_hub is not installed.
 """
 
+import io
 import json
 import os
 import sys
@@ -17,11 +18,8 @@ def run_sdg(config: dict[str, Any]) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     try:
-        import io
-
+        from datasets import Dataset
         from sdg_hub import Flow, FlowRegistry
-
-        from datasets import Dataset  # type: ignore[attr-defined]
 
         # discover_flows() prints a Rich table to stdout — suppress it
         old_stdout = sys.stdout
