@@ -25,15 +25,18 @@ class Repository:
         config: dict[str, Any],
         created_at: str,
         output_dir: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         await self.conn.execute(
-            """INSERT INTO jobs (id, type, status, config, created_at, updated_at, output_dir)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO jobs
+               (id, type, status, config, metadata, created_at, updated_at, output_dir)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 job_type.value,
                 JobStatus.pending.value,
                 json.dumps(config),
+                json.dumps(metadata or {}),
                 created_at,
                 created_at,
                 output_dir,
@@ -283,6 +286,11 @@ def _row_to_message(row: Any) -> dict[str, Any]:
 def _row_to_job(row: Any) -> dict[str, Any]:
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
+    raw_meta = d.get("metadata")
+    if isinstance(raw_meta, str):
+        d["metadata"] = json.loads(raw_meta) if raw_meta else {}
+    elif raw_meta is None:
+        d["metadata"] = {}
     return d
 
 

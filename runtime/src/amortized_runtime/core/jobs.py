@@ -22,6 +22,7 @@ async def create_job(
     job_type: JobType,
     config: dict[str, Any],
     output_dir: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
@@ -32,6 +33,7 @@ async def create_job(
         config=config,
         created_at=now,
         output_dir=output_dir,
+        metadata=metadata,
     )
 
     await emit_event(repo, job_id, "state_change", {"status": JobStatus.pending.value})

@@ -18,6 +18,8 @@ class JobType(StrEnum):
 class JobStatus(StrEnum):
     """Status of a job."""
 
+    validating = "validating"
+    queued = "queued"
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -56,6 +58,14 @@ class SDGJobConfig(BaseModel):
     )
 
 
+class JobRequest(BaseModel):
+    """Universal job submission request."""
+
+    type: str = Field(..., description="Job type (e.g. 'training', 'sdg')")
+    config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+
+
 # --- Response models ---
 
 
@@ -66,6 +76,7 @@ class Job(BaseModel):
     type: JobType
     status: JobStatus = JobStatus.pending
     config: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None

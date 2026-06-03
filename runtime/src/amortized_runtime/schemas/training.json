@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrainingJobConfig",
+  "description": "Configuration for a LoRA SFT training job.",
+  "type": "object",
+  "required": ["model_path", "data_path", "ckpt_output_dir"],
+  "additionalProperties": false,
+  "properties": {
+    "model_path": {
+      "type": "string",
+      "description": "HuggingFace model path or local path"
+    },
+    "data_path": {
+      "type": "string",
+      "description": "Path to training data (JSONL)"
+    },
+    "ckpt_output_dir": {
+      "type": "string",
+      "description": "Directory for checkpoints and outputs"
+    },
+    "learning_rate": {
+      "type": "number",
+      "description": "Learning rate (default: 2e-4)"
+    },
+    "num_epochs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of training epochs"
+    },
+    "lora_r": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "LoRA rank"
+    },
+    "lora_alpha": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "LoRA alpha"
+    },
+    "load_in_4bit": {
+      "type": "boolean",
+      "description": "Enable QLoRA 4-bit quantization"
+    },
+    "micro_batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Micro batch size"
+    },
+    "max_seq_len": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum sequence length"
+    }
+  }
+}

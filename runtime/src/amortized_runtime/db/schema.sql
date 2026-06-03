@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     config TEXT NOT NULL DEFAULT '{}',
+    metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     started_at TEXT,
