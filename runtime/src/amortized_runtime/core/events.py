@@ -37,5 +37,11 @@ async def emit_event(
     return event
 
 
-async def list_events(repo: Repository, job_id: str) -> list[dict[str, Any]]:
-    return await repo.list_events(job_id)
+async def list_events(
+    repo: Repository,
+    job_id: str,
+    *,
+    since: str | None = None,
+    types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    return await repo.list_events(job_id, since=since, types=types)

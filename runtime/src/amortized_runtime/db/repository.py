@@ -25,15 +25,18 @@ class Repository:
         config: dict[str, Any],
         created_at: str,
         output_dir: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         await self.conn.execute(
-            """INSERT INTO jobs (id, type, status, config, created_at, updated_at, output_dir)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO jobs
+               (id, type, status, config, metadata, created_at, updated_at, output_dir)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 job_id,
                 job_type.value,
                 JobStatus.pending.value,
                 json.dumps(config),
+                json.dumps(metadata or {}),
                 created_at,
                 created_at,
                 output_dir,
@@ -117,16 +120,30 @@ class Repository:
         self,
         *,
         artifact_id: str,
-        job_id: str,
+        job_id: str | None = None,
         artifact_type: str,
-        path: str,
-        size: int,
+        path: str = "",
+        size: int = 0,
         created_at: str,
+        name: str = "",
+        location: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         await self.conn.execute(
-            """INSERT INTO artifacts (id, job_id, artifact_type, path, size, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (artifact_id, job_id, artifact_type, path, size, created_at),
+            """INSERT INTO artifacts
+               (id, job_id, artifact_type, path, size, created_at, name, location, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                artifact_id,
+                job_id,
+                artifact_type,
+                path,
+                size,
+                created_at,
+                name,
+                location,
+                json.dumps(metadata or {}),
+            ),
         )
         await self.conn.commit()
         cursor = await self.conn.execute(
@@ -134,22 +151,46 @@ class Repository:
         )
         row = await cursor.fetchone()
         assert row is not None
-        return dict(row)
+        return _row_to_artifact(row)
 
     async def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
         cursor = await self.conn.execute(
             "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
         )
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        return _row_to_artifact(row) if row else None
 
-    async def list_artifacts(self, job_id: str) -> list[dict[str, Any]]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM artifacts WHERE job_id = ? ORDER BY created_at",
-            (job_id,),
-        )
+    async def list_artifacts(
+        self,
+        job_id: str | None = None,
+        *,
+        artifact_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM artifacts"
+        params: list[str] = []
+        conditions: list[str] = []
+
+        if job_id is not None:
+            conditions.append("job_id = ?")
+            params.append(job_id)
+        if artifact_type is not None:
+            conditions.append("artifact_type = ?")
+            params.append(artifact_type)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY created_at"
+
+        cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [_row_to_artifact(row) for row in rows]
+
+    async def delete_artifact(self, artifact_id: str) -> bool:
+        cursor = await self.conn.execute(
+            "DELETE FROM artifacts WHERE id = ?", (artifact_id,)
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
 
     # ---- Events ----
 
@@ -175,11 +216,26 @@ class Repository:
         assert row is not None
         return _row_to_event(row)
 
-    async def list_events(self, job_id: str) -> list[dict[str, Any]]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM events WHERE job_id = ? ORDER BY timestamp",
-            (job_id,),
-        )
+    async def list_events(
+        self,
+        job_id: str,
+        *,
+        since: str | None = None,
+        types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM events WHERE job_id = ?"
+        params: list[Any] = [job_id]
+
+        if since is not None:
+            query += " AND timestamp > ?"
+            params.append(since)
+        if types:
+            placeholders = ", ".join("?" for _ in types)
+            query += f" AND type IN ({placeholders})"
+            params.extend(types)
+
+        query += " ORDER BY timestamp"
+        cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
         return [_row_to_event(row) for row in rows]
 
@@ -283,6 +339,22 @@ def _row_to_message(row: Any) -> dict[str, Any]:
 def _row_to_job(row: Any) -> dict[str, Any]:
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
+    raw_meta = d.get("metadata")
+    if isinstance(raw_meta, str):
+        d["metadata"] = json.loads(raw_meta) if raw_meta else {}
+    elif raw_meta is None:
+        d["metadata"] = {}
+    return d
+
+
+def _row_to_artifact(row: Any) -> dict[str, Any]:
+    d = dict(row)
+    if isinstance(d.get("metadata"), str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["metadata"] = json.loads(d["metadata"])
+    if d.get("metadata") is None:
+        d["metadata"] = {}
+    d["producer_job"] = d.get("job_id")
     return d
 
 

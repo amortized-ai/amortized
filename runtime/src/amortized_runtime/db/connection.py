@@ -49,10 +49,12 @@ async def create_job(
     config: dict[str, Any],
     created_at: str,
     output_dir: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return await Repository(db).create_job(
         job_id=job_id, job_type=job_type, config=config,
         created_at=created_at, output_dir=output_dir,
+        metadata=metadata,
     )
 
 

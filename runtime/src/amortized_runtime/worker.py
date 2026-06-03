@@ -16,6 +16,7 @@ import aiosqlite
 
 import amortized_runtime.config as config_mod
 from amortized_runtime.core.artifacts import register_artifacts_for_job, register_log_artifacts
+from amortized_runtime.core.events import emit_event
 from amortized_runtime.db.repository import Repository
 from amortized_runtime.models import JobStatus, JobType
 
@@ -232,7 +233,7 @@ async def _update_job(
     error: str | None = None,
     pid: int | None = None,
 ) -> None:
-    """Update job status in the database."""
+    """Update job status in the database and emit a state_change event."""
     db = await _get_db()
     try:
         now = datetime.now(UTC).isoformat()
@@ -258,6 +259,12 @@ async def _update_job(
             params,
         )
         await db.commit()
+
+        repo = Repository(db)
+        event_data: dict[str, Any] = {"status": status.value}
+        if error is not None:
+            event_data["error"] = error
+        await emit_event(repo, job_id, "state_change", event_data)
     finally:
         await db.close()
 

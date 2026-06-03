@@ -18,6 +18,8 @@ class JobType(StrEnum):
 class JobStatus(StrEnum):
     """Status of a job."""
 
+    validating = "validating"
+    queued = "queued"
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -56,6 +58,14 @@ class SDGJobConfig(BaseModel):
     )
 
 
+class JobRequest(BaseModel):
+    """Universal job submission request."""
+
+    type: str = Field(..., description="Job type (e.g. 'training', 'sdg')")
+    config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+
+
 # --- Response models ---
 
 
@@ -66,6 +76,7 @@ class Job(BaseModel):
     type: JobType
     status: JobStatus = JobStatus.pending
     config: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
@@ -74,15 +85,29 @@ class Job(BaseModel):
     output_dir: str | None = None
 
 
+class ArtifactRequest(BaseModel):
+    """Request to register an artifact."""
+
+    name: str = Field(..., description="Human-readable artifact name")
+    artifact_type: str = Field(..., description="Artifact type (e.g. adapter_weights, dataset)")
+    location: str = Field(..., description="File path or URI where the artifact lives")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+    producer_job: str | None = Field(None, description="Job ID that produced this artifact")
+
+
 class Artifact(BaseModel):
     """An output artifact from a job."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    job_id: str
+    job_id: str | None = None
     artifact_type: str
-    path: str
+    path: str = ""
     size: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    name: str = ""
+    location: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    producer_job: str | None = None
 
 
 class MemoryEstimateRequest(BaseModel):

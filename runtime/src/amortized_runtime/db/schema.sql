@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     config TEXT NOT NULL DEFAULT '{}',
+    metadata TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     started_at TEXT,
@@ -16,11 +17,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
-    job_id TEXT NOT NULL,
+    job_id TEXT,
     artifact_type TEXT NOT NULL,
     path TEXT NOT NULL,
     size INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    location TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
