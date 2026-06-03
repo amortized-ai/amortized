@@ -60,11 +60,20 @@ class SDGJobConfig(BaseModel):
     )
 
 
+class ComputeSpec(BaseModel):
+    """Specifies which compute backend to use for a job."""
+
+    backend: str = Field("local", description="Compute backend name (e.g. 'local', 'ssh')")
+    gpus: int = Field(0, ge=0, description="Number of GPUs requested")
+    gpu_type: str | None = Field(None, description="GPU type (e.g. 'A100', 'H100')")
+
+
 class JobRequest(BaseModel):
     """Universal job submission request."""
 
     type: str = Field(..., description="Job type (e.g. 'training', 'sdg')")
     config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
+    compute: ComputeSpec = Field(default_factory=ComputeSpec, description="Compute backend spec")
     metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
 
 

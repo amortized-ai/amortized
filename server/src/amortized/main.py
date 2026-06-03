@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from amortized.api import (
     agent_routes,
     artifacts,
+    compute,
     datasets,
     estimate,
     events,
@@ -23,6 +24,8 @@ from amortized.api import (
     recipes,
     ws,
 )
+from amortized.backends.local import LocalBackend
+from amortized.core.compute import register_backend
 from amortized.db import init_db
 from amortized.worker import cleanup_orphaned_jobs, worker_loop
 
@@ -38,6 +41,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Initialize database and start background worker on startup."""
     await init_db()
     await cleanup_orphaned_jobs()
+    register_backend(LocalBackend())
     logger.info("Amortized runtime started")
 
     # Start background worker
@@ -78,6 +82,7 @@ app.include_router(datasets.router)
 app.include_router(ws.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
+app.include_router(compute.router)
 app.include_router(agent_routes.router)
 
 

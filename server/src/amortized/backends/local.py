@@ -1,0 +1,110 @@
+"""Local compute backend — runs jobs as subprocesses on the current machine."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+import signal
+import subprocess
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+from amortized.backends import (
+    BackendHandle,
+    BackendStatus,
+    Capability,
+    JobSpec,
+)
+
+logger = logging.getLogger("amortized.backends.local")
+
+
+class LocalBackend:
+    name = "local"
+
+    def __init__(self) -> None:
+        self._processes: dict[str, subprocess.Popen[bytes]] = {}
+
+    def capabilities(self) -> set[Capability]:
+        return {Capability.LOG_STREAM, Capability.STOP}
+
+    async def submit(self, spec: JobSpec) -> BackendHandle:
+        work_dir = spec.work_dir
+        os.makedirs(work_dir, exist_ok=True)
+
+        stdout_path = os.path.join(work_dir, "stdout.log")
+        stderr_path = os.path.join(work_dir, "stderr.log")
+
+        stdout_file = open(stdout_path, "w")  # noqa: SIM115
+        stderr_file = open(stderr_path, "w")  # noqa: SIM115
+
+        env = {**os.environ, **spec.env}
+
+        proc = subprocess.Popen(
+            spec.command,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            env=env,
+            cwd=work_dir if Path(work_dir).is_dir() else None,
+        )
+
+        self._processes[spec.job_id] = proc
+
+        logger.info("Started local job %s with pid %d", spec.job_id, proc.pid)
+
+        return BackendHandle(
+            backend_name=self.name,
+            job_id=spec.job_id,
+            remote_pid=proc.pid,
+            remote_dir=work_dir,
+        )
+
+    async def status(self, handle: BackendHandle) -> BackendStatus:
+        proc = self._processes.get(handle.job_id)
+        if proc is not None:
+            retcode = proc.poll()
+            if retcode is None:
+                return BackendStatus(running=True)
+            return BackendStatus(running=False, exit_code=retcode)
+
+        if handle.remote_pid is not None:
+            try:
+                os.kill(handle.remote_pid, 0)
+                return BackendStatus(running=True)
+            except OSError:
+                return BackendStatus(running=False)
+
+        return BackendStatus(running=False, error="Process not found")
+
+    async def cancel(self, handle: BackendHandle) -> None:
+        proc = self._processes.get(handle.job_id)
+        if proc is not None:
+            proc.terminate()
+            loop = asyncio.get_event_loop()
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, proc.wait),
+                    timeout=5.0,
+                )
+            except TimeoutError:
+                proc.kill()
+            self._processes.pop(handle.job_id, None)
+            return
+
+        if handle.remote_pid is not None:
+            with contextlib.suppress(OSError):
+                os.kill(handle.remote_pid, signal.SIGTERM)
+
+    async def logs(self, handle: BackendHandle) -> AsyncIterator[str]:
+        if handle.remote_dir is None:
+            return
+
+        stdout_path = os.path.join(handle.remote_dir, "stdout.log")
+        if not os.path.exists(stdout_path):
+            return
+
+        with open(stdout_path) as f:
+            for line in f:
+                yield line.rstrip("\n")
