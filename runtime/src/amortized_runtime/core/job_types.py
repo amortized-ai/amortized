@@ -30,7 +30,7 @@ _schema_cache: dict[str, dict[str, Any]] = {}
 def _load_schema(schema_file: str) -> dict[str, Any]:
     if schema_file not in _schema_cache:
         path = _SCHEMAS_DIR / schema_file
-        _schema_cache[schema_file] = json.loads(path.read_text())  # type: ignore[assignment]
+        _schema_cache[schema_file] = json.loads(path.read_text())
     return _schema_cache[schema_file]
 
 
