@@ -58,8 +58,8 @@ class TestJobTypeRegistry:
 
     def test_get_schema_sdg(self) -> None:
         schema = get_schema("sdg")
-        assert schema["title"] == "SDGJobConfig"
-        assert "flow_id" in schema["properties"]
+        assert schema["title"] == "SynthJobConfig"
+        assert "pipeline" in schema["properties"]
 
     def test_get_schema_unknown_type(self) -> None:
         with pytest.raises(UnknownJobTypeError):
@@ -89,8 +89,7 @@ class TestJobTypeRegistry:
 
     def test_validate_config_valid_sdg(self) -> None:
         errors = validate_config("sdg", {
-            "flow_id": "knowledge-qa",
-            "dataset_path": "./docs.jsonl",
+            "pipeline": "conversation",
             "model": "openai/gpt-4o",
         })
         assert errors == []
@@ -162,8 +161,7 @@ class TestUniversalJobEndpoint:
         response = await client.post("/api/v1/jobs", json={
             "type": "sdg",
             "config": {
-                "flow_id": "knowledge-qa",
-                "dataset_path": "./docs.jsonl",
+                "pipeline": "conversation",
                 "model": "openai/gpt-4o",
             },
         })
@@ -294,7 +292,7 @@ class TestJobTypesEndpoints:
         response = await client.get("/api/v1/job-types/sdg/schema")
         assert response.status_code == 200
         schema = response.json()
-        assert schema["title"] == "SDGJobConfig"
+        assert schema["title"] == "SynthJobConfig"
 
     @pytest.mark.asyncio
     async def test_get_inference_schema(self, client: httpx.AsyncClient) -> None:
@@ -330,8 +328,7 @@ class TestOldEndpointsBackwardCompat:
     @pytest.mark.asyncio
     async def test_old_sdg_endpoint_still_works(self, client: httpx.AsyncClient) -> None:
         response = await client.post("/api/v1/jobs/sdg", json={
-            "flow_id": "test",
-            "dataset_path": "test",
+            "pipeline": "conversation",
             "model": "test",
         })
         assert response.status_code == 201

@@ -1,93 +1,33 @@
-"""SDG flow discovery endpoints."""
+"""Synthesis pipeline discovery endpoints."""
 
-import io
 import logging
-import sys
+from typing import Any
 
 from fastapi import APIRouter
 
-from amortized.models import FlowInfo
+from amortized.models import PipelineInfo
 
 logger = logging.getLogger("amortized.api.flows")
 
 router = APIRouter(prefix="/api/v1/flows", tags=["flows"])
 
-# Tag-to-category mapping for SDG flows
-_TAG_CATEGORY_MAP: dict[str, str] = {
-    "knowledge": "knowledge_infusion",
-    "qa": "knowledge_infusion",
-    "summary": "knowledge_infusion",
-    "evaluation": "evaluation",
-    "eval": "evaluation",
-    "rag": "evaluation",
-    "agent": "agentic",
-    "agentic": "agentic",
-    "mcp": "agentic",
-    "red_team": "red_team",
-    "adversarial": "red_team",
-    "text": "text_analysis",
-    "classification": "text_analysis",
-    "sentiment": "text_analysis",
-    "code": "code_evaluation",
-}
 
-
-def _tags_to_category(tags: list[str]) -> str:
-    """Map a list of tags to a single category string."""
-    for tag in tags:
-        tag_lower = tag.lower()
-        if tag_lower in _TAG_CATEGORY_MAP:
-            return _TAG_CATEGORY_MAP[tag_lower]
-    return "unknown"
-
-
-def _discover_flows() -> list[FlowInfo]:
-    """Discover available SDG flows.
-
-    Uses sdg_hub FlowRegistry when available, falls back to empty list.
-    """
+def _discover_pipelines() -> list[PipelineInfo]:
+    """Discover available synthesis pipelines."""
     try:
-        from sdg_hub import FlowRegistry
+        from amortized_synth import list_pipelines
 
-        # discover_flows() prints a Rich table to stdout — suppress it
-        old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
-        try:
-            FlowRegistry.discover_flows()
-        finally:
-            sys.stdout = old_stdout
-
-        flows: list[FlowInfo] = []
-        for flow_id, entry in FlowRegistry._entries.items():
-            tags = getattr(entry, "tags", []) or []
-            meta = getattr(entry, "metadata", None)
-            ds_req = getattr(meta, "dataset_requirements", None) if meta else None
-            required_columns: list[str] = []
-            dataset_description = ""
-            if ds_req:
-                required_columns = getattr(ds_req, "required_columns", []) or []
-                dataset_description = getattr(ds_req, "description", "") or ""
-            flow_name = getattr(entry, "name", flow_id)
-            flows.append(
-                FlowInfo(
-                    id=flow_name,
-                    name=flow_name,
-                    description=getattr(entry, "description", ""),
-                    category=_tags_to_category(tags),
-                    required_columns=required_columns,
-                    dataset_description=dataset_description,
-                )
-            )
-        return flows
+        pipelines: list[dict[str, Any]] = list_pipelines()
+        return [PipelineInfo(**p) for p in pipelines]
     except ImportError:
-        logger.debug("sdg_hub not installed, no flows available")
+        logger.debug("amortized_synth not installed, no pipelines available")
         return []
     except Exception:
-        logger.exception("Failed to discover SDG flows")
+        logger.exception("Failed to discover synthesis pipelines")
         return []
 
 
-@router.get("", response_model=list[FlowInfo])
-async def get_flows() -> list[FlowInfo]:
-    """List available SDG flows."""
-    return _discover_flows()
+@router.get("", response_model=list[PipelineInfo])
+async def get_pipelines() -> list[PipelineInfo]:
+    """List available synthesis pipelines."""
+    return _discover_pipelines()
