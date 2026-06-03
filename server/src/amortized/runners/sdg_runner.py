@@ -18,6 +18,7 @@ def run_sdg(config: dict[str, Any]) -> None:
 
     try:
         import io
+
         from datasets import Dataset
         from sdg_hub import Flow, FlowRegistry
 
