@@ -20,6 +20,7 @@ from amortized.api import (
     flows,
     job_types,
     jobs,
+    recipes,
     ws,
 )
 from amortized.db import init_db
@@ -75,6 +76,8 @@ app.include_router(flows.router)
 app.include_router(estimate.router)
 app.include_router(datasets.router)
 app.include_router(ws.router)
+app.include_router(recipes.router)
+app.include_router(recipes.recipe_jobs_router)
 app.include_router(agent_routes.router)
 
 

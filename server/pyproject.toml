@@ -18,6 +18,7 @@ dependencies = [
     "sse-starlette>=2.0.0",
     "openai>=1.50.0",
     "jsonschema>=4.20.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +49,7 @@ python_version = "3.11"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "training_hub", "training_hub.*", "sdg_hub", "sdg_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*"]
+module = ["torch", "torch.*", "training_hub", "training_hub.*", "sdg_hub", "sdg_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
