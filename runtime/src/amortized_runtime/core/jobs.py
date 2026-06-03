@@ -82,7 +82,8 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
     )
     await emit_event(repo, job_id, "state_change", {"status": JobStatus.cancelled.value})
     logger.info("Cancelled job %s", job_id)
-    return updated  # type: ignore[return-value]
+    assert updated is not None, f"Job {job_id} vanished during cancel"
+    return updated
 
 
 class JobNotFoundError(Exception):

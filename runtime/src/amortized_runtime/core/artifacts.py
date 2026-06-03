@@ -104,6 +104,12 @@ async def register_log_artifacts(
     return registered
 
 
+async def get_artifact(
+    repo: Repository, artifact_id: str
+) -> dict[str, Any] | None:
+    return await repo.get_artifact(artifact_id)
+
+
 async def list_artifacts(
     repo: Repository, job_id: str
 ) -> list[dict[str, Any]]:

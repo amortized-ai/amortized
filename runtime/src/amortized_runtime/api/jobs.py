@@ -9,6 +9,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
+from amortized_runtime.core.artifacts import get_artifact as core_get_artifact
 from amortized_runtime.core.artifacts import list_artifacts as core_list_artifacts
 from amortized_runtime.core.jobs import (
     InvalidJobStateError,
@@ -122,7 +123,7 @@ async def get_job_metrics(
             try:
                 data = json.loads(line)
                 metrics.append(TrainingMetric(**data))
-            except (json.JSONDecodeError, Exception):
+            except (json.JSONDecodeError, KeyError, ValueError):
                 continue
     return metrics
 
@@ -156,7 +157,7 @@ async def preview_artifact(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    artifact = await repo.get_artifact(artifact_id)
+    artifact = await core_get_artifact(repo, artifact_id)
     if artifact is None or artifact["job_id"] != job_id:
         raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
 
@@ -204,7 +205,7 @@ async def download_artifact(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    artifact = await repo.get_artifact(artifact_id)
+    artifact = await core_get_artifact(repo, artifact_id)
     if artifact is None or artifact["job_id"] != job_id:
         raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
 
