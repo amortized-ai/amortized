@@ -27,6 +27,7 @@ from amortized.api import (
 from amortized.backends.local import LocalBackend
 from amortized.core.compute import register_backend
 from amortized.db import init_db
+from amortized.mcp.server import create_mcp_server
 from amortized.worker import cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
@@ -84,6 +85,8 @@ app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
 app.include_router(compute.router)
 app.include_router(agent_routes.router)
+
+create_mcp_server(app)
 
 
 def _detect_gpu() -> dict[str, object]:

@@ -360,6 +360,29 @@ def backends() -> None:
 # amortized health
 # ---------------------------------------------------------------------------
 @app.command()
+def mcp(
+    host: Annotated[str, typer.Option(help="Bind address")] = "0.0.0.0",
+    port: Annotated[int, typer.Option(help="Port")] = 8000,
+) -> None:
+    """Start MCP server (HTTP transport, auto-generated from OpenAPI)."""
+    console.print(f"[bold green]Starting Amortized MCP server[/bold green] on {host}:{port}")
+    console.print(f"MCP endpoint: http://{host}:{port}/mcp")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "amortized.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ],
+        check=False,
+    )
+
+
+@app.command()
 def health() -> None:
     """Check API server health."""
     try:
