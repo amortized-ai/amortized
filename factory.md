@@ -29,6 +29,7 @@
 - `studio/next.config.mjs`
 - `studio/tailwind.config.ts`
 - `studio/postcss.config.mjs`
+- `containers/**`
 - `docker/**`
 - `.github/**`
 
