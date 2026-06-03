@@ -11,7 +11,16 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from amortized_runtime.api import agent_routes, datasets, estimate, flows, job_types, jobs, ws
+from amortized_runtime.api import (
+    agent_routes,
+    datasets,
+    estimate,
+    events,
+    flows,
+    job_types,
+    jobs,
+    ws,
+)
 from amortized_runtime.db import init_db
 from amortized_runtime.worker import cleanup_orphaned_jobs, worker_loop
 
@@ -59,6 +68,7 @@ app.add_middleware(
 app.include_router(jobs.router)
 app.include_router(job_types.router)
 app.include_router(job_types.job_types_router)
+app.include_router(events.router)
 app.include_router(flows.router)
 app.include_router(estimate.router)
 app.include_router(datasets.router)

@@ -178,11 +178,26 @@ class Repository:
         assert row is not None
         return _row_to_event(row)
 
-    async def list_events(self, job_id: str) -> list[dict[str, Any]]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM events WHERE job_id = ? ORDER BY timestamp",
-            (job_id,),
-        )
+    async def list_events(
+        self,
+        job_id: str,
+        *,
+        since: str | None = None,
+        types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM events WHERE job_id = ?"
+        params: list[Any] = [job_id]
+
+        if since is not None:
+            query += " AND timestamp > ?"
+            params.append(since)
+        if types:
+            placeholders = ", ".join("?" for _ in types)
+            query += f" AND type IN ({placeholders})"
+            params.extend(types)
+
+        query += " ORDER BY timestamp"
+        cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
         return [_row_to_event(row) for row in rows]
 

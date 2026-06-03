@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from amortized_runtime.core.events import emit_event
+
 if TYPE_CHECKING:
     from amortized_runtime.db.repository import Repository
 
@@ -38,8 +40,9 @@ async def register_artifacts_for_job(
     registered: list[dict[str, Any]] = []
 
     async def _register(artifact_type: str, file_path: Path) -> None:
+        artifact_id = str(uuid.uuid4())
         artifact = await repo.create_artifact(
-            artifact_id=str(uuid.uuid4()),
+            artifact_id=artifact_id,
             job_id=job_id,
             artifact_type=artifact_type,
             path=str(file_path),
@@ -47,6 +50,11 @@ async def register_artifacts_for_job(
             created_at=now,
         )
         registered.append(artifact)
+        await emit_event(repo, job_id, "artifact", {
+            "artifact_id": artifact_id,
+            "artifact_type": artifact_type,
+            "path": str(file_path),
+        })
 
     for artifact_type, patterns in ARTIFACT_PATTERNS.items():
         for pattern in patterns:
@@ -92,8 +100,9 @@ async def register_log_artifacts(
     for log_name in ("stdout.log", "stderr.log"):
         log_path = Path(output_dir) / log_name
         if log_path.is_file() and log_path.stat().st_size > 0:
+            artifact_id = str(uuid.uuid4())
             artifact = await repo.create_artifact(
-                artifact_id=str(uuid.uuid4()),
+                artifact_id=artifact_id,
                 job_id=job_id,
                 artifact_type="log",
                 path=str(log_path),
@@ -101,6 +110,11 @@ async def register_log_artifacts(
                 created_at=now,
             )
             registered.append(artifact)
+            await emit_event(repo, job_id, "artifact", {
+                "artifact_id": artifact_id,
+                "artifact_type": "log",
+                "path": str(log_path),
+            })
     return registered
 
 
