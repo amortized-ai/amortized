@@ -48,6 +48,8 @@ async def register_artifacts_for_job(
             path=str(file_path),
             size=file_path.stat().st_size,
             created_at=now,
+            name=file_path.name,
+            location=str(file_path),
         )
         registered.append(artifact)
         await emit_event(repo, job_id, "artifact", {
@@ -108,6 +110,8 @@ async def register_log_artifacts(
                 path=str(log_path),
                 size=log_path.stat().st_size,
                 created_at=now,
+                name=log_path.name,
+                location=str(log_path),
             )
             registered.append(artifact)
             await emit_event(repo, job_id, "artifact", {
@@ -116,6 +120,30 @@ async def register_log_artifacts(
                 "path": str(log_path),
             })
     return registered
+
+
+async def register_artifact(
+    repo: Repository,
+    *,
+    name: str,
+    artifact_type: str,
+    location: str,
+    metadata: dict[str, Any] | None = None,
+    producer_job: str | None = None,
+) -> dict[str, Any]:
+    artifact_id = str(uuid.uuid4())
+    now = datetime.now(UTC).isoformat()
+    return await repo.create_artifact(
+        artifact_id=artifact_id,
+        job_id=producer_job,
+        artifact_type=artifact_type,
+        path=location,
+        size=0,
+        created_at=now,
+        name=name,
+        location=location,
+        metadata=metadata,
+    )
 
 
 async def get_artifact(
@@ -128,3 +156,21 @@ async def list_artifacts(
     repo: Repository, job_id: str
 ) -> list[dict[str, Any]]:
     return await repo.list_artifacts(job_id)
+
+
+async def list_all_artifacts(
+    repo: Repository,
+    *,
+    artifact_type: str | None = None,
+    producer_job: str | None = None,
+) -> list[dict[str, Any]]:
+    return await repo.list_artifacts(
+        job_id=producer_job,
+        artifact_type=artifact_type,
+    )
+
+
+async def delete_artifact(
+    repo: Repository, artifact_id: str
+) -> bool:
+    return await repo.delete_artifact(artifact_id)

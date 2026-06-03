@@ -1,4 +1,7 @@
-"""Dataset creation, preview, and conversion endpoints."""
+"""Dataset creation, preview, and conversion endpoints.
+
+Deprecated: use /api/v1/artifacts with artifact_type='dataset' instead.
+"""
 
 from __future__ import annotations
 
@@ -9,10 +12,19 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from starlette.responses import Response
 
 logger = logging.getLogger("amortized_runtime.datasets")
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
+
+_DEPRECATION_HEADER = "Use /api/v1/artifacts with artifact_type='dataset' instead"
+
+
+def _add_deprecation_headers(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2027-01-01"
+    response.headers["Link"] = '</api/v1/artifacts?type=dataset>; rel="successor-version"'
 
 DATASETS_DIR = Path("datasets")
 
@@ -57,8 +69,11 @@ class PreviewDatasetResponse(BaseModel):
 
 
 @router.post("", response_model=CreateDatasetResponse)
-async def create_dataset(req: CreateDatasetRequest) -> CreateDatasetResponse:
-    """Create a JSONL dataset file on disk."""
+async def create_dataset(
+    req: CreateDatasetRequest, response: Response,
+) -> CreateDatasetResponse:
+    """Create a JSONL dataset file on disk. Deprecated: use POST /api/v1/artifacts."""
+    _add_deprecation_headers(response)
     if not req.rows:
         raise HTTPException(status_code=400, detail="rows must not be empty")
 
@@ -87,9 +102,11 @@ async def create_dataset(req: CreateDatasetRequest) -> CreateDatasetResponse:
 @router.get("/{path:path}/preview", response_model=PreviewDatasetResponse)
 async def preview_dataset(
     path: str,
+    response: Response,
     rows: int = Query(default=3, ge=1, le=10),
 ) -> PreviewDatasetResponse:
-    """Preview the first few rows of a dataset file."""
+    """Preview the first few rows of a dataset file. Deprecated: use GET /api/v1/artifacts."""
+    _add_deprecation_headers(response)
     file_path = Path(path)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"Dataset not found: {path}")
@@ -143,8 +160,11 @@ def _row_to_messages(row: dict[str, Any], user_col: str, asst_col: str) -> dict[
 
 
 @router.post("/convert", response_model=ConvertDatasetResponse)
-async def convert_dataset(req: ConvertDatasetRequest) -> ConvertDatasetResponse:
-    """Convert an SDG output dataset to messages format for training."""
+async def convert_dataset(
+    req: ConvertDatasetRequest, response: Response,
+) -> ConvertDatasetResponse:
+    """Convert an SDG output dataset to messages format for training. Deprecated."""
+    _add_deprecation_headers(response)
     source = Path(req.source_path)
     if not source.exists():
         raise HTTPException(status_code=404, detail=f"Source dataset not found: {req.source_path}")

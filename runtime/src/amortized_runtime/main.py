@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from amortized_runtime.api import (
     agent_routes,
+    artifacts,
     datasets,
     estimate,
     events,
@@ -69,6 +70,7 @@ app.include_router(jobs.router)
 app.include_router(job_types.router)
 app.include_router(job_types.job_types_router)
 app.include_router(events.router)
+app.include_router(artifacts.router)
 app.include_router(flows.router)
 app.include_router(estimate.router)
 app.include_router(datasets.router)
