@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-RUNTIME_DIR = Path(__file__).resolve().parent.parent / "runtime"
+RUNTIME_DIR = Path(__file__).resolve().parent.parent / "server"
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -53,7 +53,7 @@ def check_type_check() -> dict:
 
 def check_capability_surface() -> dict:
     """Count API endpoints defined in the runtime."""
-    main_py = RUNTIME_DIR / "src" / "amortized_runtime" / "main.py"
+    main_py = RUNTIME_DIR / "src" / "amortized" / "main.py"
     if not main_py.exists():
         return {"name": "capability_surface", "passed": False, "score": 0.0, "details": "main.py not found"}
 
@@ -72,7 +72,7 @@ def check_capability_surface() -> dict:
 
 def check_observability() -> dict:
     """Check for logging setup in the runtime."""
-    main_py = RUNTIME_DIR / "src" / "amortized_runtime" / "main.py"
+    main_py = RUNTIME_DIR / "src" / "amortized" / "main.py"
     if not main_py.exists():
         return {"name": "observability", "passed": False, "score": 0.0, "details": "main.py not found"}
 

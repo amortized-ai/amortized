@@ -1,8 +1,8 @@
 # Amortized Runtime — GPU-enabled container image
 # Multi-stage build: CUDA devel (builder) → CUDA runtime (slim)
 #
-# Build: docker build -f docker/Dockerfile.runtime -t amortized-runtime .
-# Run:   docker run --gpus all -p 8000:8000 amortized-runtime
+# Build: docker build -f docker/Dockerfile.runtime -t amortized-server .
+# Run:   docker run --gpus all -p 8000:8000 amortized-server
 #
 # Requires on host:
 #   - NVIDIA GPU (Ampere+ for Flash Attention 2)
@@ -50,9 +50,9 @@ RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[
 # Install SDG Hub
 RUN python3.11 -m pip install --no-cache-dir "sdg-hub"
 
-# Copy and install the amortized-runtime package
-COPY runtime/ /build/runtime/
-RUN python3.11 -m pip install --no-cache-dir /build/runtime/
+# Copy and install the amortized-server package
+COPY server/ /build/server/
+RUN python3.11 -m pip install --no-cache-dir /build/server/
 
 # =============================================================================
 # Stage 2: Runtime — slim image with only runtime dependencies
@@ -79,7 +79,7 @@ COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy runtime source
-COPY runtime/ /app/runtime/
+COPY server/ /app/server/
 
 WORKDIR /app
 
@@ -93,4 +93,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
-CMD ["python3.11", "-m", "uvicorn", "amortized_runtime.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3.11", "-m", "uvicorn", "amortized.main:app", "--host", "0.0.0.0", "--port", "8000"]

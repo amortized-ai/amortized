@@ -9,8 +9,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY runtime/ /app/runtime/
-RUN pip install --no-cache-dir -e /app/runtime/
+COPY server/ /app/server/
+RUN pip install --no-cache-dir -e /app/server/
 
 RUN mkdir -p /app/data
 
@@ -19,4 +19,4 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "amortized_runtime.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/runtime/src"]
+CMD ["uvicorn", "amortized.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/server/src"]

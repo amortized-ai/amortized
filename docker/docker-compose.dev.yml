@@ -13,7 +13,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../runtime/src:/app/runtime/src:ro
+      - ../server/src:/app/server/src:ro
       - amortized-data:/app/data
     environment:
       - AMORTIZED_DATA_DIR=/app/data
