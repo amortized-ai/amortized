@@ -15,6 +15,7 @@ def _use_temp_db(tmp_path: object) -> None:
     """Use a temporary database for each test."""
     import amortized_runtime.config as config_mod
     import amortized_runtime.db as db_mod
+    import amortized_runtime.db.connection as db_conn_mod
 
     db_path = str(tmp_path) + "/test.db"
     os.environ["AMORTIZED_DB_PATH"] = db_path
@@ -22,6 +23,7 @@ def _use_temp_db(tmp_path: object) -> None:
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
     db_mod.settings = new_settings
+    db_conn_mod.settings = new_settings
 
 
 @pytest.fixture
@@ -43,7 +45,7 @@ def _mock_process() -> AsyncMock:
 
 class TestChatEndpoint:
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_chat_creates_conversation(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -58,7 +60,7 @@ class TestChatEndpoint:
         assert len(data["message"]) > 0
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_chat_with_existing_conversation(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -78,7 +80,7 @@ class TestChatEndpoint:
         assert resp2.json()["conversation_id"] == conv_id
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_chat_returns_message(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -109,7 +111,7 @@ class TestConversationsList:
         assert resp.json() == []
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_list_after_chat(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -124,7 +126,7 @@ class TestConversationsList:
         assert convs[0]["title"] == "Hello!"
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_list_multiple_conversations(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -141,7 +143,7 @@ class TestConversationsList:
 
 class TestConversationDetail:
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_get_conversation_with_messages(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
@@ -169,7 +171,7 @@ class TestConversationDetail:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.routers.agent.process_message", new_callable=_mock_process)
+    @patch("amortized_runtime.api.agent_routes.process_message", new_callable=_mock_process)
     async def test_conversation_accumulates_messages(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:

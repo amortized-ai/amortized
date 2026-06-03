@@ -28,7 +28,7 @@ from amortized_runtime.models import (
     TrainingMetric,
 )
 
-logger = logging.getLogger("amortized_runtime.routers.jobs")
+logger = logging.getLogger("amortized_runtime.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 

@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from amortized_runtime.api import agent_routes, datasets, estimate, flows, jobs, ws
 from amortized_runtime.db import init_db
-from amortized_runtime.routers import agent, datasets, estimate, flows, jobs, ws
 from amortized_runtime.worker import cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
@@ -61,7 +61,7 @@ app.include_router(flows.router)
 app.include_router(estimate.router)
 app.include_router(datasets.router)
 app.include_router(ws.router)
-app.include_router(agent.router)
+app.include_router(agent_routes.router)
 
 
 def _detect_gpu() -> dict[str, object]:

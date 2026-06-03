@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 from amortized_runtime.models import MemoryEstimateRequest, MemoryEstimateResponse
 
-logger = logging.getLogger("amortized_runtime.routers.estimate")
+logger = logging.getLogger("amortized_runtime.api.estimate")
 
 router = APIRouter(prefix="/api/v1/estimate", tags=["estimate"])
 

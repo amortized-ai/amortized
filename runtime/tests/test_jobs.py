@@ -15,6 +15,7 @@ def _use_temp_db(tmp_path: object) -> None:
     """Use a temporary database for each test."""
     import amortized_runtime.config as config_mod
     import amortized_runtime.db as db_mod
+    import amortized_runtime.db.connection as db_conn_mod
 
     db_path = str(tmp_path) + "/test.db"
     os.environ["AMORTIZED_DB_PATH"] = db_path
@@ -22,6 +23,7 @@ def _use_temp_db(tmp_path: object) -> None:
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
     db_mod.settings = new_settings
+    db_conn_mod.settings = new_settings
 
 
 @pytest.fixture
