@@ -92,8 +92,7 @@ class TestCreateSDGJob:
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "flow_id": "knowledge-qa",
-                "dataset_path": "./docs.jsonl",
+                "pipeline": "conversation",
                 "model": "openai/gpt-4o",
             },
         )
@@ -101,7 +100,7 @@ class TestCreateSDGJob:
         data = response.json()
         assert data["type"] == "sdg"
         assert data["status"] == "pending"
-        assert data["config"]["flow_id"] == "knowledge-qa"
+        assert data["config"]["pipeline"] == "conversation"
 
 
 class TestListJobs:
@@ -124,8 +123,7 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "flow_id": "test",
-                "dataset_path": "test",
+                "pipeline": "conversation",
                 "model": "test",
             },
         )
@@ -147,8 +145,7 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "flow_id": "test",
-                "dataset_path": "test",
+                "pipeline": "conversation",
                 "model": "test",
             },
         )
@@ -252,8 +249,7 @@ class TestJobMetrics:
         create_resp = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "flow_id": "test",
-                "dataset_path": "test",
+                "pipeline": "conversation",
                 "model": "test",
             },
         )
@@ -286,13 +282,13 @@ class TestFlows:
     async def test_list_flows(self, client: httpx.AsyncClient) -> None:
         response = await client.get("/api/v1/flows")
         assert response.status_code == 200
-        flows = response.json()
-        assert isinstance(flows, list)
-        # When sdg_hub is installed, flows should have expected fields
-        for flow in flows:
-            assert "id" in flow
-            assert "name" in flow
-            assert "category" in flow
+        pipelines = response.json()
+        assert isinstance(pipelines, list)
+        assert len(pipelines) >= 3
+        for pipeline in pipelines:
+            assert "name" in pipeline
+            assert "description" in pipeline
+            assert "supports_multi_turn" in pipeline
 
 
 class TestEstimate:

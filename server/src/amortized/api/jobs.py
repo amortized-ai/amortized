@@ -34,7 +34,7 @@ from amortized.models import (
     Job,
     JobStatus,
     JobType,
-    SDGJobConfig,
+    SynthJobConfig,
     TrainingJobConfig,
     TrainingMetric,
 )
@@ -61,7 +61,7 @@ async def create_training_job(
 
 @router.post("/sdg", status_code=201, response_model=Job)
 async def create_sdg_job(
-    config: SDGJobConfig,
+    config: SynthJobConfig,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)

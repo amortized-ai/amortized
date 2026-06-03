@@ -47,17 +47,25 @@ class TrainingJobConfig(BaseModel):
     max_seq_len: int | None = Field(None, ge=1, description="Maximum sequence length")
 
 
-class SDGJobConfig(BaseModel):
+class SynthJobConfig(BaseModel):
     """Configuration for a synthetic data generation job."""
 
-    flow_id: str = Field(..., description="SDG flow identifier")
-    dataset_path: str = Field(..., description="Path to input dataset")
-    model: str = Field(..., description="Teacher model name (e.g. openai/gpt-4o)")
-    api_base: str | None = Field(None, description="Teacher model API base URL")
-    api_key: str | None = Field(None, description="Teacher model API key")
-    runtime_params: dict[str, Any] | None = Field(
-        None, description="Per-block runtime parameter overrides"
+    pipeline: str = Field(..., description="Pipeline: conversation, attribute, or transform")
+    model: str = Field(..., description="Teacher model (LiteLLM format)")
+    api_base: str | None = Field(None, description="Model API base URL")
+    api_key: str | None = Field(None, description="Model API key")
+    num_samples: int = Field(100, ge=1, description="Number of samples to generate")
+    max_turns: int = Field(5, ge=1, description="Max turns per conversation")
+    max_concurrent: int = Field(16, ge=1, description="Max concurrent LLM requests")
+    seed_data_path: str | None = Field(None, description="Path to seed dataset")
+    system_prompt: str | None = Field(None, description="System prompt for assistant")
+    user_simulator_prompt: str | None = Field(
+        None, description="System prompt for simulated user"
     )
+    attributes: dict[str, Any] | None = Field(None, description="Attribute constraints")
+    output_format: str = Field("messages", description="Output format")
+    temperature: float = Field(0.7, ge=0, le=2)
+    checkpoint_interval: int = Field(50, ge=1)
 
 
 class ComputeSpec(BaseModel):
@@ -142,15 +150,13 @@ class MemoryEstimateResponse(BaseModel):
     load_in_4bit: bool
 
 
-class FlowInfo(BaseModel):
-    """Information about an available SDG flow."""
+class PipelineInfo(BaseModel):
+    """Information about an available synthesis pipeline."""
 
-    id: str
     name: str
     description: str
-    category: str
-    required_columns: list[str] = Field(default_factory=list)
-    dataset_description: str = ""
+    supports_multi_turn: bool
+    config_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 class TrainingMetric(BaseModel):

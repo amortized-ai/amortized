@@ -7,7 +7,7 @@ from amortized.models import (
     JobStatus,
     JobType,
     MemoryEstimateRequest,
-    SDGJobConfig,
+    SynthJobConfig,
     TrainingJobConfig,
     TrainingMetric,
 )
@@ -68,33 +68,36 @@ class TestTrainingJobConfig:
         assert "model_path" in dumped
 
 
-class TestSDGJobConfig:
+class TestSynthJobConfig:
     def test_minimal_config(self) -> None:
-        config = SDGJobConfig(
-            flow_id="knowledge-qa",
-            dataset_path="./data.jsonl",
+        config = SynthJobConfig(
+            pipeline="conversation",
             model="openai/gpt-4o",
         )
-        assert config.flow_id == "knowledge-qa"
+        assert config.pipeline == "conversation"
         assert config.api_base is None
+        assert config.num_samples == 100
 
     def test_full_config(self) -> None:
-        config = SDGJobConfig(
-            flow_id="rag-eval",
-            dataset_path="/data/docs.jsonl",
+        config = SynthJobConfig(
+            pipeline="attribute",
             model="hosted_vllm/meta-llama/Llama-3.3-70B-Instruct",
             api_base="http://localhost:8000/v1",
             api_key="sk-test",
-            runtime_params={"gen_qa_pairs": {"n": 50, "temperature": 0.7}},
+            num_samples=200,
+            max_turns=10,
+            max_concurrent=8,
+            attributes={"style": "formal", "domain": "science"},
+            temperature=0.5,
         )
-        assert config.runtime_params is not None
-        assert config.runtime_params["gen_qa_pairs"]["n"] == 50
+        assert config.attributes is not None
+        assert config.attributes["style"] == "formal"
+        assert config.max_turns == 10
 
     def test_missing_model(self) -> None:
         with pytest.raises(ValidationError):
-            SDGJobConfig(  # type: ignore[call-arg]
-                flow_id="test",
-                dataset_path="test",
+            SynthJobConfig(  # type: ignore[call-arg]
+                pipeline="conversation",
                 # missing model
             )
 

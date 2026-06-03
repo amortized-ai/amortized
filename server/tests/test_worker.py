@@ -102,8 +102,7 @@ class TestWorkerJobExecution:
             response = await client.post(
                 "/api/v1/jobs/sdg",
                 json={
-                    "flow_id": "knowledge-qa",
-                    "dataset_path": "./docs.jsonl",
+                    "pipeline": "conversation",
                     "model": "openai/gpt-4o",
                 },
             )
