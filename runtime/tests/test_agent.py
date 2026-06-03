@@ -99,7 +99,7 @@ class TestProcessMessage:
     """Test process_message with mocked OpenAI client."""
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_simple_text_response(self, mock_build: MagicMock) -> None:
         client = AsyncMock()
         mock_build.return_value = client
@@ -115,8 +115,8 @@ class TestProcessMessage:
         assert result.proposed_action is None
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.execute_tool")
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat.execute_tool")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_tool_call_then_response(
         self, mock_build: MagicMock, mock_execute: AsyncMock
     ) -> None:
@@ -142,8 +142,8 @@ class TestProcessMessage:
         mock_execute.assert_called_once_with("list_sdg_flows", {})
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent.execute_tool")
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat.execute_tool")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_propose_action(
         self, mock_build: MagicMock, mock_execute: AsyncMock
     ) -> None:
@@ -183,7 +183,7 @@ class TestProcessMessage:
         assert result.proposed_action["label"] == "Start Training"
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_passes_history(self, mock_build: MagicMock) -> None:
         client = AsyncMock()
         mock_build.return_value = client
@@ -212,7 +212,7 @@ class TestStreamMessage:
     """Test stream_message yields correct events."""
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_simple_text_streaming(self, mock_build: MagicMock) -> None:
         client = AsyncMock()
         mock_build.return_value = client
@@ -256,7 +256,7 @@ class TestStreamMessage:
         assert done_events[0].data["full_text"] == "Hello world"
 
     @pytest.mark.asyncio
-    @patch("amortized_runtime.agent._build_client")
+    @patch("amortized_runtime.agent.chat._build_client")
     async def test_streaming_error_handling(self, mock_build: MagicMock) -> None:
         client = AsyncMock()
         mock_build.return_value = client

@@ -8,7 +8,7 @@ from fastapi import APIRouter
 
 from amortized_runtime.models import FlowInfo
 
-logger = logging.getLogger("amortized_runtime.routers.flows")
+logger = logging.getLogger("amortized_runtime.api.flows")
 
 router = APIRouter(prefix="/api/v1/flows", tags=["flows"])
 

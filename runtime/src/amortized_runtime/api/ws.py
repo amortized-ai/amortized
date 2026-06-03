@@ -12,7 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from amortized_runtime.db import get_job
 from amortized_runtime.models import JobStatus, JobType
 
-logger = logging.getLogger("amortized_runtime.routers.ws")
+logger = logging.getLogger("amortized_runtime.api.ws")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["websocket"])
 

@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-logger = logging.getLogger("amortized_runtime.tools")
+logger = logging.getLogger("amortized_runtime.agent.tools")
 
 RUNTIME_BASE = "http://localhost:8000"
 

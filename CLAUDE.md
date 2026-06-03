@@ -15,7 +15,14 @@ amortized/
 │   ├── src/amortized_runtime/
 │   │   ├── __init__.py
 │   │   ├── main.py        # FastAPI app entry point
-│   │   └── config.py      # Settings via pydantic-settings
+│   │   ├── config.py      # Settings via pydantic-settings
+│   │   ├── models.py      # Pydantic models
+│   │   ├── worker.py      # Background job worker
+│   │   ├── core/          # Domain logic (Phase 2)
+│   │   ├── api/           # HTTP routers
+│   │   ├── db/            # Database layer
+│   │   ├── agent/         # AI agent subsystem
+│   │   └── runners/       # Job execution runners
 │   └── tests/
 ├── studio/                # Next.js React frontend
 │   ├── package.json

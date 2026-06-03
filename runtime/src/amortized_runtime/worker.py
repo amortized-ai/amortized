@@ -8,7 +8,6 @@ import os
 import signal
 import subprocess
 import sys
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,8 @@ from typing import Any
 import aiosqlite
 
 import amortized_runtime.config as config_mod
+from amortized_runtime.core.artifacts import register_artifacts_for_job, register_log_artifacts
+from amortized_runtime.db.repository import Repository
 from amortized_runtime.models import JobStatus, JobType
 
 logger = logging.getLogger("amortized_runtime.worker")
@@ -102,7 +103,7 @@ async def _monitor_adopted_process(pid: int, job_id: str, output_dir: str) -> No
 
     if exit_code == 0:
         await _update_job(job_id, status=JobStatus.completed, completed_at=completed_at)
-        await _register_artifacts(job_id, output_dir)
+        await _register_artifacts_for_job(job_id, output_dir)
         logger.info("Adopted job %s completed successfully", job_id)
     elif exit_code is None:
         # Process disappeared, we don't know the exit code — assume success if artifacts exist
@@ -110,7 +111,7 @@ async def _monitor_adopted_process(pid: int, job_id: str, output_dir: str) -> No
         has_artifacts = output_path.exists() and any(output_path.iterdir())
         if has_artifacts:
             await _update_job(job_id, status=JobStatus.completed, completed_at=completed_at)
-            await _register_artifacts(job_id, output_dir)
+            await _register_artifacts_for_job(job_id, output_dir)
             logger.info("Adopted job %s finished (artifacts found, assuming success)", job_id)
         else:
             await _update_job(
@@ -261,115 +262,12 @@ async def _update_job(
         await db.close()
 
 
-async def _register_artifacts(job_id: str, output_dir: str) -> None:
-    """Scan output directory and register found artifacts."""
-    output_path = Path(output_dir)
-    if not output_path.exists():
-        return
-
-    # Define artifact patterns by type
-    artifact_patterns: dict[str, list[str]] = {
-        "adapter_weights": ["adapter_model.safetensors", "adapter_model.bin"],
-        "adapter_config": ["adapter_config.json"],
-        "training_metrics": ["training_metrics.jsonl"],
-        "tokenizer": [
-            "tokenizer.json",
-            "tokenizer_config.json",
-            "special_tokens_map.json",
-            "tokenizer.model",
-        ],
-        "generated_data": ["*.jsonl", "*.parquet"],
-    }
-
+async def _register_artifacts_for_job(job_id: str, output_dir: str) -> None:
+    """Scan output directory and register found artifacts via core layer."""
     db = await _get_db()
     try:
-        now = datetime.now(UTC).isoformat()
-
-        for artifact_type, patterns in artifact_patterns.items():
-            for pattern in patterns:
-                if "*" in pattern:
-                    # Glob pattern
-                    for file_path in output_path.glob(pattern):
-                        if file_path.is_file():
-                            await db.execute(
-                                """INSERT INTO artifacts
-                                   (id, job_id, artifact_type, path, size, created_at)
-                                   VALUES (?, ?, ?, ?, ?, ?)""",
-                                (
-                                    str(uuid.uuid4()),
-                                    job_id,
-                                    artifact_type,
-                                    str(file_path),
-                                    file_path.stat().st_size,
-                                    now,
-                                ),
-                            )
-                else:
-                    file_path = output_path / pattern
-                    if file_path.is_file():
-                        await db.execute(
-                            """INSERT INTO artifacts
-                               (id, job_id, artifact_type, path, size, created_at)
-                               VALUES (?, ?, ?, ?, ?, ?)""",
-                            (
-                                str(uuid.uuid4()),
-                                job_id,
-                                artifact_type,
-                                str(file_path),
-                                file_path.stat().st_size,
-                                now,
-                            ),
-                        )
-
-        # Scan checkpoint-N/ subdirectories (e.g. checkpoint-500/, checkpoint-546/)
-        # These contain adapter weights, configs, and tokenizer files from training
-        for subdir in sorted(output_path.iterdir()):
-            if not subdir.is_dir() or not subdir.name.startswith("checkpoint-"):
-                continue
-            for artifact_type, patterns in artifact_patterns.items():
-                # Skip generated_data glob patterns for checkpoint subdirs
-                if artifact_type == "generated_data":
-                    continue
-                for pattern in patterns:
-                    if "*" in pattern:
-                        continue
-                    sub_file = subdir / pattern
-                    if sub_file.is_file():
-                        await db.execute(
-                            """INSERT INTO artifacts
-                               (id, job_id, artifact_type, path, size, created_at)
-                               VALUES (?, ?, ?, ?, ?, ?)""",
-                            (
-                                str(uuid.uuid4()),
-                                job_id,
-                                artifact_type,
-                                str(sub_file),
-                                sub_file.stat().st_size,
-                                now,
-                            ),
-                        )
-
-        # Also check checkpoints subdirectory for SDG output
-        checkpoint_dir = output_path / "checkpoints"
-        if checkpoint_dir.exists():
-            for file_path in checkpoint_dir.glob("*.jsonl"):
-                if file_path.is_file():
-                    await db.execute(
-                        """INSERT INTO artifacts
-                           (id, job_id, artifact_type, path, size, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        (
-                            str(uuid.uuid4()),
-                            job_id,
-                            "checkpoint",
-                            str(file_path),
-                            file_path.stat().st_size,
-                            now,
-                        ),
-                    )
-
-        await db.commit()
-        logger.info("Registered artifacts for job %s", job_id)
+        repo = Repository(db)
+        await register_artifacts_for_job(repo, job_id, output_dir)
     finally:
         await db.close()
 
@@ -393,27 +291,11 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 
 
 async def _register_log_artifacts(job_id: str, output_dir: str) -> None:
-    """Register stdout.log and stderr.log as log-type artifacts."""
+    """Register stdout.log and stderr.log as log-type artifacts via core layer."""
     db = await _get_db()
     try:
-        now = datetime.now(UTC).isoformat()
-        for log_name in ("stdout.log", "stderr.log"):
-            log_path = Path(output_dir) / log_name
-            if log_path.is_file() and log_path.stat().st_size > 0:
-                await db.execute(
-                    """INSERT INTO artifacts
-                       (id, job_id, artifact_type, path, size, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (
-                        str(uuid.uuid4()),
-                        job_id,
-                        "log",
-                        str(log_path),
-                        log_path.stat().st_size,
-                        now,
-                    ),
-                )
-        await db.commit()
+        repo = Repository(db)
+        await register_log_artifacts(repo, job_id, output_dir)
     finally:
         await db.close()
 
@@ -513,8 +395,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 status=JobStatus.completed,
                 completed_at=completed_at,
             )
-            # Register artifacts
-            await _register_artifacts(job_id, output_dir)
+            await _register_artifacts_for_job(job_id, output_dir)
             logger.info("Job %s completed successfully", job_id)
         elif returncode == -signal.SIGTERM or returncode == -signal.SIGKILL:
             await _update_job(
