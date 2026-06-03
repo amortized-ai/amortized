@@ -41,27 +41,29 @@ class Job:
 
     @property
     def id(self) -> str:
-        return self._data["id"]
+        return str(self._data["id"])
 
     @property
     def type(self) -> str:
-        return self._data["type"]
+        return str(self._data["type"])
 
     @property
     def status(self) -> str:
-        return self._data["status"]
+        return str(self._data["status"])
 
     @property
     def config(self) -> dict[str, Any]:
-        return self._data.get("config", {})
+        result: dict[str, Any] = self._data.get("config", {})
+        return result
 
     @property
     def metadata(self) -> dict[str, Any]:
-        return self._data.get("metadata", {})
+        result: dict[str, Any] = self._data.get("metadata", {})
+        return result
 
     @property
     def created_at(self) -> str:
-        return self._data.get("created_at", "")
+        return str(self._data.get("created_at", ""))
 
     @property
     def error(self) -> str | None:
@@ -69,7 +71,8 @@ class Job:
 
     @property
     def artifacts(self) -> list[dict[str, Any]]:
-        return self._data.get("_artifacts", [])
+        result: list[dict[str, Any]] = self._data.get("_artifacts", [])
+        return result
 
     @property
     def raw(self) -> dict[str, Any]:

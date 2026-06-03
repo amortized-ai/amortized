@@ -19,8 +19,9 @@ def run_sdg(config: dict[str, Any]) -> None:
     try:
         import io
 
-        from datasets import Dataset
         from sdg_hub import Flow, FlowRegistry
+
+        from datasets import Dataset  # type: ignore[attr-defined]
 
         # discover_flows() prints a Rich table to stdout — suppress it
         old_stdout = sys.stdout

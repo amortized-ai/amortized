@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 from amortized.backends import (
     BackendHandle,
@@ -16,7 +17,7 @@ from amortized.backends import (
 logger = logging.getLogger("amortized.backends.ssh")
 
 
-def _require_asyncssh():  # type: ignore[no-untyped-def]
+def _require_asyncssh() -> Any:
     try:
         import asyncssh
 
@@ -45,7 +46,7 @@ class SSHBackend:
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
 
-    async def _connect(self):  # type: ignore[no-untyped-def]
+    async def _connect(self) -> Any:
         asyncssh = _require_asyncssh()
         kwargs: dict[str, object] = {
             "host": self._host,
@@ -79,7 +80,7 @@ class SSHBackend:
             )
 
             result = await conn.run(full_cmd, check=True)
-            pid = int(result.stdout.strip())  # type: ignore[union-attr]
+            pid = int(result.stdout.strip())
 
             logger.info(
                 "Started SSH job %s on %s with pid %d", spec.job_id, self._host, pid
@@ -103,7 +104,7 @@ class SSHBackend:
             result = await conn.run(
                 f"kill -0 {handle.remote_pid} 2>/dev/null && echo alive || echo dead"
             )
-            output = result.stdout.strip()  # type: ignore[union-attr]
+            output = result.stdout.strip()
 
             if output == "alive":
                 return BackendStatus(running=True)
@@ -111,7 +112,7 @@ class SSHBackend:
             exit_result = await conn.run(
                 f"wait {handle.remote_pid} 2>/dev/null; echo $?"
             )
-            exit_code_str = exit_result.stdout.strip()  # type: ignore[union-attr]
+            exit_code_str = exit_result.stdout.strip()
             try:
                 exit_code = int(exit_code_str)
             except ValueError:
@@ -139,7 +140,7 @@ class SSHBackend:
         conn = await self._connect()
         try:
             result = await conn.run(f"cat {handle.remote_dir}/stdout.log 2>/dev/null || true")
-            output = result.stdout or ""  # type: ignore[union-attr]
+            output = result.stdout or ""
             for line in output.splitlines():
                 yield line
         finally:
