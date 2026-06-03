@@ -22,6 +22,14 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Synthetic data generation job",
         "schema_file": "sdg.json",
     },
+    "inference": {
+        "description": "vLLM batch inference job",
+        "schema_file": "inference.json",
+    },
+    "eval": {
+        "description": "LLM-as-judge evaluation job",
+        "schema_file": "eval.json",
+    },
 }
 
 _schema_cache: dict[str, dict[str, Any]] = {}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvalJobConfig",
+  "description": "Configuration for an LLM-as-judge evaluation job.",
+  "type": "object",
+  "required": ["model", "judge_model", "dataset"],
+  "additionalProperties": false,
+  "properties": {
+    "model": {
+      "type": "string",
+      "description": "Model to evaluate (HuggingFace path or artifact reference)"
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Frontier model used as judge (e.g. 'openai/gpt-4o')"
+    },
+    "dataset": {
+      "type": "string",
+      "description": "Path to evaluation dataset"
+    },
+    "judge_prompt": {
+      "type": "string",
+      "description": "Custom prompt template for the judge model"
+    },
+    "max_samples": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of samples to evaluate"
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0.0,
+      "default": 0.0,
+      "description": "Sampling temperature for the judge model"
+    }
+  }
+}

@@ -13,6 +13,8 @@ class JobType(StrEnum):
 
     training = "training"
     sdg = "sdg"
+    inference = "inference"
+    eval = "eval"
 
 
 class JobStatus(StrEnum):

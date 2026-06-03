@@ -43,10 +43,12 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
 class TestJobTypeRegistry:
     def test_list_job_types(self) -> None:
         types = list_job_types()
-        assert len(types) == 2
+        assert len(types) == 4
         type_names = [t["type"] for t in types]
         assert "training" in type_names
         assert "sdg" in type_names
+        assert "inference" in type_names
+        assert "eval" in type_names
 
     def test_get_schema_training(self) -> None:
         schema = get_schema("training")
@@ -93,6 +95,46 @@ class TestJobTypeRegistry:
         })
         assert errors == []
 
+    def test_get_schema_inference(self) -> None:
+        schema = get_schema("inference")
+        assert schema["title"] == "InferenceJobConfig"
+        assert "model_path" in schema["properties"]
+        assert "input_data" in schema["required"]
+        assert "output_path" in schema["required"]
+
+    def test_get_schema_eval(self) -> None:
+        schema = get_schema("eval")
+        assert schema["title"] == "EvalJobConfig"
+        assert "model" in schema["required"]
+        assert "judge_model" in schema["required"]
+        assert "dataset" in schema["required"]
+
+    def test_validate_config_valid_inference(self) -> None:
+        errors = validate_config("inference", {
+            "model_path": "test/model",
+            "input_data": "./input.jsonl",
+            "output_path": "./output.jsonl",
+        })
+        assert errors == []
+
+    def test_validate_config_valid_eval(self) -> None:
+        errors = validate_config("eval", {
+            "model": "test/model",
+            "judge_model": "openai/gpt-4o",
+            "dataset": "./eval_data.jsonl",
+        })
+        assert errors == []
+
+    def test_validate_config_inference_missing_required(self) -> None:
+        errors = validate_config("inference", {"model_path": "test"})
+        assert len(errors) > 0
+        assert any("input_data" in e for e in errors)
+
+    def test_validate_config_eval_missing_required(self) -> None:
+        errors = validate_config("eval", {"model": "test"})
+        assert len(errors) > 0
+        assert any("judge_model" in e for e in errors)
+
     def test_validate_config_unknown_type(self) -> None:
         with pytest.raises(UnknownJobTypeError):
             validate_config("unknown", {})
@@ -129,6 +171,38 @@ class TestUniversalJobEndpoint:
         data = response.json()
         assert data["type"] == "sdg"
         assert data["status"] == "pending"
+
+    @pytest.mark.asyncio
+    async def test_create_inference_job(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs", json={
+            "type": "inference",
+            "config": {
+                "model_path": "test/model",
+                "input_data": "./input.jsonl",
+                "output_path": "./output.jsonl",
+            },
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["type"] == "inference"
+        assert data["status"] == "pending"
+        assert data["config"]["model_path"] == "test/model"
+
+    @pytest.mark.asyncio
+    async def test_create_eval_job(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs", json={
+            "type": "eval",
+            "config": {
+                "model": "test/model",
+                "judge_model": "openai/gpt-4o",
+                "dataset": "./eval_data.jsonl",
+            },
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["type"] == "eval"
+        assert data["status"] == "pending"
+        assert data["config"]["judge_model"] == "openai/gpt-4o"
 
     @pytest.mark.asyncio
     async def test_create_job_with_metadata(self, client: httpx.AsyncClient) -> None:
@@ -200,10 +274,12 @@ class TestJobTypesEndpoints:
         response = await client.get("/api/v1/job-types")
         assert response.status_code == 200
         types = response.json()
-        assert len(types) == 2
+        assert len(types) == 4
         type_names = [t["type"] for t in types]
         assert "training" in type_names
         assert "sdg" in type_names
+        assert "inference" in type_names
+        assert "eval" in type_names
 
     @pytest.mark.asyncio
     async def test_get_training_schema(self, client: httpx.AsyncClient) -> None:
@@ -219,6 +295,20 @@ class TestJobTypesEndpoints:
         assert response.status_code == 200
         schema = response.json()
         assert schema["title"] == "SDGJobConfig"
+
+    @pytest.mark.asyncio
+    async def test_get_inference_schema(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/inference/schema")
+        assert response.status_code == 200
+        schema = response.json()
+        assert schema["title"] == "InferenceJobConfig"
+
+    @pytest.mark.asyncio
+    async def test_get_eval_schema(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/eval/schema")
+        assert response.status_code == 200
+        schema = response.json()
+        assert schema["title"] == "EvalJobConfig"
 
     @pytest.mark.asyncio
     async def test_get_unknown_schema(self, client: httpx.AsyncClient) -> None:

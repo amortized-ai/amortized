@@ -153,10 +153,14 @@ async def cleanup_orphaned_jobs() -> None:
 
             # Determine output_dir if not stored
             if not output_dir:
-                if job_type == JobType.training.value:
-                    output_dir = str(config_mod.settings.data_dir / "training_output" / job_id)
-                else:
-                    output_dir = str(config_mod.settings.data_dir / "sdg_output" / job_id)
+                orphan_dir_names = {
+                    JobType.training.value: "training_output",
+                    JobType.sdg.value: "sdg_output",
+                    JobType.inference.value: "inference_output",
+                    JobType.eval.value: "eval_output",
+                }
+                dir_name = orphan_dir_names.get(job_type, f"{job_type}_output")
+                output_dir = str(config_mod.settings.data_dir / dir_name / job_id)
 
             alive = False
             if pid is not None:
@@ -279,19 +283,34 @@ async def _register_artifacts_for_job(job_id: str, output_dir: str) -> None:
         await db.close()
 
 
+_RUNNER_MODULES: dict[str, str] = {
+    JobType.training.value: "amortized.runners.training_runner",
+    JobType.sdg.value: "amortized.runners.sdg_runner",
+    JobType.inference.value: "amortized.runners.inference_runner",
+    JobType.eval.value: "amortized.runners.eval_runner",
+}
+
+
 def _build_runner_command(job: dict[str, Any]) -> list[str]:
     """Build the subprocess command for a job."""
     config = job["config"]
+    job_type = job["type"]
 
-    if job["type"] == JobType.training.value:
-        module = "amortized.runners.training_runner"
-    else:
-        # SDG job — inject output_dir into config for the runner
-        module = "amortized.runners.sdg_runner"
+    module = _RUNNER_MODULES.get(job_type)
+    if module is None:
+        raise ValueError(f"No runner module for job type: {job_type}")
+
+    if job_type == JobType.sdg.value:
         if "output_dir" not in config and job.get("output_dir"):
             config = {**config, "output_dir": job["output_dir"]}
         elif "output_dir" not in config:
             output_dir = str(config_mod.settings.data_dir / "sdg_output" / job["id"])
+            config = {**config, "output_dir": output_dir}
+    elif job_type == JobType.eval.value:
+        if "output_dir" not in config and job.get("output_dir"):
+            config = {**config, "output_dir": job["output_dir"]}
+        elif "output_dir" not in config:
+            output_dir = str(config_mod.settings.data_dir / "eval_output" / job["id"])
             config = {**config, "output_dir": output_dir}
 
     return [sys.executable, "-m", module, json.dumps(config)]
@@ -314,17 +333,15 @@ async def _run_job(job: dict[str, Any]) -> None:
     job_id = job["id"]
     now = datetime.now(UTC).isoformat()
 
-    # Determine output_dir — always include job_id to avoid collisions
-    if job["type"] == JobType.training.value:
-        base_dir = job.get("output_dir") or str(
-            config_mod.settings.data_dir / "training_output"
-        )
-        output_dir = os.path.join(base_dir, job_id)
-    else:
-        base_dir = job.get("output_dir") or str(
-            config_mod.settings.data_dir / "sdg_output"
-        )
-        output_dir = os.path.join(base_dir, job_id)
+    output_dir_names = {
+        JobType.training.value: "training_output",
+        JobType.sdg.value: "sdg_output",
+        JobType.inference.value: "inference_output",
+        JobType.eval.value: "eval_output",
+    }
+    dir_name = output_dir_names.get(job["type"], f"{job['type']}_output")
+    base_dir = job.get("output_dir") or str(config_mod.settings.data_dir / dir_name)
+    output_dir = os.path.join(base_dir, job_id)
 
     # Ensure output_dir is set in DB
     db = await _get_db()
@@ -341,6 +358,9 @@ async def _run_job(job: dict[str, Any]) -> None:
     config = job["config"]
     if job["type"] == JobType.training.value:
         config = {**config, "ckpt_output_dir": output_dir}
+    elif job["type"] == JobType.inference.value:
+        if "output_path" not in config or not config["output_path"]:
+            config = {**config, "output_path": os.path.join(output_dir, "results.jsonl")}
     elif "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
 
