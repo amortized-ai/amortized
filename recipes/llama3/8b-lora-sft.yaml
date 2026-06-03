@@ -1,0 +1,5 @@
+extends: base/lora-sft
+description: Llama 3.1 8B LoRA SFT — requires A100 or better
+config:
+  model_path: meta-llama/Llama-3.1-8B-Instruct
+  max_seq_len: 8192

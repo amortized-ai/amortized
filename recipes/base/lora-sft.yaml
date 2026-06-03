@@ -1,0 +1,10 @@
+type: training
+description: Base LoRA SFT recipe — good defaults for most models
+config:
+  num_epochs: 3
+  learning_rate: 2e-5
+  lora_r: 16
+  lora_alpha: 32
+  micro_batch_size: 2
+  max_seq_len: 2048
+  bf16: true

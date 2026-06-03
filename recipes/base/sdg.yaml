@@ -1,0 +1,5 @@
+type: sdg
+description: Base synthetic data generation recipe
+config:
+  max_concurrency: 10
+  save_freq: 50

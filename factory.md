@@ -10,9 +10,9 @@
 
 | Dimension | Script | Description |
 |---|---|---|
-| tests | `eval/score.py` | Run pytest in runtime/ and check exit code |
-| lint | `eval/score.py` | Run ruff check in runtime/ |
-| type_check | `eval/score.py` | Run mypy in runtime/ |
+| tests | `eval/score.py` | Run pytest in server/ and check exit code |
+| lint | `eval/score.py` | Run ruff check in server/ |
+| type_check | `eval/score.py` | Run mypy in server/ |
 | capability_surface | `eval/score.py` | Count API endpoints defined |
 | observability | `eval/score.py` | Check for logging setup |
 
@@ -20,15 +20,16 @@
 
 - `CLAUDE.md`
 - `factory.md`
-- `runtime/src/**`
-- `runtime/tests/**`
-- `runtime/pyproject.toml`
+- `server/src/**`
+- `server/tests/**`
+- `server/pyproject.toml`
 - `studio/src/**`
 - `studio/package.json`
 - `studio/tsconfig.json`
 - `studio/next.config.mjs`
 - `studio/tailwind.config.ts`
 - `studio/postcss.config.mjs`
+- `containers/**`
 - `docker/**`
 - `.github/**`
 

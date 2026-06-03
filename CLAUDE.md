@@ -10,9 +10,9 @@ Amortized is a fully open-source, on-premises studio for optimizing AI agent wor
 amortized/
 ├── CLAUDE.md              # This file — project conventions
 ├── factory.md             # Factory configuration and eval dimensions
-├── runtime/               # Python FastAPI backend
+├── server/                # Python FastAPI backend
 │   ├── pyproject.toml
-│   ├── src/amortized_runtime/
+│   ├── src/amortized/
 │   │   ├── __init__.py
 │   │   ├── main.py        # FastAPI app entry point
 │   │   ├── config.py      # Settings via pydantic-settings
@@ -30,7 +30,7 @@ amortized/
 │   ├── next.config.mjs
 │   ├── tailwind.config.ts
 │   └── src/app/
-├── .claude/skills/        # Claude Code skills for runtime API operations
+├── .claude/skills/        # Claude Code skills for server API operations
 ├── docker/                # Container definitions
 │   └── Dockerfile.runtime
 ├── eval/                  # Factory eval harness
@@ -41,12 +41,12 @@ amortized/
 
 ## Dev Commands
 
-### Runtime (Python FastAPI backend)
+### Server (Python FastAPI backend)
 
 ```bash
-cd runtime
+cd server
 pip install -e '.[dev]'
-uvicorn amortized_runtime.main:app --reload
+uvicorn amortized.main:app --reload
 ```
 
 - API runs at http://localhost:8000
@@ -63,13 +63,13 @@ npm run dev
 - Dev server runs at http://localhost:3000
 - Proxies /api requests to the runtime backend at http://localhost:8000
 
-## Python Conventions (runtime/)
+## Python Conventions (server/)
 
 - **Linter**: `ruff check src/ tests/` — enforced in CI
 - **Formatter**: `ruff format src/ tests/`
 - **Type checker**: `mypy src/` — strict mode enabled
 - **Tests**: `pytest` — use `pytest-asyncio` for async tests
-- **Package structure**: src layout (`src/amortized_runtime/`)
+- **Package structure**: src layout (`src/amortized/`)
 - **Settings**: Use `pydantic-settings` for configuration (env vars, .env files)
 - **API versioning**: All endpoints under `/api/v1/`
 
