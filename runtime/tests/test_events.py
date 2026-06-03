@@ -136,8 +136,9 @@ class TestSSEStreaming:
         """
         from unittest.mock import AsyncMock
 
-        from amortized_runtime.api.events import get_job_events
         from sse_starlette.sse import EventSourceResponse
+
+        from amortized_runtime.api.events import get_job_events
 
         job_id = await _create_training_job(client)
 
