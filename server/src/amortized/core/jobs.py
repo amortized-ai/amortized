@@ -85,6 +85,24 @@ async def create_job(
     return await repo.get_job(job_id) or row
 
 
+async def validate_job(
+    *,
+    job_type: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate a job config without creating it. Returns dry-run result."""
+    try:
+        schema_errors = validate_config(job_type, config)
+    except UnknownJobTypeError as exc:
+        raise exc
+    semantic_errors = await validate_semantic(job_type, config)
+    all_errors = schema_errors + semantic_errors
+    return {
+        "valid": not all_errors,
+        "errors": all_errors,
+    }
+
+
 async def get_job(repo: Repository, job_id: str) -> dict[str, Any] | None:
     return await repo.get_job(job_id)
 

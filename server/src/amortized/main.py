@@ -8,8 +8,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from amortized.api import (
     agent_routes,
@@ -29,6 +32,7 @@ from amortized.backends.local import LocalBackend
 from amortized.core.compute import register_backend
 from amortized.db import init_db
 from amortized.mcp.server import create_mcp_server
+from amortized.models import HealthResponse
 from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
@@ -77,6 +81,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    if isinstance(exc.detail, list):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": f"http_{exc.status_code}",
+                "message": "Request failed",
+                "details": [{"msg": str(e)} for e in exc.detail],
+            },
+        )
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "code": f"http_{exc.status_code}",
+            "message": detail,
+            "details": [],
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    _request: Request, exc: RequestValidationError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "validation_error",
+            "message": "Request validation failed",
+            "details": [
+                {"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]}
+                for e in exc.errors()
+            ],
+        },
+    )
+
+
 app.include_router(jobs.router)
 app.include_router(job_types.router)
 app.include_router(job_types.job_types_router)
@@ -122,7 +165,7 @@ def _detect_gpu() -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/health")
+@app.get("/api/v1/health", response_model=HealthResponse)
 async def health() -> dict[str, object]:
     """Health check endpoint with GPU info."""
     logger.info("Health check requested")

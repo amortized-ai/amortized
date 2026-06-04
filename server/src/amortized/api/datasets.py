@@ -14,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from starlette.responses import Response
 
+import amortized.config as _config_mod
+
 logger = logging.getLogger("amortized.datasets")
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
@@ -26,7 +28,12 @@ def _add_deprecation_headers(response: Response) -> None:
     response.headers["Sunset"] = "2027-01-01"
     response.headers["Link"] = '</api/v1/artifacts?type=dataset>; rel="successor-version"'
 
-DATASETS_DIR = Path("datasets")
+
+def _get_datasets_dir() -> Path:
+    configured = _config_mod.settings.datasets_dir
+    if configured is not None:
+        return configured
+    return _config_mod.settings.data_dir / "datasets"
 
 # Column patterns that can be auto-detected and converted to messages format
 _COLUMN_PATTERNS: list[tuple[str, str]] = [
@@ -82,8 +89,9 @@ async def create_dataset(
     if not filename.endswith(".jsonl"):
         filename += ".jsonl"
 
-    DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = DATASETS_DIR / filename
+    datasets_dir = _get_datasets_dir()
+    datasets_dir.mkdir(parents=True, exist_ok=True)
+    file_path = datasets_dir / filename
 
     with open(file_path, "w") as f:
         for row in req.rows:
@@ -207,8 +215,9 @@ async def convert_dataset(
     if not output_filename.endswith(".jsonl"):
         output_filename += ".jsonl"
 
-    DATASETS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = DATASETS_DIR / output_filename
+    datasets_dir = _get_datasets_dir()
+    datasets_dir.mkdir(parents=True, exist_ok=True)
+    output_path = datasets_dir / output_filename
 
     with open(output_path, "w") as f:
         for row in converted:

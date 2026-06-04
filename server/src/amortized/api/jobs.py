@@ -31,6 +31,7 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
     Artifact,
+    ArtifactPreview,
     Job,
     JobStatus,
     JobType,
@@ -148,7 +149,7 @@ async def get_job_artifacts(
     return [Artifact(**r) for r in rows]
 
 
-@router.get("/{job_id}/artifacts/{artifact_id}/preview")
+@router.get("/{job_id}/artifacts/{artifact_id}/preview", response_model=ArtifactPreview)
 async def preview_artifact(
     job_id: str,
     artifact_id: str,

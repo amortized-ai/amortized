@@ -231,7 +231,7 @@ class TestUniversalJobEndpoint:
             "dry_run": False,
         })
         assert response.status_code == 400
-        assert "Unknown job type" in response.json()["detail"]
+        assert "Unknown job type" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_create_job_validation_error(self, client: httpx.AsyncClient) -> None:
@@ -241,9 +241,9 @@ class TestUniversalJobEndpoint:
             "dry_run": False,
         })
         assert response.status_code == 422
-        errors = response.json()["detail"]
-        assert isinstance(errors, list)
-        assert len(errors) > 0
+        body = response.json()
+        assert body["code"] == "http_422"
+        assert len(body["details"]) > 0
 
     @pytest.mark.asyncio
     async def test_create_job_invalid_field_type(self, client: httpx.AsyncClient) -> None:

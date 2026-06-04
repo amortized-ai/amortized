@@ -174,9 +174,18 @@ async def chat_stream(
 
     # 3. Replay collected events to the client via SSE
     async def replay_events() -> AsyncIterator[dict[str, str]]:
-        yield {"event": "metadata", "data": json.dumps({"conversation_id": conversation_id})}
+        meta = {"conversation_id": conversation_id}
+        yield {
+            "event": "metadata",
+            "id": str(uuid.uuid4()),
+            "data": json.dumps(meta),
+        }
         for evt in events:
-            yield {"event": str(evt["type"]), "data": json.dumps(evt["data"])}
+            yield {
+                "event": str(evt["type"]),
+                "id": str(uuid.uuid4()),
+                "data": json.dumps(evt["data"]),
+            }
 
     return EventSourceResponse(replay_events())
 

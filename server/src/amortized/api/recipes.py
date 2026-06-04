@@ -12,14 +12,14 @@ from amortized.core.jobs import create_job as core_create_job
 from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Job, JobType
+from amortized.models import Job, JobType, RecipeSummary
 
 logger = logging.getLogger("amortized.api.recipes")
 
 router = APIRouter(prefix="/api/v1/recipes", tags=["recipes"])
 
 
-@router.get("")
+@router.get("", response_model=list[RecipeSummary])
 async def get_recipes() -> list[dict[str, Any]]:
     return list_recipes()
 

@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 import amortized.config as config_mod
@@ -19,6 +19,9 @@ from amortized.db.repository import Repository
 logger = logging.getLogger("amortized.api.events")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["events"])
+
+_SSE_RETRY_MS = 3000
+_KEEPALIVE_INTERVAL = 15
 
 
 def _parse_types(types: str | None) -> list[str] | None:
@@ -34,6 +37,7 @@ async def get_job_events(
     since: str | None = Query(None, description="ISO timestamp — return events after this time"),
     types: str | None = Query(None, description="Comma-separated event types to filter"),
     stream: bool = Query(False, description="Enable SSE streaming"),
+    last_event_id: str | None = Header(None, alias="Last-Event-ID"),
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Any:
     repo = Repository(db)
@@ -48,9 +52,15 @@ async def get_job_events(
         events = await core_list_events(repo, job_id, since=since, types=type_list)
         return events
 
+    cursor = last_event_id or since
+
     async def event_generator() -> AsyncGenerator[dict[str, str], None]:
-        cursor = since
+        nonlocal cursor
         db_path = str(config_mod.settings.db_path)
+
+        yield {"event": "retry", "data": "", "retry": _SSE_RETRY_MS}  # type: ignore[dict-item]
+
+        ticks_since_event = 0
         while True:
             if await request.is_disconnected():
                 break
@@ -65,12 +75,26 @@ async def get_job_events(
             finally:
                 await db_inner.close()
 
-            for event in events:
-                cursor = event["timestamp"]
-                yield {
-                    "event": event["type"],
-                    "data": json.dumps(event),
-                }
+            if events:
+                ticks_since_event = 0
+                for event in events:
+                    event_id = event["id"]
+                    cursor = event["timestamp"]
+                    yield {
+                        "id": event_id,
+                        "event": event["type"],
+                        "data": json.dumps({
+                            "job_id": job_id,
+                            "timestamp": event["timestamp"],
+                            "type": event["type"],
+                            "data": event.get("data", {}),
+                        }),
+                    }
+            else:
+                ticks_since_event += 1
+                if ticks_since_event * 2 >= _KEEPALIVE_INTERVAL:
+                    yield {"comment": "keepalive"}
+                    ticks_since_event = 0
 
             await asyncio.sleep(2)
 
