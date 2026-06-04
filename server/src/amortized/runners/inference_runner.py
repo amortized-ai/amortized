@@ -8,7 +8,16 @@ import json
 import os
 import sys
 import time
+import types
 from typing import Any
+
+_vllm: types.ModuleType | None
+try:
+    import vllm  # type: ignore[import-not-found]
+
+    _vllm = vllm
+except ImportError:
+    _vllm = None
 
 
 def run_inference(config: dict[str, Any]) -> None:
@@ -16,15 +25,9 @@ def run_inference(config: dict[str, Any]) -> None:
     output_path = str(config["output_path"])
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    try:
-        from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
-    except ImportError:
-        LLM = None  # noqa: N806
-        SamplingParams = None  # noqa: N806
-
-    if LLM is not None and SamplingParams is not None:
-        llm = LLM(model=config["model_path"])
-        params = SamplingParams(
+    if _vllm is not None:
+        llm = _vllm.LLM(model=config["model_path"])
+        params = _vllm.SamplingParams(
             temperature=float(config.get("temperature", 0.0) or 0.0),
             max_tokens=int(config.get("max_tokens", 2048) or 2048),
         )

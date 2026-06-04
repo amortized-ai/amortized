@@ -8,7 +8,16 @@ import json
 import os
 import sys
 import time
+import types
 from typing import Any
+
+_litellm: types.ModuleType | None
+try:
+    import litellm
+
+    _litellm = litellm
+except ImportError:
+    _litellm = None
 
 
 def run_eval(config: dict[str, Any]) -> None:
@@ -16,13 +25,8 @@ def run_eval(config: dict[str, Any]) -> None:
     output_dir = str(config.get("output_dir", "./eval_output"))
     os.makedirs(output_dir, exist_ok=True)
 
-    try:
-        import litellm  # type: ignore[import-not-found]
-    except ImportError:
-        litellm = None
-
-    if litellm is not None:
-        _run_litellm_eval(config, output_dir, litellm)
+    if _litellm is not None:
+        _run_litellm_eval(config, output_dir, _litellm)
     else:
         _simulate_eval(config, output_dir)
 
