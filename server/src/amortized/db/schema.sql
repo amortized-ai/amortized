@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     completed_at TEXT,
     error TEXT,
     pid INTEGER,
-    output_dir TEXT
+    output_dir TEXT,
+    backend_handle TEXT
 );
 
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
     name TEXT NOT NULL DEFAULT '',
     location TEXT NOT NULL DEFAULT '',
     metadata TEXT NOT NULL DEFAULT '{}',
+    producer_job TEXT,
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
@@ -53,4 +55,10 @@ CREATE TABLE IF NOT EXISTS events (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type);
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_job_id ON events(job_id);
