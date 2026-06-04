@@ -75,6 +75,10 @@ class SSHBackend:
                 f"http://{control_plane_host}:{control_plane_port}/api/v1/events/ingest"
             ),
         }
+        if spec.resources.nodes > 1:
+            amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
+            amortized_env["RANK"] = "0"
+            amortized_env["LOCAL_RANK"] = "0"
         filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
         merged_env = {**amortized_env, **filtered_spec_env}
 

@@ -1,5 +1,5 @@
-"""Amortized Python SDK — async client for the Amortized API."""
+"""Amortized Python SDK — async and sync clients for the Amortized API."""
 
-from amortized.sdk.client import Client, Job
+from amortized.sdk.client import Client, Job, SyncClient
 
-__all__ = ["Client", "Job"]
+__all__ = ["Client", "Job", "SyncClient"]
