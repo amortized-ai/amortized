@@ -17,6 +17,7 @@ from amortized.api import (
     compute,
     datasets,
     estimate,
+    event_ingest,
     events,
     flows,
     job_types,
@@ -28,7 +29,7 @@ from amortized.backends.local import LocalBackend
 from amortized.core.compute import register_backend
 from amortized.db import init_db
 from amortized.mcp.server import create_mcp_server
-from amortized.worker import cleanup_orphaned_jobs, worker_loop
+from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,15 +46,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     register_backend(LocalBackend())
     logger.info("Amortized runtime started")
 
-    # Start background worker
+    # Start background worker and heartbeat monitor
     worker_task = asyncio.create_task(worker_loop())
+    heartbeat_task = asyncio.create_task(_monitor_heartbeats())
 
     yield
 
-    # Shutdown worker
+    # Shutdown worker and heartbeat monitor
     worker_task.cancel()
+    heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
+    with contextlib.suppress(asyncio.CancelledError):
+        await heartbeat_task
     logger.info("Amortized runtime shutting down")
 
 
@@ -76,6 +81,7 @@ app.include_router(jobs.router)
 app.include_router(job_types.router)
 app.include_router(job_types.job_types_router)
 app.include_router(events.router)
+app.include_router(event_ingest.router)
 app.include_router(artifacts.router)
 app.include_router(flows.router)
 app.include_router(estimate.router)
