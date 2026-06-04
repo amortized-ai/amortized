@@ -51,7 +51,7 @@ class TestCreateTrainingJob:
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "training"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
         assert data["config"]["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
         assert data["id"]
 
@@ -100,7 +100,7 @@ class TestCreateSDGJob:
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "sdg"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
         assert data["config"]["flow_id"] == "knowledge-qa"
 
 
@@ -126,7 +126,7 @@ class TestListJobs:
             json={
                 "flow_id": "test",
                 "dataset_path": "test",
-                "model": "test",
+                "model": "openai/gpt-4o",
             },
         )
         response = await client.get("/api/v1/jobs")
@@ -149,7 +149,7 @@ class TestListJobs:
             json={
                 "flow_id": "test",
                 "dataset_path": "test",
-                "model": "test",
+                "model": "openai/gpt-4o",
             },
         )
         response = await client.get("/api/v1/jobs?type=training")
@@ -254,7 +254,7 @@ class TestJobMetrics:
             json={
                 "flow_id": "test",
                 "dataset_path": "test",
-                "model": "test",
+                "model": "openai/gpt-4o",
             },
         )
         job_id = create_resp.json()["id"]

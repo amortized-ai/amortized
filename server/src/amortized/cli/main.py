@@ -218,7 +218,7 @@ def logs(
             job_resp = client.get(f"/api/v1/jobs/{job_id}")
             if job_resp.status_code == 200:
                 job_data = job_resp.json()
-                if job_data.get("status") in ("completed", "failed", "cancelled"):
+                if job_data.get("status") in ("succeeded", "completed", "failed", "cancelled"):
                     break
             time.sleep(2)
 
@@ -414,6 +414,7 @@ _STATUS_COLORS = {
     "pending": "yellow",
     "queued": "yellow",
     "validating": "yellow",
+    "provisioning": "cyan",
     "running": "blue",
     "completed": "green",
     "succeeded": "green",

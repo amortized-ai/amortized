@@ -68,7 +68,7 @@ async def _stream_training_metrics(
 
         # Stop if job is done
         if status in (
-            JobStatus.completed.value,
+            JobStatus.succeeded.value,
             JobStatus.failed.value,
             JobStatus.cancelled.value,
         ):
@@ -111,7 +111,7 @@ async def _stream_sdg_progress(
 
         # Stop if job is done
         if status in (
-            JobStatus.completed.value,
+            JobStatus.succeeded.value,
             JobStatus.failed.value,
             JobStatus.cancelled.value,
         ):

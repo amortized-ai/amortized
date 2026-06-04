@@ -61,7 +61,7 @@ class TestRESTEventListing:
         events = resp.json()
         assert len(events) >= 1
         state_changes = [e for e in events if e["type"] == "state_change"]
-        assert any(e["data"]["status"] == "pending" for e in state_changes)
+        assert any(e["data"]["status"] == "queued" for e in state_changes)
 
     @pytest.mark.asyncio
     async def test_events_after_cancel(self, client: httpx.AsyncClient) -> None:
@@ -72,7 +72,7 @@ class TestRESTEventListing:
         events = resp.json()
         state_changes = [e for e in events if e["type"] == "state_change"]
         statuses = [e["data"]["status"] for e in state_changes]
-        assert "pending" in statuses
+        assert "queued" in statuses
         assert "cancelled" in statuses
 
     @pytest.mark.asyncio
@@ -162,12 +162,12 @@ class TestSSEStreaming:
 
 class TestEventLifecycle:
     @pytest.mark.asyncio
-    async def test_create_emits_pending_event(self, client: httpx.AsyncClient) -> None:
+    async def test_create_emits_queued_event(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
         resp = await client.get(f"/api/v1/jobs/{job_id}/events")
         events = resp.json()
         assert any(
-            e["type"] == "state_change" and e["data"]["status"] == "pending"
+            e["type"] == "state_change" and e["data"]["status"] == "queued"
             for e in events
         )
 

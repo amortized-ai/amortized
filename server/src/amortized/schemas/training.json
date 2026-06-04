@@ -19,8 +19,12 @@
       "description": "Directory for checkpoints and outputs"
     },
     "learning_rate": {
-      "type": "number",
+      "type": ["number", "string"],
       "description": "Learning rate (default: 2e-4)"
+    },
+    "bf16": {
+      "type": "boolean",
+      "description": "Use bfloat16 mixed precision"
     },
     "num_epochs": {
       "type": "integer",

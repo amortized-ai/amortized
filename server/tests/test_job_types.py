@@ -150,11 +150,12 @@ class TestUniversalJobEndpoint:
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
             },
+            "dry_run": False,
         })
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "training"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
         assert data["config"]["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
 
     @pytest.mark.asyncio
@@ -166,11 +167,12 @@ class TestUniversalJobEndpoint:
                 "dataset_path": "./docs.jsonl",
                 "model": "openai/gpt-4o",
             },
+            "dry_run": False,
         })
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "sdg"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
 
     @pytest.mark.asyncio
     async def test_create_inference_job(self, client: httpx.AsyncClient) -> None:
@@ -181,11 +183,12 @@ class TestUniversalJobEndpoint:
                 "input_data": "./input.jsonl",
                 "output_path": "./output.jsonl",
             },
+            "dry_run": False,
         })
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "inference"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
         assert data["config"]["model_path"] == "test/model"
 
     @pytest.mark.asyncio
@@ -197,11 +200,12 @@ class TestUniversalJobEndpoint:
                 "judge_model": "openai/gpt-4o",
                 "dataset": "./eval_data.jsonl",
             },
+            "dry_run": False,
         })
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "eval"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
         assert data["config"]["judge_model"] == "openai/gpt-4o"
 
     @pytest.mark.asyncio
@@ -214,6 +218,7 @@ class TestUniversalJobEndpoint:
                 "ckpt_output_dir": "test",
             },
             "metadata": {"owner": "test-user", "experiment": "run-42"},
+            "dry_run": False,
         })
         assert response.status_code == 201
         data = response.json()
@@ -225,6 +230,7 @@ class TestUniversalJobEndpoint:
         response = await client.post("/api/v1/jobs", json={
             "type": "unknown",
             "config": {},
+            "dry_run": False,
         })
         assert response.status_code == 400
         assert "Unknown job type" in response.json()["detail"]
@@ -234,6 +240,7 @@ class TestUniversalJobEndpoint:
         response = await client.post("/api/v1/jobs", json={
             "type": "training",
             "config": {"model_path": "test"},
+            "dry_run": False,
         })
         assert response.status_code == 422
         errors = response.json()["detail"]
@@ -250,6 +257,7 @@ class TestUniversalJobEndpoint:
                 "ckpt_output_dir": "test",
                 "num_epochs": "not-a-number",
             },
+            "dry_run": False,
         })
         assert response.status_code == 422
 
@@ -262,10 +270,40 @@ class TestUniversalJobEndpoint:
                 "data_path": "test",
                 "ckpt_output_dir": "test",
             },
+            "dry_run": False,
         })
         response = await client.get("/api/v1/jobs")
         assert response.status_code == 200
         assert len(response.json()) == 1
+
+    @pytest.mark.asyncio
+    async def test_dry_run_returns_preview(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs", json={
+            "type": "training",
+            "config": {
+                "model_path": "test",
+                "data_path": "test",
+                "ckpt_output_dir": "test",
+            },
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["dry_run"] is True
+        assert data["valid"] is True
+        assert data["errors"] == []
+        assert data["type"] == "training"
+
+    @pytest.mark.asyncio
+    async def test_dry_run_with_errors(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs", json={
+            "type": "training",
+            "config": {"model_path": "test"},
+        })
+        assert response.status_code == 201
+        data = response.json()
+        assert data["dry_run"] is True
+        assert data["valid"] is False
+        assert len(data["errors"]) > 0
 
 
 class TestJobTypesEndpoints:
@@ -332,7 +370,7 @@ class TestOldEndpointsBackwardCompat:
         response = await client.post("/api/v1/jobs/sdg", json={
             "flow_id": "test",
             "dataset_path": "test",
-            "model": "test",
+            "model": "openai/gpt-4o",
         })
         assert response.status_code == 201
         assert response.json()["type"] == "sdg"
@@ -351,6 +389,7 @@ class TestOldEndpointsBackwardCompat:
                 "data_path": "t2",
                 "ckpt_output_dir": "t2",
             },
+            "dry_run": False,
         })
         response = await client.get("/api/v1/jobs")
         assert len(response.json()) == 2

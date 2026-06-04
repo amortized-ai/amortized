@@ -62,7 +62,7 @@ class TestWorkerJobExecution:
 
             # Verify initial status is pending
             response = await client.get(f"/api/v1/jobs/{job_id}")
-            assert response.json()["status"] == "pending"
+            assert response.json()["status"] == "queued"
 
             # Run the job through the worker
             from amortized.worker import _pick_pending_job, _run_job
@@ -76,7 +76,7 @@ class TestWorkerJobExecution:
             # Verify job completed
             response = await client.get(f"/api/v1/jobs/{job_id}")
             data = response.json()
-            assert data["status"] == "completed"
+            assert data["status"] == "succeeded"
             assert data["started_at"] is not None
             assert data["completed_at"] is not None
 
@@ -124,7 +124,7 @@ class TestWorkerJobExecution:
             # Verify completed
             response = await client.get(f"/api/v1/jobs/{job_id}")
             data = response.json()
-            assert data["status"] == "completed"
+            assert data["status"] == "succeeded"
 
             # SDG jobs should have artifacts too
             response = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
@@ -344,11 +344,11 @@ class TestCancelRunningJob:
         )
         job_id = response.json()["id"]
 
-        # Manually set to completed
+        # Manually set to succeeded
         async with aiosqlite.connect(str(settings.db_path)) as db:
             await db.execute(
                 "UPDATE jobs SET status = ? WHERE id = ?",
-                ("completed", job_id),
+                ("succeeded", job_id),
             )
             await db.commit()
 

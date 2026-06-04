@@ -33,10 +33,11 @@ class TestCreateJob:
     async def test_create_training_job(self, repo: Repository) -> None:
         row = await create_job(
             repo, job_type=JobType.training,
-            config={"model_path": "test"}, output_dir="/tmp/out",
+            config={"model_path": "test", "data_path": "test.jsonl", "ckpt_output_dir": "/tmp/out"},
+            output_dir="/tmp/out",
         )
         assert row["type"] == "training"
-        assert row["status"] == "pending"
+        assert row["status"] == "queued"
         assert row["config"]["model_path"] == "test"
         assert row["output_dir"] == "/tmp/out"
         assert row["id"]
@@ -45,25 +46,32 @@ class TestCreateJob:
     async def test_create_sdg_job(self, repo: Repository) -> None:
         row = await create_job(
             repo, job_type=JobType.sdg,
-            config={"flow_id": "knowledge-qa"},
+            config={
+                "flow_id": "knowledge-qa",
+                "dataset_path": "test.jsonl",
+                "model": "openai/gpt-4o",
+            },
         )
         assert row["type"] == "sdg"
 
     @pytest.mark.asyncio
     async def test_create_emits_event(self, repo: Repository) -> None:
         row = await create_job(
-            repo, job_type=JobType.training, config={},
+            repo, job_type=JobType.training,
+            config={"model_path": "test", "data_path": "test.jsonl", "ckpt_output_dir": "/tmp/out"},
         )
         events = await repo.list_events(row["id"])
-        assert len(events) == 1
-        assert events[0]["type"] == "state_change"
-        assert events[0]["data"]["status"] == "pending"
+        statuses = [e["data"]["status"] for e in events]
+        assert "queued" in statuses
 
 
 class TestGetJob:
     @pytest.mark.asyncio
     async def test_get_existing(self, repo: Repository) -> None:
-        created = await create_job(repo, job_type=JobType.training, config={})
+        created = await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
         fetched = await get_job(repo, created["id"])
         assert fetched is not None
         assert fetched["id"] == created["id"]
@@ -80,8 +88,14 @@ class TestListJobs:
 
     @pytest.mark.asyncio
     async def test_list_with_type_filter(self, repo: Repository) -> None:
-        await create_job(repo, job_type=JobType.training, config={})
-        await create_job(repo, job_type=JobType.sdg, config={})
+        await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
+        await create_job(
+            repo, job_type=JobType.sdg,
+            config={"flow_id": "qa", "dataset_path": "t.jsonl", "model": "openai/gpt-4o"},
+        )
 
         training = await list_jobs(repo, job_type=JobType.training)
         assert len(training) == 1
@@ -90,14 +104,20 @@ class TestListJobs:
 
 class TestCancelJob:
     @pytest.mark.asyncio
-    async def test_cancel_pending(self, repo: Repository) -> None:
-        created = await create_job(repo, job_type=JobType.training, config={})
+    async def test_cancel_queued(self, repo: Repository) -> None:
+        created = await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
         cancelled = await cancel_job(repo, created["id"])
         assert cancelled["status"] == "cancelled"
 
     @pytest.mark.asyncio
     async def test_cancel_emits_event(self, repo: Repository) -> None:
-        created = await create_job(repo, job_type=JobType.training, config={})
+        created = await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
         await cancel_job(repo, created["id"])
         events = await repo.list_events(created["id"])
         types = [e["data"]["status"] for e in events]
@@ -109,11 +129,14 @@ class TestCancelJob:
             await cancel_job(repo, "nope")
 
     @pytest.mark.asyncio
-    async def test_cancel_completed_raises(self, repo: Repository) -> None:
-        created = await create_job(repo, job_type=JobType.training, config={})
+    async def test_cancel_succeeded_raises(self, repo: Repository) -> None:
+        created = await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
         await repo.update_job_status(
             created["id"],
-            status=JobStatus.completed,
+            status=JobStatus.succeeded,
             updated_at="2026-01-01T00:01:00",
         )
         with pytest.raises(InvalidJobStateError):
@@ -121,7 +144,10 @@ class TestCancelJob:
 
     @pytest.mark.asyncio
     async def test_cancel_already_cancelled_is_idempotent(self, repo: Repository) -> None:
-        created = await create_job(repo, job_type=JobType.training, config={})
+        created = await create_job(
+            repo, job_type=JobType.training,
+            config={"model_path": "t", "data_path": "t.jsonl", "ckpt_output_dir": "/tmp/t"},
+        )
         await cancel_job(repo, created["id"])
         result = await cancel_job(repo, created["id"])
         assert result["status"] == "cancelled"

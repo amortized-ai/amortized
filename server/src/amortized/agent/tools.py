@@ -170,7 +170,10 @@ TOOLS: list[dict[str, Any]] = [
                 "properties": {
                     "status": {
                         "type": "string",
-                        "enum": ["pending", "running", "completed", "failed", "cancelled"],
+                        "enum": [
+                            "validating", "queued", "provisioning",
+                            "running", "succeeded", "failed", "cancelled",
+                        ],
                         "description": "Filter by job status",
                     },
                     "type": {

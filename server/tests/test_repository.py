@@ -32,7 +32,7 @@ class TestJobCRUD:
         )
         assert row["id"] == "j1"
         assert row["type"] == "training"
-        assert row["status"] == "pending"
+        assert row["status"] == "validating"
         assert row["config"]["model_path"] == "test"
 
         fetched = await repo.get_job("j1")

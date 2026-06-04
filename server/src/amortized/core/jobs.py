@@ -8,12 +8,43 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from amortized.core.events import emit_event
+from amortized.core.job_types import UnknownJobTypeError, validate_config, validate_semantic
 from amortized.models import JobStatus, JobType
 
 if TYPE_CHECKING:
     from amortized.db.repository import Repository
 
 logger = logging.getLogger("amortized.core.jobs")
+
+_VALID_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
+    JobStatus.validating: {JobStatus.queued, JobStatus.failed},
+    JobStatus.queued: {JobStatus.provisioning, JobStatus.failed, JobStatus.cancelled},
+    JobStatus.provisioning: {JobStatus.running, JobStatus.failed, JobStatus.cancelled},
+    JobStatus.running: {JobStatus.succeeded, JobStatus.failed, JobStatus.cancelled},
+}
+
+
+async def transition_job(
+    repo: Repository,
+    job_id: str,
+    new_status: JobStatus,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Validate and perform a job state transition."""
+    job = await repo.get_job(job_id)
+    if job is None:
+        raise JobNotFoundError(job_id)
+    current = JobStatus(job["status"])
+    allowed = _VALID_TRANSITIONS.get(current, set())
+    if new_status not in allowed:
+        raise InvalidJobStateError(
+            f"Cannot transition from {current.value} to {new_status.value}"
+        )
+    now = datetime.now(UTC).isoformat()
+    updated = await repo.update_job_status(job_id, status=new_status, updated_at=now, **kwargs)
+    await emit_event(repo, job_id, "state_change", {"status": new_status.value})
+    assert updated is not None
+    return updated
 
 
 async def create_job(
@@ -36,9 +67,22 @@ async def create_job(
         metadata=metadata,
     )
 
-    await emit_event(repo, job_id, "state_change", {"status": JobStatus.pending.value})
+    try:
+        schema_errors = validate_config(job_type.value, config)
+    except UnknownJobTypeError:
+        schema_errors = []
+    if schema_errors:
+        await transition_job(repo, job_id, JobStatus.failed, error=str(schema_errors))
+        raise InvalidJobStateError(f"Schema validation failed: {schema_errors}")
+
+    semantic_errors = await validate_semantic(job_type.value, config)
+    if semantic_errors:
+        await transition_job(repo, job_id, JobStatus.failed, error=str(semantic_errors))
+        raise InvalidJobStateError(f"Pre-flight validation failed: {semantic_errors}")
+
+    await transition_job(repo, job_id, JobStatus.queued)
     logger.info("Created %s job %s", job_type.value, job_id)
-    return row
+    return await repo.get_job(job_id) or row
 
 
 async def get_job(repo: Repository, job_id: str) -> dict[str, Any] | None:
@@ -60,7 +104,7 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
         raise JobNotFoundError(job_id)
 
     current_status = row["status"]
-    if current_status in (JobStatus.completed.value, JobStatus.failed.value):
+    if current_status in (JobStatus.succeeded.value, JobStatus.failed.value):
         raise InvalidJobStateError(
             f"Cannot cancel job with status '{current_status}'"
         )

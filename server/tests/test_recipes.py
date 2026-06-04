@@ -167,13 +167,16 @@ class TestRecipeAPI:
             "/api/v1/jobs/recipe",
             json={
                 "recipe": "qwen/1.5b-lora-sft",
-                "overrides": {"config.data_path": "/data/train.jsonl"},
+                "overrides": {
+                    "config.data_path": "/data/train.jsonl",
+                    "config.ckpt_output_dir": "/tmp/recipe-out",
+                },
             },
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["type"] == "training"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
 
     @pytest.mark.asyncio
     async def test_submit_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:
