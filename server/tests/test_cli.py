@@ -55,12 +55,17 @@ class _FakeClient:
 
 class TestHealth:
     def test_health_ok(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/health"): _mock_response(200, {
-                "status": "ok",
-                "gpu": {"available": False},
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/health"): _mock_response(
+                    200,
+                    {
+                        "status": "ok",
+                        "gpu": {"available": False},
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["health"])
         assert result.exit_code == 0
@@ -82,12 +87,17 @@ class TestHealth:
 
 class TestTypes:
     def test_list_types(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/job-types"): _mock_response(200, [
-                {"name": "training", "description": "LoRA SFT training"},
-                {"name": "sdg", "description": "Synthetic data generation"},
-            ]),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/job-types"): _mock_response(
+                    200,
+                    [
+                        {"name": "training", "description": "LoRA SFT training"},
+                        {"name": "sdg", "description": "Synthetic data generation"},
+                    ],
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["types"])
         assert result.exit_code == 0
@@ -97,25 +107,32 @@ class TestTypes:
 
 class TestJobs:
     def test_list_jobs_empty(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/jobs"): _mock_response(200, []),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/jobs"): _mock_response(200, []),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["jobs"])
         assert result.exit_code == 0
         assert "Jobs" in result.output
 
     def test_list_jobs_with_data(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/jobs"): _mock_response(200, [
-                {
-                    "id": "job_123",
-                    "type": "training",
-                    "status": "running",
-                    "created_at": "2026-01-01T00:00:00Z",
-                },
-            ]),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/jobs"): _mock_response(
+                    200,
+                    [
+                        {
+                            "id": "job_123",
+                            "type": "training",
+                            "status": "running",
+                            "created_at": "2026-01-01T00:00:00Z",
+                        },
+                    ],
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["jobs"])
         assert result.exit_code == 0
@@ -125,24 +142,31 @@ class TestJobs:
 
 class TestJobDetail:
     def test_get_job(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/jobs/job_abc"): _mock_response(200, {
-                "id": "job_abc",
-                "type": "training",
-                "status": "completed",
-                "created_at": "2026-01-01T00:00:00Z",
-                "config": {"model_path": "test"},
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/jobs/job_abc"): _mock_response(
+                    200,
+                    {
+                        "id": "job_abc",
+                        "type": "training",
+                        "status": "completed",
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "config": {"model_path": "test"},
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["job", "job_abc"])
         assert result.exit_code == 0
         assert "job_abc" in result.output
 
     def test_get_job_not_found(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/jobs/nope"): _mock_response(404, {"detail": "not found"}),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/jobs/nope"): _mock_response(404, {"detail": "not found"}),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["job", "nope"])
         assert result.exit_code == 1
@@ -150,14 +174,19 @@ class TestJobDetail:
 
 class TestCancel:
     def test_cancel_job(self) -> None:
-        fake = _FakeClient({
-            ("DELETE", "/api/v1/jobs/job_xyz"): _mock_response(200, {
-                "id": "job_xyz",
-                "type": "training",
-                "status": "cancelled",
-                "created_at": "2026-01-01T00:00:00Z",
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("DELETE", "/api/v1/jobs/job_xyz"): _mock_response(
+                    200,
+                    {
+                        "id": "job_xyz",
+                        "type": "training",
+                        "status": "cancelled",
+                        "created_at": "2026-01-01T00:00:00Z",
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["cancel", "job_xyz"])
         assert result.exit_code == 0
@@ -166,24 +195,38 @@ class TestCancel:
 
 class TestRecipes:
     def test_list_recipes(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/recipes"): _mock_response(200, [
-                {"name": "llama3/8b-lora-sft", "type": "training", "description": "LoRA SFT"},
-            ]),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/recipes"): _mock_response(
+                    200,
+                    [
+                        {
+                            "name": "llama3/8b-lora-sft",
+                            "type": "training",
+                            "description": "LoRA SFT",
+                        },
+                    ],
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["recipes"])
         assert result.exit_code == 0
         assert "llama3/8b-lora-sft" in result.output
 
     def test_show_recipe(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/recipes/llama3/8b-lora-sft"): _mock_response(200, {
-                "name": "llama3/8b-lora-sft",
-                "type": "training",
-                "config": {"model_path": "meta-llama/Llama-3-8B"},
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/recipes/llama3/8b-lora-sft"): _mock_response(
+                    200,
+                    {
+                        "name": "llama3/8b-lora-sft",
+                        "type": "training",
+                        "config": {"model_path": "meta-llama/Llama-3-8B"},
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["recipe", "llama3/8b-lora-sft"])
         assert result.exit_code == 0
@@ -192,15 +235,20 @@ class TestRecipes:
 
 class TestSubmit:
     def test_submit_with_config(self) -> None:
-        fake = _FakeClient({
-            ("POST", "/api/v1/jobs"): _mock_response(201, {
-                "id": "job_new",
-                "type": "training",
-                "status": "pending",
-                "created_at": "2026-01-01T00:00:00Z",
-                "config": {"model_path": "test"},
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/jobs"): _mock_response(
+                    201,
+                    {
+                        "id": "job_new",
+                        "type": "training",
+                        "status": "pending",
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "config": {"model_path": "test"},
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(
                 app,
@@ -210,14 +258,19 @@ class TestSubmit:
         assert "job_new" in result.output
 
     def test_submit_with_recipe(self) -> None:
-        fake = _FakeClient({
-            ("POST", "/api/v1/jobs/recipe"): _mock_response(201, {
-                "id": "job_recipe",
-                "type": "training",
-                "status": "pending",
-                "created_at": "2026-01-01T00:00:00Z",
-            }),
-        })
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/jobs/recipe"): _mock_response(
+                    201,
+                    {
+                        "id": "job_recipe",
+                        "type": "training",
+                        "status": "pending",
+                        "created_at": "2026-01-01T00:00:00Z",
+                    },
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(
                 app,
@@ -229,29 +282,91 @@ class TestSubmit:
 
 class TestBackends:
     def test_list_backends(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/compute"): _mock_response(200, [
-                {"name": "local", "capabilities": ["LOG_STREAM", "STOP"]},
-            ]),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/compute"): _mock_response(
+                    200,
+                    [
+                        {"name": "local", "capabilities": ["LOG_STREAM", "STOP"]},
+                    ],
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["backends"])
         assert result.exit_code == 0
         assert "local" in result.output
 
 
+class TestUpload:
+    def test_upload_file(self, tmp_path: object) -> None:
+        test_file = tmp_path / "data.jsonl"  # type: ignore[operator]
+        test_file.write_text('{"text": "hello"}\n')
+
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/artifacts"): _mock_response(
+                    201,
+                    {
+                        "id": "art_uploaded",
+                        "name": "data.jsonl",
+                        "artifact_type": "dataset",
+                        "location": str(test_file),
+                    },
+                ),
+            }
+        )
+        with patch("amortized.cli.main._client", return_value=fake):
+            result = runner.invoke(app, ["upload", str(test_file)])
+        assert result.exit_code == 0
+        assert "art_uploaded" in result.output
+
+    def test_upload_with_name_and_type(self, tmp_path: object) -> None:
+        test_file = tmp_path / "model.safetensors"  # type: ignore[operator]
+        test_file.write_text("fake model data")
+
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/artifacts"): _mock_response(
+                    201,
+                    {
+                        "id": "art_model",
+                        "name": "my-model",
+                        "artifact_type": "adapter_weights",
+                        "location": str(test_file),
+                    },
+                ),
+            }
+        )
+        with patch("amortized.cli.main._client", return_value=fake):
+            result = runner.invoke(
+                app, ["upload", str(test_file), "--type", "adapter_weights", "--name", "my-model"]
+            )
+        assert result.exit_code == 0
+        assert "my-model" in result.output
+
+    def test_upload_nonexistent_file(self) -> None:
+        result = runner.invoke(app, ["upload", "/nonexistent/file.jsonl"])
+        assert result.exit_code == 1
+
+
 class TestArtifacts:
     def test_list_artifacts(self) -> None:
-        fake = _FakeClient({
-            ("GET", "/api/v1/artifacts"): _mock_response(200, [
-                {
-                    "id": "art_1",
-                    "name": "model-v1",
-                    "artifact_type": "model",
-                    "job_id": "job_1",
-                },
-            ]),
-        })
+        fake = _FakeClient(
+            {
+                ("GET", "/api/v1/artifacts"): _mock_response(
+                    200,
+                    [
+                        {
+                            "id": "art_1",
+                            "name": "model-v1",
+                            "artifact_type": "model",
+                            "job_id": "job_1",
+                        },
+                    ],
+                ),
+            }
+        )
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(app, ["artifacts"])
         assert result.exit_code == 0

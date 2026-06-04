@@ -218,7 +218,7 @@ def logs(
             job_resp = client.get(f"/api/v1/jobs/{job_id}")
             if job_resp.status_code == 200:
                 job_data = job_resp.json()
-                if job_data.get("status") in ("completed", "failed", "cancelled"):
+                if job_data.get("status") in ("succeeded", "completed", "failed", "cancelled"):
                     break
             time.sleep(2)
 
@@ -293,11 +293,13 @@ def recipe(
         resp = client.get(f"/api/v1/recipes/{name}")
         data = _handle_response(resp)
 
-    console.print(Panel(
-        json.dumps(data, indent=2),
-        title=f"Recipe: {name}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            json.dumps(data, indent=2),
+            title=f"Recipe: {name}",
+            border_style="blue",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +359,45 @@ def backends() -> None:
 
 
 # ---------------------------------------------------------------------------
-# amortized health
+# amortized upload
+# ---------------------------------------------------------------------------
+@app.command()
+def upload(
+    file_path: Annotated[str, typer.Argument(help="Local file to upload as an artifact")],
+    artifact_type: Annotated[str, typer.Option("--type", "-t", help="Artifact type")] = "dataset",
+    name: Annotated[str | None, typer.Option("--name", "-n", help="Artifact name")] = None,
+) -> None:
+    """Upload a local file as an artifact."""
+    p = Path(file_path)
+    if not p.is_file():
+        err_console.print(f"[red]File not found:[/red] {file_path}")
+        raise typer.Exit(1)
+
+    artifact_name = name or p.name
+    with _client() as client:
+        body = {
+            "name": artifact_name,
+            "artifact_type": artifact_type,
+            "location": str(p.resolve()),
+            "metadata": {"original_filename": p.name, "size_bytes": p.stat().st_size},
+        }
+        resp = client.post("/api/v1/artifacts", json=body)
+        data = _handle_response(resp)
+
+    console.print(
+        Panel(
+            f"[bold]ID:[/bold]   {data.get('id', '')}\n"
+            f"[bold]Name:[/bold] {data.get('name', '')}\n"
+            f"[bold]Type:[/bold] {data.get('artifact_type', '')}\n"
+            f"[bold]Path:[/bold] {data.get('location', '')}",
+            title="Uploaded Artifact",
+            border_style="green",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# amortized mcp
 # ---------------------------------------------------------------------------
 @app.command()
 def mcp(
@@ -414,6 +454,7 @@ _STATUS_COLORS = {
     "pending": "yellow",
     "queued": "yellow",
     "validating": "yellow",
+    "provisioning": "cyan",
     "running": "blue",
     "completed": "green",
     "succeeded": "green",

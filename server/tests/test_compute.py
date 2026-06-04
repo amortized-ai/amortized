@@ -1,5 +1,6 @@
 """Tests for compute backends, registry, and API endpoints."""
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -191,6 +192,54 @@ class TestLocalBackend:
         assert "line2" in lines
 
     @pytest.mark.asyncio
+    async def test_submit_sets_amortized_env_vars(self, tmp_path: object) -> None:
+        backend = LocalBackend()
+        work_dir = str(tmp_path) + "/job-env"
+        py_script = (
+            "import os, json; "
+            "env = {k: v for k, v in os.environ.items() "
+            "if k.startswith('AMORTIZED_')}; "
+            "json.dump(env, open('env.json', 'w'))"
+        )
+        spec = JobSpec(
+            job_id="env-job",
+            command=["python", "-c", py_script],
+            work_dir=work_dir,
+        )
+
+        await backend.submit(spec)
+        import asyncio
+
+        await asyncio.sleep(0.5)
+
+        env_path = os.path.join(work_dir, "env.json")
+        with open(env_path) as f:
+            env_data = json.load(f)
+
+        assert env_data["AMORTIZED_JOB_ID"] == "env-job"
+        assert env_data["AMORTIZED_WORK_DIR"] == work_dir
+        assert "AMORTIZED_CONFIG_PATH" in env_data
+
+    @pytest.mark.asyncio
+    async def test_submit_writes_config_json(self, tmp_path: object) -> None:
+        backend = LocalBackend()
+        work_dir = str(tmp_path) + "/job-config"
+        spec = JobSpec(
+            job_id="config-job",
+            command=["python", "-c", "print('done')"],
+            work_dir=work_dir,
+            env={"_config": {"model_path": "test/model"}},
+        )
+
+        await backend.submit(spec)
+
+        config_path = os.path.join(work_dir, "config.json")
+        with open(config_path) as f:
+            config_data = json.load(f)
+
+        assert config_data == {"config": {"model_path": "test/model"}, "artifacts": {}}
+
+    @pytest.mark.asyncio
     async def test_logs_no_dir(self) -> None:
         backend = LocalBackend()
         handle = BackendHandle(backend_name="local", job_id="x", remote_dir=None)
@@ -228,7 +277,85 @@ class TestSSHBackend:
         assert handle.job_id == "ssh-job-1"
         assert handle.remote_pid == 12345
         assert handle.remote_dir == "~/amortized-jobs/ssh-job-1"
+        assert handle.container_id is None
         assert mock_conn.run.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_submit_sets_env_vars(self) -> None:
+        backend = SSHBackend(host="gpu-node", user="ml")
+
+        mock_conn = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "12345\n"
+        mock_conn.run = AsyncMock(return_value=mock_result)
+        mock_conn.close = MagicMock()
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            spec = JobSpec(
+                job_id="env-ssh-job",
+                command=["python", "train.py"],
+            )
+            await backend.submit(spec)
+
+        nohup_call = mock_conn.run.call_args_list[2]
+        cmd = nohup_call[0][0]
+        assert "AMORTIZED_JOB_ID=env-ssh-job" in cmd
+        assert "AMORTIZED_WORK_DIR=" in cmd
+        assert "AMORTIZED_CONFIG_PATH=" in cmd
+        assert "AMORTIZED_EVENTS_URL=" in cmd
+
+    @pytest.mark.asyncio
+    async def test_submit_writes_config_json_format(self) -> None:
+        backend = SSHBackend(host="gpu-node", user="ml")
+
+        mock_conn = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "12345\n"
+        mock_conn.run = AsyncMock(return_value=mock_result)
+        mock_conn.close = MagicMock()
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            spec = JobSpec(
+                job_id="config-ssh-job",
+                command=["python", "train.py"],
+                env={"_config": {"model_path": "test/model"}},
+            )
+            await backend.submit(spec)
+
+        config_call = mock_conn.run.call_args_list[1]
+        cmd = config_call[0][0]
+        json_str = cmd.split("<< 'AMORTIZED_EOF'\n")[1].split("\nAMORTIZED_EOF")[0]
+        parsed = json.loads(json_str)
+        assert parsed == {"config": {"model_path": "test/model"}, "artifacts": {}}
+
+    @pytest.mark.asyncio
+    async def test_submit_docker_mode(self) -> None:
+        backend = SSHBackend(host="gpu-node", user="ml")
+
+        mock_conn = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "abc123def456\n"
+        mock_conn.run = AsyncMock(return_value=mock_result)
+        mock_conn.close = MagicMock()
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            spec = JobSpec(
+                job_id="docker-job-1",
+                command=["python", "train.py"],
+                image="ghcr.io/amortized-ai/training:latest",
+            )
+            handle = await backend.submit(spec)
+
+        assert handle.container_id == "abc123def456"
+        assert handle.remote_pid is None
+        assert handle.remote_dir == "~/amortized-jobs/docker-job-1"
+
+        docker_call = mock_conn.run.call_args_list[2]
+        cmd = docker_call[0][0]
+        assert "docker run -d --gpus all" in cmd
+        assert "ghcr.io/amortized-ai/training:latest" in cmd
+        assert "python -m runner" in cmd
+        assert "-e AMORTIZED_JOB_ID=docker-job-1" in cmd
 
     @pytest.mark.asyncio
     async def test_status_running_mock(self) -> None:
@@ -240,9 +367,7 @@ class TestSSHBackend:
         mock_conn.run = AsyncMock(return_value=mock_result)
         mock_conn.close = MagicMock()
 
-        handle = BackendHandle(
-            backend_name="ssh", job_id="j1", remote_pid=999
-        )
+        handle = BackendHandle(backend_name="ssh", job_id="j1", remote_pid=999)
 
         with patch.object(backend, "_connect", return_value=mock_conn):
             status = await backend.status(handle)
@@ -261,9 +386,7 @@ class TestSSHBackend:
         mock_conn.run = AsyncMock(side_effect=[alive_result, exit_result])
         mock_conn.close = MagicMock()
 
-        handle = BackendHandle(
-            backend_name="ssh", job_id="j1", remote_pid=999
-        )
+        handle = BackendHandle(backend_name="ssh", job_id="j1", remote_pid=999)
 
         with patch.object(backend, "_connect", return_value=mock_conn):
             status = await backend.status(handle)
@@ -279,14 +402,62 @@ class TestSSHBackend:
         mock_conn.run = AsyncMock()
         mock_conn.close = MagicMock()
 
-        handle = BackendHandle(
-            backend_name="ssh", job_id="j1", remote_pid=999
-        )
+        handle = BackendHandle(backend_name="ssh", job_id="j1", remote_pid=999)
 
         with patch.object(backend, "_connect", return_value=mock_conn):
             await backend.cancel(handle)
 
         mock_conn.run.assert_called_once_with("kill 999 2>/dev/null || true")
+
+    @pytest.mark.asyncio
+    async def test_docker_status_running(self) -> None:
+        backend = SSHBackend(host="gpu-node")
+
+        mock_conn = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "true 0"
+        mock_conn.run = AsyncMock(return_value=mock_result)
+        mock_conn.close = MagicMock()
+
+        handle = BackendHandle(backend_name="ssh", job_id="j1", container_id="abc123")
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            status = await backend.status(handle)
+
+        assert status.running
+
+    @pytest.mark.asyncio
+    async def test_docker_status_exited(self) -> None:
+        backend = SSHBackend(host="gpu-node")
+
+        mock_conn = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.stdout = "false 0"
+        mock_conn.run = AsyncMock(return_value=mock_result)
+        mock_conn.close = MagicMock()
+
+        handle = BackendHandle(backend_name="ssh", job_id="j1", container_id="abc123")
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            status = await backend.status(handle)
+
+        assert not status.running
+        assert status.exit_code == 0
+
+    @pytest.mark.asyncio
+    async def test_docker_cancel(self) -> None:
+        backend = SSHBackend(host="gpu-node")
+
+        mock_conn = AsyncMock()
+        mock_conn.run = AsyncMock()
+        mock_conn.close = MagicMock()
+
+        handle = BackendHandle(backend_name="ssh", job_id="j1", container_id="abc123def")
+
+        with patch.object(backend, "_connect", return_value=mock_conn):
+            await backend.cancel(handle)
+
+        mock_conn.run.assert_called_once_with("docker stop abc123def 2>/dev/null || true")
 
     @pytest.mark.asyncio
     async def test_cancel_no_pid(self) -> None:

@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_TERMINAL_STATUSES = frozenset({"succeeded", "completed", "failed", "cancelled"})
 
 
 def _discover_url() -> str:
@@ -91,9 +91,7 @@ class Job:
 
     async def stream_events(self) -> AsyncIterator[dict[str, Any]]:
         url = f"/api/v1/jobs/{self.id}/events"
-        async with self._client._http.stream(
-            "GET", url, params={"stream": "true"}
-        ) as response:
+        async with self._client._http.stream("GET", url, params={"stream": "true"}) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
                 if line.startswith("data:"):
@@ -103,6 +101,10 @@ class Job:
 
     async def cancel(self) -> Job:
         return await self._client.cancel_job(self.id)
+
+    def artifact_ref(self, name: str) -> str:
+        """Return an artifact reference string for use in job configs."""
+        return f"artifact:{self.id}/{name}"
 
     def __repr__(self) -> str:
         return f"Job(id={self.id!r}, type={self.type!r}, status={self.status!r})"
@@ -128,8 +130,9 @@ class Client:
         config: dict[str, Any],
         compute: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        dry_run: bool = False,
     ) -> Job:
-        body: dict[str, Any] = {"type": type, "config": config}
+        body: dict[str, Any] = {"type": type, "config": config, "dry_run": dry_run}
         if compute is not None:
             body["compute"] = compute
         if metadata is not None:
@@ -194,6 +197,25 @@ class Client:
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 
+    async def upload(
+        self,
+        file_path: str,
+        artifact_type: str = "dataset",
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        """Register a local file as an artifact."""
+        p = Path(file_path)
+        artifact_name = name or p.name
+        body: dict[str, Any] = {
+            "name": artifact_name,
+            "artifact_type": artifact_type,
+            "location": str(p.resolve()),
+            "metadata": {"original_filename": p.name},
+        }
+        resp = await self._http.post("/api/v1/artifacts", json=body)
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+
     async def list_artifacts(
         self,
         type: str | None = None,
@@ -226,3 +248,98 @@ class Client:
 
     async def __aexit__(self, *args: Any) -> None:
         await self.close()
+
+
+class SyncClient:
+    """Synchronous wrapper around the async :class:`Client`.
+
+    Every method delegates to the async counterpart via ``asyncio.run()``.
+    Useful for scripts and notebooks where an event loop is not already running.
+
+    Usage::
+
+        client = SyncClient()
+        job = client.submit(type="training", config={...})
+        job.wait()
+    """
+
+    def __init__(self, base_url: str | None = None) -> None:
+        self._async = Client(base_url)
+
+    @property
+    def base_url(self) -> str:
+        return self._async.base_url
+
+    def submit(
+        self,
+        type: str,
+        config: dict[str, Any],
+        compute: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        dry_run: bool = False,
+    ) -> Job:
+        return asyncio.run(
+            self._async.submit(type, config, compute=compute, metadata=metadata, dry_run=dry_run)
+        )
+
+    def submit_recipe(
+        self,
+        recipe: str,
+        overrides: dict[str, Any] | None = None,
+    ) -> Job:
+        return asyncio.run(self._async.submit_recipe(recipe, overrides=overrides))
+
+    def get_job(self, job_id: str) -> Job:
+        return asyncio.run(self._async.get_job(job_id))
+
+    def list_jobs(
+        self,
+        status: str | None = None,
+        type: str | None = None,
+    ) -> list[Job]:
+        return asyncio.run(self._async.list_jobs(status=status, type=type))
+
+    def cancel_job(self, job_id: str) -> Job:
+        return asyncio.run(self._async.cancel_job(job_id))
+
+    def list_job_types(self) -> list[dict[str, Any]]:
+        return asyncio.run(self._async.list_job_types())
+
+    def get_job_type_schema(self, type: str) -> dict[str, Any]:
+        return asyncio.run(self._async.get_job_type_schema(type))
+
+    def list_recipes(self) -> list[dict[str, Any]]:
+        return asyncio.run(self._async.list_recipes())
+
+    def get_recipe(self, name: str) -> dict[str, Any]:
+        return asyncio.run(self._async.get_recipe(name))
+
+    def upload(
+        self,
+        file_path: str,
+        artifact_type: str = "dataset",
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        return asyncio.run(self._async.upload(file_path, artifact_type=artifact_type, name=name))
+
+    def list_artifacts(
+        self,
+        type: str | None = None,
+        producer_job: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return asyncio.run(self._async.list_artifacts(type=type, producer_job=producer_job))
+
+    def list_backends(self) -> list[dict[str, Any]]:
+        return asyncio.run(self._async.list_backends())
+
+    def health(self) -> dict[str, Any]:
+        return asyncio.run(self._async.health())
+
+    def close(self) -> None:
+        asyncio.run(self._async.close())
+
+    def __enter__(self) -> SyncClient:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()

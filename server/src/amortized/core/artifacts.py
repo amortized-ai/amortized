@@ -170,6 +170,31 @@ async def list_all_artifacts(
     )
 
 
+async def resolve_artifact_refs(
+    repo: Repository, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Walk config dict, replace 'artifact:job_id/name' strings with resolved file paths."""
+    resolved: dict[str, Any] = {}
+    for key, value in config.items():
+        if isinstance(value, dict):
+            resolved[key] = await resolve_artifact_refs(repo, value)
+        elif isinstance(value, str) and value.startswith("artifact:"):
+            ref = value[len("artifact:"):]
+            if "/" not in ref:
+                raise ValueError(
+                    f"Invalid artifact reference '{value}': expected 'artifact:job_id/name'"
+                )
+            job_id, name = ref.split("/", 1)
+            artifacts = await repo.list_artifacts(job_id)
+            match = next((a for a in artifacts if a["name"] == name), None)
+            if match is None:
+                raise ValueError(f"Artifact not found: {value}")
+            resolved[key] = match["location"]
+        else:
+            resolved[key] = value
+    return resolved
+
+
 async def delete_artifact(
     repo: Repository, artifact_id: str
 ) -> bool:

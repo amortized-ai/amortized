@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from amortized.main import app
-from amortized.sdk import Client, Job
+from amortized.sdk import Client, Job, SyncClient
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +95,7 @@ class TestSubmit:
         )
         assert isinstance(job, Job)
         assert job.type == "training"
-        assert job.status == "pending"
+        assert job.status == "queued"
         assert job.id
 
     @pytest.mark.asyncio
@@ -122,7 +122,7 @@ class TestSubmit:
             },
             compute={"backend": "local", "gpus": 1},
         )
-        assert job.status == "pending"
+        assert job.status == "queued"
 
 
 class TestGetJob:
@@ -177,8 +177,8 @@ class TestListJobs:
                 "ckpt_output_dir": "./out",
             },
         )
-        pending = await sdk_client.list_jobs(status="pending")
-        assert len(pending) == 1
+        queued = await sdk_client.list_jobs(status="queued")
+        assert len(queued) == 1
         running = await sdk_client.list_jobs(status="running")
         assert len(running) == 0
 
@@ -294,6 +294,74 @@ class TestListEndpoints:
     async def test_list_backends(self, sdk_client: Client) -> None:
         result = await sdk_client.list_backends()
         assert isinstance(result, list)
+
+
+class TestArtifactRef:
+    @pytest.mark.asyncio
+    async def test_artifact_ref_format(self, sdk_client: Client) -> None:
+        job = await sdk_client.submit(
+            type="training",
+            config={
+                "model_path": "test",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "./out",
+            },
+        )
+        ref = job.artifact_ref("model")
+        assert ref == f"artifact:{job.id}/model"
+
+    @pytest.mark.asyncio
+    async def test_artifact_ref_with_slash_in_name(self, sdk_client: Client) -> None:
+        job = await sdk_client.submit(
+            type="training",
+            config={
+                "model_path": "test",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "./out",
+            },
+        )
+        ref = job.artifact_ref("checkpoint-100/adapter_model")
+        assert ref == f"artifact:{job.id}/checkpoint-100/adapter_model"
+
+
+class TestUpload:
+    @pytest.mark.asyncio
+    async def test_upload_registers_artifact(self, sdk_client: Client, tmp_path: object) -> None:
+        test_file = tmp_path / "data.jsonl"  # type: ignore[operator]
+        test_file.write_text('{"text": "hello"}\n')
+
+        result = await sdk_client.upload(str(test_file), artifact_type="dataset")
+        assert result["name"] == "data.jsonl"
+        assert result["artifact_type"] == "dataset"
+
+    @pytest.mark.asyncio
+    async def test_upload_with_custom_name(self, sdk_client: Client, tmp_path: object) -> None:
+        test_file = tmp_path / "data.jsonl"  # type: ignore[operator]
+        test_file.write_text('{"text": "hello"}\n')
+
+        result = await sdk_client.upload(str(test_file), artifact_type="dataset", name="my-dataset")
+        assert result["name"] == "my-dataset"
+
+
+class TestSyncClient:
+    def test_sync_client_health(self) -> None:
+        transport = httpx.ASGITransport(app=app)
+        sync = SyncClient(base_url="http://test")
+        import asyncio
+
+        asyncio.run(sync._async._http.aclose())
+        sync._async._http = httpx.AsyncClient(transport=transport, base_url="http://test")
+
+        from amortized.db import init_db
+
+        asyncio.run(init_db())
+        result = sync.health()
+        assert result["status"] == "ok"
+        sync.close()
+
+    def test_sync_client_context_manager(self) -> None:
+        with SyncClient(base_url="http://test") as client:
+            assert client.base_url == "http://test"
 
 
 class TestSubmitRecipe:

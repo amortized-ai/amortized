@@ -22,11 +22,15 @@ class JobStatus(StrEnum):
 
     validating = "validating"
     queued = "queued"
-    pending = "pending"
+    provisioning = "provisioning"
     running = "running"
-    completed = "completed"
+    succeeded = "succeeded"
     failed = "failed"
     cancelled = "cancelled"
+
+    # Backward-compat aliases
+    pending = "queued"
+    completed = "succeeded"
 
 
 # --- Request models ---
@@ -83,6 +87,11 @@ class JobRequest(BaseModel):
     config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
     compute: ComputeSpec = Field(default_factory=ComputeSpec, description="Compute backend spec")
     metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
+    dry_run: bool = Field(True, description="Validate and preview without creating the job")
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="Artifact references this job depends on (e.g. ['artifact:job-abc/model'])",
+    )
 
 
 # --- Response models ---
@@ -93,7 +102,7 @@ class Job(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: JobType
-    status: JobStatus = JobStatus.pending
+    status: JobStatus = JobStatus.queued
     config: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())

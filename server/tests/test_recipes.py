@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from amortized.core.recipes import (
+    CircularRecipeError,
     RecipeNotFoundError,
     apply_overrides,
     list_recipes,
@@ -66,6 +67,50 @@ class TestLoadRecipe:
         assert recipe["config"]["num_epochs"] == 3
         assert recipe["config"]["lora_r"] == 16
         assert "extends" not in recipe
+
+
+    def test_circular_extends_raises(self, recipes_dir: Path) -> None:
+        (recipes_dir / "a.yaml").write_text(
+            "extends: b\n"
+            "type: training\n"
+            "description: A\n"
+        )
+        (recipes_dir / "b.yaml").write_text(
+            "extends: a\n"
+            "type: training\n"
+            "description: B\n"
+        )
+        with pytest.raises(CircularRecipeError):
+            load_recipe("a", recipes_dir=recipes_dir)
+
+    def test_self_extending_raises(self, recipes_dir: Path) -> None:
+        (recipes_dir / "self.yaml").write_text(
+            "extends: self\n"
+            "type: training\n"
+            "description: Self\n"
+        )
+        with pytest.raises(CircularRecipeError):
+            load_recipe("self", recipes_dir=recipes_dir)
+
+    def test_configurable_recipes_dir(self, tmp_path: Path) -> None:
+        custom_dir = tmp_path / "custom_recipes"
+        custom_dir.mkdir()
+        (custom_dir / "custom.yaml").write_text(
+            "type: training\n"
+            "description: Custom recipe\n"
+            "config:\n"
+            "  num_epochs: 5\n"
+        )
+        import amortized.config as config_mod
+
+        old_dir = config_mod.settings.recipes_dir
+        config_mod.settings.recipes_dir = custom_dir
+        try:
+            recipe = load_recipe("custom")
+            assert recipe["description"] == "Custom recipe"
+            assert recipe["config"]["num_epochs"] == 5
+        finally:
+            config_mod.settings.recipes_dir = old_dir
 
 
 class TestListRecipes:
@@ -167,13 +212,16 @@ class TestRecipeAPI:
             "/api/v1/jobs/recipe",
             json={
                 "recipe": "qwen/1.5b-lora-sft",
-                "overrides": {"config.data_path": "/data/train.jsonl"},
+                "overrides": {
+                    "config.data_path": "/data/train.jsonl",
+                    "config.ckpt_output_dir": "/tmp/recipe-out",
+                },
             },
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["type"] == "training"
-        assert data["status"] == "pending"
+        assert data["status"] == "queued"
 
     @pytest.mark.asyncio
     async def test_submit_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:

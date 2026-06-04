@@ -15,7 +15,12 @@ if TYPE_CHECKING:
 
 
 def create_mcp_server(app: FastAPI) -> FastApiMCP:
-    """Create and mount an MCP server from the FastAPI app's OpenAPI spec."""
+    """Create and mount an MCP server from the FastAPI app's OpenAPI spec.
+
+    MCP resources (system://capabilities, jobs://recent, recipes://{name})
+    are deferred — fastapi-mcp only supports auto-generated tools from
+    OpenAPI endpoints, not custom resource registration.
+    """
     mcp = FastApiMCP(
         app,
         name="amortized",

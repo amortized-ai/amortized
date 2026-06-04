@@ -22,6 +22,7 @@ class BackendHandle:
     job_id: str
     remote_pid: int | None = None
     remote_dir: str | None = None
+    container_id: str | None = None
 
 
 @dataclass
@@ -32,6 +33,15 @@ class BackendStatus:
 
 
 @dataclass
+class Resources:
+    gpus: int = 1
+    gpu_type: str | None = None
+    cpus: int | None = None
+    memory_gb: int | None = None
+    nodes: int = 1
+
+
+@dataclass
 class JobSpec:
     job_id: str
     command: list[str]
@@ -39,6 +49,7 @@ class JobSpec:
     work_dir: str = "."
     image: str | None = None
     timeout: int | None = None
+    resources: Resources = field(default_factory=Resources)
 
 
 @runtime_checkable

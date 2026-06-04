@@ -7,6 +7,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
 from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
 from amortized.db import get_db as _get_db
@@ -66,10 +67,13 @@ async def submit_recipe_job(
     output_dir = config.get("ckpt_output_dir")
 
     repo = Repository(db)
-    row = await core_create_job(
-        repo,
-        job_type=job_type,
-        config=config,
-        output_dir=output_dir,
-    )
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=job_type,
+            config=config,
+            output_dir=output_dir,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Job(**row)
