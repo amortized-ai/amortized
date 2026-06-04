@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import signal
@@ -34,13 +35,24 @@ class LocalBackend:
         work_dir = spec.work_dir
         os.makedirs(work_dir, exist_ok=True)
 
+        config_path = os.path.join(work_dir, "config.json")
+        config_data: dict[str, object] = {"config": spec.env.get("_config", {}), "artifacts": {}}
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+
         stdout_path = os.path.join(work_dir, "stdout.log")
         stderr_path = os.path.join(work_dir, "stderr.log")
 
         stdout_file = open(stdout_path, "w")  # noqa: SIM115
         stderr_file = open(stderr_path, "w")  # noqa: SIM115
 
-        env = {**os.environ, **spec.env}
+        amortized_env = {
+            "AMORTIZED_JOB_ID": spec.job_id,
+            "AMORTIZED_WORK_DIR": work_dir,
+            "AMORTIZED_CONFIG_PATH": config_path,
+        }
+        filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
+        env = {**os.environ, **amortized_env, **filtered_spec_env}
 
         proc = subprocess.Popen(
             spec.command,
