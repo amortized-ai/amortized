@@ -50,12 +50,15 @@ async def create_training_job(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
-    row = await core_create_job(
-        repo,
-        job_type=JobType.training,
-        config=config.model_dump(exclude_none=True),
-        output_dir=config.ckpt_output_dir,
-    )
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.training,
+            config=config.model_dump(exclude_none=True),
+            output_dir=config.ckpt_output_dir,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Job(**row)
 
 
@@ -65,11 +68,14 @@ async def create_sdg_job(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
-    row = await core_create_job(
-        repo,
-        job_type=JobType.sdg,
-        config=config.model_dump(exclude_none=True),
-    )
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.sdg,
+            config=config.model_dump(exclude_none=True),
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Job(**row)
 
 

@@ -34,7 +34,7 @@ class Repository:
             (
                 job_id,
                 job_type.value,
-                JobStatus.pending.value,
+                JobStatus.validating.value,
                 json.dumps(config),
                 json.dumps(metadata or {}),
                 created_at,

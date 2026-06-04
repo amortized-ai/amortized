@@ -1,4 +1,4 @@
-"""Background worker that picks up pending jobs and runs them via ComputeBackend."""
+"""Background worker that picks up queued jobs and runs them via ComputeBackend."""
 
 import asyncio
 import json
@@ -143,12 +143,12 @@ async def _update_job(
 
 
 async def _pick_pending_job() -> dict[str, Any] | None:
-    """Pick the oldest pending job from the database."""
+    """Pick the oldest queued job from the database."""
     db = await _get_db()
     try:
         cursor = await db.execute(
             "SELECT * FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1",
-            (JobStatus.pending.value,),
+            (JobStatus.queued.value,),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -266,11 +266,11 @@ async def _run_job(job: dict[str, Any]) -> None:
         if status.exit_code == 0:
             await _update_job(
                 job_id,
-                status=JobStatus.completed,
+                status=JobStatus.succeeded,
                 completed_at=completed_at,
             )
             await _register_artifacts_for_job(job_id, output_dir)
-            logger.info("Job %s completed successfully", job_id)
+            logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(
                 job_id,
@@ -472,7 +472,7 @@ async def _monitor_heartbeats(poll_interval: float = 60.0, timeout: float = 300.
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
-    """Main worker loop — polls for pending jobs and runs them."""
+    """Main worker loop — polls for queued jobs and runs them."""
     logger.info("Worker started (poll interval: %.1fs)", poll_interval)
 
     while True:

@@ -124,11 +124,15 @@ class TestMemoryEstimateRequest:
 
 class TestEnums:
     def test_job_status_values(self) -> None:
-        assert JobStatus.pending.value == "pending"
+        assert JobStatus.queued.value == "queued"
+        assert JobStatus.provisioning.value == "provisioning"
         assert JobStatus.running.value == "running"
-        assert JobStatus.completed.value == "completed"
+        assert JobStatus.succeeded.value == "succeeded"
         assert JobStatus.failed.value == "failed"
         assert JobStatus.cancelled.value == "cancelled"
+        # Backward-compat aliases
+        assert JobStatus.pending is JobStatus.queued
+        assert JobStatus.completed is JobStatus.succeeded
 
     def test_job_type_values(self) -> None:
         assert JobType.training.value == "training"

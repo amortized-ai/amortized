@@ -95,7 +95,7 @@ class TestSubmit:
         )
         assert isinstance(job, Job)
         assert job.type == "training"
-        assert job.status == "pending"
+        assert job.status == "queued"
         assert job.id
 
     @pytest.mark.asyncio
@@ -122,7 +122,7 @@ class TestSubmit:
             },
             compute={"backend": "local", "gpus": 1},
         )
-        assert job.status == "pending"
+        assert job.status == "queued"
 
 
 class TestGetJob:
@@ -177,8 +177,8 @@ class TestListJobs:
                 "ckpt_output_dir": "./out",
             },
         )
-        pending = await sdk_client.list_jobs(status="pending")
-        assert len(pending) == 1
+        queued = await sdk_client.list_jobs(status="queued")
+        assert len(queued) == 1
         running = await sdk_client.list_jobs(status="running")
         assert len(running) == 0
 

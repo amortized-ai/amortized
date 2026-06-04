@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_TERMINAL_STATUSES = frozenset({"succeeded", "completed", "failed", "cancelled"})
 
 
 def _discover_url() -> str:
@@ -128,8 +128,9 @@ class Client:
         config: dict[str, Any],
         compute: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        dry_run: bool = False,
     ) -> Job:
-        body: dict[str, Any] = {"type": type, "config": config}
+        body: dict[str, Any] = {"type": type, "config": config, "dry_run": dry_run}
         if compute is not None:
             body["compute"] = compute
         if metadata is not None:
