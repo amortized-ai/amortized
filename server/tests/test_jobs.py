@@ -250,7 +250,7 @@ class TestJobMetrics:
             "/api/v1/jobs/sdg",
             json={
                 "pipeline": "conversation",
-                "model": "test",
+                "model": "openai/gpt-4o",
             },
         )
         job_id = create_resp.json()["id"]

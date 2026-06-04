@@ -47,8 +47,7 @@ class TestCreateJob:
         row = await create_job(
             repo, job_type=JobType.sdg,
             config={
-                "flow_id": "knowledge-qa",
-                "dataset_path": "test.jsonl",
+                "pipeline": "conversation",
                 "model": "openai/gpt-4o",
             },
         )
@@ -94,7 +93,7 @@ class TestListJobs:
         )
         await create_job(
             repo, job_type=JobType.sdg,
-            config={"flow_id": "qa", "dataset_path": "t.jsonl", "model": "openai/gpt-4o"},
+            config={"pipeline": "conversation", "model": "openai/gpt-4o"},
         )
 
         training = await list_jobs(repo, job_type=JobType.training)

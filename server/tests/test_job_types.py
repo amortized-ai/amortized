@@ -367,7 +367,7 @@ class TestOldEndpointsBackwardCompat:
     async def test_old_sdg_endpoint_still_works(self, client: httpx.AsyncClient) -> None:
         response = await client.post("/api/v1/jobs/sdg", json={
             "pipeline": "conversation",
-            "model": "test",
+            "model": "openai/gpt-4o",
         })
         assert response.status_code == 201
         assert response.json()["type"] == "sdg"
