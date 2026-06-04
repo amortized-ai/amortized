@@ -33,6 +33,19 @@ class JobStatus(StrEnum):
     completed = "succeeded"
 
 
+# --- Error models ---
+
+
+class ErrorResponse(BaseModel):
+    """Structured error envelope returned by all error responses."""
+
+    code: str = Field(..., description="Machine-readable error code")
+    message: str = Field(..., description="Human-readable error message")
+    details: list[dict[str, Any]] = Field(
+        default_factory=list, description="Additional error details"
+    )
+
+
 # --- Request models ---
 
 
@@ -179,6 +192,79 @@ class TrainingMetric(BaseModel):
     learning_rate: float | None = None
     max_steps: int | None = None
     grad_norm: float | None = None
+
+
+# --- Typed response models ---
+
+
+class DryRunResponse(BaseModel):
+    """Response from a dry-run / validation request."""
+
+    dry_run: bool = True
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    type: str
+    compute: dict[str, Any] = Field(default_factory=dict)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+
+    status: str
+    timestamp: str
+    gpu: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobTypeInfo(BaseModel):
+    """Information about a registered job type."""
+
+    type: str
+    description: str
+
+
+class ComputeBackendInfo(BaseModel):
+    """Summary of a registered compute backend."""
+
+    name: str
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class ComputeStatusResponse(BaseModel):
+    """Status of a compute backend."""
+
+    name: str
+    capabilities: list[str] = Field(default_factory=list)
+    healthy: bool
+
+
+class RecipeSummary(BaseModel):
+    """Summary of an available recipe."""
+
+    name: str
+    description: str = ""
+    type: str = ""
+
+
+class ArtifactPreview(BaseModel):
+    """Preview of an artifact's contents."""
+
+    type: str
+    format: str
+    filename: str
+    size: int | None = None
+    lines: list[str] | None = None
+    total_size: int | None = None
+
+
+class EventResponse(BaseModel):
+    """A single event record."""
+
+    id: str
+    job_id: str
+    type: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    timestamp: str
 
 
 # --- Agent / Chat models ---

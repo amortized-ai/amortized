@@ -3,16 +3,17 @@
 from fastapi import APIRouter, HTTPException
 
 from amortized.core.compute import get_backend, list_backends
+from amortized.models import ComputeBackendInfo, ComputeStatusResponse
 
 router = APIRouter(prefix="/api/v1/compute", tags=["compute"])
 
 
-@router.get("")
+@router.get("", response_model=list[ComputeBackendInfo])
 async def list_compute_backends() -> list[dict[str, object]]:
     return list_backends()
 
 
-@router.get("/{name}/status")
+@router.get("/{name}/status", response_model=ComputeStatusResponse)
 async def compute_backend_status(name: str) -> dict[str, object]:
     try:
         backend = get_backend(name)

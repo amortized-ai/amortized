@@ -15,37 +15,36 @@ from amortized.core.job_types import (
 )
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
+from amortized.core.jobs import validate_job as core_validate_job
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Job, JobRequest, JobType
+from amortized.models import DryRunResponse, Job, JobRequest, JobType, JobTypeInfo
 
 logger = logging.getLogger("amortized.api.job_types")
 
 router = APIRouter(tags=["jobs"])
 
 
-@router.post("/api/v1/jobs", status_code=201)
+@router.post("/api/v1/jobs", status_code=201, response_model=Job | DryRunResponse)
 async def create_job_universal(
     request: JobRequest,
     db: aiosqlite.Connection = Depends(_get_db),
-) -> dict[str, Any]:
+) -> Job | DryRunResponse:
     try:
         schema_errors = validate_config(request.type, request.config)
     except UnknownJobTypeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    semantic_errors = await validate_semantic(request.type, request.config)
-    all_errors = schema_errors + semantic_errors
-
     if request.dry_run:
-        return {
-            "dry_run": True,
-            "valid": not all_errors,
-            "errors": all_errors,
-            "type": request.type,
-            "compute": request.compute.model_dump(),
-            "config": request.config,
-        }
+        semantic_errors = await validate_semantic(request.type, request.config)
+        all_errors = schema_errors + semantic_errors
+        return DryRunResponse(
+            valid=not all_errors,
+            errors=all_errors,
+            type=request.type,
+            compute=request.compute.model_dump(),
+            config=request.config,
+        )
 
     if schema_errors:
         raise HTTPException(status_code=422, detail=schema_errors)
@@ -64,13 +63,32 @@ async def create_job_universal(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Job(**row).model_dump()
+    return Job(**row)
+
+
+@router.post("/api/v1/jobs/validate", response_model=DryRunResponse)
+async def validate_job(request: JobRequest) -> DryRunResponse:
+    """Validate a job configuration without creating it."""
+    try:
+        result = await core_validate_job(
+            job_type=request.type,
+            config=request.config,
+        )
+    except UnknownJobTypeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DryRunResponse(
+        valid=result["valid"],
+        errors=result["errors"],
+        type=request.type,
+        compute=request.compute.model_dump(),
+        config=request.config,
+    )
 
 
 job_types_router = APIRouter(prefix="/api/v1/job-types", tags=["job-types"])
 
 
-@job_types_router.get("")
+@job_types_router.get("", response_model=list[JobTypeInfo])
 async def get_job_types() -> list[dict[str, str]]:
     return list_job_types()
 

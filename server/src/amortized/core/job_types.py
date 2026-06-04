@@ -10,9 +10,18 @@ from typing import Any
 
 import jsonschema
 
+import amortized.config as _config_mod
+
 logger = logging.getLogger("amortized.core.job_types")
 
-_SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
+_PACKAGE_SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "schemas"
+
+
+def _get_schemas_dir() -> Path:
+    configured = _config_mod.settings.schemas_dir
+    if configured is not None:
+        return configured
+    return _PACKAGE_SCHEMAS_DIR
 
 _REGISTRY: dict[str, dict[str, Any]] = {
     "training": {
@@ -38,7 +47,7 @@ _schema_cache: dict[str, dict[str, Any]] = {}
 
 def _load_schema(schema_file: str) -> dict[str, Any]:
     if schema_file not in _schema_cache:
-        path = _SCHEMAS_DIR / schema_file
+        path = _get_schemas_dir() / schema_file
         _schema_cache[schema_file] = json.loads(path.read_text())
     return _schema_cache[schema_file]
 

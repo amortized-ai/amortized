@@ -141,6 +141,20 @@ class Client:
         resp.raise_for_status()
         return Job(resp.json(), self)
 
+    async def validate(
+        self,
+        type: str,
+        config: dict[str, Any],
+        compute: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Validate a job configuration without creating it."""
+        body: dict[str, Any] = {"type": type, "config": config, "dry_run": True}
+        if compute is not None:
+            body["compute"] = compute
+        resp = await self._http.post("/api/v1/jobs/validate", json=body)
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+
     async def submit_recipe(
         self,
         recipe: str,
@@ -281,6 +295,14 @@ class SyncClient:
         return asyncio.run(
             self._async.submit(type, config, compute=compute, metadata=metadata, dry_run=dry_run)
         )
+
+    def validate(
+        self,
+        type: str,
+        config: dict[str, Any],
+        compute: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return asyncio.run(self._async.validate(type, config, compute=compute))
 
     def submit_recipe(
         self,
