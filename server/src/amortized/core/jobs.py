@@ -69,12 +69,16 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
 
     now = datetime.now(UTC).isoformat()
 
-    pid = row.get("pid")
-    if current_status == JobStatus.running.value and pid is not None:
-        from amortized.worker import kill_job_process
+    if current_status == JobStatus.running.value:
+        from amortized.worker import cancel_job_via_backend, kill_job_process
 
-        await kill_job_process(pid)
-        logger.info("Killed process %d for job %s", pid, job_id)
+        handle_json = row.get("backend_handle")
+        cancelled = await cancel_job_via_backend(job_id, handle_json)
+        if not cancelled:
+            pid = row.get("pid")
+            if pid is not None:
+                await kill_job_process(pid)
+                logger.info("Killed process %d for job %s", pid, job_id)
 
     updated = await repo.update_job_status(
         job_id,

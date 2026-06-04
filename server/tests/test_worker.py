@@ -31,9 +31,13 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
+        from amortized.backends.local import LocalBackend
+        from amortized.core.compute import register_backend, reset
         from amortized.db import init_db
 
         await init_db()
+        reset()
+        register_backend(LocalBackend())
         yield c  # type: ignore[misc]
 
 

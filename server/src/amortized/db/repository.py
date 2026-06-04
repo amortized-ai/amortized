@@ -216,6 +216,14 @@ class Repository:
         assert row is not None
         return _row_to_event(row)
 
+    async def get_latest_event(self, job_id: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute(
+            "SELECT * FROM events WHERE job_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (job_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_event(row) if row else None
+
     async def list_events(
         self,
         job_id: str,
