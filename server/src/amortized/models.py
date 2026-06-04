@@ -88,6 +88,10 @@ class JobRequest(BaseModel):
     compute: ComputeSpec = Field(default_factory=ComputeSpec, description="Compute backend spec")
     metadata: dict[str, Any] = Field(default_factory=dict, description="User-defined metadata")
     dry_run: bool = Field(True, description="Validate and preview without creating the job")
+    depends_on: list[str] = Field(
+        default_factory=list,
+        description="Artifact references this job depends on (e.g. ['artifact:job-abc/model'])",
+    )
 
 
 # --- Response models ---

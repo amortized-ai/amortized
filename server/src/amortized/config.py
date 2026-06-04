@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     port: int = 8000
     db_path: Path = Path("./data/amortized.db")
     data_dir: Path = Path("./data")
+    recipes_dir: Path | None = None
 
     openai_api_key: str = Field(
         default="",
