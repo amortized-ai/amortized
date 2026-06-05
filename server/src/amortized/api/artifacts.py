@@ -22,9 +22,10 @@ from amortized.core.artifacts import (
 from amortized.core.artifacts import (
     register_artifact as core_register_artifact,
 )
+from amortized.core.storage import LocalStorage, get_storage
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Artifact, ArtifactRequest
+from amortized.models import Artifact, ArtifactRequest, UploadUrlRequest, UploadUrlResponse
 
 logger = logging.getLogger("amortized.api.artifacts")
 
@@ -55,9 +56,7 @@ async def list_artifacts(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> list[Artifact]:
     repo = Repository(db)
-    rows = await core_list_all_artifacts(
-        repo, artifact_type=type, producer_job=producer_job
-    )
+    rows = await core_list_all_artifacts(repo, artifact_type=type, producer_job=producer_job)
     return [Artifact(**r) for r in rows]
 
 
@@ -85,6 +84,21 @@ async def delete_artifact(
     await core_delete_artifact(repo, artifact_id)
 
 
+@router.post("/upload-url", response_model=UploadUrlResponse)
+async def get_upload_url(req: UploadUrlRequest) -> UploadUrlResponse:
+    storage = get_storage()
+    if isinstance(storage, LocalStorage):
+        raise HTTPException(
+            status_code=400,
+            detail="Pre-signed uploads not available with local storage backend",
+        )
+    try:
+        result = storage.generate_upload_url(req.name, req.content_type)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return UploadUrlResponse(**result)
+
+
 @router.get("/{artifact_id}/download")
 async def download_artifact(
     artifact_id: str,
@@ -97,7 +111,19 @@ async def download_artifact(
 
     location = artifact.get("location") or artifact.get("path", "")
 
-    if location.startswith(("http://", "https://", "s3://", "gs://")):
+    if location.startswith(("s3://", "gs://")):
+        storage = get_storage()
+        if not isinstance(storage, LocalStorage):
+            after_scheme = location.split("//", 1)[1]
+            key = after_scheme.split("/", 1)[1] if "/" in after_scheme else location
+            try:
+                url = storage.generate_download_url(key)
+                return JSONResponse({"location": url})
+            except Exception:
+                pass
+        return JSONResponse({"location": location})
+
+    if location.startswith(("http://", "https://")):
         return JSONResponse({"location": location})
 
     file_path = Path(location)

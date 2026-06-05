@@ -23,6 +23,7 @@ class BackendHandle:
     remote_pid: int | None = None
     remote_dir: str | None = None
     container_id: str | None = None
+    scheduler_id: str | None = None
 
 
 @dataclass

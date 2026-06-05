@@ -190,6 +190,44 @@ class TrainingMetric(BaseModel):
 # --- Typed response models ---
 
 
+class ConfigValidateRequest(BaseModel):
+    """Lightweight config validation request (no compute spec)."""
+
+    type: str = Field(..., description="Job type (e.g. 'training', 'sdg')")
+    config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
+
+
+class ConfigValidateResponse(BaseModel):
+    """Response from config validation."""
+
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ResumeRequest(BaseModel):
+    """Request to resume a failed job."""
+
+    checkpoint_id: str | None = Field(
+        None, description="Artifact ID of the checkpoint to resume from"
+    )
+
+
+class UploadUrlRequest(BaseModel):
+    """Request for a pre-signed upload URL."""
+
+    name: str = Field(..., description="Object name / key")
+    content_type: str = Field("application/octet-stream", description="MIME type of the upload")
+
+
+class UploadUrlResponse(BaseModel):
+    """Response with a pre-signed upload URL."""
+
+    url: str
+    method: str = "PUT"
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
 class DryRunResponse(BaseModel):
     """Response from a dry-run / validation request."""
 
