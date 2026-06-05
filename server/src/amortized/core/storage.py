@@ -10,14 +10,14 @@ from amortized.config import settings
 logger = logging.getLogger("amortized.core.storage")
 
 try:
-    import boto3  # type: ignore[import-not-found]
-    from botocore.config import Config as BotoConfig  # type: ignore[import-not-found]
+    import boto3
+    from botocore.config import Config as BotoConfig
 except ImportError:
     boto3 = None
     BotoConfig = None
 
 try:
-    from google.cloud import storage as gcs_storage  # type: ignore[import-untyped]
+    from google.cloud import storage as gcs_storage
 except ImportError:
     gcs_storage = None
 
