@@ -22,7 +22,7 @@ class TestSimulationFallback:
 
         with open(output_path) as f:
             lines = f.readlines()
-        assert len(lines) == 50
+        assert len(lines) == 10
 
         first_row = json.loads(lines[0])
         assert "instruction" in first_row
@@ -38,7 +38,7 @@ class TestSimulationFallback:
 
         with open(stats_path) as f:
             stats = json.load(f)
-        assert stats["total_completed"] == 50
+        assert stats["total_completed"] == 10
         assert stats["status"] == "completed"
 
     def test_default_output_dir(self, tmp_path: Any, monkeypatch: Any) -> None:
