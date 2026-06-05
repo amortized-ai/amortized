@@ -4,6 +4,7 @@ import os
 
 import httpx
 import pytest
+from sse_starlette.sse import EventSourceResponse
 
 from amortized.main import app
 
@@ -136,8 +137,6 @@ class TestSSEStreaming:
         """
         from unittest.mock import AsyncMock
 
-        from sse_starlette.sse import EventSourceResponse
-
         from amortized.api.events import get_job_events
 
         job_id = await _create_training_job(client)
@@ -154,6 +153,138 @@ class TestSSEStreaming:
                 since=None,
                 types=None,
                 stream=True,
+                last_event_id=None,
+                db=db,
+            )
+            assert isinstance(result, EventSourceResponse)
+            break
+
+
+class TestLogsEndpoint:
+    @pytest.mark.asyncio
+    async def test_logs_for_nonexistent_job(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get("/api/v1/jobs/nonexistent/logs")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_logs_returns_event_source_response(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        from amortized.api.events import stream_job_logs
+
+        job_id = await _create_training_job(client)
+
+        request = AsyncMock()
+        request.is_disconnected = AsyncMock(return_value=True)
+
+        from amortized.db import get_db
+
+        async for db in get_db():
+            result = await stream_job_logs(
+                request=request,
+                job_id=job_id,
+                last_event_id=None,
+                db=db,
+            )
+            assert isinstance(result, EventSourceResponse)
+            break
+
+    @pytest.mark.asyncio
+    async def test_logs_cursor_reconnection(self, client: httpx.AsyncClient) -> None:
+        from amortized.core.events import emit_log
+        from amortized.db import get_db
+        from amortized.db.repository import Repository
+
+        job_id = await _create_training_job(client)
+
+        async for db in get_db():
+            repo = Repository(db)
+            e1 = await emit_log(repo, job_id, "line one")
+            await emit_log(repo, job_id, "line two")
+            break
+
+        resp = await client.get(
+            f"/api/v1/jobs/{job_id}/events",
+            params={"types": "log", "since": e1.timestamp},
+        )
+        assert resp.status_code == 200
+        events = resp.json()
+        assert len(events) == 1
+        assert events[0]["data"]["message"] == "line two"
+
+
+class TestTerminalState:
+    @pytest.mark.asyncio
+    async def test_events_done_on_cancelled_job(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A cancelled job's event stream should include a done event."""
+        job_id = await _create_training_job(client)
+        await client.delete(f"/api/v1/jobs/{job_id}")
+
+        resp = await client.get(f"/api/v1/jobs/{job_id}/events")
+        assert resp.status_code == 200
+        events = resp.json()
+        assert any(
+            e["type"] == "state_change" and e["data"]["status"] == "cancelled"
+            for e in events
+        ), "cancelled state_change event missing"
+
+    @pytest.mark.asyncio
+    async def test_events_sse_terminates_on_terminal_job(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """SSE event_generator should yield done event for a terminal job."""
+        from unittest.mock import AsyncMock
+
+        from amortized.api.events import _TERMINAL_STATUSES, get_job_events
+
+        job_id = await _create_training_job(client)
+        await client.delete(f"/api/v1/jobs/{job_id}")
+
+        request = AsyncMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        from amortized.db import get_db
+
+        async for db in get_db():
+            result = await get_job_events(
+                request=request,
+                job_id=job_id,
+                since=None,
+                types=None,
+                stream=True,
+                last_event_id=None,
+                db=db,
+            )
+            assert isinstance(result, EventSourceResponse)
+            assert {"succeeded", "failed", "cancelled"} == _TERMINAL_STATUSES
+            break
+
+    @pytest.mark.asyncio
+    async def test_logs_sse_returns_response_for_terminal_job(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Logs SSE should still return EventSourceResponse for a terminal job."""
+        from unittest.mock import AsyncMock
+
+        from amortized.api.events import stream_job_logs
+
+        job_id = await _create_training_job(client)
+        await client.delete(f"/api/v1/jobs/{job_id}")
+
+        request = AsyncMock()
+        request.is_disconnected = AsyncMock(return_value=False)
+
+        from amortized.db import get_db
+
+        async for db in get_db():
+            result = await stream_job_logs(
+                request=request,
+                job_id=job_id,
+                last_event_id=None,
                 db=db,
             )
             assert isinstance(result, EventSourceResponse)
