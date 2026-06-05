@@ -10,6 +10,7 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
+from amortized.config import settings as _settings
 from amortized.core.artifacts import (
     delete_artifact as core_delete_artifact,
 )
@@ -95,7 +96,8 @@ async def get_upload_url(req: UploadUrlRequest) -> UploadUrlResponse:
     try:
         result = storage.generate_upload_url(req.name, req.content_type)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Failed to generate upload URL")
+        raise HTTPException(status_code=500, detail="Failed to generate upload URL") from exc
     return UploadUrlResponse(**result)
 
 
@@ -116,11 +118,13 @@ async def download_artifact(
         if not isinstance(storage, LocalStorage):
             after_scheme = location.split("//", 1)[1]
             key = after_scheme.split("/", 1)[1] if "/" in after_scheme else location
+            if key.startswith(_settings.storage_prefix):
+                key = key[len(_settings.storage_prefix):]
             try:
                 url = storage.generate_download_url(key)
                 return JSONResponse({"location": url})
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to generate pre-signed download URL for %s: %s", key, exc)
         return JSONResponse({"location": location})
 
     if location.startswith(("http://", "https://")):

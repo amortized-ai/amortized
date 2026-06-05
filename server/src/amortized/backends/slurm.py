@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import textwrap
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -103,7 +104,7 @@ class SlurmBackend:
 
         module_lines = "\n".join(f"module load {m}" for m in profile.module_loads)
 
-        env_lines = "\n".join(f"export {k}={v}" for k, v in spec.env.items())
+        env_lines = "\n".join(f"export {k}={shlex.quote(v)}" for k, v in spec.env.items())
 
         cmd = " ".join(spec.command)
 
