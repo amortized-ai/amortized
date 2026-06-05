@@ -12,9 +12,9 @@ from typing import Any
 import aiosqlite
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, BackendStatus, JobSpec
+from amortized.backends import BackendHandle, BackendStatus, Capability, JobSpec
 from amortized.core.artifacts import register_artifacts_for_job, register_log_artifacts
-from amortized.core.compute import get_backend
+from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.events import emit_event
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
@@ -73,12 +73,15 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 
 
 def _serialize_handle(handle: BackendHandle) -> str:
-    return json.dumps({
-        "backend_name": handle.backend_name,
-        "job_id": handle.job_id,
-        "remote_pid": handle.remote_pid,
-        "remote_dir": handle.remote_dir,
-    })
+    return json.dumps(
+        {
+            "backend_name": handle.backend_name,
+            "job_id": handle.job_id,
+            "remote_pid": handle.remote_pid,
+            "remote_dir": handle.remote_dir,
+            "scheduler_id": handle.scheduler_id,
+        }
+    )
 
 
 def _deserialize_handle(raw: str | None) -> BackendHandle | None:
@@ -90,6 +93,7 @@ def _deserialize_handle(raw: str | None) -> BackendHandle | None:
         job_id=d["job_id"],
         remote_pid=d.get("remote_pid"),
         remote_dir=d.get("remote_dir"),
+        scheduler_id=d.get("scheduler_id"),
     )
 
 
@@ -230,6 +234,26 @@ async def _run_job(job: dict[str, Any]) -> None:
             error=f"Unknown compute backend: {backend_name!r}",
         )
         return
+
+    required_caps: set[Capability] = set()
+    compute = job.get("metadata", {}) if isinstance(job.get("metadata"), dict) else {}
+    gpus = compute.get("gpus", 0)
+    if isinstance(gpus, int) and gpus > 0:
+        required_caps.add(Capability.GPU)
+    if config.get("resume_from_checkpoint"):
+        required_caps.add(Capability.RESUME)
+
+    if required_caps:
+        try:
+            check_capabilities(backend, required_caps)
+        except MissingCapabilityError as exc:
+            await _update_job(
+                job_id,
+                status=JobStatus.failed,
+                completed_at=datetime.now(UTC).isoformat(),
+                error=str(exc),
+            )
+            return
 
     spec = JobSpec(
         job_id=job_id,
@@ -455,12 +479,15 @@ async def _monitor_heartbeats(poll_interval: float = 60.0, timeout: float = 300.
                         )
                         await db.commit()
                         await emit_event(
-                            repo, job["id"], "state_change",
+                            repo,
+                            job["id"],
+                            "state_change",
                             {"status": JobStatus.failed.value, "error": error_msg},
                         )
                         logger.warning(
                             "Heartbeat timeout: job %s marked failed (exit_code=%s)",
-                            job["id"], bs.exit_code,
+                            job["id"],
+                            bs.exit_code,
                         )
             finally:
                 await db.close()

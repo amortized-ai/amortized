@@ -27,6 +27,9 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
+from amortized.core.jobs import (
+    resume_job as core_resume_job,
+)
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
@@ -35,6 +38,7 @@ from amortized.models import (
     Job,
     JobStatus,
     JobType,
+    ResumeRequest,
     SynthJobConfig,
     TrainingJobConfig,
     TrainingMetric,
@@ -225,6 +229,26 @@ async def download_artifact(
         filename=file_path.name,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/{job_id}/resume", response_model=Job)
+async def resume_job(
+    job_id: str,
+    request: ResumeRequest | None = None,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> Job:
+    repo = Repository(db)
+    try:
+        row = await core_resume_job(
+            repo,
+            job_id,
+            checkpoint_id=request.checkpoint_id if request else None,
+        )
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from exc
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Job(**row)
 
 
 @router.delete("/{job_id}", response_model=Job)

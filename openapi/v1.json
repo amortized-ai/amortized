@@ -489,6 +489,65 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/resume": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Resume Job",
+        "operationId": "resume_job_api_v1_jobs__job_id__resume_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ResumeRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/validate": {
       "post": {
         "tags": [
@@ -514,6 +573,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DryRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate Config Endpoint",
+        "description": "Lightweight config validation \u2014 just type + config, no compute spec.",
+        "operationId": "validate_config_endpoint_api_v1_config_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigValidateResponse"
                 }
               }
             }
@@ -919,6 +1020,47 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/artifacts/upload-url": {
+      "post": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "Get Upload Url",
+        "operationId": "get_upload_url_api_v1_artifacts_upload_url_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadUrlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadUrlResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -1876,6 +2018,56 @@
         "title": "ComputeStatusResponse",
         "description": "Status of a compute backend."
       },
+      "ConfigValidateRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Job type (e.g. 'training', 'sdg')"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "Job-type-specific configuration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "config"
+        ],
+        "title": "ConfigValidateRequest",
+        "description": "Lightweight config validation request (no compute spec)."
+      },
+      "ConfigValidateResponse": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "ConfigValidateResponse",
+        "description": "Response from config validation."
+      },
       "Conversation": {
         "properties": {
           "id": {
@@ -2554,6 +2746,25 @@
         "title": "RecipeSummary",
         "description": "Summary of an available recipe."
       },
+      "ResumeRequest": {
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id",
+            "description": "Artifact ID of the checkpoint to resume from"
+          }
+        },
+        "type": "object",
+        "title": "ResumeRequest",
+        "description": "Request to resume a failed job."
+      },
       "SuggestedAction": {
         "properties": {
           "type": {
@@ -2837,6 +3048,53 @@
         ],
         "title": "TrainingMetric",
         "description": "A single training metrics data point."
+      },
+      "UploadUrlRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Object name / key"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME type of the upload",
+            "default": "application/octet-stream"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "UploadUrlRequest",
+        "description": "Request for a pre-signed upload URL."
+      },
+      "UploadUrlResponse": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "default": "PUT"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "UploadUrlResponse",
+        "description": "Response with a pre-signed upload URL."
       },
       "ValidationError": {
         "properties": {

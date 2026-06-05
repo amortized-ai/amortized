@@ -18,7 +18,15 @@ from amortized.core.jobs import create_job as core_create_job
 from amortized.core.jobs import validate_job as core_validate_job
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import DryRunResponse, Job, JobRequest, JobType, JobTypeInfo
+from amortized.models import (
+    ConfigValidateRequest,
+    ConfigValidateResponse,
+    DryRunResponse,
+    Job,
+    JobRequest,
+    JobType,
+    JobTypeInfo,
+)
 
 logger = logging.getLogger("amortized.api.job_types")
 
@@ -82,6 +90,22 @@ async def validate_job(request: JobRequest) -> DryRunResponse:
         type=request.type,
         compute=request.compute.model_dump(),
         config=request.config,
+    )
+
+
+@router.post("/api/v1/config/validate", response_model=ConfigValidateResponse)
+async def validate_config_endpoint(request: ConfigValidateRequest) -> ConfigValidateResponse:
+    """Lightweight config validation — just type + config, no compute spec."""
+    try:
+        result = await core_validate_job(
+            job_type=request.type,
+            config=request.config,
+        )
+    except UnknownJobTypeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ConfigValidateResponse(
+        valid=result["valid"],
+        errors=result["errors"],
     )
 
 

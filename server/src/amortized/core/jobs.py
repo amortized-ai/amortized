@@ -21,6 +21,7 @@ _VALID_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
     JobStatus.queued: {JobStatus.provisioning, JobStatus.failed, JobStatus.cancelled},
     JobStatus.provisioning: {JobStatus.running, JobStatus.failed, JobStatus.cancelled},
     JobStatus.running: {JobStatus.succeeded, JobStatus.failed, JobStatus.cancelled},
+    JobStatus.failed: {JobStatus.queued},
 }
 
 
@@ -37,9 +38,7 @@ async def transition_job(
     current = JobStatus(job["status"])
     allowed = _VALID_TRANSITIONS.get(current, set())
     if new_status not in allowed:
-        raise InvalidJobStateError(
-            f"Cannot transition from {current.value} to {new_status.value}"
-        )
+        raise InvalidJobStateError(f"Cannot transition from {current.value} to {new_status.value}")
     now = datetime.now(UTC).isoformat()
     updated = await repo.update_job_status(job_id, status=new_status, updated_at=now, **kwargs)
     await emit_event(repo, job_id, "state_change", {"status": new_status.value})
@@ -123,9 +122,7 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
 
     current_status = row["status"]
     if current_status in (JobStatus.succeeded.value, JobStatus.failed.value):
-        raise InvalidJobStateError(
-            f"Cannot cancel job with status '{current_status}'"
-        )
+        raise InvalidJobStateError(f"Cannot cancel job with status '{current_status}'")
     if current_status == JobStatus.cancelled.value:
         return row
 
@@ -141,6 +138,8 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
             if pid is not None:
                 await kill_job_process(pid)
                 logger.info("Killed process %d for job %s", pid, job_id)
+        else:
+            logger.info("Cancelled job %s via backend", job_id)
 
     updated = await repo.update_job_status(
         job_id,
@@ -151,6 +150,59 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
     await emit_event(repo, job_id, "state_change", {"status": JobStatus.cancelled.value})
     logger.info("Cancelled job %s", job_id)
     assert updated is not None, f"Job {job_id} vanished during cancel"
+    return updated
+
+
+async def resume_job(
+    repo: Repository,
+    job_id: str,
+    *,
+    checkpoint_id: str | None = None,
+) -> dict[str, Any]:
+    """Resume a failed job, optionally from a specific checkpoint."""
+    import json as _json
+
+    row = await repo.get_job(job_id)
+    if row is None:
+        raise JobNotFoundError(job_id)
+
+    if row["status"] != JobStatus.failed.value:
+        raise InvalidJobStateError(
+            f"Can only resume failed jobs, current status is '{row['status']}'"
+        )
+
+    config = row["config"]
+    if isinstance(config, str):
+        config = _json.loads(config)
+
+    if checkpoint_id:
+        from amortized.core.artifacts import get_artifact
+
+        artifact = await get_artifact(repo, checkpoint_id)
+        if artifact is None:
+            raise InvalidJobStateError(f"Checkpoint artifact {checkpoint_id} not found")
+        checkpoint_path = artifact.get("path") or artifact.get("location", "")
+        config = {**config, "resume_from_checkpoint": checkpoint_path}
+
+    now = datetime.now(UTC).isoformat()
+
+    await repo.conn.execute(
+        """UPDATE jobs SET status = ?, updated_at = ?, error = NULL,
+           started_at = NULL, completed_at = NULL, config = ? WHERE id = ?""",
+        (JobStatus.queued.value, now, _json.dumps(config), job_id),
+    )
+    await repo.conn.commit()
+
+    await emit_event(
+        repo,
+        job_id,
+        "state_change",
+        {"status": JobStatus.queued.value, "resumed": True},
+    )
+    logger.info("Resumed job %s", job_id)
+
+    updated = await repo.get_job(job_id)
+    assert updated is not None
     return updated
 
 

@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from amortized.backends import ComputeBackend
+from amortized.backends import Capability, ComputeBackend
 
 _backends: dict[str, ComputeBackend] = {}
+
+
+class MissingCapabilityError(Exception):
+    def __init__(self, backend_name: str, missing: set[Capability]) -> None:
+        self.backend_name = backend_name
+        self.missing = missing
+        names = ", ".join(sorted(c.value for c in missing))
+        super().__init__(f"Backend {backend_name!r} lacks required capabilities: {names}")
 
 
 def register_backend(backend: ComputeBackend) -> None:
@@ -16,6 +24,13 @@ def get_backend(name: str) -> ComputeBackend:
         return _backends[name]
     except KeyError:
         raise KeyError(f"Unknown compute backend: {name!r}") from None
+
+
+def check_capabilities(backend: ComputeBackend, required: set[Capability]) -> None:
+    available = backend.capabilities()
+    missing = required - available
+    if missing:
+        raise MissingCapabilityError(backend.name, missing)
 
 
 def list_backends() -> list[dict[str, object]]:

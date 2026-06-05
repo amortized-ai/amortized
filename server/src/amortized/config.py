@@ -17,12 +17,26 @@ class Settings(BaseSettings):
     schemas_dir: Path | None = None
     datasets_dir: Path | None = None
 
+    api_key: str = Field(
+        default="",
+        description="API key for auth (empty = no auth, reads AMORTIZED_API_KEY)",
+    )
+    cors_origins: str = Field(
+        default="*",
+        description="Comma-separated allowed CORS origins",
+    )
+
     openai_api_key: str = Field(
         default="",
         description="OpenAI API key (reads AMORTIZED_OPENAI_API_KEY or OPENAI_API_KEY)",
     )
     openai_model: str = "gpt-5-mini"
     openai_base_url: str = "https://api.openai.com/v1"
+
+    storage_backend: str = Field("local", description="Storage backend: local, s3, gcs")
+    storage_bucket: str = Field("", description="S3/GCS bucket name")
+    storage_prefix: str = Field("artifacts/", description="Key prefix for cloud storage")
+    storage_region: str = Field("us-east-1", description="AWS region for S3")
 
     model_config = {
         "env_prefix": "AMORTIZED_",

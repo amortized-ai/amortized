@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import hmac
 import logging
 import shutil
 from collections.abc import AsyncIterator
@@ -29,6 +30,7 @@ from amortized.api import (
     ws,
 )
 from amortized.backends.local import LocalBackend
+from amortized.config import settings as _settings
 from amortized.core.compute import register_backend
 from amortized.db import init_db
 from amortized.mcp.server import create_mcp_server
@@ -73,13 +75,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_AUTH_SKIP_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"}
+
+
+@app.middleware("http")
+async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+    if not _settings.api_key:
+        return await call_next(request)
+    if request.url.path in _AUTH_SKIP_PATHS:
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": "unauthorized",
+                "message": "Missing or invalid Authorization header",
+                "details": [],
+            },
+        )
+    token = auth[len("Bearer ") :]
+    if not hmac.compare_digest(token, _settings.api_key):
+        return JSONResponse(
+            status_code=401,
+            content={"code": "unauthorized", "message": "Invalid API key", "details": []},
+        )
+    return await call_next(request)
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -105,7 +136,8 @@ async def http_exception_handler(_request: Request, exc: StarletteHTTPException)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
-    _request: Request, exc: RequestValidationError,
+    _request: Request,
+    exc: RequestValidationError,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=422,
@@ -113,8 +145,7 @@ async def validation_exception_handler(
             "code": "validation_error",
             "message": "Request validation failed",
             "details": [
-                {"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]}
-                for e in exc.errors()
+                {"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in exc.errors()
             ],
         },
     )
@@ -148,8 +179,7 @@ def _detect_gpu() -> dict[str, object]:
                 "available": True,
                 "count": torch.cuda.device_count(),
                 "devices": [
-                    torch.cuda.get_device_name(i)
-                    for i in range(torch.cuda.device_count())
+                    torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
                 ],
             }
     except ImportError:
