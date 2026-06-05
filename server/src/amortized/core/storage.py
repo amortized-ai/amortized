@@ -10,16 +10,16 @@ from amortized.config import settings
 logger = logging.getLogger("amortized.core.storage")
 
 try:
-    import boto3
-    from botocore.config import Config as BotoConfig
+    import boto3  # type: ignore[import-not-found]
+    from botocore.config import Config as BotoConfig  # type: ignore[import-not-found]
 except ImportError:
-    boto3 = None  # type: ignore[assignment]
-    BotoConfig = None  # type: ignore[assignment,misc]
+    boto3 = None
+    BotoConfig = None
 
 try:
-    from google.cloud import storage as gcs_storage
+    from google.cloud import storage as gcs_storage  # type: ignore[import-untyped]
 except ImportError:
-    gcs_storage = None  # type: ignore[assignment]
+    gcs_storage = None
 
 
 class StorageBackend(Protocol):
@@ -85,10 +85,12 @@ class S3Storage:
 
     def generate_download_url(self, key: str, expires_in: int = 3600) -> str:
         full_key = self._full_key(key)
-        return self._client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": self._bucket, "Key": full_key},
-            ExpiresIn=expires_in,
+        return str(
+            self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._bucket, "Key": full_key},
+                ExpiresIn=expires_in,
+            )
         )
 
 
@@ -131,10 +133,12 @@ class GCSStorage:
         import datetime
 
         blob = self._bucket.blob(self._full_key(key))
-        return blob.generate_signed_url(
-            version="v4",
-            expiration=datetime.timedelta(seconds=expires_in),
-            method="GET",
+        return str(
+            blob.generate_signed_url(
+                version="v4",
+                expiration=datetime.timedelta(seconds=expires_in),
+                method="GET",
+            )
         )
 
 
