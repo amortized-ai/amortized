@@ -2582,11 +2582,6 @@
       },
       "SynthJobConfig": {
         "properties": {
-          "pipeline": {
-            "type": "string",
-            "title": "Pipeline",
-            "description": "Pipeline: conversation, attribute, or transform"
-          },
           "model": {
             "type": "string",
             "title": "Model",
@@ -2623,13 +2618,6 @@
             "description": "Number of samples to generate",
             "default": 100
           },
-          "max_turns": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Max Turns",
-            "description": "Max turns per conversation",
-            "default": 5
-          },
           "max_concurrent": {
             "type": "integer",
             "minimum": 1.0,
@@ -2637,43 +2625,14 @@
             "description": "Max concurrent LLM requests",
             "default": 16
           },
-          "seed_data_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seed Data Path",
-            "description": "Path to seed dataset"
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0.7
           },
-          "system_prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "System Prompt",
-            "description": "System prompt for assistant"
-          },
-          "user_simulator_prompt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Simulator Prompt",
-            "description": "System prompt for simulated user"
-          },
-          "attributes": {
+          "strategy_params": {
             "anyOf": [
               {
                 "additionalProperties": true,
@@ -2683,32 +2642,12 @@
                 "type": "null"
               }
             ],
-            "title": "Attributes",
-            "description": "Attribute constraints"
-          },
-          "output_format": {
-            "type": "string",
-            "title": "Output Format",
-            "description": "Output format",
-            "default": "messages"
-          },
-          "temperature": {
-            "type": "number",
-            "maximum": 2.0,
-            "minimum": 0.0,
-            "title": "Temperature",
-            "default": 0.7
-          },
-          "checkpoint_interval": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Checkpoint Interval",
-            "default": 50
+            "title": "Strategy Params",
+            "description": "Raw asynth GeneralSynthesisParams (advanced)"
           }
         },
         "type": "object",
         "required": [
-          "pipeline",
           "model"
         ],
         "title": "SynthJobConfig",
