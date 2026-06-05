@@ -73,6 +73,7 @@ async def get_job_events(
                 events = await core_list_events(
                     inner_repo, job_id, since=cursor, types=type_list,
                 )
+                job = await core_get_job(inner_repo, job_id)
             finally:
                 await db_inner.close()
 
@@ -96,12 +97,6 @@ async def get_job_events(
                     yield {"comment": "keepalive"}
                     ticks_since_event = 0
 
-            db_inner2 = await aiosqlite.connect(db_path)
-            db_inner2.row_factory = aiosqlite.Row
-            try:
-                job = await core_get_job(Repository(db_inner2), job_id)
-            finally:
-                await db_inner2.close()
             if job and job["status"] in _TERMINAL_STATUSES:
                 yield {"event": "done", "data": json.dumps({"status": job["status"]})}
                 return
