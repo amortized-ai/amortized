@@ -37,6 +37,15 @@ async def emit_event(
     return event
 
 
+async def emit_log(
+    repo: Repository,
+    job_id: str,
+    message: str,
+) -> Event:
+    """Emit a log event for a job."""
+    return await emit_event(repo, job_id, "log", {"message": message})
+
+
 async def list_events(
     repo: Repository,
     job_id: str,

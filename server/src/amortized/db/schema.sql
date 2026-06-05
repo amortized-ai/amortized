@@ -62,3 +62,4 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_job_id ON artifacts(job_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_type ON artifacts(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_events_job_id ON events(job_id);
+CREATE INDEX IF NOT EXISTS idx_events_job_timestamp ON events(job_id, timestamp);
