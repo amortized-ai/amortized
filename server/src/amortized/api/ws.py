@@ -80,12 +80,11 @@ async def _stream_training_metrics(
 async def _stream_sdg_progress(
     websocket: WebSocket, output_dir: str, job_id: str
 ) -> None:
-    """Poll SDG checkpoint progress and push updates to the client."""
-    checkpoint_dir = Path(output_dir) / "checkpoints"
-    metadata_path = checkpoint_dir / "flow_metadata.json"
+    """Poll SDG output JSONL and push progress updates to the client."""
+    output_path = Path(output_dir) / "generated_data.jsonl"
+    stats_path = Path(output_dir) / "stats.json"
 
     while True:
-        # Check job status
         db = await _get_db_connection()
         try:
             job = await get_job(db, job_id)
@@ -98,18 +97,35 @@ async def _stream_sdg_progress(
 
         status = job["status"]
 
-        # Read progress from metadata
-        if metadata_path.exists():
+        completed_rows = 0
+        if output_path.exists():
+            with contextlib.suppress(OSError), output_path.open() as f:
+                completed_rows = sum(1 for _ in f)
+
+        config = job.get("config")
+        total_requested = 100
+        if isinstance(config, str):
+            with contextlib.suppress(json.JSONDecodeError, AttributeError):
+                total_requested = json.loads(config).get("num_samples", 100)
+        elif isinstance(config, dict):
+            total_requested = config.get("num_samples", 100)
+
+        progress = {
+            "completed_rows": completed_rows,
+            "total_rows": total_requested,
+            "status": "running",
+        }
+
+        if stats_path.exists():
             try:
-                metadata = json.loads(metadata_path.read_text())
-                await websocket.send_json({"type": "metric", "data": metadata})
+                stats = json.loads(stats_path.read_text())
+                progress["status"] = stats.get("status", "running")
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Send status update
+        await websocket.send_json({"type": "metric", "data": progress})
         await websocket.send_json({"type": "status", "data": {"status": status}})
 
-        # Stop if job is done
         if status in (
             JobStatus.succeeded.value,
             JobStatus.failed.value,

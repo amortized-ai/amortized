@@ -71,35 +71,29 @@ class TestTrainingJobConfig:
 class TestSynthJobConfig:
     def test_minimal_config(self) -> None:
         config = SynthJobConfig(
-            pipeline="conversation",
             model="openai/gpt-4o",
         )
-        assert config.pipeline == "conversation"
+        assert config.model == "openai/gpt-4o"
         assert config.api_base is None
         assert config.num_samples == 100
+        assert config.strategy_params is None
 
     def test_full_config(self) -> None:
         config = SynthJobConfig(
-            pipeline="attribute",
             model="hosted_vllm/meta-llama/Llama-3.3-70B-Instruct",
             api_base="http://localhost:8000/v1",
             api_key="sk-test",
             num_samples=200,
-            max_turns=10,
             max_concurrent=8,
-            attributes={"style": "formal", "domain": "science"},
             temperature=0.5,
+            strategy_params={"sampled_attributes": [{"name": "domain", "values": ["science"]}]},
         )
-        assert config.attributes is not None
-        assert config.attributes["style"] == "formal"
-        assert config.max_turns == 10
+        assert config.strategy_params is not None
+        assert config.max_concurrent == 8
 
     def test_missing_model(self) -> None:
         with pytest.raises(ValidationError):
-            SynthJobConfig(  # type: ignore[call-arg]
-                pipeline="conversation",
-                # missing model
-            )
+            SynthJobConfig()  # type: ignore[call-arg]
 
 
 class TestMemoryEstimateRequest:

@@ -1,7 +1,6 @@
 """Synthesis pipeline discovery endpoints."""
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter
 
@@ -13,17 +12,20 @@ router = APIRouter(prefix="/api/v1/flows", tags=["flows"])
 
 
 def _discover_pipelines() -> list[PipelineInfo]:
-    """Discover available synthesis pipelines."""
+    """Discover available synthesis strategies via asynth."""
     try:
-        from amortized_synth import list_pipelines
+        import asynth  # noqa: F401
 
-        pipelines: list[dict[str, Any]] = list_pipelines()
-        return [PipelineInfo(**p) for p in pipelines]
+        return [
+            PipelineInfo(
+                name="general",
+                description="General synthesis strategy with attribute system",
+                supports_multi_turn=True,
+                config_schema={"strategy_params": "GeneralSynthesisParams"},
+            )
+        ]
     except ImportError:
-        logger.debug("amortized_synth not installed, no pipelines available")
-        return []
-    except Exception:
-        logger.exception("Failed to discover synthesis pipelines")
+        logger.debug("asynth not installed, no strategies available")
         return []
 
 

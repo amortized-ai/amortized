@@ -67,22 +67,15 @@ class TrainingJobConfig(BaseModel):
 class SynthJobConfig(BaseModel):
     """Configuration for a synthetic data generation job."""
 
-    pipeline: str = Field(..., description="Pipeline: conversation, attribute, or transform")
     model: str = Field(..., description="Teacher model (LiteLLM format)")
     api_base: str | None = Field(None, description="Model API base URL")
     api_key: str | None = Field(None, description="Model API key")
     num_samples: int = Field(100, ge=1, description="Number of samples to generate")
-    max_turns: int = Field(5, ge=1, description="Max turns per conversation")
     max_concurrent: int = Field(16, ge=1, description="Max concurrent LLM requests")
-    seed_data_path: str | None = Field(None, description="Path to seed dataset")
-    system_prompt: str | None = Field(None, description="System prompt for assistant")
-    user_simulator_prompt: str | None = Field(
-        None, description="System prompt for simulated user"
-    )
-    attributes: dict[str, Any] | None = Field(None, description="Attribute constraints")
-    output_format: str = Field("messages", description="Output format")
     temperature: float = Field(0.7, ge=0, le=2)
-    checkpoint_interval: int = Field(50, ge=1)
+    strategy_params: dict[str, Any] | None = Field(
+        None, description="Raw asynth GeneralSynthesisParams (advanced)"
+    )
 
 
 class ComputeSpec(BaseModel):

@@ -103,31 +103,23 @@ Recommended models:
 Output: HuggingFace PEFT format (adapter_model.safetensors + adapter_config.json). \
 Metrics written as training_metrics.jsonl with per-step loss, LR, epoch.
 
-## SDG HUB KNOWLEDGE (Synthetic Data Generation)
+## ASYNTH KNOWLEDGE (Synthetic Data Generation)
 
-SDG Hub flows transform an input dataset into training data using a teacher model.
-CRITICAL: Every flow requires an input dataset with specific columns. Use list_sdg_flows \
-to see what columns each flow needs.
+asynth generates synthetic training data using a teacher model. It uses an attribute-based \
+system: you define what kind of data to generate via strategy_params, and asynth orchestrates \
+the LLM calls to produce it.
+
+Key concepts:
+- **strategy_params**: Defines attributes for generation — sampled (discrete values), \
+generated (LLM-produced), multiturn (conversations), transformed (reshape output)
+- **model**: Teacher model in LiteLLM format (e.g. openai/gpt-4o, hosted_vllm/model-name)
+- **num_samples**: How many samples to generate
 
 Workflow for SDG:
-1. Call list_sdg_flows to see available flows and their required input columns
-2. Use create_dataset to generate the seed data with the required columns
-   - For knowledge tuning flows: create rows with document, document_outline, domain \
-columns containing factual information (100+ words per document)
-   - For code evaluation: domain specs and function specifications
-   - For MCP distillation: tool definitions from an MCP server
-3. Use preview_dataset to show the user a sample of the seed data for verification
-4. Once the user approves, propose an SDG job with the correct flow_id and dataset_path
-5. The flow will use the teacher model (e.g. gpt-5-mini) to generate enriched training data
-
-Common flows for knowledge tasks:
-- 'Key Facts Knowledge Tuning Dataset Generation Flow': Needs document, document_outline, \
-domain columns. Good for factual Q&A.
-- 'Document Based Knowledge Tuning Dataset Generation Flow': Needs document, \
-document_outline, domain, icl_document, icl_query_1-3. Best quality.
-
-The user may need help creating the seed dataset. Use create_dataset to write the JSONL \
-file, then preview_dataset to verify it before proposing the SDG job.
+1. Understand what kind of training data the user needs
+2. Propose an SDG job with the teacher model and num_samples
+3. For advanced use cases, configure strategy_params with attribute definitions
+4. The job runs asynth's synthesis pipeline and outputs a JSONL file
 
 Teacher model support: 100+ providers via LiteLLM — OpenAI, Anthropic, Google, \
 vLLM (hosted_vllm/), Ollama (ollama/), Azure, and more.

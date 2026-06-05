@@ -39,23 +39,19 @@ TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "submit_sdg_job",
             "description": (
-                "Submit a synthetic data generation job. "
+                "Submit a synthetic data generation job using asynth. "
                 "Use propose_action instead if you want the user to confirm first."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "flow_id": {
-                        "type": "string",
-                        "description": "SDG flow identifier",
-                    },
-                    "dataset_path": {
-                        "type": "string",
-                        "description": "Path to input dataset",
-                    },
                     "model": {
                         "type": "string",
                         "description": "Teacher model name (e.g. openai/gpt-4o)",
+                    },
+                    "num_samples": {
+                        "type": "integer",
+                        "description": "Number of samples to generate (default: 100)",
                     },
                     "api_base": {
                         "type": "string",
@@ -65,8 +61,16 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "Teacher model API key",
                     },
+                    "temperature": {
+                        "type": "number",
+                        "description": "Sampling temperature (default: 0.7)",
+                    },
+                    "strategy_params": {
+                        "type": "object",
+                        "description": "Raw asynth GeneralSynthesisParams (advanced)",
+                    },
                 },
-                "required": ["flow_id", "dataset_path", "model"],
+                "required": ["model"],
             },
         },
     },

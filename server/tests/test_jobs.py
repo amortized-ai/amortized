@@ -92,7 +92,6 @@ class TestCreateSDGJob:
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "pipeline": "conversation",
                 "model": "openai/gpt-4o",
             },
         )
@@ -100,7 +99,7 @@ class TestCreateSDGJob:
         data = response.json()
         assert data["type"] == "sdg"
         assert data["status"] == "queued"
-        assert data["config"]["pipeline"] == "conversation"
+        assert data["config"]["model"] == "openai/gpt-4o"
 
 
 class TestListJobs:
@@ -284,7 +283,6 @@ class TestFlows:
         assert response.status_code == 200
         pipelines = response.json()
         assert isinstance(pipelines, list)
-        assert len(pipelines) >= 3
         for pipeline in pipelines:
             assert "name" in pipeline
             assert "description" in pipeline

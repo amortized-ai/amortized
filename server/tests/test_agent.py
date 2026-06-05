@@ -35,9 +35,9 @@ class TestSystemPrompt:
         assert "Qwen" in SYSTEM_PROMPT
         assert "lora_r" in SYSTEM_PROMPT
 
-    def test_contains_sdg_hub_knowledge(self) -> None:
-        assert "input dataset" in SYSTEM_PROMPT
-        assert "required columns" in SYSTEM_PROMPT
+    def test_contains_asynth_knowledge(self) -> None:
+        assert "asynth" in SYSTEM_PROMPT
+        assert "strategy_params" in SYSTEM_PROMPT
         assert "LiteLLM" in SYSTEM_PROMPT
 
 
