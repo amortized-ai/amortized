@@ -59,7 +59,7 @@ class TestJobTypeRegistry:
     def test_get_schema_sdg(self) -> None:
         schema = get_schema("sdg")
         assert schema["title"] == "SynthJobConfig"
-        assert "pipeline" in schema["properties"]
+        assert "model" in schema["properties"]
 
     def test_get_schema_unknown_type(self) -> None:
         with pytest.raises(UnknownJobTypeError):
@@ -89,7 +89,6 @@ class TestJobTypeRegistry:
 
     def test_validate_config_valid_sdg(self) -> None:
         errors = validate_config("sdg", {
-            "pipeline": "conversation",
             "model": "openai/gpt-4o",
         })
         assert errors == []
@@ -162,7 +161,6 @@ class TestUniversalJobEndpoint:
         response = await client.post("/api/v1/jobs", json={
             "type": "sdg",
             "config": {
-                "pipeline": "conversation",
                 "model": "openai/gpt-4o",
             },
             "dry_run": False,
@@ -366,7 +364,6 @@ class TestOldEndpointsBackwardCompat:
     @pytest.mark.asyncio
     async def test_old_sdg_endpoint_still_works(self, client: httpx.AsyncClient) -> None:
         response = await client.post("/api/v1/jobs/sdg", json={
-            "pipeline": "conversation",
             "model": "openai/gpt-4o",
         })
         assert response.status_code == 201

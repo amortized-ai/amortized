@@ -3,13 +3,8 @@
   "title": "SynthJobConfig",
   "description": "Configuration for a synthetic data generation job.",
   "type": "object",
-  "required": ["pipeline", "model"],
+  "required": ["model"],
   "properties": {
-    "pipeline": {
-      "type": "string",
-      "enum": ["conversation", "attribute", "transform"],
-      "description": "Synthesis pipeline to use"
-    },
     "model": {
       "type": "string",
       "description": "Teacher model for generation (LiteLLM format, e.g. openai/gpt-4o)"
@@ -26,13 +21,7 @@
       "type": "integer",
       "minimum": 1,
       "default": 100,
-      "description": "Number of conversations/samples to generate"
-    },
-    "max_turns": {
-      "type": "integer",
-      "minimum": 1,
-      "default": 5,
-      "description": "Max turns per conversation (conversation pipeline only)"
+      "description": "Number of samples to generate"
     },
     "max_concurrent": {
       "type": "integer",
@@ -40,39 +29,15 @@
       "default": 16,
       "description": "Max concurrent LLM requests"
     },
-    "seed_data_path": {
-      "type": "string",
-      "description": "Path to seed dataset (JSONL with topics/personas/constraints)"
-    },
-    "system_prompt": {
-      "type": "string",
-      "description": "System prompt for the assistant being synthesized"
-    },
-    "user_simulator_prompt": {
-      "type": "string",
-      "description": "System prompt for the simulated user (conversation pipeline)"
-    },
-    "attributes": {
-      "type": "object",
-      "description": "Attribute constraints for generation (attribute pipeline)"
-    },
-    "output_format": {
-      "type": "string",
-      "enum": ["messages", "chatml", "jsonl"],
-      "default": "messages",
-      "description": "Output format for generated data"
-    },
     "temperature": {
       "type": "number",
       "minimum": 0,
       "maximum": 2,
       "default": 0.7
     },
-    "checkpoint_interval": {
-      "type": "integer",
-      "minimum": 1,
-      "default": 50,
-      "description": "Checkpoint every N completed conversations"
+    "strategy_params": {
+      "type": "object",
+      "description": "Raw asynth GeneralSynthesisParams (advanced)"
     }
   }
 }

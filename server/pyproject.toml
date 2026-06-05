@@ -41,7 +41,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["amortized*", "amortized_synth*"]
+include = ["amortized*"]
 
 [tool.ruff]
 target-version = "py311"
@@ -53,7 +53,6 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 "src/amortized/api/*.py" = ["B008"]
 "src/amortized/runners/sdg_runner.py" = ["I001"]
-"src/amortized_synth/**" = ["I001"]
 
 [tool.mypy]
 strict = true
@@ -61,7 +60,7 @@ python_version = "3.11"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "training_hub", "training_hub.*", "sdg_hub", "sdg_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*", "asyncssh", "asyncssh.*", "typer", "typer.*", "fastapi_mcp", "fastapi_mcp.*", "litellm", "litellm.*", "amortized_synth", "amortized_synth.*"]
+module = ["torch", "torch.*", "training_hub", "training_hub.*", "sdg_hub", "sdg_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*", "asyncssh", "asyncssh.*", "typer", "typer.*", "fastapi_mcp", "fastapi_mcp.*", "litellm", "litellm.*", "asynth", "asynth.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
