@@ -99,8 +99,8 @@ async def _stream_sdg_progress(
 
         completed_rows = 0
         if output_path.exists():
-            with contextlib.suppress(OSError):
-                completed_rows = sum(1 for _ in output_path.open())
+            with contextlib.suppress(OSError), output_path.open() as f:
+                completed_rows = sum(1 for _ in f)
 
         config = job.get("config")
         total_requested = 100

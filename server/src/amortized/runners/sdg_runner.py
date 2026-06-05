@@ -62,7 +62,7 @@ def run_sdg(config: dict[str, Any]) -> None:
 
 def _simulate_sdg(config: dict[str, Any], output_dir: str) -> None:
     """Simulate SDG when asynth is not installed."""
-    total_rows = 50
+    total_rows = config.get("num_samples", 100)
     output_path = os.path.join(output_dir, "generated_data.jsonl")
 
     with open(output_path, "w") as f:
