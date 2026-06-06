@@ -1090,6 +1090,47 @@
         }
       }
     },
+    "/api/v1/artifacts/upload": {
+      "post": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "Upload Artifact",
+        "operationId": "upload_artifact_api_v1_artifacts_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_artifact_api_v1_artifacts_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Artifact"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/artifacts/upload-url": {
       "post": {
         "tags": [
@@ -1932,6 +1973,36 @@
         ],
         "title": "ArtifactRequest",
         "description": "Request to register an artifact."
+      },
+      "Body_upload_artifact_api_v1_artifacts_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "artifact_type": {
+            "type": "string",
+            "title": "Artifact Type",
+            "default": "dataset"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_artifact_api_v1_artifacts_upload_post"
       },
       "ChatRequest": {
         "properties": {
@@ -2922,6 +2993,11 @@
       },
       "TrainingJobConfig": {
         "properties": {
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm",
+            "description": "Training algorithm (lora_sft, full_sft, dpo, grpo)"
+          },
           "model_path": {
             "type": "string",
             "title": "Model Path",
@@ -2933,7 +3009,14 @@
             "description": "Path to training data (JSONL)"
           },
           "ckpt_output_dir": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Ckpt Output Dir",
             "description": "Directory for checkpoints and outputs"
           },
@@ -3013,6 +3096,19 @@
             "title": "Micro Batch Size",
             "description": "Micro batch size"
           },
+          "batch_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size",
+            "description": "Training batch size"
+          },
           "max_seq_len": {
             "anyOf": [
               {
@@ -3025,16 +3121,41 @@
             ],
             "title": "Max Seq Len",
             "description": "Maximum sequence length"
+          },
+          "gradient_checkpointing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Checkpointing",
+            "description": "Enable gradient checkpointing"
+          },
+          "model_max_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Max Length",
+            "description": "Maximum model sequence length"
           }
         },
         "type": "object",
         "required": [
+          "algorithm",
           "model_path",
-          "data_path",
-          "ckpt_output_dir"
+          "data_path"
         ],
         "title": "TrainingJobConfig",
-        "description": "Configuration for a LoRA SFT training job."
+        "description": "Configuration for a training job."
       },
       "TrainingMetric": {
         "properties": {

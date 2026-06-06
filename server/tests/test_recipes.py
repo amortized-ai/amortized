@@ -29,10 +29,7 @@ def recipes_dir(tmp_path: Path) -> Path:
         "  lora_r: 16\n"
     )
     (base / "sdg.yaml").write_text(
-        "type: sdg\n"
-        "description: Base SDG\n"
-        "config:\n"
-        "  max_concurrency: 10\n"
+        "type: sdg\ndescription: Base SDG\nconfig:\n  max_concurrency: 10\n"
     )
     llama = tmp_path / "llama3"
     llama.mkdir()
@@ -68,27 +65,14 @@ class TestLoadRecipe:
         assert recipe["config"]["lora_r"] == 16
         assert "extends" not in recipe
 
-
     def test_circular_extends_raises(self, recipes_dir: Path) -> None:
-        (recipes_dir / "a.yaml").write_text(
-            "extends: b\n"
-            "type: training\n"
-            "description: A\n"
-        )
-        (recipes_dir / "b.yaml").write_text(
-            "extends: a\n"
-            "type: training\n"
-            "description: B\n"
-        )
+        (recipes_dir / "a.yaml").write_text("extends: b\ntype: training\ndescription: A\n")
+        (recipes_dir / "b.yaml").write_text("extends: a\ntype: training\ndescription: B\n")
         with pytest.raises(CircularRecipeError):
             load_recipe("a", recipes_dir=recipes_dir)
 
     def test_self_extending_raises(self, recipes_dir: Path) -> None:
-        (recipes_dir / "self.yaml").write_text(
-            "extends: self\n"
-            "type: training\n"
-            "description: Self\n"
-        )
+        (recipes_dir / "self.yaml").write_text("extends: self\ntype: training\ndescription: Self\n")
         with pytest.raises(CircularRecipeError):
             load_recipe("self", recipes_dir=recipes_dir)
 
@@ -96,10 +80,7 @@ class TestLoadRecipe:
         custom_dir = tmp_path / "custom_recipes"
         custom_dir.mkdir()
         (custom_dir / "custom.yaml").write_text(
-            "type: training\n"
-            "description: Custom recipe\n"
-            "config:\n"
-            "  num_epochs: 5\n"
+            "type: training\ndescription: Custom recipe\nconfig:\n  num_epochs: 5\n"
         )
         import amortized.config as config_mod
 

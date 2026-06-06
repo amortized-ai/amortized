@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from amortized.config import settings as _settings
@@ -85,6 +85,34 @@ async def delete_artifact(
     await core_delete_artifact(repo, artifact_id)
 
 
+@router.post("/upload", status_code=201, response_model=Artifact)
+async def upload_artifact(
+    file: UploadFile,
+    artifact_type: str = Form("dataset"),
+    name: str | None = Form(None),
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> Artifact:
+    artifact_name = name or (file.filename or "upload")
+    upload_dir = Path(_settings.data_dir) / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / artifact_name
+    content = await file.read()
+    dest.write_bytes(content)
+
+    repo = Repository(db)
+    row = await core_register_artifact(
+        repo,
+        name=artifact_name,
+        artifact_type=artifact_type,
+        location=str(dest.resolve()),
+        metadata={
+            "original_filename": file.filename or "",
+            "size_bytes": len(content),
+        },
+    )
+    return Artifact(**row)
+
+
 @router.post("/upload-url", response_model=UploadUrlResponse)
 async def get_upload_url(req: UploadUrlRequest) -> UploadUrlResponse:
     storage = get_storage()
@@ -119,7 +147,7 @@ async def download_artifact(
             after_scheme = location.split("//", 1)[1]
             key = after_scheme.split("/", 1)[1] if "/" in after_scheme else location
             if key.startswith(_settings.storage_prefix):
-                key = key[len(_settings.storage_prefix):]
+                key = key[len(_settings.storage_prefix) :]
             try:
                 url = storage.generate_download_url(key)
                 return JSONResponse({"location": url})

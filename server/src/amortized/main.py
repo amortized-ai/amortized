@@ -8,6 +8,7 @@ import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -44,12 +45,53 @@ logging.basicConfig(
 logger = logging.getLogger("amortized")
 
 
+def _load_backends() -> None:
+    """Register compute backends from config file and always include local."""
+    register_backend(LocalBackend())
+
+    config_path = Path.home() / ".amortized" / "config.yaml"
+    if not config_path.exists():
+        return
+
+    try:
+        import yaml
+    except ImportError:
+        logger.warning("PyYAML not installed — skipping config.yaml backend loading")
+        return
+
+    try:
+        config = yaml.safe_load(config_path.read_text())
+    except Exception:
+        logger.exception("Failed to read %s", config_path)
+        return
+
+    if not isinstance(config, dict):
+        return
+
+    backends = config.get("compute", {}).get("backends", {})
+    for name, spec in backends.items():
+        if not isinstance(spec, dict):
+            continue
+        backend_type = spec.get("type", "")
+        if backend_type == "ssh":
+            from amortized.backends.ssh import SSHBackend
+
+            backend = SSHBackend(
+                host=spec["host"],
+                user=spec.get("user"),
+                key_path=spec.get("key_path"),
+                remote_base_dir=spec.get("remote_base_dir", "~/amortized-jobs"),
+            )
+            register_backend(backend)
+            logger.info("Registered SSH backend %r (host=%s)", name, spec["host"])
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Initialize database and start background worker on startup."""
     await init_db()
     await cleanup_orphaned_jobs()
-    register_backend(LocalBackend())
+    _load_backends()
     logger.info("Amortized runtime started")
 
     # Start background worker and heartbeat monitor

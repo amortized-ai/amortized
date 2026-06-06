@@ -52,6 +52,7 @@ class TestWorkerJobExecution:
             response = await client.post(
                 "/api/v1/jobs/training",
                 json={
+                    "algorithm": "lora_sft",
                     "model_path": "test/model",
                     "data_path": "./data.jsonl",
                     "ckpt_output_dir": tmpdir,
@@ -137,6 +138,7 @@ class TestWorkerJobExecution:
         resp1 = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/first",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-first",
@@ -145,6 +147,7 @@ class TestWorkerJobExecution:
         await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/second",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-second",
@@ -167,6 +170,46 @@ class TestWorkerJobExecution:
         assert job is None
 
 
+class TestTildeExpansion:
+    """Verify ~ is expanded in paths, not used literally."""
+
+    def test_expanduser_in_output_dir(self) -> None:
+        """output_dir with ~ should be expanded to the home directory."""
+        result = os.path.expanduser("~/some/path")
+        assert "~" not in result
+        assert result.startswith("/")
+
+    @pytest.mark.asyncio
+    async def test_run_job_expands_tilde_in_output_dir(self, client: httpx.AsyncClient) -> None:
+        """_run_job should expand ~ in the computed output_dir."""
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "test/model",
+                "data_path": "~/data/train.jsonl",
+                "ckpt_output_dir": "~/amortized-jobs/output",
+            },
+        )
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+
+        from amortized.worker import _pick_pending_job, _run_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+        assert job["id"] == job_id
+
+        await _run_job(job)
+
+        response = await client.get(f"/api/v1/jobs/{job_id}")
+        data = response.json()
+        assert "~" not in data["output_dir"], (
+            f"output_dir still contains literal ~: {data['output_dir']}"
+        )
+        assert data["output_dir"].startswith("/")
+
+
 class TestOrphanedJobCleanup:
     """Test orphaned job detection on startup."""
 
@@ -182,6 +225,7 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-orphan",
@@ -220,6 +264,7 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-readopt",
@@ -269,6 +314,7 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-no-pid",
@@ -306,6 +352,7 @@ class TestCancelRunningJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-cancel",
@@ -336,6 +383,7 @@ class TestCancelRunningJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test-done",

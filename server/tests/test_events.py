@@ -39,6 +39,7 @@ async def _create_training_job(client: httpx.AsyncClient) -> str:
     resp = await client.post(
         "/api/v1/jobs/training",
         json={
+            "algorithm": "lora_sft",
             "model_path": "test-model",
             "data_path": "./data.jsonl",
             "ckpt_output_dir": "./outputs",
@@ -80,9 +81,7 @@ class TestRESTEventListing:
     async def test_filter_by_type(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
         await client.delete(f"/api/v1/jobs/{job_id}")
-        resp = await client.get(
-            f"/api/v1/jobs/{job_id}/events", params={"types": "state_change"}
-        )
+        resp = await client.get(f"/api/v1/jobs/{job_id}/events", params={"types": "state_change"})
         assert resp.status_code == 200
         events = resp.json()
         assert all(e["type"] == "state_change" for e in events)
@@ -94,17 +93,13 @@ class TestRESTEventListing:
         events = resp.json()
         assert len(events) >= 1
         first_ts = events[0]["timestamp"]
-        resp2 = await client.get(
-            f"/api/v1/jobs/{job_id}/events", params={"since": first_ts}
-        )
+        resp2 = await client.get(f"/api/v1/jobs/{job_id}/events", params={"since": first_ts})
         assert resp2.status_code == 200
         filtered = resp2.json()
         assert len(filtered) < len(events) or len(events) == 0
 
     @pytest.mark.asyncio
-    async def test_filter_nonmatching_type_returns_empty(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_filter_nonmatching_type_returns_empty(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
         resp = await client.get(
             f"/api/v1/jobs/{job_id}/events", params={"types": "nonexistent_type"}
@@ -117,9 +112,7 @@ class TestSSEStreaming:
     @pytest.mark.asyncio
     async def test_stream_false_returns_json(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
-        resp = await client.get(
-            f"/api/v1/jobs/{job_id}/events", params={"stream": "false"}
-        )
+        resp = await client.get(f"/api/v1/jobs/{job_id}/events", params={"stream": "false"})
         assert resp.status_code == 200
         assert "application/json" in resp.headers.get("content-type", "")
         events = resp.json()
@@ -167,9 +160,7 @@ class TestLogsEndpoint:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_logs_returns_event_source_response(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_logs_returns_event_source_response(self, client: httpx.AsyncClient) -> None:
         from unittest.mock import AsyncMock
 
         from amortized.api.events import stream_job_logs
@@ -217,9 +208,7 @@ class TestLogsEndpoint:
 
 class TestTerminalState:
     @pytest.mark.asyncio
-    async def test_events_done_on_cancelled_job(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_events_done_on_cancelled_job(self, client: httpx.AsyncClient) -> None:
         """A cancelled job's event stream should include a done event."""
         job_id = await _create_training_job(client)
         await client.delete(f"/api/v1/jobs/{job_id}")
@@ -228,14 +217,11 @@ class TestTerminalState:
         assert resp.status_code == 200
         events = resp.json()
         assert any(
-            e["type"] == "state_change" and e["data"]["status"] == "cancelled"
-            for e in events
+            e["type"] == "state_change" and e["data"]["status"] == "cancelled" for e in events
         ), "cancelled state_change event missing"
 
     @pytest.mark.asyncio
-    async def test_events_sse_terminates_on_terminal_job(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_events_sse_terminates_on_terminal_job(self, client: httpx.AsyncClient) -> None:
         """SSE event_generator should yield done event for a terminal job."""
         from unittest.mock import AsyncMock
 
@@ -297,28 +283,20 @@ class TestEventLifecycle:
         job_id = await _create_training_job(client)
         resp = await client.get(f"/api/v1/jobs/{job_id}/events")
         events = resp.json()
-        assert any(
-            e["type"] == "state_change" and e["data"]["status"] == "queued"
-            for e in events
-        )
+        assert any(e["type"] == "state_change" and e["data"]["status"] == "queued" for e in events)
 
     @pytest.mark.asyncio
-    async def test_cancel_emits_cancelled_event(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_cancel_emits_cancelled_event(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
         await client.delete(f"/api/v1/jobs/{job_id}")
         resp = await client.get(f"/api/v1/jobs/{job_id}/events")
         events = resp.json()
         assert any(
-            e["type"] == "state_change" and e["data"]["status"] == "cancelled"
-            for e in events
+            e["type"] == "state_change" and e["data"]["status"] == "cancelled" for e in events
         )
 
     @pytest.mark.asyncio
-    async def test_events_have_required_fields(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_events_have_required_fields(self, client: httpx.AsyncClient) -> None:
         job_id = await _create_training_job(client)
         resp = await client.get(f"/api/v1/jobs/{job_id}/events")
         events = resp.json()

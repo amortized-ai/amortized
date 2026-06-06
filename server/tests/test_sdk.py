@@ -88,6 +88,7 @@ class TestSubmit:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
@@ -103,19 +104,22 @@ class TestSubmit:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
             },
             metadata={"team": "ml-infra"},
         )
-        assert job.metadata == {"team": "ml-infra"}
+        assert job.metadata["team"] == "ml-infra"
+        assert job.metadata["backend"] == "local"
 
     @pytest.mark.asyncio
     async def test_submit_with_compute(self, sdk_client: Client) -> None:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
@@ -131,6 +135,7 @@ class TestGetJob:
         created = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test-model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -158,6 +163,7 @@ class TestListJobs:
         await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -172,6 +178,7 @@ class TestListJobs:
         await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -189,6 +196,7 @@ class TestCancelJob:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -202,6 +210,7 @@ class TestCancelJob:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -217,6 +226,7 @@ class TestJobWait:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -232,6 +242,7 @@ class TestJobWait:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -249,6 +260,7 @@ class TestJobRaw:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -302,6 +314,7 @@ class TestArtifactRef:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",
@@ -315,6 +328,7 @@ class TestArtifactRef:
         job = await sdk_client.submit(
             type="training",
             config={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./out",

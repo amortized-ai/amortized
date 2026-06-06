@@ -217,16 +217,15 @@ class Client:
         artifact_type: str = "dataset",
         name: str | None = None,
     ) -> dict[str, Any]:
-        """Register a local file as an artifact."""
+        """Upload a local file as an artifact."""
         p = Path(file_path)
         artifact_name = name or p.name
-        body: dict[str, Any] = {
-            "name": artifact_name,
-            "artifact_type": artifact_type,
-            "location": str(p.resolve()),
-            "metadata": {"original_filename": p.name},
-        }
-        resp = await self._http.post("/api/v1/artifacts", json=body)
+        with p.open("rb") as f:
+            resp = await self._http.post(
+                "/api/v1/artifacts/upload",
+                files={"file": (p.name, f)},
+                data={"artifact_type": artifact_type, "name": artifact_name},
+            )
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
 

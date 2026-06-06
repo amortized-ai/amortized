@@ -43,6 +43,7 @@ class TestCreateTrainingJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
@@ -56,12 +57,11 @@ class TestCreateTrainingJob:
         assert data["id"]
 
     @pytest.mark.asyncio
-    async def test_create_training_job_with_hyperparams(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_create_training_job_with_hyperparams(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "meta-llama/Llama-3-8B",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",
@@ -76,9 +76,7 @@ class TestCreateTrainingJob:
         assert data["config"]["load_in_4bit"] is True
 
     @pytest.mark.asyncio
-    async def test_create_training_job_validation_error(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_create_training_job_validation_error(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs/training",
             json={"model_path": "test"},  # missing required fields
@@ -114,6 +112,7 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "test",
@@ -136,6 +135,7 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "test",
@@ -161,6 +161,7 @@ class TestGetJob:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "test",
@@ -184,6 +185,7 @@ class TestCancelJob:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "test",
@@ -207,6 +209,7 @@ class TestJobMetrics:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "/tmp/nonexistent",
@@ -229,6 +232,7 @@ class TestJobMetrics:
             create_resp = await client.post(
                 "/api/v1/jobs/training",
                 json={
+                    "algorithm": "lora_sft",
                     "model_path": "test",
                     "data_path": "test",
                     "ckpt_output_dir": tmpdir,
@@ -264,6 +268,7 @@ class TestJobArtifacts:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test",
                 "data_path": "test",
                 "ckpt_output_dir": "test",

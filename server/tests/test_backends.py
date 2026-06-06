@@ -1,6 +1,10 @@
 """Tests for compute backend data types."""
 
+from unittest.mock import patch
+
 from amortized.backends import BackendHandle, BackendStatus, JobSpec, Resources
+from amortized.core.compute import list_backends, reset
+from amortized.main import _load_backends
 
 
 class TestResources:
@@ -52,3 +56,51 @@ class TestBackendStatus:
         s = BackendStatus(running=True)
         assert s.running is True
         assert s.exit_code is None
+
+
+class TestLoadBackends:
+    def setup_method(self) -> None:
+        reset()
+
+    def test_no_config_file(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        with patch("amortized.main.Path.home", return_value=tmp_path):
+            _load_backends()
+        names = [b["name"] for b in list_backends()]
+        assert names == ["local"]
+
+    def test_ssh_backend_from_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        config_dir = tmp_path / ".amortized"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_text(
+            "compute:\n"
+            "  backends:\n"
+            "    gpu-box:\n"
+            "      type: ssh\n"
+            "      host: 10.0.0.5\n"
+            "      user: trainer\n"
+        )
+        with patch("amortized.main.Path.home", return_value=tmp_path):
+            _load_backends()
+        names = [b["name"] for b in list_backends()]
+        assert "local" in names
+        assert "ssh" in names
+
+    def test_invalid_yaml_logs_warning(self, tmp_path, caplog) -> None:  # type: ignore[no-untyped-def]
+        config_dir = tmp_path / ".amortized"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_bytes(b"\x80\x81\x82")
+        with patch("amortized.main.Path.home", return_value=tmp_path):
+            _load_backends()
+        names = [b["name"] for b in list_backends()]
+        assert names == ["local"]
+
+    def test_unknown_backend_type_skipped(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        config_dir = tmp_path / ".amortized"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_text(
+            "compute:\n  backends:\n    mystery:\n      type: kubernetes\n      host: k8s.local\n"
+        )
+        with patch("amortized.main.Path.home", return_value=tmp_path):
+            _load_backends()
+        names = [b["name"] for b in list_backends()]
+        assert names == ["local"]
