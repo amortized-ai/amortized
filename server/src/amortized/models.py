@@ -50,18 +50,22 @@ class ErrorResponse(BaseModel):
 
 
 class TrainingJobConfig(BaseModel):
-    """Configuration for a LoRA SFT training job."""
+    """Configuration for a training job."""
 
+    algorithm: str = Field(..., description="Training algorithm (lora_sft, full_sft, dpo, grpo)")
     model_path: str = Field(..., description="HuggingFace model path or local path")
     data_path: str = Field(..., description="Path to training data (JSONL)")
-    ckpt_output_dir: str = Field(..., description="Directory for checkpoints and outputs")
+    ckpt_output_dir: str | None = Field(None, description="Directory for checkpoints and outputs")
     learning_rate: float | None = Field(None, description="Learning rate (default: 2e-4)")
     num_epochs: int | None = Field(None, ge=1, description="Number of training epochs")
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     load_in_4bit: bool | None = Field(None, description="Enable QLoRA 4-bit quantization")
     micro_batch_size: int | None = Field(None, ge=1, description="Micro batch size")
+    batch_size: int | None = Field(None, ge=1, description="Training batch size")
     max_seq_len: int | None = Field(None, ge=1, description="Maximum sequence length")
+    gradient_checkpointing: bool | None = Field(None, description="Enable gradient checkpointing")
+    model_max_length: int | None = Field(None, ge=1, description="Maximum model sequence length")
 
 
 class SynthJobConfig(BaseModel):

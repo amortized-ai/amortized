@@ -197,7 +197,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     }
     dir_name = output_dir_names.get(job["type"], f"{job['type']}_output")
     base_dir = job.get("output_dir") or str(config_mod.settings.data_dir / dir_name)
-    output_dir = os.path.join(base_dir, job_id)
+    output_dir = os.path.expanduser(os.path.join(base_dir, job_id))
 
     db = await _get_db()
     try:
@@ -217,6 +217,17 @@ async def _run_job(job: dict[str, Any]) -> None:
             config = {**config, "output_path": os.path.join(output_dir, "results.jsonl")}
     elif "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
+
+    path_keys = {
+        "data_path",
+        "ckpt_output_dir",
+        "output_dir",
+        "output_path",
+        "resume_from_checkpoint",
+    }
+    for key in path_keys:
+        if key in config and isinstance(config[key], str):
+            config = {**config, key: os.path.expanduser(config[key])}
 
     cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
 

@@ -60,6 +60,13 @@ async def create_job_universal(
     job_type = JobType(request.type)
     output_dir = request.config.get("ckpt_output_dir")
 
+    merged_metadata = {
+        **request.metadata,
+        "backend": request.compute.backend,
+        "gpus": request.compute.gpus,
+        "gpu_type": request.compute.gpu_type,
+    }
+
     repo = Repository(db)
     try:
         row = await core_create_job(
@@ -67,7 +74,7 @@ async def create_job_universal(
             job_type=job_type,
             config=request.config,
             output_dir=output_dir,
-            metadata=request.metadata,
+            metadata=merged_metadata,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

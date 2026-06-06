@@ -58,6 +58,7 @@ class TestConfigValidate:
             json={
                 "type": "training",
                 "config": {
+                    "algorithm": "lora_sft",
                     "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "data_path": "./data.jsonl",
                     "ckpt_output_dir": "./out",
@@ -282,6 +283,7 @@ class TestResumeEndpoint:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test-model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "/tmp/test_resume",

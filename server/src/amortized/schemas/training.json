@@ -1,11 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TrainingJobConfig",
-  "description": "Configuration for a LoRA SFT training job.",
+  "description": "Configuration for a training job.",
   "type": "object",
-  "required": ["model_path", "data_path", "ckpt_output_dir"],
-  "additionalProperties": false,
+  "required": ["algorithm", "model_path", "data_path"],
+  "additionalProperties": true,
   "properties": {
+    "algorithm": {
+      "type": "string",
+      "enum": ["lora_sft", "full_sft", "dpo", "grpo"],
+      "description": "Training algorithm"
+    },
     "model_path": {
       "type": "string",
       "description": "HuggingFace model path or local path"
@@ -50,10 +55,24 @@
       "minimum": 1,
       "description": "Micro batch size"
     },
+    "batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Training batch size"
+    },
     "max_seq_len": {
       "type": "integer",
       "minimum": 1,
       "description": "Maximum sequence length"
+    },
+    "gradient_checkpointing": {
+      "type": "boolean",
+      "description": "Enable gradient checkpointing to reduce VRAM"
+    },
+    "model_max_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum model sequence length"
     }
   }
 }

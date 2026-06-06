@@ -32,7 +32,7 @@ class LocalBackend:
         return {Capability.LOG_STREAM, Capability.STOP}
 
     async def submit(self, spec: JobSpec) -> BackendHandle:
-        work_dir = spec.work_dir
+        work_dir = os.path.expanduser(spec.work_dir)
         os.makedirs(work_dir, exist_ok=True)
 
         config_path = os.path.join(work_dir, "config.json")

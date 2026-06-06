@@ -174,9 +174,7 @@ class TestDeleteArtifact:
 
 class TestDownloadArtifact:
     @pytest.mark.asyncio
-    async def test_download_local_file(
-        self, client: httpx.AsyncClient, tmp_path: object
-    ) -> None:
+    async def test_download_local_file(self, client: httpx.AsyncClient, tmp_path: object) -> None:
         file_path = str(tmp_path) + "/test_file.txt"
         with open(file_path, "w") as f:
             f.write("test content")
@@ -191,9 +189,7 @@ class TestDownloadArtifact:
         assert resp.text == "test content"
 
     @pytest.mark.asyncio
-    async def test_download_uri_returns_location(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_download_uri_returns_location(self, client: httpx.AsyncClient) -> None:
         create_resp = await client.post(
             "/api/v1/artifacts",
             json={
@@ -229,9 +225,7 @@ class TestDownloadArtifact:
 
 class TestDatasetsDeprecation:
     @pytest.mark.asyncio
-    async def test_create_dataset_has_deprecation_headers(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_create_dataset_has_deprecation_headers(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/datasets",
             json={"filename": "test.jsonl", "rows": [{"a": 1}]},
@@ -262,6 +256,7 @@ class TestJobArtifactsStillWork:
         job_resp = await client.post(
             "/api/v1/jobs/training",
             json={
+                "algorithm": "lora_sft",
                 "model_path": "test/model",
                 "data_path": "./data.jsonl",
                 "ckpt_output_dir": "./outputs",

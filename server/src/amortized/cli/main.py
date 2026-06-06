@@ -375,13 +375,12 @@ def upload(
 
     artifact_name = name or p.name
     with _client() as client:
-        body = {
-            "name": artifact_name,
-            "artifact_type": artifact_type,
-            "location": str(p.resolve()),
-            "metadata": {"original_filename": p.name, "size_bytes": p.stat().st_size},
-        }
-        resp = client.post("/api/v1/artifacts", json=body)
+        with p.open("rb") as f:
+            resp = client.post(
+                "/api/v1/artifacts/upload",
+                files={"file": (p.name, f)},
+                data={"artifact_type": artifact_type, "name": artifact_name},
+            )
         data = _handle_response(resp)
 
     console.print(

@@ -305,7 +305,7 @@ class TestUpload:
 
         fake = _FakeClient(
             {
-                ("POST", "/api/v1/artifacts"): _mock_response(
+                ("POST", "/api/v1/artifacts/upload"): _mock_response(
                     201,
                     {
                         "id": "art_uploaded",
@@ -327,7 +327,7 @@ class TestUpload:
 
         fake = _FakeClient(
             {
-                ("POST", "/api/v1/artifacts"): _mock_response(
+                ("POST", "/api/v1/artifacts/upload"): _mock_response(
                     201,
                     {
                         "id": "art_model",
