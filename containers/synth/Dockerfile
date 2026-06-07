@@ -5,6 +5,6 @@ COPY containers/synth/runner.py /app/
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir sdg-hub datasets
+RUN pip install --no-cache-dir asynth
 
 CMD ["python", "runner.py"]

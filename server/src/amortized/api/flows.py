@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter
 
-from amortized.models import PipelineInfo
+from amortized.models import PipelineInfo, SynthCapabilities
 
 logger = logging.getLogger("amortized.api.flows")
 
@@ -33,3 +33,31 @@ def _discover_pipelines() -> list[PipelineInfo]:
 async def get_pipelines() -> list[PipelineInfo]:
     """List available synthesis pipelines."""
     return _discover_pipelines()
+
+
+@router.get("/capabilities", response_model=SynthCapabilities)
+async def get_capabilities() -> SynthCapabilities:
+    """Report asynth capabilities and available features."""
+    try:
+        import asynth
+
+        return SynthCapabilities(
+            available=True,
+            version=getattr(asynth, "__version__", "unknown"),
+            strategies=["general"],
+            attribute_types=["sampled", "generated", "multiturn", "transformed"],
+            data_sources=["dataset", "document", "example"],
+            environment_types=["synthetic", "deterministic"],
+            judge_templates=_list_judge_templates(),
+        )
+    except ImportError:
+        return SynthCapabilities(available=False)
+
+
+def _list_judge_templates() -> list[str]:
+    try:
+        from asynth.judges import list_templates
+
+        return list(list_templates())
+    except (ImportError, Exception):
+        return []

@@ -77,6 +77,16 @@ class SynthJobConfig(BaseModel):
     num_samples: int = Field(100, ge=1, description="Number of samples to generate")
     max_concurrent: int = Field(16, ge=1, description="Max concurrent LLM requests")
     temperature: float = Field(0.7, ge=0, le=2)
+    max_tokens: int | None = Field(None, ge=1, description="Max tokens per LLM response")
+    top_p: float | None = Field(None, ge=0, le=1, description="Nucleus sampling parameter")
+    seed: int | None = Field(None, description="Random seed for reproducibility")
+    num_retries: int | None = Field(None, ge=0, description="Number of LLM retries on failure")
+    input_data: list[dict[str, Any]] | None = Field(
+        None, description="Input dataset sources (JSONL/CSV/HuggingFace paths)"
+    )
+    input_documents: list[dict[str, Any]] | None = Field(
+        None, description="Input document sources (PDF/DOCX/TXT files)"
+    )
     strategy_params: dict[str, Any] | None = Field(
         None, description="Raw asynth GeneralSynthesisParams (advanced)"
     )
@@ -176,6 +186,26 @@ class PipelineInfo(BaseModel):
     description: str
     supports_multi_turn: bool
     config_schema: dict[str, Any] = Field(default_factory=dict)
+
+
+class SynthCapabilities(BaseModel):
+    """asynth synthesis engine capabilities."""
+
+    available: bool = Field(..., description="Whether asynth is installed")
+    version: str = Field("", description="asynth version")
+    strategies: list[str] = Field(
+        default_factory=list, description="Available synthesis strategies"
+    )
+    attribute_types: list[str] = Field(
+        default_factory=list, description="Supported attribute types"
+    )
+    data_sources: list[str] = Field(default_factory=list, description="Supported data source types")
+    environment_types: list[str] = Field(
+        default_factory=list, description="Supported environment types"
+    )
+    judge_templates: list[str] = Field(
+        default_factory=list, description="Available judge templates"
+    )
 
 
 class TrainingMetric(BaseModel):
@@ -300,6 +330,26 @@ class EventResponse(BaseModel):
     type: str
     data: dict[str, Any] = Field(default_factory=dict)
     timestamp: str
+
+
+# --- Judge models ---
+
+
+class JudgeRequest(BaseModel):
+    """Request to judge data quality."""
+
+    template: str = Field(..., description="Judge template name (e.g. generic/safety)")
+    data: list[dict[str, Any]] = Field(..., description="Data rows to judge")
+    model: str = Field(..., description="LLM model for judging (LiteLLM format)")
+    api_base: str | None = Field(None, description="Model API base URL")
+    api_key: str | None = Field(None, description="Model API key")
+
+
+class JudgeResult(BaseModel):
+    """Result from judging data."""
+
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
 
 
 # --- Agent / Chat models ---

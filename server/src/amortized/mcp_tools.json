@@ -55,7 +55,7 @@
     },
     {
       "name": "submit_sdg_job",
-      "description": "Submit a synthetic data generation job. Uses SDG Hub flows to generate training data from seed examples.",
+      "description": "Submit a synthetic data generation job. Uses asynth flows to generate training data from seed examples.",
       "parameters": {
         "type": "object",
         "required": ["flow_id", "dataset_path", "model"],

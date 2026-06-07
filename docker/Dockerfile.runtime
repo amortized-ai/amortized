@@ -47,8 +47,8 @@ WORKDIR /build
 RUN python3.11 -m pip install --no-cache-dir "training-hub[lora]"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
 
-# Install SDG Hub
-RUN python3.11 -m pip install --no-cache-dir "sdg-hub"
+# Install asynth
+RUN python3.11 -m pip install --no-cache-dir "asynth"
 
 # Copy and install the amortized-server package
 COPY server/ /build/server/

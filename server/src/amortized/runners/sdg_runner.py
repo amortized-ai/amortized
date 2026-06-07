@@ -29,13 +29,27 @@ def run_sdg(config: dict[str, Any]) -> None:
         api_key=config.get("api_key"),
         temperature=config.get("temperature", 0.7),
         max_concurrency=config.get("max_concurrent", 16),
+        max_tokens=config.get("max_tokens"),
+        top_p=config.get("top_p"),
+        seed=config.get("seed"),
+        num_retries=config.get("num_retries", 3),
     )
 
     raw_strategy = config.get("strategy_params")
     if raw_strategy and isinstance(raw_strategy, dict):
-        strategy_params = GeneralSynthesisParams(**raw_strategy)
+        merged = dict(raw_strategy)
+        if config.get("input_data") and "input_data" not in merged:
+            merged["input_data"] = config["input_data"]
+        if config.get("input_documents") and "input_documents" not in merged:
+            merged["input_documents"] = config["input_documents"]
+        strategy_params = GeneralSynthesisParams(**merged)
     else:
-        strategy_params = GeneralSynthesisParams()
+        kwargs: dict[str, Any] = {}
+        if config.get("input_data"):
+            kwargs["input_data"] = config["input_data"]
+        if config.get("input_documents"):
+            kwargs["input_documents"] = config["input_documents"]
+        strategy_params = GeneralSynthesisParams(**kwargs) if kwargs else GeneralSynthesisParams()
 
     output_path = os.path.join(output_dir, "generated_data.jsonl")
 

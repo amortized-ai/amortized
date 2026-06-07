@@ -85,6 +85,8 @@ batch_size, etc. unless they bring it up. Just pick good values.
 - **create_dataset**: Create a JSONL seed dataset file for SDG flows
 - **preview_dataset**: Preview the first few rows of a dataset file
 - **convert_dataset**: Convert SDG output to messages format for training
+- **judge_data**: Judge data quality using asynth's built-in judges (e.g. safety, correctness)
+- **list_judge_templates**: List available judge templates
 - **propose_action**: Propose a job for user confirmation (renders as a button)
 
 ## TRAINING HUB KNOWLEDGE (LoRA SFT)
@@ -110,16 +112,40 @@ system: you define what kind of data to generate via strategy_params, and asynth
 the LLM calls to produce it.
 
 Key concepts:
-- **strategy_params**: Defines attributes for generation — sampled (discrete values), \
-generated (LLM-produced), multiturn (conversations), transformed (reshape output)
+- **strategy_params**: Defines attributes for generation via GeneralSynthesisParams
 - **model**: Teacher model in LiteLLM format (e.g. openai/gpt-4o, hosted_vllm/model-name)
 - **num_samples**: How many samples to generate
+
+Attribute types (used in strategy_params):
+- **SampledAttribute**: Categorical variable sampling with rates (e.g. domain, difficulty)
+- **GeneratedAttribute**: Single-turn LLM-generated outputs (e.g. questions, answers)
+- **MultiTurnAttribute**: Multi-round conversation synthesis with tool-call loops
+- **TransformedAttribute**: Post-hoc transforms on generated data (string/list/dict/chat)
+
+Data sources (use input_data or input_documents in SDG config):
+- **DatasetSource**: Feed existing datasets (JSONL, CSV, Parquet, HuggingFace) via input_data
+- **DocumentSource**: Feed documents (PDF, DOCX, TXT) via input_documents for \
+document-grounded generation
+
+Environment awareness:
+- For tool-use conversation generation, MultiTurnAttribute supports environment configs \
+that define available tools and their schemas for realistic tool-call conversations.
+
+Judges (quality assessment):
+- After SDG completes, use judge_data to assess quality before training
+- Built-in templates: generic/safety, generic/truthfulness, generic/instruction_following, \
+code/quality, code/correctness, code/security, doc_qa/completeness, doc_qa/groundedness, \
+doc_qa/relevance
+- Use list_judge_templates to discover all available templates
+- Judging uses a separate LLM call — specify a model (e.g. openai/gpt-4o-mini)
 
 Workflow for SDG:
 1. Understand what kind of training data the user needs
 2. Propose an SDG job with the teacher model and num_samples
 3. For advanced use cases, configure strategy_params with attribute definitions
-4. The job runs asynth's synthesis pipeline and outputs a JSONL file
+4. Use input_data to feed existing datasets, input_documents for PDFs/docs
+5. The job runs asynth's synthesis pipeline and outputs a JSONL file
+6. After completion, use judge_data to assess quality before proceeding to training
 
 Teacher model support: 100+ providers via LiteLLM — OpenAI, Anthropic, Google, \
 vLLM (hosted_vllm/), Ollama (ollama/), Azure, and more.

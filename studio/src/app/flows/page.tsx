@@ -26,26 +26,25 @@ export default function FlowsPage() {
         <p className="text-muted-foreground">Loading flows...</p>
       ) : flows.length === 0 ? (
         <p className="text-muted-foreground">
-          No flows available. Make sure the runtime is running and SDG Hub is configured.
+          No flows available. Make sure the runtime is running and asynth is configured.
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {flows.map((flow) => (
             <Card
-              key={flow.id}
+              key={flow.name}
               className="cursor-pointer hover:border-accent/50 transition-colors"
               onClick={() => setSelectedFlow(flow)}
             >
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">{flow.name}</CardTitle>
-                  <Badge variant="secondary">{flow.category}</Badge>
+                  {flow.supports_multi_turn && (
+                    <Badge variant="secondary">Multi-turn</Badge>
+                  )}
                 </div>
                 <CardDescription>{flow.description}</CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-xs font-mono text-muted-foreground">{flow.id}</p>
-              </CardContent>
             </Card>
           ))}
         </div>
@@ -60,12 +59,8 @@ export default function FlowsPage() {
             </DialogHeader>
             <div className="space-y-3 text-sm">
               <div>
-                <span className="text-muted-foreground">Flow ID: </span>
-                <span className="font-mono">{selectedFlow.id}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Category: </span>
-                <Badge variant="secondary">{selectedFlow.category}</Badge>
+                <span className="text-muted-foreground">Multi-turn: </span>
+                <Badge variant="secondary">{selectedFlow.supports_multi_turn ? "Yes" : "No"}</Badge>
               </div>
             </div>
           </DialogContent>

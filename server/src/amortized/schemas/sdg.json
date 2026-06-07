@@ -35,6 +35,36 @@
       "maximum": 2,
       "default": 0.7
     },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Max tokens per LLM response"
+    },
+    "top_p": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Nucleus sampling parameter"
+    },
+    "seed": {
+      "type": "integer",
+      "description": "Random seed for reproducibility"
+    },
+    "num_retries": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of LLM retries"
+    },
+    "input_data": {
+      "type": "array",
+      "items": {"type": "object"},
+      "description": "Input dataset source configs"
+    },
+    "input_documents": {
+      "type": "array",
+      "items": {"type": "object"},
+      "description": "Input document source configs"
+    },
     "strategy_params": {
       "type": "object",
       "description": "Raw asynth GeneralSynthesisParams (advanced)"

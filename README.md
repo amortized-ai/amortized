@@ -6,12 +6,12 @@
 
 Amortized is a studio for optimizing AI agent pipelines. It lets you take workflows built on large or frontier API models and systematically replace them with smaller, more efficient, customized models — all while maintaining agent quality and task accuracy.
 
-Built on the [Red Hat AI Innovation Training Hub](https://github.com/redhat-ai-services/training-hub) and [SDG Hub](https://github.com/redhat-ai-services/sdg-hub) for model customization, Amortized provides a fully open-source, on-premises experience that requires no prior model customization expertise.
+Built on the [Red Hat AI Innovation Training Hub](https://github.com/redhat-ai-services/training-hub) and [asynth](https://github.com/amortized-ai/asynth) for model customization, Amortized provides a fully open-source, on-premises experience that requires no prior model customization expertise.
 
 ## What It Does
 
 - **Agent Workflow Analysis** — Import your existing agent workflows and identify which model calls are candidates for optimization
-- **Synthetic Data Generation** — Automatically generate task-specific training data from frontier model outputs using SDG Hub
+- **Synthetic Data Generation** — Automatically generate task-specific training data from frontier model outputs using asynth
 - **Model Customization** — Fine-tune smaller models on your agent's specific tasks using the Red Hat AI Innovation Training Hub
 - **Quality Evaluation** — Validate that customized models maintain accuracy and agent behavior through automated benchmarking
 - **Iterative Refinement** — Continuously improve custom models with feedback loops until they match frontier model performance
