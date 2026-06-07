@@ -91,6 +91,9 @@ npm run dev
 - GET /api/v1/jobs/{id}/artifacts — List job output artifacts
 - DELETE /api/v1/jobs/{id} — Cancel a job
 - GET /api/v1/flows — List available SDG flows
+- GET /api/v1/flows/capabilities — Report asynth capabilities and features
+- POST /api/v1/judge — Judge data quality using asynth judge templates
+- GET /api/v1/judge/templates — List available judge templates
 - POST /api/v1/estimate — Estimate GPU VRAM requirements
 - GET /api/v1/health — Health check
 - POST /api/v1/agent/chat — Send a message to the AI assistant

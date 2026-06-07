@@ -76,12 +76,15 @@ class TestConfigMapping:
             "num_samples": 50,
         }
 
-        with patch.dict(sys.modules, {
-            "asynth": mock_asynth,
-            "asynth.configs": MagicMock(),
-            "asynth.configs.params": MagicMock(),
-            "asynth.configs.params.synthesis_params": mock_params_mod,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "asynth": mock_asynth,
+                "asynth.configs": MagicMock(),
+                "asynth.configs.params": MagicMock(),
+                "asynth.configs.params.synthesis_params": mock_params_mod,
+            },
+        ):
             run_sdg(config)
 
         mock_inference_cls.assert_called_once_with(
@@ -90,6 +93,10 @@ class TestConfigMapping:
             api_key="sk-test",
             temperature=0.5,
             max_concurrency=8,
+            max_tokens=None,
+            top_p=None,
+            seed=None,
+            num_retries=3,
         )
         mock_synthesize.assert_called_once()
 
@@ -115,12 +122,15 @@ class TestConfigMapping:
             "strategy_params": strategy,
         }
 
-        with patch.dict(sys.modules, {
-            "asynth": mock_asynth,
-            "asynth.configs": MagicMock(),
-            "asynth.configs.params": MagicMock(),
-            "asynth.configs.params.synthesis_params": mock_params_mod,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "asynth": mock_asynth,
+                "asynth.configs": MagicMock(),
+                "asynth.configs.params": MagicMock(),
+                "asynth.configs.params.synthesis_params": mock_params_mod,
+            },
+        ):
             run_sdg(config)
 
         mock_params_cls.assert_called_once_with(**strategy)

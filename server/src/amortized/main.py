@@ -27,6 +27,7 @@ from amortized.api import (
     flows,
     job_types,
     jobs,
+    judge,
     recipes,
     ws,
 )
@@ -206,6 +207,7 @@ app.include_router(ws.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
 app.include_router(compute.router)
+app.include_router(judge.router)
 app.include_router(agent_routes.router)
 
 create_mcp_server(app)

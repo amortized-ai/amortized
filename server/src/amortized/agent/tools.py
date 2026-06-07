@@ -65,6 +65,23 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "number",
                         "description": "Sampling temperature (default: 0.7)",
                     },
+                    "max_tokens": {
+                        "type": "integer",
+                        "description": "Max tokens per LLM response",
+                    },
+                    "top_p": {
+                        "type": "number",
+                        "description": "Nucleus sampling parameter (0-1)",
+                    },
+                    "seed": {
+                        "type": "integer",
+                        "description": "Random seed for reproducibility",
+                    },
+                    "input_data": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Input dataset source configs (JSONL/CSV/HuggingFace)",
+                    },
                     "strategy_params": {
                         "type": "object",
                         "description": "Raw asynth GeneralSynthesisParams (advanced)",
@@ -175,8 +192,13 @@ TOOLS: list[dict[str, Any]] = [
                     "status": {
                         "type": "string",
                         "enum": [
-                            "validating", "queued", "provisioning",
-                            "running", "succeeded", "failed", "cancelled",
+                            "validating",
+                            "queued",
+                            "provisioning",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "cancelled",
                         ],
                         "description": "Filter by job status",
                     },
@@ -340,6 +362,49 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "judge_data",
+            "description": (
+                "Judge the quality of generated data using asynth's built-in judges. "
+                "Use after SDG to assess quality before training."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template": {
+                        "type": "string",
+                        "description": (
+                            "Judge template (e.g. generic/safety, "
+                            "code/correctness, doc_qa/groundedness)"
+                        ),
+                    },
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job ID whose output data to judge",
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "LLM model for judging",
+                    },
+                    "sample_size": {
+                        "type": "integer",
+                        "description": "Number of rows to judge (default: 10)",
+                    },
+                },
+                "required": ["template", "job_id", "model"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_judge_templates",
+            "description": "List available judge templates for assessing data quality.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_action",
             "description": (
                 "Propose an action for the user to confirm before executing. "
@@ -477,6 +542,47 @@ async def _call_api(
         convert_data: dict[str, Any] = r.json()
         return convert_data
 
+    if name == "judge_data":
+        job_id = args["job_id"]
+        sample_size = args.get("sample_size", 10)
+        r = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
+        r.raise_for_status()
+        artifacts = r.json()
+        if not artifacts:
+            return {"error": "No artifacts found for this job"}
+        artifact_id = artifacts[0]["id"]
+        r = await client.get(
+            f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
+            params={"lines": sample_size},
+        )
+        r.raise_for_status()
+        preview = r.json()
+        rows: list[dict[str, Any]] = []
+        for line in preview.get("lines", []):
+            try:
+                rows.append(json.loads(line))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if not rows:
+            return {"error": "No parseable data rows in artifact"}
+        r = await client.post(
+            "/api/v1/judge",
+            json={
+                "template": args["template"],
+                "data": rows,
+                "model": args["model"],
+            },
+        )
+        r.raise_for_status()
+        judge_result: dict[str, Any] = r.json()
+        return judge_result
+
+    if name == "list_judge_templates":
+        r = await client.get("/api/v1/judge/templates")
+        r.raise_for_status()
+        templates_data: dict[str, Any] = {"templates": r.json()}
+        return templates_data
+
     if name == "read_artifact_preview":
         job_id = args["job_id"]
         artifact_id = args.get("artifact_id")
@@ -550,6 +656,14 @@ def tool_result_summary(name: str, result: dict[str, Any]) -> str:
         path = result.get("path", "unknown")
         count = result.get("total_rows_previewed", 0)
         return f"Preview: {path} ({count} rows)"
+
+    if name == "judge_data":
+        scores = result.get("results", [])
+        return f"Judged {len(scores)} row(s)"
+
+    if name == "list_judge_templates":
+        templates = result.get("templates", [])
+        return f"Found {len(templates)} judge template(s)"
 
     if name == "read_artifact_preview":
         fmt = result.get("format", "unknown")

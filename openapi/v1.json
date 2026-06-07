@@ -1240,6 +1240,28 @@
         }
       }
     },
+    "/api/v1/flows/capabilities": {
+      "get": {
+        "tags": [
+          "flows"
+        ],
+        "summary": "Get Capabilities",
+        "description": "Report asynth capabilities and available features.",
+        "operationId": "get_capabilities_api_v1_flows_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynthCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/estimate": {
       "post": {
         "tags": [
@@ -1591,6 +1613,77 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/judge": {
+      "post": {
+        "tags": [
+          "judge"
+        ],
+        "summary": "Judge Data",
+        "description": "Judge data quality using an asynth judge template.",
+        "operationId": "judge_data_api_v1_judge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgeResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/judge/templates": {
+      "get": {
+        "tags": [
+          "judge"
+        ],
+        "summary": "List Judge Templates",
+        "description": "List available judge templates.",
+        "operationId": "list_judge_templates_api_v1_judge_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Judge Templates Api V1 Judge Templates Get"
                 }
               }
             }
@@ -2637,6 +2730,81 @@
         "title": "JobTypeInfo",
         "description": "Information about a registered job type."
       },
+      "JudgeRequest": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "title": "Template",
+            "description": "Judge template name (e.g. generic/safety)"
+          },
+          "data": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "Data rows to judge"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "LLM model for judging (LiteLLM format)"
+          },
+          "api_base": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Base",
+            "description": "Model API base URL"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key",
+            "description": "Model API key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template",
+          "data",
+          "model"
+        ],
+        "title": "JudgeRequest",
+        "description": "Request to judge data quality."
+      },
+      "JudgeResult": {
+        "properties": {
+          "results": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "title": "JudgeResult",
+        "description": "Result from judging data."
+      },
       "MemoryEstimateRequest": {
         "properties": {
           "model_path": {
@@ -2918,6 +3086,67 @@
         "title": "SuggestedAction",
         "description": "An action the agent suggests the user take."
       },
+      "SynthCapabilities": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "description": "Whether asynth is installed"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "asynth version",
+            "default": ""
+          },
+          "strategies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Strategies",
+            "description": "Available synthesis strategies"
+          },
+          "attribute_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attribute Types",
+            "description": "Supported attribute types"
+          },
+          "data_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Sources",
+            "description": "Supported data source types"
+          },
+          "environment_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Environment Types",
+            "description": "Supported environment types"
+          },
+          "judge_templates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Judge Templates",
+            "description": "Available judge templates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "SynthCapabilities",
+        "description": "asynth synthesis engine capabilities."
+      },
       "SynthJobConfig": {
         "properties": {
           "model": {
@@ -2969,6 +3198,90 @@
             "minimum": 0.0,
             "title": "Temperature",
             "default": 0.7
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "Max tokens per LLM response"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P",
+            "description": "Nucleus sampling parameter"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed",
+            "description": "Random seed for reproducibility"
+          },
+          "num_retries": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Retries",
+            "description": "Number of LLM retries on failure"
+          },
+          "input_data": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Data",
+            "description": "Input dataset sources (JSONL/CSV/HuggingFace paths)"
+          },
+          "input_documents": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Documents",
+            "description": "Input document sources (PDF/DOCX/TXT files)"
           },
           "strategy_params": {
             "anyOf": [

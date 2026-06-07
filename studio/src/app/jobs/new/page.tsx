@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -13,8 +12,6 @@ import {
   createTrainingJob,
   createSDGJob,
   estimateMemory,
-  listFlows,
-  type SDGFlow,
   type MemoryEstimate,
 } from "@/lib/api";
 
@@ -41,17 +38,12 @@ export default function NewJobPage() {
   const [estimating, setEstimating] = useState(false);
 
   // SDG form state
-  const [flows, setFlows] = useState<SDGFlow[]>([]);
-  const [flowId, setFlowId] = useState("");
-  const [datasetPath, setDatasetPath] = useState("");
   const [teacherModel, setTeacherModel] = useState("");
+  const [numSamples, setNumSamples] = useState("100");
+  const [temperature, setTemperature] = useState("0.7");
   const [apiBase, setApiBase] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [runtimeParams, setRuntimeParams] = useState("");
-
-  useEffect(() => {
-    listFlows().then(setFlows).catch(() => {});
-  }, []);
+  const [strategyParams, setStrategyParams] = useState("");
 
   const handleEstimateVRAM = async () => {
     if (!modelPath) return;
@@ -102,30 +94,30 @@ export default function NewJobPage() {
   };
 
   const handleSubmitSDG = async () => {
-    if (!flowId || !datasetPath || !teacherModel) {
-      setError("flow_id, dataset_path, and model are required");
+    if (!teacherModel) {
+      setError("model is required");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
       let parsedParams: Record<string, unknown> | null = null;
-      if (runtimeParams.trim()) {
+      if (strategyParams.trim()) {
         try {
-          parsedParams = JSON.parse(runtimeParams);
+          parsedParams = JSON.parse(strategyParams);
         } catch {
-          setError("runtime_params must be valid JSON");
+          setError("strategy_params must be valid JSON");
           setSubmitting(false);
           return;
         }
       }
       const job = await createSDGJob({
-        flow_id: flowId,
-        dataset_path: datasetPath,
         model: teacherModel,
+        num_samples: numSamples ? parseInt(numSamples) : undefined,
+        temperature: temperature ? parseFloat(temperature) : undefined,
         api_base: apiBase || null,
         api_key: apiKey || null,
-        runtime_params: parsedParams,
+        strategy_params: parsedParams,
       });
       router.push(`/jobs/${job.id}`);
     } catch (e) {
@@ -299,37 +291,39 @@ export default function NewJobPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="flow_id">SDG Flow *</Label>
-                <Select
-                  id="flow_id"
-                  value={flowId}
-                  onChange={(e) => setFlowId(e.target.value)}
-                >
-                  <option value="">Select a flow...</option>
-                  {flows.map((flow) => (
-                    <option key={flow.id} value={flow.id}>
-                      {flow.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dataset_path">Dataset Path *</Label>
-                <Input
-                  id="dataset_path"
-                  placeholder="/data/seed-dataset.jsonl"
-                  value={datasetPath}
-                  onChange={(e) => setDatasetPath(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="teacher_model">Teacher Model *</Label>
+                <Label htmlFor="teacher_model">Model *</Label>
                 <Input
                   id="teacher_model"
-                  placeholder="openai/gpt-4o"
+                  placeholder="openai/gpt-4o-mini"
                   value={teacherModel}
                   onChange={(e) => setTeacherModel(e.target.value)}
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="num_samples">Number of Samples</Label>
+                  <Input
+                    id="num_samples"
+                    type="number"
+                    min="1"
+                    placeholder="100"
+                    value={numSamples}
+                    onChange={(e) => setNumSamples(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="temperature">Temperature</Label>
+                  <Input
+                    id="temperature"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="2"
+                    placeholder="0.7"
+                    value={temperature}
+                    onChange={(e) => setTemperature(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="api_base">API Base URL</Label>
@@ -351,13 +345,13 @@ export default function NewJobPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="runtime_params">Runtime Parameters (JSON)</Label>
+                <Label htmlFor="strategy_params">Strategy Parameters (JSON)</Label>
                 <Textarea
-                  id="runtime_params"
-                  placeholder='{"temperature": 0.7}'
+                  id="strategy_params"
+                  placeholder='{"system_prompt": "You are a helpful assistant."}'
                   rows={3}
-                  value={runtimeParams}
-                  onChange={(e) => setRuntimeParams(e.target.value)}
+                  value={strategyParams}
+                  onChange={(e) => setStrategyParams(e.target.value)}
                 />
               </div>
 

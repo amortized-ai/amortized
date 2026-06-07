@@ -17,12 +17,19 @@ export interface TrainingJobConfig {
 }
 
 export interface SDGJobConfig {
-  flow_id: string;
-  dataset_path: string;
   model: string;
+  num_samples?: number;
+  max_concurrent?: number;
+  temperature?: number;
+  max_tokens?: number | null;
+  top_p?: number | null;
+  seed?: number | null;
+  num_retries?: number | null;
   api_base?: string | null;
   api_key?: string | null;
-  runtime_params?: Record<string, unknown> | null;
+  strategy_params?: Record<string, unknown> | null;
+  input_data?: Record<string, unknown>[] | null;
+  input_documents?: Record<string, unknown>[] | null;
 }
 
 export interface Job {
@@ -65,10 +72,10 @@ export interface MemoryEstimate {
 }
 
 export interface SDGFlow {
-  id: string;
   name: string;
   description: string;
-  category: string;
+  supports_multi_turn: boolean;
+  config_schema?: Record<string, unknown>;
 }
 
 // --- API base ---
