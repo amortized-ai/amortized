@@ -1,4 +1,4 @@
-"""Synthesis container runner — wraps SDG Hub flow execution."""
+"""Synthesis container runner — wraps asynth execution."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ sys.path.insert(0, "/app")
 from shared.context import RunContext
 
 try:
-    from datasets import Dataset
-    from sdg_hub import Flow, FlowRegistry
+    from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
+    from asynth.configs.params.synthesis_params import GeneralSynthesisParams
 
-    _HAS_SDG = True
+    _HAS_ASYNTH = True
 except ImportError:
-    _HAS_SDG = False
+    _HAS_ASYNTH = False
 
 
 def _simulate_synth(ctx: RunContext) -> None:
@@ -28,7 +28,7 @@ def _simulate_synth(ctx: RunContext) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "generated.jsonl"
 
-    ctx.emit("progress", {"message": "Simulating synthesis (sdg_hub not installed)", "phase": "simulate"})
+    ctx.emit("progress", {"message": "Simulating synthesis (asynth not installed)", "phase": "simulate"})
 
     with open(output_path, "w") as f:
         for i in range(num_samples):
@@ -51,37 +51,36 @@ def main() -> None:
     try:
         ctx.emit("progress", {"message": "Starting synthesis", "phase": "init"})
 
-        if _HAS_SDG:
+        if _HAS_ASYNTH:
             config = ctx.config
-
-            FlowRegistry.discover_flows()
-            flow_path = FlowRegistry.get_flow_path(config["flow_id"])
-            flow = Flow.from_yaml(flow_path)
-
-            flow.set_model_config(
-                model=config["model"],
-                api_base=config.get("api_base", "http://localhost:8101/v1"),
-                api_key=config.get("api_key", ""),
-            )
-
-            dataset = Dataset.from_json(config["dataset_path"])
-
-            checkpoint_dir = str(ctx.work_dir / "checkpoints")
-            log_dir = str(ctx.work_dir / "logs")
             output_dir = ctx.work_dir / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / "generated_data.jsonl"
 
-            ctx.emit("progress", {"message": "Running flow", "phase": "generate"})
-
-            result = flow.generate(
-                dataset,
-                runtime_params=config.get("runtime_params", {}),
-                checkpoint_dir=checkpoint_dir,
-                log_dir=log_dir,
+            inference_config = LiteLLMInferenceConfig(
+                model=config["model"],
+                api_base=config.get("api_base"),
+                api_key=config.get("api_key"),
+                temperature=config.get("temperature", 0.7),
+                max_concurrency=config.get("max_concurrent", 16),
             )
 
-            output_path = output_dir / "generated.jsonl"
-            result.to_json(str(output_path))
+            raw_strategy = config.get("strategy_params")
+            if raw_strategy and isinstance(raw_strategy, dict):
+                strategy_params = GeneralSynthesisParams(**raw_strategy)
+            else:
+                strategy_params = GeneralSynthesisParams()
+
+            synth_config = SynthesisConfig(
+                num_samples=config.get("num_samples", 100),
+                output_path=str(output_path),
+                inference_config=inference_config,
+                strategy_params=strategy_params,
+            )
+
+            ctx.emit("progress", {"message": "Running synthesis", "phase": "generate"})
+
+            results = synthesize(synth_config)
 
             ctx.save_artifact("dataset", output_path)
             ctx.emit("progress", {"message": "Synthesis complete", "phase": "done"})

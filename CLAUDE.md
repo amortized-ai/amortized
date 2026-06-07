@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [Training Hub](https://github.com/Red-Hat-AI-Innovation-Team/training_hub) (LoRA fine-tuning) and [SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub) (synthetic data generation).
+Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [Training Hub](https://github.com/Red-Hat-AI-Innovation-Team/training_hub) (LoRA fine-tuning) and [asynth](https://github.com/amortized-ai/asynth) (synthetic data generation).
 
 ## Monorepo Layout
 
@@ -168,39 +168,41 @@ vram_gb = estimator.estimate(
 - For 7B+ models, recommend QLoRA (`load_in_4bit=True`) to fit in VRAM
 - A single 24GB GPU can fine-tune 7B with LoRA, 20B+ with QLoRA
 
-## SDG Hub — Full Flow API
+## asynth — Synthesis Engine
 
-SDG Hub provides synthetic data generation. Install: `pip install sdg-hub`.
+asynth is the synthesis engine for generating training data. Install: `pip install asynth`.
 
-### Flow discovery and execution
+### Core API
 
 ```python
-from sdg_hub import FlowRegistry, Flow
-from datasets import Dataset
+from asynth import synthesize, SynthesisConfig, LiteLLMInferenceConfig
+from asynth.configs.params.synthesis_params import GeneralSynthesisParams
 
-# Discover available flows
-FlowRegistry.discover_flows()
-flow_path = FlowRegistry.get_flow_path("epic-jade-656")  # by flow ID
-
-# Load and configure
-flow = Flow.from_yaml(flow_path)
-flow.set_model_config(
-    model="openai/gpt-4o",        # teacher model (100+ providers via LiteLLM)
-    api_base="http://localhost:8101/v1",  # default API base
-    api_key="sk-...",
+config = SynthesisConfig(
+    num_samples=100,
+    output_path="./output.jsonl",
+    inference_config=LiteLLMInferenceConfig(
+        model="openai/gpt-4o-mini",
+        temperature=0.7,
+        max_concurrency=16,
+    ),
+    strategy_params=GeneralSynthesisParams(),
 )
+results = synthesize(config)  # returns list[dict]
+```
 
-# Target specific blocks (optional)
-flow.set_model_config(model="anthropic/claude-sonnet-4-20250514", blocks=["gen_qa_pairs"])
+### LiteLLMInferenceConfig
 
-# Generate
-result = flow.generate(
-    dataset,
-    runtime_params={"gen_extractive_summary": {"n": 50, "temperature": 0.7}},
-    checkpoint_dir="./checkpoints",
-    save_freq=50,
-    log_dir="./logs",
-    max_concurrency=10,
+```python
+LiteLLMInferenceConfig(
+    model="openai/gpt-4o-mini",    # LiteLLM format — 100+ providers
+    temperature=1.0,
+    max_tokens=None,
+    top_p=None,
+    max_concurrency=16,
+    num_retries=3,
+    api_base=None,                  # custom API endpoint
+    api_key=None,
 )
 ```
 
@@ -208,47 +210,58 @@ result = flow.generate(
 
 Supports 100+ providers: OpenAI, Anthropic, Google, vLLM (`hosted_vllm/`), Ollama (`ollama/`), Azure, Bedrock, Cohere, Mistral, Together, Groq, OpenRouter, and more.
 
-### Dry run (validate and estimate cost)
+### GeneralSynthesisParams — Attribute types
+
+| Attribute Type | Class | Purpose |
+|---|---|---|
+| Sampled | `SampledAttribute` | Categorical variable sampling with rates |
+| Generated | `GeneratedAttribute` | Single-turn LLM-generated outputs |
+| Multi-turn | `MultiTurnAttribute` | Multi-round conversation synthesis |
+| Transformed | `TransformedAttribute` | Post-hoc transforms (string/list/dict/chat) |
+
+### Data sources
+
+| Source | Class | Formats |
+|---|---|---|
+| Datasets | `DatasetSource` | JSONL, CSV, Parquet, HuggingFace |
+| Documents | `DocumentSource` | PDF, DOCX, TXT (token-based segmentation) |
+| Examples | `ExampleSource` | Inline example dicts |
+
+### Pipeline execution order
+
+1. **Dataset planning** — sample attributes, load sources, create rows
+2. **Generated attribute synthesis** — batch LLM calls for single-turn outputs
+3. **Conversation synthesis** — turn-by-turn multi-turn generation with tool-call loops
+4. **Attribute transformation** — apply string/list/dict/chat transforms
+5. **Quality checking** — structural validation on conversation outputs
+6. **Save** — write JSONL if `output_path` is set
+
+### Output format
+
+`synthesize()` returns `list[dict]`, one dict per sample. Keys come from attribute IDs. When `output_path` is set, also saves as JSONL.
+
+### Judges API
 
 ```python
-flow.dry_run(dataset, sample_size=2, enable_time_estimation=True)
+from asynth import judge, create_judge, JudgeConfig
+
+# Quick judge with built-in template
+results = judge("generic/safety", data=[{"response": "..."}], model="openai/gpt-4o-mini")
+
+# Custom judge
+config = JudgeConfig.from_path("my_judge.yaml")
+j = create_judge(config, inference_config=LiteLLMInferenceConfig(model="openai/gpt-4o"))
+results = j.judge(data)
 ```
 
-### Progress monitoring
-
-- **Checkpointing**: `FlowCheckpointer` saves `checkpoint_NNNN.jsonl` + `flow_metadata.json`
-- **Progress query**: `FlowCheckpointer.get_progress_info()` for programmatic progress
-- **Logs**: `{flow_name}_{timestamp}.log` + `{flow_name}_{timestamp}_metrics.json`
-- **MLflow tracing**: Built-in via `mlflow-tracing` dependency
-
-### Available SDG flow categories
-
-| Category | Purpose |
-|---|---|
-| knowledge_infusion | Q&A generation, summaries, knowledge extraction |
-| evaluation | RAG evaluation, answer quality assessment |
-| agentic | MCP distillation, agent behavior datasets |
-| red_team | Adversarial prompt generation |
-| text_analysis | Classification, sentiment, text transformation |
-| code_evaluation | Code quality, bug detection datasets |
-
-### Block types in flows
-
-| Category | Key Blocks | Purpose |
-|---|---|---|
-| llm | LLMChatBlock, PromptBuilderBlock, LLMResponseExtractorBlock | LLM calls, prompt construction, response extraction |
-| parsing | TagParserBlock, RegexParserBlock, JSONParserBlock | Extract structured data from LLM output |
-| transform | TextConcatBlock, RenameColumnsBlock, SamplerBlock | Data manipulation |
-| filtering | ColumnValueFilterBlock | Quality filtering |
-| agent | AgentBlock, MCPAgentBlock | External agent integration |
-| code | PythonInterpreterBlock | Sandboxed code execution |
+Built-in judge categories: generic (safety, truthfulness, instruction_following), code (quality, correctness, security), doc_qa (completeness, groundedness, relevance).
 
 ## The Amortization Workflow
 
 The core workflow to replace expensive frontier model calls with smaller, customized models:
 
 1. **Analyze** — Understand the user's agent task, identify which LLM calls are expensive and repetitive
-2. **Generate data (SDG)** — Use a teacher model (e.g. GPT-4o) to generate training data via SDG Hub flows
+2. **Generate data (SDG)** — Use a teacher model (e.g. GPT-4o) to generate training data via asynth
 3. **Fine-tune (LoRA SFT)** — Train a small model (e.g. Qwen 1.5B) on the generated data using Training Hub
 4. **Evaluate** — Compare the fine-tuned model against the original frontier model on the task
 5. **Deploy** — Replace the frontier model call with the smaller, cheaper fine-tuned model
