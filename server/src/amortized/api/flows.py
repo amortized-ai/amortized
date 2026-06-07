@@ -58,6 +58,6 @@ def _list_judge_templates() -> list[str]:
     try:
         from asynth.judges import list_templates
 
-        return list_templates()
+        return list(list_templates())
     except (ImportError, Exception):
         return []
