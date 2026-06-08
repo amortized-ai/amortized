@@ -62,7 +62,7 @@ class SSHBackend:
         else:
             import socket
 
-            host = settings.host if settings.host != "0.0.0.0" else socket.getfqdn()
+            host = settings.host if settings.host != "0.0.0.0" else socket.gethostname()
             events_url = f"http://{host}:{settings.port}/api/v1/events/ingest"
 
         amortized_env = {
@@ -82,8 +82,11 @@ class SSHBackend:
         try:
             await conn.run(f"mkdir -p {remote_dir}", check=True)
 
+            raw_config = spec.env.get("_config", {})
+            if isinstance(raw_config, str):
+                raw_config = json.loads(raw_config)
             config_data: dict[str, object] = {
-                "config": spec.env.get("_config", {}),
+                "config": raw_config,
                 "artifacts": {},
             }
             config_json = json.dumps(config_data)

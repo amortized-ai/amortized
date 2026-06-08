@@ -159,15 +159,39 @@ def _configure_ssh_backend() -> dict[str, Any] | None:
         if not typer.confirm("Continue anyway?", default=False):
             return None
 
+    # Detect container runtime on the REMOTE node (not locally)
+    ssh_target = f"{user}@{host}" if user else host
+    console.print("Detecting container runtime...", end=" ")
+    container_rt = None
+    for rt in ("podman", "docker"):
+        detect_cmd = [
+            "ssh",
+            "-o",
+            "ConnectTimeout=5",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            ssh_target,
+            f"{rt} --version",
+        ]
+        try:
+            proc = subprocess.run(detect_cmd, capture_output=True, text=True, timeout=10)
+            if proc.returncode == 0:
+                container_rt = rt
+                break
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+
+    if container_rt:
+        console.print(f"[cyan]{container_rt}[/cyan]")
+    else:
+        console.print("[dim]none detected[/dim]")
+
     backend_name = typer.prompt("Name this backend", default="gpu-node")
 
     backend_cfg: dict[str, Any] = {"type": "ssh", "host": host}
     if user:
         backend_cfg["user"] = user
-
-    container_rt = _detect_container_runtime()
-    if container_rt:
-        console.print(f"Detected container runtime: [cyan]{container_rt}[/cyan]")
+    backend_cfg["container_runtime"] = container_rt or "docker"
     console.print("\nHow should jobs execute on this node?")
     console.print("  [1] Docker / Podman container (recommended)")
     console.print("  [2] Bare metal (Python venv)")
@@ -175,7 +199,6 @@ def _configure_ssh_backend() -> dict[str, Any] | None:
     if exec_choice == "2":
         backend_cfg["bare_metal"] = True
     else:
-        ssh_target = f"{user}@{host}" if user else host
         rt = container_rt or "docker"
         console.print(f"\n[bold]Pull container images on {host}:[/bold]")
         console.print(f"  ssh {ssh_target} '{rt} pull ghcr.io/amortized-ai/training:latest'")
@@ -332,6 +355,20 @@ def config() -> None:
         except (ValueError, IndexError):
             default_name = next(iter(backends.keys()))
         existing["compute"]["default_backend"] = default_name
+
+    # Auto-detect external_url for SSH backends so remote nodes can reach us
+    has_ssh = any(b.get("type") == "ssh" for b in backends.values())
+    if has_ssh and not existing.get("external_url"):
+        import socket
+
+        local_hostname = socket.gethostname()
+        try:
+            local_ip = socket.gethostbyname(local_hostname)
+        except socket.gaierror:
+            local_ip = None
+        if local_ip and local_ip != "127.0.0.1":
+            console.print(f"Control plane reachable at: [cyan]http://{local_ip}:8000[/cyan]")
+            existing["external_url"] = f"http://{local_ip}:8000"
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.dump(existing, default_flow_style=False))
