@@ -60,8 +60,7 @@ COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY containers/shared/ /app/shared/
-COPY containers/training/runner.py /app/
 
 WORKDIR /app
 
-CMD ["python3.11", "runner.py"]
+CMD ["python3.11", "shared/training_runner.py"]
