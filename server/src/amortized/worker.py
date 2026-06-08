@@ -281,15 +281,19 @@ async def _run_job(job: dict[str, Any]) -> None:
         model = config.get("model", "")
         provider = model.split("/")[0] if "/" in model else ""
         if provider:
+            env_var = f"{provider.upper()}_API_KEY"
             key_db = await _get_db()
             try:
                 key_repo = Repository(key_db)
                 key_row = await key_repo.get_api_key_for_provider(provider)
                 if key_row:
-                    env_var = f"{provider.upper()}_API_KEY"
                     spec_env[env_var] = key_row["key_value"]
             finally:
                 await key_db.close()
+            if env_var not in spec_env and os.environ.get(env_var):
+                spec_env[env_var] = os.environ[env_var]
+            if env_var not in spec_env and os.environ.get("AMORTIZED_LLM_API_KEY"):
+                spec_env[env_var] = os.environ["AMORTIZED_LLM_API_KEY"]
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
     if job["type"] == JobType.training.value:
