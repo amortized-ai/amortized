@@ -40,6 +40,11 @@ async def add_api_key(
     body: ApiKeyCreate,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
+    """Store an LLM provider API key.
+
+    The server uses it for SDG and eval jobs when no key is in the job
+    config. Supports any LiteLLM provider (openai, anthropic, google).
+    """
     repo = Repository(db)
     row = await repo.create_api_key(
         key_id=str(uuid.uuid4()),
@@ -55,6 +60,11 @@ async def add_api_key(
 async def list_api_keys(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> list[dict[str, Any]]:
+    """List stored API keys (redacted).
+
+    Returns provider names and last 4 chars only — never the full key.
+    Check which providers are configured before submitting jobs.
+    """
     repo = Repository(db)
     return await repo.list_api_keys()
 
@@ -64,6 +74,7 @@ async def delete_api_key(
     key_id: str,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> None:
+    """Remove a stored API key by ID."""
     repo = Repository(db)
     deleted = await repo.delete_api_key(key_id)
     if not deleted:
@@ -97,6 +108,11 @@ def _save_config(config: dict[str, Any]) -> None:
 
 @router.post("/backends", status_code=201, response_model=ComputeBackendInfo)
 async def add_backend(body: BackendCreate) -> dict[str, Any]:
+    """Register a compute backend for job dispatch.
+
+    SSH backends connect to remote GPU nodes. Available immediately
+    and persisted across server restarts.
+    """
     if body.name == "local":
         raise HTTPException(400, detail="Cannot use reserved name 'local'")
 
@@ -136,11 +152,13 @@ async def add_backend(body: BackendCreate) -> dict[str, Any]:
 
 @router.get("/backends", response_model=list[ComputeBackendInfo])
 async def list_settings_backends() -> list[dict[str, object]]:
+    """List registered compute backends with their capabilities."""
     return list_backends()
 
 
 @router.delete("/backends/{name}", status_code=204)
 async def delete_backend(name: str) -> None:
+    """Remove a compute backend. The built-in 'local' backend cannot be removed."""
     if name == "local":
         raise HTTPException(
             status_code=400,
@@ -159,6 +177,11 @@ async def delete_backend(name: str) -> None:
 
 @router.post("/backends/{name}/test")
 async def test_backend(name: str) -> dict[str, Any]:
+    """Test connectivity to a compute backend.
+
+    For SSH backends, attempts a connection and queries GPU info via
+    nvidia-smi. Returns healthy status and GPU details if available.
+    """
     from amortized.core.compute import get_backend
 
     try:

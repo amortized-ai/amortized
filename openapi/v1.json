@@ -2219,6 +2219,7 @@
           "settings"
         ],
         "summary": "List Api Keys",
+        "description": "List stored API keys (redacted).\n\nReturns provider names and last 4 chars only \u2014 never the full key.\nCheck which providers are configured before submitting jobs.",
         "operationId": "list_api_keys_api_v1_settings_api_keys_get",
         "responses": {
           "200": {
@@ -2242,6 +2243,7 @@
           "settings"
         ],
         "summary": "Add Api Key",
+        "description": "Store an LLM provider API key.\n\nThe server uses it for SDG and eval jobs when no key is in the job\nconfig. Supports any LiteLLM provider (openai, anthropic, google).",
         "operationId": "add_api_key_api_v1_settings_api_keys_post",
         "requestBody": {
           "content": {
@@ -2283,6 +2285,7 @@
           "settings"
         ],
         "summary": "Delete Api Key",
+        "description": "Remove a stored API key by ID.",
         "operationId": "delete_api_key_api_v1_settings_api_keys__key_id__delete",
         "parameters": [
           {
@@ -2318,6 +2321,7 @@
           "settings"
         ],
         "summary": "List Settings Backends",
+        "description": "List registered compute backends with their capabilities.",
         "operationId": "list_settings_backends_api_v1_settings_backends_get",
         "responses": {
           "200": {
@@ -2341,6 +2345,7 @@
           "settings"
         ],
         "summary": "Add Backend",
+        "description": "Register a compute backend for job dispatch.\n\nSSH backends connect to remote GPU nodes. Available immediately\nand persisted across server restarts.",
         "operationId": "add_backend_api_v1_settings_backends_post",
         "requestBody": {
           "content": {
@@ -2382,6 +2387,7 @@
           "settings"
         ],
         "summary": "Delete Backend",
+        "description": "Remove a compute backend. The built-in 'local' backend cannot be removed.",
         "operationId": "delete_backend_api_v1_settings_backends__name__delete",
         "parameters": [
           {
@@ -2417,6 +2423,7 @@
           "settings"
         ],
         "summary": "Test Backend",
+        "description": "Test connectivity to a compute backend.\n\nFor SSH backends, attempts a connection and queries GPU info via\nnvidia-smi. Returns healthy status and GPU details if available.",
         "operationId": "test_backend_api_v1_settings_backends__name__test_post",
         "parameters": [
           {

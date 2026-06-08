@@ -50,10 +50,10 @@ Verify it's running: [http://localhost:8000/api/v1/health](http://localhost:8000
 ### 3. First-Time Setup (optional)
 
 ```bash
-amortized init
+amortized config
 ```
 
-Walks you through configuring API keys and GPU backends.
+Walks you through configuring compute backends for GPU training.
 
 ### 4. Generate Synthetic Data
 

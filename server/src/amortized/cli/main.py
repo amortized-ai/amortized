@@ -85,11 +85,149 @@ def up(
 
 
 # ---------------------------------------------------------------------------
-# amortized init
+# amortized config
 # ---------------------------------------------------------------------------
+
+
+def _test_ssh(host: str, user: str | None = None) -> dict[str, Any]:
+    """Test SSH connectivity and detect GPUs."""
+    result: dict[str, Any] = {"connected": False}
+    try:
+        ssh_target = f"{user}@{host}" if user else host
+        cmd = ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no", ssh_target]
+        gpu_cmd = [
+            *cmd,
+            "nvidia-smi --query-gpu=name,memory.total"
+            " --format=csv,noheader,nounits 2>/dev/null"
+            " || echo no-gpu",
+        ]
+        proc = subprocess.run(gpu_cmd, capture_output=True, text=True, timeout=15)
+        if proc.returncode == 0:
+            result["connected"] = True
+            output = proc.stdout.strip()
+            if output and output != "no-gpu":
+                gpus = [line.strip() for line in output.splitlines() if line.strip()]
+                result["gpus"] = gpus
+                result["gpu_count"] = len(gpus)
+        else:
+            result["error"] = proc.stderr.strip() or "Connection failed"
+    except subprocess.TimeoutExpired:
+        result["error"] = "Connection timed out"
+    except FileNotFoundError:
+        result["error"] = "ssh command not found"
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def _detect_container_runtime() -> str | None:
+    """Detect Docker or Podman."""
+    for runtime in ("podman", "docker"):
+        try:
+            proc = subprocess.run(
+                [runtime, "version"], capture_output=True, timeout=5
+            )
+            if proc.returncode == 0:
+                return runtime
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return None
+
+
+def _configure_ssh_backend() -> dict[str, Any] | None:
+    """Interactive SSH backend configuration."""
+    host = typer.prompt("SSH host")
+    user = typer.prompt("SSH user (Enter for default)", default="", show_default=False)
+    user = user or None
+
+    console.print("Testing connection...", end=" ")
+    ssh_result = _test_ssh(host, user)
+    if ssh_result["connected"]:
+        console.print("[green]✓ Connected[/green]")
+        if ssh_result.get("gpus"):
+            gpu_summary = f"{ssh_result['gpu_count']}x {ssh_result['gpus'][0]}"
+            console.print(f"Detecting GPUs... [cyan]{gpu_summary}[/cyan]")
+        else:
+            console.print("Detecting GPUs... [dim]none detected[/dim]")
+    else:
+        console.print(f"[red]✗ {ssh_result.get('error', 'Failed')}[/red]")
+        if not typer.confirm("Continue anyway?", default=False):
+            return None
+
+    backend_name = typer.prompt("Name this backend", default="gpu-node")
+
+    backend_cfg: dict[str, Any] = {"type": "ssh", "host": host}
+    if user:
+        backend_cfg["user"] = user
+
+    container_rt = _detect_container_runtime()
+    if container_rt:
+        console.print(f"Detected container runtime: [cyan]{container_rt}[/cyan]")
+    console.print("\nHow should jobs execute on this node?")
+    console.print("  [1] Docker / Podman container (recommended)")
+    console.print("  [2] Bare metal (Python venv)")
+    exec_choice = typer.prompt("Choice", default="1")
+    if exec_choice == "2":
+        backend_cfg["bare_metal"] = True
+
+    if ssh_result.get("gpus"):
+        backend_cfg["gpu_info"] = ssh_result["gpus"]
+
+    return {"name": backend_name, "config": backend_cfg}
+
+
+def _discover_k8s_contexts() -> list[str]:
+    """Read available K8s contexts from ~/.kube/config."""
+    kube_config = Path.home() / ".kube" / "config"
+    if not kube_config.exists():
+        return []
+    try:
+        import yaml
+
+        data = yaml.safe_load(kube_config.read_text())
+        if isinstance(data, dict) and "contexts" in data:
+            return [ctx["name"] for ctx in data["contexts"] if isinstance(ctx, dict)]
+    except Exception:
+        pass
+    return []
+
+
+def _configure_k8s_backend() -> dict[str, Any] | None:
+    """Interactive K8s backend configuration."""
+    contexts = _discover_k8s_contexts()
+    if contexts:
+        console.print("\nKubernetes contexts (from ~/.kube/config):")
+        for i, ctx in enumerate(contexts, 1):
+            console.print(f"  [{i}] {ctx}")
+        console.print(f"  [{len(contexts) + 1}] Enter manually")
+        choice = typer.prompt("Choice", default="1")
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(contexts):
+                context = contexts[idx]
+            else:
+                context = typer.prompt("K8s context name")
+        except ValueError:
+            context = choice
+    else:
+        context = typer.prompt("K8s context name")
+
+    namespace = typer.prompt("Namespace", default="default")
+    backend_name = typer.prompt("Name this backend", default=context)
+
+    return {
+        "name": backend_name,
+        "config": {
+            "type": "kubernetes",
+            "context": context,
+            "namespace": namespace,
+        },
+    }
+
+
 @app.command()
-def init() -> None:
-    """Set up Amortized for first-time use."""
+def config() -> None:
+    """Configure compute runtimes for job dispatch."""
     import yaml
 
     config_path = Path.home() / ".amortized" / "config.yaml"
@@ -100,24 +238,68 @@ def init() -> None:
         if not overwrite:
             raise typer.Exit()
 
-    config: dict[str, Any] = {}
+    backends: dict[str, dict[str, Any]] = {}
 
-    has_gpu = typer.confirm("Do you have a GPU node for training (SSH)?", default=False)
-    if has_gpu:
-        host = typer.prompt("SSH host")
-        backend_name = typer.prompt("Backend name", default="gpu-node")
-        config.setdefault("compute", {}).setdefault("backends", {})[backend_name] = {
-            "type": "ssh",
-            "host": host,
-        }
+    while True:
+        console.print("\n[bold]Where will your jobs run?[/bold]")
+        console.print("  [1] This machine (local)")
+        console.print("  [2] Remote GPU node (SSH)")
+        console.print("  [3] Kubernetes / OpenShift cluster")
+        console.print("  [4] Skip — configure later")
+        choice = typer.prompt("Choice", default="1")
+
+        if choice == "1":
+            console.print("[green]✓ Local backend always available[/green]")
+        elif choice == "2":
+            result = _configure_ssh_backend()
+            if result:
+                backends[result["name"]] = result["config"]
+                console.print(
+                    f"[green]✓ Added backend"
+                    f" '{result['name']}'[/green]"
+                )
+        elif choice == "3":
+            result = _configure_k8s_backend()
+            if result:
+                backends[result["name"]] = result["config"]
+                console.print(
+                    f"[green]✓ Added backend"
+                    f" '{result['name']}'[/green]"
+                )
+        elif choice == "4":
+            break
+        else:
+            console.print("[yellow]Invalid choice[/yellow]")
+            continue
+
+        if not typer.confirm("\nAdd another backend?", default=False):
+            break
+
+    cfg: dict[str, Any] = {}
+    if backends:
+        cfg["compute"] = {"backends": backends}
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.dump(config, default_flow_style=False))
+    config_path.write_text(yaml.dump(cfg, default_flow_style=False))
 
-    console.print(f"\n[green]✓ Config saved to {config_path}[/green]")
-    console.print("\n[bold]Tip:[/bold] Set your LLM API key via environment variable:")
+    console.print(f"\n[green]✓ Saved to {config_path}[/green]")
+
+    if backends:
+        table = Table(title="Configured Backends")
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Host / Context")
+        table.add_column("GPUs", style="dim")
+        for name, bcfg in backends.items():
+            host_or_ctx = bcfg.get("host", bcfg.get("context", ""))
+            gpu_info = ""
+            if bcfg.get("gpu_info"):
+                gpu_info = f"{len(bcfg['gpu_info'])}x {bcfg['gpu_info'][0]}"
+            table.add_row(name, bcfg["type"], host_or_ctx, gpu_info)
+        console.print(table)
+
+    console.print("\n[bold]Tip:[/bold] Set LLM API keys via env vars:")
     console.print("  export OPENAI_API_KEY=sk-...")
-    console.print("  export ANTHROPIC_API_KEY=sk-ant-...")
     console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
