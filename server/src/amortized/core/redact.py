@@ -10,4 +10,14 @@ _REDACTED = "***redacted***"
 
 
 def redact_config(config: dict[str, Any]) -> dict[str, Any]:
-    return {k: _REDACTED if k in _REDACT_FIELDS and v else v for k, v in config.items()}
+    result: dict[str, Any] = {}
+    for k, v in config.items():
+        if k in _REDACT_FIELDS and v:
+            result[k] = _REDACTED
+        elif isinstance(v, dict):
+            result[k] = redact_config(v)
+        elif isinstance(v, list):
+            result[k] = [redact_config(item) if isinstance(item, dict) else item for item in v]
+        else:
+            result[k] = v
+    return result

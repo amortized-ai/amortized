@@ -6,6 +6,7 @@ import tempfile
 
 import httpx
 import pytest
+from conftest import requires_training_hub_functional
 
 from amortized.main import app
 
@@ -44,6 +45,7 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
 class TestWorkerJobExecution:
     """Test the worker picks up and executes jobs."""
 
+    @requires_training_hub_functional
     @pytest.mark.asyncio
     async def test_training_job_lifecycle(self, client: httpx.AsyncClient) -> None:
         """Create a training job, run it through the worker, verify status transitions."""

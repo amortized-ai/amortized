@@ -294,8 +294,8 @@ class TestUniversalJobEndpoint:
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["metadata"]["backend"] == "local"
-        assert data["metadata"]["gpus"] == 0
+        assert "backend" not in data["metadata"]
+        assert "gpus" not in data["metadata"]
 
     @pytest.mark.asyncio
     async def test_create_job_unknown_type(self, client: httpx.AsyncClient) -> None:

@@ -12,14 +12,24 @@ from typing import Any
 
 
 def _deserialize_strategy_params(raw: dict[str, Any]) -> Any:
-    """Convert nested dicts to proper asynth dataclass instances."""
+    """Deserialize strategy_params dict into GeneralSynthesisParams.
+
+    Prefers asynth's own from_dict() if available, falls back to
+    manual deserialization for older asynth versions.
+    """
+    from asynth.configs.params.synthesis_params import (
+        GeneralSynthesisParams,
+    )
+
+    if hasattr(GeneralSynthesisParams, "from_dict"):
+        return GeneralSynthesisParams.from_dict(raw)
+
     from asynth.configs.params.synthesis_params import (
         AttributeCombination,
         DatasetSource,
         DocumentSegmentationParams,
         DocumentSource,
         ExampleSource,
-        GeneralSynthesisParams,
         GeneratedAttribute,
         GeneratedAttributePostprocessingParams,
         MultiTurnAttribute,

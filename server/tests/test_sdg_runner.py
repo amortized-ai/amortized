@@ -151,7 +151,7 @@ class TestConfigMapping:
         ):
             run_sdg(config)
 
-        mock_params_cls.assert_called_once()
+        mock_params_cls.from_dict.assert_called_once_with(strategy)
 
 
 class TestStrategyParamsDeserialization:

@@ -6,6 +6,7 @@ import tempfile
 
 import httpx
 import pytest
+from conftest import requires_training_hub_functional
 
 from amortized.main import app
 
@@ -405,6 +406,7 @@ class TestFlows:
             assert "supports_multi_turn" in pipeline
 
 
+@requires_training_hub_functional
 class TestEstimate:
     @pytest.mark.asyncio
     async def test_estimate_memory(self, client: httpx.AsyncClient) -> None:

@@ -2435,7 +2435,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ComputeBackendInfo"
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Test Backend Api V1 Settings Backends  Name  Test Post"
                 }
               }
             }
@@ -2756,8 +2758,11 @@
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
             "title": "Name",
-            "description": "Backend name"
+            "description": "Backend name (alphanumeric, hyphens, underscores)"
           },
           "type": {
             "type": "string",

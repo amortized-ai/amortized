@@ -192,6 +192,38 @@ class TestBackends:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
+    async def test_add_backend_reserved_name(self, client: httpx.AsyncClient) -> None:
+        resp = await client.post(
+            "/api/v1/settings/backends",
+            json={"name": "local", "type": "ssh", "host": "gpu.example.com"},
+        )
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_add_backend_empty_name(self, client: httpx.AsyncClient) -> None:
+        resp = await client.post(
+            "/api/v1/settings/backends",
+            json={"name": "", "type": "ssh", "host": "gpu.example.com"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_add_backend_invalid_chars(self, client: httpx.AsyncClient) -> None:
+        resp = await client.post(
+            "/api/v1/settings/backends",
+            json={"name": "my backend!", "type": "ssh", "host": "gpu.example.com"},
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_test_backend_local(self, client: httpx.AsyncClient) -> None:
+        resp = await client.post("/api/v1/settings/backends/local/test")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["name"] == "local"
+        assert data["healthy"] is True
+
+    @pytest.mark.asyncio
     async def test_add_unsupported_backend_type(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/settings/backends",

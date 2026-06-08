@@ -37,3 +37,33 @@ class TestRedactConfig:
         config = {"api_key": "sk-secret-123", "model": "x"}
         redact_config(config)
         assert config["api_key"] == "sk-secret-123"
+
+    def test_nested_dict_redacted(self) -> None:
+        config = {"inference": {"api_key": "sk-nested", "model": "gpt-4o"}}
+        result = redact_config(config)
+        assert result["inference"]["api_key"] == "***redacted***"
+        assert result["inference"]["model"] == "gpt-4o"
+
+    def test_list_of_dicts_redacted(self) -> None:
+        config = {
+            "providers": [
+                {"name": "openai", "api_key": "sk-1"},
+                {"name": "anthropic", "api_key": "sk-2"},
+            ]
+        }
+        result = redact_config(config)
+        assert result["providers"][0]["api_key"] == "***redacted***"
+        assert result["providers"][1]["api_key"] == "***redacted***"
+        assert result["providers"][0]["name"] == "openai"
+
+    def test_deeply_nested_three_levels(self) -> None:
+        config = {"level1": {"level2": {"level3": {"api_key": "deep-secret", "safe": "ok"}}}}
+        result = redact_config(config)
+        assert result["level1"]["level2"]["level3"]["api_key"] == "***redacted***"
+        assert result["level1"]["level2"]["level3"]["safe"] == "ok"
+
+    def test_non_sensitive_nested_keys_preserved(self) -> None:
+        config = {"outer": {"inner_model": "gpt-4o", "batch_size": 16}}
+        result = redact_config(config)
+        assert result["outer"]["inner_model"] == "gpt-4o"
+        assert result["outer"]["batch_size"] == 16

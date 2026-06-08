@@ -1,5 +1,6 @@
 """Settings API — API key management and backend configuration."""
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -26,6 +27,8 @@ from amortized.models import (
 logger = logging.getLogger("amortized.api.settings")
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+
+_config_lock = asyncio.Lock()
 
 # ---------------------------------------------------------------------------
 # API Keys
@@ -94,6 +97,9 @@ def _save_config(config: dict[str, Any]) -> None:
 
 @router.post("/backends", status_code=201, response_model=ComputeBackendInfo)
 async def add_backend(body: BackendCreate) -> dict[str, Any]:
+    if body.name == "local":
+        raise HTTPException(400, detail="Cannot use reserved name 'local'")
+
     if body.type == "ssh":
         from amortized.backends.ssh import SSHBackend
 
@@ -106,15 +112,16 @@ async def add_backend(body: BackendCreate) -> dict[str, Any]:
         backend.name = body.name
         register_backend(backend)
 
-        config = _load_config()
-        config.setdefault("compute", {}).setdefault("backends", {})[body.name] = {
-            "type": body.type,
-            "host": body.host,
-            "user": body.user,
-            "key_path": body.key_path,
-            "remote_base_dir": body.remote_base_dir,
-        }
-        _save_config(config)
+        async with _config_lock:
+            config = _load_config()
+            config.setdefault("compute", {}).setdefault("backends", {})[body.name] = {
+                "type": body.type,
+                "host": body.host,
+                "user": body.user,
+                "key_path": body.key_path,
+                "remote_base_dir": body.remote_base_dir,
+            }
+            _save_config(config)
 
         return {
             "name": body.name,
@@ -143,13 +150,14 @@ async def delete_backend(name: str) -> None:
     if not removed:
         raise HTTPException(status_code=404, detail="Backend not found")
 
-    config = _load_config()
-    backends = config.get("compute", {}).get("backends", {})
-    backends.pop(name, None)
-    _save_config(config)
+    async with _config_lock:
+        config = _load_config()
+        backends = config.get("compute", {}).get("backends", {})
+        backends.pop(name, None)
+        _save_config(config)
 
 
-@router.post("/backends/{name}/test", response_model=ComputeBackendInfo)
+@router.post("/backends/{name}/test")
 async def test_backend(name: str) -> dict[str, Any]:
     from amortized.core.compute import get_backend
 
@@ -158,7 +166,29 @@ async def test_backend(name: str) -> dict[str, Any]:
     except KeyError:
         raise HTTPException(status_code=404, detail="Backend not found") from None
 
-    return {
+    result: dict[str, Any] = {
         "name": backend.name,
         "capabilities": sorted(c.value for c in backend.capabilities()),
+        "healthy": True,
     }
+
+    if hasattr(backend, "_connect"):
+        try:
+            conn = await backend._connect()
+            try:
+                nvsmi = (
+                    "nvidia-smi --query-gpu=name,memory.total"
+                    " --format=csv,noheader,nounits"
+                    " 2>/dev/null || echo 'no-gpu'"
+                )
+                gpu_result = await conn.run(nvsmi)
+                gpu_info = gpu_result.stdout.strip() if gpu_result.stdout else ""
+                if gpu_info and gpu_info != "no-gpu":
+                    result["gpu_info"] = gpu_info
+            finally:
+                conn.close()
+        except Exception as exc:
+            result["healthy"] = False
+            result["error"] = str(exc)
+
+    return result

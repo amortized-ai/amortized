@@ -112,7 +112,7 @@ class TestSubmit:
             metadata={"team": "ml-infra"},
         )
         assert job.metadata["team"] == "ml-infra"
-        assert job.metadata["backend"] == "local"
+        assert "backend" not in job.metadata
 
     @pytest.mark.asyncio
     async def test_submit_with_compute(self, sdk_client: Client) -> None:

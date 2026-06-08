@@ -16,7 +16,7 @@ from amortized.backends import BackendHandle, BackendStatus, Capability, JobSpec
 from amortized.core.artifacts import register_artifacts_for_job, register_log_artifacts
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.events import emit_event
-from amortized.db.repository import Repository
+from amortized.db.repository import Repository, _row_to_job
 from amortized.models import JobStatus, JobType
 
 logger = logging.getLogger("amortized.worker")
@@ -157,14 +157,7 @@ async def _pick_pending_job() -> dict[str, Any] | None:
         row = await cursor.fetchone()
         if row is None:
             return None
-        d = dict(row)
-        d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
-        raw_meta = d.get("metadata")
-        if isinstance(raw_meta, str):
-            d["metadata"] = json.loads(raw_meta) if raw_meta else {}
-        elif raw_meta is None:
-            d["metadata"] = {}
-        return d
+        return _row_to_job(row)
     finally:
         await db.close()
 

@@ -39,7 +39,13 @@ except ImportError:
 
 
 def _deserialize_strategy_params(raw: dict[str, Any]) -> GeneralSynthesisParams:
-    """Convert nested dicts to proper asynth dataclass instances."""
+    """Deserialize strategy_params dict into GeneralSynthesisParams.
+
+    Prefers asynth's own from_dict() if available, falls back to
+    manual deserialization for older asynth versions.
+    """
+    if hasattr(GeneralSynthesisParams, "from_dict"):
+        return GeneralSynthesisParams.from_dict(raw)
 
     def _to_dataclass(cls: type, val: Any) -> Any:
         if isinstance(val, cls):

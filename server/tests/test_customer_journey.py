@@ -163,9 +163,8 @@ class TestCustomerJourney:
         )
         assert resp.status_code == 201
         job = resp.json()
-        assert job["metadata"]["backend"] == "local"
-        assert job["metadata"]["gpus"] == 0
-        assert job["metadata"]["gpu_type"] is None
+        assert "backend" not in job.get("metadata", {})
+        assert "gpus" not in job.get("metadata", {})
 
     @pytest.mark.asyncio
     async def test_dry_run_validates_without_creating(self, client: httpx.AsyncClient) -> None:

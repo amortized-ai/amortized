@@ -6,6 +6,7 @@ from typing import Any
 
 import aiosqlite
 
+from amortized.core.crypto import decrypt_value, encrypt_value
 from amortized.models import JobStatus, JobType
 
 
@@ -468,7 +469,7 @@ class Repository:
         await self.conn.execute(
             "INSERT INTO api_keys (id, name, provider, key_value, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
-            (key_id, name, provider, key_value, created_at),
+            (key_id, name, provider, encrypt_value(key_value), created_at),
         )
         await self.conn.commit()
         result = await self.get_api_key(key_id)
@@ -491,14 +492,21 @@ class Repository:
         return cursor.rowcount > 0
 
     async def get_api_key_for_provider(self, provider: str) -> dict[str, Any] | None:
+        """Return the most recent API key for a provider.
+
+        WARNING: Returns the full key_value for internal use (worker key injection).
+        NEVER expose this in API responses — use list_api_keys() instead.
+        """
         cursor = await self.conn.execute(
-            "SELECT * FROM api_keys WHERE provider = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id, provider, key_value FROM api_keys"
+            " WHERE provider = ? ORDER BY created_at DESC LIMIT 1",
             (provider,),
         )
         row = await cursor.fetchone()
         if row is None:
             return None
         d = dict(row)
+        d["key_value"] = decrypt_value(d["key_value"])
         return d
 
     async def update_evaluation(

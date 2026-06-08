@@ -433,7 +433,13 @@ class ApiKeyInfo(BaseModel):
 class BackendCreate(BaseModel):
     """Request to add a compute backend."""
 
-    name: str = Field(..., description="Backend name")
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$",
+        description="Backend name (alphanumeric, hyphens, underscores)",
+    )
     type: str = Field("ssh", description="Backend type: ssh, slurm")
     host: str = Field(..., description="SSH hostname")
     user: str | None = Field(None, description="SSH user")

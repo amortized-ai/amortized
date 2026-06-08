@@ -64,12 +64,13 @@ async def create_job_universal(
     job_type = JobType(request.type)
     output_dir = request.config.get("ckpt_output_dir")
 
-    merged_metadata = {
-        **request.metadata,
-        "backend": request.compute.backend,
-        "gpus": request.compute.gpus,
-        "gpu_type": request.compute.gpu_type,
-    }
+    merged_metadata = {**request.metadata}
+    if request.compute.backend != "local":
+        merged_metadata["backend"] = request.compute.backend
+    if request.compute.gpus > 0:
+        merged_metadata["gpus"] = request.compute.gpus
+    if request.compute.gpu_type:
+        merged_metadata["gpu_type"] = request.compute.gpu_type
 
     repo = Repository(db)
     try:

@@ -58,10 +58,13 @@ def _job_response(row: dict[str, Any]) -> Job:
 
 def _build_metadata(compute: ComputeSpec | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
     merged = dict(metadata) if metadata else {}
-    if compute is not None:
-        merged["backend"] = compute.backend
-        merged["gpus"] = compute.gpus
-        merged["gpu_type"] = compute.gpu_type
+    if compute:
+        if compute.backend != "local":
+            merged["backend"] = compute.backend
+        if compute.gpus > 0:
+            merged["gpus"] = compute.gpus
+        if compute.gpu_type:
+            merged["gpu_type"] = compute.gpu_type
     return merged
 
 

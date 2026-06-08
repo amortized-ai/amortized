@@ -63,6 +63,14 @@ npm run dev
 - Dev server runs at http://localhost:3000
 - Proxies /api requests to the runtime backend at http://localhost:8000
 
+### Git Hooks
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Enables auto-regeneration of OpenAPI snapshot on commit.
+
 ## Python Conventions (server/)
 
 - **Linter**: `ruff check src/ tests/` — enforced in CI
