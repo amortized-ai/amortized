@@ -18,7 +18,7 @@ from rich.table import Table
 
 app = typer.Typer(
     name="amortized",
-    help="Amortized — AI Model Customization Studio CLI",
+    help="Amortized — build task models that replace frontier API calls",
     no_args_is_help=True,
 )
 console = Console()
@@ -85,6 +85,46 @@ def up(
 
 
 # ---------------------------------------------------------------------------
+# amortized init
+# ---------------------------------------------------------------------------
+@app.command()
+def init() -> None:
+    """Set up Amortized for first-time use."""
+    config_path = Path.home() / ".amortized" / "config.yaml"
+
+    if config_path.exists():
+        console.print(f"[yellow]Config already exists:[/yellow] {config_path}")
+        overwrite = typer.confirm("Overwrite?", default=False)
+        if not overwrite:
+            raise typer.Exit()
+
+    config: dict[str, Any] = {}
+
+    api_key = typer.prompt(
+        "OpenAI API key (or press Enter to skip)", default="", show_default=False
+    )
+    if api_key:
+        config["openai_api_key"] = api_key
+
+    has_gpu = typer.confirm("Do you have a GPU node accessible via SSH?", default=False)
+    if has_gpu:
+        host = typer.prompt("SSH host")
+        backend_name = typer.prompt("Backend name", default="gpu-node")
+        config.setdefault("compute", {}).setdefault("backends", {})[backend_name] = {
+            "type": "ssh",
+            "host": host,
+        }
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    import yaml
+
+    config_path.write_text(yaml.dump(config, default_flow_style=False))
+
+    console.print(f"\n[green]✓ Config saved to {config_path}[/green]")
+    console.print("Run [bold]amortized up[/bold] to start the server.")
+
+
+# ---------------------------------------------------------------------------
 # amortized submit
 # ---------------------------------------------------------------------------
 @app.command()
@@ -95,6 +135,9 @@ def submit(
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
     ] = None,
+    confirm: Annotated[
+        bool, typer.Option("--confirm", help="Actually submit (default is dry-run preview)")
+    ] = False,
 ) -> None:
     """Submit a job by type or recipe."""
     with _client() as client:
@@ -128,10 +171,22 @@ def submit(
                     cfg[k] = json.loads(v)
                 except json.JSONDecodeError:
                     cfg[k] = v
-            body = {"type": job_type, "config": cfg}
+            body = {"type": job_type, "config": cfg, "dry_run": not confirm}
             resp = client.post("/api/v1/jobs", json=body)
 
         data = _handle_response(resp)
+        if "valid" in data and "id" not in data:
+            if data["valid"]:
+                console.print("[green]✓ Config valid[/green]")
+            else:
+                console.print("[red]✗ Config invalid[/red]")
+            for err in data.get("errors", []):
+                console.print(f"  [red]• {err}[/red]")
+            if data.get("warnings"):
+                for w in data["warnings"]:
+                    console.print(f"  [yellow]⚠ {w}[/yellow]")
+            console.print("\nRun with [bold]--confirm[/bold] to submit.")
+            return
         _print_job_panel(data)
 
 
@@ -252,7 +307,7 @@ def types() -> None:
     table.add_column("Description")
 
     for jt in data:
-        table.add_row(jt.get("name", ""), jt.get("description", ""))
+        table.add_row(jt.get("type", ""), jt.get("description", ""))
     console.print(table)
 
 

@@ -92,8 +92,8 @@ class TestTypes:
                 ("GET", "/api/v1/job-types"): _mock_response(
                     200,
                     [
-                        {"name": "training", "description": "LoRA SFT training"},
-                        {"name": "sdg", "description": "Synthetic data generation"},
+                        {"type": "training", "description": "LoRA SFT training"},
+                        {"type": "sdg", "description": "Synthetic data generation"},
                     ],
                 ),
             }
@@ -252,10 +252,47 @@ class TestSubmit:
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(
                 app,
-                ["submit", "training", "--config", '{"model_path": "test"}'],
+                ["submit", "training", "--config", '{"model_path": "test"}', "--confirm"],
             )
         assert result.exit_code == 0
         assert "job_new" in result.output
+
+    def test_submit_dry_run_valid(self) -> None:
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/jobs"): _mock_response(
+                    200,
+                    {"valid": True, "errors": [], "warnings": []},
+                ),
+            }
+        )
+        with patch("amortized.cli.main._client", return_value=fake):
+            result = runner.invoke(
+                app,
+                ["submit", "training", "--config", '{"model_path": "test"}'],
+            )
+        assert result.exit_code == 0
+        assert "Config valid" in result.output
+        assert "--confirm" in result.output
+
+    def test_submit_dry_run_invalid(self) -> None:
+        fake = _FakeClient(
+            {
+                ("POST", "/api/v1/jobs"): _mock_response(
+                    200,
+                    {"valid": False, "errors": ["missing model_path"], "warnings": ["low VRAM"]},
+                ),
+            }
+        )
+        with patch("amortized.cli.main._client", return_value=fake):
+            result = runner.invoke(
+                app,
+                ["submit", "training"],
+            )
+        assert result.exit_code == 0
+        assert "Config invalid" in result.output
+        assert "missing model_path" in result.output
+        assert "low VRAM" in result.output
 
     def test_submit_with_recipe(self) -> None:
         fake = _FakeClient(

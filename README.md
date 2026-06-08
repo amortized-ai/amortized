@@ -29,6 +29,63 @@ Built on the [Red Hat AI Innovation Training Hub](https://github.com/redhat-ai-s
 
 In the same way amortization spreads a large cost over time, Amortized spreads the capability of expensive frontier models across cheaper, specialized ones — reducing your per-inference cost while preserving the quality your agents depend on.
 
+## Getting Started
+
+### 1. Install
+
+```bash
+git clone https://github.com/amortized-ai/amortized.git
+cd amortized/server
+pip install -e .
+```
+
+### 2. Start the Server
+
+```bash
+amortized up
+```
+
+Verify it's running: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+
+### 3. First-Time Setup (optional)
+
+```bash
+amortized init
+```
+
+Walks you through configuring API keys and GPU backends.
+
+### 4. Generate Synthetic Data
+
+```bash
+amortized submit sdg --confirm \
+  --recipe base/sdg \
+  --set config.model=openai/gpt-4o-mini
+```
+
+### 5. Train a Model
+
+```bash
+amortized submit training --confirm \
+  --set config.algorithm=lora_sft \
+  --set config.model_path=Qwen/Qwen2.5-1.5B-Instruct \
+  --set config.data_path=./data.jsonl
+```
+
+### 6. Connect via MCP
+
+Add this to your Claude Code or Cursor MCP config:
+
+```json
+{
+  "mcpServers": {
+    "amortized": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
 ## License
 
 [Apache License 2.0](LICENSE)
