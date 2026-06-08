@@ -7,7 +7,7 @@
 # =============================================================================
 # Stage 1: Builder — install Python deps with full build toolchain
 # =============================================================================
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:13.3.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -34,15 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-RUN echo 'torch<2.11' > /tmp/constraints.txt
-ENV PIP_CONSTRAINT=/tmp/constraints.txt
 RUN python3.11 -m pip install --no-cache-dir "training-hub[lora]"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
 
 # =============================================================================
 # Stage 2: Runtime — slim image with only runtime dependencies
 # =============================================================================
-FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
+FROM nvidia/cuda:13.3.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
