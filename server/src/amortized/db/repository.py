@@ -499,6 +499,8 @@ def _row_to_job(row: Any) -> dict[str, Any]:
         d["metadata"] = json.loads(raw_meta) if raw_meta else {}
     elif raw_meta is None:
         d["metadata"] = {}
+    if d.get("error") == "None":
+        d["error"] = None
     return d
 
 

@@ -49,6 +49,14 @@ class ErrorResponse(BaseModel):
 # --- Request models ---
 
 
+class ComputeSpec(BaseModel):
+    """Specifies which compute backend to use for a job."""
+
+    backend: str = Field("local", description="Compute backend name (e.g. 'local', 'ssh')")
+    gpus: int = Field(0, ge=0, description="Number of GPUs requested")
+    gpu_type: str | None = Field(None, description="GPU type (e.g. 'A100', 'H100')")
+
+
 class TrainingJobConfig(BaseModel):
     """Configuration for a training job."""
 
@@ -66,6 +74,8 @@ class TrainingJobConfig(BaseModel):
     max_seq_len: int | None = Field(None, ge=1, description="Maximum sequence length")
     gradient_checkpointing: bool | None = Field(None, description="Enable gradient checkpointing")
     model_max_length: int | None = Field(None, ge=1, description="Maximum model sequence length")
+    compute: ComputeSpec | None = Field(None, description="Compute backend spec")
+    metadata: dict[str, Any] | None = Field(None, description="User-defined metadata")
 
 
 class SynthJobConfig(BaseModel):
@@ -90,14 +100,8 @@ class SynthJobConfig(BaseModel):
     strategy_params: dict[str, Any] | None = Field(
         None, description="Raw asynth GeneralSynthesisParams (advanced)"
     )
-
-
-class ComputeSpec(BaseModel):
-    """Specifies which compute backend to use for a job."""
-
-    backend: str = Field("local", description="Compute backend name (e.g. 'local', 'ssh')")
-    gpus: int = Field(0, ge=0, description="Number of GPUs requested")
-    gpu_type: str | None = Field(None, description="GPU type (e.g. 'A100', 'H100')")
+    compute: ComputeSpec | None = Field(None, description="Compute backend spec")
+    metadata: dict[str, Any] | None = Field(None, description="User-defined metadata")
 
 
 class JobRequest(BaseModel):

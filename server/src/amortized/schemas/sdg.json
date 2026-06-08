@@ -76,6 +76,7 @@
           "items": {
             "type": "object",
             "required": ["id", "name", "description", "possible_values"],
+            "additionalProperties": true,
             "properties": {
               "id": {"type": "string", "description": "Unique attribute ID, used as {id} placeholder in prompts"},
               "name": {"type": "string", "description": "Display name"},
@@ -85,11 +86,12 @@
                 "items": {
                   "type": "object",
                   "required": ["id", "name", "description"],
+                  "additionalProperties": true,
                   "properties": {
                     "id": {"type": "string"},
-                    "name": {"type": "string", "description": "Value name, referenced as {attribute_id} in prompts"},
-                    "description": {"type": "string", "description": "Value description, referenced as {attribute_id.description}"},
-                    "sample_rate": {"type": "number", "minimum": 0, "maximum": 1, "description": "Sampling weight"}
+                    "name": {"type": "string", "description": "Referenced as {attribute_id} in prompts"},
+                    "description": {"type": "string", "description": "Referenced as {attribute_id.description}"},
+                    "sample_rate": {"type": "number", "minimum": 0, "maximum": 1, "description": "Sampling weight (0-1)"}
                   }
                 }
               }
@@ -102,6 +104,7 @@
           "items": {
             "type": "object",
             "required": ["id", "instruction_messages"],
+            "additionalProperties": true,
             "properties": {
               "id": {"type": "string", "description": "Unique attribute ID for the generated output"},
               "instruction_messages": {
@@ -118,13 +121,13 @@
               },
               "postprocessing_params": {
                 "type": "object",
-                "description": "Post-process the LLM response",
+                "additionalProperties": true,
                 "properties": {
                   "id": {"type": "string"},
                   "cut_prefix": {"type": "string"},
                   "cut_suffix": {"type": "string"},
                   "regex": {"type": "string"},
-                  "strip_whitespace": {"type": "boolean"}
+                  "strip_whitespace": {"type": "boolean", "default": true}
                 }
               }
             }
@@ -133,12 +136,33 @@
         "transformed_attributes": {
           "type": "array",
           "description": "Transform generated attributes into output formats (string, list, dict, chat)",
-          "items": {"type": "object"}
+          "items": {
+            "type": "object",
+            "required": ["id", "transformation_strategy"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {"type": "string"},
+              "transformation_strategy": {"type": "object", "description": "Transform config (STRING, LIST, DICT, or CHAT type)"}
+            }
+          }
         },
         "multiturn_attributes": {
           "type": "array",
           "description": "Multi-turn conversation generation with tool-use support",
-          "items": {"type": "object"}
+          "items": {
+            "type": "object",
+            "required": ["id", "min_turns", "max_turns", "role_instruction_messages"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {"type": "string"},
+              "min_turns": {"type": "integer", "minimum": 1},
+              "max_turns": {"type": "integer", "minimum": 1},
+              "role_instruction_messages": {"type": "object", "description": "Map of role to instruction string"},
+              "conversation_planner": {"type": "string", "description": "Optional planner prompt"},
+              "available_tools": {"type": "array", "items": {"type": "string"}},
+              "max_consecutive_tool_turns": {"type": "integer", "default": 50}
+            }
+          }
         },
         "passthrough_attributes": {
           "type": "array",

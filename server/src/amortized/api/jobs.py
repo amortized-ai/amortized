@@ -36,6 +36,7 @@ from amortized.db.repository import Repository
 from amortized.models import (
     Artifact,
     ArtifactPreview,
+    ComputeSpec,
     Job,
     JobStatus,
     JobType,
@@ -55,18 +56,29 @@ def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
+def _build_metadata(compute: ComputeSpec | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    merged = dict(metadata) if metadata else {}
+    if compute is not None:
+        merged["backend"] = compute.backend
+        merged["gpus"] = compute.gpus
+        merged["gpu_type"] = compute.gpu_type
+    return merged
+
+
 @router.post("/training", status_code=201, response_model=Job)
 async def create_training_job(
     config: TrainingJobConfig,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
+    metadata = _build_metadata(config.compute, config.metadata)
     try:
         row = await core_create_job(
             repo,
             job_type=JobType.training,
-            config=config.model_dump(exclude_none=True),
+            config=config.model_dump(exclude_none=True, exclude={"compute", "metadata"}),
             output_dir=config.ckpt_output_dir,
+            metadata=metadata or None,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -79,11 +91,13 @@ async def create_sdg_job(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
+    metadata = _build_metadata(config.compute, config.metadata)
     try:
         row = await core_create_job(
             repo,
             job_type=JobType.sdg,
-            config=config.model_dump(exclude_none=True),
+            config=config.model_dump(exclude_none=True, exclude={"compute", "metadata"}),
+            metadata=metadata or None,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

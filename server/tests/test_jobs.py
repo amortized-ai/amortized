@@ -76,6 +76,26 @@ class TestCreateTrainingJob:
         assert data["config"]["load_in_4bit"] is True
 
     @pytest.mark.asyncio
+    async def test_create_training_job_with_compute(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "data_path": "./data.jsonl",
+                "compute": {"backend": "ssh", "gpus": 2},
+                "metadata": {"team": "ml"},
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["metadata"]["backend"] == "ssh"
+        assert data["metadata"]["gpus"] == 2
+        assert data["metadata"]["team"] == "ml"
+        assert "compute" not in data["config"]
+        assert "metadata" not in data["config"]
+
+    @pytest.mark.asyncio
     async def test_create_training_job_validation_error(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs/training",
@@ -98,6 +118,37 @@ class TestCreateSDGJob:
         assert data["type"] == "sdg"
         assert data["status"] == "queued"
         assert data["config"]["model"] == "openai/gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_create_sdg_job_with_compute(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "model": "openai/gpt-4o",
+                "compute": {"backend": "ssh", "gpus": 1, "gpu_type": "A100"},
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["metadata"]["backend"] == "ssh"
+        assert data["metadata"]["gpus"] == 1
+        assert data["metadata"]["gpu_type"] == "A100"
+        assert "compute" not in data["config"]
+
+    @pytest.mark.asyncio
+    async def test_create_sdg_job_with_metadata(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "model": "openai/gpt-4o",
+                "compute": {"backend": "ssh"},
+                "metadata": {"project": "demo"},
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["metadata"]["backend"] == "ssh"
+        assert data["metadata"]["project"] == "demo"
 
 
 class TestListJobs:
@@ -384,6 +435,46 @@ class TestEstimate:
         assert response.status_code == 200
         data = response.json()
         assert data["load_in_4bit"] is True
+
+
+class TestErrorFieldSerialization:
+    @pytest.mark.asyncio
+    async def test_error_is_null_not_string_none(self, client: httpx.AsyncClient) -> None:
+        create_resp = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "test",
+                "data_path": "test",
+                "ckpt_output_dir": "test",
+            },
+        )
+        assert create_resp.status_code == 201
+        job_id = create_resp.json()["id"]
+
+        response = await client.get(f"/api/v1/jobs/{job_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["error"] is None
+        assert data["error"] != "None"
+
+    @pytest.mark.asyncio
+    async def test_error_null_in_list_response(self, client: httpx.AsyncClient) -> None:
+        await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "test",
+                "data_path": "test",
+                "ckpt_output_dir": "test",
+            },
+        )
+        response = await client.get("/api/v1/jobs")
+        assert response.status_code == 200
+        jobs = response.json()
+        assert len(jobs) == 1
+        assert jobs[0]["error"] is None
+        assert jobs[0]["error"] != "None"
 
 
 class TestHealth:
