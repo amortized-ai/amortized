@@ -19,7 +19,7 @@ export interface TrainingJobConfig {
 export interface SDGJobConfig {
   model: string;
   num_samples?: number;
-  max_concurrent?: number;
+  max_concurrency?: number;
   temperature?: number;
   max_tokens?: number | null;
   top_p?: number | null;

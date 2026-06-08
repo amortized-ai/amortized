@@ -72,7 +72,7 @@ class TestConfigMapping:
             "api_base": "http://localhost:8000/v1",
             "api_key": "sk-test",
             "temperature": 0.5,
-            "max_concurrent": 8,
+            "max_concurrency": 8,
             "num_samples": 50,
         }
 

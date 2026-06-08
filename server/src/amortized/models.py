@@ -75,7 +75,7 @@ class SynthJobConfig(BaseModel):
     api_base: str | None = Field(None, description="Model API base URL")
     api_key: str | None = Field(None, description="Model API key")
     num_samples: int = Field(100, ge=1, description="Number of samples to generate")
-    max_concurrent: int = Field(16, ge=1, description="Max concurrent LLM requests")
+    max_concurrency: int = Field(16, ge=1, description="Max concurrent LLM requests")
     temperature: float = Field(0.7, ge=0, le=2)
     max_tokens: int | None = Field(None, ge=1, description="Max tokens per LLM response")
     top_p: float | None = Field(None, ge=0, le=1, description="Nucleus sampling parameter")

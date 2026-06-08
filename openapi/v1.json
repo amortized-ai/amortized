@@ -3793,10 +3793,10 @@
             "description": "Number of samples to generate",
             "default": 100
           },
-          "max_concurrent": {
+          "max_concurrency": {
             "type": "integer",
             "minimum": 1.0,
-            "title": "Max Concurrent",
+            "title": "Max Concurrency",
             "description": "Max concurrent LLM requests",
             "default": 16
           },

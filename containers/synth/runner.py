@@ -167,7 +167,7 @@ def main() -> None:
                 api_base=config.get("api_base"),
                 api_key=config.get("api_key"),
                 temperature=config.get("temperature", 0.7),
-                max_concurrency=config.get("max_concurrent", 16),
+                max_concurrency=config.get("max_concurrency", 16),
                 max_tokens=config.get("max_tokens"),
                 top_p=config.get("top_p"),
                 seed=config.get("seed"),

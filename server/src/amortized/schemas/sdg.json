@@ -23,7 +23,7 @@
       "default": 100,
       "description": "Number of samples to generate"
     },
-    "max_concurrent": {
+    "max_concurrency": {
       "type": "integer",
       "minimum": 1,
       "default": 16,

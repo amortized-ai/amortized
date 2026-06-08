@@ -95,12 +95,12 @@ class TestSynthJobConfig:
             api_base="http://localhost:8000/v1",
             api_key="sk-test",
             num_samples=200,
-            max_concurrent=8,
+            max_concurrency=8,
             temperature=0.5,
             strategy_params={"sampled_attributes": [{"name": "domain", "values": ["science"]}]},
         )
         assert config.strategy_params is not None
-        assert config.max_concurrent == 8
+        assert config.max_concurrency == 8
 
     def test_missing_model(self) -> None:
         with pytest.raises(ValidationError):
