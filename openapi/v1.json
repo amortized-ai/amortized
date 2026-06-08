@@ -2324,6 +2324,18 @@
               }
             ],
             "title": "Producer Job"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url",
+            "description": "URL to download the artifact content"
           }
         },
         "type": "object",
@@ -2839,6 +2851,13 @@
             },
             "type": "array",
             "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "type": {
             "type": "string",

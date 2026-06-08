@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ def _get_schemas_dir() -> Path:
     if configured is not None:
         return configured
     return _PACKAGE_SCHEMAS_DIR
+
 
 _REGISTRY: dict[str, dict[str, Any]] = {
     "training": {
@@ -96,6 +98,25 @@ async def _validate_sdg(config: dict[str, Any]) -> list[str]:
     return errors
 
 
+async def _warn_sdg(config: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    if not config.get("api_key") and not os.environ.get("AMORTIZED_LLM_API_KEY"):
+        model = config.get("model", "")
+        provider = model.split("/")[0] if "/" in model else ""
+        provider_env_vars = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "google": "GOOGLE_API_KEY",
+        }
+        env_var = provider_env_vars.get(provider)
+        if env_var and not os.environ.get(env_var):
+            warnings.append(
+                f"No API key found. Set api_key in config, "
+                f"AMORTIZED_LLM_API_KEY env var, or {env_var} for {provider} models."
+            )
+    return warnings
+
+
 async def _validate_inference(config: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     tp = config.get("tensor_parallel_size")
@@ -124,6 +145,19 @@ async def validate_semantic(job_type: str, config: dict[str, Any]) -> list[str]:
     if validator is None:
         return []
     return await validator(config)
+
+
+_SEMANTIC_WARNERS: dict[str, _SemanticValidator] = {
+    "sdg": _warn_sdg,
+}
+
+
+async def warn_semantic(job_type: str, config: dict[str, Any]) -> list[str]:
+    """Return non-blocking warnings for a given job type."""
+    warner = _SEMANTIC_WARNERS.get(job_type)
+    if warner is None:
+        return []
+    return await warner(config)
 
 
 class UnknownJobTypeError(Exception):

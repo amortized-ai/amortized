@@ -150,6 +150,11 @@ Workflow for SDG:
 Teacher model support: 100+ providers via LiteLLM — OpenAI, Anthropic, Google, \
 vLLM (hosted_vllm/), Ollama (ollama/), Azure, and more.
 
+Credentials: API keys are resolved in order: (1) api_key in job config (per-job override), \
+(2) AMORTIZED_LLM_API_KEY environment variable, (3) provider-specific env vars \
+(OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) read by LiteLLM automatically. If a user \
+gets auth errors, tell them to set the appropriate environment variable on the server.
+
 ## TIPS
 - Use estimate_vram before proposing a training job so you can advise on config
 - For training, recommend starting with Qwen 1.5B unless the task requires more

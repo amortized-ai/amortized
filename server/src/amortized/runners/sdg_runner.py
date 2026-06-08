@@ -121,6 +121,15 @@ def _deserialize_strategy_params(raw: dict[str, Any]) -> Any:
     return GeneralSynthesisParams(**coerced)
 
 
+def _resolve_api_key(config: dict[str, Any]) -> str | None:
+    """Resolve API key from config → env var → None (let LiteLLM handle it)."""
+    if config.get("api_key"):
+        return config["api_key"]
+    if os.environ.get("AMORTIZED_LLM_API_KEY"):
+        return os.environ["AMORTIZED_LLM_API_KEY"]
+    return None
+
+
 def run_sdg(config: dict[str, Any]) -> None:
     """Execute a synthetic data generation job."""
     output_dir = str(config.get("output_dir", "./sdg_output"))
@@ -135,7 +144,7 @@ def run_sdg(config: dict[str, Any]) -> None:
     inference_config = LiteLLMInferenceConfig(
         model=config["model"],
         api_base=config.get("api_base"),
-        api_key=config.get("api_key"),
+        api_key=_resolve_api_key(config),
         temperature=config.get("temperature", 0.7),
         max_concurrency=config.get("max_concurrency", 16),
         max_tokens=config.get("max_tokens"),

@@ -259,6 +259,13 @@ results = j.judge(data)
 
 Built-in judge categories: generic (safety, truthfulness, instruction_following), code (quality, correctness, security), doc_qa (completeness, groundedness, relevance).
 
+### Credentials
+
+API keys are resolved in order:
+1. `api_key` in job config (per-job override)
+2. `AMORTIZED_LLM_API_KEY` environment variable
+3. Provider-specific env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) — read by LiteLLM automatically
+
 ## The Amortization Workflow
 
 The core workflow to replace expensive frontier model calls with smaller, customized models:

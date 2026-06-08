@@ -196,6 +196,58 @@ class TestWorkerJobExecution:
         assert job is None
 
 
+class TestWorkerMetadataParsing:
+    """Verify _pick_pending_job parses metadata JSON so backend is dispatched correctly."""
+
+    @pytest.mark.asyncio
+    async def test_pick_pending_job_parses_metadata(self, client: httpx.AsyncClient) -> None:
+        """metadata must be a dict (not a JSON string) so _run_job reads backend."""
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "test/model",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "/tmp/test-meta",
+                "compute": {"backend": "ssh", "gpus": 1, "gpu_type": "A100"},
+            },
+        )
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+
+        from amortized.worker import _pick_pending_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+        assert job["id"] == job_id
+        assert isinstance(job["metadata"], dict), (
+            f"metadata should be dict, got {type(job['metadata'])}"
+        )
+        assert job["metadata"]["backend"] == "ssh"
+        assert job["metadata"]["gpus"] == 1
+        assert job["metadata"]["gpu_type"] == "A100"
+
+    @pytest.mark.asyncio
+    async def test_pick_pending_job_empty_metadata(self, client: httpx.AsyncClient) -> None:
+        """Jobs without compute spec should get an empty metadata dict."""
+        response = await client.post(
+            "/api/v1/jobs/training",
+            json={
+                "algorithm": "lora_sft",
+                "model_path": "test/model",
+                "data_path": "./data.jsonl",
+                "ckpt_output_dir": "/tmp/test-no-meta",
+            },
+        )
+        assert response.status_code == 201
+
+        from amortized.worker import _pick_pending_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+        assert isinstance(job["metadata"], dict)
+
+
 class TestTildeExpansion:
     """Verify ~ is expanded in paths, not used literally."""
 

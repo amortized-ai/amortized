@@ -51,6 +51,7 @@ class TestCreateArtifact:
         assert data["artifact_type"] == "adapter_weights"
         assert data["location"] == "/tmp/adapter_model.safetensors"
         assert data["id"]
+        assert data["download_url"] == f"/api/v1/artifacts/{data['id']}/download"
 
     @pytest.mark.asyncio
     async def test_create_with_producer_job(self, client: httpx.AsyncClient) -> None:
@@ -187,6 +188,50 @@ class TestDownloadArtifact:
         resp = await client.get(f"/api/v1/artifacts/{artifact_id}/download")
         assert resp.status_code == 200
         assert resp.text == "test content"
+
+    @pytest.mark.asyncio
+    async def test_download_via_download_url(
+        self, client: httpx.AsyncClient, tmp_path: object
+    ) -> None:
+        file_path = str(tmp_path) + "/round_trip.jsonl"
+        content = '{"prompt": "hello", "completion": "world"}\n'
+        with open(file_path, "w") as f:
+            f.write(content)
+
+        create_resp = await client.post(
+            "/api/v1/artifacts",
+            json={"name": "training-data", "artifact_type": "dataset", "location": file_path},
+        )
+        data = create_resp.json()
+        assert "download_url" in data
+        assert data["download_url"] == f"/api/v1/artifacts/{data['id']}/download"
+
+        resp = await client.get(data["download_url"])
+        assert resp.status_code == 200
+        assert resp.text == content
+
+    @pytest.mark.asyncio
+    async def test_list_includes_download_url(self, client: httpx.AsyncClient) -> None:
+        await client.post(
+            "/api/v1/artifacts",
+            json={"name": "a", "artifact_type": "dataset", "location": "/a"},
+        )
+        resp = await client.get("/api/v1/artifacts")
+        assert resp.status_code == 200
+        artifacts = resp.json()
+        assert len(artifacts) == 1
+        assert artifacts[0]["download_url"] == f"/api/v1/artifacts/{artifacts[0]['id']}/download"
+
+    @pytest.mark.asyncio
+    async def test_get_includes_download_url(self, client: httpx.AsyncClient) -> None:
+        create_resp = await client.post(
+            "/api/v1/artifacts",
+            json={"name": "a", "artifact_type": "model", "location": "/a"},
+        )
+        artifact_id = create_resp.json()["id"]
+        resp = await client.get(f"/api/v1/artifacts/{artifact_id}")
+        assert resp.status_code == 200
+        assert resp.json()["download_url"] == f"/api/v1/artifacts/{artifact_id}/download"
 
     @pytest.mark.asyncio
     async def test_download_uri_returns_location(self, client: httpx.AsyncClient) -> None:

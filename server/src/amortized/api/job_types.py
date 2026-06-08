@@ -12,6 +12,7 @@ from amortized.core.job_types import (
     list_job_types,
     validate_config,
     validate_semantic,
+    warn_semantic,
 )
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
@@ -46,10 +47,12 @@ async def create_job_universal(
 
     if request.dry_run:
         semantic_errors = await validate_semantic(request.type, request.config)
+        semantic_warnings = await warn_semantic(request.type, request.config)
         all_errors = schema_errors + semantic_errors
         return DryRunResponse(
             valid=not all_errors,
             errors=all_errors,
+            warnings=semantic_warnings,
             type=request.type,
             compute=request.compute.model_dump(),
             config=request.config,
@@ -96,6 +99,7 @@ async def validate_job(request: JobRequest) -> DryRunResponse:
     return DryRunResponse(
         valid=result["valid"],
         errors=result["errors"],
+        warnings=result.get("warnings", []),
         type=request.type,
         compute=request.compute.model_dump(),
         config=request.config,
@@ -115,6 +119,7 @@ async def validate_config_endpoint(request: ConfigValidateRequest) -> ConfigVali
     return ConfigValidateResponse(
         valid=result["valid"],
         errors=result["errors"],
+        warnings=result.get("warnings", []),
     )
 
 

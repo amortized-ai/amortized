@@ -170,7 +170,12 @@ async def get_job_artifacts(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     rows = await core_list_artifacts(repo, job_id)
-    return [Artifact(**r) for r in rows]
+    artifacts = []
+    for r in rows:
+        a = Artifact(**r)
+        a.download_url = f"/api/v1/artifacts/{a.id}/download"
+        artifacts.append(a)
+    return artifacts
 
 
 @router.get("/{job_id}/artifacts/{artifact_id}/preview", response_model=ArtifactPreview)

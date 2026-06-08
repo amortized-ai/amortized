@@ -47,7 +47,9 @@ async def create_artifact(
         metadata=req.metadata,
         producer_job=req.producer_job,
     )
-    return Artifact(**row)
+    a = Artifact(**row)
+    a.download_url = f"/api/v1/artifacts/{a.id}/download"
+    return a
 
 
 @router.get("", response_model=list[Artifact])
@@ -58,7 +60,12 @@ async def list_artifacts(
 ) -> list[Artifact]:
     repo = Repository(db)
     rows = await core_list_all_artifacts(repo, artifact_type=type, producer_job=producer_job)
-    return [Artifact(**r) for r in rows]
+    artifacts = []
+    for r in rows:
+        a = Artifact(**r)
+        a.download_url = f"/api/v1/artifacts/{a.id}/download"
+        artifacts.append(a)
+    return artifacts
 
 
 @router.get("/{artifact_id}", response_model=Artifact)
@@ -70,7 +77,9 @@ async def get_artifact(
     row = await core_get_artifact(repo, artifact_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
-    return Artifact(**row)
+    a = Artifact(**row)
+    a.download_url = f"/api/v1/artifacts/{a.id}/download"
+    return a
 
 
 @router.delete("/{artifact_id}", status_code=204)
@@ -110,7 +119,9 @@ async def upload_artifact(
             "size_bytes": len(content),
         },
     )
-    return Artifact(**row)
+    a = Artifact(**row)
+    a.download_url = f"/api/v1/artifacts/{a.id}/download"
+    return a
 
 
 @router.post("/upload-url", response_model=UploadUrlResponse)

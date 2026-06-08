@@ -8,7 +8,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from amortized.core.events import emit_event
-from amortized.core.job_types import UnknownJobTypeError, validate_config, validate_semantic
+from amortized.core.job_types import (
+    UnknownJobTypeError,
+    validate_config,
+    validate_semantic,
+    warn_semantic,
+)
 from amortized.models import JobStatus, JobType
 
 if TYPE_CHECKING:
@@ -95,10 +100,12 @@ async def validate_job(
     except UnknownJobTypeError as exc:
         raise exc
     semantic_errors = await validate_semantic(job_type, config)
+    semantic_warnings = await warn_semantic(job_type, config)
     all_errors = schema_errors + semantic_errors
     return {
         "valid": not all_errors,
         "errors": all_errors,
+        "warnings": semantic_warnings,
     }
 
 

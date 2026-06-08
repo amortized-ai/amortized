@@ -160,6 +160,7 @@ class Artifact(BaseModel):
     location: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
     producer_job: str | None = None
+    download_url: str | None = Field(None, description="URL to download the artifact content")
 
 
 class MemoryEstimateRequest(BaseModel):
@@ -272,6 +273,7 @@ class DryRunResponse(BaseModel):
     dry_run: bool = True
     valid: bool
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     type: str
     compute: dict[str, Any] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)

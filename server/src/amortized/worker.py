@@ -159,6 +159,11 @@ async def _pick_pending_job() -> dict[str, Any] | None:
             return None
         d = dict(row)
         d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
+        raw_meta = d.get("metadata")
+        if isinstance(raw_meta, str):
+            d["metadata"] = json.loads(raw_meta) if raw_meta else {}
+        elif raw_meta is None:
+            d["metadata"] = {}
         return d
     finally:
         await db.close()
