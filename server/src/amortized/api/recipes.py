@@ -34,7 +34,7 @@ async def get_recipe(name: str) -> dict[str, Any]:
 
 
 class RecipeJobRequest(BaseModel):
-    recipe: str = Field(..., description="Recipe name (e.g. 'llama3/8b-lora-sft')")
+    recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
 
 
