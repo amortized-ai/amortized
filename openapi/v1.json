@@ -2811,6 +2811,12 @@
             "title": "Remote Base Dir",
             "description": "Remote working directory",
             "default": "~/amortized-jobs"
+          },
+          "container_runtime": {
+            "type": "string",
+            "title": "Container Runtime",
+            "description": "Container runtime: docker or podman",
+            "default": "docker"
           }
         },
         "type": "object",
