@@ -241,15 +241,9 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
 
-    backend_name = "local"
+    backend_name = config_mod.settings.default_backend or "local"
     if isinstance(job.get("metadata"), dict):
         backend_name = job["metadata"].get("backend", backend_name)
-
-    if backend_name == "local":
-        gpu_job_types = {JobType.training.value, JobType.inference.value}
-        if job["type"] in gpu_job_types and config_mod.settings.default_backend:
-            backend_name = config_mod.settings.default_backend
-            logger.info("Smart routing job %s to default backend %r", job_id, backend_name)
 
     try:
         backend = get_backend(backend_name)
