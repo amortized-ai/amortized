@@ -1842,6 +1842,329 @@
         }
       }
     },
+    "/api/v1/evaluators": {
+      "get": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "List Evaluators",
+        "operationId": "list_evaluators_api_v1_evaluators_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Evaluator"
+                  },
+                  "type": "array",
+                  "title": "Response List Evaluators Api V1 Evaluators Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Create Evaluator",
+        "operationId": "create_evaluator_api_v1_evaluators_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluatorCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluator"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluators/{evaluator_id}": {
+      "get": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Get Evaluator",
+        "operationId": "get_evaluator_api_v1_evaluators__evaluator_id__get",
+        "parameters": [
+          {
+            "name": "evaluator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluator Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluator"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Update Evaluator",
+        "operationId": "update_evaluator_api_v1_evaluators__evaluator_id__put",
+        "parameters": [
+          {
+            "name": "evaluator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluator Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluatorCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluator"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Delete Evaluator",
+        "operationId": "delete_evaluator_api_v1_evaluators__evaluator_id__delete",
+        "parameters": [
+          {
+            "name": "evaluator_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluator Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations": {
+      "post": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Create Evaluation",
+        "operationId": "create_evaluation_api_v1_evaluations_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "List Evaluations",
+        "operationId": "list_evaluations_api_v1_evaluations_get",
+        "parameters": [
+          {
+            "name": "evaluator_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Evaluator Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Evaluation"
+                  },
+                  "title": "Response List Evaluations Api V1 Evaluations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations/{evaluation_id}": {
+      "get": {
+        "tags": [
+          "evaluators"
+        ],
+        "summary": "Get Evaluation",
+        "operationId": "get_evaluation_api_v1_evaluations__evaluation_id__get",
+        "parameters": [
+          {
+            "name": "evaluation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evaluation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evaluation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health",
@@ -2491,6 +2814,291 @@
         ],
         "title": "DryRunResponse",
         "description": "Response from a dry-run / validation request."
+      },
+      "Evaluation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "evaluator_id": {
+            "type": "string",
+            "title": "Evaluator Id"
+          },
+          "dataset_artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Artifact Id"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "pending"
+          },
+          "results": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Results"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "evaluator_id"
+        ],
+        "title": "Evaluation",
+        "description": "Evaluation run record."
+      },
+      "EvaluationCreate": {
+        "properties": {
+          "evaluator_id": {
+            "type": "string",
+            "title": "Evaluator Id",
+            "description": "Evaluator ID to run"
+          },
+          "dataset": {
+            "type": "string",
+            "title": "Dataset",
+            "description": "Artifact ID or file path to evaluate"
+          },
+          "model_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Override",
+            "description": "Override evaluator's model"
+          },
+          "inference_params_override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Params Override",
+            "description": "Override inference params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluator_id",
+          "dataset"
+        ],
+        "title": "EvaluationCreate",
+        "description": "Request to run an evaluation."
+      },
+      "Evaluator": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Evaluator name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Description",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Evaluator type: llm or rule_based",
+            "default": "llm"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Evaluation prompt template"
+          },
+          "judgment_type": {
+            "type": "string",
+            "title": "Judgment Type",
+            "description": "Judgment output type: bool, int, float, enum",
+            "default": "bool"
+          },
+          "response_format": {
+            "type": "string",
+            "title": "Response Format",
+            "description": "Response format: json, xml, raw",
+            "default": "json"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Variables",
+            "description": "Template variable names"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LiteLLM model string for judging"
+          },
+          "inference_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inference Params",
+            "description": "LLM inference parameters"
+          },
+          "rule_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Config",
+            "description": "Rule config for rule_based type"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Evaluator",
+        "description": "Evaluator record returned by the API."
+      },
+      "EvaluatorCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Evaluator name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Description",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Evaluator type: llm or rule_based",
+            "default": "llm"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Evaluation prompt template"
+          },
+          "judgment_type": {
+            "type": "string",
+            "title": "Judgment Type",
+            "description": "Judgment output type: bool, int, float, enum",
+            "default": "bool"
+          },
+          "response_format": {
+            "type": "string",
+            "title": "Response Format",
+            "description": "Response format: json, xml, raw",
+            "default": "json"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Variables",
+            "description": "Template variable names"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LiteLLM model string for judging"
+          },
+          "inference_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inference Params",
+            "description": "LLM inference parameters"
+          },
+          "rule_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Config",
+            "description": "Rule config for rule_based type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "prompt"
+        ],
+        "title": "EvaluatorCreate",
+        "description": "Request to create an evaluator."
       },
       "EventIngestRequest": {
         "properties": {

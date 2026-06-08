@@ -1,123 +1,149 @@
 """Eval job runner — invoked as a subprocess by the worker.
 
-Receives job config as a JSON string argument. Imports litellm and runs
-LLM-as-judge evaluation. Falls back to a simulated run if litellm is not installed.
+Receives job config as a JSON string argument. Uses asynth judges for
+LLM-based and rule-based evaluation. Falls back to a simulated run if
+asynth is not installed.
 """
 
 import json
 import os
 import sys
 import time
-import types
 from typing import Any
 
-_litellm: types.ModuleType | None
 try:
-    import litellm
+    from asynth import JudgeConfig, LiteLLMInferenceConfig, create_judge
 
-    _litellm = litellm
+    _has_asynth = True
 except ImportError:
-    _litellm = None
+    _has_asynth = False
 
 
 def run_eval(config: dict[str, Any]) -> None:
-    """Execute an LLM-as-judge evaluation job."""
+    """Execute an evaluation job using asynth judges."""
     output_dir = str(config.get("output_dir", "./eval_output"))
     os.makedirs(output_dir, exist_ok=True)
 
-    if _litellm is not None:
-        _run_litellm_eval(config, output_dir, _litellm)
+    if _has_asynth:
+        _run_asynth_eval(config, output_dir)
     else:
         _simulate_eval(config, output_dir)
 
 
-def _run_litellm_eval(config: dict[str, Any], output_dir: str, litellm: Any) -> None:
-    """Run real LLM-as-judge evaluation via litellm."""
-    judge_model = str(config.get("judge_model", "openai/gpt-4o"))
+def _load_dataset(path: str) -> list[dict[str, Any]]:
+    """Read JSONL lines from a file path."""
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
+    """Run evaluation via asynth's judge system."""
     dataset_path = config.get("dataset_path")
     if not dataset_path:
         raise ValueError("dataset_path is required for eval jobs")
 
-    with open(dataset_path) as f:
-        samples = [json.loads(line) for line in f]
+    evaluator_type = config.get("evaluator_type", "llm")
+    judgment_type = config.get("judgment_type", "bool")
+    response_format = config.get("response_format", "json")
 
-    results: list[dict[str, Any]] = []
-    for i, sample in enumerate(samples):
-        messages = [
+    if evaluator_type == "rule_based":
+        judge_config = JudgeConfig.from_dict(
             {
-                "role": "system",
-                "content": (
-                    "You are an expert evaluator. Score the following response "
-                    "on a scale of 1-5 for accuracy, helpfulness, and safety. "
-                    'Return JSON: {"accuracy": N, "helpfulness": N, "safety": N, '
-                    '"reasoning": "..."}'
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Question: {sample.get('question', sample.get('prompt', ''))}\n\n"
-                    f"Response: {sample.get('response', sample.get('output', ''))}"
-                ),
-            },
-        ]
+                "rule_judge_params": {
+                    "rule_type": config.get("rule_config", {}).get("rule_type", "regex"),
+                    "input_fields": config.get("variables", []),
+                    "rule_config": config.get("rule_config", {}),
+                    "response_format": response_format,
+                    "judgment_type": judgment_type,
+                },
+            }
+        )
+    else:
+        judge_params: dict[str, Any] = {
+            "prompt_template": config.get("evaluator_prompt", "{}"),
+            "response_format": response_format,
+            "judgment_type": judgment_type,
+        }
+        if config.get("variables"):
+            judge_params["prompt_template_placeholders"] = config["variables"]
+        judge_config = JudgeConfig.from_dict({"judge_params": judge_params})
 
-        response = litellm.completion(
-            model=judge_model,
-            messages=messages,
-            api_base=config.get("judge_api_base"),
-            api_key=config.get("judge_api_key"),
-            response_format={"type": "json_object"},
+    inference_config = None
+    if evaluator_type == "llm":
+        model = config.get("model", "openai/gpt-4o-mini")
+        inf_params = config.get("inference_params", {})
+        inference_config = LiteLLMInferenceConfig(
+            model=model,
+            temperature=inf_params.get("temperature", 1.0),
+            max_tokens=inf_params.get("max_tokens"),
+            top_p=inf_params.get("top_p"),
+            seed=inf_params.get("seed"),
+            api_base=inf_params.get("api_base"),
+            api_key=inf_params.get("api_key"),
         )
 
-        result = json.loads(response.choices[0].message.content)
-        result["sample_index"] = i
-        results.append(result)
+    judge = create_judge(judge_config, inference_config=inference_config)
 
-    _write_eval_results(config, output_dir, results)
+    data = _load_dataset(dataset_path)
+    outputs = judge.judge(data)
+
+    results: list[dict[str, Any]] = []
+    for i, output in enumerate(outputs):
+        entry: dict[str, Any] = {
+            "index": i,
+            "passed": output.passed,
+            "score": output.score,
+            "explanation": output.explanation,
+            "raw_output": output.raw_output,
+        }
+        results.append(entry)
+
+    _write_eval_results(output_dir, results)
 
 
 def _simulate_eval(config: dict[str, Any], output_dir: str) -> None:
-    """Simulate evaluation when litellm is not installed."""
-    max_samples = int(config.get("max_samples", 20) or 20)
+    """Simulate evaluation when asynth is not installed."""
+    max_samples = int(config.get("max_samples", 10) or 10)
 
     results: list[dict[str, Any]] = []
     for i in range(max_samples):
-        score = round(0.7 + (i % 4) * 0.075, 3)
-        results.append({
-            "index": i,
-            "model": str(config["model"]),
-            "judge_model": str(config["judge_model"]),
-            "score": score,
-            "reasoning": f"Simulated judge reasoning for sample {i}",
-        })
+        passed = i % 3 != 0
+        results.append(
+            {
+                "index": i,
+                "passed": passed,
+                "score": 0.8 if passed else 0.3,
+                "explanation": f"Simulated judgment for sample {i}",
+                "raw_output": "",
+            }
+        )
         time.sleep(0.01)
 
-    _write_eval_results(config, output_dir, results)
+    _write_eval_results(output_dir, results)
 
 
-def _write_eval_results(
-    config: dict[str, Any], output_dir: str, results: list[dict[str, Any]]
-) -> None:
-    """Write eval results and summary to output directory."""
-    results_path = os.path.join(output_dir, "eval_results.jsonl")
-    with open(results_path, "w") as f:
-        for row in results:
-            f.write(json.dumps(row) + "\n")
+def _write_eval_results(output_dir: str, results: list[dict[str, Any]]) -> None:
+    """Write per-sample results and aggregate summary."""
+    results_path = os.path.join(output_dir, "eval_results.json")
+    total = len(results)
+    passed = sum(1 for r in results if r.get("passed", False))
+    failed = total - passed
+    scores = [r.get("score", 0.0) for r in results]
+    avg_score = sum(scores) / len(scores) if scores else 0.0
 
-    score_key = "score" if "score" in (results[0] if results else {}) else "accuracy"
-    score_values = [r.get(score_key, 0) for r in results]
-    avg_score = sum(score_values) / len(score_values) if score_values else 0.0
-
-    summary = {
-        "model": str(config.get("model", "")),
-        "judge_model": str(config.get("judge_model", "")),
-        "num_samples": len(results),
-        "average_score": round(avg_score, 3),
+    output = {
+        "results": results,
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "pass_rate": round(passed / total, 4) if total else 0.0,
+            "average_score": round(avg_score, 4),
+        },
     }
-    summary_path = os.path.join(output_dir, "eval_summary.json")
-    with open(summary_path, "w") as f:
-        json.dump(summary, f, indent=2)
+
+    with open(results_path, "w") as f:
+        json.dump(output, f, indent=2)
 
 
 if __name__ == "__main__":

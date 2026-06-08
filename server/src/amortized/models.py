@@ -352,6 +352,57 @@ class JudgeResult(BaseModel):
     summary: dict[str, Any] = Field(default_factory=dict)
 
 
+# --- Evaluator models ---
+
+
+class EvaluatorCreate(BaseModel):
+    """Request to create an evaluator."""
+
+    name: str = Field(..., description="Evaluator name")
+    description: str = Field("", description="Description")
+    type: str = Field("llm", description="Evaluator type: llm or rule_based")
+    prompt: str = Field(..., description="Evaluation prompt template")
+    judgment_type: str = Field("bool", description="Judgment output type: bool, int, float, enum")
+    response_format: str = Field("json", description="Response format: json, xml, raw")
+    variables: list[str] = Field(default_factory=list, description="Template variable names")
+    model: str | None = Field(None, description="LiteLLM model string for judging")
+    inference_params: dict[str, Any] = Field(
+        default_factory=dict, description="LLM inference parameters"
+    )
+    rule_config: dict[str, Any] | None = Field(None, description="Rule config for rule_based type")
+
+
+class Evaluator(EvaluatorCreate):
+    """Evaluator record returned by the API."""
+
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class EvaluationCreate(BaseModel):
+    """Request to run an evaluation."""
+
+    evaluator_id: str = Field(..., description="Evaluator ID to run")
+    dataset: str = Field(..., description="Artifact ID or file path to evaluate")
+    model_override: str | None = Field(None, description="Override evaluator's model")
+    inference_params_override: dict[str, Any] | None = Field(
+        None, description="Override inference params"
+    )
+
+
+class Evaluation(BaseModel):
+    """Evaluation run record."""
+
+    id: str
+    evaluator_id: str
+    dataset_artifact_id: str | None = None
+    job_id: str | None = None
+    status: str = "pending"
+    results: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = ""
+
+
 # --- Agent / Chat models ---
 
 
