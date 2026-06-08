@@ -124,7 +124,7 @@ def _deserialize_strategy_params(raw: dict[str, Any]) -> Any:
 def _resolve_api_key(config: dict[str, Any]) -> str | None:
     """Resolve API key from config → env var → None (let LiteLLM handle it)."""
     if config.get("api_key"):
-        return config["api_key"]
+        return str(config["api_key"])
     if os.environ.get("AMORTIZED_LLM_API_KEY"):
         return os.environ["AMORTIZED_LLM_API_KEY"]
     return None
