@@ -2213,6 +2213,246 @@
         }
       }
     },
+    "/api/v1/settings/api-keys": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "List Api Keys",
+        "operationId": "list_api_keys_api_v1_settings_api_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Api Keys Api V1 Settings Api Keys Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Add Api Key",
+        "operationId": "add_api_key_api_v1_settings_api_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/api-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Delete Api Key",
+        "operationId": "delete_api_key_api_v1_settings_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/backends": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "List Settings Backends",
+        "operationId": "list_settings_backends_api_v1_settings_backends_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ComputeBackendInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Settings Backends Api V1 Settings Backends Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Add Backend",
+        "operationId": "add_backend_api_v1_settings_backends_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackendCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputeBackendInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/backends/{name}": {
+      "delete": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Delete Backend",
+        "operationId": "delete_backend_api_v1_settings_backends__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/backends/{name}/test": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Test Backend",
+        "operationId": "test_backend_api_v1_settings_backends__name__test_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputeBackendInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health",
@@ -2263,6 +2503,68 @@
         ],
         "title": "AgentResponse",
         "description": "Response from the agent."
+      },
+      "ApiKeyCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Display name for the key"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "Provider name (openai, anthropic, google, etc.)"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "API key value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "provider",
+          "key"
+        ],
+        "title": "ApiKeyCreate",
+        "description": "Request to store a provider API key."
+      },
+      "ApiKeyInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "key_preview": {
+            "type": "string",
+            "title": "Key Preview",
+            "description": "Last 4 characters only",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "created_at"
+        ],
+        "title": "ApiKeyInfo",
+        "description": "API key info (key value redacted)."
       },
       "Artifact": {
         "properties": {
@@ -2449,6 +2751,63 @@
         ],
         "title": "ArtifactRequest",
         "description": "Request to register an artifact."
+      },
+      "BackendCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Backend name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Backend type: ssh, slurm",
+            "default": "ssh"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "SSH hostname"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User",
+            "description": "SSH user"
+          },
+          "key_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Path",
+            "description": "SSH key path"
+          },
+          "remote_base_dir": {
+            "type": "string",
+            "title": "Remote Base Dir",
+            "description": "Remote working directory",
+            "default": "~/amortized-jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "host"
+        ],
+        "title": "BackendCreate",
+        "description": "Request to add a compute backend."
       },
       "Body_upload_artifact_api_v1_artifacts_upload_post": {
         "properties": {

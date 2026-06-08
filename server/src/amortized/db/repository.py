@@ -454,6 +454,53 @@ class Repository:
         rows = await cursor.fetchall()
         return [_row_to_evaluation(row) for row in rows]
 
+    # ---- API Keys ----
+
+    async def create_api_key(
+        self,
+        *,
+        key_id: str,
+        name: str,
+        provider: str,
+        key_value: str,
+        created_at: str,
+    ) -> dict[str, Any]:
+        await self.conn.execute(
+            "INSERT INTO api_keys (id, name, provider, key_value, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (key_id, name, provider, key_value, created_at),
+        )
+        await self.conn.commit()
+        result = await self.get_api_key(key_id)
+        assert result is not None
+        return result
+
+    async def get_api_key(self, key_id: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute("SELECT * FROM api_keys WHERE id = ?", (key_id,))
+        row = await cursor.fetchone()
+        return _row_to_api_key(row) if row else None
+
+    async def list_api_keys(self) -> list[dict[str, Any]]:
+        cursor = await self.conn.execute("SELECT * FROM api_keys ORDER BY created_at")
+        rows = await cursor.fetchall()
+        return [_row_to_api_key(row) for row in rows]
+
+    async def delete_api_key(self, key_id: str) -> bool:
+        cursor = await self.conn.execute("DELETE FROM api_keys WHERE id = ?", (key_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def get_api_key_for_provider(self, provider: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute(
+            "SELECT * FROM api_keys WHERE provider = ? ORDER BY created_at DESC LIMIT 1",
+            (provider,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        return d
+
     async def update_evaluation(
         self,
         evaluation_id: str,
@@ -534,6 +581,13 @@ def _row_to_evaluator(row: Any) -> dict[str, Any]:
     if isinstance(d.get("rule_config"), str):
         with contextlib.suppress(json.JSONDecodeError, TypeError):
             d["rule_config"] = json.loads(d["rule_config"])
+    return d
+
+
+def _row_to_api_key(row: Any) -> dict[str, Any]:
+    d = dict(row)
+    key_val = d.pop("key_value", "")
+    d["key_preview"] = f"...{key_val[-4:]}" if len(key_val) >= 4 else "***"
     return d
 
 

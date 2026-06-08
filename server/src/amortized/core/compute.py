@@ -43,5 +43,9 @@ def list_backends() -> list[dict[str, object]]:
     ]
 
 
+def unregister_backend(name: str) -> bool:
+    return _backends.pop(name, None) is not None
+
+
 def reset() -> None:
     _backends.clear()

@@ -409,6 +409,38 @@ class Evaluation(BaseModel):
     created_at: str = ""
 
 
+# --- Settings models ---
+
+
+class ApiKeyCreate(BaseModel):
+    """Request to store a provider API key."""
+
+    name: str = Field(..., description="Display name for the key")
+    provider: str = Field(..., description="Provider name (openai, anthropic, google, etc.)")
+    key: str = Field(..., description="API key value")
+
+
+class ApiKeyInfo(BaseModel):
+    """API key info (key value redacted)."""
+
+    id: str
+    name: str
+    provider: str
+    key_preview: str = Field("", description="Last 4 characters only")
+    created_at: str
+
+
+class BackendCreate(BaseModel):
+    """Request to add a compute backend."""
+
+    name: str = Field(..., description="Backend name")
+    type: str = Field("ssh", description="Backend type: ssh, slurm")
+    host: str = Field(..., description="SSH hostname")
+    user: str | None = Field(None, description="SSH user")
+    key_path: str | None = Field(None, description="SSH key path")
+    remote_base_dir: str = Field("~/amortized-jobs", description="Remote working directory")
+
+
 # --- Agent / Chat models ---
 
 

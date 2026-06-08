@@ -271,10 +271,25 @@ async def _run_job(job: dict[str, Any]) -> None:
             )
             return
 
+    spec_env: dict[str, str] = {}
+    if job["type"] in (JobType.sdg.value, JobType.eval.value) and not config.get("api_key"):
+        model = config.get("model", "")
+        provider = model.split("/")[0] if "/" in model else ""
+        if provider:
+            key_db = await _get_db()
+            try:
+                key_repo = Repository(key_db)
+                key_row = await key_repo.get_api_key_for_provider(provider)
+                if key_row:
+                    env_var = f"{provider.upper()}_API_KEY"
+                    spec_env[env_var] = key_row["key_value"]
+            finally:
+                await key_db.close()
+
     spec = JobSpec(
         job_id=job_id,
         command=cmd,
-        env={},
+        env=spec_env,
         work_dir=output_dir,
         image=_JOB_TYPE_IMAGES.get(job["type"]),
     )

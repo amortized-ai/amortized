@@ -90,6 +90,8 @@ def up(
 @app.command()
 def init() -> None:
     """Set up Amortized for first-time use."""
+    import yaml
+
     config_path = Path.home() / ".amortized" / "config.yaml"
 
     if config_path.exists():
@@ -100,13 +102,7 @@ def init() -> None:
 
     config: dict[str, Any] = {}
 
-    api_key = typer.prompt(
-        "OpenAI API key (or press Enter to skip)", default="", show_default=False
-    )
-    if api_key:
-        config["openai_api_key"] = api_key
-
-    has_gpu = typer.confirm("Do you have a GPU node accessible via SSH?", default=False)
+    has_gpu = typer.confirm("Do you have a GPU node for training (SSH)?", default=False)
     if has_gpu:
         host = typer.prompt("SSH host")
         backend_name = typer.prompt("Backend name", default="gpu-node")
@@ -116,12 +112,13 @@ def init() -> None:
         }
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    import yaml
-
     config_path.write_text(yaml.dump(config, default_flow_style=False))
 
     console.print(f"\n[green]✓ Config saved to {config_path}[/green]")
-    console.print("Run [bold]amortized up[/bold] to start the server.")
+    console.print("\n[bold]Tip:[/bold] Set your LLM API key via environment variable:")
+    console.print("  export OPENAI_API_KEY=sk-...")
+    console.print("  export ANTHROPIC_API_KEY=sk-ant-...")
+    console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
 # ---------------------------------------------------------------------------

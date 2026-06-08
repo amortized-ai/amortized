@@ -30,6 +30,7 @@ from amortized.api import (
     jobs,
     judge,
     recipes,
+    settings,
     ws,
 )
 from amortized.backends.local import LocalBackend
@@ -213,6 +214,7 @@ app.include_router(compute.router)
 app.include_router(judge.router)
 app.include_router(agent_routes.router)
 app.include_router(evaluators.router)
+app.include_router(settings.router)
 
 create_mcp_server(app)
 

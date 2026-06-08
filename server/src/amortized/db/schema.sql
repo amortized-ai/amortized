@@ -92,3 +92,13 @@ CREATE INDEX IF NOT EXISTS idx_events_job_id ON events(job_id);
 CREATE INDEX IF NOT EXISTS idx_events_job_timestamp ON events(job_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_evaluations_evaluator ON evaluations(evaluator_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_status ON evaluations(status);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    key_value TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_provider ON api_keys(provider);
