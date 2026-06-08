@@ -3,7 +3,8 @@
 from unittest.mock import patch
 
 from amortized.backends import BackendHandle, BackendStatus, JobSpec, Resources
-from amortized.core.compute import list_backends, reset
+from amortized.backends.ssh import SSHBackend
+from amortized.core.compute import list_backends, register_backend, reset
 from amortized.main import _load_backends
 
 
@@ -58,6 +59,35 @@ class TestBackendStatus:
         assert s.exit_code is None
 
 
+class TestSSHBackendName:
+    def test_default_name(self) -> None:
+        backend = SSHBackend(host="example.com")
+        assert backend.name == "ssh"
+
+    def test_custom_name(self) -> None:
+        backend = SSHBackend(host="example.com", name="gpu-node")
+        assert backend.name == "gpu-node"
+
+    def test_backend_handle_preserves_custom_name(self) -> None:
+        backend = SSHBackend(host="example.com", name="my-gpu")
+        handle = BackendHandle(backend_name=backend.name, job_id="j1")
+        assert handle.backend_name == "my-gpu"
+
+    def test_multiple_backends_different_names(self) -> None:
+        b1 = SSHBackend(host="10.0.0.1", name="gpu-a")
+        b2 = SSHBackend(host="10.0.0.2", name="gpu-b")
+        assert b1.name == "gpu-a"
+        assert b2.name == "gpu-b"
+        assert b1.name != b2.name
+
+    def test_register_custom_name(self) -> None:
+        reset()
+        backend = SSHBackend(host="10.0.0.1", name="my-cluster")
+        register_backend(backend)
+        names = [b["name"] for b in list_backends()]
+        assert "my-cluster" in names
+
+
 class TestLoadBackends:
     def setup_method(self) -> None:
         reset()
@@ -83,7 +113,7 @@ class TestLoadBackends:
             _load_backends()
         names = [b["name"] for b in list_backends()]
         assert "local" in names
-        assert "ssh" in names
+        assert "gpu-box" in names
 
     def test_invalid_yaml_logs_warning(self, tmp_path, caplog) -> None:  # type: ignore[no-untyped-def]
         config_dir = tmp_path / ".amortized"
@@ -93,6 +123,26 @@ class TestLoadBackends:
             _load_backends()
         names = [b["name"] for b in list_backends()]
         assert names == ["local"]
+
+    def test_multiple_ssh_backends_from_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        config_dir = tmp_path / ".amortized"
+        config_dir.mkdir()
+        (config_dir / "config.yaml").write_text(
+            "compute:\n"
+            "  backends:\n"
+            "    gpu-node-1:\n"
+            "      type: ssh\n"
+            "      host: 10.0.0.5\n"
+            "    gpu-node-2:\n"
+            "      type: ssh\n"
+            "      host: 10.0.0.6\n"
+        )
+        with patch("amortized.main.Path.home", return_value=tmp_path):
+            _load_backends()
+        names = [b["name"] for b in list_backends()]
+        assert "local" in names
+        assert "gpu-node-1" in names
+        assert "gpu-node-2" in names
 
     def test_unknown_backend_type_skipped(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         config_dir = tmp_path / ".amortized"

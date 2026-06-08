@@ -124,8 +124,8 @@ async def add_backend(body: BackendCreate) -> dict[str, Any]:
             user=body.user,
             key_path=body.key_path,
             remote_base_dir=body.remote_base_dir,
+            name=body.name,
         )
-        backend.name = body.name
         register_backend(backend)
 
         async with _config_lock:

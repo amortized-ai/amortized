@@ -71,6 +71,12 @@ def _load_backends() -> None:
     if not isinstance(config, dict):
         return
 
+    default = config.get("compute", {}).get("default_backend", "")
+    if default:
+        from amortized.config import settings
+
+        settings.default_backend = default
+
     backends = config.get("compute", {}).get("backends", {})
     for name, spec in backends.items():
         if not isinstance(spec, dict):
@@ -84,6 +90,7 @@ def _load_backends() -> None:
                 user=spec.get("user"),
                 key_path=spec.get("key_path"),
                 remote_base_dir=spec.get("remote_base_dir", "~/amortized-jobs"),
+                name=name,
             )
             register_backend(backend)
             logger.info("Registered SSH backend %r (host=%s)", name, spec["host"])

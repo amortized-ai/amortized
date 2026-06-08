@@ -1,0 +1,30 @@
+type: sdg
+description: Generate domain-specific QA pairs conditioned on specialty and context
+config:
+  num_samples: 50
+  temperature: 0.4
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: specialty
+        name: Specialty
+        description: Domain specialty
+        possible_values:
+          - {id: cardiology, name: Cardiology, description: Heart and cardiovascular system}
+          - {id: neurology, name: Neurology, description: Brain and nervous system}
+          - {id: orthopedics, name: Orthopedics, description: "Bones, joints, and muscles"}
+    generated_attributes:
+      - id: question
+        instruction_messages:
+          - role: user
+            content: "Generate a detailed {specialty.description} question that a medical professional might ask. Be specific and clinical."
+      - id: answer
+        instruction_messages:
+          - role: system
+            content: "You are an expert in {specialty.name}. Provide accurate, detailed medical answers."
+          - role: user
+            content: "{question}"
+    passthrough_attributes:
+      - specialty
+      - question
+      - answer

@@ -29,15 +29,15 @@ def _require_asyncssh() -> Any:
 
 
 class SSHBackend:
-    name = "ssh"
-
     def __init__(
         self,
         host: str,
         user: str | None = None,
         key_path: str | None = None,
         remote_base_dir: str = "~/amortized-jobs",
+        name: str = "ssh",
     ) -> None:
+        self.name = name
         self._host = host
         self._user = user
         self._key_path = key_path

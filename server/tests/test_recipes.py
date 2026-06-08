@@ -18,24 +18,30 @@ from amortized.core.recipes import (
 
 @pytest.fixture
 def recipes_dir(tmp_path: Path) -> Path:
-    base = tmp_path / "base"
-    base.mkdir()
-    (base / "lora-sft.yaml").write_text(
+    training = tmp_path / "training"
+    training.mkdir()
+    (training / "lora-sft.yaml").write_text(
         "type: training\n"
-        "description: Base LoRA SFT\n"
+        "description: LoRA SFT\n"
         "config:\n"
+        "  algorithm: lora_sft\n"
         "  num_epochs: 3\n"
-        "  learning_rate: 2e-5\n"
+        "  learning_rate: 2e-4\n"
         "  lora_r: 16\n"
+        "  lora_alpha: 32\n"
     )
-    (base / "sdg.yaml").write_text(
-        "type: sdg\ndescription: Base SDG\nconfig:\n  max_concurrency: 10\n"
+    (training / "grpo.yaml").write_text(
+        "type: training\n"
+        "description: GRPO RL\n"
+        "config:\n"
+        "  algorithm: grpo\n"
+        "  num_iterations: 15\n"
     )
-    llama = tmp_path / "llama3"
-    llama.mkdir()
-    (llama / "8b-lora-sft.yaml").write_text(
-        "extends: base/lora-sft\n"
-        "description: Llama 3.1 8B\n"
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "llama3-8b-lora.yaml").write_text(
+        "extends: training/lora-sft\n"
+        "description: Llama 3.1 8B LoRA\n"
         "config:\n"
         "  model_path: meta-llama/Llama-3.1-8B-Instruct\n"
         "  max_seq_len: 8192\n"
@@ -45,9 +51,9 @@ def recipes_dir(tmp_path: Path) -> Path:
 
 class TestLoadRecipe:
     def test_load_base_recipe(self, recipes_dir: Path) -> None:
-        recipe = load_recipe("base/lora-sft", recipes_dir=recipes_dir)
+        recipe = load_recipe("training/lora-sft", recipes_dir=recipes_dir)
         assert recipe["type"] == "training"
-        assert recipe["description"] == "Base LoRA SFT"
+        assert recipe["description"] == "LoRA SFT"
         assert recipe["config"]["num_epochs"] == 3
         assert recipe["config"]["lora_r"] == 16
 
@@ -56,9 +62,9 @@ class TestLoadRecipe:
             load_recipe("nonexistent/recipe", recipes_dir=recipes_dir)
 
     def test_extends_merges_parent(self, recipes_dir: Path) -> None:
-        recipe = load_recipe("llama3/8b-lora-sft", recipes_dir=recipes_dir)
+        recipe = load_recipe("models/llama3-8b-lora", recipes_dir=recipes_dir)
         assert recipe["type"] == "training"
-        assert recipe["description"] == "Llama 3.1 8B"
+        assert recipe["description"] == "Llama 3.1 8B LoRA"
         assert recipe["config"]["model_path"] == "meta-llama/Llama-3.1-8B-Instruct"
         assert recipe["config"]["max_seq_len"] == 8192
         assert recipe["config"]["num_epochs"] == 3
@@ -98,9 +104,9 @@ class TestListRecipes:
     def test_list_all(self, recipes_dir: Path) -> None:
         recipes = list_recipes(recipes_dir=recipes_dir)
         names = {r["name"] for r in recipes}
-        assert "base/lora-sft" in names
-        assert "base/sdg" in names
-        assert "llama3/8b-lora-sft" in names
+        assert "training/lora-sft" in names
+        assert "training/grpo" in names
+        assert "models/llama3-8b-lora" in names
 
     def test_list_empty_dir(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty"
@@ -163,12 +169,12 @@ class TestRecipeAPI:
         data = resp.json()
         assert isinstance(data, list)
         names = {r["name"] for r in data}
-        assert "base/lora-sft" in names
-        assert "base/sdg" in names
+        assert "training/lora-sft" in names
+        assert "training/grpo" in names
 
     @pytest.mark.asyncio
     async def test_get_recipe_endpoint(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/base/lora-sft")
+        resp = await client.get("/api/v1/recipes/training/lora-sft")
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "training"
@@ -176,7 +182,7 @@ class TestRecipeAPI:
 
     @pytest.mark.asyncio
     async def test_get_recipe_with_extends(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/llama3/8b-lora-sft")
+        resp = await client.get("/api/v1/recipes/models/llama3-8b-lora")
         assert resp.status_code == 200
         data = resp.json()
         assert data["config"]["model_path"] == "meta-llama/Llama-3.1-8B-Instruct"
@@ -192,7 +198,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "qwen/1.5b-lora-sft",
+                "recipe": "models/qwen-1.5b-lora",
                 "overrides": {
                     "config.data_path": "/data/train.jsonl",
                     "config.ckpt_output_dir": "/tmp/recipe-out",

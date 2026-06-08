@@ -31,6 +31,15 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
     "eval": "ghcr.io/amortized-ai/eval:latest",
 }
 
+_ALGORITHM_IMAGES: dict[str, str] = {
+    "lora_sft": "ghcr.io/amortized-ai/training-lora:latest",
+    "full_sft": "ghcr.io/amortized-ai/training-sft:latest",
+    "sft": "ghcr.io/amortized-ai/training-sft:latest",
+    "grpo": "ghcr.io/amortized-ai/training-grpo:latest",
+    "lora_grpo": "ghcr.io/amortized-ai/training-grpo:latest",
+    "gepa": "ghcr.io/amortized-ai/training-gepa:latest",
+}
+
 _RUNNER_MODULES: dict[str, str] = {
     JobType.training.value: "amortized.runners.training_runner",
     JobType.sdg.value: "amortized.runners.sdg_runner",
@@ -233,6 +242,12 @@ async def _run_job(job: dict[str, Any]) -> None:
     if isinstance(job.get("metadata"), dict):
         backend_name = job["metadata"].get("backend", backend_name)
 
+    if backend_name == "local":
+        gpu_job_types = {JobType.training.value, JobType.inference.value}
+        if job["type"] in gpu_job_types and config_mod.settings.default_backend:
+            backend_name = config_mod.settings.default_backend
+            logger.info("Smart routing job %s to default backend %r", job_id, backend_name)
+
     try:
         backend = get_backend(backend_name)
     except KeyError:
@@ -279,12 +294,17 @@ async def _run_job(job: dict[str, Any]) -> None:
             finally:
                 await key_db.close()
 
+    image = _JOB_TYPE_IMAGES.get(job["type"])
+    if job["type"] == JobType.training.value:
+        algorithm = config.get("algorithm", "lora_sft")
+        image = _ALGORITHM_IMAGES.get(algorithm, image)
+
     spec = JobSpec(
         job_id=job_id,
         command=cmd,
         env=spec_env,
         work_dir=output_dir,
-        image=_JOB_TYPE_IMAGES.get(job["type"]),
+        image=image,
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)

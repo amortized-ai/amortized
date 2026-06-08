@@ -1,0 +1,44 @@
+type: sdg
+description: Generate instruction-response pairs across domains and complexity levels
+config:
+  num_samples: 100
+  temperature: 0.7
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: domain
+        name: Domain
+        description: Task domain
+        possible_values:
+          - {id: coding, name: Coding, description: Programming and software development}
+          - {id: writing, name: Writing, description: Creative and technical writing}
+          - {id: analysis, name: Analysis, description: Data analysis and reasoning}
+          - {id: math, name: Math, description: Mathematical problem solving}
+      - id: complexity
+        name: Complexity
+        description: Task complexity level
+        possible_values:
+          - {id: basic, name: Basic, description: Single-step tasks}
+          - {id: intermediate, name: Intermediate, description: Multi-step tasks}
+          - {id: advanced, name: Advanced, description: Complex open-ended tasks}
+    generated_attributes:
+      - id: instruction
+        instruction_messages:
+          - role: user
+            content: "Generate a {complexity} {domain.description} task instruction. Be specific and actionable."
+      - id: response
+        instruction_messages:
+          - role: user
+            content: "Complete this {domain} task:\n\n{instruction}"
+    transformed_attributes:
+      - id: conversation
+        transformation_strategy:
+          type: CHAT
+          chat_transform:
+            messages:
+              - role: user
+                content: "{instruction}"
+              - role: assistant
+                content: "{response}"
+    passthrough_attributes:
+      - conversation

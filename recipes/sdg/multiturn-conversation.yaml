@@ -1,0 +1,30 @@
+type: sdg
+description: Generate variable-length multi-turn conversations with turn planning
+config:
+  num_samples: 30
+  temperature: 0.7
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: scenario
+        name: Scenario
+        description: Conversation scenario
+        possible_values:
+          - {id: tech_support, name: Tech Support, description: Technical troubleshooting}
+          - {id: sales, name: Sales, description: Product inquiry and purchase}
+          - {id: onboarding, name: Onboarding, description: New user setup and guidance}
+    generated_attributes:
+      - id: customer_name
+        instruction_messages:
+          - role: user
+            content: "Generate a realistic first name. Just the name, nothing else."
+    multiturn_attributes:
+      - id: support_conversation
+        min_turns: 4
+        max_turns: 10
+        role_instruction_messages:
+          user: "You are {customer_name}, a customer with a {scenario.description} issue. Be realistic."
+          assistant: "You are a helpful support agent. Resolve the customer's issue step by step."
+        output_system_prompt: "You are a helpful customer support agent."
+    passthrough_attributes:
+      - support_conversation

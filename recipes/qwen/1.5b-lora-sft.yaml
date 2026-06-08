@@ -1,4 +1,0 @@
-extends: base/lora-sft
-description: Qwen 2.5 1.5B LoRA SFT — fast, fits on any GPU
-config:
-  model_path: Qwen/Qwen2.5-1.5B-Instruct

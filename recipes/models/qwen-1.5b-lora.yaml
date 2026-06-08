@@ -1,0 +1,8 @@
+extends: training/lora-sft
+description: Qwen 2.5 1.5B — fast, fits on any GPU
+config:
+  model_path: Qwen/Qwen2.5-1.5B-Instruct
+  lora_r: 32
+  lora_alpha: 64
+  learning_rate: 1e-4
+  micro_batch_size: 1

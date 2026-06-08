@@ -4048,7 +4048,7 @@
           "recipe": {
             "type": "string",
             "title": "Recipe",
-            "description": "Recipe name (e.g. 'llama3/8b-lora-sft')"
+            "description": "Recipe name (e.g. 'models/qwen-1.5b-lora')"
           },
           "overrides": {
             "additionalProperties": true,

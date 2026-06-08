@@ -124,9 +124,7 @@ def _detect_container_runtime() -> str | None:
     """Detect Docker or Podman."""
     for runtime in ("podman", "docker"):
         try:
-            proc = subprocess.run(
-                [runtime, "version"], capture_output=True, timeout=5
-            )
+            proc = subprocess.run([runtime, "version"], capture_output=True, timeout=5)
             if proc.returncode == 0:
                 return runtime
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -169,6 +167,12 @@ def _configure_ssh_backend() -> dict[str, Any] | None:
     exec_choice = typer.prompt("Choice", default="1")
     if exec_choice == "2":
         backend_cfg["bare_metal"] = True
+    else:
+        ssh_target = f"{user}@{host}" if user else host
+        rt = container_rt or "docker"
+        console.print(f"\n[bold]Pull container images on {host}:[/bold]")
+        console.print(f"  ssh {ssh_target} '{rt} pull ghcr.io/amortized-ai/training:latest'")
+        console.print(f"  ssh {ssh_target} '{rt} pull ghcr.io/amortized-ai/synth:latest'")
 
     if ssh_result.get("gpus"):
         backend_cfg["gpu_info"] = ssh_result["gpus"]
@@ -232,13 +236,47 @@ def config() -> None:
 
     config_path = Path.home() / ".amortized" / "config.yaml"
 
+    existing: dict[str, Any] = {}
     if config_path.exists():
-        console.print(f"[yellow]Config already exists:[/yellow] {config_path}")
-        overwrite = typer.confirm("Overwrite?", default=False)
-        if not overwrite:
-            raise typer.Exit()
+        existing = yaml.safe_load(config_path.read_text()) or {}
 
-    backends: dict[str, dict[str, Any]] = {}
+    backends: dict[str, dict[str, Any]] = dict(existing.get("compute", {}).get("backends", {}))
+
+    if backends:
+        console.print("\n[bold]Current backends:[/bold]")
+        table = Table()
+        table.add_column("Name", style="cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Host / Context")
+        for name, bcfg in backends.items():
+            host = bcfg.get("host", bcfg.get("context", ""))
+            table.add_row(name, bcfg.get("type", ""), host)
+        console.print(table)
+
+        console.print("\nWhat would you like to do?")
+        console.print("  [1] Add a new backend")
+        console.print("  [2] Remove a backend")
+        console.print("  [3] Reconfigure from scratch")
+        console.print("  [4] Done")
+        action = typer.prompt("Choice", default="1")
+
+        if action == "2":
+            name = typer.prompt("Backend name to remove")
+            if name in backends:
+                del backends[name]
+                console.print(f"[yellow]Removed {name}[/yellow]")
+            else:
+                console.print(f"[red]Not found: {name}[/red]")
+            existing.setdefault("compute", {})["backends"] = backends
+            config_path.write_text(yaml.dump(existing, default_flow_style=False))
+            console.print(f"[green]✓ Saved to {config_path}[/green]")
+            return
+        elif action == "3":
+            backends = {}
+        elif action == "4":
+            return
+
+    new_backends: dict[str, dict[str, Any]] = {}
 
     while True:
         console.print("\n[bold]Where will your jobs run?[/bold]")
@@ -253,19 +291,13 @@ def config() -> None:
         elif choice == "2":
             result = _configure_ssh_backend()
             if result:
-                backends[result["name"]] = result["config"]
-                console.print(
-                    f"[green]✓ Added backend"
-                    f" '{result['name']}'[/green]"
-                )
+                new_backends[result["name"]] = result["config"]
+                console.print(f"[green]✓ Added backend '{result['name']}'[/green]")
         elif choice == "3":
             result = _configure_k8s_backend()
             if result:
-                backends[result["name"]] = result["config"]
-                console.print(
-                    f"[green]✓ Added backend"
-                    f" '{result['name']}'[/green]"
-                )
+                new_backends[result["name"]] = result["config"]
+                console.print(f"[green]✓ Added backend '{result['name']}'[/green]")
         elif choice == "4":
             break
         else:
@@ -275,12 +307,27 @@ def config() -> None:
         if not typer.confirm("\nAdd another backend?", default=False):
             break
 
-    cfg: dict[str, Any] = {}
-    if backends:
-        cfg["compute"] = {"backends": backends}
+    backends.update(new_backends)
+    existing.setdefault("compute", {})["backends"] = backends
+
+    if len(backends) == 1:
+        default_name = next(iter(backends.keys()))
+        existing["compute"]["default_backend"] = default_name
+        console.print(f"[dim]Default backend set to '{default_name}'[/dim]")
+    elif len(backends) > 1:
+        console.print("\nWhich backend should be the default for GPU jobs?")
+        for i, name in enumerate(backends, 1):
+            console.print(f"  [{i}] {name}")
+        choice = typer.prompt("Choice", default="1")
+        try:
+            idx = int(choice) - 1
+            default_name = list(backends.keys())[idx]
+        except (ValueError, IndexError):
+            default_name = next(iter(backends.keys()))
+        existing["compute"]["default_backend"] = default_name
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.dump(cfg, default_flow_style=False))
+    config_path.write_text(yaml.dump(existing, default_flow_style=False))
 
     console.print(f"\n[green]✓ Saved to {config_path}[/green]")
 

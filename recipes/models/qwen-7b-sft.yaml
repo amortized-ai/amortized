@@ -1,0 +1,5 @@
+extends: training/full-sft
+description: Qwen 2.5 7B full SFT — requires 8x GPU
+config:
+  model_path: Qwen/Qwen2.5-7B-Instruct
+  max_tokens_per_gpu: 20000

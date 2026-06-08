@@ -1,9 +1,9 @@
 type: training
-description: Base LoRA SFT recipe — good defaults for most models
+description: LoRA SFT — parameter-efficient fine-tuning for most models
 config:
   algorithm: lora_sft
   num_epochs: 3
-  learning_rate: 2e-5
+  learning_rate: 2e-4
   lora_r: 16
   lora_alpha: 32
   micro_batch_size: 2

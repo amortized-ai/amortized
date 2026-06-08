@@ -1,0 +1,40 @@
+type: sdg
+description: Generate multi-turn customer support conversations
+config:
+  num_samples: 50
+  temperature: 0.7
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: scenario
+        name: Scenario
+        description: Support scenario type
+        possible_values:
+          - {id: billing, name: Billing Issue, description: "Payment problems, refunds, charges"}
+          - {id: technical, name: Technical Issue, description: "Product bugs, errors, crashes"}
+          - {id: account, name: Account Issue, description: "Login problems, password reset, settings"}
+    generated_attributes:
+      - id: customer_message
+        instruction_messages:
+          - role: user
+            content: "Write a customer message about a {scenario.description} issue. Be realistic and specific."
+      - id: agent_response
+        instruction_messages:
+          - role: system
+            content: "You are a helpful customer support agent."
+          - role: user
+            content: "Respond helpfully to this customer message:\n\n{customer_message}"
+    transformed_attributes:
+      - id: conversation
+        transformation_strategy:
+          type: CHAT
+          chat_transform:
+            messages:
+              - role: system
+                content: "You are a helpful customer support agent."
+              - role: user
+                content: "{customer_message}"
+              - role: assistant
+                content: "{agent_response}"
+    passthrough_attributes:
+      - conversation

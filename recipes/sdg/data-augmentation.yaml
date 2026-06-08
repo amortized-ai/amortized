@@ -1,0 +1,32 @@
+type: sdg
+description: Augment an existing dataset by rephrasing and generating variations
+config:
+  num_samples: 100
+  temperature: 0.8
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: augmentation_type
+        name: Augmentation Type
+        description: How to augment the data
+        possible_values:
+          - {id: rephrase, name: Rephrase, description: Rewrite with different wording}
+          - {id: elaborate, name: Elaborate, description: Add more detail and context}
+          - {id: simplify, name: Simplify, description: Make simpler and more concise}
+    generated_attributes:
+      - id: original_instruction
+        instruction_messages:
+          - role: user
+            content: "Generate a short, clear task instruction about any topic."
+      - id: augmented_instruction
+        instruction_messages:
+          - role: user
+            content: "{augmentation_type.description} the following instruction:\n\n{original_instruction}"
+      - id: response
+        instruction_messages:
+          - role: user
+            content: "Complete this task:\n\n{augmented_instruction}"
+    passthrough_attributes:
+      - augmentation_type
+      - augmented_instruction
+      - response

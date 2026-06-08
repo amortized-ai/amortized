@@ -1,0 +1,52 @@
+type: sdg
+description: Generate question-answer pairs with sampled difficulty and topic
+config:
+  num_samples: 50
+  temperature: 0.7
+  max_tokens: 1024
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: difficulty
+        name: Difficulty
+        description: Question difficulty level
+        possible_values:
+          - id: easy
+            name: Easy
+            description: Simple factual questions
+            sample_rate: 0.3
+          - id: medium
+            name: Medium
+            description: Requires reasoning
+            sample_rate: 0.5
+          - id: hard
+            name: Hard
+            description: Complex multi-step reasoning
+            sample_rate: 0.2
+      - id: topic
+        name: Topic
+        description: Subject area
+        possible_values:
+          - id: science
+            name: Science
+            description: Physics, chemistry, biology
+          - id: history
+            name: History
+            description: Historical events and figures
+          - id: technology
+            name: Technology
+            description: Computing, engineering, AI
+    generated_attributes:
+      - id: question
+        instruction_messages:
+          - role: user
+            content: "Generate a {difficulty} difficulty question about {topic.description}. Just output the question."
+      - id: answer
+        instruction_messages:
+          - role: user
+            content: "Answer this {difficulty} question thoroughly: {question}"
+    passthrough_attributes:
+      - difficulty
+      - topic
+      - question
+      - answer

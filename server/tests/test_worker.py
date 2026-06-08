@@ -514,3 +514,112 @@ class TestCancelRunningJob:
 
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 400
+
+
+class TestSmartBackendRouting:
+    """Verify smart routing: GPU jobs use default_backend when no explicit backend is set."""
+
+    @pytest.mark.asyncio
+    async def test_training_job_uses_default_backend(self, client: httpx.AsyncClient) -> None:
+        """Training job should be routed to default_backend when set."""
+        import amortized.config as config_mod
+        from amortized.backends.local import LocalBackend
+        from amortized.core.compute import register_backend
+
+        original = config_mod.settings.default_backend
+        config_mod.settings.default_backend = "gpu-node"
+        gpu_backend = LocalBackend()
+        gpu_backend.name = "gpu-node"
+        register_backend(gpu_backend)
+
+        try:
+            response = await client.post(
+                "/api/v1/jobs/training",
+                json={
+                    "algorithm": "lora_sft",
+                    "model_path": "test/model",
+                    "data_path": "./data.jsonl",
+                    "ckpt_output_dir": "/tmp/test-smart-route",
+                },
+            )
+            assert response.status_code == 201
+            job_id = response.json()["id"]
+
+            from amortized.worker import _pick_pending_job, _run_job
+
+            job = await _pick_pending_job()
+            assert job is not None
+            assert job["id"] == job_id
+            await _run_job(job)
+
+            response = await client.get(f"/api/v1/jobs/{job_id}")
+            data = response.json()
+            assert data["status"] in ("succeeded", "failed")
+        finally:
+            config_mod.settings.default_backend = original
+
+    @pytest.mark.asyncio
+    async def test_sdg_job_stays_local(self, client: httpx.AsyncClient) -> None:
+        """SDG jobs should stay local even when default_backend is set."""
+        import amortized.config as config_mod
+        from amortized.worker import _pick_pending_job, _run_job
+
+        original = config_mod.settings.default_backend
+        config_mod.settings.default_backend = "gpu-node"
+
+        try:
+            response = await client.post(
+                "/api/v1/jobs/sdg",
+                json={"model": "openai/gpt-4o"},
+            )
+            assert response.status_code == 201
+            job_id = response.json()["id"]
+
+            job = await _pick_pending_job()
+            assert job is not None
+            await _run_job(job)
+
+            response = await client.get(f"/api/v1/jobs/{job_id}")
+            data = response.json()
+            assert data["status"] in ("succeeded", "failed")
+        finally:
+            config_mod.settings.default_backend = original
+
+    @pytest.mark.asyncio
+    async def test_explicit_backend_overrides_default(self, client: httpx.AsyncClient) -> None:
+        """Explicit compute.backend in metadata should override default_backend."""
+        import amortized.config as config_mod
+        from amortized.backends.local import LocalBackend
+        from amortized.core.compute import register_backend
+        from amortized.worker import _pick_pending_job, _run_job
+
+        original = config_mod.settings.default_backend
+        config_mod.settings.default_backend = "gpu-node"
+        alt_backend = LocalBackend()
+        alt_backend.name = "alt-node"
+        register_backend(alt_backend)
+
+        try:
+            response = await client.post(
+                "/api/v1/jobs/training",
+                json={
+                    "algorithm": "lora_sft",
+                    "model_path": "test/model",
+                    "data_path": "./data.jsonl",
+                    "ckpt_output_dir": "/tmp/test-explicit-backend",
+                    "compute": {"backend": "alt-node"},
+                },
+            )
+            assert response.status_code == 201
+            job_id = response.json()["id"]
+
+            job = await _pick_pending_job()
+            assert job is not None
+            assert job["metadata"]["backend"] == "alt-node"
+            await _run_job(job)
+
+            response = await client.get(f"/api/v1/jobs/{job_id}")
+            data = response.json()
+            assert data["status"] in ("succeeded", "failed")
+        finally:
+            config_mod.settings.default_backend = original
