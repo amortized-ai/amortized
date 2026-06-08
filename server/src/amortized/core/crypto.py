@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger("amortized.core.crypto")
 
 
 def _get_fernet() -> Fernet | None:
@@ -28,4 +31,5 @@ def decrypt_value(ciphertext: str) -> str:
     try:
         return f.decrypt(ciphertext.encode()).decode()
     except (InvalidToken, Exception):
+        logger.warning("Decryption failed — encryption key may have changed")
         return ciphertext

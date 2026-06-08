@@ -594,8 +594,9 @@ def _row_to_evaluator(row: Any) -> dict[str, Any]:
 
 def _row_to_api_key(row: Any) -> dict[str, Any]:
     d = dict(row)
-    key_val = d.pop("key_value", "")
-    d["key_preview"] = f"...{key_val[-4:]}" if len(key_val) >= 4 else "***"
+    raw_key = d.pop("key_value", "")
+    plaintext = decrypt_value(raw_key)
+    d["key_preview"] = f"...{plaintext[-4:]}" if len(plaintext) >= 4 else "***"
     return d
 
 

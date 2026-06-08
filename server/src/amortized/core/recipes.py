@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from pathlib import Path
 from typing import Any
@@ -107,16 +108,18 @@ def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
         except Exception:
             logger.warning("Skipping invalid recipe: %s", name)
             continue
-        results.append({
-            "name": name,
-            "description": raw.get("description", ""),
-            "type": raw.get("type", ""),
-        })
+        results.append(
+            {
+                "name": name,
+                "description": raw.get("description", ""),
+                "type": raw.get("type", ""),
+            }
+        )
     return results
 
 
 def apply_overrides(recipe: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
-    result = dict(recipe)
+    result = copy.deepcopy(recipe)
     for dotted_key, value in overrides.items():
         keys = dotted_key.split(".")
         target = result

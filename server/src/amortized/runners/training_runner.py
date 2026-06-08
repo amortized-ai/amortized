@@ -1,7 +1,8 @@
 """Training job runner — invoked as a subprocess by the worker.
 
-Receives job config as a JSON string argument. Imports training_hub and runs
-lora_sft(). Falls back to a simulated run if training_hub is not installed.
+Receives job config as a JSON string argument. Dispatches to the appropriate
+training_hub function based on config["algorithm"]. Falls back to a simulated
+run if training_hub is not installed.
 """
 
 import json
@@ -10,42 +11,122 @@ import sys
 import time
 from typing import Any
 
+_ALGORITHM_PARAMS: dict[str, list[str]] = {
+    "lora_sft": [
+        "learning_rate",
+        "num_epochs",
+        "lora_r",
+        "lora_alpha",
+        "load_in_4bit",
+        "micro_batch_size",
+        "max_seq_len",
+        "bf16",
+    ],
+    "full_sft": [
+        "learning_rate",
+        "num_epochs",
+        "effective_batch_size",
+        "max_seq_len",
+        "warmup_steps",
+        "max_tokens_per_gpu",
+        "bf16",
+    ],
+    "grpo": [
+        "learning_rate",
+        "num_iterations",
+        "group_size",
+        "prompt_batch_size",
+        "temperature",
+        "max_tokens",
+        "lora_r",
+        "lora_alpha",
+        "gpu_memory_utilization",
+    ],
+    "osft": [
+        "learning_rate",
+        "num_epochs",
+        "effective_batch_size",
+        "max_seq_len",
+        "unfreeze_rank_ratio",
+        "use_liger",
+        "lr_scheduler",
+        "bf16",
+    ],
+    "gepa": [
+        "seed_candidate",
+        "task_lm",
+        "num_iterations",
+    ],
+}
+
+_ALGORITHM_ALIASES: dict[str, str] = {
+    "sft": "full_sft",
+    "lora_grpo": "grpo",
+}
+
+
+def _import_training_func(algorithm: str) -> Any:
+    """Import the training_hub function for the given algorithm."""
+    import_map: dict[str, tuple[str, str]] = {
+        "lora_sft": ("training_hub", "lora_sft"),
+        "full_sft": ("training_hub", "sft"),
+        "grpo": ("training_hub", "lora_grpo"),
+        "osft": ("training_hub", "osft"),
+        "gepa": ("training_hub", "gepa"),
+    }
+    module_name, func_name = import_map[algorithm]
+    import importlib
+
+    module = importlib.import_module(module_name)
+    return getattr(module, func_name)
+
+
+def _build_kwargs(config: dict[str, Any], algorithm: str, output_dir: str) -> dict[str, Any]:
+    """Build kwargs for the training function from config."""
+    if algorithm == "gepa":
+        kwargs: dict[str, Any] = {}
+    else:
+        kwargs = {
+            "model_path": config["model_path"],
+            "ckpt_output_dir": output_dir,
+        }
+        if algorithm != "grpo":
+            kwargs["data_path"] = config["data_path"]
+
+    for key in _ALGORITHM_PARAMS.get(algorithm, []):
+        if key in config and config[key] is not None:
+            kwargs[key] = config[key]
+
+    return kwargs
+
 
 def run_training(config: dict[str, Any]) -> None:
-    """Execute a LoRA SFT training job."""
+    """Execute a training job using the algorithm specified in config."""
     output_dir = str(config["ckpt_output_dir"])
     os.makedirs(output_dir, exist_ok=True)
 
+    algorithm = config.get("algorithm", "lora_sft")
+    algorithm = _ALGORITHM_ALIASES.get(algorithm, algorithm)
+
+    if algorithm not in _ALGORITHM_PARAMS:
+        raise ValueError(
+            f"Unknown training algorithm: {algorithm!r}. "
+            f"Supported: {', '.join(sorted(_ALGORITHM_PARAMS))}"
+        )
+
     try:
-        from training_hub import lora_sft
+        train_func = _import_training_func(algorithm)
     except ImportError:
-        lora_sft = None
+        train_func = None
 
     # Clear stale metrics from any previous run to avoid appending to old data
     metrics_path = os.path.join(output_dir, "training_metrics.jsonl")
     if os.path.exists(metrics_path):
         os.remove(metrics_path)
 
-    if lora_sft is not None:
-        kwargs = {
-            "model_path": config["model_path"],
-            "data_path": config["data_path"],
-            "ckpt_output_dir": output_dir,
-        }
-        optional_keys = [
-            "learning_rate",
-            "num_epochs",
-            "lora_r",
-            "lora_alpha",
-            "load_in_4bit",
-            "micro_batch_size",
-            "max_seq_len",
-        ]
-        for key in optional_keys:
-            if key in config and config[key] is not None:
-                kwargs[key] = config[key]
-
-        lora_sft(**kwargs)
+    if train_func is not None:
+        kwargs = _build_kwargs(config, algorithm, output_dir)
+        train_func(**kwargs)
     else:
         _simulate_training(config, output_dir)
 

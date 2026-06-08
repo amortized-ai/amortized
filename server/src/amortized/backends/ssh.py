@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -97,8 +98,12 @@ class SSHBackend:
             )
 
             if spec.image:
-                docker_env_flags = " ".join(f"-e {k}={v}" for k, v in amortized_env.items())
-                docker_env_flags += "".join(f" -e {k}={v}" for k, v in filtered_spec_env.items())
+                docker_env_flags = " ".join(
+                    f"-e {k}={shlex.quote(v)}" for k, v in amortized_env.items()
+                )
+                docker_env_flags += "".join(
+                    f" -e {k}={shlex.quote(v)}" for k, v in filtered_spec_env.items()
+                )
                 full_cmd = (
                     f"docker run -d --gpus all "
                     f"-v {remote_dir}:/amortized/work "
@@ -125,7 +130,7 @@ class SSHBackend:
                     container_id=container_id,
                 )
             else:
-                env_exports = " ".join(f"{k}={v}" for k, v in merged_env.items())
+                env_exports = " ".join(f"{k}={shlex.quote(v)}" for k, v in merged_env.items())
                 cmd_str = " ".join(spec.command)
                 full_cmd = (
                     f"cd {remote_dir} && "

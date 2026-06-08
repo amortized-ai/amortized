@@ -94,7 +94,14 @@ def _test_ssh(host: str, user: str | None = None) -> dict[str, Any]:
     result: dict[str, Any] = {"connected": False}
     try:
         ssh_target = f"{user}@{host}" if user else host
-        cmd = ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no", ssh_target]
+        cmd = [
+            "ssh",
+            "-o",
+            "ConnectTimeout=5",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            ssh_target,
+        ]
         gpu_cmd = [
             *cmd,
             "nvidia-smi --query-gpu=name,memory.total"

@@ -38,6 +38,7 @@ _ALGORITHM_IMAGES: dict[str, str] = {
     "grpo": "ghcr.io/amortized-ai/training-grpo:latest",
     "lora_grpo": "ghcr.io/amortized-ai/training-grpo:latest",
     "gepa": "ghcr.io/amortized-ai/training-gepa:latest",
+    "osft": "ghcr.io/amortized-ai/training-osft:latest",
 }
 
 _RUNNER_MODULES: dict[str, str] = {
@@ -88,6 +89,7 @@ def _serialize_handle(handle: BackendHandle) -> str:
             "job_id": handle.job_id,
             "remote_pid": handle.remote_pid,
             "remote_dir": handle.remote_dir,
+            "container_id": handle.container_id,
             "scheduler_id": handle.scheduler_id,
         }
     )
@@ -102,6 +104,7 @@ def _deserialize_handle(raw: str | None) -> BackendHandle | None:
         job_id=d["job_id"],
         remote_pid=d.get("remote_pid"),
         remote_dir=d.get("remote_dir"),
+        container_id=d.get("container_id"),
         scheduler_id=d.get("scheduler_id"),
     )
 

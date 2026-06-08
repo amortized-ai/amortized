@@ -2,7 +2,9 @@ type: training
 description: Full supervised fine-tuning — all weights, requires multi-GPU
 config:
   algorithm: full_sft
+  num_epochs: 1
   learning_rate: 1e-5
   max_seq_len: 16384
   effective_batch_size: 128
   warmup_steps: 100
+  bf16: true
