@@ -12,10 +12,20 @@ from amortized.runners.sdg_runner import _deserialize_strategy_params, run_sdg
 class TestSimulationFallback:
     """When asynth is not installed, the runner falls back to simulation."""
 
+    def _run_sdg_simulated(self, config: dict[str, Any]) -> None:
+        """Run SDG with asynth import blocked so the fallback path is used."""
+        with patch.dict(sys.modules, {"asynth": None, "asynth.configs": None, "asynth.configs.params": None, "asynth.configs.params.synthesis_params": None}):
+            from importlib import reload
+
+            import amortized.runners.sdg_runner as mod
+
+            reload(mod)
+            mod.run_sdg(config)
+
     def test_simulation_produces_output(self, tmp_path: Any) -> None:
         output_dir = str(tmp_path / "output")
         config = {"output_dir": output_dir, "model": "openai/gpt-4o", "num_samples": 10}
-        run_sdg(config)
+        self._run_sdg_simulated(config)
 
         output_path = os.path.join(output_dir, "generated_data.jsonl")
         assert os.path.exists(output_path)
@@ -31,7 +41,7 @@ class TestSimulationFallback:
     def test_simulation_writes_stats(self, tmp_path: Any) -> None:
         output_dir = str(tmp_path / "output")
         config = {"output_dir": output_dir, "model": "openai/gpt-4o", "num_samples": 10}
-        run_sdg(config)
+        self._run_sdg_simulated(config)
 
         stats_path = os.path.join(output_dir, "stats.json")
         assert os.path.exists(stats_path)
@@ -44,7 +54,7 @@ class TestSimulationFallback:
     def test_default_output_dir(self, tmp_path: Any, monkeypatch: Any) -> None:
         monkeypatch.chdir(tmp_path)
         config = {"model": "openai/gpt-4o"}
-        run_sdg(config)
+        self._run_sdg_simulated(config)
         assert os.path.exists("./sdg_output/generated_data.jsonl")
 
 

@@ -107,19 +107,43 @@ class TestWorkerJobExecution:
             response = await client.post(
                 "/api/v1/jobs/sdg",
                 json={
-                    "pipeline": "conversation",
                     "model": "openai/gpt-4o",
                 },
             )
             assert response.status_code == 201
             job_id = response.json()["id"]
 
-            # Run through worker
-            from amortized.worker import _pick_pending_job, _run_job
+            # Mock the subprocess to simulate SDG output instead of running real asynth
+            import subprocess as _subprocess
 
-            job = await _pick_pending_job()
-            assert job is not None
-            await _run_job(job)
+            _real_popen = _subprocess.Popen
+
+            def _mock_popen(cmd: list[str], **kwargs: object) -> object:
+                work_dir = kwargs.get("cwd") or "."
+                import json as _json
+                import os as _os
+
+                _os.makedirs(str(work_dir), exist_ok=True)
+                out_path = _os.path.join(str(work_dir), "generated_data.jsonl")
+                with open(out_path, "w") as f:
+                    for i in range(5):
+                        f.write(_json.dumps({"q": f"q{i}", "a": f"a{i}"}) + "\n")
+                stats_path = _os.path.join(str(work_dir), "stats.json")
+                with open(stats_path, "w") as f:
+                    _json.dump({"total_completed": 5, "total_requested": 5, "status": "completed"}, f)
+                mock_proc = MagicMock()
+                mock_proc.pid = 99999
+                mock_proc.poll.return_value = 0
+                return mock_proc
+
+            from unittest.mock import MagicMock, patch
+
+            with patch("subprocess.Popen", side_effect=_mock_popen):
+                from amortized.worker import _pick_pending_job, _run_job
+
+                job = await _pick_pending_job()
+                assert job is not None
+                await _run_job(job)
 
             # Verify completed
             response = await client.get(f"/api/v1/jobs/{job_id}")
