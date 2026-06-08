@@ -352,7 +352,7 @@ class TestSSHBackend:
 
         docker_call = mock_conn.run.call_args_list[2]
         cmd = docker_call[0][0]
-        assert "docker run -d --gpus all" in cmd
+        assert "podman run -d --gpus all" in cmd
         assert "ghcr.io/amortized-ai/training:latest" in cmd
         assert "python -m runner" in cmd
         assert "-e AMORTIZED_JOB_ID=docker-job-1" in cmd
@@ -457,7 +457,7 @@ class TestSSHBackend:
         with patch.object(backend, "_connect", return_value=mock_conn):
             await backend.cancel(handle)
 
-        mock_conn.run.assert_called_once_with("docker stop abc123def 2>/dev/null || true")
+        mock_conn.run.assert_called_once_with("podman stop abc123def 2>/dev/null || true")
 
     @pytest.mark.asyncio
     async def test_cancel_no_pid(self) -> None:

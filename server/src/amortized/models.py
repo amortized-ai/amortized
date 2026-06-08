@@ -445,7 +445,7 @@ class BackendCreate(BaseModel):
     user: str | None = Field(None, description="SSH user")
     key_path: str | None = Field(None, description="SSH key path")
     remote_base_dir: str = Field("~/amortized-jobs", description="Remote working directory")
-    container_runtime: str = Field("docker", description="Container runtime: docker or podman")
+    container_runtime: str = Field("podman", description="Container runtime: docker or podman")
 
 
 # --- Agent / Chat models ---

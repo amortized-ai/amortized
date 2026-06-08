@@ -191,7 +191,7 @@ def _configure_ssh_backend() -> dict[str, Any] | None:
     backend_cfg: dict[str, Any] = {"type": "ssh", "host": host}
     if user:
         backend_cfg["user"] = user
-    backend_cfg["container_runtime"] = container_rt or "docker"
+    backend_cfg["container_runtime"] = container_rt or "podman"
     console.print("\nHow should jobs execute on this node?")
     console.print("  [1] Docker / Podman container (recommended)")
     console.print("  [2] Bare metal (Python venv)")

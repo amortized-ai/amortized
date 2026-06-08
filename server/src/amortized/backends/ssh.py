@@ -26,7 +26,7 @@ class SSHBackend:
         key_path: str | None = None,
         remote_base_dir: str = "~/amortized-jobs",
         name: str = "ssh",
-        container_runtime: str = "docker",
+        container_runtime: str = "podman",
     ) -> None:
         self.name = name
         self._host = host
@@ -57,29 +57,37 @@ class SSHBackend:
 
         from amortized.config import settings
 
-        if settings.external_url:
-            events_url = f"{settings.external_url.rstrip('/')}/api/v1/events/ingest"
-        else:
-            import socket
-
-            host = settings.host if settings.host != "0.0.0.0" else socket.gethostname()
-            events_url = f"http://{host}:{settings.port}/api/v1/events/ingest"
-
-        amortized_env = {
-            "AMORTIZED_JOB_ID": spec.job_id,
-            "AMORTIZED_WORK_DIR": remote_dir,
-            "AMORTIZED_CONFIG_PATH": config_path,
-            "AMORTIZED_EVENTS_URL": events_url,
-        }
-        if spec.resources.nodes > 1:
-            amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
-            amortized_env["RANK"] = "0"
-            amortized_env["LOCAL_RANK"] = "0"
-        filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
-        merged_env = {**amortized_env, **filtered_spec_env}
-
         conn = await self._connect()
         try:
+            # Resolve events URL using the SSH connection's local address —
+            # this is guaranteed reachable from the remote node.
+            if settings.external_url:
+                events_url = f"{settings.external_url.rstrip('/')}/api/v1/events/ingest"
+            else:
+                import socket
+
+                local_ip = None
+                try:
+                    sockname = conn.get_extra_info("sockname")
+                    if isinstance(sockname, tuple) and sockname[0] and sockname[0] != "127.0.0.1":
+                        local_ip = sockname[0]
+                except Exception:
+                    pass
+                host = local_ip or socket.gethostname()
+                events_url = f"http://{host}:{settings.port}/api/v1/events/ingest"
+
+            amortized_env = {
+                "AMORTIZED_JOB_ID": spec.job_id,
+                "AMORTIZED_WORK_DIR": remote_dir,
+                "AMORTIZED_CONFIG_PATH": config_path,
+                "AMORTIZED_EVENTS_URL": events_url,
+            }
+            if spec.resources.nodes > 1:
+                amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
+                amortized_env["RANK"] = "0"
+                amortized_env["LOCAL_RANK"] = "0"
+            filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
+            merged_env = {**amortized_env, **filtered_spec_env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)
 
             raw_config: object = spec.env.get("_config", {})
