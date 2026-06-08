@@ -281,6 +281,66 @@ class TestJobArtifacts:
         assert response.json() == []
 
 
+class TestConfigRedaction:
+    @pytest.mark.asyncio
+    async def test_api_key_redacted_in_get(self, client: httpx.AsyncClient) -> None:
+        create_resp = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+        )
+        assert create_resp.status_code == 201
+        job_id = create_resp.json()["id"]
+
+        response = await client.get(f"/api/v1/jobs/{job_id}")
+        assert response.status_code == 200
+        assert response.json()["config"]["api_key"] == "***redacted***"
+
+    @pytest.mark.asyncio
+    async def test_api_key_redacted_in_create_response(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+        )
+        assert response.status_code == 201
+        assert response.json()["config"]["api_key"] == "***redacted***"
+
+    @pytest.mark.asyncio
+    async def test_api_key_redacted_in_list(self, client: httpx.AsyncClient) -> None:
+        await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+        )
+        response = await client.get("/api/v1/jobs")
+        assert response.status_code == 200
+        jobs = response.json()
+        assert len(jobs) == 1
+        assert jobs[0]["config"]["api_key"] == "***redacted***"
+
+    @pytest.mark.asyncio
+    async def test_no_api_key_unchanged(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o", "num_samples": 50},
+        )
+        assert response.status_code == 201
+        config = response.json()["config"]
+        assert config["model"] == "openai/gpt-4o"
+        assert config["num_samples"] == 50
+        assert "api_key" not in config
+
+    @pytest.mark.asyncio
+    async def test_other_fields_not_redacted(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123", "num_samples": 100},
+        )
+        assert response.status_code == 201
+        config = response.json()["config"]
+        assert config["api_key"] == "***redacted***"
+        assert config["model"] == "openai/gpt-4o"
+        assert config["num_samples"] == 100
+
+
 class TestFlows:
     @pytest.mark.asyncio
     async def test_list_flows(self, client: httpx.AsyncClient) -> None:

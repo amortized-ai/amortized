@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
 from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
+from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import Job, JobType, RecipeSummary
@@ -76,4 +77,5 @@ async def submit_recipe_job(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    row["config"] = redact_config(row["config"])
     return Job(**row)

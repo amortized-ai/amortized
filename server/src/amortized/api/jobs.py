@@ -30,6 +30,7 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     resume_job as core_resume_job,
 )
+from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
@@ -49,6 +50,11 @@ logger = logging.getLogger("amortized.api.jobs")
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 
+def _job_response(row: dict[str, Any]) -> Job:
+    row["config"] = redact_config(row["config"])
+    return Job(**row)
+
+
 @router.post("/training", status_code=201, response_model=Job)
 async def create_training_job(
     config: TrainingJobConfig,
@@ -64,7 +70,7 @@ async def create_training_job(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Job(**row)
+    return _job_response(row)
 
 
 @router.post("/sdg", status_code=201, response_model=Job)
@@ -81,7 +87,7 @@ async def create_sdg_job(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Job(**row)
+    return _job_response(row)
 
 
 @router.get("", response_model=list[Job])
@@ -92,7 +98,7 @@ async def get_jobs(
 ) -> list[Job]:
     repo = Repository(db)
     rows = await core_list_jobs(repo, status=status, job_type=type)
-    return [Job(**row) for row in rows]
+    return [_job_response(row) for row in rows]
 
 
 @router.get("/{job_id}", response_model=Job)
@@ -104,7 +110,7 @@ async def get_job_detail(
     row = await core_get_job(repo, job_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    return Job(**row)
+    return _job_response(row)
 
 
 @router.get("/{job_id}/metrics", response_model=list[TrainingMetric])
@@ -248,7 +254,7 @@ async def resume_job(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from exc
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return Job(**row)
+    return _job_response(row)
 
 
 @router.delete("/{job_id}", response_model=Job)
@@ -263,4 +269,4 @@ async def cancel_job(
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from exc
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return Job(**row)
+    return _job_response(row)
