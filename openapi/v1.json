@@ -701,6 +701,54 @@
         }
       }
     },
+    "/api/v1/job-types/{job_type}/examples": {
+      "get": {
+        "tags": [
+          "job-types"
+        ],
+        "summary": "Get Job Type Examples",
+        "description": "Return working config examples for a job type.",
+        "operationId": "get_job_type_examples_api_v1_job_types__job_type__examples_get",
+        "parameters": [
+          {
+            "name": "job_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Job Type Examples Api V1 Job Types  Job Type  Examples Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/{job_id}/events": {
       "get": {
         "tags": [

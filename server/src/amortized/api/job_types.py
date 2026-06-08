@@ -132,3 +132,104 @@ async def get_job_type_schema(job_type: str) -> dict[str, Any]:
         return get_schema(job_type)
     except UnknownJobTypeError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@job_types_router.get("/{job_type}/examples")
+async def get_job_type_examples(job_type: str) -> list[dict[str, Any]]:
+    """Return working config examples for a job type."""
+    if job_type == "sdg":
+        return [
+            {
+                "name": "Simple QA generation",
+                "description": "Generate question-answer pairs using a teacher model",
+                "config": {
+                    "model": "openai/gpt-4o-mini",
+                    "num_samples": 50,
+                    "strategy_params": {
+                        "generated_attributes": [
+                            {
+                                "id": "question",
+                                "instruction_messages": [
+                                    {
+                                        "role": "user",
+                                        "content": "Generate a diverse, interesting "
+                                        "question about science.",
+                                    }
+                                ],
+                            },
+                            {
+                                "id": "answer",
+                                "instruction_messages": [
+                                    {
+                                        "role": "user",
+                                        "content": "Answer this question thoroughly: {question}",
+                                    }
+                                ],
+                            },
+                        ],
+                        "passthrough_attributes": ["question", "answer"],
+                    },
+                },
+            },
+            {
+                "name": "Customer support with categories",
+                "description": "Generate support tickets with sampled urgency and category",
+                "config": {
+                    "model": "openai/gpt-4o-mini",
+                    "num_samples": 100,
+                    "strategy_params": {
+                        "sampled_attributes": [
+                            {
+                                "id": "urgency",
+                                "name": "Urgency",
+                                "description": "How urgent the support request is",
+                                "possible_values": [
+                                    {
+                                        "id": "high",
+                                        "name": "High",
+                                        "description": "Needs immediate attention",
+                                    },
+                                    {
+                                        "id": "medium",
+                                        "name": "Medium",
+                                        "description": "Should be handled today",
+                                    },
+                                    {
+                                        "id": "low",
+                                        "name": "Low",
+                                        "description": "Can wait",
+                                    },
+                                ],
+                            }
+                        ],
+                        "generated_attributes": [
+                            {
+                                "id": "ticket",
+                                "instruction_messages": [
+                                    {
+                                        "role": "user",
+                                        "content": "Write a {urgency} urgency "
+                                        "customer support ticket. "
+                                        "The urgency level means: "
+                                        "{urgency.description}",
+                                    }
+                                ],
+                            }
+                        ],
+                        "passthrough_attributes": ["urgency", "ticket"],
+                    },
+                },
+            },
+        ]
+    elif job_type == "training":
+        return [
+            {
+                "name": "Basic LoRA fine-tune",
+                "config": {
+                    "algorithm": "lora_sft",
+                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "data_path": "./data.jsonl",
+                },
+            }
+        ]
+    return []

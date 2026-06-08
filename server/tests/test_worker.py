@@ -210,6 +210,39 @@ class TestTildeExpansion:
         assert data["output_dir"].startswith("/")
 
 
+class TestOutputDirAbsolute:
+    """Verify output_dir stored in DB is always absolute (issue #69)."""
+
+    @pytest.mark.asyncio
+    async def test_sdg_output_dir_is_absolute(self, client: httpx.AsyncClient) -> None:
+        """SDG job output_dir must be absolute to avoid double-nested paths."""
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "pipeline": "conversation",
+                "model": "openai/gpt-4o",
+            },
+        )
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+
+        from amortized.worker import _pick_pending_job, _run_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+        await _run_job(job)
+
+        response = await client.get(f"/api/v1/jobs/{job_id}")
+        data = response.json()
+        output_dir = data["output_dir"]
+        assert output_dir is not None
+        assert os.path.isabs(output_dir), f"output_dir is not absolute: {output_dir}"
+        assert "/sdg_output/" + job_id + "/sdg_output/" not in output_dir, (
+            f"output_dir has double-nested path: {output_dir}"
+        )
+        assert job_id in output_dir
+
+
 class TestOrphanedJobCleanup:
     """Test orphaned job detection on startup."""
 

@@ -26,6 +26,7 @@ ARTIFACT_PATTERNS: dict[str, list[str]] = {
         "tokenizer.model",
     ],
     "generated_data": ["*.jsonl", "*.parquet"],
+    "sdg_stats": ["stats.json"],
 }
 
 
@@ -52,11 +53,16 @@ async def register_artifacts_for_job(
             location=str(file_path),
         )
         registered.append(artifact)
-        await emit_event(repo, job_id, "artifact", {
-            "artifact_id": artifact_id,
-            "artifact_type": artifact_type,
-            "path": str(file_path),
-        })
+        await emit_event(
+            repo,
+            job_id,
+            "artifact",
+            {
+                "artifact_id": artifact_id,
+                "artifact_type": artifact_type,
+                "path": str(file_path),
+            },
+        )
 
     for artifact_type, patterns in ARTIFACT_PATTERNS.items():
         for pattern in patterns:
@@ -114,11 +120,16 @@ async def register_log_artifacts(
                 location=str(log_path),
             )
             registered.append(artifact)
-            await emit_event(repo, job_id, "artifact", {
-                "artifact_id": artifact_id,
-                "artifact_type": "log",
-                "path": str(log_path),
-            })
+            await emit_event(
+                repo,
+                job_id,
+                "artifact",
+                {
+                    "artifact_id": artifact_id,
+                    "artifact_type": "log",
+                    "path": str(log_path),
+                },
+            )
     return registered
 
 
@@ -146,15 +157,11 @@ async def register_artifact(
     )
 
 
-async def get_artifact(
-    repo: Repository, artifact_id: str
-) -> dict[str, Any] | None:
+async def get_artifact(repo: Repository, artifact_id: str) -> dict[str, Any] | None:
     return await repo.get_artifact(artifact_id)
 
 
-async def list_artifacts(
-    repo: Repository, job_id: str
-) -> list[dict[str, Any]]:
+async def list_artifacts(repo: Repository, job_id: str) -> list[dict[str, Any]]:
     return await repo.list_artifacts(job_id)
 
 
@@ -170,16 +177,14 @@ async def list_all_artifacts(
     )
 
 
-async def resolve_artifact_refs(
-    repo: Repository, config: dict[str, Any]
-) -> dict[str, Any]:
+async def resolve_artifact_refs(repo: Repository, config: dict[str, Any]) -> dict[str, Any]:
     """Walk config dict, replace 'artifact:job_id/name' strings with resolved file paths."""
     resolved: dict[str, Any] = {}
     for key, value in config.items():
         if isinstance(value, dict):
             resolved[key] = await resolve_artifact_refs(repo, value)
         elif isinstance(value, str) and value.startswith("artifact:"):
-            ref = value[len("artifact:"):]
+            ref = value[len("artifact:") :]
             if "/" not in ref:
                 raise ValueError(
                     f"Invalid artifact reference '{value}': expected 'artifact:job_id/name'"
@@ -195,7 +200,5 @@ async def resolve_artifact_refs(
     return resolved
 
 
-async def delete_artifact(
-    repo: Repository, artifact_id: str
-) -> bool:
+async def delete_artifact(repo: Repository, artifact_id: str) -> bool:
     return await repo.delete_artifact(artifact_id)

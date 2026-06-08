@@ -197,7 +197,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     }
     dir_name = output_dir_names.get(job["type"], f"{job['type']}_output")
     base_dir = job.get("output_dir") or str(config_mod.settings.data_dir / dir_name)
-    output_dir = os.path.expanduser(os.path.join(base_dir, job_id))
+    output_dir = os.path.abspath(os.path.expanduser(os.path.join(base_dir, job_id)))
 
     db = await _get_db()
     try:

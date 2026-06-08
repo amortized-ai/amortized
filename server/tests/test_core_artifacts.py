@@ -1,6 +1,5 @@
 """Tests for core/artifacts.py — no HTTP server required."""
 
-
 import aiosqlite
 import pytest
 
@@ -23,8 +22,10 @@ async def repo(tmp_path):
     await db.commit()
     repo = Repository(db)
     await repo.create_job(
-        job_id="j1", job_type=JobType.training,
-        config={}, created_at="2026-01-01T00:00:00",
+        job_id="j1",
+        job_type=JobType.training,
+        config={},
+        created_at="2026-01-01T00:00:00",
     )
     yield repo
     await db.close()
@@ -65,6 +66,22 @@ class TestRegisterArtifacts:
         types = [a["artifact_type"] for a in registered]
         assert "adapter_config" in types
         assert "adapter_weights" in types
+
+    @pytest.mark.asyncio
+    async def test_register_sdg_artifacts(self, repo: Repository, tmp_path) -> None:
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        (output_dir / "generated_data.jsonl").write_text('{"messages":[]}\n')
+        (output_dir / "stats.json").write_text('{"num_samples":10}\n')
+
+        registered = await register_artifacts_for_job(repo, "j1", str(output_dir))
+        types = {a["artifact_type"] for a in registered}
+        names = {a["name"] for a in registered}
+        assert "generated_data" in types
+        assert "sdg_stats" in types
+        assert "generated_data.jsonl" in names
+        assert "stats.json" in names
+        assert len(registered) == 2
 
     @pytest.mark.asyncio
     async def test_register_sdg_checkpoints(self, repo: Repository, tmp_path) -> None:

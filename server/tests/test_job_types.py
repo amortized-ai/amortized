@@ -444,6 +444,69 @@ class TestJobTypesEndpoints:
         assert response.status_code == 404
 
 
+class TestStrategyParamsValidation:
+    def test_valid_sdg_with_strategy_params(self) -> None:
+        errors = validate_config(
+            "sdg",
+            {
+                "model": "openai/gpt-4o-mini",
+                "num_samples": 50,
+                "strategy_params": {
+                    "generated_attributes": [
+                        {
+                            "id": "question",
+                            "instruction_messages": [
+                                {"role": "user", "content": "Generate a question."}
+                            ],
+                        }
+                    ],
+                    "passthrough_attributes": ["question"],
+                },
+            },
+        )
+        assert errors == []
+
+    def test_sdg_schema_has_strategy_params_properties(self) -> None:
+        schema = get_schema("sdg")
+        sp = schema["properties"]["strategy_params"]
+        assert "properties" in sp
+        assert "sampled_attributes" in sp["properties"]
+        assert "generated_attributes" in sp["properties"]
+        assert "passthrough_attributes" in sp["properties"]
+
+
+class TestJobTypeExamplesEndpoint:
+    @pytest.mark.asyncio
+    async def test_get_sdg_examples(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/sdg/examples")
+        assert response.status_code == 200
+        examples = response.json()
+        assert len(examples) == 2
+        assert examples[0]["name"] == "Simple QA generation"
+        assert "strategy_params" in examples[0]["config"]
+
+    @pytest.mark.asyncio
+    async def test_get_training_examples(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/training/examples")
+        assert response.status_code == 200
+        examples = response.json()
+        assert len(examples) == 1
+        assert examples[0]["config"]["algorithm"] == "lora_sft"
+
+    @pytest.mark.asyncio
+    async def test_get_unknown_type_examples(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/unknown/examples")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_sdg_examples_pass_validation(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/job-types/sdg/examples")
+        for example in response.json():
+            errors = validate_config("sdg", example["config"])
+            assert errors == [], f"Example '{example['name']}' failed: {errors}"
+
+
 class TestOldEndpointsBackwardCompat:
     @pytest.mark.asyncio
     async def test_old_training_endpoint_still_works(self, client: httpx.AsyncClient) -> None:
