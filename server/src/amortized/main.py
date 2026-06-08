@@ -22,6 +22,7 @@ from amortized.api import (
     compute,
     datasets,
     estimate,
+    evaluators,
     event_ingest,
     events,
     flows,
@@ -34,7 +35,7 @@ from amortized.api import (
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import register_backend
-from amortized.db import init_db
+from amortized.db import get_db, init_db
 from amortized.mcp.server import create_mcp_server
 from amortized.models import HealthResponse
 from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
@@ -91,6 +92,8 @@ def _load_backends() -> None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Initialize database and start background worker on startup."""
     await init_db()
+    async for db in get_db():
+        await evaluators.seed_default_evaluators(db)
     await cleanup_orphaned_jobs()
     _load_backends()
     logger.info("Amortized runtime started")
@@ -209,6 +212,7 @@ app.include_router(recipes.recipe_jobs_router)
 app.include_router(compute.router)
 app.include_router(judge.router)
 app.include_router(agent_routes.router)
+app.include_router(evaluators.router)
 
 create_mcp_server(app)
 

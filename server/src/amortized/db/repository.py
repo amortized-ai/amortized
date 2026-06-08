@@ -146,17 +146,13 @@ class Repository:
             ),
         )
         await self.conn.commit()
-        cursor = await self.conn.execute(
-            "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
-        )
+        cursor = await self.conn.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,))
         row = await cursor.fetchone()
         assert row is not None
         return _row_to_artifact(row)
 
     async def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
-        cursor = await self.conn.execute(
-            "SELECT * FROM artifacts WHERE id = ?", (artifact_id,)
-        )
+        cursor = await self.conn.execute("SELECT * FROM artifacts WHERE id = ?", (artifact_id,))
         row = await cursor.fetchone()
         return _row_to_artifact(row) if row else None
 
@@ -186,9 +182,7 @@ class Repository:
         return [_row_to_artifact(row) for row in rows]
 
     async def delete_artifact(self, artifact_id: str) -> bool:
-        cursor = await self.conn.execute(
-            "DELETE FROM artifacts WHERE id = ?", (artifact_id,)
-        )
+        cursor = await self.conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
         await self.conn.commit()
         return cursor.rowcount > 0
 
@@ -209,9 +203,7 @@ class Repository:
             (event_id, job_id, event_type, timestamp, json.dumps(data) if data else None),
         )
         await self.conn.commit()
-        cursor = await self.conn.execute(
-            "SELECT * FROM events WHERE id = ?", (event_id,)
-        )
+        cursor = await self.conn.execute("SELECT * FROM events WHERE id = ?", (event_id,))
         row = await cursor.fetchone()
         assert row is not None
         return _row_to_event(row)
@@ -277,9 +269,7 @@ class Repository:
         return dict(row) if row else None
 
     async def list_conversations(self) -> list[dict[str, Any]]:
-        cursor = await self.conn.execute(
-            "SELECT * FROM conversations ORDER BY updated_at DESC"
-        )
+        cursor = await self.conn.execute("SELECT * FROM conversations ORDER BY updated_at DESC")
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
@@ -320,9 +310,7 @@ class Repository:
             (message_id, conversation_id, role, content, created_at),
         )
         await self.conn.commit()
-        cursor = await self.conn.execute(
-            "SELECT * FROM messages WHERE id = ?", (message_id,)
-        )
+        cursor = await self.conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,))
         row = await cursor.fetchone()
         assert row is not None
         return _row_to_message(row)
@@ -334,6 +322,165 @@ class Repository:
         )
         rows = await cursor.fetchall()
         return [_row_to_message(row) for row in rows]
+
+    # ---- Evaluators ----
+
+    async def create_evaluator(
+        self,
+        *,
+        evaluator_id: str,
+        name: str,
+        description: str,
+        type: str,
+        prompt: str,
+        judgment_type: str,
+        response_format: str,
+        variables: list[str],
+        model: str | None,
+        inference_params: dict[str, Any],
+        rule_config: dict[str, Any] | None,
+        created_at: str,
+    ) -> dict[str, Any]:
+        await self.conn.execute(
+            """INSERT INTO evaluators
+               (id, name, description, type, prompt, judgment_type, response_format,
+                variables, model, inference_params, rule_config, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                evaluator_id,
+                name,
+                description,
+                type,
+                prompt,
+                judgment_type,
+                response_format,
+                json.dumps(variables),
+                model,
+                json.dumps(inference_params),
+                json.dumps(rule_config) if rule_config is not None else None,
+                created_at,
+                created_at,
+            ),
+        )
+        await self.conn.commit()
+        result = await self.get_evaluator(evaluator_id)
+        assert result is not None
+        return result
+
+    async def get_evaluator(self, evaluator_id: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute("SELECT * FROM evaluators WHERE id = ?", (evaluator_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_evaluator(row)
+
+    async def list_evaluators(self) -> list[dict[str, Any]]:
+        cursor = await self.conn.execute("SELECT * FROM evaluators ORDER BY created_at DESC")
+        rows = await cursor.fetchall()
+        return [_row_to_evaluator(row) for row in rows]
+
+    async def update_evaluator(
+        self, evaluator_id: str, *, updated_at: str, **kwargs: Any
+    ) -> dict[str, Any] | None:
+        fields = ["updated_at = ?"]
+        params: list[Any] = [updated_at]
+
+        for key, value in kwargs.items():
+            if key == "variables":
+                fields.append("variables = ?")
+                params.append(json.dumps(value))
+            elif key == "inference_params":
+                fields.append("inference_params = ?")
+                params.append(json.dumps(value))
+            elif key == "rule_config":
+                fields.append("rule_config = ?")
+                params.append(json.dumps(value) if value is not None else None)
+            else:
+                fields.append(f"{key} = ?")
+                params.append(value)
+
+        params.append(evaluator_id)
+        await self.conn.execute(
+            f"UPDATE evaluators SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+        await self.conn.commit()
+        return await self.get_evaluator(evaluator_id)
+
+    async def delete_evaluator(self, evaluator_id: str) -> bool:
+        cursor = await self.conn.execute("DELETE FROM evaluators WHERE id = ?", (evaluator_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    # ---- Evaluations ----
+
+    async def create_evaluation(
+        self,
+        *,
+        evaluation_id: str,
+        evaluator_id: str,
+        dataset_artifact_id: str | None = None,
+        job_id: str | None = None,
+        created_at: str,
+    ) -> dict[str, Any]:
+        await self.conn.execute(
+            """INSERT INTO evaluations
+               (id, evaluator_id, dataset_artifact_id, job_id, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (evaluation_id, evaluator_id, dataset_artifact_id, job_id, created_at),
+        )
+        await self.conn.commit()
+        result = await self.get_evaluation(evaluation_id)
+        assert result is not None
+        return result
+
+    async def get_evaluation(self, evaluation_id: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute("SELECT * FROM evaluations WHERE id = ?", (evaluation_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_evaluation(row)
+
+    async def list_evaluations(self, *, evaluator_id: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM evaluations"
+        params: list[str] = []
+
+        if evaluator_id is not None:
+            query += " WHERE evaluator_id = ?"
+            params.append(evaluator_id)
+
+        query += " ORDER BY created_at DESC"
+        cursor = await self.conn.execute(query, params)
+        rows = await cursor.fetchall()
+        return [_row_to_evaluation(row) for row in rows]
+
+    async def update_evaluation(
+        self,
+        evaluation_id: str,
+        *,
+        status: str | None = None,
+        results: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        fields: list[str] = []
+        params: list[Any] = []
+
+        if status is not None:
+            fields.append("status = ?")
+            params.append(status)
+        if results is not None:
+            fields.append("results = ?")
+            params.append(json.dumps(results))
+
+        if not fields:
+            return await self.get_evaluation(evaluation_id)
+
+        params.append(evaluation_id)
+        await self.conn.execute(
+            f"UPDATE evaluations SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+        await self.conn.commit()
+        return await self.get_evaluation(evaluation_id)
 
 
 def _row_to_message(row: Any) -> dict[str, Any]:
@@ -371,4 +518,28 @@ def _row_to_event(row: Any) -> dict[str, Any]:
     if isinstance(d.get("data"), str):
         with contextlib.suppress(json.JSONDecodeError, TypeError):
             d["data"] = json.loads(d["data"])
+    return d
+
+
+def _row_to_evaluator(row: Any) -> dict[str, Any]:
+    d = dict(row)
+    if isinstance(d.get("variables"), str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["variables"] = json.loads(d["variables"])
+    if isinstance(d.get("inference_params"), str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["inference_params"] = json.loads(d["inference_params"])
+    if isinstance(d.get("rule_config"), str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["rule_config"] = json.loads(d["rule_config"])
+    return d
+
+
+def _row_to_evaluation(row: Any) -> dict[str, Any]:
+    d = dict(row)
+    if isinstance(d.get("results"), str):
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
+            d["results"] = json.loads(d["results"])
+    if d.get("results") is None:
+        d["results"] = {}
     return d
