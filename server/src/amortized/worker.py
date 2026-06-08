@@ -296,6 +296,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         algorithm = config.get("algorithm", "lora_sft")
         image = _ALGORITHM_IMAGES.get(algorithm, image)
 
+    spec_env["_config"] = json.dumps(config)
+
     spec = JobSpec(
         job_id=job_id,
         command=cmd,

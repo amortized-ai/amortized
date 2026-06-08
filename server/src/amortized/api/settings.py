@@ -125,6 +125,7 @@ async def add_backend(body: BackendCreate) -> dict[str, Any]:
             key_path=body.key_path,
             remote_base_dir=body.remote_base_dir,
             name=body.name,
+            container_runtime=body.container_runtime,
         )
         register_backend(backend)
 
@@ -136,6 +137,7 @@ async def add_backend(body: BackendCreate) -> dict[str, Any]:
                 "user": body.user,
                 "key_path": body.key_path,
                 "remote_base_dir": body.remote_base_dir,
+                "container_runtime": body.container_runtime,
             }
             _save_config(config)
 

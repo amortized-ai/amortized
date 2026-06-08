@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     storage_prefix: str = Field("artifacts/", description="Key prefix for cloud storage")
     storage_region: str = Field("us-east-1", description="AWS region for S3")
 
+    external_url: str = Field("", description="Externally reachable server URL")
+
     default_backend: str = Field(
         "",
         description="Default compute backend for GPU jobs (reads AMORTIZED_DEFAULT_BACKEND)",

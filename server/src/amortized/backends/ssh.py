@@ -26,12 +26,14 @@ class SSHBackend:
         key_path: str | None = None,
         remote_base_dir: str = "~/amortized-jobs",
         name: str = "ssh",
+        container_runtime: str = "docker",
     ) -> None:
         self.name = name
         self._host = host
         self._user = user
         self._key_path = key_path
         self._remote_base_dir = remote_base_dir
+        self._container_runtime = container_runtime
 
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
@@ -55,16 +57,19 @@ class SSHBackend:
 
         from amortized.config import settings
 
-        control_plane_host = settings.host if settings.host != "0.0.0.0" else "localhost"
-        control_plane_port = settings.port
+        if settings.external_url:
+            events_url = f"{settings.external_url.rstrip('/')}/api/v1/events/ingest"
+        else:
+            import socket
+
+            host = settings.host if settings.host != "0.0.0.0" else socket.getfqdn()
+            events_url = f"http://{host}:{settings.port}/api/v1/events/ingest"
 
         amortized_env = {
             "AMORTIZED_JOB_ID": spec.job_id,
             "AMORTIZED_WORK_DIR": remote_dir,
             "AMORTIZED_CONFIG_PATH": config_path,
-            "AMORTIZED_EVENTS_URL": (
-                f"http://{control_plane_host}:{control_plane_port}/api/v1/events/ingest"
-            ),
+            "AMORTIZED_EVENTS_URL": events_url,
         }
         if spec.resources.nodes > 1:
             amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
@@ -88,14 +93,17 @@ class SSHBackend:
             )
 
             if spec.image:
+                docker_overrides = {"AMORTIZED_WORK_DIR", "AMORTIZED_CONFIG_PATH"}
                 docker_env_flags = " ".join(
-                    f"-e {k}={shlex.quote(v)}" for k, v in amortized_env.items()
+                    f"-e {k}={shlex.quote(v)}"
+                    for k, v in amortized_env.items()
+                    if k not in docker_overrides
                 )
                 docker_env_flags += "".join(
                     f" -e {k}={shlex.quote(v)}" for k, v in filtered_spec_env.items()
                 )
                 full_cmd = (
-                    f"docker run -d --gpus all "
+                    f"{self._container_runtime} run -d --gpus all "
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "
                     f"{docker_env_flags} "
@@ -178,8 +186,9 @@ class SSHBackend:
     async def _docker_status(self, handle: BackendHandle) -> BackendStatus:
         conn = await self._connect()
         try:
+            fmt = "'{{.State.Running}} {{.State.ExitCode}}'"
             result = await conn.run(
-                f"docker inspect --format '{{{{.State.Running}}}} {{{{.State.ExitCode}}}}' "
+                f"{self._container_runtime} inspect --format {fmt} "
                 f"{handle.container_id} 2>/dev/null || echo 'error 1'"
             )
             parts = result.stdout.strip().split()
@@ -194,7 +203,9 @@ class SSHBackend:
         if handle.container_id:
             conn = await self._connect()
             try:
-                await conn.run(f"docker stop {handle.container_id} 2>/dev/null || true")
+                await conn.run(
+                    f"{self._container_runtime} stop {handle.container_id} 2>/dev/null || true"
+                )
                 logger.info(
                     "Stopped Docker container %s for job %s",
                     handle.container_id[:12],

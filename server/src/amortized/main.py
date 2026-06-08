@@ -91,6 +91,7 @@ def _load_backends() -> None:
                 key_path=spec.get("key_path"),
                 remote_base_dir=spec.get("remote_base_dir", "~/amortized-jobs"),
                 name=name,
+                container_runtime=spec.get("container_runtime", "docker"),
             )
             register_backend(backend)
             logger.info("Registered SSH backend %r (host=%s)", name, spec["host"])
