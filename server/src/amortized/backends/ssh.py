@@ -25,7 +25,7 @@ def _require_asyncssh() -> Any:
         return asyncssh
     except ImportError:
         raise ImportError(
-            "asyncssh is required for SSHBackend. Install with: pip install amortized[ssh]"
+            "asyncssh is required for SSHBackend. Install with: pip install asyncssh"
         ) from None
 
 

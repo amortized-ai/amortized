@@ -168,6 +168,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
+    { name = "asyncssh" },
     { name = "asynth" },
     { name = "fastapi" },
     { name = "fastapi-mcp" },
@@ -192,14 +193,11 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
-ssh = [
-    { name = "asyncssh" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
-    { name = "asyncssh", marker = "extra == 'ssh'", specifier = ">=2.14" },
+    { name = "asyncssh", specifier = ">=2.14" },
     { name = "asynth", specifier = ">=0.1.1" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastapi-mcp", specifier = ">=0.1" },
@@ -220,7 +218,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["ssh", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "annotated-doc"

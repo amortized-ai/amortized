@@ -23,15 +23,13 @@ dependencies = [
     "fastapi-mcp>=0.1",
     "litellm>=1.40.0",
     "asynth>=0.1.1",
+    "asyncssh>=2.14",
 ]
 
 [project.scripts]
 amortized = "amortized.cli.main:app"
 
 [project.optional-dependencies]
-ssh = [
-    "asyncssh>=2.14",
-]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
