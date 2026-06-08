@@ -2816,7 +2816,7 @@
             "type": "string",
             "title": "Container Runtime",
             "description": "Container runtime: docker or podman",
-            "default": "docker"
+            "default": "podman"
           }
         },
         "type": "object",
