@@ -3951,6 +3951,30 @@
             ],
             "title": "Strategy Params",
             "description": "Raw asynth GeneralSynthesisParams (advanced)"
+          },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compute backend spec"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "User-defined metadata"
           }
         },
         "type": "object",
@@ -4115,6 +4139,30 @@
             ],
             "title": "Model Max Length",
             "description": "Maximum model sequence length"
+          },
+          "compute": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Compute backend spec"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "User-defined metadata"
           }
         },
         "type": "object",
