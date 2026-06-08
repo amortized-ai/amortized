@@ -18,17 +18,6 @@ from amortized.backends import (
 logger = logging.getLogger("amortized.backends.ssh")
 
 
-def _require_asyncssh() -> Any:
-    try:
-        import asyncssh
-
-        return asyncssh
-    except ImportError:
-        raise ImportError(
-            "asyncssh is required for SSHBackend. Install with: pip install asyncssh"
-        ) from None
-
-
 class SSHBackend:
     def __init__(
         self,
@@ -48,7 +37,8 @@ class SSHBackend:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
 
     async def _connect(self) -> Any:
-        asyncssh = _require_asyncssh()
+        import asyncssh
+
         kwargs: dict[str, object] = {
             "host": self._host,
             "known_hosts": None,
