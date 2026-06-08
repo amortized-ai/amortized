@@ -14,7 +14,15 @@ class TestSimulationFallback:
 
     def _run_sdg_simulated(self, config: dict[str, Any]) -> None:
         """Run SDG with asynth import blocked so the fallback path is used."""
-        with patch.dict(sys.modules, {"asynth": None, "asynth.configs": None, "asynth.configs.params": None, "asynth.configs.params.synthesis_params": None}):
+        with patch.dict(
+            sys.modules,
+            {
+                "asynth": None,
+                "asynth.configs": None,
+                "asynth.configs.params": None,
+                "asynth.configs.params.synthesis_params": None,
+            },
+        ):
             from importlib import reload
 
             import amortized.runners.sdg_runner as mod

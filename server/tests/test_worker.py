@@ -130,7 +130,9 @@ class TestWorkerJobExecution:
                         f.write(_json.dumps({"q": f"q{i}", "a": f"a{i}"}) + "\n")
                 stats_path = _os.path.join(str(work_dir), "stats.json")
                 with open(stats_path, "w") as f:
-                    _json.dump({"total_completed": 5, "total_requested": 5, "status": "completed"}, f)
+                    _json.dump(
+                        {"total_completed": 5, "total_requested": 5, "status": "completed"}, f
+                    )
                 mock_proc = MagicMock()
                 mock_proc.pid = 99999
                 mock_proc.poll.return_value = 0
