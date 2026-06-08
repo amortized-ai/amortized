@@ -82,7 +82,7 @@ class SSHBackend:
         try:
             await conn.run(f"mkdir -p {remote_dir}", check=True)
 
-            raw_config = spec.env.get("_config", {})
+            raw_config: object = spec.env.get("_config", {})
             if isinstance(raw_config, str):
                 raw_config = json.loads(raw_config)
             config_data: dict[str, object] = {
