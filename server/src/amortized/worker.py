@@ -292,8 +292,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 await key_db.close()
             if env_var not in spec_env and os.environ.get(env_var):
                 spec_env[env_var] = os.environ[env_var]
-            if env_var not in spec_env and os.environ.get("AMORTIZED_LLM_API_KEY"):
-                spec_env[env_var] = os.environ["AMORTIZED_LLM_API_KEY"]
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
     if job["type"] == JobType.training.value:
