@@ -220,6 +220,8 @@ async def _sftp_download_recursive(sftp: Any, remote_path: str, local_path: str)
     Path(local_path).mkdir(parents=True, exist_ok=True)
     entries = await sftp.listdir(remote_path)
     for name in entries:
+        if name in (".", ".."):
+            continue
         remote_full = f"{remote_path}/{name}"
         local_full = os.path.join(local_path, name)
         if await sftp.isdir(remote_full):

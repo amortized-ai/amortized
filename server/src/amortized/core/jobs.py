@@ -59,7 +59,7 @@ async def create_job(
     output_dir: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    job_id = uuid.uuid4().hex[:8]
+    job_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
 
     row = await repo.create_job(

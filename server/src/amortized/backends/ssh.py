@@ -120,8 +120,7 @@ class SSHBackend:
                     f"{docker_env_flags} "
                     f"-e AMORTIZED_WORK_DIR=/amortized/work "
                     f"-e AMORTIZED_CONFIG_PATH=/amortized/config.json "
-                    f"{spec.image} "
-                    f"python -m runner"
+                    f"{spec.image}"
                 )
                 result = await conn.run(full_cmd, check=True)
                 container_id = result.stdout.strip()

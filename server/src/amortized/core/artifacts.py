@@ -64,16 +64,23 @@ async def register_artifacts_for_job(
             },
         )
 
-    for artifact_type, patterns in ARTIFACT_PATTERNS.items():
-        for pattern in patterns:
-            if "*" in pattern:
-                for file_path in output_path.glob(pattern):
+    scan_dirs = [output_path]
+    for subname in ("output", "artifacts"):
+        sub = output_path / subname
+        if sub.is_dir():
+            scan_dirs.append(sub)
+
+    for scan_dir in scan_dirs:
+        for artifact_type, patterns in ARTIFACT_PATTERNS.items():
+            for pattern in patterns:
+                if "*" in pattern:
+                    for file_path in scan_dir.glob(pattern):
+                        if file_path.is_file():
+                            await _register(artifact_type, file_path)
+                else:
+                    file_path = scan_dir / pattern
                     if file_path.is_file():
                         await _register(artifact_type, file_path)
-            else:
-                file_path = output_path / pattern
-                if file_path.is_file():
-                    await _register(artifact_type, file_path)
 
     # Scan checkpoint-N/ subdirectories
     for subdir in sorted(output_path.iterdir()):
