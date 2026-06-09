@@ -128,7 +128,7 @@ def _write_eval_results(output_dir: str, results: list[dict[str, Any]]) -> None:
     total = len(results)
     passed = sum(1 for r in results if r.get("passed", False))
     failed = total - passed
-    scores = [r.get("score") for r in results if r.get("score") is not None]
+    scores: list[float] = [float(r["score"]) for r in results if r.get("score") is not None]
     avg_score = sum(scores) / len(scores) if scores else 0.0
 
     output = {

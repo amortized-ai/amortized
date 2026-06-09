@@ -192,12 +192,15 @@ async def _register_log_artifacts(job_id: str, output_dir: str) -> None:
 async def _fetch_remote_outputs(handle: BackendHandle, output_dir: str) -> None:
     """Download job outputs from a remote node to the local output directory via SFTP."""
     backend = get_backend(handle.backend_name)
+    if not hasattr(backend, "_connect"):
+        return
     conn = await backend._connect()
     try:
         async with conn.start_sftp_client() as sftp:
-            remote_dir = handle.remote_dir
-            # Resolve ~ to absolute path on the remote node
-            if remote_dir and remote_dir.startswith("~"):
+            remote_dir = handle.remote_dir or ""
+            if not remote_dir:
+                return
+            if remote_dir.startswith("~"):
                 try:
                     result = await conn.run("echo $HOME", check=True)
                     home = result.stdout.strip()
