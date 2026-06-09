@@ -290,8 +290,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                     spec_env[env_var] = key_row["key_value"]
             finally:
                 await key_db.close()
-            if env_var not in spec_env and os.environ.get(env_var):
-                spec_env[env_var] = os.environ[env_var]
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
     if job["type"] == JobType.training.value:
