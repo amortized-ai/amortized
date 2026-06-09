@@ -393,8 +393,16 @@ def config() -> None:
         elif selection.lower() == "none":
             selected = []
         else:
-            indices = [int(x.strip()) - 1 for x in selection.split(",") if x.strip().isdigit()]
-            selected = [items[i][0] for i in indices if 0 <= i < len(items)]
+            selected = []
+            all_names = {name for name, _ in items}
+            for part in selection.split(","):
+                part = part.strip()
+                if part.isdigit():
+                    idx = int(part) - 1
+                    if 0 <= idx < len(items):
+                        selected.append(items[idx][0])
+                elif part in all_names:
+                    selected.append(part)
 
         if selected:
             existing["forward_env"] = selected
