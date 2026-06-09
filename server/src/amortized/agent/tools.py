@@ -405,6 +405,44 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "list_api_keys",
+            "description": (
+                "List configured LLM API keys. Shows provider names and "
+                "redacted preview (last 4 chars) — never the full key. "
+                "Check this before proposing SDG jobs to verify the needed "
+                "provider key is configured."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_api_key",
+            "description": (
+                "Store an LLM provider API key on the server. The key is "
+                "encrypted at rest and injected automatically into SDG and "
+                "eval jobs. Supports any LiteLLM provider."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "description": "Provider name (e.g. openai, anthropic, google)",
+                    },
+                    "key": {
+                        "type": "string",
+                        "description": "The API key value",
+                    },
+                },
+                "required": ["provider", "key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "propose_action",
             "description": (
                 "Propose an action for the user to confirm before executing. "
@@ -583,6 +621,22 @@ async def _call_api(
         templates_data: dict[str, Any] = {"templates": r.json()}
         return templates_data
 
+    if name == "list_api_keys":
+        r = await client.get("/api/v1/settings/api-keys")
+        r.raise_for_status()
+        return {"keys": r.json()}
+
+    if name == "add_api_key":
+        body = {
+            "name": args["provider"],
+            "provider": args["provider"],
+            "key": args["key"],
+        }
+        r = await client.post("/api/v1/settings/api-keys", json=body)
+        r.raise_for_status()
+        result_data: dict[str, Any] = r.json()
+        return result_data
+
     if name == "read_artifact_preview":
         job_id = args["job_id"]
         artifact_id = args.get("artifact_id")
@@ -664,6 +718,17 @@ def tool_result_summary(name: str, result: dict[str, Any]) -> str:
     if name == "list_judge_templates":
         templates = result.get("templates", [])
         return f"Found {len(templates)} judge template(s)"
+
+    if name == "list_api_keys":
+        keys = result.get("keys", [])
+        if not keys:
+            return "No API keys configured"
+        providers = [k.get("provider", "?") for k in keys]
+        return f"Keys configured for: {', '.join(providers)}"
+
+    if name == "add_api_key":
+        provider = result.get("provider", "unknown")
+        return f"API key stored for provider '{provider}'"
 
     if name == "read_artifact_preview":
         fmt = result.get("format", "unknown")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
@@ -100,20 +99,25 @@ async def _validate_sdg(config: dict[str, Any]) -> list[str]:
 
 async def _warn_sdg(config: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
-    if not config.get("api_key") and not os.environ.get("AMORTIZED_LLM_API_KEY"):
+    if not config.get("api_key"):
         model = config.get("model", "")
         provider = model.split("/")[0] if "/" in model else ""
-        provider_env_vars = {
-            "openai": "OPENAI_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "google": "GOOGLE_API_KEY",
-        }
-        env_var = provider_env_vars.get(provider)
-        if env_var and not os.environ.get(env_var):
-            warnings.append(
-                f"No API key found. Set api_key in config, "
-                f"AMORTIZED_LLM_API_KEY env var, or {env_var} for {provider} models."
-            )
+        if provider:
+            import aiosqlite
+
+            try:
+                async with aiosqlite.connect(str(_config_mod.settings.db_path)) as db:
+                    cursor = await db.execute(
+                        "SELECT id FROM api_keys WHERE provider = ? LIMIT 1", (provider,)
+                    )
+                    if await cursor.fetchone() is None:
+                        warnings.append(
+                            f"No API key configured for provider '{provider}'. "
+                            f"Add one via POST /api/v1/settings/api-keys "
+                            f"or the Studio settings page."
+                        )
+            except Exception:
+                pass
     return warnings
 
 

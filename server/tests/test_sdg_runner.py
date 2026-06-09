@@ -1,4 +1,4 @@
-"""Tests for the SDG runner — simulation fallback and config mapping."""
+"""Tests for the SDG runner — simulation fallback, config mapping, and output quality checks."""
 
 import json
 import os
@@ -6,7 +6,7 @@ import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from amortized.runners.sdg_runner import _deserialize_strategy_params, run_sdg
+from amortized.runners.sdg_runner import _check_output_quality, run_sdg
 
 
 class TestSimulationFallback:
@@ -153,205 +153,80 @@ class TestConfigMapping:
 
         mock_params_cls.from_dict.assert_called_once_with(strategy)
 
+    def test_no_api_key_passes_none(self, tmp_path: Any) -> None:
+        mock_synthesize = MagicMock(return_value=[])
+        mock_inference_cls = MagicMock()
+        mock_synth_config_cls = MagicMock()
+        mock_params_cls = MagicMock()
 
-class TestStrategyParamsDeserialization:
-    """Nested dicts in strategy_params are converted to proper dataclasses."""
-
-    @staticmethod
-    def _mock_asynth_modules() -> dict[str, Any]:
-        """Build mock asynth modules that use real dataclasses."""
-        import dataclasses
-
-        @dataclasses.dataclass
-        class SampledAttributeValue:
-            id: str
-            name: str
-            description: str
-            sample_rate: float | None = None
-
-        @dataclasses.dataclass
-        class SampledAttribute:
-            id: str
-            name: str
-            description: str
-            possible_values: list[SampledAttributeValue] = dataclasses.field(default_factory=list)
-
-        @dataclasses.dataclass
-        class TextMessage:
-            role: str
-            content: str
-
-        @dataclasses.dataclass
-        class GeneratedAttributePostprocessingParams:
-            id: str
-
-        @dataclasses.dataclass
-        class GeneratedAttribute:
-            id: str
-            instruction_messages: list[TextMessage] = dataclasses.field(default_factory=list)
-            postprocessing_params: GeneratedAttributePostprocessingParams | None = None
-
-        @dataclasses.dataclass
-        class MultiTurnAttribute:
-            id: str
-            min_turns: int = 1
-            max_turns: int = 5
-
-        @dataclasses.dataclass
-        class TextConversation:
-            messages: list[TextMessage] = dataclasses.field(default_factory=list)
-
-        @dataclasses.dataclass
-        class TransformationStrategy:
-            type: str
-            string_transform: str | None = None
-            chat_transform: TextConversation | None = None
-
-        @dataclasses.dataclass
-        class TransformedAttribute:
-            id: str
-            transformation_strategy: TransformationStrategy | None = None
-
-        @dataclasses.dataclass
-        class DatasetSource:
-            path: str
-            id: str | None = None
-
-        @dataclasses.dataclass
-        class DocumentSegmentationParams:
-            id: str
-
-        @dataclasses.dataclass
-        class DocumentSource:
-            path: str
-            id: str
-            segmentation_params: DocumentSegmentationParams | None = None
-
-        @dataclasses.dataclass
-        class ExampleSource:
-            examples: list[dict[str, Any]] = dataclasses.field(default_factory=list)
-
-        @dataclasses.dataclass
-        class AttributeCombination:
-            combination: dict[str, str] = dataclasses.field(default_factory=dict)
-            sample_rate: float = 0.5
-
-        @dataclasses.dataclass
-        class GeneralSynthesisParams:
-            sampled_attributes: list[SampledAttribute] | None = None
-            generated_attributes: list[GeneratedAttribute] | None = None
-            multiturn_attributes: list[MultiTurnAttribute] | None = None
-            transformed_attributes: list[TransformedAttribute] | None = None
-            input_data: list[DatasetSource] | None = None
-            input_documents: list[DocumentSource] | None = None
-            input_examples: list[ExampleSource] | None = None
-            combination_sampling: list[AttributeCombination] | None = None
-            passthrough_attributes: list[str] | None = None
+        mock_asynth = MagicMock()
+        mock_asynth.SynthesisConfig = mock_synth_config_cls
+        mock_asynth.LiteLLMInferenceConfig = mock_inference_cls
+        mock_asynth.synthesize = mock_synthesize
 
         mock_params_mod = MagicMock()
-        mock_params_mod.GeneralSynthesisParams = GeneralSynthesisParams
-        mock_params_mod.SampledAttribute = SampledAttribute
-        mock_params_mod.SampledAttributeValue = SampledAttributeValue
-        mock_params_mod.GeneratedAttribute = GeneratedAttribute
-        mock_params_mod.GeneratedAttributePostprocessingParams = (
-            GeneratedAttributePostprocessingParams
-        )
-        mock_params_mod.TextMessage = TextMessage
-        mock_params_mod.TextConversation = TextConversation
-        mock_params_mod.TransformationStrategy = TransformationStrategy
-        mock_params_mod.TransformedAttribute = TransformedAttribute
-        mock_params_mod.MultiTurnAttribute = MultiTurnAttribute
-        mock_params_mod.DatasetSource = DatasetSource
-        mock_params_mod.DocumentSource = DocumentSource
-        mock_params_mod.DocumentSegmentationParams = DocumentSegmentationParams
-        mock_params_mod.ExampleSource = ExampleSource
-        mock_params_mod.AttributeCombination = AttributeCombination
+        mock_params_mod.GeneralSynthesisParams = mock_params_cls
 
-        return {
-            "asynth": MagicMock(),
-            "asynth.configs": MagicMock(),
-            "asynth.configs.params": MagicMock(),
-            "asynth.configs.params.synthesis_params": mock_params_mod,
-            "_classes": {
-                "SampledAttribute": SampledAttribute,
-                "SampledAttributeValue": SampledAttributeValue,
-                "GeneratedAttribute": GeneratedAttribute,
-                "DatasetSource": DatasetSource,
-                "GeneralSynthesisParams": GeneralSynthesisParams,
+        output_dir = str(tmp_path / "output")
+        config = {
+            "output_dir": output_dir,
+            "model": "openai/gpt-4o",
+        }
+
+        with patch.dict(
+            sys.modules,
+            {
+                "asynth": mock_asynth,
+                "asynth.configs": MagicMock(),
+                "asynth.configs.params": MagicMock(),
+                "asynth.configs.params.synthesis_params": mock_params_mod,
             },
+        ):
+            run_sdg(config)
+
+        call_kwargs = mock_inference_cls.call_args[1]
+        assert call_kwargs["api_key"] is None
+
+
+class TestOutputQualityCheck:
+    """_check_output_quality warns on identical samples (template echo)."""
+
+    def test_warns_on_identical_samples(self, caplog: Any) -> None:
+        results = [{"answer": "same"} for _ in range(5)]
+        config = {
+            "strategy_params": {
+                "generated_attributes": [{"id": "answer"}],
+            }
         }
+        with caplog.at_level("WARNING"):
+            _check_output_quality(results, config)
+        assert "identical" in caplog.text
 
-    def test_sampled_attributes_with_nested_values(self) -> None:
-        mods = self._mock_asynth_modules()
-        classes = mods.pop("_classes")
-        raw = {
-            "sampled_attributes": [
-                {
-                    "id": "urgency",
-                    "name": "Urgency Level",
-                    "description": "How urgent the request is",
-                    "possible_values": [
-                        {"id": "high", "name": "High", "description": "Very urgent"},
-                        {"id": "low", "name": "Low", "description": "Not urgent"},
-                    ],
-                }
-            ]
+    def test_no_warning_on_diverse_samples(self, caplog: Any) -> None:
+        results = [{"answer": f"answer_{i}"} for i in range(5)]
+        config = {
+            "strategy_params": {
+                "generated_attributes": [{"id": "answer"}],
+            }
         }
-        with patch.dict(sys.modules, mods):
-            result = _deserialize_strategy_params(raw)
+        with caplog.at_level("WARNING"):
+            _check_output_quality(results, config)
+        assert "identical" not in caplog.text
 
-        assert isinstance(result, classes["GeneralSynthesisParams"])
-        assert len(result.sampled_attributes) == 1
-        attr = result.sampled_attributes[0]
-        assert isinstance(attr, classes["SampledAttribute"])
-        assert attr.id == "urgency"
-        assert len(attr.possible_values) == 2
-        assert isinstance(attr.possible_values[0], classes["SampledAttributeValue"])
-        assert attr.possible_values[0].id == "high"
+    def test_no_warning_without_strategy_params(self, caplog: Any) -> None:
+        results = [{"answer": "same"} for _ in range(5)]
+        config: dict[str, Any] = {}
+        with caplog.at_level("WARNING"):
+            _check_output_quality(results, config)
+        assert caplog.text == ""
 
-    def test_input_data_as_dicts(self) -> None:
-        mods = self._mock_asynth_modules()
-        classes = mods.pop("_classes")
-        raw = {
-            "input_data": [
-                {"path": "data.jsonl"},
-                {"path": "hf:org/dataset", "id": "ds1"},
-            ]
+    def test_no_warning_on_single_result(self, caplog: Any) -> None:
+        results = [{"answer": "same"}]
+        config = {
+            "strategy_params": {
+                "generated_attributes": [{"id": "answer"}],
+            }
         }
-        with patch.dict(sys.modules, mods):
-            result = _deserialize_strategy_params(raw)
-
-        assert len(result.input_data) == 2
-        assert isinstance(result.input_data[0], classes["DatasetSource"])
-        assert result.input_data[0].path == "data.jsonl"
-
-    def test_generated_attributes_with_nested_messages(self) -> None:
-        mods = self._mock_asynth_modules()
-        classes = mods.pop("_classes")
-        raw = {
-            "generated_attributes": [
-                {
-                    "id": "response",
-                    "instruction_messages": [
-                        {"role": "system", "content": "You are helpful."},
-                        {"role": "user", "content": "Answer: {question}"},
-                    ],
-                }
-            ]
-        }
-        with patch.dict(sys.modules, mods):
-            result = _deserialize_strategy_params(raw)
-
-        assert len(result.generated_attributes) == 1
-        ga = result.generated_attributes[0]
-        assert isinstance(ga, classes["GeneratedAttribute"])
-        assert len(ga.instruction_messages) == 2
-
-    def test_empty_strategy_params(self) -> None:
-        mods = self._mock_asynth_modules()
-        classes = mods.pop("_classes")
-        with patch.dict(sys.modules, mods):
-            result = _deserialize_strategy_params({})
-
-        assert isinstance(result, classes["GeneralSynthesisParams"])
-        assert result.sampled_attributes is None
+        with caplog.at_level("WARNING"):
+            _check_output_quality(results, config)
+        assert "identical" not in caplog.text

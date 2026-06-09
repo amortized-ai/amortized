@@ -5,6 +5,7 @@ import contextlib
 import hmac
 import logging
 import shutil
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -36,7 +37,7 @@ from amortized.api import (
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import register_backend
-from amortized.db import get_db, init_db
+from amortized.db import Repository, get_db, init_db
 from amortized.mcp.server import create_mcp_server
 from amortized.models import HealthResponse
 from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
@@ -97,6 +98,49 @@ def _load_backends() -> None:
             logger.info("Registered SSH backend %r (host=%s)", name, spec["host"])
 
 
+async def _seed_api_keys() -> None:
+    """Seed API keys from config.yaml into the database (if not already present)."""
+    config_path = Path.home() / ".amortized" / "config.yaml"
+    if not config_path.exists():
+        return
+
+    try:
+        import yaml
+    except ImportError:
+        return
+
+    try:
+        config = yaml.safe_load(config_path.read_text())
+    except Exception:
+        logger.exception("Failed to read config.yaml for API key seeding")
+        return
+
+    if not isinstance(config, dict):
+        return
+
+    api_keys_config = config.get("api_keys", [])
+    if not api_keys_config:
+        return
+
+    async for db in get_db():
+        repo = Repository(db)
+        for entry in api_keys_config:
+            provider = entry.get("provider", "")
+            key = entry.get("key", "")
+            if provider and key:
+                existing_key = await repo.get_api_key_for_provider(provider)
+                if existing_key is None:
+                    await repo.create_api_key(
+                        key_id=str(uuid.uuid4()),
+                        name=provider,
+                        provider=provider,
+                        key_value=key,
+                        created_at=datetime.now(UTC).isoformat(),
+                    )
+                    logger.info("Seeded API key for provider '%s' from config.yaml", provider)
+        break
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Initialize database and start background worker on startup."""
@@ -105,6 +149,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await evaluators.seed_default_evaluators(db)
     await cleanup_orphaned_jobs()
     _load_backends()
+    await _seed_api_keys()
     logger.info("Amortized runtime started")
 
     # Start background worker and heartbeat monitor

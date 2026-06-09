@@ -370,6 +370,31 @@ def config() -> None:
             console.print(f"Control plane reachable at: [cyan]http://{local_ip}:8000[/cyan]")
             existing["external_url"] = f"http://{local_ip}:8000"
 
+    console.print("\n[bold]LLM API Keys[/bold]")
+    console.print("Keys are needed for synthetic data generation (SDG jobs).")
+    add_keys = typer.confirm("Configure an API key now?", default=False)
+
+    while add_keys:
+        provider = typer.prompt("Provider (openai/anthropic/google)", default="openai")
+        env_var = f"{provider.upper()}_API_KEY"
+        local_key = os.environ.get(env_var)
+        if local_key:
+            console.print(f"Detected local {env_var}")
+            use_local = typer.confirm("Use this key?", default=True)
+            key = local_key if use_local else typer.prompt("API key", hide_input=True)
+        else:
+            key = typer.prompt("API key", hide_input=True)
+
+        existing.setdefault("api_keys", []).append(
+            {
+                "provider": provider,
+                "key": key,
+            }
+        )
+        console.print(f"[green]✓ API key configured for '{provider}'[/green]")
+
+        add_keys = typer.confirm("Add another provider?", default=False)
+
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.dump(existing, default_flow_style=False))
 
@@ -389,8 +414,6 @@ def config() -> None:
             table.add_row(name, bcfg["type"], host_or_ctx, gpu_info)
         console.print(table)
 
-    console.print("\n[bold]Tip:[/bold] Set LLM API keys via env vars:")
-    console.print("  export OPENAI_API_KEY=sk-...")
     console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
@@ -441,6 +464,34 @@ def submit(
                     cfg[k] = json.loads(v)
                 except json.JSONDecodeError:
                     cfg[k] = v
+
+            if job_type == "sdg" and confirm and not cfg.get("api_key"):
+                model = cfg.get("model", "")
+                provider = model.split("/")[0] if "/" in model else ""
+                if provider:
+                    env_var = f"{provider.upper()}_API_KEY"
+                    local_key = os.environ.get(env_var)
+                    if local_key:
+                        try:
+                            keys_resp = client.get("/api/v1/settings/api-keys")
+                            existing_keys = keys_resp.json() if keys_resp.status_code == 200 else []
+                            has_provider = any(k.get("provider") == provider for k in existing_keys)
+                            if not has_provider and typer.confirm(
+                                f"Detected local {env_var}. Store on server?",
+                                default=True,
+                            ):
+                                client.post(
+                                    "/api/v1/settings/api-keys",
+                                    json={
+                                        "name": provider,
+                                        "provider": provider,
+                                        "key": local_key,
+                                    },
+                                )
+                                console.print(f"[green]✓ API key stored for '{provider}'[/green]")
+                        except Exception:
+                            pass
+
             body = {"type": job_type, "config": cfg, "dry_run": not confirm}
             resp = client.post("/api/v1/jobs", json=body)
 

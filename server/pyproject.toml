@@ -22,7 +22,7 @@ dependencies = [
     "typer>=0.9",
     "fastapi-mcp>=0.1",
     "litellm>=1.40.0",
-    "asynth>=0.1.1",
+    "asynth>=0.1.2",
     "asyncssh>=2.14",
 ]
 
@@ -51,7 +51,6 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/amortized/api/*.py" = ["B008"]
-"src/amortized/runners/sdg_runner.py" = ["I001"]
 
 [tool.mypy]
 strict = true

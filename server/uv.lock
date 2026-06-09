@@ -198,7 +198,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "asyncssh", specifier = ">=2.14" },
-    { name = "asynth", specifier = ">=0.1.1" },
+    { name = "asynth", specifier = ">=0.1.2" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastapi-mcp", specifier = ">=0.1" },
     { name = "httpx", specifier = ">=0.27.0" },
@@ -306,7 +306,7 @@ wheels = [
 
 [[package]]
 name = "asynth"
-version = "0.1.1"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
@@ -318,9 +318,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tiktoken" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/93/f9/e241fabcf75b158c96ac86bfb416ea865e136ed57b5977c2007080c8e332/asynth-0.1.1.tar.gz", hash = "sha256:0ebc71a7eeb91037f0addecd86cd9d034cf71b7a9423a855d4c2559746de73d5", size = 312598, upload-time = "2026-06-08T00:50:50.303Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cf/c2/8441279fc94d8f76bd4bc4a5b5407f77ccc3cfdcb9ef0039eb4b3aa63bbb/asynth-0.1.2.tar.gz", hash = "sha256:685ef2e000bbefe5bbdec1796f12886100471ef7450c3d6c32f9d3a949d39712", size = 315176, upload-time = "2026-06-09T02:01:06.917Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/5d/c98086de4153c76aac6c7d06a16c7568a507fc8d55ec1e1954a7e61b1e6b/asynth-0.1.1-py3-none-any.whl", hash = "sha256:974c77941620cde9d96ee1629d13decafd8920e4c3258fd4157e7b5dd829b2b3", size = 118617, upload-time = "2026-06-08T00:50:48.726Z" },
+    { url = "https://files.pythonhosted.org/packages/96/16/158410118e20efa8a5cfbab28b54e7054319cc0b682268a866064486b004/asynth-0.1.2-py3-none-any.whl", hash = "sha256:1123d64194c71d88fc1e5db78a5024b2896295d9088fe55b639fab8b4798ce47", size = 119758, upload-time = "2026-06-09T02:01:05.512Z" },
 ]
 
 [[package]]
