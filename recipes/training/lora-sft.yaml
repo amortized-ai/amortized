@@ -3,9 +3,10 @@ description: LoRA SFT — parameter-efficient fine-tuning for most models
 config:
   algorithm: lora_sft
   num_epochs: 3
-  learning_rate: 2e-4
+  learning_rate: 0.0002
   lora_r: 16
   lora_alpha: 32
   micro_batch_size: 2
   max_seq_len: 2048
   bf16: true
+  sample_packing: true

@@ -1,10 +1,4 @@
 FROM docker.io/python:3.11-slim
-
-COPY containers/shared/ /app/shared/
-COPY containers/inference/runner.py /app/
-
-WORKDIR /app
+LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
 RUN pip install --no-cache-dir vllm
-
-CMD ["python", "runner.py"]

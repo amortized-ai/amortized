@@ -83,7 +83,7 @@ config:
           cut_suffix: "End of ticket."
           strip_whitespace: true
     transformed_attributes:
-      - id: conversation
+      - id: messages
         transformation_strategy:
           type: chat
           chat_transform:
@@ -104,4 +104,4 @@ config:
       - urgency
       - topic
       - ticket_clean
-      - conversation
+      - messages

@@ -86,7 +86,9 @@ class SSHBackend:
                 amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
                 amortized_env["RANK"] = "0"
                 amortized_env["LOCAL_RANK"] = "0"
-            filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
+            filtered_spec_env = {
+                k: v for k, v in spec.env.items() if k not in ("_config", "_run_script")
+            }
             merged_env = {**amortized_env, **filtered_spec_env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)
 
@@ -102,6 +104,14 @@ class SSHBackend:
                 f"cat > {config_path} << 'AMORTIZED_EOF'\n{config_json}\nAMORTIZED_EOF",
                 check=True,
             )
+
+            run_script = spec.env.get("_run_script")
+            if run_script:
+                await conn.run(
+                    f"cat > {remote_dir}/run.py << 'AMORTIZED_SCRIPT_EOF'\n"
+                    f"{run_script}\nAMORTIZED_SCRIPT_EOF",
+                    check=True,
+                )
 
             if spec.image:
                 docker_overrides = {"AMORTIZED_WORK_DIR", "AMORTIZED_CONFIG_PATH"}
@@ -131,6 +141,9 @@ class SSHBackend:
                     home_dir = home_result.stdout.strip()
                 except Exception:
                     pass
+                cmd_override = ""
+                if spec.command:
+                    cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
                     f"-v {remote_dir}:/amortized/work "
@@ -140,7 +153,7 @@ class SSHBackend:
                     f"{secret_flags} "
                     f"-e AMORTIZED_WORK_DIR=/amortized/work "
                     f"-e AMORTIZED_CONFIG_PATH=/amortized/config.json "
-                    f"{spec.image}"
+                    f"{spec.image}{cmd_override}"
                 )
                 result = await conn.run(full_cmd, check=True)
                 container_id = result.stdout.strip()

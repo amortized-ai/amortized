@@ -3,7 +3,7 @@ description: OSFT — preserves base capabilities while adapting
 config:
   algorithm: osft
   unfreeze_rank_ratio: 0.25
-  learning_rate: 5e-6
+  learning_rate: 0.000005
   max_seq_len: 8192
   effective_batch_size: 128
   lr_scheduler: cosine

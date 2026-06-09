@@ -4,5 +4,5 @@ config:
   model_path: Qwen/Qwen2.5-1.5B-Instruct
   lora_r: 32
   lora_alpha: 64
-  learning_rate: 1e-4
+  learning_rate: 0.0001
   micro_batch_size: 1

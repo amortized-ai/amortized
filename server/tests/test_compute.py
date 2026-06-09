@@ -355,6 +355,7 @@ class TestSSHBackend:
         assert "podman run -d --gpus all" in run_cmd
         assert "ghcr.io/amortized-ai/training:latest" in run_cmd
         assert "-e AMORTIZED_JOB_ID=docker-job-1" in run_cmd
+        assert "python train.py" in run_cmd
 
     @pytest.mark.asyncio
     async def test_status_running_mock(self) -> None:

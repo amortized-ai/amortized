@@ -73,6 +73,228 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     return [sys.executable, "-m", module, json.dumps(config)]
 
 
+_ALGORITHM_IMPORTS: dict[str, tuple[str, str]] = {
+    "lora_sft": ("training_hub", "lora_sft"),
+    "full_sft": ("training_hub", "sft"),
+    "sft": ("training_hub", "sft"),
+    "grpo": ("training_hub", "lora_grpo"),
+    "lora_grpo": ("training_hub", "lora_grpo"),
+    "osft": ("training_hub", "osft"),
+    "gepa": ("training_hub", "gepa"),
+}
+
+
+def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
+    """Generate a self-contained Python script for container execution.
+
+    The script reads config from /amortized/config.json (already mounted)
+    and calls the library function directly. No custom framework needed —
+    the container only needs the library installed.
+    """
+    if job_type == JobType.training.value:
+        return _training_script(config)
+    if job_type == JobType.sdg.value:
+        return _sdg_script()
+    if job_type == JobType.eval.value:
+        return _eval_script()
+    if job_type == JobType.inference.value:
+        return _inference_script()
+    raise ValueError(f"No container script for job type: {job_type}")
+
+
+def _training_script(config: dict[str, Any]) -> str:
+    algorithm = config.get("algorithm", "lora_sft")
+    entry = _ALGORITHM_IMPORTS.get(algorithm)
+    if not entry:
+        raise ValueError(f"Unknown training algorithm: {algorithm}")
+    module, func = entry
+    return f"""\
+import json
+
+config = json.load(open("/amortized/config.json"))["config"]
+from {module} import {func}
+
+skip = {{"algorithm", "ckpt_output_dir", "output_dir"}}
+kwargs = {{k: v for k, v in config.items() if k not in skip and v is not None}}
+kwargs["ckpt_output_dir"] = "/amortized/work"
+{func}(**kwargs)
+"""
+
+
+def _sdg_script() -> str:
+    return """\
+import json, os
+
+config = json.load(open("/amortized/config.json"))["config"]
+
+from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
+from asynth.configs.params.synthesis_params import GeneralSynthesisParams
+
+os.makedirs("/amortized/work/output", exist_ok=True)
+
+inference_config = LiteLLMInferenceConfig(
+    model=config["model"],
+    temperature=config.get("temperature", 0.7),
+    max_concurrency=config.get("max_concurrency", 16),
+    max_tokens=config.get("max_tokens"),
+    top_p=config.get("top_p"),
+    seed=config.get("seed"),
+    num_retries=config.get("num_retries", 3),
+    api_base=config.get("api_base"),
+    api_key=config.get("api_key"),
+)
+
+raw_strategy = config.get("strategy_params", {})
+if raw_strategy and isinstance(raw_strategy, dict):
+    merged = dict(raw_strategy)
+    if config.get("input_data") and "input_data" not in merged:
+        merged["input_data"] = config["input_data"]
+    if config.get("input_documents") and "input_documents" not in merged:
+        merged["input_documents"] = config["input_documents"]
+    if hasattr(GeneralSynthesisParams, "from_dict"):
+        strategy_params = GeneralSynthesisParams.from_dict(merged)
+    else:
+        strategy_params = GeneralSynthesisParams(**merged)
+else:
+    strategy_params = GeneralSynthesisParams()
+
+synth_config = SynthesisConfig(
+    num_samples=config.get("num_samples", 100),
+    output_path="/amortized/work/output/generated_data.jsonl",
+    inference_config=inference_config,
+    strategy_params=strategy_params,
+)
+
+synthesize(synth_config)
+"""
+
+
+def _eval_script() -> str:
+    return """\
+import json, os
+
+config = json.load(open("/amortized/config.json"))["config"]
+
+from asynth import JudgeConfig, LiteLLMInferenceConfig, create_judge
+
+dataset_path = config.get("dataset_path") or config.get("dataset")
+if not dataset_path:
+    raise ValueError("dataset or dataset_path is required for eval jobs")
+
+data = [json.loads(line) for line in open(dataset_path) if line.strip()]
+
+evaluator_type = config.get("evaluator_type", "llm")
+judgment_type = config.get("judgment_type", "bool")
+response_format = config.get("response_format", "json")
+
+if evaluator_type == "rule_based":
+    judge_config = JudgeConfig.from_dict({
+        "rule_judge_params": {
+            "rule_type": config.get("rule_config", {}).get("rule_type", "regex"),
+            "input_fields": config.get("variables", []),
+            "rule_config": config.get("rule_config", {}),
+            "response_format": response_format,
+            "judgment_type": judgment_type,
+        },
+    })
+else:
+    judge_params = {
+        "prompt_template": config.get("judge_prompt", "Evaluate the following: {response}"),
+        "response_format": response_format,
+        "judgment_type": judgment_type,
+    }
+    if config.get("variables"):
+        judge_params["prompt_template_placeholders"] = config["variables"]
+    judge_config = JudgeConfig.from_dict({"judge_params": judge_params})
+
+inference_config = None
+if evaluator_type == "llm":
+    model = config.get("judge_model") or config.get("model", "openai/gpt-4o-mini")
+    inf_params = config.get("inference_params", {})
+    inference_config = LiteLLMInferenceConfig(
+        model=model,
+        temperature=inf_params.get("temperature", 1.0),
+        max_tokens=inf_params.get("max_tokens"),
+        top_p=inf_params.get("top_p"),
+        seed=inf_params.get("seed"),
+        api_base=inf_params.get("api_base"),
+        api_key=inf_params.get("api_key"),
+    )
+
+judge = create_judge(judge_config, inference_config=inference_config)
+outputs = judge.judge(data)
+
+os.makedirs("/amortized/work", exist_ok=True)
+results = []
+for i, output in enumerate(outputs):
+    results.append({
+        "index": i,
+        "passed": output.passed,
+        "score": output.score,
+        "explanation": output.explanation,
+        "raw_output": output.raw_output,
+    })
+
+total = len(results)
+passed = sum(1 for r in results if r.get("passed", False))
+scores = [float(r["score"]) for r in results if r.get("score") is not None]
+avg_score = sum(scores) / len(scores) if scores else 0.0
+
+output = {
+    "results": results,
+    "summary": {
+        "total": total,
+        "passed": passed,
+        "failed": total - passed,
+        "pass_rate": round(passed / total, 4) if total else 0.0,
+        "average_score": round(avg_score, 4),
+    },
+}
+
+with open("/amortized/work/eval_results.json", "w") as f:
+    json.dump(output, f, indent=2)
+"""
+
+
+def _inference_script() -> str:
+    return """\
+import json, os
+
+config = json.load(open("/amortized/config.json"))["config"]
+
+from vllm import LLM, SamplingParams
+
+model_path = config["model_path"]
+tp = config.get("tensor_parallel_size", 1)
+llm = LLM(model=model_path, tensor_parallel_size=tp, trust_remote_code=True)
+
+sampling = SamplingParams(
+    temperature=config.get("temperature", 0.7),
+    max_tokens=config.get("max_tokens", 512),
+    top_p=config.get("top_p", 1.0),
+)
+
+prompts = config.get("prompts", [])
+input_path = config.get("input_path")
+if input_path and not prompts:
+    with open(input_path) as f:
+        for line in f:
+            row = json.loads(line)
+            prompts.append(row.get("prompt", row.get("input", "")))
+
+outputs = llm.generate(prompts, sampling)
+
+os.makedirs("/amortized/work", exist_ok=True)
+with open("/amortized/work/results.jsonl", "w") as f:
+    for output in outputs:
+        f.write(json.dumps({
+            "prompt": output.prompt,
+            "output": output.outputs[0].text,
+            "finish_reason": output.outputs[0].finish_reason,
+        }) + "\\n")
+"""
+
+
 def _serialize_handle(handle: BackendHandle) -> str:
     return json.dumps(
         {
@@ -229,6 +451,51 @@ async def _sftp_download_recursive(sftp: Any, remote_path: str, local_path: str)
     logger.info("Fetched %d entries from %s", len(entries), remote_path)
 
 
+async def _resolve_artifact_refs(config: dict[str, Any]) -> dict[str, Any]:
+    """Resolve ``artifact:<id>`` references to file paths."""
+    updated = dict(config)
+    for key, value in config.items():
+        if not isinstance(value, str) or not value.startswith("artifact:"):
+            continue
+        artifact_id = value[len("artifact:") :]
+        db = await _get_db()
+        try:
+            cursor = await db.execute(
+                "SELECT a.path, j.backend_handle, j.output_dir "
+                "FROM artifacts a LEFT JOIN jobs j ON a.job_id = j.id "
+                "WHERE a.id = ?",
+                (artifact_id,),
+            )
+            row = await cursor.fetchone()
+        finally:
+            await db.close()
+        if not row:
+            logger.warning("Artifact %s not found", artifact_id)
+            continue
+        local_path, handle_json, local_output_dir = row
+        # For remote backends, resolve to the remote path
+        if handle_json and local_output_dir and local_path.startswith(local_output_dir):
+            handle_data = json.loads(handle_json)
+            remote_dir = handle_data.get("remote_dir", "")
+            if remote_dir:
+                rel = local_path[len(local_output_dir) :].lstrip("/")
+                if remote_dir.startswith("~"):
+                    backend = get_backend(handle_data.get("backend_name", ""))
+                    if hasattr(backend, "_connect"):
+                        conn = await backend._connect()
+                        try:
+                            result = await conn.run("echo $HOME", check=True)
+                            remote_dir = remote_dir.replace("~", result.stdout.strip(), 1)
+                        finally:
+                            conn.close()
+                updated[key] = f"{remote_dir}/{rel}"
+                logger.info("Resolved %s -> %s (remote)", key, updated[key])
+                continue
+        updated[key] = local_path
+        logger.info("Resolved %s -> %s (local)", key, local_path)
+    return updated
+
+
 async def _run_job(job: dict[str, Any]) -> None:
     """Dispatch a job via ComputeBackend and poll until completion."""
     job_id = job["id"]
@@ -273,6 +540,8 @@ async def _run_job(job: dict[str, Any]) -> None:
     for key in path_keys:
         if key in config and isinstance(config[key], str):
             config = {**config, key: os.path.expanduser(config[key])}
+
+    config = await _resolve_artifact_refs(config)
 
     cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
 
@@ -320,6 +589,12 @@ async def _run_job(job: dict[str, Any]) -> None:
     image = _JOB_TYPE_IMAGES.get(job["type"])
 
     spec_env["_config"] = json.dumps(config)
+
+    if image:
+        script = _generate_container_script(job["type"], config)
+        spec_env["_run_script"] = script
+        python_bin = "python3.11" if job["type"] == JobType.training.value else "python3"
+        cmd = [python_bin, "/amortized/work/run.py"]
 
     spec = JobSpec(
         job_id=job_id,
