@@ -70,6 +70,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Pin kernels version in runtime (constraint may not survive multi-stage COPY)
+RUN python3.11 -m pip install --no-cache-dir "kernels==0.11.7"
+
 COPY containers/shared/ /app/shared/
 
 WORKDIR /app
