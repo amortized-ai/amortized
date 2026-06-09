@@ -7,6 +7,7 @@ import os
 import sys
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
@@ -194,6 +195,32 @@ async def _register_log_artifacts(job_id: str, output_dir: str) -> None:
         await db.close()
 
 
+async def _fetch_remote_outputs(handle: BackendHandle, output_dir: str) -> None:
+    """Download job outputs from a remote node to the local output directory via SFTP."""
+    backend = get_backend(handle.backend_name)
+    conn = await backend._connect()
+    try:
+        async with conn.start_sftp_client() as sftp:
+            await _sftp_download_recursive(sftp, handle.remote_dir, output_dir)
+    finally:
+        conn.close()
+
+
+async def _sftp_download_recursive(sftp: Any, remote_path: str, local_path: str) -> None:
+    """Recursively download all files from a remote directory via SFTP."""
+    Path(local_path).mkdir(parents=True, exist_ok=True)
+    entries = await sftp.listdir(remote_path)
+    for name in entries:
+        remote_full = f"{remote_path}/{name}"
+        local_full = os.path.join(local_path, name)
+        if await sftp.isdir(remote_full):
+            await _sftp_download_recursive(sftp, remote_full, local_full)
+        else:
+            await sftp.get(remote_full, local_full)
+            logger.debug("Fetched %s -> %s", remote_full, local_full)
+    logger.info("Fetched %d entries from %s", len(entries), remote_path)
+
+
 async def _run_job(job: dict[str, Any]) -> None:
     """Dispatch a job via ComputeBackend and poll until completion."""
     job_id = job["id"]
@@ -328,6 +355,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             await asyncio.sleep(poll_interval)
 
         completed_at = datetime.now(UTC).isoformat()
+
+        if handle.remote_dir and handle.backend_name != "local":
+            try:
+                await _fetch_remote_outputs(handle, output_dir)
+            except Exception:
+                logger.warning("Failed to fetch remote outputs for job %s", job_id)
+
         await _register_log_artifacts(job_id, output_dir)
 
         if status.exit_code == 0:

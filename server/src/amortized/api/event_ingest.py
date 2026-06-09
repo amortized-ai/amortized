@@ -1,6 +1,8 @@
 """Event ingest endpoint — containers POST events back to the control plane."""
 
 import logging
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
@@ -37,4 +39,23 @@ async def ingest_event(
 
     event = await emit_event(repo, req.job_id, req.type, req.data)
     logger.debug("Ingested %s event for job %s", req.type, req.job_id)
+
+    if req.type == "artifact" and isinstance(req.data, dict):
+        name = req.data.get("name", "")
+        path = req.data.get("path", "")
+        if name:
+            existing = await repo.list_artifacts(req.job_id)
+            already_registered = any(a.get("name") == name for a in existing)
+            if not already_registered:
+                await repo.create_artifact(
+                    artifact_id=str(uuid.uuid4()),
+                    job_id=req.job_id,
+                    artifact_type="generated_data",
+                    path=path,
+                    size=0,
+                    created_at=datetime.now(UTC).isoformat(),
+                    name=name,
+                    location=path,
+                )
+
     return {"id": event.id, "job_id": req.job_id, "type": req.type, "timestamp": event.timestamp}
