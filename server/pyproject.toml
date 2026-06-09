@@ -21,7 +21,7 @@ dependencies = [
     "pyyaml>=6.0",
     "typer>=0.9",
     "fastapi-mcp>=0.1",
-    "litellm>=1.40.0",
+    "litellm>=1.83.7",
     "asynth>=0.1.2",
     "asyncssh>=2.14",
 ]
