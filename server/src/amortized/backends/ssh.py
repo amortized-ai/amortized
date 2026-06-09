@@ -113,10 +113,17 @@ class SSHBackend:
                 docker_env_flags += "".join(
                     f" -e {k}={shlex.quote(v)}" for k, v in filtered_spec_env.items()
                 )
+                home_dir = "~"
+                try:
+                    home_result = await conn.run("echo $HOME", check=True)
+                    home_dir = home_result.stdout.strip()
+                except Exception:
+                    pass
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "
+                    f"-v {home_dir}:{home_dir}:ro "
                     f"{docker_env_flags} "
                     f"-e AMORTIZED_WORK_DIR=/amortized/work "
                     f"-e AMORTIZED_CONFIG_PATH=/amortized/config.json "

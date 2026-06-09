@@ -36,6 +36,7 @@ WORKDIR /build
 
 RUN python3.11 -m pip install --no-cache-dir "training-hub[lora]"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
+RUN python3.11 -m pip install --no-cache-dir "kernels==0.11.7"
 
 # =============================================================================
 # Stage 2: Runtime — slim image with only runtime dependencies
@@ -50,10 +51,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common \
         gnupg2 \
         curl \
+        gcc \
+        g++ \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
         python3.11 \
         python3.11-venv \
+        python3.11-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
