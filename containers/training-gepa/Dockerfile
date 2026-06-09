@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
+RUN python3.11 -m pip install --no-cache-dir "torch<2.11"
 RUN python3.11 -m pip install --no-cache-dir "training-hub[gepa]"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
 RUN python3.11 -m pip install --no-cache-dir "kernels==0.11.7"
