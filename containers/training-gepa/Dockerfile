@@ -37,7 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-RUN echo "torch<2.11" > /tmp/constraints.txt
+RUN echo "torch<2.11
+kernels==0.11.7" > /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 RUN python3.11 -m pip install --no-cache-dir "training-hub[gepa]"
