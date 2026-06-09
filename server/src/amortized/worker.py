@@ -201,7 +201,16 @@ async def _fetch_remote_outputs(handle: BackendHandle, output_dir: str) -> None:
     conn = await backend._connect()
     try:
         async with conn.start_sftp_client() as sftp:
-            await _sftp_download_recursive(sftp, handle.remote_dir, output_dir)
+            remote_dir = handle.remote_dir
+            # Resolve ~ to absolute path on the remote node
+            if remote_dir and remote_dir.startswith("~"):
+                try:
+                    result = await conn.run("echo $HOME", check=True)
+                    home = result.stdout.strip()
+                    remote_dir = remote_dir.replace("~", home, 1)
+                except Exception:
+                    pass
+            await _sftp_download_recursive(sftp, remote_dir, output_dir)
     finally:
         conn.close()
 
@@ -360,7 +369,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             try:
                 await _fetch_remote_outputs(handle, output_dir)
             except Exception:
-                logger.warning("Failed to fetch remote outputs for job %s", job_id)
+                logger.warning("Failed to fetch remote outputs for job %s", job_id, exc_info=True)
 
         await _register_log_artifacts(job_id, output_dir)
 
