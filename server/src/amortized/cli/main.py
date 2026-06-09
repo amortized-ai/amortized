@@ -417,6 +417,33 @@ def config() -> None:
     console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
+def _auto_forward_api_keys(client: httpx.Client) -> None:
+    """Auto-forward local provider API keys to the server if not already stored."""
+    provider_env_vars = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "google": "GOOGLE_API_KEY",
+    }
+    try:
+        keys_resp = client.get("/api/v1/settings/api-keys")
+        existing = keys_resp.json() if keys_resp.status_code == 200 else []
+        stored_providers = {k.get("provider") for k in existing}
+    except Exception:
+        return
+
+    for provider, env_var in provider_env_vars.items():
+        local_key = os.environ.get(env_var)
+        if local_key and provider not in stored_providers:
+            try:
+                client.post(
+                    "/api/v1/settings/api-keys",
+                    json={"name": provider, "provider": provider, "key": local_key},
+                )
+                console.print(f"[green]✓ Stored {env_var} on server[/green]")
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # amortized submit
 # ---------------------------------------------------------------------------
@@ -434,6 +461,10 @@ def submit(
 ) -> None:
     """Submit a job by type or recipe."""
     with _client() as client:
+        # Auto-forward local API keys to server for SDG/eval jobs
+        if confirm and job_type in ("sdg", "eval"):
+            _auto_forward_api_keys(client)
+
         if recipe:
             overrides: dict[str, Any] = {}
             for kv in set_values or []:
@@ -464,30 +495,6 @@ def submit(
                     cfg[k] = json.loads(v)
                 except json.JSONDecodeError:
                     cfg[k] = v
-
-            if job_type == "sdg" and confirm and not cfg.get("api_key"):
-                model = cfg.get("model", "")
-                provider = model.split("/")[0] if "/" in model else ""
-                if provider:
-                    env_var = f"{provider.upper()}_API_KEY"
-                    local_key = os.environ.get(env_var)
-                    if local_key:
-                        try:
-                            keys_resp = client.get("/api/v1/settings/api-keys")
-                            existing_keys = keys_resp.json() if keys_resp.status_code == 200 else []
-                            has_provider = any(k.get("provider") == provider for k in existing_keys)
-                            if not has_provider:
-                                client.post(
-                                    "/api/v1/settings/api-keys",
-                                    json={
-                                        "name": provider,
-                                        "provider": provider,
-                                        "key": local_key,
-                                    },
-                                )
-                                console.print(f"[green]✓ Stored {env_var} on server[/green]")
-                        except Exception:
-                            pass
 
             body = {"type": job_type, "config": cfg, "dry_run": not confirm}
             resp = client.post("/api/v1/jobs", json=body)
