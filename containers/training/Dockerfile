@@ -1,6 +1,6 @@
 # Training container — universal (all algorithms, CUDA-enabled)
 # Supports: lora_sft, sft, osft, grpo, lora_grpo, gepa
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
+FROM docker.io/nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -28,7 +28,7 @@ ENV PIP_CONSTRAINT=/tmp/constraints.txt
 RUN python3.11 -m pip install --no-cache-dir "training-hub[grpo,lora,gepa]"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda]"
 
-FROM nvidia/cuda:12.6.0-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
 ENV DEBIAN_FRONTEND=noninteractive
