@@ -25,8 +25,8 @@ WORKDIR /build
 # instructlab-training — enforce with PIP_CONSTRAINT.
 RUN echo 'transformers<5.0' > /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
-RUN python3.11 -m pip install --no-cache-dir "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
-RUN python3.11 -m pip install --no-cache-dir --no-build-isolation "training-hub[cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
+RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
+RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 
 FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
