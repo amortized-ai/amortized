@@ -82,6 +82,7 @@ def _serialize_handle(handle: BackendHandle) -> str:
             "remote_dir": handle.remote_dir,
             "container_id": handle.container_id,
             "scheduler_id": handle.scheduler_id,
+            "secret_names": handle.secret_names,
         }
     )
 
@@ -90,6 +91,8 @@ def _deserialize_handle(raw: str | None) -> BackendHandle | None:
     if not raw:
         return None
     d = json.loads(raw)
+    raw_secrets = d.get("secret_names")
+    secret_names = [tuple(s) for s in raw_secrets] if raw_secrets else None
     return BackendHandle(
         backend_name=d["backend_name"],
         job_id=d["job_id"],
@@ -97,6 +100,7 @@ def _deserialize_handle(raw: str | None) -> BackendHandle | None:
         remote_dir=d.get("remote_dir"),
         container_id=d.get("container_id"),
         scheduler_id=d.get("scheduler_id"),
+        secret_names=secret_names,
     )
 
 
@@ -305,19 +309,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             return
 
     spec_env: dict[str, str] = {}
-    if job["type"] in (JobType.sdg.value, JobType.eval.value) and not config.get("api_key"):
-        model = config.get("model", "")
-        provider = model.split("/")[0] if "/" in model else ""
-        if provider:
-            env_var = f"{provider.upper()}_API_KEY"
-            key_db = await _get_db()
-            try:
-                key_repo = Repository(key_db)
-                key_row = await key_repo.get_api_key_for_provider(provider)
-                if key_row:
-                    spec_env[env_var] = key_row["key_value"]
-            finally:
-                await key_db.close()
+    for env_name in config_mod.settings.forward_env:
+        value = os.environ.get(env_name)
+        if value:
+            spec_env[env_name] = value
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
 
@@ -360,6 +355,12 @@ async def _run_job(job: dict[str, Any]) -> None:
             except Exception:
                 logger.warning("Failed to fetch remote outputs for job %s", job_id, exc_info=True)
 
+        if handle.secret_names and hasattr(backend, "cleanup_secrets"):
+            try:
+                await backend.cleanup_secrets(handle)
+            except Exception:
+                logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
+
         await _register_log_artifacts(job_id, output_dir)
 
         if status.exit_code == 0:
@@ -388,6 +389,9 @@ async def _run_job(job: dict[str, Any]) -> None:
                 pass
             error_msg = status.error or f"Process exited with code {status.exit_code}"
             if stderr_output:
+                from amortized.core.redact import redact_text
+
+                stderr_output = redact_text(stderr_output)
                 error_msg = f"{error_msg}: {stderr_output}"
             await _update_job(
                 job_id,

@@ -1,6 +1,6 @@
 """Tests for config redaction utility."""
 
-from amortized.core.redact import redact_config
+from amortized.core.redact import redact_config, redact_text
 
 
 class TestRedactConfig:
@@ -67,3 +67,35 @@ class TestRedactConfig:
         result = redact_config(config)
         assert result["outer"]["inner_model"] == "gpt-4o"
         assert result["outer"]["batch_size"] == 16
+
+
+class TestRedactText:
+    def test_redacts_api_key_in_text(self) -> None:
+        text = "OPENAI_API_KEY=sk-secret123 some other text"
+        result = redact_text(text)
+        assert "sk-secret123" not in result
+        assert "***redacted***" in result
+        assert "some other text" in result
+
+    def test_redacts_multiple_credentials(self) -> None:
+        text = "TOKEN=abc123 and API_KEY=xyz789"
+        result = redact_text(text)
+        assert "abc123" not in result
+        assert "xyz789" not in result
+
+    def test_redacts_with_colon_separator(self) -> None:
+        text = "SECRET: my-secret-value"
+        result = redact_text(text)
+        assert "my-secret-value" not in result
+
+    def test_preserves_non_sensitive_text(self) -> None:
+        text = "model=gpt-4o batch_size=16"
+        assert redact_text(text) == text
+
+    def test_case_insensitive(self) -> None:
+        text = "api_key=lower-secret"
+        result = redact_text(text)
+        assert "lower-secret" not in result
+
+    def test_empty_string(self) -> None:
+        assert redact_text("") == ""

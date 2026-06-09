@@ -350,12 +350,11 @@ class TestSSHBackend:
         assert handle.remote_pid is None
         assert handle.remote_dir == "~/amortized-jobs/docker-job-1"
 
-        docker_call = mock_conn.run.call_args_list[2]
-        cmd = docker_call[0][0]
-        assert "podman run -d --gpus all" in cmd
-        assert "ghcr.io/amortized-ai/training:latest" in cmd
-        assert "python -m runner" in cmd
-        assert "-e AMORTIZED_JOB_ID=docker-job-1" in cmd
+        all_cmds = [c[0][0] for c in mock_conn.run.call_args_list]
+        run_cmd = next(c for c in all_cmds if "podman run" in c)
+        assert "podman run -d --gpus all" in run_cmd
+        assert "ghcr.io/amortized-ai/training:latest" in run_cmd
+        assert "-e AMORTIZED_JOB_ID=docker-job-1" in run_cmd
 
     @pytest.mark.asyncio
     async def test_status_running_mock(self) -> None:

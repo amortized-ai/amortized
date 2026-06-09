@@ -105,14 +105,26 @@ class SSHBackend:
 
             if spec.image:
                 docker_overrides = {"AMORTIZED_WORK_DIR", "AMORTIZED_CONFIG_PATH"}
-                docker_env_flags = " ".join(
+                infra_flags = " ".join(
                     f"-e {k}={shlex.quote(v)}"
                     for k, v in amortized_env.items()
                     if k not in docker_overrides
                 )
-                docker_env_flags += "".join(
-                    f" -e {k}={shlex.quote(v)}" for k, v in filtered_spec_env.items()
+
+                secret_names: list[tuple[str, str]] = []
+                for k, v in filtered_spec_env.items():
+                    secret_name = f"amortized-{spec.job_id[:8]}-{k.lower().replace('_', '-')}"
+                    await conn.run(
+                        f"printf '%s' {shlex.quote(v)} | "
+                        f"{self._container_runtime} secret create {secret_name} -",
+                        check=True,
+                    )
+                    secret_names.append((secret_name, k))
+
+                secret_flags = " ".join(
+                    f"--secret {sname},type=env,target={target}" for sname, target in secret_names
                 )
+
                 home_dir = "~"
                 try:
                     home_result = await conn.run("echo $HOME", check=True)
@@ -124,7 +136,8 @@ class SSHBackend:
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "
                     f"-v {home_dir}:{home_dir}:ro "
-                    f"{docker_env_flags} "
+                    f"{infra_flags} "
+                    f"{secret_flags} "
                     f"-e AMORTIZED_WORK_DIR=/amortized/work "
                     f"-e AMORTIZED_CONFIG_PATH=/amortized/config.json "
                     f"{spec.image}"
@@ -132,10 +145,11 @@ class SSHBackend:
                 result = await conn.run(full_cmd, check=True)
                 container_id = result.stdout.strip()
                 logger.info(
-                    "Started Docker job %s on %s (container %s)",
+                    "Started container job %s on %s (container %s, %d secrets)",
                     spec.job_id,
                     self._host,
                     container_id[:12],
+                    len(secret_names),
                 )
                 return BackendHandle(
                     backend_name=self.name,
@@ -143,6 +157,7 @@ class SSHBackend:
                     remote_pid=None,
                     remote_dir=remote_dir,
                     container_id=container_id,
+                    secret_names=secret_names or None,
                 )
             else:
                 env_exports = " ".join(f"{k}={shlex.quote(v)}" for k, v in merged_env.items())
@@ -216,6 +231,18 @@ class SSHBackend:
         finally:
             conn.close()
 
+    async def cleanup_secrets(self, handle: BackendHandle) -> None:
+        """Remove podman secrets created for this job."""
+        if not handle.secret_names:
+            return
+        conn = await self._connect()
+        try:
+            for sname, _ in handle.secret_names:
+                await conn.run(f"{self._container_runtime} secret rm {sname} 2>/dev/null || true")
+            logger.info("Cleaned up %d secrets for job %s", len(handle.secret_names), handle.job_id)
+        finally:
+            conn.close()
+
     async def cancel(self, handle: BackendHandle) -> None:
         if handle.container_id:
             conn = await self._connect()
@@ -224,12 +251,13 @@ class SSHBackend:
                     f"{self._container_runtime} stop {handle.container_id} 2>/dev/null || true"
                 )
                 logger.info(
-                    "Stopped Docker container %s for job %s",
+                    "Stopped container %s for job %s",
                     handle.container_id[:12],
                     handle.job_id,
                 )
             finally:
                 conn.close()
+            await self.cleanup_secrets(handle)
             return
 
         if handle.remote_pid is None:

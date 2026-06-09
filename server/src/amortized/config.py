@@ -40,6 +40,11 @@ class Settings(BaseSettings):
 
     external_url: str = Field("", description="Externally reachable server URL")
 
+    forward_env: list[str] = Field(
+        default_factory=list,
+        description="Env var names to forward to job containers",
+    )
+
     default_backend: str = Field(
         "",
         description="Default compute backend for GPU jobs (reads AMORTIZED_DEFAULT_BACKEND)",

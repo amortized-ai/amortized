@@ -24,6 +24,7 @@ class BackendHandle:
     remote_dir: str | None = None
     container_id: str | None = None
     scheduler_id: str | None = None
+    secret_names: list[tuple[str, str]] | None = None
 
 
 @dataclass

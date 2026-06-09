@@ -370,30 +370,37 @@ def config() -> None:
             console.print(f"Control plane reachable at: [cyan]http://{local_ip}:8000[/cyan]")
             existing["external_url"] = f"http://{local_ip}:8000"
 
-    console.print("\n[bold]LLM API Keys[/bold]")
-    console.print("Keys are needed for synthetic data generation (SDG jobs).")
-    add_keys = typer.confirm("Configure an API key now?", default=False)
+    console.print("\n[bold]Credentials[/bold]")
+    detected: dict[str, str] = {}
+    for env_var, value in sorted(os.environ.items()):
+        if any(env_var.endswith(suffix) for suffix in ("_API_KEY", "_TOKEN", "_SECRET_KEY")):
+            preview = f"...{value[-4:]}" if len(value) >= 4 else "***"
+            detected[env_var] = preview
 
-    while add_keys:
-        provider = typer.prompt("Provider (openai/anthropic/google)", default="openai")
-        env_var = f"{provider.upper()}_API_KEY"
-        local_key = os.environ.get(env_var)
-        if local_key:
-            console.print(f"Detected local {env_var}")
-            use_local = typer.confirm("Use this key?", default=True)
-            key = local_key if use_local else typer.prompt("API key", hide_input=True)
-        else:
-            key = typer.prompt("API key", hide_input=True)
+    if detected:
+        console.print("Detected credentials in your environment:")
+        items = list(detected.items())
+        for i, (name, preview) in enumerate(items, 1):
+            console.print(f"  [{i}] {name:30s} {preview}")
 
-        existing.setdefault("api_keys", []).append(
-            {
-                "provider": provider,
-                "key": key,
-            }
+        selection = typer.prompt(
+            "Select which to forward to remote jobs (comma-separated, 'all', or 'none')",
+            default="all",
         )
-        console.print(f"[green]✓ API key configured for '{provider}'[/green]")
 
-        add_keys = typer.confirm("Add another provider?", default=False)
+        if selection.lower() == "all":
+            selected = [name for name, _ in items]
+        elif selection.lower() == "none":
+            selected = []
+        else:
+            indices = [int(x.strip()) - 1 for x in selection.split(",") if x.strip().isdigit()]
+            selected = [items[i][0] for i in indices if 0 <= i < len(items)]
+
+        if selected:
+            existing["forward_env"] = selected
+            console.print(f"[green]✓ {len(selected)} credentials will be forwarded[/green]")
+    else:
+        console.print("[dim]No credentials detected (set env vars like OPENAI_API_KEY)[/dim]")
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.dump(existing, default_flow_style=False))
@@ -417,33 +424,6 @@ def config() -> None:
     console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
-def _auto_forward_api_keys(client: httpx.Client) -> None:
-    """Auto-forward local provider API keys to the server if not already stored."""
-    provider_env_vars = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "google": "GOOGLE_API_KEY",
-    }
-    try:
-        keys_resp = client.get("/api/v1/settings/api-keys")
-        existing = keys_resp.json() if keys_resp.status_code == 200 else []
-        stored_providers = {k.get("provider") for k in existing}
-    except Exception:
-        return
-
-    for provider, env_var in provider_env_vars.items():
-        local_key = os.environ.get(env_var)
-        if local_key and provider not in stored_providers:
-            try:
-                client.post(
-                    "/api/v1/settings/api-keys",
-                    json={"name": provider, "provider": provider, "key": local_key},
-                )
-                console.print(f"[green]✓ Stored {env_var} on server[/green]")
-            except Exception:
-                pass
-
-
 # ---------------------------------------------------------------------------
 # amortized submit
 # ---------------------------------------------------------------------------
@@ -461,10 +441,6 @@ def submit(
 ) -> None:
     """Submit a job by type or recipe."""
     with _client() as client:
-        # Auto-forward local API keys to server for SDG/eval jobs
-        if confirm and job_type in ("sdg", "eval"):
-            _auto_forward_api_keys(client)
-
         if recipe:
             overrides: dict[str, Any] = {}
             for kv in set_values or []:

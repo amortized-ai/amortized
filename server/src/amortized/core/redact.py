@@ -1,12 +1,23 @@
-"""Redact sensitive fields from job configs before returning in API responses."""
+"""Redact sensitive fields from job configs and credential values from text."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 _REDACT_FIELDS = frozenset({"api_key", "api_secret", "token", "password", "secret"})
 
 _REDACTED = "***redacted***"
+
+_CREDENTIAL_VALUE_PATTERN = re.compile(
+    r"((?:[A-Z_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL))\s*[=:]\s*)(\S+)",
+    re.IGNORECASE,
+)
+
+
+def redact_text(text: str) -> str:
+    """Redact credential values from log/error text."""
+    return _CREDENTIAL_VALUE_PATTERN.sub(r"\1***redacted***", text)
 
 
 def redact_config(config: dict[str, Any]) -> dict[str, Any]:
