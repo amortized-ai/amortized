@@ -38,9 +38,9 @@ def _load_dataset(path: str) -> list[dict[str, Any]]:
 
 def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
     """Run evaluation via asynth's judge system."""
-    dataset_path = config.get("dataset_path")
+    dataset_path = config.get("dataset_path") or config.get("dataset")
     if not dataset_path:
-        raise ValueError("dataset_path is required for eval jobs")
+        raise ValueError("dataset or dataset_path is required for eval jobs")
 
     evaluator_type = config.get("evaluator_type", "llm")
     judgment_type = config.get("judgment_type", "bool")
@@ -60,7 +60,7 @@ def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
         )
     else:
         judge_params: dict[str, Any] = {
-            "prompt_template": config.get("evaluator_prompt", "{}"),
+            "prompt_template": config.get("judge_prompt", "Evaluate the following: {response}"),
             "response_format": response_format,
             "judgment_type": judgment_type,
         }
@@ -70,7 +70,7 @@ def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
 
     inference_config = None
     if evaluator_type == "llm":
-        model = config.get("model", "openai/gpt-4o-mini")
+        model = config.get("judge_model") or config.get("model", "openai/gpt-4o-mini")
         inf_params = config.get("inference_params", {})
         inference_config = LiteLLMInferenceConfig(
             model=model,
@@ -128,7 +128,7 @@ def _write_eval_results(output_dir: str, results: list[dict[str, Any]]) -> None:
     total = len(results)
     passed = sum(1 for r in results if r.get("passed", False))
     failed = total - passed
-    scores = [r.get("score", 0.0) for r in results]
+    scores = [r.get("score") for r in results if r.get("score") is not None]
     avg_score = sum(scores) / len(scores) if scores else 0.0
 
     output = {

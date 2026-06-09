@@ -474,12 +474,8 @@ def submit(
                     if local_key:
                         try:
                             keys_resp = client.get("/api/v1/settings/api-keys")
-                            existing_keys = (
-                                keys_resp.json() if keys_resp.status_code == 200 else []
-                            )
-                            has_provider = any(
-                                k.get("provider") == provider for k in existing_keys
-                            )
+                            existing_keys = keys_resp.json() if keys_resp.status_code == 200 else []
+                            has_provider = any(k.get("provider") == provider for k in existing_keys)
                             if not has_provider:
                                 client.post(
                                     "/api/v1/settings/api-keys",
@@ -489,9 +485,7 @@ def submit(
                                         "key": local_key,
                                     },
                                 )
-                                console.print(
-                                    f"[green]✓ Stored {env_var} on server[/green]"
-                                )
+                                console.print(f"[green]✓ Stored {env_var} on server[/green]")
                         except Exception:
                             pass
 
