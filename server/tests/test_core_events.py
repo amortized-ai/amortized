@@ -19,8 +19,10 @@ async def repo(tmp_path):
     repo = Repository(db)
     # Seed a job for FK constraints
     await repo.create_job(
-        job_id="j1", job_type=JobType.training,
-        config={}, created_at="2026-01-01T00:00:00",
+        job_id="j1",
+        job_type=JobType.training,
+        config={},
+        created_at="2026-01-01T00:00:00",
     )
     yield repo
     await db.close()
@@ -62,8 +64,10 @@ class TestListEvents:
     @pytest.mark.asyncio
     async def test_list_filters_by_job_id(self, repo: Repository) -> None:
         await repo.create_job(
-            job_id="j2", job_type=JobType.sdg,
-            config={}, created_at="2026-01-01T00:00:01",
+            job_id="j2",
+            job_type=JobType.sdg,
+            config={},
+            created_at="2026-01-01T00:00:01",
         )
         await emit_event(repo, "j1", "state_change")
         await emit_event(repo, "j2", "state_change")

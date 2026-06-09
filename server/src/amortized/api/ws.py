@@ -29,9 +29,7 @@ async def _get_db_connection() -> aiosqlite.Connection:
     return db
 
 
-async def _stream_training_metrics(
-    websocket: WebSocket, output_dir: str, job_id: str
-) -> None:
+async def _stream_training_metrics(websocket: WebSocket, output_dir: str, job_id: str) -> None:
     """Tail training_metrics.jsonl and push new lines to the client."""
     metrics_path = Path(output_dir) / "training_metrics.jsonl"
     lines_sent = 0
@@ -77,9 +75,7 @@ async def _stream_training_metrics(
         await asyncio.sleep(1.0)
 
 
-async def _stream_sdg_progress(
-    websocket: WebSocket, output_dir: str, job_id: str
-) -> None:
+async def _stream_sdg_progress(websocket: WebSocket, output_dir: str, job_id: str) -> None:
     """Poll SDG output JSONL and push progress updates to the client."""
     output_path = Path(output_dir) / "generated_data.jsonl"
     stats_path = Path(output_dir) / "stats.json"

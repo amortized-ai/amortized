@@ -74,9 +74,7 @@ async def chat(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> ChatResponse:
     """Send a message to the agent and get a response."""
-    conversation_id = await _ensure_conversation(
-        db, request.conversation_id, request.message[:50]
-    )
+    conversation_id = await _ensure_conversation(db, request.conversation_id, request.message[:50])
 
     existing_msgs = await list_messages(db, conversation_id)
     history = _history_from_messages(existing_msgs)
@@ -128,9 +126,7 @@ async def chat_stream(
     events replayed to the client.  This guarantees the assistant response is
     always saved regardless of whether the client disconnects mid-stream.
     """
-    conversation_id = await _ensure_conversation(
-        db, request.conversation_id, request.message[:50]
-    )
+    conversation_id = await _ensure_conversation(db, request.conversation_id, request.message[:50])
 
     existing_msgs = await list_messages(db, conversation_id)
     history = _history_from_messages(existing_msgs)

@@ -43,10 +43,15 @@ def run_inference(config: dict[str, Any]) -> None:
 
         with open(output_path, "w") as f:
             for output in outputs:
-                f.write(json.dumps({
-                    "prompt": output.prompt,
-                    "output": output.outputs[0].text,
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "prompt": output.prompt,
+                            "output": output.outputs[0].text,
+                        }
+                    )
+                    + "\n"
+                )
     else:
         _simulate_inference(config, output_path)
 
@@ -58,13 +63,15 @@ def _simulate_inference(config: dict[str, Any], output_path: str) -> None:
 
     results = []
     for i in range(total_samples):
-        results.append({
-            "index": i,
-            "input": f"sample_{i}",
-            "output": f"Generated response for sample {i}",
-            "model": str(config["model_path"]),
-            "tokens_generated": int(config.get("max_tokens", 2048) or 2048),
-        })
+        results.append(
+            {
+                "index": i,
+                "input": f"sample_{i}",
+                "output": f"Generated response for sample {i}",
+                "model": str(config["model_path"]),
+                "tokens_generated": int(config.get("max_tokens", 2048) or 2048),
+            }
+        )
         time.sleep(0.01)
 
     with open(output_path, "w") as f:

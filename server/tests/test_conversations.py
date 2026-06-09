@@ -81,9 +81,7 @@ class TestChatEndpoint:
 
     @pytest.mark.asyncio
     @patch("amortized.api.agent_routes.process_message", new_callable=_mock_process)
-    async def test_chat_returns_message(
-        self, _mock: AsyncMock, client: httpx.AsyncClient
-    ) -> None:
+    async def test_chat_returns_message(self, _mock: AsyncMock, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/agent/chat",
             json={"message": "I want to train a model"},
@@ -93,9 +91,7 @@ class TestChatEndpoint:
         assert data["suggested_action"] is None
 
     @pytest.mark.asyncio
-    async def test_chat_empty_message_rejected(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_chat_empty_message_rejected(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/agent/chat",
             json={"message": ""},
@@ -112,9 +108,7 @@ class TestConversationsList:
 
     @pytest.mark.asyncio
     @patch("amortized.api.agent_routes.process_message", new_callable=_mock_process)
-    async def test_list_after_chat(
-        self, _mock: AsyncMock, client: httpx.AsyncClient
-    ) -> None:
+    async def test_list_after_chat(self, _mock: AsyncMock, client: httpx.AsyncClient) -> None:
         await client.post(
             "/api/v1/agent/chat",
             json={"message": "Hello!"},
@@ -130,12 +124,8 @@ class TestConversationsList:
     async def test_list_multiple_conversations(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
-        await client.post(
-            "/api/v1/agent/chat", json={"message": "First conversation"}
-        )
-        await client.post(
-            "/api/v1/agent/chat", json={"message": "Second conversation"}
-        )
+        await client.post("/api/v1/agent/chat", json={"message": "First conversation"})
+        await client.post("/api/v1/agent/chat", json={"message": "Second conversation"})
         resp = await client.get("/api/v1/agent/conversations")
         convs = resp.json()
         assert len(convs) == 2
@@ -164,9 +154,7 @@ class TestConversationDetail:
         assert data["messages"][1]["role"] == "assistant"
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_conversation(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_get_nonexistent_conversation(self, client: httpx.AsyncClient) -> None:
         resp = await client.get("/api/v1/agent/conversations/nonexistent-id")
         assert resp.status_code == 404
 
@@ -175,9 +163,7 @@ class TestConversationDetail:
     async def test_conversation_accumulates_messages(
         self, _mock: AsyncMock, client: httpx.AsyncClient
     ) -> None:
-        resp1 = await client.post(
-            "/api/v1/agent/chat", json={"message": "Hello!"}
-        )
+        resp1 = await client.post("/api/v1/agent/chat", json={"message": "Hello!"})
         conv_id = resp1.json()["conversation_id"]
 
         await client.post(

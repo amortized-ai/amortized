@@ -85,9 +85,7 @@ def _mock_choice(
     return choice
 
 
-def _mock_tool_call(
-    call_id: str, name: str, arguments: dict[str, Any]
-) -> MagicMock:
+def _mock_tool_call(call_id: str, name: str, arguments: dict[str, Any]) -> MagicMock:
     tc = MagicMock()
     tc.id = call_id
     tc.function.name = name
@@ -144,9 +142,7 @@ class TestProcessMessage:
     @pytest.mark.asyncio
     @patch("amortized.agent.chat.execute_tool")
     @patch("amortized.agent.chat._build_client")
-    async def test_propose_action(
-        self, mock_build: MagicMock, mock_execute: AsyncMock
-    ) -> None:
+    async def test_propose_action(self, mock_build: MagicMock, mock_execute: AsyncMock) -> None:
         client = AsyncMock()
         mock_build.return_value = client
 
@@ -261,9 +257,7 @@ class TestStreamMessage:
         client = AsyncMock()
         mock_build.return_value = client
 
-        client.chat.completions.create = AsyncMock(
-            side_effect=Exception("API error")
-        )
+        client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
 
         events: list[StreamEvent] = []
         async for event in stream_message("hello"):

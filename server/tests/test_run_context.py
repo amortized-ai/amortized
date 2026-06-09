@@ -38,9 +38,7 @@ def config_file(tmp_path: Path) -> Path:
 
 
 class TestRunContextFromEnvironment:
-    def test_reads_config_and_env(
-        self, tmp_work_dir: Path, config_file: Path
-    ) -> None:
+    def test_reads_config_and_env(self, tmp_work_dir: Path, config_file: Path) -> None:
         env = {
             "AMORTIZED_JOB_ID": "job-123",
             "AMORTIZED_WORK_DIR": str(tmp_work_dir),
@@ -54,9 +52,7 @@ class TestRunContextFromEnvironment:
         assert ctx.config["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
         assert ctx.artifacts["dataset"] == "/shared/datasets/train.jsonl"
 
-    def test_events_url_optional(
-        self, tmp_work_dir: Path, config_file: Path
-    ) -> None:
+    def test_events_url_optional(self, tmp_work_dir: Path, config_file: Path) -> None:
         env = {
             "AMORTIZED_JOB_ID": "job-456",
             "AMORTIZED_WORK_DIR": str(tmp_work_dir),
@@ -67,9 +63,7 @@ class TestRunContextFromEnvironment:
 
         assert ctx._events_url is None
 
-    def test_events_url_set(
-        self, tmp_work_dir: Path, config_file: Path
-    ) -> None:
+    def test_events_url_set(self, tmp_work_dir: Path, config_file: Path) -> None:
         env = {
             "AMORTIZED_JOB_ID": "job-789",
             "AMORTIZED_WORK_DIR": str(tmp_work_dir),

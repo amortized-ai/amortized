@@ -31,11 +31,7 @@ def recipes_dir(tmp_path: Path) -> Path:
         "  lora_alpha: 32\n"
     )
     (training / "grpo.yaml").write_text(
-        "type: training\n"
-        "description: GRPO RL\n"
-        "config:\n"
-        "  algorithm: grpo\n"
-        "  num_iterations: 15\n"
+        "type: training\ndescription: GRPO RL\nconfig:\n  algorithm: grpo\n  num_iterations: 15\n"
     )
     models = tmp_path / "models"
     models.mkdir()

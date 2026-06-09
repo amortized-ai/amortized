@@ -71,7 +71,10 @@ async def get_job_events(
             try:
                 inner_repo = Repository(db_inner)
                 events = await core_list_events(
-                    inner_repo, job_id, since=cursor, types=type_list,
+                    inner_repo,
+                    job_id,
+                    since=cursor,
+                    types=type_list,
                 )
                 job = await core_get_job(inner_repo, job_id)
             finally:
@@ -84,12 +87,14 @@ async def get_job_events(
                     yield {
                         "id": event["timestamp"],
                         "event": event["type"],
-                        "data": json.dumps({
-                            "job_id": job_id,
-                            "timestamp": event["timestamp"],
-                            "type": event["type"],
-                            "data": event.get("data", {}),
-                        }),
+                        "data": json.dumps(
+                            {
+                                "job_id": job_id,
+                                "timestamp": event["timestamp"],
+                                "type": event["type"],
+                                "data": event.get("data", {}),
+                            }
+                        ),
                     }
             else:
                 ticks_since_event += 1
@@ -136,7 +141,10 @@ async def stream_job_logs(
             try:
                 inner_repo = Repository(db_inner)
                 events = await core_list_events(
-                    inner_repo, job_id, since=cursor, types=["log", "progress"],
+                    inner_repo,
+                    job_id,
+                    since=cursor,
+                    types=["log", "progress"],
                 )
                 job = await core_get_job(inner_repo, job_id)
             finally:

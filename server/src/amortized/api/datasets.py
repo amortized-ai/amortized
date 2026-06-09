@@ -35,6 +35,7 @@ def _get_datasets_dir() -> Path:
         return configured
     return _config_mod.settings.data_dir / "datasets"
 
+
 # Column patterns that can be auto-detected and converted to messages format
 _COLUMN_PATTERNS: list[tuple[str, str]] = [
     ("question", "answer"),
@@ -77,7 +78,8 @@ class PreviewDatasetResponse(BaseModel):
 
 @router.post("", response_model=CreateDatasetResponse)
 async def create_dataset(
-    req: CreateDatasetRequest, response: Response,
+    req: CreateDatasetRequest,
+    response: Response,
 ) -> CreateDatasetResponse:
     """Create a JSONL dataset file on disk. Deprecated: use POST /api/v1/artifacts."""
     _add_deprecation_headers(response)
@@ -169,7 +171,8 @@ def _row_to_messages(row: dict[str, Any], user_col: str, asst_col: str) -> dict[
 
 @router.post("/convert", response_model=ConvertDatasetResponse)
 async def convert_dataset(
-    req: ConvertDatasetRequest, response: Response,
+    req: ConvertDatasetRequest,
+    response: Response,
 ) -> ConvertDatasetResponse:
     """Convert an SDG output dataset to messages format for training. Deprecated."""
     _add_deprecation_headers(response)
