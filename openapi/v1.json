@@ -1582,9 +1582,7 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Job"
-                }
+                "schema": {}
               }
             }
           },
@@ -4061,6 +4059,12 @@
             "type": "object",
             "title": "Overrides",
             "description": "Dot-notation overrides"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Validate without creating the job",
+            "default": true
           }
         },
         "type": "object",

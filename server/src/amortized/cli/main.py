@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -432,6 +433,31 @@ def config() -> None:
     console.print("\nRun [bold]amortized up[/bold] to start the server.")
 
 
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_data(client: httpx.Client, value: str) -> str:
+    """Validate an artifact ID or return a file path as-is.
+
+    If the value is a UUID, validates the artifact exists and returns an
+    ``artifact:<id>`` reference for the worker to resolve at dispatch time.
+    """
+    if not _is_uuid(value):
+        return value
+    resp = client.get(f"/api/v1/artifacts/{value}")
+    if resp.status_code != 200:
+        err_console.print(f"[red]Artifact {value} not found[/red]")
+        raise typer.Exit(1)
+    name = resp.json().get("name", value)
+    console.print(f"[dim]Using artifact: {name} ({value[:8]}…)[/dim]")
+    return f"artifact:{value}"
+
+
 # ---------------------------------------------------------------------------
 # amortized submit
 # ---------------------------------------------------------------------------
@@ -440,6 +466,11 @@ def submit(
     job_type: Annotated[str, typer.Argument(help="Job type (e.g. training, sdg)")],
     config: Annotated[str | None, typer.Option("--config", help="JSON config string")] = None,
     recipe: Annotated[str | None, typer.Option("--recipe", help="Recipe name")] = None,
+    model: Annotated[
+        str | None,
+        typer.Option("--model", help="Model path (training) or model name (sdg)"),
+    ] = None,
+    data: Annotated[str | None, typer.Option("--data", help="Data path or artifact ID")] = None,
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
     ] = None,
@@ -456,11 +487,27 @@ def submit(
                     err_console.print(f"[red]Invalid --set format:[/red] {kv} (expected KEY=VALUE)")
                     raise typer.Exit(1)
                 k, v = kv.split("=", 1)
+                if not k.startswith("config."):
+                    k = f"config.{k}"
                 try:
                     overrides[k] = json.loads(v)
                 except json.JSONDecodeError:
                     overrides[k] = v
-            body: dict[str, Any] = {"recipe": recipe, "overrides": overrides}
+            model_key = "model" if job_type == "sdg" else "model_path"
+            if model:
+                overrides.setdefault(f"config.{model_key}", model)
+            if data:
+                overrides.setdefault("config.data_path", _resolve_data(client, data))
+            for k in list(overrides):
+                v = overrides[k]
+                bare = k.removeprefix("config.")
+                if isinstance(v, str) and _is_uuid(v) and bare.endswith("_path"):
+                    overrides[k] = _resolve_data(client, v)
+            body: dict[str, Any] = {
+                "recipe": recipe,
+                "overrides": overrides,
+                "dry_run": not confirm,
+            }
             resp = client.post("/api/v1/jobs/recipe", json=body)
         else:
             cfg: dict[str, Any] = {}
@@ -470,6 +517,11 @@ def submit(
                 except json.JSONDecodeError as exc:
                     err_console.print(f"[red]Invalid JSON config:[/red] {exc}")
                     raise typer.Exit(1) from exc
+            model_key = "model" if job_type == "sdg" else "model_path"
+            if model:
+                cfg.setdefault(model_key, model)
+            if data:
+                cfg.setdefault("data_path", _resolve_data(client, data))
             for kv in set_values or []:
                 if "=" not in kv:
                     err_console.print(f"[red]Invalid --set format:[/red] {kv} (expected KEY=VALUE)")
@@ -483,20 +535,20 @@ def submit(
             body = {"type": job_type, "config": cfg, "dry_run": not confirm}
             resp = client.post("/api/v1/jobs", json=body)
 
-        data = _handle_response(resp)
-        if "valid" in data and "id" not in data:
-            if data["valid"]:
+        resp_data = _handle_response(resp)
+        if "valid" in resp_data and "id" not in resp_data:
+            if resp_data["valid"]:
                 console.print("[green]✓ Config valid[/green]")
             else:
                 console.print("[red]✗ Config invalid[/red]")
-            for err in data.get("errors", []):
+            for err in resp_data.get("errors", []):
                 console.print(f"  [red]• {err}[/red]")
-            if data.get("warnings"):
-                for w in data["warnings"]:
+            if resp_data.get("warnings"):
+                for w in resp_data["warnings"]:
                     console.print(f"  [yellow]⚠ {w}[/yellow]")
             console.print("\nRun with [bold]--confirm[/bold] to submit.")
             return
-        _print_job_panel(data)
+        _print_job_panel(resp_data)
 
 
 # ---------------------------------------------------------------------------

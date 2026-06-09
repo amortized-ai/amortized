@@ -5,15 +5,17 @@ from typing import Any
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
+from amortized.core.jobs import validate_job as core_validate_job
 from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
 from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Job, JobType, RecipeSummary
+from amortized.models import DryRunResponse, Job, JobType, RecipeSummary
 
 logger = logging.getLogger("amortized.api.recipes")
 
@@ -36,16 +38,17 @@ async def get_recipe(name: str) -> dict[str, Any]:
 class RecipeJobRequest(BaseModel):
     recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
+    dry_run: bool = Field(True, description="Validate without creating the job")
 
 
 recipe_jobs_router = APIRouter(tags=["recipes"])
 
 
-@recipe_jobs_router.post("/api/v1/jobs/recipe", status_code=201, response_model=Job)
+@recipe_jobs_router.post("/api/v1/jobs/recipe", status_code=201, response_model=None)
 async def submit_recipe_job(
     request: RecipeJobRequest,
     db: aiosqlite.Connection = Depends(_get_db),
-) -> Job:
+) -> Job | JSONResponse:
     try:
         recipe = load_recipe(request.recipe)
     except RecipeNotFoundError as exc:
@@ -65,8 +68,19 @@ async def submit_recipe_job(
         )
 
     config: dict[str, Any] = recipe.get("config", {})
-    output_dir = config.get("ckpt_output_dir")
 
+    if request.dry_run:
+        result = await core_validate_job(job_type=recipe_type, config=config)
+        dry_resp = DryRunResponse(
+            valid=result["valid"],
+            errors=result["errors"],
+            warnings=result.get("warnings", []),
+            type=recipe_type,
+            config=redact_config(config),
+        )
+        return JSONResponse(content=dry_resp.model_dump(), status_code=200)
+
+    output_dir = config.get("ckpt_output_dir")
     repo = Repository(db)
     try:
         row = await core_create_job(
