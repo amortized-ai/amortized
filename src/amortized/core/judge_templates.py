@@ -8,7 +8,7 @@ import yaml
 
 logger = logging.getLogger("amortized.core.judge_templates")
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "templates" / "eval"
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "templates" / "eval"
 
 
 def load_judge_template(name: str) -> dict[str, Any]:

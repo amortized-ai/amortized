@@ -9,7 +9,7 @@ from amortized.main import app
 
 def main() -> None:
     spec = app.openapi()
-    out_dir = Path(__file__).resolve().parent.parent.parent / "openapi"
+    out_dir = Path(__file__).resolve().parent.parent / "openapi"
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / "v1.json"
     out_path.write_text(json.dumps(spec, indent=2) + "\n")

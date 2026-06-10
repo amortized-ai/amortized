@@ -13,7 +13,7 @@ import amortized.config as _config_mod
 
 logger = logging.getLogger("amortized.core.recipes")
 
-_RECIPES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
+_RECIPES_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
 
 class RecipeNotFoundError(Exception):
