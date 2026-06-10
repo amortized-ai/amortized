@@ -491,12 +491,14 @@ async def _pick_pending_job() -> dict[str, Any] | None:
         await db.close()
 
 
-async def _register_artifacts_for_job(job_id: str, output_dir: str) -> None:
+async def _register_artifacts_for_job(
+    job_id: str, output_dir: str, *, job_type: str | None = None
+) -> None:
     """Scan output directory and register found artifacts via core layer."""
     db = await _get_db()
     try:
         repo = Repository(db)
-        await register_artifacts_for_job(repo, job_id, output_dir)
+        await register_artifacts_for_job(repo, job_id, output_dir, job_type=job_type)
     finally:
         await db.close()
 
@@ -770,7 +772,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 status=JobStatus.succeeded,
                 completed_at=completed_at,
             )
-            await _register_artifacts_for_job(job_id, output_dir)
+            await _register_artifacts_for_job(job_id, output_dir, job_type=job["type"])
             logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(

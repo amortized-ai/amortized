@@ -31,7 +31,11 @@ ARTIFACT_PATTERNS: dict[str, list[str]] = {
 
 
 async def register_artifacts_for_job(
-    repo: Repository, job_id: str, output_dir: str
+    repo: Repository,
+    job_id: str,
+    output_dir: str,
+    *,
+    job_type: str | None = None,
 ) -> list[dict[str, Any]]:
     output_path = Path(output_dir)
     if not output_path.exists():
@@ -40,16 +44,22 @@ async def register_artifacts_for_job(
     now = datetime.now(UTC).isoformat()
     registered: list[dict[str, Any]] = []
 
-    async def _register(artifact_type: str, file_path: Path) -> None:
+    async def _register(artifact_type: str, file_path: Path, *, name: str | None = None) -> None:
         artifact_id = str(uuid.uuid4())
+        is_dir = file_path.is_dir()
+        size = (
+            sum(f.stat().st_size for f in file_path.rglob("*") if f.is_file())
+            if is_dir
+            else file_path.stat().st_size
+        )
         artifact = await repo.create_artifact(
             artifact_id=artifact_id,
             job_id=job_id,
             artifact_type=artifact_type,
             path=str(file_path),
-            size=file_path.stat().st_size,
+            size=size,
             created_at=now,
-            name=file_path.name,
+            name=name or file_path.name,
             location=str(file_path),
         )
         registered.append(artifact)
@@ -63,6 +73,11 @@ async def register_artifacts_for_job(
                 "path": str(file_path),
             },
         )
+
+    if job_type == "training":
+        await _register("model", output_path, name="model")
+        logger.info("Registered model artifact for training job %s", job_id)
+        return registered
 
     scan_dirs = [output_path]
     for subname in ("output", "artifacts"):
@@ -81,20 +96,6 @@ async def register_artifacts_for_job(
                     file_path = scan_dir / pattern
                     if file_path.is_file():
                         await _register(artifact_type, file_path)
-
-    # Scan checkpoint-N/ subdirectories
-    for subdir in sorted(output_path.iterdir()):
-        if not subdir.is_dir() or not subdir.name.startswith("checkpoint-"):
-            continue
-        for artifact_type, patterns in ARTIFACT_PATTERNS.items():
-            if artifact_type == "generated_data":
-                continue
-            for pattern in patterns:
-                if "*" in pattern:
-                    continue
-                sub_file = subdir / pattern
-                if sub_file.is_file():
-                    await _register(artifact_type, sub_file)
 
     # SDG checkpoints subdirectory
     checkpoint_dir = output_path / "checkpoints"

@@ -41,12 +41,13 @@ class TestRegisterArtifacts:
         (output_dir / "training_metrics.jsonl").write_text('{"step":1}\n')
         (output_dir / "tokenizer.json").write_text("{}")
 
-        registered = await register_artifacts_for_job(repo, "j1", str(output_dir))
-        types = {a["artifact_type"] for a in registered}
-        assert "adapter_config" in types
-        assert "adapter_weights" in types
-        assert "training_metrics" in types
-        assert "tokenizer" in types
+        registered = await register_artifacts_for_job(
+            repo, "j1", str(output_dir), job_type="training"
+        )
+        assert len(registered) == 1
+        assert registered[0]["artifact_type"] == "model"
+        assert registered[0]["name"] == "model"
+        assert registered[0]["path"] == str(output_dir)
 
     @pytest.mark.asyncio
     async def test_register_nonexistent_dir(self, repo: Repository) -> None:
@@ -54,18 +55,20 @@ class TestRegisterArtifacts:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_register_checkpoint_subdirs(self, repo: Repository, tmp_path) -> None:
+    async def test_register_checkpoint_subdirs_non_training(
+        self, repo: Repository, tmp_path
+    ) -> None:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        ckpt = output_dir / "checkpoint-100"
+        (output_dir / "generated_data.jsonl").write_text('{"a":1}\n')
+        ckpt = output_dir / "checkpoints"
         ckpt.mkdir()
-        (ckpt / "adapter_config.json").write_text("{}")
-        (ckpt / "adapter_model.safetensors").write_bytes(b"\x00" * 50)
+        (ckpt / "batch_0.jsonl").write_text('{"b":1}\n')
 
         registered = await register_artifacts_for_job(repo, "j1", str(output_dir))
         types = [a["artifact_type"] for a in registered]
-        assert "adapter_config" in types
-        assert "adapter_weights" in types
+        assert "generated_data" in types
+        assert "checkpoint" in types
 
     @pytest.mark.asyncio
     async def test_register_sdg_artifacts(self, repo: Repository, tmp_path) -> None:
