@@ -1,7 +1,6 @@
 type: sdg
 description: Generate domain-specific medical QA pairs conditioned on specialty, context, and complexity
 config:
-  model: openai/gpt-5.4
   num_samples: 50
   temperature: 0.7
   max_tokens: 4096

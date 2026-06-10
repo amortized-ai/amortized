@@ -1,7 +1,6 @@
 type: sdg
 description: Generate diverse tasks using dynamic few-shot sampling from an example pool
 config:
-  model: openai/gpt-5.4
   num_samples: 100
   temperature: 0.9
   max_tokens: 1024

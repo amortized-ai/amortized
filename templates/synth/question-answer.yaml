@@ -1,7 +1,6 @@
 type: sdg
 description: Generate question-answer pairs with few-shot examples across difficulty levels and topics
 config:
-  model: openai/gpt-5.4
   num_samples: 50
   temperature: 0.7
   max_tokens: 1024

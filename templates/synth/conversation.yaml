@@ -1,7 +1,6 @@
 type: sdg
 description: Generate variable-length multi-turn customer support conversations with turn planning
 config:
-  model: openai/gpt-5.4
   num_samples: 30
   temperature: 0.7
   max_tokens: 8192
