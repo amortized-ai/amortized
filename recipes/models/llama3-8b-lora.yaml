@@ -1,5 +1,0 @@
-extends: training/lora-sft
-description: Llama 3.1 8B — LoRA SFT
-config:
-  model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
-  max_length: 8192

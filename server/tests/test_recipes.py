@@ -165,24 +165,16 @@ class TestRecipeAPI:
         data = resp.json()
         assert isinstance(data, list)
         names = {r["name"] for r in data}
-        assert "training/lora-sft" in names
-        assert "training/grpo" in names
+        assert "templates/training/lora-sft" in names
+        assert "templates/training/grpo" in names
 
     @pytest.mark.asyncio
     async def test_get_recipe_endpoint(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/training/lora-sft")
+        resp = await client.get("/api/v1/recipes/templates/training/lora-sft")
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "training"
         assert "config" in data
-
-    @pytest.mark.asyncio
-    async def test_get_recipe_with_extends(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/models/llama3-8b-lora")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["config"]["model_name_or_path"] == "meta-llama/Llama-3.1-8B-Instruct"
-        assert data["config"]["num_train_epochs"] == 3
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:
@@ -194,10 +186,10 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "models/qwen-1.5b-lora",
+                "recipe": "projects/ticket-classifier/train",
                 "overrides": {
+                    "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
-                    "config.output_dir": "/tmp/recipe-out",
                 },
                 "dry_run": False,
             },
@@ -212,8 +204,9 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "models/qwen-1.5b-lora",
+                "recipe": "projects/ticket-classifier/train",
                 "overrides": {
+                    "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
                 },
             },
@@ -229,7 +222,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "training/lora-sft",
+                "recipe": "templates/training/lora-sft",
                 "overrides": {},
             },
         )

@@ -1,0 +1,12 @@
+type: training
+description: LoRA SFT for ticket classification — Qwen 2.5 1.5B
+config:
+  algorithm: sft
+  num_train_epochs: 3
+  learning_rate: 0.0002
+  max_length: 2048
+  bf16: true
+  use_peft: true
+  lora_r: 16
+  lora_alpha: 32
+  report_to: none

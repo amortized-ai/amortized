@@ -1,0 +1,14 @@
+type: eval
+description: Evaluate classification accuracy with per-class metrics
+config:
+  accuracy_fields: []
+  max_samples: 100
+  temperature: 0.0
+  judge_model: openai/gpt-4o-mini
+  judge_prompt: >-
+    A text was classified. Evaluate if the classification is correct and reasonable.
+
+    Input: {request}
+    Classification: {response}
+
+    Is this classification correct?

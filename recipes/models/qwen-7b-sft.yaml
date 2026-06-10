@@ -1,5 +1,0 @@
-extends: training/full-sft
-description: Qwen 2.5 7B — Full SFT
-config:
-  model_name_or_path: Qwen/Qwen2.5-7B-Instruct
-  gradient_checkpointing: true

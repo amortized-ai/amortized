@@ -1,5 +1,0 @@
-type: serve
-description: Serve a base model via vLLM
-config:
-  served_model_name: base
-  port: 8000

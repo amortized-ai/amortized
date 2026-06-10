@@ -1,8 +1,0 @@
-extends: training/lora-sft
-description: Qwen 2.5 1.5B — LoRA SFT
-config:
-  model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
-  lora_r: 32
-  lora_alpha: 64
-  learning_rate: 0.0001
-  per_device_train_batch_size: 1

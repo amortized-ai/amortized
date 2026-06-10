@@ -1,0 +1,12 @@
+type: training
+description: LoRA SFT for entity extraction
+config:
+  algorithm: sft
+  num_train_epochs: 3
+  learning_rate: 0.0002
+  max_length: 4096
+  bf16: true
+  use_peft: true
+  lora_r: 16
+  lora_alpha: 32
+  report_to: none

@@ -1,0 +1,6 @@
+type: eval
+description: Evaluate model outputs with exact-match accuracy on parsed fields
+config:
+  accuracy_fields: []
+  max_samples: 100
+  temperature: 0.0
