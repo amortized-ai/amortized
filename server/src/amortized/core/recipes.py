@@ -13,7 +13,7 @@ import amortized.config as _config_mod
 
 logger = logging.getLogger("amortized.core.recipes")
 
-_RECIPES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "recipes"
+_RECIPES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 
 class RecipeNotFoundError(Exception):
@@ -97,24 +97,29 @@ def _validate_merged_config(job_type: str, config: dict[str, Any]) -> None:
 def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
     base_dir = _get_recipes_dir(recipes_dir)
     results: list[dict[str, Any]] = []
-    if not base_dir.is_dir():
-        return results
 
-    for path in sorted(base_dir.rglob("*.yaml")):
-        rel = path.relative_to(base_dir).with_suffix("")
-        name = str(rel)
-        try:
-            raw: dict[str, Any] = yaml.safe_load(path.read_text())
-        except Exception:
-            logger.warning("Skipping invalid recipe: %s", name)
+    scan_dirs = [base_dir / "templates", base_dir / "examples"]
+    if recipes_dir is not None:
+        scan_dirs = [base_dir]
+
+    for scan_dir in scan_dirs:
+        if not scan_dir.is_dir():
             continue
-        results.append(
-            {
-                "name": name,
-                "description": raw.get("description", ""),
-                "type": raw.get("type", ""),
-            }
-        )
+        for path in sorted(scan_dir.rglob("*.yaml")):
+            rel = path.relative_to(base_dir).with_suffix("")
+            name = str(rel)
+            try:
+                raw: dict[str, Any] = yaml.safe_load(path.read_text())
+            except Exception:
+                logger.warning("Skipping invalid recipe: %s", name)
+                continue
+            results.append(
+                {
+                    "name": name,
+                    "description": raw.get("description", ""),
+                    "type": raw.get("type", ""),
+                }
+            )
     return results
 
 

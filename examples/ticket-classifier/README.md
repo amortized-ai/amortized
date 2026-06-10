@@ -7,10 +7,10 @@ replacing expensive frontier model calls.
 
 ```bash
 # 1. Generate training data (100 labeled tickets)
-amortized submit sdg --recipe projects/ticket-classifier/synth --confirm
+amortized submit sdg --recipe examples/ticket-classifier/synth --confirm
 
 # 2. Fine-tune with LoRA SFT
-amortized submit training --recipe projects/ticket-classifier/train \
+amortized submit training --recipe examples/ticket-classifier/train \
   --model Qwen/Qwen2.5-1.5B-Instruct --data <sdg-artifact-id> --confirm
 
 # 3. Serve the fine-tuned model
@@ -18,7 +18,7 @@ amortized submit serve --recipe serve/adapter \
   --model Qwen/Qwen2.5-1.5B-Instruct --adapter <model-artifact-id> --confirm
 
 # 4. Evaluate
-amortized submit eval --recipe projects/ticket-classifier/eval \
+amortized submit eval --recipe examples/ticket-classifier/eval \
   --data <sdg-artifact-id> --serve <serve-job-id> --confirm
 ```
 

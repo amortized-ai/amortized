@@ -186,7 +186,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "projects/ticket-classifier/train",
+                "recipe": "examples/ticket-classifier/train",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
@@ -204,7 +204,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "projects/ticket-classifier/train",
+                "recipe": "examples/ticket-classifier/train",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
