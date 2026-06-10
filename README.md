@@ -29,6 +29,16 @@ amortized submit eval --recipe examples/ticket-classifier/eval --serve <id> --co
 
 See [examples/](examples/) for end-to-end projects: ticket classifier, intent router, entity extractor, summarizer, content moderator, and model distillation.
 
+## CLI
+
+```bash
+amortized --help       # see all commands
+amortized jobs         # list all jobs
+amortized logs <id>    # stream job events
+amortized cancel <id>  # stop a job
+amortized artifacts    # list outputs
+```
+
 ## License
 
 [Apache 2.0](LICENSE)
