@@ -1,0 +1,5 @@
+type: serve
+description: Serve a fine-tuned model with LoRA adapter via vLLM
+config:
+  served_model_name: tuned
+  port: 8001

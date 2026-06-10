@@ -146,7 +146,7 @@ _SERVE_FIELD_MAP: dict[str, str] = {
     "tensor_parallel_size": "tensor-parallel-size",
 }
 
-_SERVE_SKIP_KEYS = {"adapter_path", "output_dir"}
+_SERVE_SKIP_KEYS = {"adapter_path", "output_dir", "gpu_ids"}
 
 
 def _serve_config_yaml(config: dict[str, Any]) -> str:
@@ -704,6 +704,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
     elif image and job["type"] == JobType.serve.value:
         spec_env["_run_config"] = _serve_config_yaml(config)
+        if config.get("gpu_ids"):
+            spec_env["CUDA_VISIBLE_DEVICES"] = str(config["gpu_ids"])
     elif image:
         script = _generate_container_script(job["type"], config)
         spec_env["_run_script"] = script
