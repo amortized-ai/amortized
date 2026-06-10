@@ -3755,7 +3755,6 @@
         "enum": [
           "training",
           "sdg",
-          "inference",
           "eval",
           "serve"
         ],
