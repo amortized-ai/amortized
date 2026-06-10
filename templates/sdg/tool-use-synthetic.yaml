@@ -2,7 +2,6 @@ type: sdg
 description: Generate multi-turn developer conversations with LLM-simulated MCP-style documentation tools
 config:
   num_samples: 50
-  temperature: 0.7
   max_tokens: 2048
   max_concurrency: 10
   environment_config:

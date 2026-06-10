@@ -2,7 +2,6 @@ type: sdg
 description: Generate variable-length multi-turn customer support conversations with turn planning
 config:
   num_samples: 30
-  temperature: 0.7
   max_tokens: 8192
   max_concurrency: 10
   strategy_params:

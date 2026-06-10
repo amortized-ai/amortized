@@ -2,7 +2,6 @@ type: sdg
 description: Generate diverse tasks using dynamic few-shot sampling from an example pool
 config:
   num_samples: 100
-  temperature: 0.9
   max_tokens: 1024
   max_concurrency: 10
   strategy_params:

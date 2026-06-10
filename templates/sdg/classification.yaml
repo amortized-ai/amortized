@@ -2,7 +2,6 @@ type: sdg
 description: Generate customer support ticket classification training data — tickets with urgency and topic labels
 config:
   num_samples: 100
-  temperature: 0.7
   max_tokens: 8192
   max_concurrency: 10
   strategy_params:

@@ -2,7 +2,6 @@ type: sdg
 description: Generate multi-turn library assistant conversations with deterministic tool calling
 config:
   num_samples: 50
-  temperature: 0.4
   max_tokens: 1024
   max_concurrency: 10
   environment_config:

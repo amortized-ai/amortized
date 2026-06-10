@@ -16,7 +16,6 @@ config:
   weight_decay: 0.01
   max_grad_norm: 1.0
 
-  temperature: 0.9
   lmbda: 0.5
   beta: 0.5
   max_new_tokens: 256
