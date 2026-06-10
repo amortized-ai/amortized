@@ -27,9 +27,9 @@ _monitor_tasks: set[asyncio.Task[None]] = set()
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "docker.io/huggingface/trl:1.5.0",
-    "sdg": "ghcr.io/amortized-ai/synth:latest",
-    "inference": "ghcr.io/amortized-ai/inference:latest",
-    "eval": "ghcr.io/amortized-ai/synth:latest",
+    "sdg": "ghcr.io/amortized-ai/asynth:latest",
+    "inference": "ghcr.io/amortized-ai/asynth:latest",
+    "eval": "ghcr.io/amortized-ai/asynth:latest",
     "serve": "docker.io/vllm/vllm-openai",
 }
 
