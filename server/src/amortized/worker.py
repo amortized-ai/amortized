@@ -170,7 +170,8 @@ def _serve_config_yaml(config: dict[str, Any]) -> str:
         elif key not in _SERVE_FIELD_MAP:
             vllm_config[key] = value
 
-    return yaml.dump(vllm_config, default_flow_style=False, sort_keys=False)
+    result: str = yaml.dump(vllm_config, default_flow_style=False, sort_keys=False)
+    return result
 
 
 def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
