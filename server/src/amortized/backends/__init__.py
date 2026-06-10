@@ -52,6 +52,7 @@ class JobSpec:
     image: str | None = None
     timeout: int | None = None
     resources: Resources = field(default_factory=Resources)
+    ports: dict[int, int] = field(default_factory=dict)
 
 
 @runtime_checkable

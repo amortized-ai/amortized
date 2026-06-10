@@ -43,12 +43,13 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
 class TestJobTypeRegistry:
     def test_list_job_types(self) -> None:
         types = list_job_types()
-        assert len(types) == 4
+        assert len(types) == 5
         type_names = [t["type"] for t in types]
         assert "training" in type_names
         assert "sdg" in type_names
         assert "inference" in type_names
         assert "eval" in type_names
+        assert "serve" in type_names
 
     def test_get_schema_training(self) -> None:
         schema = get_schema("training")
@@ -400,12 +401,13 @@ class TestJobTypesEndpoints:
         response = await client.get("/api/v1/job-types")
         assert response.status_code == 200
         types = response.json()
-        assert len(types) == 4
+        assert len(types) == 5
         type_names = [t["type"] for t in types]
         assert "training" in type_names
         assert "sdg" in type_names
         assert "inference" in type_names
         assert "eval" in type_names
+        assert "serve" in type_names
 
     @pytest.mark.asyncio
     async def test_get_training_schema(self, client: httpx.AsyncClient) -> None:

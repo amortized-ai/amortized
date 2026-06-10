@@ -471,6 +471,9 @@ def submit(
         typer.Option("--model", help="Model path (training) or model name (sdg)"),
     ] = None,
     data: Annotated[str | None, typer.Option("--data", help="Data path or artifact ID")] = None,
+    adapter: Annotated[
+        str | None, typer.Option("--adapter", help="LoRA adapter artifact ID or path")
+    ] = None,
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
     ] = None,
@@ -493,12 +496,14 @@ def submit(
                     overrides[k] = json.loads(v)
                 except json.JSONDecodeError:
                     overrides[k] = v
-            model_key = "model_name_or_path" if job_type == "training" else "model"
+            model_key = "model_name_or_path" if job_type in ("training", "serve") else "model"
             if model:
                 overrides.setdefault(f"config.{model_key}", model)
             data_key = "dataset" if job_type == "eval" else "data_path"
             if data:
                 overrides.setdefault(f"config.{data_key}", _resolve_data(client, data))
+            if adapter:
+                overrides.setdefault("config.adapter_path", _resolve_data(client, adapter))
             for k in list(overrides):
                 v = overrides[k]
                 bare = k.removeprefix("config.")
@@ -518,12 +523,14 @@ def submit(
                 except json.JSONDecodeError as exc:
                     err_console.print(f"[red]Invalid JSON config:[/red] {exc}")
                     raise typer.Exit(1) from exc
-            model_key = "model_name_or_path" if job_type == "training" else "model"
+            model_key = "model_name_or_path" if job_type in ("training", "serve") else "model"
             if model:
                 cfg.setdefault(model_key, model)
             data_key = "dataset" if job_type == "eval" else "data_path"
             if data:
                 cfg.setdefault(data_key, _resolve_data(client, data))
+            if adapter:
+                cfg.setdefault("adapter_path", _resolve_data(client, adapter))
             for kv in set_values or []:
                 if "=" not in kv:
                     err_console.print(f"[red]Invalid --set format:[/red] {kv} (expected KEY=VALUE)")

@@ -3756,7 +3756,8 @@
           "training",
           "sdg",
           "inference",
-          "eval"
+          "eval",
+          "serve"
         ],
         "title": "JobType",
         "description": "Type of job."

@@ -145,6 +145,11 @@ class SSHBackend:
                     f"--secret {sname},type=env,target={target}" for sname, target in secret_names
                 )
 
+                port_flags = " ".join(
+                    f"-p {host_port}:{container_port}"
+                    for host_port, container_port in spec.ports.items()
+                )
+
                 home_dir = "~"
                 try:
                     home_result = await conn.run("echo $HOME", check=True)
@@ -156,6 +161,7 @@ class SSHBackend:
                     cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
+                    f"{port_flags + ' ' if port_flags else ''}"
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "
                     f"-v {home_dir}:{home_dir}:ro "

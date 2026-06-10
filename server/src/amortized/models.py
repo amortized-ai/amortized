@@ -15,6 +15,7 @@ class JobType(StrEnum):
     sdg = "sdg"
     inference = "inference"
     eval = "eval"
+    serve = "serve"
 
 
 class JobStatus(StrEnum):

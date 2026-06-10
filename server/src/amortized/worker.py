@@ -30,6 +30,7 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
     "sdg": "ghcr.io/amortized-ai/synth:latest",
     "inference": "ghcr.io/amortized-ai/inference:latest",
     "eval": "ghcr.io/amortized-ai/synth:latest",
+    "serve": "docker.io/vllm/vllm-openai",
 }
 
 _RUNNER_MODULES: dict[str, str] = {
@@ -136,6 +137,39 @@ def _training_config_yaml(config: dict[str, Any]) -> str:
         trl_config["use_peft"] = True
 
     return yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+
+
+_SERVE_FIELD_MAP: dict[str, str] = {
+    "model_name_or_path": "model",
+    "served_model_name": "served-model-name",
+    "tensor_parallel_size": "tensor-parallel-size",
+}
+
+_SERVE_SKIP_KEYS = {"adapter_path", "output_dir"}
+
+
+def _serve_config_yaml(config: dict[str, Any]) -> str:
+    import yaml
+
+    vllm_config: dict[str, Any] = {"host": "0.0.0.0"}
+
+    served_name = config.get("served_model_name", "default")
+    adapter_path = config.get("adapter_path")
+
+    if adapter_path:
+        vllm_config["enable-lora"] = True
+        vllm_config["lora-modules"] = f"{served_name}={adapter_path}"
+
+    for key, value in config.items():
+        if key in _SERVE_SKIP_KEYS or value is None:
+            continue
+        vllm_field = _SERVE_FIELD_MAP.get(key)
+        if vllm_field:
+            vllm_config[vllm_field] = value
+        elif key not in _SERVE_FIELD_MAP:
+            vllm_config[key] = value
+
+    return yaml.dump(vllm_config, default_flow_style=False, sort_keys=False)
 
 
 def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
@@ -570,6 +604,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         JobType.sdg.value: "sdg_output",
         JobType.inference.value: "inference_output",
         JobType.eval.value: "eval_output",
+        JobType.serve.value: "serve_output",
     }
     dir_name = output_dir_names.get(job["type"], f"{job['type']}_output")
     base_dir = job.get("output_dir") or str(config_mod.settings.data_dir / dir_name)
@@ -606,7 +641,13 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     config = await _resolve_artifact_refs(config)
 
-    cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
+    if job["type"] == JobType.serve.value:
+        port = int(config.get("port", 8000))
+        spec_ports = {port: port}
+        cmd = ["vllm", "serve", "--config", "/amortized/work/config.yaml"]
+    else:
+        cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
+        spec_ports = {}
 
     backend_name = config_mod.settings.default_backend or "local"
     if isinstance(job.get("metadata"), dict):
@@ -659,6 +700,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         trl_yaml = _training_config_yaml(config)
         spec_env["_run_config"] = trl_yaml
         cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
+    elif image and job["type"] == JobType.serve.value:
+        spec_env["_run_config"] = _serve_config_yaml(config)
     elif image:
         script = _generate_container_script(job["type"], config)
         spec_env["_run_script"] = script
@@ -670,6 +713,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         env=spec_env,
         work_dir=output_dir,
         image=image,
+        ports=spec_ports,
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)
@@ -685,6 +729,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             pid=handle.remote_pid,
             backend_handle=handle_json,
         )
+
+        if job["type"] == JobType.serve.value:
+            task = asyncio.create_task(_monitor_serve_job(job_id, handle, backend))
+            _monitor_tasks.add(task)
+            task.add_done_callback(_monitor_tasks.discard)
+            logger.info("Serve job %s started — monitoring in background", job_id)
+            return
 
         poll_interval = 2.0
         while True:
@@ -864,6 +915,48 @@ async def cleanup_orphaned_jobs() -> None:
         await db.commit()
     finally:
         await db.close()
+
+
+async def _monitor_serve_job(
+    job_id: str,
+    handle: BackendHandle,
+    backend: Any,
+) -> None:
+    """Background monitor for a long-running serve job.
+
+    Polls the backend periodically. If the container dies unexpectedly,
+    marks the job as failed. Normal shutdown happens via cancel.
+    """
+    poll_interval = 10.0
+    while True:
+        try:
+            status = await backend.status(handle)
+            if not status.running:
+                completed_at = datetime.now(UTC).isoformat()
+                if status.exit_code is not None and status.exit_code < 0:
+                    await _update_job(
+                        job_id,
+                        status=JobStatus.cancelled,
+                        completed_at=completed_at,
+                        error="Serve container stopped",
+                    )
+                else:
+                    error = status.error or f"Serve container exited with code {status.exit_code}"
+                    await _update_job(
+                        job_id,
+                        status=JobStatus.failed,
+                        completed_at=completed_at,
+                        error=error,
+                    )
+                if handle.secret_names and hasattr(backend, "cleanup_secrets"):
+                    try:
+                        await backend.cleanup_secrets(handle)
+                    except Exception:
+                        logger.warning("Failed to clean up secrets for serve job %s", job_id)
+                break
+        except Exception:
+            logger.warning("Error monitoring serve job %s", job_id, exc_info=True)
+        await asyncio.sleep(poll_interval)
 
 
 async def _monitor_heartbeats(poll_interval: float = 60.0, timeout: float = 300.0) -> None:

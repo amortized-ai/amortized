@@ -41,6 +41,10 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "description": "LLM-as-judge evaluation job",
         "schema_file": "eval.json",
     },
+    "serve": {
+        "description": "Serve a model via vLLM with OpenAI-compatible API",
+        "schema_file": "serve.json",
+    },
 }
 
 _schema_cache: dict[str, dict[str, Any]] = {}
@@ -133,6 +137,14 @@ async def _validate_eval(config: dict[str, Any]) -> list[str]:
     return []
 
 
+async def _validate_serve(config: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    tp = config.get("tensor_parallel_size")
+    if tp is not None and (tp & (tp - 1)) != 0:
+        errors.append(f"tensor_parallel_size={tp} must be a power of 2")
+    return errors
+
+
 _SemanticValidator = Callable[[dict[str, Any]], Coroutine[Any, Any, list[str]]]
 
 _SEMANTIC_VALIDATORS: dict[str, _SemanticValidator] = {
@@ -140,6 +152,7 @@ _SEMANTIC_VALIDATORS: dict[str, _SemanticValidator] = {
     "sdg": _validate_sdg,
     "inference": _validate_inference,
     "eval": _validate_eval,
+    "serve": _validate_serve,
 }
 
 
