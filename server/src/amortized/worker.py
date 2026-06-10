@@ -136,7 +136,8 @@ def _training_config_yaml(config: dict[str, Any]) -> str:
     if "lora_r" in trl_config:
         trl_config["use_peft"] = True
 
-    return yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+    result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+    return result
 
 
 _SERVE_FIELD_MAP: dict[str, str] = {
