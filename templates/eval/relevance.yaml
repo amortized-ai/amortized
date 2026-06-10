@@ -32,6 +32,6 @@ judge_params:
     ***
     [END DATA]
 
-  response_format: JSON
-  judgment_type: BOOL
+  response_format: json
+  judgment_type: bool
   include_explanation: True

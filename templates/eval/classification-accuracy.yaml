@@ -11,7 +11,6 @@ description: >-
 
 config:
   accuracy_fields: []
-  max_samples: 100
   temperature: 0.0
   judge_model: openai/gpt-5.4
   judgment_type: bool

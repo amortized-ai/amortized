@@ -11,7 +11,6 @@ description: >-
 
 config:
   accuracy_fields: []
-  max_samples: 100
   temperature: 0.0
   system_instruction: |
     Exact-match evaluation compares parsed field values from the model's output

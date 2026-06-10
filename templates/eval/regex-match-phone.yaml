@@ -28,7 +28,7 @@ rule_judge_params:
     inverse: false
 
   # Output format for the judgment
-  response_format: XML
+  response_format: xml
 
   # Type of judgment output
-  judgment_type: BOOL
+  judgment_type: bool

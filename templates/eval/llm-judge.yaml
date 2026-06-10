@@ -7,7 +7,6 @@ description: >-
 
 config:
   judge_model: openai/gpt-5.4
-  max_samples: 100
   temperature: 0.0
   judgment_type: bool
   response_format: json

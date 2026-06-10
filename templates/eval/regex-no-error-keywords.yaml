@@ -24,5 +24,5 @@ rule_judge_params:
     # Case-insensitive matching (re.IGNORECASE = 2)
     flags: 2
 
-  response_format: XML
-  judgment_type: BOOL
+  response_format: xml
+  judgment_type: bool

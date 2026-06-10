@@ -36,5 +36,4 @@ config:
   judgment_type: bool
   response_format: json
   include_explanation: true
-  max_samples: 100
   temperature: 0.0
