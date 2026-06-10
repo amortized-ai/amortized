@@ -38,9 +38,9 @@ def _load_dataset(path: str) -> list[dict[str, Any]]:
 
 def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
     """Run evaluation via asynth's judge system."""
-    dataset_path = config.get("dataset_path") or config.get("dataset")
+    dataset_path = config.get("dataset")
     if not dataset_path:
-        raise ValueError("dataset or dataset_path is required for eval jobs")
+        raise ValueError("'dataset' is required for eval jobs")
 
     evaluator_type = config.get("evaluator_type", "llm")
     judgment_type = config.get("judgment_type", "bool")
@@ -59,8 +59,10 @@ def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
             }
         )
     else:
+        judge_cfg = config.get("judge", {})
+        prompt = judge_cfg.get("prompt", "Evaluate the following: {response}")
         judge_params: dict[str, Any] = {
-            "prompt_template": config.get("judge_prompt", "Evaluate the following: {response}"),
+            "prompt_template": prompt,
             "response_format": response_format,
             "judgment_type": judgment_type,
         }
@@ -70,7 +72,8 @@ def _run_asynth_eval(config: dict[str, Any], output_dir: str) -> None:
 
     inference_config = None
     if evaluator_type == "llm":
-        model = config.get("judge_model") or config.get("model", "openai/gpt-4o-mini")
+        judge_cfg = config.get("judge", {})
+        model = judge_cfg.get("model") or config.get("model", "openai/gpt-4o-mini")
         inf_params = config.get("inference_params", {})
         inference_config = LiteLLMInferenceConfig(
             model=model,

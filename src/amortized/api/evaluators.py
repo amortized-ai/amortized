@@ -231,10 +231,11 @@ async def create_evaluation(
     inference = body.inference_params_override or evaluator.get("inference_params", {})
 
     eval_config: dict[str, Any] = {
-        "model": judge_model,
-        "judge_model": judge_model,
         "dataset": body.dataset,
-        "judge_prompt": evaluator["prompt"],
+        "judge": {
+            "model": judge_model,
+            "prompt": evaluator["prompt"],
+        },
     }
     if inference.get("temperature") is not None:
         eval_config["temperature"] = inference["temperature"]
