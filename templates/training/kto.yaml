@@ -1,16 +1,17 @@
 type: training
-description: LoRA SFT — parameter-efficient fine-tuning via TRL
+description: KTO — binary feedback optimization via TRL
 config:
-  algorithm: sft
+  algorithm: kto
 
-  # Data
+  # Data — binary feedback with label column (true/false)
   max_length: 2048
+  max_prompt_length: 1024
 
   # Training
-  num_train_epochs: 3
-  per_device_train_batch_size: 4
+  num_train_epochs: 1
+  per_device_train_batch_size: 2
   gradient_accumulation_steps: 4
-  learning_rate: 2.0e-04
+  learning_rate: 5.0e-07
   lr_scheduler_type: cosine
   warmup_ratio: 0.1
   weight_decay: 0.01
@@ -40,4 +41,4 @@ config:
 
 compute:
   gpus: 1
-  min_vram_gb: 16
+  min_vram_gb: 24

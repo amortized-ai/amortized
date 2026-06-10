@@ -1,5 +1,5 @@
 type: training
-description: LoRA SFT — parameter-efficient fine-tuning via TRL
+description: QLoRA SFT — 4-bit quantized LoRA for minimal VRAM
 config:
   algorithm: sft
 
@@ -8,18 +8,18 @@ config:
 
   # Training
   num_train_epochs: 3
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 4
-  learning_rate: 2.0e-04
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 3.0e-04
   lr_scheduler_type: cosine
-  warmup_ratio: 0.1
+  warmup_steps: 100
   weight_decay: 0.01
   max_grad_norm: 1.0
 
   # Precision
   bf16: true
 
-  # LoRA
+  # QLoRA
   use_peft: true
   lora_r: 16
   lora_alpha: 32
@@ -32,6 +32,12 @@ config:
     - gate_proj
     - up_proj
     - down_proj
+  qlora: true
+  bnb_4bit_quant_type: nf4
+  bnb_4bit_compute_dtype: bfloat16
+
+  # Memory
+  gradient_checkpointing: true
 
   # Logging
   logging_steps: 10
@@ -40,4 +46,4 @@ config:
 
 compute:
   gpus: 1
-  min_vram_gb: 16
+  min_vram_gb: 10
