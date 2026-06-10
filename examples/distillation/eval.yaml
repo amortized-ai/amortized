@@ -1,11 +1,9 @@
 type: eval
-description: Evaluate ticket classifier — deterministic accuracy + LLM judge
+description: Evaluate distilled student vs teacher — deterministic accuracy + LLM judge
 config:
-  # Test data
   test_data_path: test_data.jsonl
   max_samples: 50
 
-  # Deterministic scoring — exact match on structured output
   deterministic_checks:
     - field: urgency
       type: exact_match
@@ -14,7 +12,6 @@ config:
       type: exact_match
       expected_from: label
 
-  # LLM-as-judge — assess overall quality
   judge:
     model: openai/gpt-4o-mini
     temperature: 0.0
@@ -37,7 +34,6 @@ config:
       2. Is the topic correctly identified?
       3. Would a human support agent agree with this classification?
 
-  # Reporting
   metrics:
     - overall_accuracy
     - per_class_accuracy

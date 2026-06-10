@@ -1,0 +1,96 @@
+type: sdg
+description: Generate conversation summarization training data
+config:
+  model: openai/gpt-4o-mini
+  num_samples: 100
+  temperature: 0.7
+  max_tokens: 4096
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: domain
+        name: Domain
+        description: Business domain of the conversation
+        possible_values:
+          - id: support
+            name: Customer Support
+            description: Technical support, billing, account issues
+            sample_rate: 0.4
+          - id: sales
+            name: Sales
+            description: Product inquiries, pricing, demos
+            sample_rate: 0.2
+          - id: hr
+            name: HR
+            description: Employee onboarding, benefits, policies
+            sample_rate: 0.2
+          - id: legal
+            name: Legal
+            description: Contract review, compliance, terms
+            sample_rate: 0.2
+      - id: length
+        name: Conversation Length
+        description: How long the conversation is
+        possible_values:
+          - id: short
+            name: Short
+            description: 2-4 turns, simple issue
+            sample_rate: 0.3
+          - id: medium
+            name: Medium
+            description: 5-8 turns, moderate complexity
+            sample_rate: 0.5
+          - id: long
+            name: Long
+            description: 9-15 turns, complex multi-issue conversation
+            sample_rate: 0.2
+    generated_attributes:
+      - id: conversation
+        instruction_messages:
+          - role: system
+            content: >-
+              Generate a realistic {length} ({length.description}) business
+              conversation in the {domain} domain. Format as alternating
+              Customer/Agent lines. Include specific details — names, order
+              numbers, dates, product names. Make it feel like a real
+              conversation transcript.
+          - role: user
+            content: "Generate a {length} {domain} conversation."
+      - id: summary
+        instruction_messages:
+          - role: system
+            content: >-
+              You are a conversation summarizer. Given a business conversation,
+              produce a structured summary with exactly these fields:
+              - Issue: One sentence describing the customer's problem
+              - Resolution: One sentence describing how it was resolved (or "Unresolved" if not)
+              - Action Items: Bullet list of follow-up actions (or "None")
+              - Sentiment: positive, neutral, or negative
+          - role: user
+            content: >-
+              Summarize this conversation:
+
+              {conversation}
+    transformed_attributes:
+      - id: messages
+        transformation_strategy:
+          type: chat
+          chat_transform:
+            messages:
+              - role: system
+                content: >-
+                  Summarize the conversation. Output exactly:
+                  Issue: <one sentence>
+                  Resolution: <one sentence or "Unresolved">
+                  Action Items: <bullet list or "None">
+                  Sentiment: <positive/neutral/negative>
+              - role: user
+                content: "{conversation}"
+              - role: assistant
+                content: "{summary}"
+    passthrough_attributes:
+      - domain
+      - length
+      - conversation
+      - summary
+      - messages

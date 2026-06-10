@@ -1,27 +1,23 @@
 type: training
-description: LoRA SFT for ticket classification — Qwen 2.5 1.5B
+description: LoRA SFT for conversation summarization — Qwen 2.5 1.5B
 config:
   algorithm: sft
   model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
 
-  # Data
   data_path: training_data.jsonl
-  max_length: 2048
+  max_length: 4096
 
-  # Training
   num_train_epochs: 3
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 4
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
   learning_rate: 2.0e-04
   lr_scheduler_type: cosine
   warmup_ratio: 0.1
   weight_decay: 0.01
   max_grad_norm: 1.0
 
-  # Precision
   bf16: true
 
-  # LoRA
   use_peft: true
   lora_r: 16
   lora_alpha: 32
@@ -35,13 +31,12 @@ config:
     - up_proj
     - down_proj
 
-  # Logging
+  gradient_checkpointing: true
+
   logging_steps: 10
   save_steps: 500
   report_to: none
-
-  # Output
-  output_dir: output/ticket-classifier
+  output_dir: output/summarizer
 
 compute:
   gpus: 1

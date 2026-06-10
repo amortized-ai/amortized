@@ -1,0 +1,18 @@
+type: eval
+description: Evaluate content moderator — precision, recall, F1
+config:
+  test_data_path: test_data.jsonl
+  max_samples: 100
+
+  deterministic_checks:
+    - field: safety_label
+      type: exact_match
+      expected_from: label
+
+  metrics:
+    - overall_accuracy
+    - precision
+    - recall
+    - f1
+    - false_positive_rate
+    - false_negative_rate

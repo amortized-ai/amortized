@@ -1,7 +1,7 @@
 type: sdg
 description: Generate entity extraction training data — extract structured fields from text
 config:
-  model: openai/gpt-5.4
+  model: openai/gpt-4o-mini
   num_samples: 100
   temperature: 0.7
   max_tokens: 4096
@@ -71,11 +71,17 @@ config:
         instruction_messages:
           - role: user
             content: >-
-              Extract all {entity_type} entities from this text. Return a JSON array
-              of objects with "entity" and "span" fields.
+              Extract all {entity_type} entities from this text. Return ONLY a JSON
+              array of objects with "entity" and "type" fields.
 
+              Entities:
+              <json>
               Text:
               {source_text}
+        postprocessing_params:
+          id: extraction_clean
+          cut_prefix: "Entities:"
+          strip_whitespace: true
     transformed_attributes:
       - id: messages
         transformation_strategy:

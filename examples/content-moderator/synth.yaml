@@ -1,0 +1,99 @@
+type: sdg
+description: Generate content moderation training data — safe vs unsafe classification
+config:
+  model: openai/gpt-4o-mini
+  num_samples: 200
+  temperature: 0.8
+  max_tokens: 2048
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: safety_label
+        name: Safety Label
+        description: Whether the content is safe or unsafe
+        possible_values:
+          - id: safe
+            name: Safe
+            description: Appropriate content that follows community guidelines
+            sample_rate: 0.6
+          - id: unsafe
+            name: Unsafe
+            description: Content that violates community guidelines
+            sample_rate: 0.4
+      - id: content_type
+        name: Content Type
+        description: The type of user-generated content
+        possible_values:
+          - id: comment
+            name: Comment
+            description: A comment on a post or article
+            sample_rate: 0.3
+          - id: review
+            name: Review
+            description: A product or service review
+            sample_rate: 0.3
+          - id: message
+            name: Message
+            description: A direct message or chat message
+            sample_rate: 0.2
+          - id: post
+            name: Post
+            description: A social media post or forum post
+            sample_rate: 0.2
+      - id: violation_type
+        name: Violation Type
+        description: Type of guideline violation (only applies when unsafe)
+        possible_values:
+          - id: harassment
+            name: Harassment
+            description: Targeted abuse, bullying, or intimidation
+            sample_rate: 0.25
+          - id: hate_speech
+            name: Hate Speech
+            description: Discrimination based on protected characteristics
+            sample_rate: 0.2
+          - id: misinformation
+            name: Misinformation
+            description: Deliberately false or misleading claims
+            sample_rate: 0.2
+          - id: spam
+            name: Spam
+            description: Unsolicited commercial content or scams
+            sample_rate: 0.2
+          - id: self_harm
+            name: Self Harm
+            description: Content promoting or glorifying self-harm
+            sample_rate: 0.15
+    generated_attributes:
+      - id: content
+        instruction_messages:
+          - role: system
+            content: >-
+              You are generating synthetic content moderation training data. Generate
+              a realistic piece of user-generated content. For safe content, write
+              normal, appropriate messages. For unsafe content, write content that
+              is clearly problematic but not graphic — it should be detectable by
+              a classifier. Do not include labels or metadata. Just write the content.
+          - role: user
+            content: >-
+              Generate a {content_type} that is {safety_label}.
+              If unsafe, the violation type is: {violation_type} — {violation_type.description}
+    transformed_attributes:
+      - id: messages
+        transformation_strategy:
+          type: chat
+          chat_transform:
+            messages:
+              - role: system
+                content: >-
+                  You are a content moderator. Classify the following content as
+                  either "safe" or "unsafe". Respond with exactly one word.
+              - role: user
+                content: "{content}"
+              - role: assistant
+                content: "{safety_label}"
+    passthrough_attributes:
+      - safety_label
+      - content_type
+      - content
+      - messages

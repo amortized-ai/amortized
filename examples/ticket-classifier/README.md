@@ -3,26 +3,75 @@
 Fine-tune a small model to classify customer support tickets by urgency and topic,
 replacing expensive frontier model calls.
 
+## What You'll Build
+
+A task model that takes a customer support ticket and outputs:
+- **Urgency**: low, medium, high, critical
+- **Topic**: orders, shipping, returns, payments, product_questions, account_issues
+
+## Prerequisites
+
+- Amortized server running (`amortized up`)
+- Compute backend configured (`amortized config`)
+- API key for an LLM provider (OpenAI, Anthropic, etc.) set as env var
+- ~30 minutes total (5 min synth, 15 min training, 5 min eval)
+
 ## Pipeline
 
+### Step 1: Generate training data (100 labeled tickets)
+
 ```bash
-# 1. Generate training data (100 labeled tickets)
-amortized submit sdg --recipe examples/ticket-classifier/synth --confirm
+amortized submit examples/ticket-classifier/synth.yaml --confirm
+```
 
-# 2. Fine-tune with LoRA SFT
-amortized submit training --recipe examples/ticket-classifier/train \
-  --model Qwen/Qwen2.5-1.5B-Instruct --data <sdg-artifact-id> --confirm
+This generates 100 realistic customer support tickets with controlled
+urgency/topic distributions, formatted as SFT training conversations.
 
-# 3. Serve the fine-tuned model
-amortized submit serve --recipe serve/adapter \
-  --model Qwen/Qwen2.5-1.5B-Instruct --adapter <model-artifact-id> --confirm
+### Step 2: Fine-tune with LoRA SFT
 
-# 4. Evaluate
-amortized submit eval --recipe examples/ticket-classifier/eval \
-  --data <sdg-artifact-id> --serve <serve-job-id> --confirm
+```bash
+amortized submit examples/ticket-classifier/train.yaml \
+  --set config.data_path=<sdg-output-path> --confirm
+```
+
+Trains a Qwen 2.5 1.5B model with LoRA. Takes ~15 minutes on a single GPU.
+
+### Step 3: Serve the fine-tuned model
+
+```bash
+amortized submit recipes/serve/adapter.yaml \
+  --set config.model=Qwen/Qwen2.5-1.5B-Instruct \
+  --set config.adapter=<training-output-path> --confirm
+```
+
+### Step 4: Evaluate
+
+```bash
+amortized submit examples/ticket-classifier/eval.yaml \
+  --set config.test_data_path=<test-data-path> \
+  --set config.model_endpoint=<serve-url> --confirm
 ```
 
 ## Expected Results
 
-- Base model: ~60% urgency accuracy, ~80% topic accuracy
-- Fine-tuned model: ~90%+ on both with sufficient training data
+| Metric | Base Model | Fine-tuned |
+|--------|-----------|------------|
+| Urgency accuracy | ~60% | ~90%+ |
+| Topic accuracy | ~80% | ~95%+ |
+| Judge pass rate | ~70% | ~95%+ |
+
+## Customization
+
+- **More data**: Increase `num_samples` in `synth.yaml` to 500-1000 for better quality
+- **Different model**: Change `model_name_or_path` in `train.yaml` (try `Qwen/Qwen3-4B` for higher accuracy)
+- **Different categories**: Edit the `possible_values` in `synth.yaml` to match your ticket taxonomy
+- **Harder task**: Add more sampled attributes (e.g., language, department, priority)
+
+## GPU Requirements
+
+| Stage | GPU | VRAM | Time |
+|-------|-----|------|------|
+| Synth | None (API calls) | 0 | ~5 min |
+| Training | 1x GPU | 8 GB+ | ~15 min |
+| Serving | 1x GPU | 4 GB+ | — |
+| Eval | None (API calls) | 0 | ~2 min |

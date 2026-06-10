@@ -1,17 +1,38 @@
 type: eval
-description: Evaluate entity extraction accuracy
+description: Evaluate entity extraction — precision, recall, and LLM judge
 config:
-  model_name: tuned
-  accuracy_fields:
-    - entity_type
+  test_data_path: test_data.jsonl
   max_samples: 50
-  temperature: 0.0
-  judge_model: openai/gpt-5.4
-  judge_prompt: >-
-    An entity extraction task was performed. Evaluate if the extracted
-    entities are correct and complete.
 
-    Source text: {request}
-    Extracted entities: {response}
+  # Deterministic scoring — JSON array comparison
+  deterministic_checks:
+    - field: entities
+      type: json_array_match
+      expected_from: label
+      scoring: f1
 
-    Are the extractions correct?
+  # LLM-as-judge — assess extraction quality
+  judge:
+    model: openai/gpt-4o-mini
+    temperature: 0.0
+    prompt: >-
+      An entity extraction task was performed on the following text.
+
+      Source text: {request}
+
+      Expected entities: {expected}
+      Extracted entities: {response}
+
+      Evaluate the extraction quality:
+      1. Are all expected entities found? (recall)
+      2. Are there any false positives — entities extracted that shouldn't be? (precision)
+      3. Are entity boundaries correct (full names vs partial)?
+      4. Are entity types correctly labeled?
+
+  # Reporting
+  metrics:
+    - precision
+    - recall
+    - f1
+    - judge_pass_rate
+    - per_entity_type_f1

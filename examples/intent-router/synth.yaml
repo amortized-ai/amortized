@@ -1,0 +1,102 @@
+type: sdg
+description: Generate intent classification training data for a support routing system
+config:
+  model: openai/gpt-4o-mini
+  num_samples: 200
+  temperature: 0.8
+  max_tokens: 2048
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: intent
+        name: Intent
+        description: The user's intent category
+        possible_values:
+          - id: billing_inquiry
+            name: Billing Inquiry
+            description: Questions about charges, invoices, payment methods
+            sample_rate: 0.15
+          - id: technical_support
+            name: Technical Support
+            description: Product bugs, errors, how-to questions
+            sample_rate: 0.2
+          - id: account_management
+            name: Account Management
+            description: Password reset, profile updates, account deletion
+            sample_rate: 0.15
+          - id: order_status
+            name: Order Status
+            description: Where is my order, tracking, delivery ETA
+            sample_rate: 0.15
+          - id: refund_request
+            name: Refund Request
+            description: Return items, request refund, dispute charge
+            sample_rate: 0.1
+          - id: feature_request
+            name: Feature Request
+            description: Suggestions for new features or improvements
+            sample_rate: 0.05
+          - id: complaint
+            name: Complaint
+            description: Dissatisfaction with service, escalation
+            sample_rate: 0.1
+          - id: general_inquiry
+            name: General Inquiry
+            description: Pricing, availability, business hours, policies
+            sample_rate: 0.1
+      - id: tone
+        name: Tone
+        description: The user's communication tone
+        possible_values:
+          - id: polite
+            name: Polite
+            description: Friendly, patient, uses pleasantries
+            sample_rate: 0.4
+          - id: neutral
+            name: Neutral
+            description: Direct and factual, no strong emotion
+            sample_rate: 0.3
+          - id: frustrated
+            name: Frustrated
+            description: Annoyed, impatient, may use strong language
+            sample_rate: 0.2
+          - id: urgent
+            name: Urgent
+            description: Time-pressured, needs immediate help
+            sample_rate: 0.1
+    generated_attributes:
+      - id: user_message
+        instruction_messages:
+          - role: system
+            content: >-
+              Generate a realistic customer message for a SaaS product's support system.
+              The message should feel authentic — vary length (1 sentence to a short
+              paragraph), include typos occasionally, and match the specified tone.
+              Just write the customer's message, nothing else.
+          - role: user
+            content: >-
+              Generate a customer message with:
+              - Intent: {intent} — {intent.description}
+              - Tone: {tone} — {tone.description}
+    transformed_attributes:
+      - id: messages
+        transformation_strategy:
+          type: chat
+          chat_transform:
+            messages:
+              - role: system
+                content: >-
+                  You are an intent classifier for a customer support system.
+                  Classify the user's message into exactly one intent category.
+                  Respond with only the intent label, nothing else.
+                  Valid intents: billing_inquiry, technical_support, account_management,
+                  order_status, refund_request, feature_request, complaint, general_inquiry
+              - role: user
+                content: "{user_message}"
+              - role: assistant
+                content: "{intent}"
+    passthrough_attributes:
+      - intent
+      - tone
+      - user_message
+      - messages
