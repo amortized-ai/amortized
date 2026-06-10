@@ -53,7 +53,7 @@ inspect generated data, training metrics, and other text-based outputs.
 the user a few example rows and assess whether the data looks good for training.
 - After SDG completes, the output data usually needs to be converted to messages \
 format before training. Use convert_dataset to transform SDG output \
-(question/answer pairs) into the messages format that training_hub expects. \
+(question/answer pairs) into the messages format that TRL expects. \
 Always convert BEFORE proposing a training job.
 - After training completes, check the training metrics to assess convergence \
 (look at final loss, whether loss plateaued, etc.) and give recommendations. \
@@ -93,14 +93,16 @@ batch_size, etc. unless they bring it up. Just pick good values.
 - **add_api_key**: Store a provider API key (encrypted, persists)
 - **propose_action**: Propose a job for user confirmation (renders as a button)
 
-## TRAINING HUB KNOWLEDGE (LoRA SFT)
+## TRL KNOWLEDGE (LoRA SFT)
 
-Training Hub provides LoRA fine-tuning. Key parameters:
-- **model_path** (required): HuggingFace model ID (e.g. "Qwen/Qwen2.5-1.5B-Instruct")
-- **data_path** (required): Path to training data in JSONL format
-- **ckpt_output_dir** (required): Output directory for checkpoints
-- Sensible defaults: learning_rate=2e-4, num_epochs=3, micro_batch_size=2, \
-max_seq_len=2048, lora_r=16, lora_alpha=32, load_in_4bit=false.
+Training runs via the HuggingFace TRL CLI (`trl sft --config config.yaml`). \
+Key parameters:
+- **model_name_or_path** (required): HuggingFace model ID (e.g. "Qwen/Qwen2.5-1.5B-Instruct")
+- **datasets** (required): Path to training data in JSONL format
+- **output_dir** (required): Output directory for checkpoints
+- Sensible defaults: learning_rate=2e-4, num_train_epochs=3, \
+per_device_train_batch_size=2, max_length=2048, lora_r=16, lora_alpha=32, \
+use_peft=true, bf16=true.
 
 Recommended models:
 - **Qwen/Qwen2.5-1.5B-Instruct** — small, fast, good default

@@ -1,5 +1,5 @@
 """Tests for issues #43-#49: auth, config/validate, capability-gating,
-slurm, container fallbacks, resume, pre-signed URLs."""
+container fallbacks, resume, pre-signed URLs."""
 
 import os
 
@@ -7,13 +7,6 @@ import httpx
 import pytest
 
 from amortized.backends import Capability
-from amortized.backends.slurm import (
-    FRONTIER,
-    PERLMUTTER,
-    POLARIS,
-    SlurmBackend,
-    SlurmProfile,
-)
 from amortized.core.compute import MissingCapabilityError, check_capabilities
 from amortized.core.storage import LocalStorage, reset_storage
 from amortized.main import app
@@ -221,57 +214,6 @@ class TestCapabilityGating:
 # ---- #45: Slurm backend stub ----
 
 
-class TestSlurmBackend:
-    def test_profiles_exist(self) -> None:
-        assert FRONTIER.name == "frontier"
-        assert PERLMUTTER.name == "perlmutter"
-        assert POLARIS.name == "polaris"
-
-    def test_slurm_capabilities(self) -> None:
-        backend = SlurmBackend(host="example.com")
-        caps = backend.capabilities()
-        assert Capability.GPU in caps
-        assert Capability.LOG_STREAM in caps
-        assert Capability.STOP in caps
-
-    def test_slurm_profile_defaults(self) -> None:
-        profile = SlurmProfile(name="test", partition="debug")
-        assert profile.scheduler == "slurm"
-        assert profile.account == ""
-        assert profile.module_loads == []
-
-    def test_sbatch_script_generation(self) -> None:
-        from amortized.backends import JobSpec, Resources
-
-        backend = SlurmBackend(
-            host="example.com",
-            profile=SlurmProfile(
-                name="test",
-                partition="gpu",
-                account="myacct",
-                module_loads=["cuda", "python"],
-            ),
-        )
-        spec = JobSpec(
-            job_id="abc12345-6789",
-            command=["python", "train.py"],
-            work_dir="/scratch/jobs/abc",
-            resources=Resources(gpus=2),
-        )
-        script = backend._generate_sbatch_script(spec)
-        assert "partition=gpu" in script
-        assert "account=myacct" in script
-        assert "gres:gpu:2" in script
-        assert "module load cuda" in script
-        assert "python train.py" in script
-
-    def test_perlmutter_gpu_format(self) -> None:
-        assert "a100" in PERLMUTTER.gpu_resource_format
-
-
-# ---- #48: Resume endpoint ----
-
-
 class TestResumeEndpoint:
     @pytest.mark.asyncio
     async def test_resume_nonexistent_job(self, client: httpx.AsyncClient) -> None:
@@ -349,7 +291,7 @@ class TestNewModels:
         from amortized.backends import BackendHandle
 
         handle = BackendHandle(
-            backend_name="slurm",
+            backend_name="ssh",
             job_id="test-123",
             scheduler_id="12345",
         )

@@ -12,42 +12,12 @@ router = APIRouter(prefix="/api/v1/estimate", tags=["estimate"])
 
 
 def _estimate_vram(req: MemoryEstimateRequest) -> float:
-    """Estimate GPU VRAM requirements.
-
-    Uses Training Hub's LoRAEstimator/QLoRAEstimator when available,
-    falls back to a rough heuristic.
-    """
-    try:
-        if req.load_in_4bit:
-            from training_hub import QLoRAEstimator
-
-            estimator = QLoRAEstimator(
-                model_path=req.model_name_or_path,
-                lora_r=req.lora_r,
-                batch_size=req.batch_size,
-                max_seq_len=req.max_length,
-            )
-        else:
-            from training_hub import LoRAEstimator
-
-            estimator = LoRAEstimator(
-                model_path=req.model_name_or_path,
-                lora_r=req.lora_r,
-                batch_size=req.batch_size,
-                max_seq_len=req.max_length,
-            )
-        return float(estimator.estimate())
-    except ImportError:
-        logger.debug("training_hub not installed, using heuristic estimation")
-        return _heuristic_estimate(req)
+    """Estimate GPU VRAM requirements using a heuristic model."""
+    return _heuristic_estimate(req)
 
 
 def _heuristic_estimate(req: MemoryEstimateRequest) -> float:
-    """Rough VRAM estimate based on model name heuristics.
-
-    This is a fallback when training_hub is not installed.
-    Real estimates should use LoRAEstimator/QLoRAEstimator.
-    """
+    """Rough VRAM estimate based on model name heuristics."""
     # Extract approximate parameter count from model path
     model_lower = req.model_name_or_path.lower()
     param_billions = 1.5  # default

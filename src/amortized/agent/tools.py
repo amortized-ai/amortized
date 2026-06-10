@@ -96,13 +96,13 @@ TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "submit_training_job",
             "description": (
-                "Submit a LoRA SFT training job. "
+                "Submit a LoRA SFT training job via TRL. "
                 "Use propose_action instead if you want the user to confirm first."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "model_path": {
+                    "model_name_or_path": {
                         "type": "string",
                         "description": "HuggingFace model ID or local path",
                     },
@@ -110,7 +110,7 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "description": "Path to training data (JSONL)",
                     },
-                    "ckpt_output_dir": {
+                    "output_dir": {
                         "type": "string",
                         "description": "Output directory for checkpoints",
                     },
@@ -118,7 +118,7 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "number",
                         "description": "Learning rate (default: 2e-4)",
                     },
-                    "num_epochs": {
+                    "num_train_epochs": {
                         "type": "integer",
                         "description": "Number of training epochs (default: 3)",
                     },
@@ -134,16 +134,16 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "boolean",
                         "description": "Enable QLoRA 4-bit quantization",
                     },
-                    "micro_batch_size": {
+                    "per_device_train_batch_size": {
                         "type": "integer",
-                        "description": "Micro batch size (default: 2)",
+                        "description": "Batch size per GPU (default: 2)",
                     },
-                    "max_seq_len": {
+                    "max_length": {
                         "type": "integer",
                         "description": "Maximum sequence length (default: 2048)",
                     },
                 },
-                "required": ["model_path", "data_path", "ckpt_output_dir"],
+                "required": ["model_name_or_path", "data_path", "output_dir"],
             },
         },
     },
@@ -204,7 +204,7 @@ TOOLS: list[dict[str, Any]] = [
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["training", "sdg"],
+                        "enum": ["training", "sdg", "eval", "serve"],
                         "description": "Filter by job type",
                     },
                 },
@@ -219,7 +219,7 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "model_path": {
+                    "model_name_or_path": {
                         "type": "string",
                         "description": "HuggingFace model ID",
                     },
@@ -231,7 +231,7 @@ TOOLS: list[dict[str, Any]] = [
                         "type": "integer",
                         "description": "Batch size (default: 2)",
                     },
-                    "max_seq_len": {
+                    "max_length": {
                         "type": "integer",
                         "description": "Max sequence length (default: 2048)",
                     },
@@ -240,7 +240,7 @@ TOOLS: list[dict[str, Any]] = [
                         "description": "Use QLoRA 4-bit quantization",
                     },
                 },
-                "required": ["model_path"],
+                "required": ["model_name_or_path"],
             },
         },
     },
@@ -341,7 +341,7 @@ TOOLS: list[dict[str, Any]] = [
                 "Convert an SDG output dataset to messages format for training. "
                 "Auto-detects the input format (question/answer, input/output, "
                 "prompt/response) and converts to the messages format required "
-                "by training_hub."
+                "by TRL."
             ),
             "parameters": {
                 "type": "object",
