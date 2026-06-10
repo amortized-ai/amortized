@@ -1,6 +1,34 @@
 type: eval
-description: Evaluate model outputs with exact-match accuracy on parsed fields
+description: >-
+  Deterministic exact-match evaluation. Parses structured fields from model
+  output (lines matching "Field: value") and compares them against ground-truth
+  labels. No LLM judge needed — accuracy is computed programmatically.
+
+  Fill in accuracy_fields with the field names your model outputs
+  (e.g., [urgency, topic, sentiment]). The evaluator expects the model to
+  produce one "FieldName: value" line per field in its response. Matching is
+  case-insensitive and strips whitespace.
+
 config:
   accuracy_fields: []
   max_samples: 100
   temperature: 0.0
+  system_instruction: |
+    Exact-match evaluation compares parsed field values from the model's output
+    against ground-truth labels. Each field listed in accuracy_fields is
+    extracted from the model response using the pattern "FieldName: value"
+    (one per line, case-insensitive). A field scores 1 if the extracted value
+    exactly matches the expected value (after lowercasing and stripping
+    whitespace), and 0 otherwise. Overall accuracy is the fraction of fields
+    matched correctly across all samples.
+
+    Expected data format:
+      - Each sample has a request (input prompt) and a reference with the
+        correct values for each accuracy field.
+      - The model response should contain lines like:
+            Urgency: high
+            Topic: billing
+      - Fields not found in the output are scored as incorrect.
+
+    This evaluator is best for classification, extraction, and structured
+    output tasks where there is a single correct answer per field.
