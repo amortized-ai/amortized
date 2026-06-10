@@ -2,11 +2,23 @@ type: eval
 description: >-
   General-purpose LLM-as-judge evaluation. Uses a teacher model to score
   model responses on quality, correctness, and helpfulness. This is the
-  go-to template for custom evaluation — adapt the judge_prompt and
+  go-to template for custom evaluation — adapt the judge prompt and
   system_instruction to match your task's criteria.
 
 config:
-  judge_model: openai/gpt-5.4
+  judge:
+    model: openai/gpt-5.4
+    prompt: |
+      Here is the data:
+      [BEGIN DATA]
+      ***
+      [user request]:
+      {request}
+      ***
+      [response]:
+      {response}
+      ***
+      [END DATA]
   temperature: 0.0
   judgment_type: bool
   response_format: json
@@ -39,15 +51,3 @@ config:
     Note: Evaluate the response against the request as written. Do not penalize
     for omitting information that was not asked for, and do not reward
     unnecessary verbosity.
-
-  judge_prompt: |
-    Here is the data:
-    [BEGIN DATA]
-    ***
-    [user request]:
-    {request}
-    ***
-    [response]:
-    {response}
-    ***
-    [END DATA]

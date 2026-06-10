@@ -235,19 +235,24 @@ import json, os, re
 
 config = json.load(open("/amortized/config.json"))["config"]
 
-# --- Load dataset ---
 dataset_path = config["dataset"]
 data = [json.loads(line) for line in open(dataset_path) if line.strip()]
 max_samples = config.get("max_samples")
 if max_samples:
     data = data[:max_samples]
 
+checks = config.get("deterministic_checks", [])
+
+judge_config = config.get("judge", {})
+judge_model = judge_config.get("model")
+judge_prompt = judge_config.get("prompt", "Evaluate this response: {response}")
+judge_temp = judge_config.get("temperature", 0.0)
+
 model_endpoint = config.get("model_endpoint")
 model_name = config.get("model_name")
 
 results = []
 if model_endpoint and model_name:
-    # --- Run inference against served model ---
     from openai import OpenAI
     client = OpenAI(base_url=model_endpoint, api_key="dummy")
     temperature = config.get("temperature", 0.0)
@@ -280,59 +285,73 @@ if model_endpoint and model_name:
             "actual": actual_output,
         }
 
-        accuracy_fields = config.get("accuracy_fields", [])
-        for field in accuracy_fields:
-            pattern = rf"{field}:\\s*(\\w+)"
-            expected_match = re.search(pattern, expected_output, re.IGNORECASE)
-            actual_match = re.search(pattern, actual_output, re.IGNORECASE)
-            expected_val = expected_match.group(1).lower() if expected_match else ""
-            actual_val = actual_match.group(1).lower() if actual_match else ""
-            result[f"{field}_expected"] = expected_val
-            result[f"{field}_actual"] = actual_val
-            result[f"{field}_correct"] = expected_val == actual_val
+        for check in checks:
+            field = check["field"]
+            check_type = check.get("type", "exact_match")
+
+            if check_type == "exact_match":
+                pattern = rf"{field}:\\s*(\\w+)"
+                expected_match = re.search(pattern, expected_output, re.IGNORECASE)
+                actual_match = re.search(pattern, actual_output, re.IGNORECASE)
+                expected_val = expected_match.group(1).lower() if expected_match else ""
+                actual_val = actual_match.group(1).lower() if actual_match else ""
+                result[f"{field}_expected"] = expected_val
+                result[f"{field}_actual"] = actual_val
+                result[f"{field}_correct"] = expected_val == actual_val
+
+            elif check_type == "contains":
+                values = check.get("values", [])
+                result[f"{field}_correct"] = all(v in actual_output for v in values)
+
+            elif check_type == "enum_match":
+                pattern = rf"{field}:\\s*(\\w+)"
+                actual_match = re.search(pattern, actual_output, re.IGNORECASE)
+                actual_val = actual_match.group(1).lower() if actual_match else ""
+                allowed = [a.lower() for a in check.get("allowed", [])]
+                result[f"{field}_actual"] = actual_val
+                result[f"{field}_correct"] = actual_val in allowed if actual_val else False
 
         results.append(result)
 else:
     for i, row in enumerate(data):
         results.append({"index": i, **row})
 
-# --- Compute accuracy ---
 summary = {"total": len(results)}
-accuracy_fields = config.get("accuracy_fields", [])
-for field in accuracy_fields:
+check_fields = [c["field"] for c in checks]
+for field in check_fields:
     correct = sum(1 for r in results if r.get(f"{field}_correct", False))
     summary[f"{field}_accuracy"] = round(correct / len(results), 4) if results else 0.0
     summary[f"{field}_correct"] = correct
 
-if accuracy_fields:
+if check_fields:
     all_correct = sum(
         1 for r in results
-        if all(r.get(f"{f}_correct", False) for f in accuracy_fields)
+        if all(r.get(f"{f}_correct", False) for f in check_fields)
     )
     summary["overall_accuracy"] = round(
         all_correct / len(results), 4
     ) if results else 0.0
 
-# --- Optional LLM judge ---
-judge_model = config.get("judge_model")
 if judge_model:
-    from asynth import create_judge, JudgeConfig
+    from asynth import create_judge, JudgeConfig as AsynthJudgeConfig
     from asynth.configs.params.judge_params import JudgeParams
     from asynth.inference.litellm_engine import LiteLLMInferenceConfig
 
-    judge_prompt = config.get("judge_prompt", "Evaluate this response: {response}")
-    judge_config = JudgeConfig(
+    jc = AsynthJudgeConfig(
         judge_params=JudgeParams(
             prompt_template=judge_prompt,
             response_format="json",
             judgment_type="bool",
             include_explanation=True,
         ),
-        inference_config=LiteLLMInferenceConfig(model=judge_model),
+        inference_config=LiteLLMInferenceConfig(
+            model=judge_model,
+            temperature=judge_temp,
+        ),
     )
-    judge = create_judge(judge_config)
+    j = create_judge(jc)
     judge_data = [{"request": r["input"], "response": r["actual"]} for r in results]
-    judge_outputs = judge.judge(judge_data)
+    judge_outputs = j.judge(judge_data)
 
     for i, output in enumerate(judge_outputs):
         results[i]["judge_passed"] = output.field_values.get("judgment", False)
@@ -344,7 +363,6 @@ if judge_model:
     summary["judge_pass_rate"] = round(passed / len(results), 4) if results else 0.0
     summary["judge_avg_score"] = round(sum(scores) / len(scores), 4) if scores else 0.0
 
-# --- Write results ---
 os.makedirs("/amortized/work", exist_ok=True)
 output = {"results": results, "summary": summary}
 with open("/amortized/work/eval_results.json", "w") as f:

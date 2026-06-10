@@ -2,7 +2,7 @@ type: eval
 description: Evaluate ticket classifier — deterministic accuracy + LLM judge
 config:
   # Test data
-  test_data_path: test_data.jsonl
+  dataset: test_data.jsonl
   max_samples: 50
 
   # Deterministic scoring — exact match on structured output

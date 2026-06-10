@@ -1,17 +1,18 @@
 type: eval
 description: Judge whether a response adheres to required output formatting and structural rules
 config:
-  judge_model: openai/gpt-5.4
-  judge_prompt: >-
-    Here is the data:
+  judge:
+    model: openai/gpt-5.4
+    prompt: >-
+      Here is the data:
 
-    [BEGIN DATA]
+      [BEGIN DATA]
 
-    [response]:
+      [response]:
 
-    {response}
+      {response}
 
-    [END DATA]
+      [END DATA]
   system_instruction: >-
     You are a format compliance judge. Your task is to determine whether the given response strictly adheres to the required output formatting and structural rules. The expected format is `{format_description}`. This may include required keys or fields, indentation guidelines, and additional constraints.
 

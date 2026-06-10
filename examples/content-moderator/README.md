@@ -50,6 +50,6 @@ amortized submit recipes/serve/adapter.yaml \
 
 ```bash
 amortized submit examples/content-moderator/eval.yaml \
-  --set config.test_data_path=<test-data-path> \
+  --set config.dataset=<test-data-path> \
   --set config.model_endpoint=<serve-url> --confirm
 ```

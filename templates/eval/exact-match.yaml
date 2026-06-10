@@ -4,17 +4,17 @@ description: >-
   output (lines matching "Field: value") and compares them against ground-truth
   labels. No LLM judge needed — accuracy is computed programmatically.
 
-  Fill in accuracy_fields with the field names your model outputs
-  (e.g., [urgency, topic, sentiment]). The evaluator expects the model to
-  produce one "FieldName: value" line per field in its response. Matching is
-  case-insensitive and strips whitespace.
+  Fill in deterministic_checks with the field names your model outputs
+  (e.g., [{field: urgency, type: exact_match}]). The evaluator expects the
+  model to produce one "FieldName: value" line per field in its response.
+  Matching is case-insensitive and strips whitespace.
 
 config:
-  accuracy_fields: []
+  deterministic_checks: []
   temperature: 0.0
   system_instruction: |
     Exact-match evaluation compares parsed field values from the model's output
-    against ground-truth labels. Each field listed in accuracy_fields is
+    against ground-truth labels. Each field listed in deterministic_checks is
     extracted from the model response using the pattern "FieldName: value"
     (one per line, case-insensitive). A field scores 1 if the extracted value
     exactly matches the expected value (after lowercasing and stripping

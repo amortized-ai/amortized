@@ -1,7 +1,7 @@
 type: eval
 description: Evaluate entity extraction — precision, recall, and LLM judge
 config:
-  test_data_path: test_data.jsonl
+  dataset: test_data.jsonl
   max_samples: 50
 
   # Deterministic scoring — JSON array comparison

@@ -1,7 +1,7 @@
 type: eval
 description: Evaluate intent router accuracy
 config:
-  test_data_path: test_data.jsonl
+  dataset: test_data.jsonl
   max_samples: 100
 
   deterministic_checks:

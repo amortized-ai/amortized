@@ -5,14 +5,26 @@ description: >-
   (lines matching "Field: value"), then uses a judge model to assess whether
   the classifications are correct and well-reasoned.
 
-  Fill in accuracy_fields with the classification fields your model outputs
-  (e.g., [category, severity, priority]). The judge provides a secondary
-  quality check beyond exact matching.
+  Fill in deterministic_checks with the classification fields your model outputs
+  (e.g., [{field: category, type: exact_match}]). The judge provides a
+  secondary quality check beyond exact matching.
 
 config:
-  accuracy_fields: []
+  deterministic_checks: []
   temperature: 0.0
-  judge_model: openai/gpt-5.4
+  judge:
+    model: openai/gpt-5.4
+    prompt: |
+      Here is the data:
+      [BEGIN DATA]
+      ***
+      [user request]:
+      {request}
+      ***
+      [classification output]:
+      {response}
+      ***
+      [END DATA]
   judgment_type: bool
   response_format: json
   include_explanation: true
@@ -49,15 +61,3 @@ config:
     Note: Focus on classification quality. Do not penalize for writing style,
     tone, or additional explanatory text as long as the classification fields
     are present and correct.
-
-  judge_prompt: |
-    Here is the data:
-    [BEGIN DATA]
-    ***
-    [user request]:
-    {request}
-    ***
-    [classification output]:
-    {response}
-    ***
-    [END DATA]

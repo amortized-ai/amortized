@@ -5,35 +5,50 @@
   "type": "object",
   "required": ["dataset"],
   "properties": {
+    "dataset": {
+      "type": "string",
+      "description": "Path to test dataset (JSONL with messages + ground truth fields)"
+    },
     "model_endpoint": {
       "type": "string",
-      "description": "OpenAI-compatible API base URL (e.g. http://rh-h100-06:8000/v1)"
+      "description": "OpenAI-compatible API base URL (e.g. http://127.0.0.1:8000/v1)"
     },
     "model_name": {
       "type": "string",
       "description": "Model name as registered in the serving endpoint"
-    },
-    "dataset": {
-      "type": "string",
-      "description": "Path to test dataset (JSONL with messages + ground truth fields)"
     },
     "max_samples": {
       "type": "integer",
       "minimum": 1,
       "description": "Maximum number of samples to evaluate"
     },
-    "judge_model": {
-      "type": "string",
-      "description": "LLM for subjective quality judging (e.g. openai/gpt-4o-mini)"
+    "deterministic_checks": {
+      "type": "array",
+      "description": "List of deterministic checks to run on each result",
+      "items": {
+        "type": "object",
+        "required": ["field", "type"],
+        "properties": {
+          "field": {"type": "string"},
+          "type": {"type": "string", "enum": ["exact_match", "contains", "enum_match"]},
+          "values": {"type": "array", "items": {"type": "string"}},
+          "allowed": {"type": "array", "items": {"type": "string"}}
+        }
+      }
     },
-    "judge_prompt": {
-      "type": "string",
-      "description": "Custom judge prompt template with {placeholders}"
+    "judge": {
+      "type": "object",
+      "description": "LLM-as-judge configuration",
+      "properties": {
+        "model": {"type": "string"},
+        "temperature": {"type": "number", "minimum": 0.0, "default": 0.0},
+        "prompt": {"type": "string"}
+      }
     },
-    "accuracy_fields": {
+    "metrics": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Fields to compute exact-match accuracy on (parsed from model response)"
+      "description": "Metrics to report"
     },
     "temperature": {
       "type": "number",

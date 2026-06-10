@@ -178,9 +178,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "eval",
                 "config": {
-                    "model": "test/model",
-                    "judge_model": "openai/gpt-4o",
                     "dataset": "./eval_data.jsonl",
+                    "judge": {"model": "openai/gpt-4o"},
                 },
                 "dry_run": False,
             },
@@ -189,7 +188,7 @@ class TestUniversalJobEndpoint:
         data = response.json()
         assert data["type"] == "eval"
         assert data["status"] == "queued"
-        assert data["config"]["judge_model"] == "openai/gpt-4o"
+        assert data["config"]["judge"]["model"] == "openai/gpt-4o"
 
     @pytest.mark.asyncio
     async def test_create_job_with_metadata(self, client: httpx.AsyncClient) -> None:
