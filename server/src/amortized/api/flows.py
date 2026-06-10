@@ -55,9 +55,6 @@ async def get_capabilities() -> SynthCapabilities:
 
 
 def _list_judge_templates() -> list[str]:
-    try:
-        from asynth.judges import list_templates
+    from amortized.core.judge_templates import list_judge_templates
 
-        return list(list_templates())
-    except (ImportError, Exception):
-        return []
+    return list_judge_templates()
