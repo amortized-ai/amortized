@@ -68,29 +68,3 @@ amortized submit examples/distillation/eval.yaml \
 ```
 
 Run the same eval against both the teacher and student endpoints to compare.
-
-## Expected Results
-
-| Metric | Teacher (4B) | Student (0.6B) | Student / Teacher |
-|--------|-------------|----------------|-------------------|
-| Urgency accuracy | ~92% | ~85% | ~92% |
-| Topic accuracy | ~95% | ~88% | ~93% |
-| Judge pass rate | ~96% | ~90% | ~94% |
-| Inference latency | ~120ms | ~20ms | 6x faster |
-| VRAM (serving) | ~8 GB | ~2 GB | 4x smaller |
-
-## Customization
-
-- **Different teacher**: Change `teacher_model_name_or_path` (e.g., `Qwen/Qwen3-8B` for a stronger teacher)
-- **Different student**: Change `model_name_or_path` (e.g., `Qwen/Qwen3-1.7B` for higher accuracy)
-- **More training**: Increase `max_steps` to 1000+ for better convergence
-- **Temperature**: Adjust `temperature` — higher values transfer more of the teacher's uncertainty
-
-## GPU Requirements
-
-| Stage | GPU | VRAM | Time |
-|-------|-----|------|------|
-| Synth | None (API calls) | 0 | ~5 min |
-| Training | 1x GPU | 16 GB+ | ~30 min |
-| Serving (student) | 1x GPU | 2 GB+ | — |
-| Eval | None (API calls) | 0 | ~5 min |
