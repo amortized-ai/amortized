@@ -493,11 +493,12 @@ def submit(
                     overrides[k] = json.loads(v)
                 except json.JSONDecodeError:
                     overrides[k] = v
-            model_key = "model" if job_type == "sdg" else "model_name_or_path"
+            model_key = "model_name_or_path" if job_type == "training" else "model"
             if model:
                 overrides.setdefault(f"config.{model_key}", model)
+            data_key = "dataset" if job_type == "eval" else "data_path"
             if data:
-                overrides.setdefault("config.data_path", _resolve_data(client, data))
+                overrides.setdefault(f"config.{data_key}", _resolve_data(client, data))
             for k in list(overrides):
                 v = overrides[k]
                 bare = k.removeprefix("config.")
@@ -517,11 +518,12 @@ def submit(
                 except json.JSONDecodeError as exc:
                     err_console.print(f"[red]Invalid JSON config:[/red] {exc}")
                     raise typer.Exit(1) from exc
-            model_key = "model" if job_type == "sdg" else "model_name_or_path"
+            model_key = "model_name_or_path" if job_type == "training" else "model"
             if model:
                 cfg.setdefault(model_key, model)
+            data_key = "dataset" if job_type == "eval" else "data_path"
             if data:
-                cfg.setdefault("data_path", _resolve_data(client, data))
+                cfg.setdefault(data_key, _resolve_data(client, data))
             for kv in set_values or []:
                 if "=" not in kv:
                     err_console.print(f"[red]Invalid --set format:[/red] {kv} (expected KEY=VALUE)")
@@ -837,6 +839,9 @@ def mcp(
     )
 
 
+# ---------------------------------------------------------------------------
+# amortized health
+# ---------------------------------------------------------------------------
 @app.command()
 def health() -> None:
     """Check API server health."""

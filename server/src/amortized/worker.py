@@ -29,7 +29,7 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "docker.io/huggingface/trl:1.5.0",
     "sdg": "ghcr.io/amortized-ai/synth:latest",
     "inference": "ghcr.io/amortized-ai/inference:latest",
-    "eval": "ghcr.io/amortized-ai/eval:latest",
+    "eval": "ghcr.io/amortized-ai/synth:latest",
 }
 
 _RUNNER_MODULES: dict[str, str] = {
@@ -199,86 +199,122 @@ synthesize(synth_config)
 
 def _eval_script() -> str:
     return """\
-import json, os
+import json, os, re
 
 config = json.load(open("/amortized/config.json"))["config"]
 
-from asynth import JudgeConfig, LiteLLMInferenceConfig, create_judge
-
-dataset_path = config.get("dataset_path") or config.get("dataset")
-if not dataset_path:
-    raise ValueError("dataset or dataset_path is required for eval jobs")
-
+# --- Load dataset ---
+dataset_path = config["dataset"]
 data = [json.loads(line) for line in open(dataset_path) if line.strip()]
+max_samples = config.get("max_samples")
+if max_samples:
+    data = data[:max_samples]
 
-evaluator_type = config.get("evaluator_type", "llm")
-judgment_type = config.get("judgment_type", "bool")
-response_format = config.get("response_format", "json")
+model_endpoint = config.get("model_endpoint")
+model_name = config.get("model_name")
 
-if evaluator_type == "rule_based":
-    judge_config = JudgeConfig.from_dict({
-        "rule_judge_params": {
-            "rule_type": config.get("rule_config", {}).get("rule_type", "regex"),
-            "input_fields": config.get("variables", []),
-            "rule_config": config.get("rule_config", {}),
-            "response_format": response_format,
-            "judgment_type": judgment_type,
-        },
-    })
-else:
-    judge_params = {
-        "prompt_template": config.get("judge_prompt", "Evaluate the following: {response}"),
-        "response_format": response_format,
-        "judgment_type": judgment_type,
-    }
-    if config.get("variables"):
-        judge_params["prompt_template_placeholders"] = config["variables"]
-    judge_config = JudgeConfig.from_dict({"judge_params": judge_params})
-
-inference_config = None
-if evaluator_type == "llm":
-    model = config.get("judge_model") or config.get("model", "openai/gpt-4o-mini")
-    inf_params = config.get("inference_params", {})
-    inference_config = LiteLLMInferenceConfig(
-        model=model,
-        temperature=inf_params.get("temperature", 1.0),
-        max_tokens=inf_params.get("max_tokens"),
-        top_p=inf_params.get("top_p"),
-        seed=inf_params.get("seed"),
-        api_base=inf_params.get("api_base"),
-        api_key=inf_params.get("api_key"),
-    )
-
-judge = create_judge(judge_config, inference_config=inference_config)
-outputs = judge.judge(data)
-
-os.makedirs("/amortized/work", exist_ok=True)
 results = []
-for i, output in enumerate(outputs):
-    results.append({
-        "index": i,
-        "passed": output.passed,
-        "score": output.score,
-        "explanation": output.explanation,
-        "raw_output": output.raw_output,
-    })
+if model_endpoint and model_name:
+    # --- Run inference against served model ---
+    from openai import OpenAI
+    client = OpenAI(base_url=model_endpoint, api_key="dummy")
+    temperature = config.get("temperature", 0.0)
 
-total = len(results)
-passed = sum(1 for r in results if r.get("passed", False))
-scores = [float(r["score"]) for r in results if r.get("score") is not None]
-avg_score = sum(scores) / len(scores) if scores else 0.0
+    for i, row in enumerate(data):
+        messages = row.get("messages", [])
+        prompt_messages = [m for m in messages if m["role"] != "assistant"]
 
-output = {
-    "results": results,
-    "summary": {
-        "total": total,
-        "passed": passed,
-        "failed": total - passed,
-        "pass_rate": round(passed / total, 4) if total else 0.0,
-        "average_score": round(avg_score, 4),
-    },
-}
+        try:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=prompt_messages,
+                temperature=temperature,
+                max_tokens=256,
+            )
+            actual_output = completion.choices[0].message.content
+        except Exception as e:
+            actual_output = f"ERROR: {e}"
 
+        expected_output = ""
+        for m in messages:
+            if m["role"] == "assistant":
+                expected_output = m["content"]
+                break
+
+        result = {
+            "index": i,
+            "input": prompt_messages[-1]["content"] if prompt_messages else "",
+            "expected": expected_output,
+            "actual": actual_output,
+        }
+
+        accuracy_fields = config.get("accuracy_fields", [])
+        for field in accuracy_fields:
+            pattern = rf"{field}:\\s*(\\w+)"
+            expected_match = re.search(pattern, expected_output, re.IGNORECASE)
+            actual_match = re.search(pattern, actual_output, re.IGNORECASE)
+            expected_val = expected_match.group(1).lower() if expected_match else ""
+            actual_val = actual_match.group(1).lower() if actual_match else ""
+            result[f"{field}_expected"] = expected_val
+            result[f"{field}_actual"] = actual_val
+            result[f"{field}_correct"] = expected_val == actual_val
+
+        results.append(result)
+else:
+    for i, row in enumerate(data):
+        results.append({"index": i, **row})
+
+# --- Compute accuracy ---
+summary = {"total": len(results)}
+accuracy_fields = config.get("accuracy_fields", [])
+for field in accuracy_fields:
+    correct = sum(1 for r in results if r.get(f"{field}_correct", False))
+    summary[f"{field}_accuracy"] = round(correct / len(results), 4) if results else 0.0
+    summary[f"{field}_correct"] = correct
+
+if accuracy_fields:
+    all_correct = sum(
+        1 for r in results
+        if all(r.get(f"{f}_correct", False) for f in accuracy_fields)
+    )
+    summary["overall_accuracy"] = round(
+        all_correct / len(results), 4
+    ) if results else 0.0
+
+# --- Optional LLM judge ---
+judge_model = config.get("judge_model")
+if judge_model:
+    from asynth import create_judge, JudgeConfig
+    from asynth.configs.params.judge_params import JudgeParams
+    from asynth.inference.litellm_engine import LiteLLMInferenceConfig
+
+    judge_prompt = config.get("judge_prompt", "Evaluate this response: {response}")
+    judge_config = JudgeConfig(
+        judge_params=JudgeParams(
+            prompt_template=judge_prompt,
+            response_format="JSON",
+            judgment_type="BOOL",
+            include_explanation=True,
+        ),
+        inference_config=LiteLLMInferenceConfig(model=judge_model),
+    )
+    judge = create_judge(judge_config)
+    judge_data = [{"request": r["input"], "response": r["actual"]} for r in results]
+    judge_outputs = judge.judge(judge_data)
+
+    for i, output in enumerate(judge_outputs):
+        results[i]["judge_passed"] = output.field_values.get("judgment", False)
+        results[i]["judge_score"] = output.field_scores.get("judgment", 0.0)
+        results[i]["judge_explanation"] = output.field_values.get("explanation", "")
+
+    passed = sum(1 for r in results if r.get("judge_passed", False))
+    scores = [r.get("judge_score", 0.0) for r in results if r.get("judge_score") is not None]
+    summary["judge_pass_rate"] = round(passed / len(results), 4) if results else 0.0
+    summary["judge_avg_score"] = round(sum(scores) / len(scores), 4) if scores else 0.0
+
+# --- Write results ---
+os.makedirs("/amortized/work", exist_ok=True)
+output = {"results": results, "summary": summary}
 with open("/amortized/work/eval_results.json", "w") as f:
     json.dump(output, f, indent=2)
 """

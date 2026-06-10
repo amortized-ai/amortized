@@ -1,37 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "EvalJobConfig",
-  "description": "Configuration for an LLM-as-judge evaluation job.",
+  "description": "Configuration for evaluating a served model",
   "type": "object",
-  "required": ["model", "judge_model", "dataset"],
-  "additionalProperties": false,
+  "required": ["dataset"],
   "properties": {
-    "model": {
+    "model_endpoint": {
       "type": "string",
-      "description": "Model to evaluate (HuggingFace path or artifact reference)"
+      "description": "OpenAI-compatible API base URL (e.g. http://rh-h100-06:8000/v1)"
     },
-    "judge_model": {
+    "model_name": {
       "type": "string",
-      "description": "Frontier model used as judge (e.g. 'openai/gpt-4o')"
+      "description": "Model name as registered in the serving endpoint"
     },
     "dataset": {
       "type": "string",
-      "description": "Path to evaluation dataset"
-    },
-    "judge_prompt": {
-      "type": "string",
-      "description": "Custom prompt template for the judge model"
+      "description": "Path to test dataset (JSONL with messages + ground truth fields)"
     },
     "max_samples": {
       "type": "integer",
       "minimum": 1,
       "description": "Maximum number of samples to evaluate"
     },
+    "judge_model": {
+      "type": "string",
+      "description": "LLM for subjective quality judging (e.g. openai/gpt-4o-mini)"
+    },
+    "judge_prompt": {
+      "type": "string",
+      "description": "Custom judge prompt template with {placeholders}"
+    },
+    "accuracy_fields": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Fields to compute exact-match accuracy on (parsed from model response)"
+    },
     "temperature": {
       "type": "number",
       "minimum": 0.0,
       "default": 0.0,
-      "description": "Sampling temperature for the judge model"
+      "description": "Temperature for model inference"
     }
-  }
+  },
+  "additionalProperties": true
 }

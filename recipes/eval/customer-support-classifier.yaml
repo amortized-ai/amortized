@@ -1,0 +1,17 @@
+type: eval
+description: Evaluate customer support ticket classifier accuracy
+config:
+  model_name: customer-support
+  accuracy_fields:
+    - urgency
+    - topic
+  judge_model: openai/gpt-4o-mini
+  judge_prompt: >-
+    A customer support ticket was classified. Evaluate if the classification is reasonable.
+
+    Ticket: {request}
+    Model's classification: {response}
+
+    Is this classification correct and reasonable?
+  max_samples: 50
+  temperature: 0.0

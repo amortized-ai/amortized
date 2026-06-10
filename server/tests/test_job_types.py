@@ -115,8 +115,6 @@ class TestJobTypeRegistry:
     def test_get_schema_eval(self) -> None:
         schema = get_schema("eval")
         assert schema["title"] == "EvalJobConfig"
-        assert "model" in schema["required"]
-        assert "judge_model" in schema["required"]
         assert "dataset" in schema["required"]
 
     def test_validate_config_valid_inference(self) -> None:
@@ -134,8 +132,8 @@ class TestJobTypeRegistry:
         errors = validate_config(
             "eval",
             {
-                "model": "test/model",
-                "judge_model": "openai/gpt-4o",
+                "model_endpoint": "http://localhost:8000/v1",
+                "model_name": "customer-support",
                 "dataset": "./eval_data.jsonl",
             },
         )
@@ -147,9 +145,9 @@ class TestJobTypeRegistry:
         assert any("input_data" in e for e in errors)
 
     def test_validate_config_eval_missing_required(self) -> None:
-        errors = validate_config("eval", {"model": "test"})
+        errors = validate_config("eval", {"model_name": "test"})
         assert len(errors) > 0
-        assert any("judge_model" in e for e in errors)
+        assert any("dataset" in e for e in errors)
 
     def test_validate_config_unknown_type(self) -> None:
         with pytest.raises(UnknownJobTypeError):
