@@ -58,22 +58,33 @@ class ComputeSpec(BaseModel):
 
 
 class TrainingJobConfig(BaseModel):
-    """Configuration for a training job."""
+    """Configuration for a TRL-based training job."""
 
-    algorithm: str = Field(..., description="Training algorithm (lora_sft, full_sft, dpo, grpo)")
-    model_path: str = Field(..., description="HuggingFace model path or local path")
-    data_path: str = Field(..., description="Path to training data (JSONL)")
-    ckpt_output_dir: str | None = Field(None, description="Directory for checkpoints and outputs")
-    learning_rate: float | None = Field(None, description="Learning rate (default: 2e-4)")
-    num_epochs: int | None = Field(None, ge=1, description="Number of training epochs")
+    model_config = {"extra": "allow"}
+
+    algorithm: str = Field(
+        ..., description="TRL training algorithm (sft, dpo, grpo, kto, rloo, reward)"
+    )
+    model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
+    data_path: str = Field(..., description="Path to training data (resolved by worker)")
+    output_dir: str | None = Field(None, description="Output directory for checkpoints")
+    learning_rate: float | None = Field(None, description="Learning rate")
+    num_train_epochs: int | None = Field(None, ge=1, description="Number of training epochs")
+    per_device_train_batch_size: int | None = Field(None, ge=1, description="Batch size per GPU")
+    batch_size: int | None = Field(None, ge=1, description="Total batch size")
+    max_length: int | None = Field(None, ge=1, description="Maximum sequence length")
+    model_max_length: int | None = Field(None, ge=1, description="Model maximum sequence length")
+    bf16: bool | None = Field(None, description="Use bfloat16 mixed precision")
+    gradient_checkpointing: bool | None = Field(None, description="Enable gradient checkpointing")
+    gradient_accumulation_steps: int | None = Field(
+        None, ge=1, description="Gradient accumulation steps"
+    )
+    load_in_4bit: bool | None = Field(None, description="Use QLoRA 4-bit quantization")
+    use_peft: bool | None = Field(None, description="Enable LoRA via PEFT")
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
-    load_in_4bit: bool | None = Field(None, description="Enable QLoRA 4-bit quantization")
-    micro_batch_size: int | None = Field(None, ge=1, description="Micro batch size")
-    batch_size: int | None = Field(None, ge=1, description="Training batch size")
-    max_seq_len: int | None = Field(None, ge=1, description="Maximum sequence length")
-    gradient_checkpointing: bool | None = Field(None, description="Enable gradient checkpointing")
-    model_max_length: int | None = Field(None, ge=1, description="Maximum model sequence length")
+    lora_dropout: float | None = Field(None, description="LoRA dropout rate")
+    report_to: str | None = Field(None, description="Logging backend (none, wandb, tensorboard)")
     compute: ComputeSpec | None = Field(None, description="Compute backend spec")
     metadata: dict[str, Any] | None = Field(None, description="User-defined metadata")
 
@@ -166,20 +177,20 @@ class Artifact(BaseModel):
 class MemoryEstimateRequest(BaseModel):
     """Request for GPU memory estimation."""
 
-    model_path: str = Field(..., description="HuggingFace model path")
+    model_name_or_path: str = Field(..., description="HuggingFace model path")
     lora_r: int = Field(16, ge=1, description="LoRA rank")
     batch_size: int = Field(2, ge=1, description="Batch size")
-    max_seq_len: int = Field(2048, ge=1, description="Maximum sequence length")
+    max_length: int = Field(2048, ge=1, description="Maximum sequence length")
     load_in_4bit: bool = Field(False, description="Use QLoRA 4-bit quantization")
 
 
 class MemoryEstimateResponse(BaseModel):
     """Response with estimated GPU VRAM requirements."""
 
-    model_path: str
+    model_name_or_path: str
     lora_r: int
     batch_size: int
-    max_seq_len: int
+    max_length: int
     estimated_vram_gb: float
     load_in_4bit: bool
 

@@ -1,10 +1,11 @@
 type: training
-description: OSFT — preserves base capabilities while adapting
+description: Full SFT — large model fine-tuning with gradient checkpointing
 config:
-  algorithm: osft
-  unfreeze_rank_ratio: 0.25
+  algorithm: sft
+  num_train_epochs: 1
   learning_rate: 0.000005
-  max_seq_len: 8192
-  effective_batch_size: 128
-  lr_scheduler: cosine
-  use_liger: true
+  max_length: 8192
+  bf16: true
+  gradient_checkpointing: true
+  gradient_accumulation_steps: 8
+  report_to: none

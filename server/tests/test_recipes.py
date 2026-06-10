@@ -24,9 +24,9 @@ def recipes_dir(tmp_path: Path) -> Path:
         "type: training\n"
         "description: LoRA SFT\n"
         "config:\n"
-        "  algorithm: lora_sft\n"
-        "  num_epochs: 3\n"
-        "  learning_rate: 2e-4\n"
+        "  algorithm: sft\n"
+        "  num_train_epochs: 3\n"
+        "  learning_rate: 0.0002\n"
         "  lora_r: 16\n"
         "  lora_alpha: 32\n"
     )
@@ -39,8 +39,8 @@ def recipes_dir(tmp_path: Path) -> Path:
         "extends: training/lora-sft\n"
         "description: Llama 3.1 8B LoRA\n"
         "config:\n"
-        "  model_path: meta-llama/Llama-3.1-8B-Instruct\n"
-        "  max_seq_len: 8192\n"
+        "  model_name_or_path: meta-llama/Llama-3.1-8B-Instruct\n"
+        "  max_length: 8192\n"
     )
     return tmp_path
 
@@ -50,7 +50,7 @@ class TestLoadRecipe:
         recipe = load_recipe("training/lora-sft", recipes_dir=recipes_dir)
         assert recipe["type"] == "training"
         assert recipe["description"] == "LoRA SFT"
-        assert recipe["config"]["num_epochs"] == 3
+        assert recipe["config"]["num_train_epochs"] == 3
         assert recipe["config"]["lora_r"] == 16
 
     def test_load_nonexistent_raises(self, recipes_dir: Path) -> None:
@@ -61,9 +61,9 @@ class TestLoadRecipe:
         recipe = load_recipe("models/llama3-8b-lora", recipes_dir=recipes_dir)
         assert recipe["type"] == "training"
         assert recipe["description"] == "Llama 3.1 8B LoRA"
-        assert recipe["config"]["model_path"] == "meta-llama/Llama-3.1-8B-Instruct"
-        assert recipe["config"]["max_seq_len"] == 8192
-        assert recipe["config"]["num_epochs"] == 3
+        assert recipe["config"]["model_name_or_path"] == "meta-llama/Llama-3.1-8B-Instruct"
+        assert recipe["config"]["max_length"] == 8192
+        assert recipe["config"]["num_train_epochs"] == 3
         assert recipe["config"]["lora_r"] == 16
         assert "extends" not in recipe
 
@@ -82,7 +82,7 @@ class TestLoadRecipe:
         custom_dir = tmp_path / "custom_recipes"
         custom_dir.mkdir()
         (custom_dir / "custom.yaml").write_text(
-            "type: training\ndescription: Custom recipe\nconfig:\n  num_epochs: 5\n"
+            "type: training\ndescription: Custom recipe\nconfig:\n  num_train_epochs: 5\n"
         )
         import amortized.config as config_mod
 
@@ -91,7 +91,7 @@ class TestLoadRecipe:
         try:
             recipe = load_recipe("custom")
             assert recipe["description"] == "Custom recipe"
-            assert recipe["config"]["num_epochs"] == 5
+            assert recipe["config"]["num_train_epochs"] == 5
         finally:
             config_mod.settings.recipes_dir = old_dir
 
@@ -115,9 +115,9 @@ class TestListRecipes:
 
 class TestApplyOverrides:
     def test_dotted_key_override(self) -> None:
-        recipe: dict[str, Any] = {"type": "training", "config": {"num_epochs": 3}}
-        result = apply_overrides(recipe, {"config.num_epochs": 5})
-        assert result["config"]["num_epochs"] == 5
+        recipe: dict[str, Any] = {"type": "training", "config": {"num_train_epochs": 3}}
+        result = apply_overrides(recipe, {"config.num_train_epochs": 5})
+        assert result["config"]["num_train_epochs"] == 5
 
     def test_creates_nested_keys(self) -> None:
         recipe: dict[str, Any] = {"type": "training"}
@@ -181,8 +181,8 @@ class TestRecipeAPI:
         resp = await client.get("/api/v1/recipes/models/llama3-8b-lora")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["config"]["model_path"] == "meta-llama/Llama-3.1-8B-Instruct"
-        assert data["config"]["num_epochs"] == 3
+        assert data["config"]["model_name_or_path"] == "meta-llama/Llama-3.1-8B-Instruct"
+        assert data["config"]["num_train_epochs"] == 3
 
     @pytest.mark.asyncio
     async def test_get_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:
@@ -197,7 +197,7 @@ class TestRecipeAPI:
                 "recipe": "models/qwen-1.5b-lora",
                 "overrides": {
                     "config.data_path": "/data/train.jsonl",
-                    "config.ckpt_output_dir": "/tmp/recipe-out",
+                    "config.output_dir": "/tmp/recipe-out",
                 },
                 "dry_run": False,
             },

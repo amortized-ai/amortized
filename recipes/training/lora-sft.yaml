@@ -1,12 +1,12 @@
 type: training
-description: LoRA SFT — parameter-efficient fine-tuning for most models
+description: LoRA SFT — parameter-efficient fine-tuning via TRL
 config:
-  algorithm: lora_sft
-  num_epochs: 3
+  algorithm: sft
+  num_train_epochs: 3
   learning_rate: 0.0002
+  max_length: 2048
+  bf16: true
+  use_peft: true
   lora_r: 16
   lora_alpha: 32
-  micro_batch_size: 2
-  max_seq_len: 2048
-  bf16: true
-  sample_packing: true
+  report_to: none

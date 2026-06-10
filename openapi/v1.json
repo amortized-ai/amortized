@@ -3857,9 +3857,9 @@
       },
       "MemoryEstimateRequest": {
         "properties": {
-          "model_path": {
+          "model_name_or_path": {
             "type": "string",
-            "title": "Model Path",
+            "title": "Model Name Or Path",
             "description": "HuggingFace model path"
           },
           "lora_r": {
@@ -3876,10 +3876,10 @@
             "description": "Batch size",
             "default": 2
           },
-          "max_seq_len": {
+          "max_length": {
             "type": "integer",
             "minimum": 1.0,
-            "title": "Max Seq Len",
+            "title": "Max Length",
             "description": "Maximum sequence length",
             "default": 2048
           },
@@ -3892,16 +3892,16 @@
         },
         "type": "object",
         "required": [
-          "model_path"
+          "model_name_or_path"
         ],
         "title": "MemoryEstimateRequest",
         "description": "Request for GPU memory estimation."
       },
       "MemoryEstimateResponse": {
         "properties": {
-          "model_path": {
+          "model_name_or_path": {
             "type": "string",
-            "title": "Model Path"
+            "title": "Model Name Or Path"
           },
           "lora_r": {
             "type": "integer",
@@ -3911,9 +3911,9 @@
             "type": "integer",
             "title": "Batch Size"
           },
-          "max_seq_len": {
+          "max_length": {
             "type": "integer",
-            "title": "Max Seq Len"
+            "title": "Max Length"
           },
           "estimated_vram_gb": {
             "type": "number",
@@ -3926,10 +3926,10 @@
         },
         "type": "object",
         "required": [
-          "model_path",
+          "model_name_or_path",
           "lora_r",
           "batch_size",
-          "max_seq_len",
+          "max_length",
           "estimated_vram_gb",
           "load_in_4bit"
         ],
@@ -4389,19 +4389,19 @@
           "algorithm": {
             "type": "string",
             "title": "Algorithm",
-            "description": "Training algorithm (lora_sft, full_sft, dpo, grpo)"
+            "description": "TRL training algorithm (sft, dpo, grpo, kto, rloo, reward)"
           },
-          "model_path": {
+          "model_name_or_path": {
             "type": "string",
-            "title": "Model Path",
-            "description": "HuggingFace model path or local path"
+            "title": "Model Name Or Path",
+            "description": "HuggingFace model ID or local path"
           },
           "data_path": {
             "type": "string",
             "title": "Data Path",
-            "description": "Path to training data (JSONL)"
+            "description": "Path to training data (resolved by worker)"
           },
-          "ckpt_output_dir": {
+          "output_dir": {
             "anyOf": [
               {
                 "type": "string"
@@ -4410,8 +4410,8 @@
                 "type": "null"
               }
             ],
-            "title": "Ckpt Output Dir",
-            "description": "Directory for checkpoints and outputs"
+            "title": "Output Dir",
+            "description": "Output directory for checkpoints"
           },
           "learning_rate": {
             "anyOf": [
@@ -4423,9 +4423,9 @@
               }
             ],
             "title": "Learning Rate",
-            "description": "Learning rate (default: 2e-4)"
+            "description": "Learning rate"
           },
-          "num_epochs": {
+          "num_train_epochs": {
             "anyOf": [
               {
                 "type": "integer",
@@ -4435,8 +4435,121 @@
                 "type": "null"
               }
             ],
-            "title": "Num Epochs",
+            "title": "Num Train Epochs",
             "description": "Number of training epochs"
+          },
+          "per_device_train_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Device Train Batch Size",
+            "description": "Batch size per GPU"
+          },
+          "batch_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size",
+            "description": "Total batch size"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length",
+            "description": "Maximum sequence length"
+          },
+          "model_max_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Max Length",
+            "description": "Model maximum sequence length"
+          },
+          "bf16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bf16",
+            "description": "Use bfloat16 mixed precision"
+          },
+          "gradient_checkpointing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Checkpointing",
+            "description": "Enable gradient checkpointing"
+          },
+          "gradient_accumulation_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Accumulation Steps",
+            "description": "Gradient accumulation steps"
+          },
+          "load_in_4bit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load In 4Bit",
+            "description": "Use QLoRA 4-bit quantization"
+          },
+          "use_peft": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Peft",
+            "description": "Enable LoRA via PEFT"
           },
           "lora_r": {
             "anyOf": [
@@ -4464,81 +4577,29 @@
             "title": "Lora Alpha",
             "description": "LoRA alpha"
           },
-          "load_in_4bit": {
+          "lora_dropout": {
             "anyOf": [
               {
-                "type": "boolean"
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Load In 4Bit",
-            "description": "Enable QLoRA 4-bit quantization"
+            "title": "Lora Dropout",
+            "description": "LoRA dropout rate"
           },
-          "micro_batch_size": {
+          "report_to": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": 1.0
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Micro Batch Size",
-            "description": "Micro batch size"
-          },
-          "batch_size": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Batch Size",
-            "description": "Training batch size"
-          },
-          "max_seq_len": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Seq Len",
-            "description": "Maximum sequence length"
-          },
-          "gradient_checkpointing": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gradient Checkpointing",
-            "description": "Enable gradient checkpointing"
-          },
-          "model_max_length": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Max Length",
-            "description": "Maximum model sequence length"
+            "title": "Report To",
+            "description": "Logging backend (none, wandb, tensorboard)"
           },
           "compute": {
             "anyOf": [
@@ -4565,14 +4626,15 @@
             "description": "User-defined metadata"
           }
         },
+        "additionalProperties": true,
         "type": "object",
         "required": [
           "algorithm",
-          "model_path",
+          "model_name_or_path",
           "data_path"
         ],
         "title": "TrainingJobConfig",
-        "description": "Configuration for a training job."
+        "description": "Configuration for a TRL-based training job."
       },
       "TrainingMetric": {
         "properties": {

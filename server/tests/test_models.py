@@ -16,30 +16,30 @@ from amortized.models import (
 class TestTrainingJobConfig:
     def test_minimal_config(self) -> None:
         config = TrainingJobConfig(
-            algorithm="lora_sft",
-            model_path="Qwen/Qwen2.5-1.5B-Instruct",
+            algorithm="sft",
+            model_name_or_path="Qwen/Qwen2.5-1.5B-Instruct",
             data_path="./data.jsonl",
         )
-        assert config.model_path == "Qwen/Qwen2.5-1.5B-Instruct"
-        assert config.algorithm == "lora_sft"
-        assert config.ckpt_output_dir is None
+        assert config.model_name_or_path == "Qwen/Qwen2.5-1.5B-Instruct"
+        assert config.algorithm == "sft"
+        assert config.output_dir is None
         assert config.learning_rate is None
         assert config.lora_r is None
 
     def test_full_config(self) -> None:
         config = TrainingJobConfig(
-            algorithm="lora_sft",
-            model_path="meta-llama/Llama-3-8B",
+            algorithm="sft",
+            model_name_or_path="meta-llama/Llama-3-8B",
             data_path="/data/train.jsonl",
-            ckpt_output_dir="/outputs/run1",
+            output_dir="/outputs/run1",
             learning_rate=1e-4,
-            num_epochs=5,
+            num_train_epochs=5,
             lora_r=32,
             lora_alpha=64,
             load_in_4bit=True,
-            micro_batch_size=4,
+            per_device_train_batch_size=4,
             batch_size=8,
-            max_seq_len=4096,
+            max_length=4096,
             gradient_checkpointing=True,
             model_max_length=8192,
         )
@@ -52,7 +52,7 @@ class TestTrainingJobConfig:
     def test_missing_required_field(self) -> None:
         with pytest.raises(ValidationError):
             TrainingJobConfig(  # type: ignore[call-arg]
-                model_path="test",
+                model_name_or_path="test",
                 data_path="test",
                 # missing algorithm
             )
@@ -60,22 +60,22 @@ class TestTrainingJobConfig:
     def test_invalid_lora_r(self) -> None:
         with pytest.raises(ValidationError):
             TrainingJobConfig(
-                algorithm="lora_sft",
-                model_path="test",
+                algorithm="sft",
+                model_name_or_path="test",
                 data_path="test",
                 lora_r=0,
             )
 
     def test_exclude_none_serialization(self) -> None:
         config = TrainingJobConfig(
-            algorithm="lora_sft",
-            model_path="test",
+            algorithm="sft",
+            model_name_or_path="test",
             data_path="test",
         )
         dumped = config.model_dump(exclude_none=True)
         assert "learning_rate" not in dumped
-        assert "ckpt_output_dir" not in dumped
-        assert "model_path" in dumped
+        assert "output_dir" not in dumped
+        assert "model_name_or_path" in dumped
         assert "algorithm" in dumped
 
 
@@ -109,18 +109,18 @@ class TestSynthJobConfig:
 
 class TestMemoryEstimateRequest:
     def test_defaults(self) -> None:
-        req = MemoryEstimateRequest(model_path="test/model")
+        req = MemoryEstimateRequest(model_name_or_path="test/model")
         assert req.lora_r == 16
         assert req.batch_size == 2
-        assert req.max_seq_len == 2048
+        assert req.max_length == 2048
         assert req.load_in_4bit is False
 
     def test_custom_values(self) -> None:
         req = MemoryEstimateRequest(
-            model_path="test/model",
+            model_name_or_path="test/model",
             lora_r=64,
             batch_size=8,
-            max_seq_len=4096,
+            max_length=4096,
             load_in_4bit=True,
         )
         assert req.lora_r == 64

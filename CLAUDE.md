@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [Training Hub](https://github.com/Red-Hat-AI-Innovation-Team/training_hub) (LoRA fine-tuning) and [asynth](https://github.com/amortized-ai/asynth) (synthetic data generation).
+Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [TRL](https://github.com/huggingface/trl) (fine-tuning via CLI) and [asynth](https://github.com/amortized-ai/asynth) (synthetic data generation).
 
 ## Monorepo Layout
 
@@ -91,7 +91,7 @@ Enables auto-regeneration of OpenAPI snapshot on commit.
 
 ## Runtime API Endpoints
 
-- POST /api/v1/jobs/training — Create a LoRA SFT training job
+- POST /api/v1/jobs/training — Create a training job (SFT, DPO, GRPO, KTO)
 - POST /api/v1/jobs/sdg — Create a synthetic data generation job
 - GET /api/v1/jobs — List all jobs (optional filters: status, type)
 - GET /api/v1/jobs/{id} — Get job details
@@ -107,77 +107,48 @@ Enables auto-regeneration of OpenAPI snapshot on commit.
 - POST /api/v1/agent/chat — Send a message to the AI assistant
 - POST /api/v1/agent/chat/stream — Stream a response via SSE
 
-## Training Hub — Full LoRA SFT API
+## TRL — Training CLI
 
-Training Hub provides LoRA fine-tuning via a Python API. Install: `pip install training-hub[lora]` then `pip install training-hub[cuda]`.
+Training jobs run via the official HuggingFace TRL CLI in the `docker.io/huggingface/trl` container image.
 
-### Minimal usage (3 required params)
+### Supported algorithms
 
-```python
-from training_hub import lora_sft
+| Algorithm | CLI Command | Data Format |
+|---|---|---|
+| SFT (LoRA or full) | `trl sft` | `messages` (chat) or `text` |
+| DPO | `trl dpo` | `prompt`, `chosen`, `rejected` |
+| GRPO | `trl grpo` | `prompt` + reward functions |
+| KTO | `trl kto` | `prompt`, `completion`, `label` |
 
-result = lora_sft(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",  # required — HuggingFace model ID
-    data_path="./data.jsonl",                    # required — training data
-    ckpt_output_dir="./outputs",                 # required — output directory
-)
+### Minimal LoRA SFT config
+
+```yaml
+model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
+datasets:
+  - path: /path/to/data
+output_dir: ./output
+num_train_epochs: 3
+learning_rate: 0.0002
+bf16: true
+use_peft: true
+lora_r: 16
+lora_alpha: 32
+report_to: none
 ```
 
-### All parameters with defaults
+### Key field names
 
-```python
-result = lora_sft(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",
-    data_path="./data.jsonl",
-    ckpt_output_dir="./outputs",
-    # Hyperparameters
-    learning_rate=2e-4,
-    num_epochs=3,
-    micro_batch_size=2,
-    max_seq_len=2048,
-    bf16=True,
-    # LoRA configuration
-    lora_r=16,           # LoRA rank — higher = more parameters, more expressive
-    lora_alpha=32,       # LoRA alpha — scaling factor, typically 2x lora_r
-    # QLoRA (4-bit quantization for reduced VRAM)
-    load_in_4bit=False,  # Enable QLoRA — fits 7B+ on 24GB, 20B+ with QLoRA
-)
-```
+- `model_name_or_path` — HuggingFace model ID
+- `num_train_epochs` — number of epochs
+- `per_device_train_batch_size` — batch size per GPU
+- `max_length` — max sequence length
+- `use_peft` — enable LoRA
+- `lora_r`, `lora_alpha` — LoRA configuration
+- `accelerate_config` — distributed training (zero2, fsdp2, etc.)
 
-### Return value
+### Container image
 
-`lora_sft()` returns `{'model': model, 'tokenizer': tokenizer, 'trainer': trainer}` (live objects).
-
-### Metrics output
-
-Training writes `training_metrics.jsonl` to `ckpt_output_dir` with per-step records:
-```json
-{"step": 10, "loss": 2.345, "epoch": 1.0, "learning_rate": 1e-05, "max_steps": 1000}
-```
-
-### Checkpoints
-
-Output is in HuggingFace PEFT format: `adapter_model.safetensors` + `adapter_config.json`, plus tokenizer files. Intermediate checkpoints in `checkpoint-N/` subdirectories.
-
-### Memory estimation
-
-```python
-from training_hub import LoRAEstimator, QLoRAEstimator
-
-estimator = LoRAEstimator()  # or QLoRAEstimator() for 4-bit
-vram_gb = estimator.estimate(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",
-    lora_r=16,
-    batch_size=2,
-    max_seq_len=2048,
-)
-```
-
-### Recommended models
-
-- **Qwen/Qwen2.5-1.5B-Instruct** — small, fast, good default for most tasks
-- For 7B+ models, recommend QLoRA (`load_in_4bit=True`) to fit in VRAM
-- A single 24GB GPU can fine-tune 7B with LoRA, 20B+ with QLoRA
+`docker.io/huggingface/trl:1.5.0` — official HuggingFace image with all dependencies.
 
 ## asynth — Synthesis Engine
 
@@ -280,7 +251,7 @@ The core workflow to replace expensive frontier model calls with smaller, custom
 
 1. **Analyze** — Understand the user's agent task, identify which LLM calls are expensive and repetitive
 2. **Generate data (SDG)** — Use a teacher model (e.g. GPT-4o) to generate training data via asynth
-3. **Fine-tune (LoRA SFT)** — Train a small model (e.g. Qwen 1.5B) on the generated data using Training Hub
+3. **Fine-tune (LoRA SFT)** — Train a small model (e.g. Qwen 1.5B) on the generated data using TRL
 4. **Evaluate** — Compare the fine-tuned model against the original frontier model on the task
 5. **Deploy** — Replace the frontier model call with the smaller, cheaper fine-tuned model
 

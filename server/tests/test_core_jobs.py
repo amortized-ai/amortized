@@ -35,16 +35,16 @@ class TestCreateJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test.jsonl",
-                "ckpt_output_dir": "/tmp/out",
+                "output_dir": "/tmp/out",
             },
             output_dir="/tmp/out",
         )
         assert row["type"] == "training"
         assert row["status"] == "queued"
-        assert row["config"]["model_path"] == "test"
+        assert row["config"]["model_name_or_path"] == "test"
         assert row["output_dir"] == "/tmp/out"
         assert row["id"]
 
@@ -66,10 +66,10 @@ class TestCreateJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test.jsonl",
-                "ckpt_output_dir": "/tmp/out",
+                "output_dir": "/tmp/out",
             },
         )
         events = await repo.list_events(row["id"])
@@ -84,10 +84,10 @@ class TestGetJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         fetched = await get_job(repo, created["id"])
@@ -110,10 +110,10 @@ class TestListJobs:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         await create_job(
@@ -134,10 +134,10 @@ class TestCancelJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         cancelled = await cancel_job(repo, created["id"])
@@ -149,10 +149,10 @@ class TestCancelJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         await cancel_job(repo, created["id"])
@@ -171,10 +171,10 @@ class TestCancelJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         await repo.update_job_status(
@@ -191,10 +191,10 @@ class TestCancelJob:
             repo,
             job_type=JobType.training,
             config={
-                "algorithm": "lora_sft",
-                "model_path": "t",
+                "algorithm": "sft",
+                "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "ckpt_output_dir": "/tmp/t",
+                "output_dir": "/tmp/t",
             },
         )
         await cancel_job(repo, created["id"])

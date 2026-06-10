@@ -151,7 +151,7 @@ class TestJobDetail:
                         "type": "training",
                         "status": "completed",
                         "created_at": "2026-01-01T00:00:00Z",
-                        "config": {"model_path": "test"},
+                        "config": {"model_name_or_path": "test"},
                     },
                 ),
             }
@@ -222,7 +222,7 @@ class TestRecipes:
                     {
                         "name": "llama3/8b-lora-sft",
                         "type": "training",
-                        "config": {"model_path": "meta-llama/Llama-3-8B"},
+                        "config": {"model_name_or_path": "meta-llama/Llama-3-8B"},
                     },
                 ),
             }
@@ -244,7 +244,7 @@ class TestSubmit:
                         "type": "training",
                         "status": "pending",
                         "created_at": "2026-01-01T00:00:00Z",
-                        "config": {"model_path": "test"},
+                        "config": {"model_name_or_path": "test"},
                     },
                 ),
             }
@@ -252,7 +252,7 @@ class TestSubmit:
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(
                 app,
-                ["submit", "training", "--config", '{"model_path": "test"}', "--confirm"],
+                ["submit", "training", "--config", '{"model_name_or_path": "test"}', "--confirm"],
             )
         assert result.exit_code == 0
         assert "job_new" in result.output
@@ -269,7 +269,7 @@ class TestSubmit:
         with patch("amortized.cli.main._client", return_value=fake):
             result = runner.invoke(
                 app,
-                ["submit", "training", "--config", '{"model_path": "test"}'],
+                ["submit", "training", "--config", '{"model_name_or_path": "test"}'],
             )
         assert result.exit_code == 0
         assert "Config valid" in result.output

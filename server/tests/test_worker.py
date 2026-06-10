@@ -54,10 +54,10 @@ class TestWorkerJobExecution:
             response = await client.post(
                 "/api/v1/jobs/training",
                 json={
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
-                    "ckpt_output_dir": tmpdir,
+                    "output_dir": tmpdir,
                 },
             )
             assert response.status_code == 201
@@ -166,19 +166,19 @@ class TestWorkerJobExecution:
         resp1 = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/first",
+                "algorithm": "sft",
+                "model_name_or_path": "test/first",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-first",
+                "output_dir": "/tmp/test-first",
             },
         )
         await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/second",
+                "algorithm": "sft",
+                "model_name_or_path": "test/second",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-second",
+                "output_dir": "/tmp/test-second",
             },
         )
         first_id = resp1.json()["id"]
@@ -207,10 +207,10 @@ class TestWorkerMetadataParsing:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-meta",
+                "output_dir": "/tmp/test-meta",
                 "compute": {"backend": "ssh", "gpus": 1, "gpu_type": "A100"},
             },
         )
@@ -235,10 +235,10 @@ class TestWorkerMetadataParsing:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-no-meta",
+                "output_dir": "/tmp/test-no-meta",
             },
         )
         assert response.status_code == 201
@@ -265,10 +265,10 @@ class TestTildeExpansion:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "~/data/train.jsonl",
-                "ckpt_output_dir": "~/amortized-jobs/output",
+                "output_dir": "~/amortized-jobs/output",
             },
         )
         assert response.status_code == 201
@@ -338,10 +338,10 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-orphan",
+                "output_dir": "/tmp/test-orphan",
             },
         )
         job_id = response.json()["id"]
@@ -377,10 +377,10 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-readopt",
+                "output_dir": "/tmp/test-readopt",
             },
         )
         job_id = response.json()["id"]
@@ -427,10 +427,10 @@ class TestOrphanedJobCleanup:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-no-pid",
+                "output_dir": "/tmp/test-no-pid",
             },
         )
         job_id = response.json()["id"]
@@ -465,10 +465,10 @@ class TestCancelRunningJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-cancel",
+                "output_dir": "/tmp/test-cancel",
             },
         )
         job_id = response.json()["id"]
@@ -496,10 +496,10 @@ class TestCancelRunningJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test-done",
+                "output_dir": "/tmp/test-done",
             },
         )
         job_id = response.json()["id"]
@@ -536,10 +536,10 @@ class TestSmartBackendRouting:
             response = await client.post(
                 "/api/v1/jobs/training",
                 json={
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
-                    "ckpt_output_dir": "/tmp/test-smart-route",
+                    "output_dir": "/tmp/test-smart-route",
                 },
             )
             assert response.status_code == 201
@@ -603,10 +603,10 @@ class TestSmartBackendRouting:
             response = await client.post(
                 "/api/v1/jobs/training",
                 json={
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
-                    "ckpt_output_dir": "/tmp/test-explicit-backend",
+                    "output_dir": "/tmp/test-explicit-backend",
                     "compute": {"backend": "alt-node"},
                 },
             )

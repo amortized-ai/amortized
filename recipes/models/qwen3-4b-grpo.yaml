@@ -1,4 +1,4 @@
 extends: training/grpo
-description: Qwen3 4B GRPO — RL with tool-use rewards
+description: Qwen3 4B — GRPO RL
 config:
-  model_path: Qwen/Qwen3-4B
+  model_name_or_path: Qwen/Qwen3-4B

@@ -301,10 +301,10 @@ class TestJobArtifactsStillWork:
         job_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
             },
         )
         assert job_resp.status_code == 201

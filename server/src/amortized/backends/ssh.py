@@ -87,7 +87,9 @@ class SSHBackend:
                 amortized_env["RANK"] = "0"
                 amortized_env["LOCAL_RANK"] = "0"
             filtered_spec_env = {
-                k: v for k, v in spec.env.items() if k not in ("_config", "_run_script")
+                k: v
+                for k, v in spec.env.items()
+                if k not in ("_config", "_run_script", "_run_config")
             }
             merged_env = {**amortized_env, **filtered_spec_env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)
@@ -110,6 +112,14 @@ class SSHBackend:
                 await conn.run(
                     f"cat > {remote_dir}/run.py << 'AMORTIZED_SCRIPT_EOF'\n"
                     f"{run_script}\nAMORTIZED_SCRIPT_EOF",
+                    check=True,
+                )
+
+            run_config = spec.env.get("_run_config")
+            if run_config:
+                await conn.run(
+                    f"cat > {remote_dir}/config.yaml << 'AMORTIZED_CONFIG_EOF'\n"
+                    f"{run_config}\nAMORTIZED_CONFIG_EOF",
                     check=True,
                 )
 

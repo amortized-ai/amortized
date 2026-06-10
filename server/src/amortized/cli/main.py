@@ -493,7 +493,7 @@ def submit(
                     overrides[k] = json.loads(v)
                 except json.JSONDecodeError:
                     overrides[k] = v
-            model_key = "model" if job_type == "sdg" else "model_path"
+            model_key = "model" if job_type == "sdg" else "model_name_or_path"
             if model:
                 overrides.setdefault(f"config.{model_key}", model)
             if data:
@@ -517,7 +517,7 @@ def submit(
                 except json.JSONDecodeError as exc:
                     err_console.print(f"[red]Invalid JSON config:[/red] {exc}")
                     raise typer.Exit(1) from exc
-            model_key = "model" if job_type == "sdg" else "model_path"
+            model_key = "model" if job_type == "sdg" else "model_name_or_path"
             if model:
                 cfg.setdefault(model_key, model)
             if data:

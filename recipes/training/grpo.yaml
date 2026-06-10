@@ -1,13 +1,15 @@
 type: training
-description: GRPO reinforcement learning with reward signals
+description: GRPO — group relative policy optimization via TRL
 config:
   algorithm: grpo
-  num_iterations: 15
-  group_size: 8
-  prompt_batch_size: 100
-  learning_rate: 0.00001
-  temperature: 0.7
-  max_tokens: 512
+  learning_rate: 0.000001
+  num_generations: 8
+  max_completion_length: 256
+  temperature: 1.0
+  beta: 0.0
+  epsilon: 0.2
+  bf16: true
+  use_peft: true
   lora_r: 16
   lora_alpha: 8
-  gpu_memory_utilization: 0.45
+  report_to: none

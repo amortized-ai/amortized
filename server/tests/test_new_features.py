@@ -58,10 +58,10 @@ class TestConfigValidate:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "algorithm": "sft",
+                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "data_path": "./data.jsonl",
-                    "ckpt_output_dir": "./out",
+                    "output_dir": "./out",
                 },
             },
         )
@@ -283,10 +283,10 @@ class TestResumeEndpoint:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test-model",
+                "algorithm": "sft",
+                "model_name_or_path": "test-model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "/tmp/test_resume",
+                "output_dir": "/tmp/test_resume",
             },
         )
         assert create_resp.status_code == 201
@@ -336,7 +336,7 @@ class TestStorageBackends:
 
 class TestNewModels:
     def test_config_validate_request(self) -> None:
-        req = ConfigValidateRequest(type="training", config={"model_path": "x"})
+        req = ConfigValidateRequest(type="training", config={"model_name_or_path": "x"})
         assert req.type == "training"
 
     def test_config_validate_response(self) -> None:

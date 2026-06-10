@@ -40,13 +40,13 @@ async def repo(tmp_path):
 class TestResolveArtifactRefs:
     @pytest.mark.asyncio
     async def test_resolves_simple_ref(self, repo: Repository) -> None:
-        config = {"model_path": "artifact:job-abc/adapter_model.safetensors"}
+        config = {"model_name_or_path": "artifact:job-abc/adapter_model.safetensors"}
         resolved = await resolve_artifact_refs(repo, config)
-        assert resolved["model_path"] == "/outputs/job-abc/adapter_model.safetensors"
+        assert resolved["model_name_or_path"] == "/outputs/job-abc/adapter_model.safetensors"
 
     @pytest.mark.asyncio
     async def test_passes_through_non_refs(self, repo: Repository) -> None:
-        config = {"model_path": "Qwen/Qwen2.5-1.5B", "num_epochs": 3}
+        config = {"model_name_or_path": "Qwen/Qwen2.5-1.5B", "num_train_epochs": 3}
         resolved = await resolve_artifact_refs(repo, config)
         assert resolved == config
 

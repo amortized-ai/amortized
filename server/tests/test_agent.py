@@ -152,7 +152,7 @@ class TestProcessMessage:
             "propose_action",
             {
                 "action_type": "submit_training_job",
-                "config": {"model_path": "Qwen/Qwen2.5-1.5B-Instruct"},
+                "config": {"model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct"},
                 "label": "Start Training",
             },
         )
@@ -169,7 +169,7 @@ class TestProcessMessage:
         mock_execute.return_value = {
             "__proposed_action__": True,
             "action_type": "submit_training_job",
-            "config": {"model_path": "Qwen/Qwen2.5-1.5B-Instruct"},
+            "config": {"model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct"},
             "label": "Start Training",
         }
 

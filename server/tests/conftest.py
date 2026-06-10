@@ -17,7 +17,7 @@ def _training_hub_functional() -> bool:
     try:
         from training_hub import LoRAEstimator
 
-        LoRAEstimator(model_path="test", lora_r=16, batch_size=2, max_seq_len=512)
+        LoRAEstimator(model_name_or_path="test", lora_r=16, batch_size=2, max_length=512)
         return True
     except Exception:
         return False

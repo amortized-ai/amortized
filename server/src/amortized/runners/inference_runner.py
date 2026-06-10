@@ -26,7 +26,7 @@ def run_inference(config: dict[str, Any]) -> None:
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     if _vllm is not None:
-        llm = _vllm.LLM(model=config["model_path"])
+        llm = _vllm.LLM(model=config["model_name_or_path"])
         params = _vllm.SamplingParams(
             temperature=float(config.get("temperature", 0.0) or 0.0),
             max_tokens=int(config.get("max_tokens", 2048) or 2048),
@@ -68,7 +68,7 @@ def _simulate_inference(config: dict[str, Any], output_path: str) -> None:
                 "index": i,
                 "input": f"sample_{i}",
                 "output": f"Generated response for sample {i}",
-                "model": str(config["model_path"]),
+                "model": str(config["model_name_or_path"]),
                 "tokens_generated": int(config.get("max_tokens", 2048) or 2048),
             }
         )

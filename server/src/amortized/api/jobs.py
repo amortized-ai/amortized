@@ -80,7 +80,7 @@ async def create_training_job(
             repo,
             job_type=JobType.training,
             config=config.model_dump(exclude_none=True, exclude={"compute", "metadata"}),
-            output_dir=config.ckpt_output_dir,
+            output_dir=config.output_dir,
             metadata=metadata or None,
         )
     except InvalidJobStateError as exc:

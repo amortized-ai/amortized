@@ -62,7 +62,7 @@ async def create_job_universal(
         raise HTTPException(status_code=422, detail=schema_errors)
 
     job_type = JobType(request.type)
-    output_dir = request.config.get("ckpt_output_dir")
+    output_dir = request.config.get("output_dir")
 
     merged_metadata = {**request.metadata}
     if request.compute.backend != "local":
@@ -232,8 +232,8 @@ async def get_job_type_examples(job_type: str) -> list[dict[str, Any]]:
             {
                 "name": "Basic LoRA fine-tune",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "algorithm": "sft",
+                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "data_path": "./data.jsonl",
                 },
             }

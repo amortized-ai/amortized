@@ -39,10 +39,10 @@ async def _create_training_job(client: httpx.AsyncClient) -> str:
     resp = await client.post(
         "/api/v1/jobs/training",
         json={
-            "algorithm": "lora_sft",
-            "model_path": "test-model",
+            "algorithm": "sft",
+            "model_name_or_path": "test-model",
             "data_path": "./data.jsonl",
-            "ckpt_output_dir": "./outputs",
+            "output_dir": "./outputs",
         },
     )
     assert resp.status_code == 201

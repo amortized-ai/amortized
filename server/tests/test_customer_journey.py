@@ -66,7 +66,7 @@ class TestCustomerJourney:
         schema = resp.json()
         assert "algorithm" in schema["properties"]
         assert "algorithm" in schema["required"]
-        assert "batch_size" in schema["properties"]
+        assert "per_device_train_batch_size" in schema["properties"]
         assert "gradient_checkpointing" in schema["properties"]
 
         # 4. Upload a dataset artifact
@@ -99,12 +99,12 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "algorithm": "sft",
+                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "data_path": dataset_location,
-                    "ckpt_output_dir": "/tmp/test-outputs",
+                    "output_dir": "/tmp/test-outputs",
                     "lora_r": 16,
-                    "num_epochs": 1,
+                    "num_train_epochs": 1,
                 },
                 "compute": {
                     "backend": "ssh",
@@ -133,7 +133,7 @@ class TestCustomerJourney:
         job_detail = resp.json()
         assert job_detail["id"] == job_id
         assert job_detail["type"] == "training"
-        assert job_detail["config"]["algorithm"] == "lora_sft"
+        assert job_detail["config"]["algorithm"] == "sft"
 
         # 9. Job appears in list with filters
         resp = await client.get("/api/v1/jobs", params={"type": "training"})
@@ -154,8 +154,8 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
                 },
                 "dry_run": False,
@@ -174,8 +174,8 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
                 },
                 "compute": {"backend": "ssh", "gpus": 1},
@@ -201,7 +201,7 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "model_path": "test/model",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
                 },
                 "dry_run": False,
@@ -217,10 +217,10 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "~/data/train.jsonl",
-                    "ckpt_output_dir": "~/outputs/run-1",
+                    "output_dir": "~/outputs/run-1",
                 },
                 "dry_run": False,
             },
@@ -241,8 +241,8 @@ class TestCustomerJourney:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test/model",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
                     "data_path": "./data.jsonl",
                 },
                 "dry_run": False,

@@ -88,10 +88,10 @@ class TestSubmit:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
             },
         )
         assert isinstance(job, Job)
@@ -104,10 +104,10 @@ class TestSubmit:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
             },
             metadata={"team": "ml-infra"},
         )
@@ -119,10 +119,10 @@ class TestSubmit:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
             },
             compute={"backend": "local", "gpus": 1},
         )
@@ -135,10 +135,10 @@ class TestGetJob:
         created = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test-model",
+                "algorithm": "sft",
+                "model_name_or_path": "test-model",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         fetched = await sdk_client.get_job(created.id)
@@ -163,10 +163,10 @@ class TestListJobs:
         await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         jobs = await sdk_client.list_jobs()
@@ -178,10 +178,10 @@ class TestListJobs:
         await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         queued = await sdk_client.list_jobs(status="queued")
@@ -196,10 +196,10 @@ class TestCancelJob:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         cancelled = await sdk_client.cancel_job(job.id)
@@ -210,10 +210,10 @@ class TestCancelJob:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         cancelled = await job.cancel()
@@ -226,10 +226,10 @@ class TestJobWait:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         await job.cancel()
@@ -242,10 +242,10 @@ class TestJobWait:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         r = repr(job)
@@ -260,10 +260,10 @@ class TestJobRaw:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         raw = job.raw
@@ -314,10 +314,10 @@ class TestArtifactRef:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         ref = job.artifact_ref("model")
@@ -328,10 +328,10 @@ class TestArtifactRef:
         job = await sdk_client.submit(
             type="training",
             config={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./out",
+                "output_dir": "./out",
             },
         )
         ref = job.artifact_ref("checkpoint-100/adapter_model")

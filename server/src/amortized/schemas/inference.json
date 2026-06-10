@@ -3,10 +3,10 @@
   "title": "InferenceJobConfig",
   "description": "Configuration for a vLLM batch inference job.",
   "type": "object",
-  "required": ["model_path", "input_data", "output_path"],
+  "required": ["model_name_or_path", "input_data", "output_path"],
   "additionalProperties": false,
   "properties": {
-    "model_path": {
+    "model_name_or_path": {
       "type": "string",
       "description": "HuggingFace model path or local path to the model"
     },

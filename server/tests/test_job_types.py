@@ -54,9 +54,9 @@ class TestJobTypeRegistry:
         schema = get_schema("training")
         assert schema["title"] == "TrainingJobConfig"
         assert "algorithm" in schema["properties"]
-        assert "model_path" in schema["properties"]
+        assert "model_name_or_path" in schema["properties"]
         assert "algorithm" in schema["required"]
-        assert "model_path" in schema["required"]
+        assert "model_name_or_path" in schema["required"]
         assert schema["additionalProperties"] is True
 
     def test_get_schema_sdg(self) -> None:
@@ -72,15 +72,15 @@ class TestJobTypeRegistry:
         errors = validate_config(
             "training",
             {
-                "algorithm": "lora_sft",
-                "model_path": "test/model",
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
                 "data_path": "./data.jsonl",
             },
         )
         assert errors == []
 
     def test_validate_config_missing_required(self) -> None:
-        errors = validate_config("training", {"model_path": "test"})
+        errors = validate_config("training", {"model_name_or_path": "test"})
         assert len(errors) > 0
         assert any("algorithm" in e for e in errors)
 
@@ -88,8 +88,8 @@ class TestJobTypeRegistry:
         errors = validate_config(
             "training",
             {
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
                 "lora_r": "not-an-int",
             },
@@ -108,7 +108,7 @@ class TestJobTypeRegistry:
     def test_get_schema_inference(self) -> None:
         schema = get_schema("inference")
         assert schema["title"] == "InferenceJobConfig"
-        assert "model_path" in schema["properties"]
+        assert "model_name_or_path" in schema["properties"]
         assert "input_data" in schema["required"]
         assert "output_path" in schema["required"]
 
@@ -123,7 +123,7 @@ class TestJobTypeRegistry:
         errors = validate_config(
             "inference",
             {
-                "model_path": "test/model",
+                "model_name_or_path": "test/model",
                 "input_data": "./input.jsonl",
                 "output_path": "./output.jsonl",
             },
@@ -142,7 +142,7 @@ class TestJobTypeRegistry:
         assert errors == []
 
     def test_validate_config_inference_missing_required(self) -> None:
-        errors = validate_config("inference", {"model_path": "test"})
+        errors = validate_config("inference", {"model_name_or_path": "test"})
         assert len(errors) > 0
         assert any("input_data" in e for e in errors)
 
@@ -164,8 +164,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "algorithm": "sft",
+                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "data_path": "./data.jsonl",
                 },
                 "dry_run": False,
@@ -175,8 +175,8 @@ class TestUniversalJobEndpoint:
         data = response.json()
         assert data["type"] == "training"
         assert data["status"] == "queued"
-        assert data["config"]["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
-        assert data["config"]["algorithm"] == "lora_sft"
+        assert data["config"]["model_name_or_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
+        assert data["config"]["algorithm"] == "sft"
 
     @pytest.mark.asyncio
     async def test_create_sdg_job(self, client: httpx.AsyncClient) -> None:
@@ -202,7 +202,7 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "inference",
                 "config": {
-                    "model_path": "test/model",
+                    "model_name_or_path": "test/model",
                     "input_data": "./input.jsonl",
                     "output_path": "./output.jsonl",
                 },
@@ -213,7 +213,7 @@ class TestUniversalJobEndpoint:
         data = response.json()
         assert data["type"] == "inference"
         assert data["status"] == "queued"
-        assert data["config"]["model_path"] == "test/model"
+        assert data["config"]["model_name_or_path"] == "test/model"
 
     @pytest.mark.asyncio
     async def test_create_eval_job(self, client: httpx.AsyncClient) -> None:
@@ -242,8 +242,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
                 },
                 "metadata": {"owner": "test-user", "experiment": "run-42"},
@@ -262,8 +262,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
                 },
                 "compute": {"backend": "ssh", "gpus": 2, "gpu_type": "A100"},
@@ -285,8 +285,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
                 },
                 "dry_run": False,
@@ -316,7 +316,7 @@ class TestUniversalJobEndpoint:
             "/api/v1/jobs",
             json={
                 "type": "training",
-                "config": {"model_path": "test"},
+                "config": {"model_name_or_path": "test"},
                 "dry_run": False,
             },
         )
@@ -332,10 +332,10 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
-                    "num_epochs": "not-a-number",
+                    "num_train_epochs": "not-a-number",
                 },
                 "dry_run": False,
             },
@@ -349,8 +349,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
                 },
                 "dry_run": False,
@@ -367,8 +367,8 @@ class TestUniversalJobEndpoint:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
                 },
             },
@@ -386,7 +386,7 @@ class TestUniversalJobEndpoint:
             "/api/v1/jobs",
             json={
                 "type": "training",
-                "config": {"model_path": "test"},
+                "config": {"model_name_or_path": "test"},
             },
         )
         assert response.status_code == 201
@@ -415,7 +415,7 @@ class TestJobTypesEndpoints:
         assert response.status_code == 200
         schema = response.json()
         assert schema["title"] == "TrainingJobConfig"
-        assert "model_path" in schema["properties"]
+        assert "model_name_or_path" in schema["properties"]
 
     @pytest.mark.asyncio
     async def test_get_sdg_schema(self, client: httpx.AsyncClient) -> None:
@@ -491,7 +491,7 @@ class TestJobTypeExamplesEndpoint:
         assert response.status_code == 200
         examples = response.json()
         assert len(examples) == 1
-        assert examples[0]["config"]["algorithm"] == "lora_sft"
+        assert examples[0]["config"]["algorithm"] == "sft"
 
     @pytest.mark.asyncio
     async def test_get_unknown_type_examples(self, client: httpx.AsyncClient) -> None:
@@ -513,8 +513,8 @@ class TestOldEndpointsBackwardCompat:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
             },
         )
@@ -537,8 +537,8 @@ class TestOldEndpointsBackwardCompat:
         await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "t1",
+                "algorithm": "sft",
+                "model_name_or_path": "t1",
                 "data_path": "t1",
             },
         )
@@ -547,8 +547,8 @@ class TestOldEndpointsBackwardCompat:
             json={
                 "type": "training",
                 "config": {
-                    "algorithm": "lora_sft",
-                    "model_path": "t2",
+                    "algorithm": "sft",
+                    "model_name_or_path": "t2",
                     "data_path": "t2",
                 },
                 "dry_run": False,

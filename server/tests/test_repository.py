@@ -27,13 +27,13 @@ class TestJobCRUD:
         row = await repo.create_job(
             job_id="j1",
             job_type=JobType.training,
-            config={"model_path": "test"},
+            config={"model_name_or_path": "test"},
             created_at="2026-01-01T00:00:00",
         )
         assert row["id"] == "j1"
         assert row["type"] == "training"
         assert row["status"] == "validating"
-        assert row["config"]["model_path"] == "test"
+        assert row["config"]["model_name_or_path"] == "test"
 
         fetched = await repo.get_job("j1")
         assert fetched is not None

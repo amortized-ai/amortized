@@ -228,7 +228,7 @@ class TestLocalBackend:
             job_id="config-job",
             command=["python", "-c", "print('done')"],
             work_dir=work_dir,
-            env={"_config": {"model_path": "test/model"}},
+            env={"_config": {"model_name_or_path": "test/model"}},
         )
 
         await backend.submit(spec)
@@ -237,7 +237,7 @@ class TestLocalBackend:
         with open(config_path) as f:
             config_data = json.load(f)
 
-        assert config_data == {"config": {"model_path": "test/model"}, "artifacts": {}}
+        assert config_data == {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
 
     @pytest.mark.asyncio
     async def test_logs_no_dir(self) -> None:
@@ -318,7 +318,7 @@ class TestSSHBackend:
             spec = JobSpec(
                 job_id="config-ssh-job",
                 command=["python", "train.py"],
-                env={"_config": {"model_path": "test/model"}},
+                env={"_config": {"model_name_or_path": "test/model"}},
             )
             await backend.submit(spec)
 
@@ -326,7 +326,7 @@ class TestSSHBackend:
         cmd = config_call[0][0]
         json_str = cmd.split("<< 'AMORTIZED_EOF'\n")[1].split("\nAMORTIZED_EOF")[0]
         parsed = json.loads(json_str)
-        assert parsed == {"config": {"model_path": "test/model"}, "artifacts": {}}
+        assert parsed == {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
 
     @pytest.mark.asyncio
     async def test_submit_docker_mode(self) -> None:

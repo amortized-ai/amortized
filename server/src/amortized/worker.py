@@ -26,14 +26,13 @@ logger = logging.getLogger("amortized.worker")
 _monitor_tasks: set[asyncio.Task[None]] = set()
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
-    "training": "ghcr.io/amortized-ai/training:latest",
+    "training": "docker.io/huggingface/trl:1.5.0",
     "sdg": "ghcr.io/amortized-ai/synth:latest",
     "inference": "ghcr.io/amortized-ai/inference:latest",
     "eval": "ghcr.io/amortized-ai/eval:latest",
 }
 
 _RUNNER_MODULES: dict[str, str] = {
-    JobType.training.value: "amortized.runners.training_runner",
     JobType.sdg.value: "amortized.runners.sdg_runner",
     JobType.inference.value: "amortized.runners.inference_runner",
     JobType.eval.value: "amortized.runners.eval_runner",
@@ -52,6 +51,11 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     """Build the subprocess command for a job."""
     config = job["config"]
     job_type = job["type"]
+
+    if job_type == JobType.training.value:
+        algorithm = config.get("algorithm", "sft")
+        subcommand = _get_trl_subcommand(algorithm)
+        return ["trl", subcommand, "--config", json.dumps(config)]
 
     module = _RUNNER_MODULES.get(job_type)
     if module is None:
@@ -73,26 +77,69 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     return [sys.executable, "-m", module, json.dumps(config)]
 
 
-_ALGORITHM_IMPORTS: dict[str, tuple[str, str]] = {
-    "lora_sft": ("training_hub", "lora_sft"),
-    "full_sft": ("training_hub", "sft"),
-    "sft": ("training_hub", "sft"),
-    "grpo": ("training_hub", "lora_grpo"),
-    "lora_grpo": ("training_hub", "lora_grpo"),
-    "osft": ("training_hub", "osft"),
-    "gepa": ("training_hub", "gepa"),
+_TRL_SUBCOMMANDS: dict[str, str] = {
+    "lora_sft": "sft",
+    "full_sft": "sft",
+    "sft": "sft",
+    "dpo": "dpo",
+    "grpo": "grpo",
+    "lora_grpo": "grpo",
+    "kto": "kto",
+    "rloo": "rloo",
 }
 
 
-def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
-    """Generate a self-contained Python script for container execution.
+def _get_trl_subcommand(algorithm: str) -> str:
+    sub = _TRL_SUBCOMMANDS.get(algorithm)
+    if sub is None:
+        raise ValueError(f"Unknown training algorithm: {algorithm}")
+    return sub
 
-    The script reads config from /amortized/config.json (already mounted)
-    and calls the library function directly. No custom framework needed —
-    the container only needs the library installed.
-    """
-    if job_type == JobType.training.value:
-        return _training_script(config)
+
+_TRL_FIELD_MAP: dict[str, str] = {
+    "model_path": "model_name_or_path",
+    "model_name_or_path": "model_name_or_path",
+    "num_epochs": "num_train_epochs",
+    "learning_rate": "learning_rate",
+    "lora_r": "lora_r",
+    "lora_alpha": "lora_alpha",
+    "lora_dropout": "lora_dropout",
+    "micro_batch_size": "per_device_train_batch_size",
+    "max_seq_len": "max_length",
+    "bf16": "bf16",
+}
+
+_TRL_SKIP_KEYS = {"algorithm", "ckpt_output_dir", "output_dir", "engine", "load_in_4bit"}
+
+
+def _training_config_yaml(config: dict[str, Any]) -> str:
+    import yaml
+
+    trl_config: dict[str, Any] = {
+        "output_dir": "/amortized/work",
+        "report_to": "none",
+    }
+
+    for key, value in config.items():
+        if key in _TRL_SKIP_KEYS or value is None:
+            continue
+        if key == "data_path":
+            trl_config["datasets"] = [{"path": os.path.dirname(value)}]
+            continue
+        trl_field = _TRL_FIELD_MAP.get(key)
+        if trl_field:
+            trl_config[trl_field] = value
+        elif key not in _TRL_FIELD_MAP:
+            trl_config[key] = value
+
+    if "lora_r" in trl_config:
+        trl_config["use_peft"] = True
+
+    return yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+
+
+def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
+    """Generate a self-contained Python script for container execution."""
     if job_type == JobType.sdg.value:
         return _sdg_script()
     if job_type == JobType.eval.value:
@@ -100,25 +147,6 @@ def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
     if job_type == JobType.inference.value:
         return _inference_script()
     raise ValueError(f"No container script for job type: {job_type}")
-
-
-def _training_script(config: dict[str, Any]) -> str:
-    algorithm = config.get("algorithm", "lora_sft")
-    entry = _ALGORITHM_IMPORTS.get(algorithm)
-    if not entry:
-        raise ValueError(f"Unknown training algorithm: {algorithm}")
-    module, func = entry
-    return f"""\
-import json
-
-config = json.load(open("/amortized/config.json"))["config"]
-from {module} import {func}
-
-skip = {{"algorithm", "ckpt_output_dir", "output_dir"}}
-kwargs = {{k: v for k, v in config.items() if k not in skip and v is not None}}
-kwargs["ckpt_output_dir"] = "/amortized/work"
-{func}(**kwargs)
-"""
 
 
 def _sdg_script() -> str:
@@ -264,7 +292,7 @@ config = json.load(open("/amortized/config.json"))["config"]
 
 from vllm import LLM, SamplingParams
 
-model_path = config["model_path"]
+model_path = config["model_name_or_path"]
 tp = config.get("tensor_parallel_size", 1)
 llm = LLM(model=model_path, tensor_parallel_size=tp, trust_remote_code=True)
 
@@ -523,7 +551,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     config = job["config"]
     if job["type"] == JobType.training.value:
-        config = {**config, "ckpt_output_dir": output_dir}
+        config = {**config, "output_dir": output_dir}
     elif job["type"] == JobType.inference.value:
         if "output_path" not in config or not config["output_path"]:
             config = {**config, "output_path": os.path.join(output_dir, "results.jsonl")}
@@ -532,7 +560,6 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     path_keys = {
         "data_path",
-        "ckpt_output_dir",
         "output_dir",
         "output_path",
         "resume_from_checkpoint",
@@ -590,11 +617,16 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     spec_env["_config"] = json.dumps(config)
 
-    if image:
+    if image and job["type"] == JobType.training.value:
+        algorithm = config.get("algorithm", "sft")
+        subcommand = _get_trl_subcommand(algorithm)
+        trl_yaml = _training_config_yaml(config)
+        spec_env["_run_config"] = trl_yaml
+        cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
+    elif image:
         script = _generate_container_script(job["type"], config)
         spec_env["_run_script"] = script
-        python_bin = "python3.11" if job["type"] == JobType.training.value else "python3"
-        cmd = [python_bin, "/amortized/work/run.py"]
+        cmd = ["python3", "/amortized/work/run.py"]
 
     spec = JobSpec(
         job_id=job_id,

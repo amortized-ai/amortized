@@ -1,40 +1,58 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TrainingJobConfig",
-  "description": "Configuration for a training job.",
+  "description": "Configuration for TRL-based training jobs",
   "type": "object",
-  "required": ["algorithm", "model_path", "data_path"],
-  "additionalProperties": true,
+  "required": ["algorithm", "model_name_or_path"],
   "properties": {
     "algorithm": {
       "type": "string",
-      "enum": ["lora_sft", "full_sft", "dpo", "grpo"],
-      "description": "Training algorithm"
+      "enum": ["sft", "dpo", "grpo", "kto", "rloo", "reward"],
+      "description": "TRL training algorithm / CLI subcommand"
     },
-    "model_path": {
+    "model_name_or_path": {
       "type": "string",
-      "description": "HuggingFace model path or local path"
+      "description": "HuggingFace model ID or local path"
     },
     "data_path": {
       "type": "string",
-      "description": "Path to training data (JSONL)"
+      "description": "Path to training data (resolved by worker)"
     },
-    "ckpt_output_dir": {
-      "type": "string",
-      "description": "Directory for checkpoints and outputs"
+    "num_train_epochs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of training epochs"
     },
     "learning_rate": {
-      "type": ["number", "string"],
-      "description": "Learning rate (default: 2e-4)"
+      "type": "number",
+      "description": "Learning rate"
+    },
+    "per_device_train_batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Batch size per GPU"
+    },
+    "max_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum sequence length"
     },
     "bf16": {
       "type": "boolean",
       "description": "Use bfloat16 mixed precision"
     },
-    "num_epochs": {
+    "gradient_checkpointing": {
+      "type": "boolean",
+      "description": "Enable gradient checkpointing"
+    },
+    "gradient_accumulation_steps": {
       "type": "integer",
       "minimum": 1,
-      "description": "Number of training epochs"
+      "description": "Gradient accumulation steps"
+    },
+    "use_peft": {
+      "type": "boolean",
+      "description": "Enable LoRA via PEFT"
     },
     "lora_r": {
       "type": "integer",
@@ -46,33 +64,36 @@
       "minimum": 1,
       "description": "LoRA alpha"
     },
-    "load_in_4bit": {
-      "type": "boolean",
-      "description": "Enable QLoRA 4-bit quantization"
+    "lora_dropout": {
+      "type": "number",
+      "description": "LoRA dropout rate"
     },
-    "micro_batch_size": {
+    "num_generations": {
       "type": "integer",
       "minimum": 1,
-      "description": "Micro batch size"
+      "description": "GRPO: completions per prompt"
     },
-    "batch_size": {
+    "max_completion_length": {
       "type": "integer",
       "minimum": 1,
-      "description": "Training batch size"
+      "description": "GRPO: max generated tokens"
     },
-    "max_seq_len": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Maximum sequence length"
+    "temperature": {
+      "type": "number",
+      "description": "Sampling temperature"
     },
-    "gradient_checkpointing": {
-      "type": "boolean",
-      "description": "Enable gradient checkpointing to reduce VRAM"
+    "beta": {
+      "type": "number",
+      "description": "KL penalty (DPO/GRPO)"
     },
-    "model_max_length": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Maximum model sequence length"
+    "epsilon": {
+      "type": "number",
+      "description": "Clipping epsilon (GRPO)"
+    },
+    "report_to": {
+      "type": "string",
+      "description": "Logging backend (none, wandb, tensorboard)"
     }
-  }
+  },
+  "additionalProperties": true
 }

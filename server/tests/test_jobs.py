@@ -44,17 +44,17 @@ class TestCreateTrainingJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
             },
         )
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "training"
         assert data["status"] == "queued"
-        assert data["config"]["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
+        assert data["config"]["model_name_or_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
         assert data["id"]
 
     @pytest.mark.asyncio
@@ -62,10 +62,10 @@ class TestCreateTrainingJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "meta-llama/Llama-3-8B",
+                "algorithm": "sft",
+                "model_name_or_path": "meta-llama/Llama-3-8B",
                 "data_path": "./data.jsonl",
-                "ckpt_output_dir": "./outputs",
+                "output_dir": "./outputs",
                 "learning_rate": 1e-4,
                 "lora_r": 32,
                 "load_in_4bit": True,
@@ -81,8 +81,8 @@ class TestCreateTrainingJob:
         response = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "data_path": "./data.jsonl",
                 "compute": {"backend": "ssh", "gpus": 2},
                 "metadata": {"team": "ml"},
@@ -100,7 +100,7 @@ class TestCreateTrainingJob:
     async def test_create_training_job_validation_error(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs/training",
-            json={"model_path": "test"},  # missing required fields
+            json={"model_name_or_path": "test"},  # missing required fields
         )
         assert response.status_code == 422
 
@@ -164,10 +164,10 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         await client.post(
@@ -187,10 +187,10 @@ class TestListJobs:
         await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         await client.post(
@@ -213,10 +213,10 @@ class TestGetJob:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         job_id = create_resp.json()["id"]
@@ -237,10 +237,10 @@ class TestCancelJob:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         job_id = create_resp.json()["id"]
@@ -261,10 +261,10 @@ class TestJobMetrics:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "/tmp/nonexistent",
+                "output_dir": "/tmp/nonexistent",
             },
         )
         job_id = create_resp.json()["id"]
@@ -284,10 +284,10 @@ class TestJobMetrics:
             create_resp = await client.post(
                 "/api/v1/jobs/training",
                 json={
-                    "algorithm": "lora_sft",
-                    "model_path": "test",
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
                     "data_path": "test",
-                    "ckpt_output_dir": tmpdir,
+                    "output_dir": tmpdir,
                 },
             )
             job_id = create_resp.json()["id"]
@@ -320,10 +320,10 @@ class TestJobArtifacts:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         job_id = create_resp.json()["id"]
@@ -413,16 +413,16 @@ class TestEstimate:
         response = await client.post(
             "/api/v1/estimate",
             json={
-                "model_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "lora_r": 16,
                 "batch_size": 2,
-                "max_seq_len": 2048,
+                "max_length": 2048,
             },
         )
         assert response.status_code == 200
         data = response.json()
         assert "estimated_vram_gb" in data
-        assert data["model_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
+        assert data["model_name_or_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
         assert data["estimated_vram_gb"] > 0
 
     @pytest.mark.asyncio
@@ -430,7 +430,7 @@ class TestEstimate:
         response = await client.post(
             "/api/v1/estimate",
             json={
-                "model_path": "meta-llama/Llama-3-8B",
+                "model_name_or_path": "meta-llama/Llama-3-8B",
                 "load_in_4bit": True,
             },
         )
@@ -445,10 +445,10 @@ class TestErrorFieldSerialization:
         create_resp = await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         assert create_resp.status_code == 201
@@ -465,10 +465,10 @@ class TestErrorFieldSerialization:
         await client.post(
             "/api/v1/jobs/training",
             json={
-                "algorithm": "lora_sft",
-                "model_path": "test",
+                "algorithm": "sft",
+                "model_name_or_path": "test",
                 "data_path": "test",
-                "ckpt_output_dir": "test",
+                "output_dir": "test",
             },
         )
         response = await client.get("/api/v1/jobs")

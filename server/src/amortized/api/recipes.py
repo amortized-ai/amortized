@@ -80,7 +80,7 @@ async def submit_recipe_job(
         )
         return JSONResponse(content=dry_resp.model_dump(), status_code=200)
 
-    output_dir = config.get("ckpt_output_dir")
+    output_dir = config.get("output_dir")
     repo = Repository(db)
     try:
         row = await core_create_job(

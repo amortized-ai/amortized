@@ -1,10 +1,10 @@
 type: training
-description: Full supervised fine-tuning — all weights, requires multi-GPU
+description: Full SFT — all weights updated via TRL
 config:
-  algorithm: full_sft
-  num_epochs: 1
+  algorithm: sft
+  num_train_epochs: 1
   learning_rate: 0.00001
-  max_seq_len: 16384
-  effective_batch_size: 128
-  warmup_steps: 100
+  max_length: 4096
   bf16: true
+  gradient_checkpointing: true
+  report_to: none
