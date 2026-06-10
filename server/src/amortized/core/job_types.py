@@ -33,10 +33,6 @@ _REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Synthetic data generation job",
         "schema_file": "sdg.json",
     },
-    "inference": {
-        "description": "vLLM batch inference job",
-        "schema_file": "inference.json",
-    },
     "eval": {
         "description": "LLM-as-judge evaluation job",
         "schema_file": "eval.json",
@@ -125,14 +121,6 @@ async def _warn_sdg(config: dict[str, Any]) -> list[str]:
     return warnings
 
 
-async def _validate_inference(config: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-    tp = config.get("tensor_parallel_size")
-    if tp is not None and (tp & (tp - 1)) != 0:
-        errors.append(f"tensor_parallel_size={tp} must be a power of 2")
-    return errors
-
-
 async def _validate_eval(config: dict[str, Any]) -> list[str]:
     return []
 
@@ -150,7 +138,6 @@ _SemanticValidator = Callable[[dict[str, Any]], Coroutine[Any, Any, list[str]]]
 _SEMANTIC_VALIDATORS: dict[str, _SemanticValidator] = {
     "training": _validate_training,
     "sdg": _validate_sdg,
-    "inference": _validate_inference,
     "eval": _validate_eval,
     "serve": _validate_serve,
 }

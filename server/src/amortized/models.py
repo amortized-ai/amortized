@@ -13,7 +13,6 @@ class JobType(StrEnum):
 
     training = "training"
     sdg = "sdg"
-    inference = "inference"
     eval = "eval"
     serve = "serve"
 

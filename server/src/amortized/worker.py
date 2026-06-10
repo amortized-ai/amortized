@@ -28,14 +28,12 @@ _monitor_tasks: set[asyncio.Task[None]] = set()
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "docker.io/huggingface/trl:1.5.0",
     "sdg": "ghcr.io/amortized-ai/asynth:latest",
-    "inference": "ghcr.io/amortized-ai/asynth:latest",
     "eval": "ghcr.io/amortized-ai/asynth:latest",
     "serve": "docker.io/vllm/vllm-openai",
 }
 
 _RUNNER_MODULES: dict[str, str] = {
     JobType.sdg.value: "amortized.runners.sdg_runner",
-    JobType.inference.value: "amortized.runners.inference_runner",
     JobType.eval.value: "amortized.runners.eval_runner",
 }
 
@@ -180,8 +178,6 @@ def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
         return _sdg_script()
     if job_type == JobType.eval.value:
         return _eval_script()
-    if job_type == JobType.inference.value:
-        return _inference_script()
     raise ValueError(f"No container script for job type: {job_type}")
 
 
@@ -353,45 +349,6 @@ os.makedirs("/amortized/work", exist_ok=True)
 output = {"results": results, "summary": summary}
 with open("/amortized/work/eval_results.json", "w") as f:
     json.dump(output, f, indent=2)
-"""
-
-
-def _inference_script() -> str:
-    return """\
-import json, os
-
-config = json.load(open("/amortized/config.json"))["config"]
-
-from vllm import LLM, SamplingParams
-
-model_path = config["model_name_or_path"]
-tp = config.get("tensor_parallel_size", 1)
-llm = LLM(model=model_path, tensor_parallel_size=tp, trust_remote_code=True)
-
-sampling = SamplingParams(
-    temperature=config.get("temperature", 0.7),
-    max_tokens=config.get("max_tokens", 512),
-    top_p=config.get("top_p", 1.0),
-)
-
-prompts = config.get("prompts", [])
-input_path = config.get("input_path")
-if input_path and not prompts:
-    with open(input_path) as f:
-        for line in f:
-            row = json.loads(line)
-            prompts.append(row.get("prompt", row.get("input", "")))
-
-outputs = llm.generate(prompts, sampling)
-
-os.makedirs("/amortized/work", exist_ok=True)
-with open("/amortized/work/results.jsonl", "w") as f:
-    for output in outputs:
-        f.write(json.dumps({
-            "prompt": output.prompt,
-            "output": output.outputs[0].text,
-            "finish_reason": output.outputs[0].finish_reason,
-        }) + "\\n")
 """
 
 
@@ -606,7 +563,6 @@ async def _run_job(job: dict[str, Any]) -> None:
     output_dir_names = {
         JobType.training.value: "training_output",
         JobType.sdg.value: "sdg_output",
-        JobType.inference.value: "inference_output",
         JobType.eval.value: "eval_output",
         JobType.serve.value: "serve_output",
     }
@@ -625,12 +581,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         await db.close()
 
     config = job["config"]
-    if job["type"] == JobType.training.value:
-        config = {**config, "output_dir": output_dir}
-    elif job["type"] == JobType.inference.value:
-        if "output_path" not in config or not config["output_path"]:
-            config = {**config, "output_path": os.path.join(output_dir, "results.jsonl")}
-    elif "output_dir" not in config:
+    if job["type"] == JobType.training.value or "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
 
     for key, value in list(config.items()):
@@ -872,7 +823,6 @@ async def cleanup_orphaned_jobs() -> None:
                 orphan_dir_names = {
                     JobType.training.value: "training_output",
                     JobType.sdg.value: "sdg_output",
-                    JobType.inference.value: "inference_output",
                     JobType.eval.value: "eval_output",
                 }
                 dir_name = orphan_dir_names.get(job_type, f"{job_type}_output")
