@@ -633,15 +633,9 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
 
-    path_keys = {
-        "data_path",
-        "output_dir",
-        "output_path",
-        "resume_from_checkpoint",
-    }
-    for key in path_keys:
-        if key in config and isinstance(config[key], str):
-            config = {**config, key: os.path.expanduser(config[key])}
+    for key, value in list(config.items()):
+        if isinstance(value, str) and value.startswith("~"):
+            config = {**config, key: os.path.expanduser(value)}
 
     config = await _resolve_artifact_refs(config)
 
