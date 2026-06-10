@@ -1,5 +1,6 @@
-<p align="center"><strong>amortized</strong></p>
-<p align="center"><em>Build task models that replace frontier API calls</em></p>
+# amortized
+
+*Build task models that replace frontier API calls*
 
 ---
 
