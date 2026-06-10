@@ -328,8 +328,8 @@ if judge_model:
     judge_config = JudgeConfig(
         judge_params=JudgeParams(
             prompt_template=judge_prompt,
-            response_format="JSON",
-            judgment_type="BOOL",
+            response_format="json",
+            judgment_type="bool",
             include_explanation=True,
         ),
         inference_config=LiteLLMInferenceConfig(model=judge_model),
@@ -646,7 +646,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     if job["type"] == JobType.serve.value:
         port = int(config.get("port", 8000))
         spec_ports = {port: port}
-        cmd = ["vllm", "serve", "--config", "/amortized/work/config.yaml"]
+        cmd = ["--config", "/amortized/work/config.yaml"]
     else:
         cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
         spec_ports = {}

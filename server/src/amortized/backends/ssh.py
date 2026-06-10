@@ -159,8 +159,10 @@ class SSHBackend:
                 cmd_override = ""
                 if spec.command:
                     cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
+                network_flag = "--network host " if not port_flags else ""
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
+                    f"{network_flag}"
                     f"{port_flags + ' ' if port_flags else ''}"
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "

@@ -458,6 +458,27 @@ def _resolve_data(client: httpx.Client, value: str) -> str:
     return f"artifact:{value}"
 
 
+def _resolve_serve_job(client: httpx.Client, job_id: str) -> dict[str, str]:
+    """Look up a serve job and return its endpoint + model name."""
+    resp = client.get(f"/api/v1/jobs/{job_id}")
+    if resp.status_code != 200:
+        err_console.print(f"[red]Serve job {job_id} not found[/red]")
+        raise typer.Exit(1)
+    job = resp.json()
+    if job.get("type") != "serve":
+        err_console.print(f"[red]Job {job_id} is not a serve job[/red]")
+        raise typer.Exit(1)
+    if job.get("status") != "running":
+        err_console.print(f"[red]Serve job {job_id} is not running ({job.get('status')})[/red]")
+        raise typer.Exit(1)
+    cfg = job.get("config", {})
+    port = cfg.get("port", 8000)
+    model_name = cfg.get("served_model_name", "default")
+    endpoint = f"http://127.0.0.1:{port}/v1"
+    console.print(f"[dim]Using serve job {job_id[:8]}… → {endpoint} ({model_name})[/dim]")
+    return {"endpoint": endpoint, "model_name": model_name}
+
+
 # ---------------------------------------------------------------------------
 # amortized submit
 # ---------------------------------------------------------------------------
@@ -473,6 +494,9 @@ def submit(
     data: Annotated[str | None, typer.Option("--data", help="Data path or artifact ID")] = None,
     adapter: Annotated[
         str | None, typer.Option("--adapter", help="LoRA adapter artifact ID or path")
+    ] = None,
+    serve: Annotated[
+        str | None, typer.Option("--serve", help="Serve job ID to eval against")
     ] = None,
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
@@ -504,6 +528,10 @@ def submit(
                 overrides.setdefault(f"config.{data_key}", _resolve_data(client, data))
             if adapter:
                 overrides.setdefault("config.adapter_path", _resolve_data(client, adapter))
+            if serve:
+                serve_cfg = _resolve_serve_job(client, serve)
+                overrides.setdefault("config.model_endpoint", serve_cfg["endpoint"])
+                overrides.setdefault("config.model_name", serve_cfg["model_name"])
             for k in list(overrides):
                 v = overrides[k]
                 bare = k.removeprefix("config.")
@@ -531,6 +559,10 @@ def submit(
                 cfg.setdefault(data_key, _resolve_data(client, data))
             if adapter:
                 cfg.setdefault("adapter_path", _resolve_data(client, adapter))
+            if serve:
+                serve_cfg = _resolve_serve_job(client, serve)
+                cfg.setdefault("model_endpoint", serve_cfg["endpoint"])
+                cfg.setdefault("model_name", serve_cfg["model_name"])
             for kv in set_values or []:
                 if "=" not in kv:
                     err_console.print(f"[red]Invalid --set format:[/red] {kv} (expected KEY=VALUE)")
