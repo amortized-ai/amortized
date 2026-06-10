@@ -5,6 +5,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from amortized.core.judge_templates import (
+    list_judge_templates as _list_templates,
+)
+from amortized.core.judge_templates import (
+    load_judge_template,
+)
 from amortized.models import JudgeRequest, JudgeResult
 
 logger = logging.getLogger("amortized.api.judge")
@@ -16,7 +22,7 @@ router = APIRouter(prefix="/api/v1/judge", tags=["judge"])
 async def judge_data(request: JudgeRequest) -> JudgeResult:
     """Judge data quality using an asynth judge template."""
     try:
-        from asynth import judge as asynth_judge
+        from asynth import JudgeConfig, LiteLLMInferenceConfig, create_judge
     except ImportError as err:
         raise HTTPException(
             status_code=501,
@@ -24,13 +30,19 @@ async def judge_data(request: JudgeRequest) -> JudgeResult:
         ) from err
 
     try:
-        results = asynth_judge(
-            request.template,
-            data=request.data,
+        template_data = load_judge_template(request.template)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    try:
+        config = JudgeConfig(**template_data)
+        inference_config = LiteLLMInferenceConfig(
             model=request.model,
             api_base=request.api_base,
             api_key=request.api_key,
         )
+        j = create_judge(config, inference_config=inference_config)
+        results = j.judge(request.data)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -58,12 +70,5 @@ async def judge_data(request: JudgeRequest) -> JudgeResult:
 @router.get("/templates")
 async def list_judge_templates() -> list[dict[str, str]]:
     """List available judge templates."""
-    try:
-        from asynth.judges import list_templates
-
-        templates = list_templates()
-        return [{"name": t} for t in templates]
-    except ImportError:
-        return []
-    except Exception:
-        return []
+    templates = _list_templates()
+    return [{"name": t} for t in templates]

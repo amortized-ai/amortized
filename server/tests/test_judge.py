@@ -29,7 +29,7 @@ async def test_judge_without_asynth_returns_501() -> None:
             resp = await client.post(
                 "/api/v1/judge",
                 json={
-                    "template": "generic/safety",
+                    "template": "safety",
                     "data": [{"response": "hello"}],
                     "model": "openai/gpt-4o-mini",
                 },
@@ -39,16 +39,24 @@ async def test_judge_without_asynth_returns_501() -> None:
 
 @pytest.mark.anyio
 async def test_judge_with_mocked_asynth() -> None:
-    mock_judge = MagicMock(return_value=[{"passed": True, "score": 0.9}])
+    mock_judge_instance = MagicMock()
+    mock_judge_instance.judge = MagicMock(return_value=[{"passed": True, "score": 0.9}])
+
+    mock_create_judge = MagicMock(return_value=mock_judge_instance)
+    mock_judge_config = MagicMock()
+    mock_inference_config = MagicMock()
+
     mock_asynth = MagicMock()
-    mock_asynth.judge = mock_judge
+    mock_asynth.JudgeConfig = mock_judge_config
+    mock_asynth.LiteLLMInferenceConfig = mock_inference_config
+    mock_asynth.create_judge = mock_create_judge
 
     with patch.dict(sys.modules, {"asynth": mock_asynth}):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post(
                 "/api/v1/judge",
                 json={
-                    "template": "generic/safety",
+                    "template": "safety",
                     "data": [{"response": "hello"}],
                     "model": "openai/gpt-4o-mini",
                 },
