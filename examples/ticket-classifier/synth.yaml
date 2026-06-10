@@ -1,7 +1,7 @@
 type: sdg
 description: Generate customer support ticket classification training data — tickets with urgency and topic labels
 config:
-  model: openai/gpt-4o-mini
+  model: openai/gpt-5.4
   num_samples: 100
   temperature: 0.7
   max_tokens: 8192

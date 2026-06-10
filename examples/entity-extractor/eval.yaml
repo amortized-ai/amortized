@@ -6,7 +6,7 @@ config:
     - entity_type
   max_samples: 50
   temperature: 0.0
-  judge_model: openai/gpt-4o-mini
+  judge_model: openai/gpt-5.4
   judge_prompt: >-
     An entity extraction task was performed. Evaluate if the extracted
     entities are correct and complete.

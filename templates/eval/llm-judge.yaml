@@ -1,7 +1,7 @@
 type: eval
 description: Evaluate model outputs using LLM-as-judge with custom criteria
 config:
-  judge_model: openai/gpt-4o-mini
+  judge_model: openai/gpt-5.4
   judge_prompt: >-
     Evaluate the following response for quality, correctness, and helpfulness.
 

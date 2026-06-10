@@ -5,7 +5,7 @@ config:
   accuracy_fields:
     - urgency
     - topic
-  judge_model: openai/gpt-4o-mini
+  judge_model: openai/gpt-5.4
   judge_prompt: >-
     A customer support ticket was classified. Evaluate if the classification is reasonable.
 

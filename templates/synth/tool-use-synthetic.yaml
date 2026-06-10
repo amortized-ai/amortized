@@ -1,7 +1,7 @@
 type: sdg
 description: Generate multi-turn developer conversations with LLM-simulated MCP-style documentation tools
 config:
-  model: openai/gpt-4o-mini
+  model: openai/gpt-5.4
   num_samples: 50
   temperature: 0.7
   max_tokens: 2048

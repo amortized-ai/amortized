@@ -4,7 +4,7 @@ config:
   accuracy_fields: []
   max_samples: 100
   temperature: 0.0
-  judge_model: openai/gpt-4o-mini
+  judge_model: openai/gpt-5.4
   judge_prompt: >-
     A text was classified. Evaluate if the classification is correct and reasonable.
 

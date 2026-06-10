@@ -1,7 +1,7 @@
 type: sdg
 description: Generate entity extraction training data — extract structured fields from text
 config:
-  model: openai/gpt-4o-mini
+  model: openai/gpt-5.4
   num_samples: 100
   temperature: 0.7
   max_tokens: 4096
