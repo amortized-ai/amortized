@@ -162,6 +162,31 @@ async def get_job_metrics(
     return metrics
 
 
+@router.get("/{job_id}/results")
+async def get_job_results(
+    job_id: str,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> dict[str, Any]:
+    """Get structured eval results for a job."""
+    repo = Repository(db)
+    row = await core_get_job(repo, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    if row["type"] != JobType.eval.value:
+        raise HTTPException(status_code=400, detail="Results only available for eval jobs")
+
+    output_dir = row.get("output_dir")
+    if not output_dir:
+        raise HTTPException(status_code=404, detail="No output directory for this job")
+
+    results_path = Path(output_dir) / "eval_results.json"
+    if not results_path.exists():
+        raise HTTPException(status_code=404, detail="Eval results not found")
+
+    return json.loads(results_path.read_text())
+
+
 @router.get("/{job_id}/artifacts", response_model=list[Artifact])
 async def get_job_artifacts(
     job_id: str,

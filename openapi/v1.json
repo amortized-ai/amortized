@@ -332,6 +332,51 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/results": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get Job Results",
+        "description": "Get structured eval results for a job.",
+        "operationId": "get_job_results_api_v1_jobs__job_id__results_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Job Results Api V1 Jobs  Job Id  Results Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/{job_id}/artifacts": {
       "get": {
         "tags": [
