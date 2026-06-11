@@ -25,12 +25,7 @@ config:
 
       Ticket: {request}
 
-      Expected classification:
-      Urgency: {expected_urgency}
-      Topic: {expected_topic}
-
-      Model's classification:
-      {response}
+      Model's classification: {response}
 
       Consider:
       1. Is the urgency level appropriate for the customer's situation?
