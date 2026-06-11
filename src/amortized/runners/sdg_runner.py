@@ -1,0 +1,139 @@
+"""SDG job runner — invoked as a subprocess by the worker.
+
+Receives job config as a JSON string argument. Uses asynth for
+synthesis. Falls back to a simulated run if asynth is not installed.
+"""
+
+import json
+import logging
+import os
+import sys
+import time
+from typing import Any
+
+logger = logging.getLogger("amortized.runners.sdg_runner")
+
+
+def run_sdg(config: dict[str, Any]) -> None:
+    """Execute a synthetic data generation job."""
+    output_dir = str(config.get("output_dir", "./sdg_output"))
+    os.makedirs(output_dir, exist_ok=True)
+
+    try:
+        from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
+        from asynth.configs.params.synthesis_params import GeneralSynthesisParams
+    except ImportError:
+        _simulate_sdg(config, output_dir)
+        return
+
+    inference_config = LiteLLMInferenceConfig(
+        model=config["model"],
+        api_base=config.get("api_base"),
+        api_key=config.get("api_key"),
+        temperature=config.get("temperature", 0.7),
+        max_concurrency=config.get("max_concurrency", 16),
+        max_tokens=config.get("max_tokens"),
+        top_p=config.get("top_p"),
+        seed=config.get("seed"),
+        num_retries=config.get("num_retries", 3),
+    )
+
+    raw_strategy = config.get("strategy_params")
+    if raw_strategy and isinstance(raw_strategy, dict):
+        merged = dict(raw_strategy)
+        if config.get("input_data") and "input_data" not in merged:
+            merged["input_data"] = config["input_data"]
+        if config.get("input_documents") and "input_documents" not in merged:
+            merged["input_documents"] = config["input_documents"]
+        strategy_params = _build_strategy_params(GeneralSynthesisParams, merged)
+    else:
+        kwargs: dict[str, Any] = {}
+        if config.get("input_data"):
+            kwargs["input_data"] = config["input_data"]
+        if config.get("input_documents"):
+            kwargs["input_documents"] = config["input_documents"]
+        strategy_params = _build_strategy_params(GeneralSynthesisParams, kwargs)
+
+    output_path = os.path.join(output_dir, "generated_data.jsonl")
+
+    synth_config = SynthesisConfig(
+        num_samples=config.get("num_samples", 100),
+        output_path=output_path,
+        inference_config=inference_config,
+        strategy_params=strategy_params,
+    )
+
+    results = synthesize(synth_config)
+
+    _check_output_quality(results, config)
+
+    with open(os.path.join(output_dir, "stats.json"), "w") as f:
+        json.dump(
+            {
+                "total_completed": len(results),
+                "total_requested": config.get("num_samples", 100),
+                "status": "completed",
+            },
+            f,
+            indent=2,
+        )
+
+
+def _build_strategy_params(cls: type, params: dict[str, Any]) -> Any:
+    """Build GeneralSynthesisParams, preferring from_dict() when available."""
+    if hasattr(cls, "from_dict"):
+        return cls.from_dict(params)
+    return cls(**params)
+
+
+def _check_output_quality(results: list[dict[str, Any]], config: dict[str, Any]) -> None:
+    """Warn if output looks like template echo from LLM auth failures."""
+    if not results or not config.get("strategy_params", {}).get("generated_attributes"):
+        return
+    for attr in config["strategy_params"]["generated_attributes"]:
+        attr_id = attr.get("id", "")
+        if not attr_id:
+            continue
+        sample_values = [r.get(attr_id, "") for r in results[:5] if attr_id in r]
+        if len(set(sample_values)) == 1 and len(sample_values) > 1:
+            logger.warning(
+                "All %d samples for '%s' are identical — LLM may not have run",
+                len(sample_values),
+                attr_id,
+            )
+
+
+def _simulate_sdg(config: dict[str, Any], output_dir: str) -> None:
+    """Simulate SDG when asynth is not installed."""
+    total_rows = config.get("num_samples", 100)
+    output_path = os.path.join(output_dir, "generated_data.jsonl")
+
+    with open(output_path, "w") as f:
+        for i in range(total_rows):
+            row = {
+                "instruction": f"Sample instruction {i}",
+                "input": f"Sample input {i}",
+                "output": f"Sample output {i}",
+            }
+            f.write(json.dumps(row) + "\n")
+            time.sleep(0.01)
+
+    with open(os.path.join(output_dir, "stats.json"), "w") as f:
+        json.dump(
+            {
+                "total_completed": total_rows,
+                "total_requested": config.get("num_samples", 100),
+                "status": "completed",
+            },
+            f,
+            indent=2,
+        )
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python -m amortized.runners.sdg_runner '<config_json>'")
+        sys.exit(1)
+
+    config_data = json.loads(sys.argv[1])
+    run_sdg(config_data)

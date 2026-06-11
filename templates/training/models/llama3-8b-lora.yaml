@@ -1,0 +1,10 @@
+extends: templates/training/lora-sft
+description: Llama 3.1 8B Instruct — LoRA SFT
+config:
+  model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
+  max_length: 8192
+  per_device_train_batch_size: 2
+  gradient_checkpointing: true
+
+compute:
+  min_vram_gb: 24

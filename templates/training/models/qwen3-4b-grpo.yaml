@@ -1,0 +1,12 @@
+extends: templates/training/grpo
+description: Qwen3 4B — GRPO reinforcement learning
+config:
+  model_name_or_path: Qwen/Qwen3-4B
+  max_prompt_length: 512
+  max_completion_length: 256
+  num_generations: 4
+  gradient_checkpointing: true
+
+compute:
+  gpus: 1
+  min_vram_gb: 24

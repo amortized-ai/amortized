@@ -1,0 +1,48 @@
+type: training
+description: DPO — direct preference optimization via TRL
+config:
+  algorithm: dpo
+
+  # Data — must be preference pairs with chosen/rejected columns
+  max_length: 2048
+  max_prompt_length: 1024
+
+  # Training
+  num_train_epochs: 1
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-07
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  # DPO params
+  beta: 0.1
+  loss_type: sigmoid
+
+  # Precision
+  bf16: true
+
+  # LoRA (DPO typically uses LoRA)
+  use_peft: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+  # Logging
+  logging_steps: 10
+  save_steps: 500
+  report_to: none
+
+compute:
+  gpus: 1
+  min_vram_gb: 24

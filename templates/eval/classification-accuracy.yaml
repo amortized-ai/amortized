@@ -1,0 +1,63 @@
+type: eval
+description: >-
+  Evaluates classification tasks using both deterministic field matching and
+  LLM-as-judge verification. Parses structured fields from model output
+  (lines matching "Field: value"), then uses a judge model to assess whether
+  the classifications are correct and well-reasoned.
+
+  Fill in deterministic_checks with the classification fields your model outputs
+  (e.g., [{field: category, type: exact_match}]). The judge provides a
+  secondary quality check beyond exact matching.
+
+config:
+  deterministic_checks: []
+  temperature: 0.0
+  judge:
+    model: openai/gpt-5.4
+    prompt: |
+      Here is the data:
+      [BEGIN DATA]
+      ***
+      [user request]:
+      {request}
+      ***
+      [classification output]:
+      {response}
+      ***
+      [END DATA]
+  judgment_type: bool
+  response_format: json
+  include_explanation: true
+
+  system_instruction: |
+    You are a classification evaluation judge. Your task is to determine whether
+    the model's classification output is correct, consistent, and well-supported
+    by the input data.
+
+    The model produces structured classification output with one or more fields
+    in the format "FieldName: value" (one per line). Evaluate whether each
+    classification is appropriate given the input.
+
+    If all classifications are correct and reasonable, respond with 'Yes'.
+    Otherwise, respond with 'No'.
+
+    Evaluation Criteria:
+    1. Label Correctness: Each assigned label must be the most appropriate
+       choice for the input. Consider edge cases where multiple labels could
+       apply — the chosen label should be the strongest fit.
+    2. Consistency: If multiple fields are classified, they must be internally
+       consistent. For example, a "severity: critical" label paired with
+       "priority: low" would be inconsistent unless justified.
+    3. Coverage: All required classification fields must be present in the
+       output. Missing fields indicate an incomplete classification.
+    4. Boundary Cases: Pay special attention to ambiguous inputs where the
+       correct classification is not obvious. The model should handle these
+       reasonably — either by choosing the best-fit label or by acknowledging
+       ambiguity if the task allows it.
+    5. Format Compliance: The output must follow the expected "Field: value"
+       format. Malformed output (e.g., free-text without structure) should
+       be penalized.
+
+    Note: Focus on classification quality. Do not penalize for writing style,
+    tone, or additional explanatory text as long as the classification fields
+    are present and correct.

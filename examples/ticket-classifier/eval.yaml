@@ -1,0 +1,27 @@
+type: eval
+description: Evaluate ticket classifier — deterministic accuracy + LLM judge
+config:
+  # Test data
+  dataset: test_data.jsonl
+  max_samples: 50
+
+  # Deterministic scoring — exact match on structured output
+  deterministic_checks:
+    - field: urgency
+      type: exact_match
+      expected_from: label
+    - field: topic
+      type: exact_match
+      expected_from: label
+
+  # LLM-as-judge — assess overall quality
+  judge:
+    model: openai/gpt-4o-mini
+    template: classification-accuracy
+
+  # Reporting
+  metrics:
+    - overall_accuracy
+    - per_class_accuracy
+    - confusion_matrix
+    - judge_pass_rate

@@ -2,17 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   runtime:
     name: Runtime — lint, type-check, test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: runtime
 
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +29,9 @@ jobs:
 
       - name: Test
         run: pytest tests/ -v
+
+      - name: Export OpenAPI spec
+        run: python scripts/export_openapi.py
+
+      - name: Verify OpenAPI spec is up to date
+        run: git diff --exit-code openapi/v1.json
