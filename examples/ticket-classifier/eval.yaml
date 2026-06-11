@@ -18,7 +18,7 @@ config:
   judge:
     model: openai/gpt-4o-mini
     temperature: 0.0
-    template: generic/instruction_following
+    template: instruction-following
     prompt: >-
       A customer support ticket was classified by urgency and topic.
       Evaluate whether the classification is reasonable given the ticket content.

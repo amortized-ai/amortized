@@ -229,6 +229,38 @@ synthesize(synth_config)
 """
 
 
+def _resolve_judge_template(config: dict[str, Any]) -> dict[str, Any]:
+    """If the judge config references a template, load it and merge the prompt."""
+    judge = config.get("judge")
+    if not judge or not isinstance(judge, dict):
+        return config
+    template_name = judge.get("template")
+    if not template_name:
+        return config
+    from amortized.core.judge_templates import load_judge_template
+
+    try:
+        tmpl = load_judge_template(template_name)
+    except FileNotFoundError:
+        logger.warning("Judge template '%s' not found, skipping", template_name)
+        return config
+    judge_params = tmpl.get("judge_params", tmpl)
+    merged_judge = dict(judge)
+    if "prompt" not in merged_judge and judge_params.get("prompt_template"):
+        merged_judge["prompt"] = judge_params["prompt_template"]
+    if judge_params.get("system_instruction"):
+        merged_judge["system_instruction"] = judge_params["system_instruction"]
+    if judge_params.get("judgment_type") and "judgment_type" not in merged_judge:
+        merged_judge["judgment_type"] = judge_params["judgment_type"]
+    if judge_params.get("response_format") and "response_format" not in merged_judge:
+        merged_judge["response_format"] = judge_params["response_format"]
+    if judge_params.get("include_explanation") and "include_explanation" not in merged_judge:
+        merged_judge["include_explanation"] = judge_params["include_explanation"]
+    config = {**config, "judge": merged_judge}
+    logger.info("Resolved judge template '%s'", template_name)
+    return config
+
+
 def _eval_script() -> str:
     return """\
 import json, os, re
@@ -246,7 +278,11 @@ checks = config.get("deterministic_checks", [])
 judge_config = config.get("judge", {})
 judge_model = judge_config.get("model")
 judge_prompt = judge_config.get("prompt", "Evaluate this response: {response}")
+judge_system = judge_config.get("system_instruction")
 judge_temp = judge_config.get("temperature", 0.0)
+judge_judgment_type = judge_config.get("judgment_type", "bool")
+judge_response_format = judge_config.get("response_format", "json")
+judge_include_explanation = judge_config.get("include_explanation", True)
 
 model_endpoint = config.get("model_endpoint")
 model_name = config.get("model_name")
@@ -337,13 +373,16 @@ if judge_model:
     from asynth.configs.params.judge_params import JudgeParams
     from asynth.inference.litellm_engine import LiteLLMInferenceConfig
 
+    judge_params_kwargs = {
+        "prompt_template": judge_prompt,
+        "response_format": judge_response_format,
+        "judgment_type": judge_judgment_type,
+        "include_explanation": judge_include_explanation,
+    }
+    if judge_system:
+        judge_params_kwargs["system_instruction"] = judge_system
     jc = AsynthJudgeConfig(
-        judge_params=JudgeParams(
-            prompt_template=judge_prompt,
-            response_format="json",
-            judgment_type="bool",
-            include_explanation=True,
-        ),
+        judge_params=JudgeParams(**judge_params_kwargs),
         inference_config=LiteLLMInferenceConfig(
             model=judge_model,
             temperature=judge_temp,
@@ -658,6 +697,9 @@ async def _run_job(job: dict[str, Any]) -> None:
             spec_env[env_name] = value
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
+
+    if job["type"] == JobType.eval.value:
+        config = _resolve_judge_template(config)
 
     spec_env["_config"] = json.dumps(config)
 
