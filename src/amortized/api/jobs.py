@@ -184,7 +184,8 @@ async def get_job_results(
     if not results_path.exists():
         raise HTTPException(status_code=404, detail="Eval results not found")
 
-    return json.loads(results_path.read_text())
+    result: dict[str, Any] = json.loads(results_path.read_text())
+    return result
 
 
 @router.get("/{job_id}/artifacts", response_model=list[Artifact])
