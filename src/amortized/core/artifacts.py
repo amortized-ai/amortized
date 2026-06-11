@@ -27,6 +27,7 @@ ARTIFACT_PATTERNS: dict[str, list[str]] = {
     ],
     "generated_data": ["*.jsonl", "*.parquet"],
     "sdg_stats": ["stats.json"],
+    "eval_results": ["eval_results.json"],
 }
 
 
