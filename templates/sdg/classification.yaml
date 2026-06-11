@@ -1,0 +1,105 @@
+type: sdg
+description: Generate customer support ticket classification training data — tickets with urgency and topic labels
+config:
+  num_samples: 100
+  max_tokens: 8192
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: urgency
+        name: Urgency Level
+        description: How urgent the customer's issue is
+        possible_values:
+          - id: low
+            name: Low
+            description: Minor issue, no time pressure
+            sample_rate: 0.3
+          - id: medium
+            name: Medium
+            description: Moderate issue needing attention within a day or two
+            sample_rate: 0.35
+          - id: high
+            name: High
+            description: Serious issue requiring prompt resolution within hours
+            sample_rate: 0.25
+          - id: critical
+            name: Critical
+            description: Extremely urgent, customer is at risk of churn or financial loss, needs immediate action
+            sample_rate: 0.1
+      - id: topic
+        name: Support Topic
+        description: The category of the customer support ticket
+        possible_values:
+          - id: orders
+            name: Orders
+            description: Issues with placing, modifying, or canceling orders
+            sample_rate: 0.2
+          - id: shipping
+            name: Shipping
+            description: Issues with delivery, tracking, delays, or lost packages
+            sample_rate: 0.2
+          - id: returns
+            name: Returns
+            description: Issues with returning items, refund status, or exchange requests
+            sample_rate: 0.2
+          - id: payments
+            name: Payments
+            description: Issues with payment processing, billing errors, or payment methods
+            sample_rate: 0.15
+          - id: product_questions
+            name: Product Questions
+            description: Questions about product details, availability, compatibility, or specifications
+            sample_rate: 0.15
+          - id: account_issues
+            name: Account Issues
+            description: Issues with login, password reset, account settings, or profile management
+            sample_rate: 0.1
+    generated_attributes:
+      - id: ticket_message
+        instruction_messages:
+          - role: system
+            content: >-
+              You are a realistic customer support ticket generator for an e-commerce
+              retail company. Generate a single customer support message that a real
+              customer might submit. The message should feel authentic — vary the tone,
+              length, writing quality, and level of detail. Some customers are polite,
+              some are frustrated, some provide too little information. Do not include
+              any labels or metadata. Just write the customer's message.
+
+              Output format:
+              Ticket:
+              <customer message>
+              End of ticket.
+          - role: user
+            content: >-
+              Generate a customer support ticket with the following characteristics:
+              - Urgency: {urgency} — {urgency.description}
+              - Topic: {topic} — {topic.description}
+        postprocessing_params:
+          id: ticket_clean
+          cut_prefix: "Ticket:"
+          cut_suffix: "End of ticket."
+          strip_whitespace: true
+    transformed_attributes:
+      - id: messages
+        transformation_strategy:
+          type: chat
+          chat_transform:
+            messages:
+              - role: system
+                content: >-
+                  You are a customer support ticket classifier for an e-commerce company.
+                  Given a customer support ticket, classify it by urgency level (low,
+                  medium, high, critical) and topic (orders, shipping, returns, payments,
+                  product_questions, account_issues). Respond with exactly two lines:
+                  Urgency: <level>
+                  Topic: <topic>
+              - role: user
+                content: "{ticket_clean}"
+              - role: assistant
+                content: "Urgency: {urgency}\nTopic: {topic}"
+    passthrough_attributes:
+      - urgency
+      - topic
+      - ticket_clean
+      - messages

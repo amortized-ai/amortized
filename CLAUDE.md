@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [Training Hub](https://github.com/Red-Hat-AI-Innovation-Team/training_hub) (LoRA fine-tuning) and [SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub) (synthetic data generation).
+Amortized is a fully open-source, on-premises studio for optimizing AI agent workflows. It replaces expensive frontier model calls with smaller, customized models — without sacrificing quality. Built on [TRL](https://github.com/huggingface/trl) (fine-tuning via CLI) and [asynth](https://github.com/amortized-ai/asynth) (synthetic data generation).
 
 ## Monorepo Layout
 
@@ -10,12 +10,19 @@ Amortized is a fully open-source, on-premises studio for optimizing AI agent wor
 amortized/
 ├── CLAUDE.md              # This file — project conventions
 ├── factory.md             # Factory configuration and eval dimensions
-├── runtime/               # Python FastAPI backend
+├── server/                # Python FastAPI backend
 │   ├── pyproject.toml
-│   ├── src/amortized_runtime/
+│   ├── src/amortized/
 │   │   ├── __init__.py
 │   │   ├── main.py        # FastAPI app entry point
-│   │   └── config.py      # Settings via pydantic-settings
+│   │   ├── config.py      # Settings via pydantic-settings
+│   │   ├── models.py      # Pydantic models
+│   │   ├── worker.py      # Background job worker
+│   │   ├── core/          # Domain logic (Phase 2)
+│   │   ├── api/           # HTTP routers
+│   │   ├── db/            # Database layer
+│   │   ├── agent/         # AI agent subsystem
+│   │   └── runners/       # Job execution runners
 │   └── tests/
 ├── studio/                # Next.js React frontend
 │   ├── package.json
@@ -23,7 +30,7 @@ amortized/
 │   ├── next.config.mjs
 │   ├── tailwind.config.ts
 │   └── src/app/
-├── .claude/skills/        # Claude Code skills for runtime API operations
+├── .claude/skills/        # Claude Code skills for server API operations
 ├── docker/                # Container definitions
 │   └── Dockerfile.runtime
 ├── eval/                  # Factory eval harness
@@ -34,12 +41,12 @@ amortized/
 
 ## Dev Commands
 
-### Runtime (Python FastAPI backend)
+### Server (Python FastAPI backend)
 
 ```bash
-cd runtime
+cd server
 pip install -e '.[dev]'
-uvicorn amortized_runtime.main:app --reload
+uvicorn amortized.main:app --reload
 ```
 
 - API runs at http://localhost:8000
@@ -56,13 +63,21 @@ npm run dev
 - Dev server runs at http://localhost:3000
 - Proxies /api requests to the runtime backend at http://localhost:8000
 
-## Python Conventions (runtime/)
+### Git Hooks
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Enables auto-regeneration of OpenAPI snapshot on commit.
+
+## Python Conventions (server/)
 
 - **Linter**: `ruff check src/ tests/` — enforced in CI
 - **Formatter**: `ruff format src/ tests/`
 - **Type checker**: `mypy src/` — strict mode enabled
 - **Tests**: `pytest` — use `pytest-asyncio` for async tests
-- **Package structure**: src layout (`src/amortized_runtime/`)
+- **Package structure**: src layout (`src/amortized/`)
 - **Settings**: Use `pydantic-settings` for configuration (env vars, .env files)
 - **API versioning**: All endpoints under `/api/v1/`
 
@@ -76,7 +91,7 @@ npm run dev
 
 ## Runtime API Endpoints
 
-- POST /api/v1/jobs/training — Create a LoRA SFT training job
+- POST /api/v1/jobs/training — Create a training job (SFT, DPO, GRPO, KTO)
 - POST /api/v1/jobs/sdg — Create a synthetic data generation job
 - GET /api/v1/jobs — List all jobs (optional filters: status, type)
 - GET /api/v1/jobs/{id} — Get job details
@@ -84,116 +99,92 @@ npm run dev
 - GET /api/v1/jobs/{id}/artifacts — List job output artifacts
 - DELETE /api/v1/jobs/{id} — Cancel a job
 - GET /api/v1/flows — List available SDG flows
+- GET /api/v1/flows/capabilities — Report asynth capabilities and features
+- POST /api/v1/judge — Judge data quality using asynth judge templates
+- GET /api/v1/judge/templates — List available judge templates
 - POST /api/v1/estimate — Estimate GPU VRAM requirements
 - GET /api/v1/health — Health check
 - POST /api/v1/agent/chat — Send a message to the AI assistant
 - POST /api/v1/agent/chat/stream — Stream a response via SSE
 
-## Training Hub — Full LoRA SFT API
+## TRL — Training CLI
 
-Training Hub provides LoRA fine-tuning via a Python API. Install: `pip install training-hub[lora]` then `pip install training-hub[cuda]`.
+Training jobs run via the official HuggingFace TRL CLI in the `docker.io/huggingface/trl` container image.
 
-### Minimal usage (3 required params)
+### Supported algorithms
 
-```python
-from training_hub import lora_sft
+| Algorithm | CLI Command | Data Format |
+|---|---|---|
+| SFT (LoRA or full) | `trl sft` | `messages` (chat) or `text` |
+| DPO | `trl dpo` | `prompt`, `chosen`, `rejected` |
+| GRPO | `trl grpo` | `prompt` + reward functions |
+| KTO | `trl kto` | `prompt`, `completion`, `label` |
 
-result = lora_sft(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",  # required — HuggingFace model ID
-    data_path="./data.jsonl",                    # required — training data
-    ckpt_output_dir="./outputs",                 # required — output directory
-)
+### Minimal LoRA SFT config
+
+```yaml
+model_name_or_path: Qwen/Qwen2.5-1.5B-Instruct
+datasets:
+  - path: /path/to/data
+output_dir: ./output
+num_train_epochs: 3
+learning_rate: 0.0002
+bf16: true
+use_peft: true
+lora_r: 16
+lora_alpha: 32
+report_to: none
 ```
 
-### All parameters with defaults
+### Key field names
+
+- `model_name_or_path` — HuggingFace model ID
+- `num_train_epochs` — number of epochs
+- `per_device_train_batch_size` — batch size per GPU
+- `max_length` — max sequence length
+- `use_peft` — enable LoRA
+- `lora_r`, `lora_alpha` — LoRA configuration
+- `accelerate_config` — distributed training (zero2, fsdp2, etc.)
+
+### Container image
+
+`docker.io/huggingface/trl:1.5.0` — official HuggingFace image with all dependencies.
+
+## asynth — Synthesis Engine
+
+asynth is the synthesis engine for generating training data. Install: `pip install asynth`.
+
+### Core API
 
 ```python
-result = lora_sft(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",
-    data_path="./data.jsonl",
-    ckpt_output_dir="./outputs",
-    # Hyperparameters
-    learning_rate=2e-4,
-    num_epochs=3,
-    micro_batch_size=2,
-    max_seq_len=2048,
-    bf16=True,
-    # LoRA configuration
-    lora_r=16,           # LoRA rank — higher = more parameters, more expressive
-    lora_alpha=32,       # LoRA alpha — scaling factor, typically 2x lora_r
-    # QLoRA (4-bit quantization for reduced VRAM)
-    load_in_4bit=False,  # Enable QLoRA — fits 7B+ on 24GB, 20B+ with QLoRA
+from asynth import synthesize, SynthesisConfig, LiteLLMInferenceConfig
+from asynth.configs.params.synthesis_params import GeneralSynthesisParams
+
+config = SynthesisConfig(
+    num_samples=100,
+    output_path="./output.jsonl",
+    inference_config=LiteLLMInferenceConfig(
+        model="openai/gpt-4o-mini",
+        temperature=0.7,
+        max_concurrency=16,
+    ),
+    strategy_params=GeneralSynthesisParams(),
 )
+results = synthesize(config)  # returns list[dict]
 ```
 
-### Return value
-
-`lora_sft()` returns `{'model': model, 'tokenizer': tokenizer, 'trainer': trainer}` (live objects).
-
-### Metrics output
-
-Training writes `training_metrics.jsonl` to `ckpt_output_dir` with per-step records:
-```json
-{"step": 10, "loss": 2.345, "epoch": 1.0, "learning_rate": 1e-05, "max_steps": 1000}
-```
-
-### Checkpoints
-
-Output is in HuggingFace PEFT format: `adapter_model.safetensors` + `adapter_config.json`, plus tokenizer files. Intermediate checkpoints in `checkpoint-N/` subdirectories.
-
-### Memory estimation
+### LiteLLMInferenceConfig
 
 ```python
-from training_hub import LoRAEstimator, QLoRAEstimator
-
-estimator = LoRAEstimator()  # or QLoRAEstimator() for 4-bit
-vram_gb = estimator.estimate(
-    model_path="Qwen/Qwen2.5-1.5B-Instruct",
-    lora_r=16,
-    batch_size=2,
-    max_seq_len=2048,
-)
-```
-
-### Recommended models
-
-- **Qwen/Qwen2.5-1.5B-Instruct** — small, fast, good default for most tasks
-- For 7B+ models, recommend QLoRA (`load_in_4bit=True`) to fit in VRAM
-- A single 24GB GPU can fine-tune 7B with LoRA, 20B+ with QLoRA
-
-## SDG Hub — Full Flow API
-
-SDG Hub provides synthetic data generation. Install: `pip install sdg-hub`.
-
-### Flow discovery and execution
-
-```python
-from sdg_hub import FlowRegistry, Flow
-from datasets import Dataset
-
-# Discover available flows
-FlowRegistry.discover_flows()
-flow_path = FlowRegistry.get_flow_path("epic-jade-656")  # by flow ID
-
-# Load and configure
-flow = Flow.from_yaml(flow_path)
-flow.set_model_config(
-    model="openai/gpt-4o",        # teacher model (100+ providers via LiteLLM)
-    api_base="http://localhost:8101/v1",  # default API base
-    api_key="sk-...",
-)
-
-# Target specific blocks (optional)
-flow.set_model_config(model="anthropic/claude-sonnet-4-20250514", blocks=["gen_qa_pairs"])
-
-# Generate
-result = flow.generate(
-    dataset,
-    runtime_params={"gen_extractive_summary": {"n": 50, "temperature": 0.7}},
-    checkpoint_dir="./checkpoints",
-    save_freq=50,
-    log_dir="./logs",
-    max_concurrency=10,
+LiteLLMInferenceConfig(
+    model="openai/gpt-4o-mini",    # LiteLLM format — 100+ providers
+    temperature=1.0,
+    max_tokens=None,
+    top_p=None,
+    max_concurrency=16,
+    num_retries=3,
+    api_base=None,                  # custom API endpoint
+    api_key=None,
 )
 ```
 
@@ -201,48 +192,66 @@ result = flow.generate(
 
 Supports 100+ providers: OpenAI, Anthropic, Google, vLLM (`hosted_vllm/`), Ollama (`ollama/`), Azure, Bedrock, Cohere, Mistral, Together, Groq, OpenRouter, and more.
 
-### Dry run (validate and estimate cost)
+### GeneralSynthesisParams — Attribute types
+
+| Attribute Type | Class | Purpose |
+|---|---|---|
+| Sampled | `SampledAttribute` | Categorical variable sampling with rates |
+| Generated | `GeneratedAttribute` | Single-turn LLM-generated outputs |
+| Multi-turn | `MultiTurnAttribute` | Multi-round conversation synthesis |
+| Transformed | `TransformedAttribute` | Post-hoc transforms (string/list/dict/chat) |
+
+### Data sources
+
+| Source | Class | Formats |
+|---|---|---|
+| Datasets | `DatasetSource` | JSONL, CSV, Parquet, HuggingFace |
+| Documents | `DocumentSource` | PDF, DOCX, TXT (token-based segmentation) |
+| Examples | `ExampleSource` | Inline example dicts |
+
+### Pipeline execution order
+
+1. **Dataset planning** — sample attributes, load sources, create rows
+2. **Generated attribute synthesis** — batch LLM calls for single-turn outputs
+3. **Conversation synthesis** — turn-by-turn multi-turn generation with tool-call loops
+4. **Attribute transformation** — apply string/list/dict/chat transforms
+5. **Quality checking** — structural validation on conversation outputs
+6. **Save** — write JSONL if `output_path` is set
+
+### Output format
+
+`synthesize()` returns `list[dict]`, one dict per sample. Keys come from attribute IDs. When `output_path` is set, also saves as JSONL.
+
+### Judges API
 
 ```python
-flow.dry_run(dataset, sample_size=2, enable_time_estimation=True)
+from asynth import judge, create_judge, JudgeConfig
+
+# Quick judge with built-in template
+results = judge("generic/safety", data=[{"response": "..."}], model="openai/gpt-4o-mini")
+
+# Custom judge
+config = JudgeConfig.from_path("my_judge.yaml")
+j = create_judge(config, inference_config=LiteLLMInferenceConfig(model="openai/gpt-4o"))
+results = j.judge(data)
 ```
 
-### Progress monitoring
+Built-in judge categories: generic (safety, truthfulness, instruction_following), code (quality, correctness, security), doc_qa (completeness, groundedness, relevance).
 
-- **Checkpointing**: `FlowCheckpointer` saves `checkpoint_NNNN.jsonl` + `flow_metadata.json`
-- **Progress query**: `FlowCheckpointer.get_progress_info()` for programmatic progress
-- **Logs**: `{flow_name}_{timestamp}.log` + `{flow_name}_{timestamp}_metrics.json`
-- **MLflow tracing**: Built-in via `mlflow-tracing` dependency
+### Credentials
 
-### Available SDG flow categories
-
-| Category | Purpose |
-|---|---|
-| knowledge_infusion | Q&A generation, summaries, knowledge extraction |
-| evaluation | RAG evaluation, answer quality assessment |
-| agentic | MCP distillation, agent behavior datasets |
-| red_team | Adversarial prompt generation |
-| text_analysis | Classification, sentiment, text transformation |
-| code_evaluation | Code quality, bug detection datasets |
-
-### Block types in flows
-
-| Category | Key Blocks | Purpose |
-|---|---|---|
-| llm | LLMChatBlock, PromptBuilderBlock, LLMResponseExtractorBlock | LLM calls, prompt construction, response extraction |
-| parsing | TagParserBlock, RegexParserBlock, JSONParserBlock | Extract structured data from LLM output |
-| transform | TextConcatBlock, RenameColumnsBlock, SamplerBlock | Data manipulation |
-| filtering | ColumnValueFilterBlock | Quality filtering |
-| agent | AgentBlock, MCPAgentBlock | External agent integration |
-| code | PythonInterpreterBlock | Sandboxed code execution |
+API keys are resolved in order:
+1. `api_key` in job config (per-job override)
+2. `AMORTIZED_LLM_API_KEY` environment variable
+3. Provider-specific env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) — read by LiteLLM automatically
 
 ## The Amortization Workflow
 
 The core workflow to replace expensive frontier model calls with smaller, customized models:
 
 1. **Analyze** — Understand the user's agent task, identify which LLM calls are expensive and repetitive
-2. **Generate data (SDG)** — Use a teacher model (e.g. GPT-4o) to generate training data via SDG Hub flows
-3. **Fine-tune (LoRA SFT)** — Train a small model (e.g. Qwen 1.5B) on the generated data using Training Hub
+2. **Generate data (SDG)** — Use a teacher model (e.g. GPT-4o) to generate training data via asynth
+3. **Fine-tune (LoRA SFT)** — Train a small model (e.g. Qwen 1.5B) on the generated data using TRL
 4. **Evaluate** — Compare the fine-tuned model against the original frontier model on the task
 5. **Deploy** — Replace the frontier model call with the smaller, cheaper fine-tuned model
 

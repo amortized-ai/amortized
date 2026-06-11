@@ -1,0 +1,41 @@
+type: eval
+description: Evaluate distilled student vs teacher — deterministic accuracy + LLM judge
+config:
+  dataset: test_data.jsonl
+  max_samples: 50
+
+  deterministic_checks:
+    - field: urgency
+      type: exact_match
+      expected_from: label
+    - field: topic
+      type: exact_match
+      expected_from: label
+
+  judge:
+    model: openai/gpt-4o-mini
+    temperature: 0.0
+    template: generic/instruction_following
+    prompt: >-
+      A customer support ticket was classified by urgency and topic.
+      Evaluate whether the classification is reasonable given the ticket content.
+
+      Ticket: {request}
+
+      Expected classification:
+      Urgency: {expected_urgency}
+      Topic: {expected_topic}
+
+      Model's classification:
+      {response}
+
+      Consider:
+      1. Is the urgency level appropriate for the customer's situation?
+      2. Is the topic correctly identified?
+      3. Would a human support agent agree with this classification?
+
+  metrics:
+    - overall_accuracy
+    - per_class_accuracy
+    - confusion_matrix
+    - judge_pass_rate

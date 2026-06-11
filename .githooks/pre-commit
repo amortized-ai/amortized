@@ -1,0 +1,8 @@
+#!/bin/bash
+# Auto-regenerate OpenAPI snapshot if API files changed
+CHANGED=$(git diff --cached --name-only | grep -E 'src/amortized/(models|api/|main)\.py' || true)
+if [ -n "$CHANGED" ]; then
+    echo "API files changed — regenerating OpenAPI snapshot..."
+    uv run python scripts/export_openapi.py 2>/dev/null
+    git add openapi/v1.json
+fi

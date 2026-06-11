@@ -1,0 +1,15 @@
+type: eval
+description: Evaluate intent router accuracy
+config:
+  dataset: test_data.jsonl
+  max_samples: 100
+
+  deterministic_checks:
+    - field: intent
+      type: exact_match
+      expected_from: label
+
+  metrics:
+    - overall_accuracy
+    - per_class_accuracy
+    - confusion_matrix

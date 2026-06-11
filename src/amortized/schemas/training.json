@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrainingJobConfig",
+  "description": "Configuration for TRL-based training jobs",
+  "type": "object",
+  "required": ["algorithm", "model_name_or_path"],
+  "properties": {
+    "algorithm": {
+      "type": "string",
+      "enum": ["sft", "dpo", "grpo", "kto", "rloo", "reward"],
+      "description": "TRL training algorithm / CLI subcommand"
+    },
+    "model_name_or_path": {
+      "type": "string",
+      "description": "HuggingFace model ID or local path"
+    },
+    "data_path": {
+      "type": "string",
+      "description": "Path to training data (resolved by worker)"
+    },
+    "num_train_epochs": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of training epochs"
+    },
+    "learning_rate": {
+      "type": "number",
+      "description": "Learning rate"
+    },
+    "per_device_train_batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Batch size per GPU"
+    },
+    "max_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum sequence length"
+    },
+    "bf16": {
+      "type": "boolean",
+      "description": "Use bfloat16 mixed precision"
+    },
+    "gradient_checkpointing": {
+      "type": "boolean",
+      "description": "Enable gradient checkpointing"
+    },
+    "gradient_accumulation_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Gradient accumulation steps"
+    },
+    "use_peft": {
+      "type": "boolean",
+      "description": "Enable LoRA via PEFT"
+    },
+    "lora_r": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "LoRA rank"
+    },
+    "lora_alpha": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "LoRA alpha"
+    },
+    "lora_dropout": {
+      "type": "number",
+      "description": "LoRA dropout rate"
+    },
+    "num_generations": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "GRPO: completions per prompt"
+    },
+    "max_completion_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "GRPO: max generated tokens"
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Sampling temperature"
+    },
+    "beta": {
+      "type": "number",
+      "description": "KL penalty (DPO/GRPO)"
+    },
+    "epsilon": {
+      "type": "number",
+      "description": "Clipping epsilon (GRPO)"
+    },
+    "report_to": {
+      "type": "string",
+      "description": "Logging backend (none, wandb, tensorboard)"
+    }
+  },
+  "additionalProperties": true
+}

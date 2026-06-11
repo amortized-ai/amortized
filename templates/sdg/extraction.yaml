@@ -1,0 +1,96 @@
+type: sdg
+description: Generate entity extraction training data — extract structured fields from text
+config:
+  num_samples: 100
+  max_tokens: 4096
+  max_concurrency: 10
+  strategy_params:
+    sampled_attributes:
+      - id: entity_type
+        name: Entity Type
+        description: The type of entity to extract
+        possible_values:
+          - id: person
+            name: Person
+            description: Names of people
+            sample_rate: 0.2
+          - id: organization
+            name: Organization
+            description: Company and organization names
+            sample_rate: 0.2
+          - id: location
+            name: Location
+            description: Places, addresses, geographic entities
+            sample_rate: 0.2
+          - id: date
+            name: Date
+            description: Dates, times, durations
+            sample_rate: 0.15
+          - id: product
+            name: Product
+            description: Product names, model numbers
+            sample_rate: 0.15
+          - id: monetary
+            name: Monetary
+            description: Prices, amounts, currencies
+            sample_rate: 0.1
+      - id: text_type
+        name: Text Type
+        description: The type of source text
+        possible_values:
+          - id: email
+            name: Email
+            description: Business or personal email
+            sample_rate: 0.25
+          - id: article
+            name: Article
+            description: News article or blog post
+            sample_rate: 0.25
+          - id: report
+            name: Report
+            description: Business or technical report
+            sample_rate: 0.25
+          - id: social_media
+            name: Social Media
+            description: Tweet, post, or comment
+            sample_rate: 0.25
+    generated_attributes:
+      - id: source_text
+        instruction_messages:
+          - role: system
+            content: >-
+              You are a text generator. Generate a realistic {text_type} that naturally
+              contains {entity_type} entities. The text should be 2-4 paragraphs and
+              feel authentic. Just output the text, nothing else.
+          - role: user
+            content: >-
+              Generate a realistic {text_type} containing {entity_type} entities.
+      - id: extraction
+        instruction_messages:
+          - role: user
+            content: >-
+              Extract all {entity_type} entities from this text. Return a JSON array
+              of objects with "entity" and "span" fields.
+
+              Text:
+              {source_text}
+    transformed_attributes:
+      - id: messages
+        transformation_strategy:
+          type: chat
+          chat_transform:
+            messages:
+              - role: system
+                content: >-
+                  You are an entity extraction assistant. Extract the requested
+                  entity types from the given text. Return a JSON array of objects
+                  with "entity" and "span" fields.
+              - role: user
+                content: "Extract all {entity_type} entities from:\n\n{source_text}"
+              - role: assistant
+                content: "{extraction}"
+    passthrough_attributes:
+      - entity_type
+      - text_type
+      - source_text
+      - messages

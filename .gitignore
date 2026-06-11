@@ -15,3 +15,12 @@ runtime/outputs/
 *.egg-info/
 tsconfig.tsbuildinfo
 .venv/
+eval/score.py
+factory.md
+.factory/
+server/~/
+server/datasets/
+uv.lock
+runtime/
+2026-06-02-amortized-design.md
+CONTEXT.md
