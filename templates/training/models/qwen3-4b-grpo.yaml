@@ -1,5 +1,5 @@
 extends: templates/training/grpo
-description: Qwen3 4B — GRPO reinforcement learning
+description: Qwen3 4B — LoRA GRPO reinforcement learning
 config:
   model_name_or_path: Qwen/Qwen3-4B
   max_prompt_length: 512
