@@ -33,7 +33,7 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
 }
 
 TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
-TRL_ALGOS = {"dpo", "kto"}
+TRL_ALGOS = {"dpo", "kto", "gkd"}
 
 _RUNNER_MODULES: dict[str, str] = {
     JobType.sdg.value: "amortized.runners.sdg_runner",
@@ -86,6 +86,7 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 _TRL_SUBCOMMANDS: dict[str, str] = {
     "dpo": "dpo",
     "kto": "kto",
+    "gkd": "gkd",
 }
 
 
