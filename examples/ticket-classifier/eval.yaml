@@ -17,20 +17,7 @@ config:
   # LLM-as-judge — assess overall quality
   judge:
     model: openai/gpt-4o-mini
-    temperature: 0.0
-    template: instruction-following
-    prompt: >-
-      A customer support ticket was classified by urgency and topic.
-      Evaluate whether the classification is reasonable given the ticket content.
-
-      Ticket: {request}
-
-      Model's classification: {response}
-
-      Consider:
-      1. Is the urgency level appropriate for the customer's situation?
-      2. Is the topic correctly identified?
-      3. Would a human support agent agree with this classification?
+    template: classification-accuracy
 
   # Reporting
   metrics:
