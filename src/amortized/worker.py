@@ -244,18 +244,16 @@ def _resolve_judge_template(config: dict[str, Any]) -> dict[str, Any]:
     except FileNotFoundError:
         logger.warning("Judge template '%s' not found, skipping", template_name)
         return config
-    judge_params = tmpl.get("judge_params", tmpl)
+    tmpl_config = tmpl.get("config", tmpl)
+    tmpl_judge = tmpl_config.get("judge", {})
     merged_judge = dict(judge)
-    if "prompt" not in merged_judge and judge_params.get("prompt_template"):
-        merged_judge["prompt"] = judge_params["prompt_template"]
-    if judge_params.get("system_instruction"):
-        merged_judge["system_instruction"] = judge_params["system_instruction"]
-    if judge_params.get("judgment_type") and "judgment_type" not in merged_judge:
-        merged_judge["judgment_type"] = judge_params["judgment_type"]
-    if judge_params.get("response_format") and "response_format" not in merged_judge:
-        merged_judge["response_format"] = judge_params["response_format"]
-    if judge_params.get("include_explanation") and "include_explanation" not in merged_judge:
-        merged_judge["include_explanation"] = judge_params["include_explanation"]
+    if "prompt" not in merged_judge:
+        merged_judge["prompt"] = tmpl_judge.get("prompt") or tmpl_config.get("judge_prompt", "")
+    if tmpl_config.get("system_instruction"):
+        merged_judge["system_instruction"] = tmpl_config["system_instruction"]
+    for key in ("judgment_type", "response_format", "include_explanation"):
+        if tmpl_config.get(key) is not None and key not in merged_judge:
+            merged_judge[key] = tmpl_config[key]
     config = {**config, "judge": merged_judge}
     logger.info("Resolved judge template '%s'", template_name)
     return config
