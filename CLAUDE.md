@@ -6,16 +6,6 @@ A product that builds task models. The user describes a task their AI agent does
 
 This is not a toolkit or framework. It's an opinionated, batteries-included product. The user shouldn't configure training frameworks, pick container images, or wire up serving infrastructure. They describe the task, we handle everything else.
 
-## Stack (these are decisions, not options)
-
-- **Training**: TRL via `trl sft --config`. Official HuggingFace image. No Training Hub, no custom trainers.
-- **Serving**: vLLM via `vllm serve --config`. Official vLLM image. OpenAI-compatible API.
-- **Data generation**: asynth. Our own engine for synthetic data from frontier models.
-- **Evaluation**: asynth judges + deterministic metrics. 19 judge templates included.
-- **Models**: Qwen family as defaults (0.6B for routing, 1.5B for classification, 4B for complex tasks).
-- **Compute**: SSH + podman on GPU nodes. No Kubernetes, no cloud orchestrators.
-- **Storage**: SQLite for metadata. S3 for artifacts (planned).
-
 When in doubt, pick the simpler, more opinionated choice. One way to do things, documented in examples.
 
 ## Dev Commands
