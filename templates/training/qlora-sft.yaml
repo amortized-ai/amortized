@@ -1,7 +1,8 @@
 type: training
 description: QLoRA SFT — 4-bit quantized LoRA for minimal VRAM
 config:
-  algorithm: sft
+  algorithm: lora_sft
+  load_in_4bit: true
 
   # Data
   max_length: 2048
@@ -19,22 +20,10 @@ config:
   # Precision
   bf16: true
 
-  # QLoRA
-  use_peft: true
+  # LoRA
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.05
-  lora_target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
-  qlora: true
-  bnb_4bit_quant_type: nf4
-  bnb_4bit_compute_dtype: bfloat16
 
   # Memory
   gradient_checkpointing: true

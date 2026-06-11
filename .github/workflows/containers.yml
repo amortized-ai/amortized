@@ -34,9 +34,10 @@ jobs:
             ghcr.io/amortized-ai/${{ matrix.image }}:latest
             ghcr.io/amortized-ai/${{ matrix.image }}:${{ github.sha }}
 
-  # CUDA training images — too large for GitHub runners (~12GB each).
-  # Build on a self-hosted GPU runner, or manually on the GPU node:
-  #   ssh REDACTED_HOST "cd ~/amortized && podman build -f containers/training-lora/Dockerfile -t ghcr.io/amortized-ai/training-lora:latest . && podman push ghcr.io/amortized-ai/training-lora:latest"
+  # CUDA training image — uses the single ghcr.io/amortized-ai/training:latest image.
+  # Too large for GitHub runners (~12GB). Build on a self-hosted GPU runner,
+  # or manually on the GPU node:
+  #   ssh REDACTED_HOST "cd ~/amortized && podman build -f containers/training/Dockerfile -t ghcr.io/amortized-ai/training:latest . && podman push ghcr.io/amortized-ai/training:latest"
   #
   # To enable CI builds, add a self-hosted runner with the 'gpu' label:
   #   https://docs.github.com/en/actions/hosting-your-own-runners
@@ -45,5 +46,5 @@ jobs:
   #   runs-on: [self-hosted, gpu]
   #   strategy:
   #     matrix:
-  #       image: [training-lora, training-sft, training-grpo, training-gepa, training-osft]
+  #       image: [training]
   #   ...

@@ -1,16 +1,16 @@
 type: training
-description: LoRA SFT — parameter-efficient fine-tuning via training-hub
+description: On-policy SFT — online supervised fine-tuning via training-hub
 config:
-  algorithm: lora_sft
+  algorithm: osft
 
   # Data
-  max_length: 2048
+  max_length: 4096
 
   # Training
   num_train_epochs: 3
-  per_device_train_batch_size: 4
+  per_device_train_batch_size: 2
   gradient_accumulation_steps: 4
-  learning_rate: 2.0e-04
+  learning_rate: 2.0e-05
   lr_scheduler_type: cosine
   warmup_ratio: 0.1
   weight_decay: 0.01
@@ -19,10 +19,8 @@ config:
   # Precision
   bf16: true
 
-  # LoRA
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.05
+  # Memory
+  gradient_checkpointing: true
 
   # Logging
   logging_steps: 10
@@ -31,4 +29,4 @@ config:
 
 compute:
   gpus: 1
-  min_vram_gb: 16
+  min_vram_gb: 40

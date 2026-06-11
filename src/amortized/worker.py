@@ -26,11 +26,14 @@ logger = logging.getLogger("amortized.worker")
 _monitor_tasks: set[asyncio.Task[None]] = set()
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
-    "training": "docker.io/huggingface/trl:1.5.0",
+    "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/asynth:latest",
     "eval": "ghcr.io/amortized-ai/asynth:latest",
     "serve": "docker.io/vllm/vllm-openai",
 }
+
+TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
+TRL_ALGOS = {"dpo", "kto"}
 
 _RUNNER_MODULES: dict[str, str] = {
     JobType.sdg.value: "amortized.runners.sdg_runner",
@@ -53,6 +56,10 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 
     if job_type == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
+        if algorithm in TRAINING_HUB_ALGOS:
+            # training-hub algos are dispatched via container script;
+            # this placeholder is overridden by the container dispatch path.
+            return [sys.executable, "-m", "training_hub", algorithm, json.dumps(config)]
         subcommand = _get_trl_subcommand(algorithm)
         return ["trl", subcommand, "--config", json.dumps(config)]
 
@@ -77,14 +84,8 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 
 
 _TRL_SUBCOMMANDS: dict[str, str] = {
-    "lora_sft": "sft",
-    "full_sft": "sft",
-    "sft": "sft",
     "dpo": "dpo",
-    "grpo": "grpo",
-    "lora_grpo": "grpo",
     "kto": "kto",
-    "rloo": "rloo",
 }
 
 
@@ -136,6 +137,71 @@ def _training_config_yaml(config: dict[str, Any]) -> str:
 
     result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
     return result
+
+
+_TRAINING_HUB_FIELD_MAP: dict[str, str] = {
+    "model_name_or_path": "model_path",
+    "num_train_epochs": "num_epochs",
+    "per_device_train_batch_size": "micro_batch_size",
+    "max_length": "max_seq_len",
+    "output_dir": "ckpt_output_dir",
+}
+
+_TRAINING_HUB_NATIVE_KEYS = {
+    "model_path",
+    "data_path",
+    "ckpt_output_dir",
+    "num_epochs",
+    "micro_batch_size",
+    "max_seq_len",
+    "learning_rate",
+    "lora_r",
+    "lora_alpha",
+    "lora_dropout",
+    "bf16",
+    "gradient_checkpointing",
+    "gradient_accumulation_steps",
+    "sample_packing",
+    "seed_candidate",
+    "task_lm",
+}
+
+_TRAINING_HUB_SKIP_KEYS = {
+    "algorithm",
+    "engine",
+    "use_peft",
+    "qlora",
+    "bnb_4bit_quant_type",
+    "bnb_4bit_compute_dtype",
+    "lora_target_modules",
+}
+
+
+def _training_hub_script(algorithm: str) -> str:
+    return (
+        "import json, os\n"
+        "\n"
+        "config = json.load(open('/amortized/config.json'))['config']\n"
+        f"from training_hub import {algorithm}\n"
+        "\n"
+        "FIELD_MAP = " + repr(_TRAINING_HUB_FIELD_MAP) + "\n"
+        "SKIP_KEYS = " + repr(_TRAINING_HUB_SKIP_KEYS) + "\n"
+        "\n"
+        "kwargs = {}\n"
+        "for key, value in config.items():\n"
+        "    if key in SKIP_KEYS or value is None:\n"
+        "        continue\n"
+        "    if key == 'load_in_4bit' and value:\n"
+        "        kwargs['load_in_4bit'] = True\n"
+        "        continue\n"
+        "    mapped = FIELD_MAP.get(key)\n"
+        "    if mapped:\n"
+        "        kwargs[mapped] = value\n"
+        "    elif key not in FIELD_MAP:\n"
+        "        kwargs[key] = value\n"
+        "\n"
+        f"{algorithm}(**kwargs)\n"
+    )
 
 
 _SERVE_FIELD_MAP: dict[str, str] = {
@@ -703,10 +769,17 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
-        subcommand = _get_trl_subcommand(algorithm)
-        trl_yaml = _training_config_yaml(config)
-        spec_env["_run_config"] = trl_yaml
-        cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
+        if algorithm in TRAINING_HUB_ALGOS:
+            script = _training_hub_script(algorithm)
+            spec_env["_run_script"] = script
+            cmd = ["python3.11", "/amortized/work/run.py"]
+        elif algorithm in TRL_ALGOS:
+            subcommand = _get_trl_subcommand(algorithm)
+            trl_yaml = _training_config_yaml(config)
+            spec_env["_run_config"] = trl_yaml
+            cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
+        else:
+            raise ValueError(f"Unknown training algorithm: {algorithm}")
     elif image and job["type"] == JobType.serve.value:
         spec_env["_run_config"] = _serve_config_yaml(config)
         if config.get("gpu_ids"):

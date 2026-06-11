@@ -1,7 +1,7 @@
 type: training
-description: GRPO — group relative policy optimization via TRL
+description: GRPO — group relative policy optimization via training-hub
 config:
-  algorithm: grpo
+  algorithm: lora_grpo
 
   # Data
   max_prompt_length: 512
@@ -26,18 +26,9 @@ config:
   # Precision
   bf16: true
 
-  # LoRA (GRPO typically uses LoRA to save VRAM for generation)
-  use_peft: true
+  # LoRA
   lora_r: 16
   lora_alpha: 8
-  lora_target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
 
   # Memory
   gradient_checkpointing: true
