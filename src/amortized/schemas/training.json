@@ -7,7 +7,7 @@
   "properties": {
     "algorithm": {
       "type": "string",
-      "enum": ["lora_sft", "sft", "osft", "dpo", "grpo", "lora_grpo", "kto", "gepa"],
+      "enum": ["lora_sft", "sft", "osft", "dpo", "grpo", "lora_grpo", "kto", "gepa", "gkd"],
       "description": "Training algorithm"
     },
     "model_name_or_path": {
