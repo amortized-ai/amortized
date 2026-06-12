@@ -122,11 +122,17 @@ Key concepts:
 - **model**: Teacher model in LiteLLM format (e.g. openai/gpt-4o, hosted_vllm/model-name)
 - **num_samples**: How many samples to generate
 
-Attribute types (used in strategy_params):
-- **SampledAttribute**: Categorical variable sampling with rates (e.g. domain, difficulty)
-- **GeneratedAttribute**: Single-turn LLM-generated outputs (e.g. questions, answers)
-- **MultiTurnAttribute**: Multi-round conversation synthesis with tool-call loops
-- **TransformedAttribute**: Post-hoc transforms on generated data (string/list/dict/chat)
+strategy_params dict keys (IMPORTANT — use these exact field names):
+- **sampled_attributes**: list of categorical variables with sample rates
+- **generated_attributes**: list of LLM-generated outputs with instruction_messages
+- **multiturn_attributes**: multi-round conversation config
+- **transformed_attributes**: post-hoc transforms (string/list/dict/chat)
+- **passthrough_attributes**: list of attribute IDs to include in output
+- **input_examples**: few-shot examples for generation
+- **input_data**: external dataset sources
+- **input_documents**: document sources (PDF, DOCX, TXT)
+
+Do NOT use "attributes" as a key — always use the full names above.
 
 Data sources (use input_data or input_documents in SDG config):
 - **DatasetSource**: Feed existing datasets (JSONL, CSV, Parquet, HuggingFace) via input_data
