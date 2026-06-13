@@ -9,6 +9,7 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -40,6 +41,22 @@ class LocalBackend:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
+        # Write special env var payloads to files in work_dir
+        if "_run_script" in spec.env:
+            with open(os.path.join(work_dir, "run.py"), "w") as f:
+                f.write(spec.env["_run_script"])
+        if "_run_config" in spec.env:
+            with open(os.path.join(work_dir, "config.yaml"), "w") as f:
+                f.write(spec.env["_run_config"])
+
+        # Transform container paths to local paths in the command
+        command = [
+            part.replace("/amortized/work/run.py", os.path.join(work_dir, "run.py"))
+                .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
+                .replace("python3.11", sys.executable)
+            for part in spec.command
+        ]
+
         stdout_path = os.path.join(work_dir, "stdout.log")
         stderr_path = os.path.join(work_dir, "stderr.log")
 
@@ -51,11 +68,11 @@ class LocalBackend:
             "AMORTIZED_WORK_DIR": work_dir,
             "AMORTIZED_CONFIG_PATH": config_path,
         }
-        filtered_spec_env = {k: v for k, v in spec.env.items() if k != "_config"}
+        filtered_spec_env = {k: v for k, v in spec.env.items() if k not in ("_config", "_run_script", "_run_config")}
         env = {**os.environ, **amortized_env, **filtered_spec_env}
 
         proc = subprocess.Popen(
-            spec.command,
+            command,
             stdout=stdout_file,
             stderr=stderr_file,
             env=env,
