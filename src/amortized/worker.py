@@ -180,7 +180,11 @@ _TRAINING_HUB_SKIP_KEYS = {
 
 def _training_hub_script(algorithm: str) -> str:
     return (
-        "import json, os\n"
+        "import json, os, sys\n"
+        "\n"
+        "# Ensure venv bin dir is in PATH (needed for torchrun, verl, etc.)\n"
+        "bin_dir = os.path.dirname(sys.executable)\n"
+        "os.environ['PATH'] = bin_dir + ':' + os.environ.get('PATH', '')\n"
         "\n"
         "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
         "config = json.load(open(config_path))['config']\n"
