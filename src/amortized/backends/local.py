@@ -71,6 +71,10 @@ class LocalBackend:
         filtered_spec_env = {k: v for k, v in spec.env.items() if k not in ("_config", "_run_script", "_run_config")}
         env = {**os.environ, **amortized_env, **filtered_spec_env}
 
+        # Prepend venv bin dir to PATH so venv tools (trl, torchrun, accelerate, etc.) are found
+        venv_bin = os.path.dirname(sys.executable)
+        env["PATH"] = venv_bin + ":" + env.get("PATH", os.environ.get("PATH", ""))
+
         proc = subprocess.Popen(
             command,
             stdout=stdout_file,
