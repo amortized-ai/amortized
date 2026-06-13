@@ -184,6 +184,8 @@ def _training_hub_script(algorithm: str) -> str:
         "\n"
         "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
         "config = json.load(open(config_path))['config']\n"
+        "if isinstance(config, str):\n"
+        "    config = json.loads(config)\n"
         f"from training_hub import {algorithm}\n"
         "\n"
         "FIELD_MAP = " + repr(_TRAINING_HUB_FIELD_MAP) + "\n"
@@ -254,6 +256,8 @@ def _sdg_script() -> str:
 import json, os
 
 config = json.load(open("/amortized/config.json"))["config"]
+if isinstance(config, str):
+    config = json.loads(config)
 
 from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
 from asynth.configs.params.synthesis_params import GeneralSynthesisParams
@@ -332,6 +336,8 @@ def _eval_script() -> str:
 import json, os, re
 
 config = json.load(open("/amortized/config.json"))["config"]
+if isinstance(config, str):
+    config = json.loads(config)
 
 dataset_path = config["dataset"]
 data = [json.loads(line) for line in open(dataset_path) if line.strip()]
