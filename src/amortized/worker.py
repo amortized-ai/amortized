@@ -182,7 +182,8 @@ def _training_hub_script(algorithm: str) -> str:
     return (
         "import json, os\n"
         "\n"
-        "config = json.load(open('/amortized/config.json'))['config']\n"
+        "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
+        "config = json.load(open(config_path))['config']\n"
         f"from training_hub import {algorithm}\n"
         "\n"
         "FIELD_MAP = " + repr(_TRAINING_HUB_FIELD_MAP) + "\n"
