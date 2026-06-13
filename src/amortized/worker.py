@@ -33,8 +33,7 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
 }
 
 TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
-TRL_ALGOS = {"dpo", "kto"}
-SCRIPT_ALGOS = {"gkd"}
+SCRIPT_ALGOS = {"gkd", "dpo", "kto"}
 
 _RUNNER_MODULES: dict[str, str] = {
     JobType.sdg.value: "amortized.runners.sdg_runner",
@@ -62,11 +61,10 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
             # this placeholder is overridden by the container dispatch path.
             return [sys.executable, "-m", "training_hub", algorithm, json.dumps(config)]
         if algorithm in SCRIPT_ALGOS:
-            # Script-based algos (e.g. GKD) are dispatched via generated script;
+            # Script-based algos are dispatched via generated script;
             # this placeholder is overridden by the container dispatch path.
             return [sys.executable, "-c", "pass"]
-        subcommand = _get_trl_subcommand(algorithm)
-        return ["trl", subcommand, "--config", json.dumps(config)]
+        raise ValueError(f"Unknown training algorithm: {algorithm}")
 
     module = _RUNNER_MODULES.get(job_type)
     if module is None:
@@ -88,19 +86,6 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     return [sys.executable, "-m", module, json.dumps(config)]
 
 
-_TRL_SUBCOMMANDS: dict[str, str] = {
-    "dpo": "dpo",
-    "kto": "kto",
-}
-
-
-def _get_trl_subcommand(algorithm: str) -> str:
-    sub = _TRL_SUBCOMMANDS.get(algorithm)
-    if sub is None:
-        raise ValueError(f"Unknown training algorithm: {algorithm}")
-    return sub
-
-
 _TRL_FIELD_MAP: dict[str, str] = {
     "model_path": "model_name_or_path",
     "model_name_or_path": "model_name_or_path",
@@ -114,58 +99,21 @@ _TRL_FIELD_MAP: dict[str, str] = {
     "bf16": "bf16",
 }
 
-_TRL_SKIP_KEYS = {"algorithm", "ckpt_output_dir", "output_dir", "engine", "load_in_4bit"}
-
-
-def _training_config_yaml(config: dict[str, Any]) -> str:
-    import yaml
-
-    trl_config: dict[str, Any] = {
-        "output_dir": config.get("output_dir", "/amortized/work"),
-        "report_to": "none",
-    }
-
-    for key, value in config.items():
-        if key in _TRL_SKIP_KEYS or value is None:
-            continue
-        if key == "data_path":
-            if value.endswith('.jsonl') or value.endswith('.json') or value.endswith('.csv') or value.endswith('.parquet'):
-                ext = os.path.splitext(value)[1].lstrip('.')
-                fmt = 'json' if ext in ('jsonl', 'json') else ext
-                trl_config["dataset_name"] = fmt
-                trl_config["dataset_kwargs"] = {"data_files": value}
-            else:
-                # Assume HuggingFace dataset name or directory
-                trl_config["dataset_name"] = value
-            continue
-        trl_field = _TRL_FIELD_MAP.get(key)
-        if trl_field:
-            trl_config[trl_field] = value
-        elif key not in _TRL_FIELD_MAP:
-            trl_config[key] = value
-
-    if "lora_r" in trl_config:
-        trl_config["use_peft"] = True
-
-    result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
-    return result
-
-
-_SCRIPT_ALGO_TRAINERS: dict[str, str] = {
-    "gkd": "GKDTrainer",
-}
-
-_SCRIPT_ALGO_CONFIGS: dict[str, str] = {
-    "gkd": "GKDConfig",
+_SCRIPT_ALGO_TRAINERS: dict[str, tuple[str, str]] = {
+    "gkd": ("GKDTrainer", "GKDConfig"),
+    "dpo": ("DPOTrainer", "DPOConfig"),
+    "kto": ("KTOTrainer", "KTOConfig"),
 }
 
 
 def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
     """Generate a self-contained Python script for TRL trainer-based algorithms."""
-    trainer_class = _SCRIPT_ALGO_TRAINERS[algorithm]
-    config_class = _SCRIPT_ALGO_CONFIGS[algorithm]
+    trainer_class, config_class = _SCRIPT_ALGO_TRAINERS[algorithm]
 
-    return (
+    # GKD needs teacher model; DPO and KTO do not
+    needs_teacher = algorithm == "gkd"
+
+    lines = (
         "import json, os, sys\n"
         "\n"
         "# Ensure venv bin dir is in PATH\n"
@@ -186,11 +134,24 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "os.makedirs(output_dir, exist_ok=True)\n"
         "\n"
         "model_name = config.get('model_name_or_path', config.get('model_path', ''))\n"
-        "teacher_name = config.get('teacher_model_name_or_path', model_name)\n"
-        "\n"
-        "# Load student and teacher models\n"
-        "student = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
-        "teacher = AutoModelForCausalLM.from_pretrained(teacher_name, torch_dtype='auto', device_map='auto')\n"
+    )
+
+    if needs_teacher:
+        lines += (
+            "teacher_name = config.get('teacher_model_name_or_path', model_name)\n"
+            "\n"
+            "# Load student and teacher models\n"
+            "student = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
+            "teacher = AutoModelForCausalLM.from_pretrained(teacher_name, torch_dtype='auto', device_map='auto')\n"
+        )
+    else:
+        lines += (
+            "\n"
+            "# Load model\n"
+            "model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
+        )
+
+    lines += (
         "tokenizer = AutoTokenizer.from_pretrained(model_name)\n"
         "if tokenizer.pad_token is None:\n"
         "    tokenizer.pad_token = tokenizer.eos_token\n"
@@ -200,11 +161,7 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "if os.path.isdir(data_path):\n"
         "    dataset = load_from_disk(data_path)\n"
         "elif os.path.isfile(data_path):\n"
-        "    ext = os.path.splitext(data_path)[1]\n"
-        "    if ext == '.jsonl':\n"
-        "        dataset = load_dataset('json', data_files=data_path, split='train')\n"
-        "    else:\n"
-        "        dataset = load_dataset('json', data_files=data_path, split='train')\n"
+        "    dataset = load_dataset('json', data_files=data_path, split='train')\n"
         "else:\n"
         "    dataset = load_dataset(data_path, split='train')\n"
         "\n"
@@ -236,17 +193,36 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "    )\n"
         "\n"
         f"training_config = {config_class}(**trainer_kwargs)\n"
-        f"trainer = {trainer_class}(\n"
-        "    model=student,\n"
-        "    teacher_model=teacher,\n"
-        "    args=training_config,\n"
-        "    train_dataset=dataset,\n"
-        "    processing_class=tokenizer,\n"
-        "    peft_config=peft_config,\n"
-        ")\n"
+    )
+
+    if needs_teacher:
+        lines += (
+            f"trainer = {trainer_class}(\n"
+            "    model=student,\n"
+            "    teacher_model=teacher,\n"
+            "    args=training_config,\n"
+            "    train_dataset=dataset,\n"
+            "    processing_class=tokenizer,\n"
+            "    peft_config=peft_config,\n"
+            ")\n"
+        )
+    else:
+        lines += (
+            f"trainer = {trainer_class}(\n"
+            "    model=model,\n"
+            "    args=training_config,\n"
+            "    train_dataset=dataset,\n"
+            "    processing_class=tokenizer,\n"
+            "    peft_config=peft_config,\n"
+            ")\n"
+        )
+
+    lines += (
         "trainer.train()\n"
         "trainer.save_model(output_dir)\n"
     )
+
+    return lines
 
 
 _TRAINING_HUB_FIELD_MAP: dict[str, str] = {
@@ -925,12 +901,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             script = _training_hub_script(algorithm)
             spec_env["_run_script"] = script
             cmd = ["python3.11", "/amortized/work/run.py"]
-        elif algorithm in TRL_ALGOS:
-            subcommand = _get_trl_subcommand(algorithm)
-            trl_yaml = _training_config_yaml(config)
-            spec_env["_run_config"] = trl_yaml
-            spec_env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-            cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
         elif algorithm in SCRIPT_ALGOS:
             script = _trl_trainer_script(algorithm, config)
             spec_env["_run_script"] = script
