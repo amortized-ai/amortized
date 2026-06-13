@@ -1,5 +1,7 @@
 type: training
-description: GEPA — guided evolution of prompt adaptations via training-hub
+description: >-
+  GEPA — guided evolution of prompt adaptations via training-hub.
+  Data must contain 'input' and 'answer' columns (JSONL with those keys).
 config:
   algorithm: gepa
 
