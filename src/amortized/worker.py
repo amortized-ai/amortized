@@ -212,7 +212,7 @@ def _training_hub_script(algorithm: str) -> str:
         "    kwargs.setdefault('max_batch_len', 60000)\n"
         "    # sft doesn't use micro_batch_size - it uses effective_batch_size\n"
         "    kwargs.pop('micro_batch_size', None)\n"
-        "    kwargs.pop('max_seq_len', None)  # sft uses max_batch_len instead\n"
+        "    kwargs.setdefault('max_seq_len', 2048)\n"
         "\n"
         f"elif '{algorithm}' == 'osft':\n"
         "    kwargs.setdefault('unfreeze_rank_ratio', 0.1)\n"
