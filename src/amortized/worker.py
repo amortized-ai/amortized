@@ -129,7 +129,7 @@ def _training_config_yaml(config: dict[str, Any]) -> str:
         if key in _TRL_SKIP_KEYS or value is None:
             continue
         if key == "data_path":
-            trl_config["datasets"] = [{"path": os.path.dirname(value)}]
+            trl_config["dataset_name"] = value
             continue
         trl_field = _TRL_FIELD_MAP.get(key)
         if trl_field:
