@@ -129,7 +129,14 @@ def _training_config_yaml(config: dict[str, Any]) -> str:
         if key in _TRL_SKIP_KEYS or value is None:
             continue
         if key == "data_path":
-            trl_config["dataset_name"] = value
+            if value.endswith('.jsonl') or value.endswith('.json') or value.endswith('.csv') or value.endswith('.parquet'):
+                ext = os.path.splitext(value)[1].lstrip('.')
+                fmt = 'json' if ext in ('jsonl', 'json') else ext
+                trl_config["dataset_name"] = fmt
+                trl_config["dataset_kwargs"] = {"data_files": value}
+            else:
+                # Assume HuggingFace dataset name or directory
+                trl_config["dataset_name"] = value
             continue
         trl_field = _TRL_FIELD_MAP.get(key)
         if trl_field:
