@@ -52,3 +52,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Fix: remove stale huggingface-hub 0.36.2 metadata left by runtime base image
+# (builder installs 1.19.0 but COPY overlays onto existing 0.36.2 dist-info)
+RUN rm -rf /usr/local/lib/python3.11/dist-packages/huggingface_hub-0.36.2.dist-info 2>/dev/null; \
+    python3.11 -c "import huggingface_hub; print(f'huggingface-hub: {huggingface_hub.__version__}')"
