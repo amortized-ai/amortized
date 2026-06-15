@@ -28,9 +28,9 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[gr
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.24"
 
-# Fix any version conflicts introduced by the multi-step install
-# (vLLM may downgrade huggingface-hub; transformers 4.57+ needs >=1.5)
-RUN python3.11 -m pip install --no-cache-dir --upgrade "huggingface-hub>=1.5.0"
+# Fix: transformers 4.57.6 runtime-checks for huggingface-hub>=1.5 despite
+# metadata saying <1.0. Force install the newer version.
+RUN python3.11 -m pip install --no-cache-dir --force-reinstall --no-deps "huggingface-hub>=1.5.0,<2.0"
 
 # Disable Ray's uv_runtime_env_hook — it crashes on pyproject.toml detection
 # and is not needed for verl workloads.
