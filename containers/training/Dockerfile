@@ -30,7 +30,7 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.2
 
 # Fix any version conflicts introduced by the multi-step install
 # (vLLM may downgrade huggingface-hub; transformers 4.57+ needs >=1.5)
-RUN python3.11 -m pip install --no-cache-dir "huggingface-hub>=1.5.0"
+RUN python3.11 -m pip install --no-cache-dir --upgrade "huggingface-hub>=1.5.0"
 
 # Disable Ray's uv_runtime_env_hook — it crashes on pyproject.toml detection
 # and is not needed for verl workloads.
