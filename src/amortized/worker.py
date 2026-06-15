@@ -26,11 +26,14 @@ logger = logging.getLogger("amortized.worker")
 _monitor_tasks: set[asyncio.Task[None]] = set()
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
-    "training": "docker.io/huggingface/trl:1.5.0",
+    "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/asynth:latest",
     "eval": "ghcr.io/amortized-ai/asynth:latest",
     "serve": "docker.io/vllm/vllm-openai",
 }
+
+TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
+SCRIPT_ALGOS = {"gkd", "dpo", "kto"}
 
 _RUNNER_MODULES: dict[str, str] = {
     JobType.sdg.value: "amortized.runners.sdg_runner",
@@ -53,8 +56,15 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
 
     if job_type == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
-        subcommand = _get_trl_subcommand(algorithm)
-        return ["trl", subcommand, "--config", json.dumps(config)]
+        if algorithm in TRAINING_HUB_ALGOS:
+            # training-hub algos are dispatched via container script;
+            # this placeholder is overridden by the container dispatch path.
+            return [sys.executable, "-m", "training_hub", algorithm, json.dumps(config)]
+        if algorithm in SCRIPT_ALGOS:
+            # Script-based algos are dispatched via generated script;
+            # this placeholder is overridden by the container dispatch path.
+            return [sys.executable, "-c", "pass"]
+        raise ValueError(f"Unknown training algorithm: {algorithm}")
 
     module = _RUNNER_MODULES.get(job_type)
     if module is None:
@@ -76,25 +86,6 @@ def _build_runner_command(job: dict[str, Any]) -> list[str]:
     return [sys.executable, "-m", module, json.dumps(config)]
 
 
-_TRL_SUBCOMMANDS: dict[str, str] = {
-    "lora_sft": "sft",
-    "full_sft": "sft",
-    "sft": "sft",
-    "dpo": "dpo",
-    "grpo": "grpo",
-    "lora_grpo": "grpo",
-    "kto": "kto",
-    "rloo": "rloo",
-}
-
-
-def _get_trl_subcommand(algorithm: str) -> str:
-    sub = _TRL_SUBCOMMANDS.get(algorithm)
-    if sub is None:
-        raise ValueError(f"Unknown training algorithm: {algorithm}")
-    return sub
-
-
 _TRL_FIELD_MAP: dict[str, str] = {
     "model_path": "model_name_or_path",
     "model_name_or_path": "model_name_or_path",
@@ -108,34 +99,245 @@ _TRL_FIELD_MAP: dict[str, str] = {
     "bf16": "bf16",
 }
 
-_TRL_SKIP_KEYS = {"algorithm", "ckpt_output_dir", "output_dir", "engine", "load_in_4bit"}
+_SCRIPT_ALGO_TRAINERS: dict[str, tuple[str, str]] = {
+    "gkd": ("GKDTrainer", "GKDConfig"),
+    "dpo": ("DPOTrainer", "DPOConfig"),
+    "kto": ("KTOTrainer", "KTOConfig"),
+}
 
 
-def _training_config_yaml(config: dict[str, Any]) -> str:
-    import yaml
+def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
+    """Generate a self-contained Python script for TRL trainer-based algorithms."""
+    trainer_class, config_class = _SCRIPT_ALGO_TRAINERS[algorithm]
 
-    trl_config: dict[str, Any] = {
-        "output_dir": "/amortized/work",
-        "report_to": "none",
-    }
+    # GKD needs teacher model; DPO and KTO do not
+    needs_teacher = algorithm == "gkd"
 
-    for key, value in config.items():
-        if key in _TRL_SKIP_KEYS or value is None:
-            continue
-        if key == "data_path":
-            trl_config["datasets"] = [{"path": os.path.dirname(value)}]
-            continue
-        trl_field = _TRL_FIELD_MAP.get(key)
-        if trl_field:
-            trl_config[trl_field] = value
-        elif key not in _TRL_FIELD_MAP:
-            trl_config[key] = value
+    lines = (
+        "import json, os, sys\n"
+        "\n"
+        "# Ensure venv bin dir is in PATH\n"
+        "bin_dir = os.path.dirname(sys.executable)\n"
+        "os.environ['PATH'] = bin_dir + ':' + os.environ.get('PATH', '')\n"
+        "os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')\n"
+        "\n"
+        "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
+        "config = json.load(open(config_path))['config']\n"
+        "if isinstance(config, str):\n"
+        "    config = json.loads(config)\n"
+        "\n"
+        "from transformers import AutoModelForCausalLM, AutoTokenizer\n"
+        f"from trl import {trainer_class}, {config_class}\n"
+        "from datasets import load_dataset, load_from_disk\n"
+        "\n"
+        "output_dir = config.get('output_dir', '/amortized/work')\n"
+        "os.makedirs(output_dir, exist_ok=True)\n"
+        "\n"
+        "model_name = config.get('model_name_or_path', config.get('model_path', ''))\n"
+    )
 
-    if "lora_r" in trl_config:
-        trl_config["use_peft"] = True
+    if needs_teacher:
+        lines += (
+            "teacher_name = config.get('teacher_model_name_or_path', model_name)\n"
+            "\n"
+            "# Load student and teacher models\n"
+            "student = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
+            "teacher = AutoModelForCausalLM.from_pretrained(teacher_name, torch_dtype='auto', device_map='auto')\n"
+        )
+    else:
+        lines += (
+            "\n"
+            "# Load model\n"
+            "model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
+        )
 
-    result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
-    return result
+    lines += (
+        "tokenizer = AutoTokenizer.from_pretrained(model_name)\n"
+        "if tokenizer.pad_token is None:\n"
+        "    tokenizer.pad_token = tokenizer.eos_token\n"
+        "\n"
+        "# Load dataset\n"
+        "data_path = config.get('data_path', config.get('dataset', ''))\n"
+        "if os.path.isdir(data_path):\n"
+        "    dataset = load_from_disk(data_path)\n"
+        "elif os.path.isfile(data_path):\n"
+        "    dataset = load_dataset('json', data_files=data_path, split='train')\n"
+        "else:\n"
+        "    dataset = load_dataset(data_path, split='train')\n"
+        "\n"
+        "# Build trainer config\n"
+        "trainer_kwargs = {\n"
+        "    'output_dir': output_dir,\n"
+        "    'report_to': 'none',\n"
+        "}\n"
+        "FIELD_MAP = " + repr(_TRL_FIELD_MAP) + "\n"
+        "SKIP_KEYS = {'algorithm', 'engine', 'data_path', 'dataset', 'model_name_or_path',\n"
+        "             'model_path', 'teacher_model_name_or_path'}\n"
+        "for key, value in config.items():\n"
+        "    if key in SKIP_KEYS or value is None:\n"
+        "        continue\n"
+        "    mapped = FIELD_MAP.get(key)\n"
+        "    if mapped:\n"
+        "        trainer_kwargs[mapped] = value\n"
+        "    elif key not in FIELD_MAP:\n"
+        "        trainer_kwargs[key] = value\n"
+        "\n"
+        "# Separate LoRA/PEFT params from trainer config\n"
+        "peft_config = None\n"
+        "lora_params = {}\n"
+        "peft_keys = {'use_peft', 'lora_r', 'lora_alpha', 'lora_dropout', 'lora_target_modules'}\n"
+        "for k in list(trainer_kwargs.keys()):\n"
+        "    if k in peft_keys:\n"
+        "        lora_params[k] = trainer_kwargs.pop(k)\n"
+        "\n"
+        "if lora_params.get('use_peft') or lora_params.get('lora_r'):\n"
+        "    from peft import LoraConfig\n"
+        "    peft_config = LoraConfig(\n"
+        "        r=lora_params.get('lora_r', 16),\n"
+        "        lora_alpha=lora_params.get('lora_alpha', 32),\n"
+        "        lora_dropout=lora_params.get('lora_dropout', 0.05),\n"
+        "        target_modules=lora_params.get('lora_target_modules', 'all-linear'),\n"
+        "        bias='none',\n"
+        "        task_type='CAUSAL_LM',\n"
+        "    )\n"
+        "\n"
+        f"training_config = {config_class}(**trainer_kwargs)\n"
+    )
+
+    if needs_teacher:
+        lines += (
+            f"trainer = {trainer_class}(\n"
+            "    model=student,\n"
+            "    teacher_model=teacher,\n"
+            "    args=training_config,\n"
+            "    train_dataset=dataset,\n"
+            "    processing_class=tokenizer,\n"
+            "    peft_config=peft_config,\n"
+            ")\n"
+        )
+    else:
+        lines += (
+            f"trainer = {trainer_class}(\n"
+            "    model=model,\n"
+            "    args=training_config,\n"
+            "    train_dataset=dataset,\n"
+            "    processing_class=tokenizer,\n"
+            "    peft_config=peft_config,\n"
+            ")\n"
+        )
+
+    lines += (
+        "trainer.train()\n"
+        "trainer.save_model(output_dir)\n"
+    )
+
+    return lines
+
+
+_TRAINING_HUB_FIELD_MAP: dict[str, str] = {
+    "model_name_or_path": "model_path",
+    "num_train_epochs": "num_epochs",
+    "per_device_train_batch_size": "micro_batch_size",
+    "max_length": "max_seq_len",
+    "output_dir": "ckpt_output_dir",
+}
+
+_TRAINING_HUB_NATIVE_KEYS = {
+    "model_path",
+    "data_path",
+    "ckpt_output_dir",
+    "num_epochs",
+    "micro_batch_size",
+    "max_seq_len",
+    "learning_rate",
+    "lora_r",
+    "lora_alpha",
+    "lora_dropout",
+    "bf16",
+    "gradient_checkpointing",
+    "gradient_accumulation_steps",
+    "sample_packing",
+    "seed_candidate",
+    "task_lm",
+}
+
+_TRAINING_HUB_SKIP_KEYS = {
+    "algorithm",
+    "engine",
+    "use_peft",
+    "qlora",
+    "bnb_4bit_quant_type",
+    "bnb_4bit_compute_dtype",
+    "lora_target_modules",
+}
+
+
+def _training_hub_script(algorithm: str) -> str:
+    return (
+        "import json, os, sys\n"
+        "\n"
+        "# Ensure venv bin dir is in PATH (needed for torchrun, verl, etc.)\n"
+        "bin_dir = os.path.dirname(sys.executable)\n"
+        "os.environ['PATH'] = bin_dir + ':' + os.environ.get('PATH', '')\n"
+        "\n"
+        "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
+        "config = json.load(open(config_path))['config']\n"
+        "if isinstance(config, str):\n"
+        "    config = json.loads(config)\n"
+        f"from training_hub import {algorithm}\n"
+        "\n"
+        "FIELD_MAP = " + repr(_TRAINING_HUB_FIELD_MAP) + "\n"
+        "SKIP_KEYS = " + repr(_TRAINING_HUB_SKIP_KEYS) + "\n"
+        "\n"
+        "kwargs = {}\n"
+        "output_dir = config.get('output_dir', '/amortized/work')\n"
+        "for key, value in config.items():\n"
+        "    if key in SKIP_KEYS or value is None:\n"
+        "        continue\n"
+        "    if key == 'load_in_4bit' and value:\n"
+        "        kwargs['load_in_4bit'] = True\n"
+        "        continue\n"
+        "    mapped = FIELD_MAP.get(key)\n"
+        "    if mapped:\n"
+        "        kwargs[mapped] = value\n"
+        "    elif key not in FIELD_MAP:\n"
+        "        kwargs[key] = value\n"
+        "\n"
+        "# Algorithm-specific defaults\n"
+        f"if '{algorithm}' == 'sft':\n"
+        "    kwargs.setdefault('effective_batch_size', kwargs.get('micro_batch_size', 2) * 4)\n"
+        "    kwargs.setdefault('data_output_dir', os.path.join(output_dir, 'processed_data'))\n"
+        "    kwargs.setdefault('max_batch_len', 60000)\n"
+        "    # sft doesn't use micro_batch_size - it uses effective_batch_size\n"
+        "    kwargs.pop('micro_batch_size', None)\n"
+        "    kwargs.setdefault('max_seq_len', 2048)\n"
+        "\n"
+        f"elif '{algorithm}' == 'osft':\n"
+        "    kwargs.setdefault('unfreeze_rank_ratio', 0.1)\n"
+        "    kwargs.setdefault('effective_batch_size', kwargs.get('micro_batch_size', 2) * 4)\n"
+        "    kwargs.setdefault('max_tokens_per_gpu', 4096)\n"
+        "    kwargs.setdefault('max_seq_len', kwargs.pop('max_seq_len', 2048))\n"
+        "    kwargs.setdefault('learning_rate', 2e-5)\n"
+        "    kwargs.pop('micro_batch_size', None)\n"
+        "\n"
+        f"elif '{algorithm}' == 'gepa':\n"
+        "    # gepa has completely different params\n"
+        "    kwargs = {\n"
+        "        'seed_candidate': config.get('seed_candidate', ''),\n"
+        "        'task_lm': config.get('task_lm', config.get('model_name_or_path', '')),\n"
+        "        'data_path': kwargs.get('data_path'),\n"
+        "        'output_dir': output_dir,\n"
+        "    }\n"
+        "    # seed_candidate must be dict[str, str]; wrap bare strings\n"
+        "    if isinstance(kwargs.get('seed_candidate'), str):\n"
+        "        kwargs['seed_candidate'] = {'system': kwargs['seed_candidate']}\n"
+        "    # Pass through any gepa-specific params\n"
+        "    for k in ('evaluator', 'reflection_lm', 'api_base', 'max_metric_calls', 'seed'):\n"
+        "        if config.get(k) is not None:\n"
+        "            kwargs[k] = config[k]\n"
+        "\n"
+        f"{algorithm}(**kwargs)\n"
+    )
 
 
 _SERVE_FIELD_MAP: dict[str, str] = {
@@ -186,6 +388,8 @@ def _sdg_script() -> str:
 import json, os
 
 config = json.load(open("/amortized/config.json"))["config"]
+if isinstance(config, str):
+    config = json.loads(config)
 
 from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
 from asynth.configs.params.synthesis_params import GeneralSynthesisParams
@@ -264,6 +468,8 @@ def _eval_script() -> str:
 import json, os, re
 
 config = json.load(open("/amortized/config.json"))["config"]
+if isinstance(config, str):
+    config = json.loads(config)
 
 dataset_path = config["dataset"]
 data = [json.loads(line) for line in open(dataset_path) if line.strip()]
@@ -703,10 +909,16 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
-        subcommand = _get_trl_subcommand(algorithm)
-        trl_yaml = _training_config_yaml(config)
-        spec_env["_run_config"] = trl_yaml
-        cmd = ["trl", subcommand, "--config", "/amortized/work/config.yaml"]
+        if algorithm in TRAINING_HUB_ALGOS:
+            script = _training_hub_script(algorithm)
+            spec_env["_run_script"] = script
+            cmd = ["python3.11", "/amortized/work/run.py"]
+        elif algorithm in SCRIPT_ALGOS:
+            script = _trl_trainer_script(algorithm, config)
+            spec_env["_run_script"] = script
+            cmd = ["python3.11", "/amortized/work/run.py"]
+        else:
+            raise ValueError(f"Unknown training algorithm: {algorithm}")
     elif image and job["type"] == JobType.serve.value:
         spec_env["_run_config"] = _serve_config_yaml(config)
         if config.get("gpu_ids"):

@@ -1,7 +1,7 @@
 type: training
-description: LoRA SFT — parameter-efficient fine-tuning via TRL
+description: LoRA SFT — parameter-efficient fine-tuning via training-hub
 config:
-  algorithm: sft
+  algorithm: lora_sft
 
   # Data
   max_length: 2048
@@ -20,18 +20,9 @@ config:
   bf16: true
 
   # LoRA
-  use_peft: true
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.05
-  lora_target_modules:
-    - q_proj
-    - k_proj
-    - v_proj
-    - o_proj
-    - gate_proj
-    - up_proj
-    - down_proj
 
   # Logging
   logging_steps: 10

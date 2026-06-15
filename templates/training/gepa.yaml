@@ -1,17 +1,15 @@
 type: training
-description: Full SFT — all weights updated via TRL SFTTrainer
+description: >-
+  GEPA — guided evolution of prompt adaptations via training-hub.
+  Data must contain 'input' and 'answer' columns (JSONL with those keys).
 config:
-  algorithm: sft
-
-  # Data
-  max_length: 4096
+  algorithm: gepa
 
   # Training
-  num_train_epochs: 3
+  max_steps: 500
   per_device_train_batch_size: 2
-  effective_batch_size: 8
   gradient_accumulation_steps: 4
-  learning_rate: 2.0e-05
+  learning_rate: 1.0e-04
   lr_scheduler_type: cosine
   warmup_ratio: 0.1
   weight_decay: 0.01
@@ -25,9 +23,9 @@ config:
 
   # Logging
   logging_steps: 10
-  save_steps: 500
+  save_steps: 100
   report_to: none
 
 compute:
   gpus: 1
-  min_vram_gb: 40
+  min_vram_gb: 24
