@@ -7,8 +7,8 @@
   "properties": {
     "algorithm": {
       "type": "string",
-      "enum": ["sft", "dpo", "grpo", "kto", "rloo", "reward"],
-      "description": "TRL training algorithm / CLI subcommand"
+      "enum": ["lora_sft", "sft", "osft", "dpo", "grpo", "lora_grpo", "kto", "gepa", "gkd"],
+      "description": "Training algorithm"
     },
     "model_name_or_path": {
       "type": "string",
@@ -93,6 +93,27 @@
     "report_to": {
       "type": "string",
       "description": "Logging backend (none, wandb, tensorboard)"
+    },
+    "load_in_4bit": {
+      "type": "boolean",
+      "description": "Use QLoRA 4-bit quantization"
+    },
+    "sample_packing": {
+      "type": "boolean",
+      "description": "Enable sample packing for efficient training"
+    },
+    "micro_batch_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Micro batch size per GPU (training-hub native)"
+    },
+    "seed_candidate": {
+      "type": "string",
+      "description": "Seed candidate for GEPA algorithm"
+    },
+    "task_lm": {
+      "type": "string",
+      "description": "Task language model for GEPA algorithm"
     }
   },
   "additionalProperties": true

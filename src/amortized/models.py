@@ -63,7 +63,7 @@ class TrainingJobConfig(BaseModel):
     model_config = {"extra": "allow"}
 
     algorithm: str = Field(
-        ..., description="TRL training algorithm (sft, dpo, grpo, kto, rloo, reward)"
+        ..., description="Training algorithm (lora_sft, sft, osft, dpo, grpo, lora_grpo, kto, gepa)"
     )
     model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
     data_path: str = Field(..., description="Path to training data (resolved by worker)")
