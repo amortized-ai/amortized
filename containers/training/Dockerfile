@@ -1,6 +1,5 @@
 # Training container — universal (all algorithms, CUDA-enabled)
-# Supports: lora_sft, sft, osft, dpo, kto, gkd, gepa
-# vLLM not included to avoid dependency conflicts with unsloth — add separately for lora_grpo
+# Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa
 FROM docker.io/nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -22,12 +21,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 
 # Install all algorithm extras following Training Hub's recommended order.
-# [grpo] caps transformers<5.0, but [cuda] step can upgrade it via
-# instructlab-training — enforce with PIP_CONSTRAINT.
-RUN echo 'transformers<5.0' > /tmp/constraints.txt && echo 'verl<0.8' >> /tmp/constraints.txt
+# verl 0.8 has a broken experimental module import — pin below it.
+RUN echo 'verl<0.8' > /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
+RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.24"
+
+# Disable Ray's uv_runtime_env_hook — it crashes on pyproject.toml detection
+# and is not needed for verl workloads.
+RUN python3.11 -c "\
+import glob; \
+for p in glob.glob('/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'): \
+    code = open(p).read(); \
+    code = code.replace('def hook(runtime_env: dict) -> dict:', 'def hook(runtime_env: dict) -> dict:\n    return runtime_env  # disabled: conflicts with verl\n    _x = True'); \
+    open(p, 'w').write(code); \
+    print(f'Patched {p}')"
 
 FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
