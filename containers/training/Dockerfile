@@ -24,7 +24,7 @@ WORKDIR /build
 # Install all algorithm extras following Training Hub's recommended order.
 # [grpo] caps transformers<5.0, but [cuda] step can upgrade it via
 # instructlab-training — enforce with PIP_CONSTRAINT.
-RUN echo 'transformers<5.0' > /tmp/constraints.txt
+RUN echo 'transformers<5.0' > /tmp/constraints.txt && echo 'verl<0.8' >> /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
