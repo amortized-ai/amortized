@@ -30,6 +30,10 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[gr
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.20"
 
+# Ensure numpy is consistent after all installs (vLLM may upgrade, unsloth needs <2)
+RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2" \
+    && python3.11 -c "import numpy; print(f'numpy: {numpy.__version__}')"
+
 FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
