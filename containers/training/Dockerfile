@@ -1,6 +1,6 @@
 # Training container — universal (all algorithms, CUDA-enabled)
 # Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa
-FROM docker.io/nvidia/cuda:12.8.0-devel-ubuntu22.04 AS builder
+FROM docker.io/nvidia/cuda:13.0.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -32,7 +32,7 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.2
 # and is not needed for verl workloads.
 RUN python3.11 -c "path='/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'; code=open(path).read(); code=code.replace('def hook(runtime_env: dict) -> dict:', 'def hook(runtime_env: dict) -> dict:\n    return runtime_env\n    _x = True'); open(path,'w').write(code); print('Patched Ray uv hook')"
 
-FROM docker.io/nvidia/cuda:12.8.0-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:13.0.0-runtime-ubuntu22.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
 ENV DEBIAN_FRONTEND=noninteractive
