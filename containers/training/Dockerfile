@@ -22,15 +22,11 @@ WORKDIR /build
 
 # Install all algorithm extras following Training Hub's recommended order.
 # verl 0.8 has a broken experimental module import — pin below it.
-RUN echo 'verl<0.8' > /tmp/constraints.txt
+RUN echo 'verl<0.8' > /tmp/constraints.txt && echo 'huggingface-hub<1.0' >> /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.24"
-
-# Fix: transformers 4.57.6 runtime-checks for huggingface-hub>=1.5 despite
-# metadata saying <1.0. Force install the newer version.
-RUN python3.11 -m pip install --no-cache-dir --force-reinstall --no-deps "huggingface-hub>=1.5.0,<2.0"
 
 # Disable Ray's uv_runtime_env_hook — it crashes on pyproject.toml detection
 # and is not needed for verl workloads.
@@ -53,7 +49,3 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Fix: remove stale huggingface-hub 0.36.2 metadata left by runtime base image
-# (builder installs 1.19.0 but COPY overlays onto existing 0.36.2 dist-info)
-RUN rm -rf /usr/local/lib/python3.11/dist-packages/huggingface_hub-0.36.2.dist-info 2>/dev/null; \
-    python3.11 -c "import huggingface_hub; print(f'huggingface-hub: {huggingface_hub.__version__}')"
