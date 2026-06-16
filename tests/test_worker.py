@@ -623,3 +623,141 @@ class TestSmartBackendRouting:
             assert data["status"] in ("succeeded", "failed")
         finally:
             config_mod.settings.default_backend = original
+
+
+class TestBareMetalDispatch:
+    """Verify bare-metal backends skip the container path (issue #154)."""
+
+    @pytest.mark.asyncio
+    async def test_local_sdg_uses_runner_module(self, client: httpx.AsyncClient) -> None:
+        """Local backend SDG jobs must use the runner module, not the container script."""
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"model": "openai/gpt-4o"},
+        )
+        assert response.status_code == 201
+
+        from unittest.mock import patch
+
+        from amortized.backends import JobSpec
+        from amortized.core.compute import get_backend
+        from amortized.worker import _pick_pending_job, _run_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+
+        submitted_specs: list[JobSpec] = []
+        backend = get_backend("local")
+        original_submit = backend.submit
+
+        async def capture_submit(spec: JobSpec) -> object:
+            submitted_specs.append(spec)
+            return await original_submit(spec)
+
+        with patch.object(backend, "submit", side_effect=capture_submit):
+            await _run_job(job)
+
+        assert len(submitted_specs) == 1
+        spec = submitted_specs[0]
+        assert spec.image is None, (
+            f"Local backend should not use container image, got {spec.image}"
+        )
+        assert "amortized.runners.sdg_runner" in " ".join(spec.command), (
+            f"Expected runner module in command, got {spec.command}"
+        )
+        assert "/amortized/work/run.py" not in " ".join(spec.command)
+
+    @pytest.mark.asyncio
+    async def test_local_eval_uses_runner_module(self, client: httpx.AsyncClient) -> None:
+        """Local backend eval jobs must use the runner module, not the container script."""
+        import uuid
+
+        import aiosqlite
+
+        from amortized.config import settings
+
+        job_id = str(uuid.uuid4())
+        async with aiosqlite.connect(str(settings.db_path)) as db:
+            await db.execute(
+                "INSERT INTO jobs (id, type, status, config, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))",
+                (
+                    job_id,
+                    "eval",
+                    "queued",
+                    json.dumps({"dataset": "/tmp/test.jsonl", "model": "openai/gpt-4o"}),
+                ),
+            )
+            await db.commit()
+
+        from unittest.mock import patch
+
+        from amortized.backends import JobSpec
+        from amortized.core.compute import get_backend
+        from amortized.worker import _pick_pending_job, _run_job
+
+        job = await _pick_pending_job()
+        assert job is not None
+
+        submitted_specs: list[JobSpec] = []
+        backend = get_backend("local")
+        original_submit = backend.submit
+
+        async def capture_submit(spec: JobSpec) -> object:
+            submitted_specs.append(spec)
+            return await original_submit(spec)
+
+        with patch.object(backend, "submit", side_effect=capture_submit):
+            await _run_job(job)
+
+        assert len(submitted_specs) == 1
+        spec = submitted_specs[0]
+        assert spec.image is None
+        assert "amortized.runners.eval_runner" in " ".join(spec.command)
+
+    @pytest.mark.asyncio
+    async def test_bare_metal_ssh_skips_container(self, client: httpx.AsyncClient) -> None:
+        """SSH backend with bare_metal=True should not use container images."""
+        import amortized.config as config_mod
+        from amortized.backends.local import LocalBackend
+        from amortized.core.compute import register_backend
+
+        bare_backend = LocalBackend()
+        bare_backend.name = "bare-ssh"
+        bare_backend.bare_metal = True  # type: ignore[attr-defined]
+        register_backend(bare_backend)
+
+        original = config_mod.settings.default_backend
+        config_mod.settings.default_backend = "bare-ssh"
+
+        try:
+            response = await client.post(
+                "/api/v1/jobs/sdg",
+                json={"model": "openai/gpt-4o"},
+            )
+            assert response.status_code == 201
+
+            from unittest.mock import patch
+
+            from amortized.backends import JobSpec
+            from amortized.worker import _pick_pending_job, _run_job
+
+            job = await _pick_pending_job()
+            assert job is not None
+
+            submitted_specs: list[JobSpec] = []
+            original_submit = bare_backend.submit
+
+            async def capture_submit(spec: JobSpec) -> object:
+                submitted_specs.append(spec)
+                return await original_submit(spec)
+
+            with patch.object(bare_backend, "submit", side_effect=capture_submit):
+                await _run_job(job)
+
+            assert len(submitted_specs) == 1
+            spec = submitted_specs[0]
+            assert spec.image is None
+            assert "amortized.runners.sdg_runner" in " ".join(spec.command)
+        finally:
+            config_mod.settings.default_backend = original

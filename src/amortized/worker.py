@@ -902,6 +902,13 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
 
+    # Skip container path for bare-metal backends: the local backend always
+    # runs subprocesses directly, and SSH backends may be configured with
+    # bare_metal=True.  When image is None the runner-module command built
+    # above by _build_runner_command() is preserved as-is.
+    if backend_name == "local" or getattr(backend, "bare_metal", False):
+        image = None
+
     if job["type"] == JobType.eval.value:
         config = _resolve_judge_template(config)
 

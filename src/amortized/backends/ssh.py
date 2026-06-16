@@ -27,6 +27,7 @@ class SSHBackend:
         remote_base_dir: str = "~/amortized-jobs",
         name: str = "ssh",
         container_runtime: str = "podman",
+        bare_metal: bool = False,
     ) -> None:
         self.name = name
         self._host = host
@@ -34,6 +35,7 @@ class SSHBackend:
         self._key_path = key_path
         self._remote_base_dir = remote_base_dir
         self._container_runtime = container_runtime
+        self.bare_metal = bare_metal
 
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
