@@ -20,7 +20,6 @@ dependencies = [
     "jsonschema>=4.20.0",
     "pyyaml>=6.0",
     "typer>=0.9",
-    "fastapi-mcp>=0.1",
     "fastmcp>=2.0",
     "litellm>=1.83.7",
     "asynth>=0.1.2",
@@ -59,7 +58,7 @@ python_version = "3.11"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["torch", "torch.*", "training_hub", "training_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*", "asyncssh", "asyncssh.*", "typer", "typer.*", "fastapi_mcp", "fastapi_mcp.*", "fastmcp", "fastmcp.*", "mcp", "mcp.*", "litellm", "litellm.*", "asynth", "asynth.*", "google", "google.*", "google.cloud", "google.cloud.*", "boto3", "boto3.*", "botocore", "botocore.*"]
+module = ["torch", "torch.*", "training_hub", "training_hub.*", "datasets", "datasets.*", "aiosqlite", "aiosqlite.*", "sse_starlette", "sse_starlette.*", "openai", "openai.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*", "asyncssh", "asyncssh.*", "typer", "typer.*", "fastmcp", "fastmcp.*", "mcp", "mcp.*", "litellm", "litellm.*", "asynth", "asynth.*", "google", "google.*", "google.cloud", "google.cloud.*", "boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

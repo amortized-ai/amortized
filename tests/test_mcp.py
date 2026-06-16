@@ -1,5 +1,6 @@
-"""Tests for the fastmcp MCP server and job management tools."""
+"""Tests for the fastmcp MCP server — all 31 tools and 3 resources."""
 
+import json
 import os
 
 import httpx
@@ -34,6 +35,89 @@ async def db_ready() -> None:  # type: ignore[misc]
     yield  # type: ignore[misc]
 
 
+@pytest.fixture
+async def db_with_evaluators() -> None:  # type: ignore[misc]
+    from amortized.api import evaluators
+    from amortized.db import get_db, init_db
+
+    await init_db()
+    async for db in get_db():
+        await evaluators.seed_default_evaluators(db)
+    yield  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Snapshot test — exact set of 31 tool names
+# ---------------------------------------------------------------------------
+
+EXPECTED_TOOL_NAMES = sorted(
+    [
+        # Job management (8)
+        "submit_job",
+        "list_jobs",
+        "get_job",
+        "cancel_job",
+        "resume_job",
+        "get_job_logs",
+        "get_job_metrics",
+        "get_job_results",
+        # Artifacts (4)
+        "list_artifacts",
+        "get_artifact",
+        "preview_artifact",
+        "upload_artifact",
+        # Recipes & discovery (6)
+        "list_recipes",
+        "get_recipe",
+        "submit_recipe_job",
+        "list_sdg_capabilities",
+        "validate_config",
+        "get_job_type_schema",
+        # Judge & evaluators (4)
+        "judge_data",
+        "list_judge_templates",
+        "list_evaluators",
+        "run_evaluation",
+        # Admin & infrastructure (9)
+        "list_compute_backends",
+        "register_backend",
+        "test_backend",
+        "remove_backend",
+        "add_api_key",
+        "list_api_keys",
+        "delete_api_key",
+        "estimate_vram",
+        "health_check",
+    ]
+)
+
+
+@pytest.mark.asyncio
+async def test_tool_names_snapshot() -> None:
+    """All 31 tools are registered with the expected names."""
+    from amortized.mcp.server import mcp
+
+    tools = await mcp.list_tools()
+    registered = sorted(t.name for t in tools)
+    assert registered == EXPECTED_TOOL_NAMES
+    assert len(registered) == 31
+
+
+@pytest.mark.asyncio
+async def test_resource_uris_snapshot() -> None:
+    """All 3 MCP resources are registered (2 static + 1 template)."""
+    from amortized.mcp.server import mcp
+
+    resources = await mcp.list_resources()
+    uris = sorted(str(r.uri) for r in resources)
+    assert "amortized://capabilities" in uris
+    assert "amortized://recipes" in uris
+
+    templates = await mcp.list_resource_templates()
+    template_uris = [t.uri_template for t in templates]
+    assert any("recipes" in u for u in template_uris)
+
+
 # ---------------------------------------------------------------------------
 # Scaffold tests
 # ---------------------------------------------------------------------------
@@ -41,7 +125,6 @@ async def db_ready() -> None:  # type: ignore[misc]
 
 @pytest.mark.asyncio
 async def test_mcp_endpoint_mounted() -> None:
-    """The /mcp endpoint is mounted and reachable."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -78,7 +161,7 @@ async def test_call_404(db_ready: None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tool: list_jobs
+# Tool: list_jobs / submit_job / get_job
 # ---------------------------------------------------------------------------
 
 
@@ -92,11 +175,6 @@ async def test_list_jobs_empty(db_ready: None) -> None:
 async def test_list_jobs_with_filter(db_ready: None) -> None:
     result = await mcp_server.list_jobs(status="running")
     assert result == []
-
-
-# ---------------------------------------------------------------------------
-# Tool: submit_job + get_job + list_jobs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -293,3 +371,354 @@ def test_summarise_metrics_decreasing_loss() -> None:
     assert result["total_steps"] == 3
     assert "decreasing" in result["trend"]
     assert result["latest"]["step"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_artifacts / get_artifact
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_artifacts_empty(db_ready: None) -> None:
+    result = await mcp_server.list_artifacts()
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_list_artifacts_with_type_filter(db_ready: None) -> None:
+    result = await mcp_server.list_artifacts(type="model")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_artifact_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError, match="not found"):
+        await mcp_server.get_artifact("nonexistent-id")
+
+
+# ---------------------------------------------------------------------------
+# Tool: upload_artifact
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upload_artifact(db_ready: None, tmp_path: object) -> None:
+    file_path = str(tmp_path) + "/test_data.jsonl"
+    with open(file_path, "w") as f:
+        f.write('{"question": "What is AI?"}\n')
+
+    result = await mcp_server.upload_artifact(
+        file_path=file_path,
+        artifact_type="dataset",
+        name="test_data.jsonl",
+    )
+    assert result["id"]
+    assert result["name"] == "test_data.jsonl"
+
+    artifacts = await mcp_server.list_artifacts()
+    assert len(artifacts) == 1
+    assert artifacts[0]["id"] == result["id"]
+
+
+@pytest.mark.asyncio
+async def test_upload_artifact_file_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError, match="File not found"):
+        await mcp_server.upload_artifact(file_path="/nonexistent/file.jsonl")
+
+
+# ---------------------------------------------------------------------------
+# Tool: preview_artifact (error path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_preview_artifact_job_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError, match="not found"):
+        await mcp_server.preview_artifact(job_id="nonexistent", artifact_id="nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_recipes / get_recipe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_recipes(db_ready: None) -> None:
+    result = await mcp_server.list_recipes()
+    assert isinstance(result, list)
+
+
+@pytest.mark.asyncio
+async def test_get_recipe_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.get_recipe("nonexistent/recipe")
+
+
+# ---------------------------------------------------------------------------
+# Tool: submit_recipe_job (error path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_submit_recipe_job_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.submit_recipe_job(recipe="nonexistent/recipe")
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_sdg_capabilities
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_sdg_capabilities(db_ready: None) -> None:
+    result = await mcp_server.list_sdg_capabilities()
+    assert "available" in result
+    assert "strategies" in result
+    assert "attribute_types" in result
+
+
+# ---------------------------------------------------------------------------
+# Tool: validate_config
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_validate_config_valid_sdg(db_ready: None) -> None:
+    result = await mcp_server.validate_config(
+        type="sdg",
+        config={"model": "openai/gpt-4o-mini", "num_samples": 10},
+    )
+    assert "valid" in result or "type" in result
+
+
+@pytest.mark.asyncio
+async def test_validate_config_invalid_type(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.validate_config(type="invalid", config={})
+
+
+# ---------------------------------------------------------------------------
+# Tool: get_job_type_schema
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_job_type_schema_training(db_ready: None) -> None:
+    result = await mcp_server.get_job_type_schema("training")
+    assert isinstance(result, dict)
+
+
+@pytest.mark.asyncio
+async def test_get_job_type_schema_sdg(db_ready: None) -> None:
+    result = await mcp_server.get_job_type_schema("sdg")
+    assert isinstance(result, dict)
+
+
+@pytest.mark.asyncio
+async def test_get_job_type_schema_invalid(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.get_job_type_schema("invalid")
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_judge_templates
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_judge_templates(db_ready: None) -> None:
+    result = await mcp_server.list_judge_templates()
+    assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Tool: judge_data (error path — needs LLM)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_judge_data_invalid_template(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.judge_data(
+            template="nonexistent/template",
+            data=[{"text": "hello"}],
+            model="openai/gpt-4o-mini",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_evaluators
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_evaluators(db_with_evaluators: None) -> None:
+    result = await mcp_server.list_evaluators()
+    assert isinstance(result, list)
+    assert len(result) >= 5
+
+
+@pytest.mark.asyncio
+async def test_list_evaluators_empty(db_ready: None) -> None:
+    result = await mcp_server.list_evaluators()
+    assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Tool: run_evaluation (error path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_evaluation_invalid_evaluator(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.run_evaluation(
+            evaluator_id="nonexistent-id",
+            dataset=[{"text": "hello"}],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tool: list_compute_backends
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_compute_backends(db_ready: None) -> None:
+    result = await mcp_server.list_compute_backends()
+    assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Tool: register_backend / remove_backend (error paths)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remove_backend_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.remove_backend("nonexistent-backend")
+
+
+# ---------------------------------------------------------------------------
+# Tool: test_backend (error path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_test_backend_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.test_backend("nonexistent-backend")
+
+
+# ---------------------------------------------------------------------------
+# Tool: add_api_key / list_api_keys / delete_api_key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_api_keys_empty(db_ready: None) -> None:
+    result = await mcp_server.list_api_keys()
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_add_and_list_api_key(db_ready: None) -> None:
+    added = await mcp_server.add_api_key(
+        name="openai-test",
+        provider="openai",
+        key="sk-test-key-12345678",
+    )
+    assert added["id"]
+    assert added["provider"] == "openai"
+    assert "5678" in added["key_preview"]
+
+    keys = await mcp_server.list_api_keys()
+    assert len(keys) == 1
+    assert keys[0]["provider"] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_add_and_delete_api_key(db_ready: None) -> None:
+    added = await mcp_server.add_api_key(
+        name="temp-key",
+        provider="anthropic",
+        key="sk-ant-test-key-abcd",
+    )
+    result = await mcp_server.delete_api_key(added["id"])
+    assert result == {}
+
+    keys = await mcp_server.list_api_keys()
+    assert len(keys) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_api_key_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError, match="not found"):
+        await mcp_server.delete_api_key("nonexistent-id")
+
+
+# ---------------------------------------------------------------------------
+# Tool: estimate_vram
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_estimate_vram(db_ready: None) -> None:
+    result = await mcp_server.estimate_vram(
+        model_name_or_path="Qwen/Qwen2.5-1.5B-Instruct",
+    )
+    assert "estimated_vram_gb" in result
+    assert result["estimated_vram_gb"] > 0
+
+
+@pytest.mark.asyncio
+async def test_estimate_vram_4bit(db_ready: None) -> None:
+    result = await mcp_server.estimate_vram(
+        model_name_or_path="Qwen/Qwen2.5-1.5B-Instruct",
+        load_in_4bit=True,
+    )
+    assert result["estimated_vram_gb"] > 0
+    assert result["load_in_4bit"] is True
+
+
+# ---------------------------------------------------------------------------
+# Tool: health_check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_health_check(db_ready: None) -> None:
+    result = await mcp_server.health_check()
+    assert result["status"] == "ok"
+    assert "timestamp" in result
+    assert "gpu" in result
+
+
+# ---------------------------------------------------------------------------
+# MCP Resources
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_capabilities_resource(db_ready: None) -> None:
+    result = await mcp_server.capabilities_resource()
+    data = json.loads(result)
+    assert "job_types" in data
+    assert "algorithms" in data
+    assert "training" in data["job_types"]
+    assert "sft" in data["algorithms"]
+
+
+@pytest.mark.asyncio
+async def test_recipes_resource(db_ready: None) -> None:
+    result = await mcp_server.recipes_resource()
+    data = json.loads(result)
+    assert isinstance(data, list)
+
+
+@pytest.mark.asyncio
+async def test_recipe_detail_resource_not_found(db_ready: None) -> None:
+    with pytest.raises(ValueError):
+        await mcp_server.recipe_detail_resource("nonexistent/recipe")

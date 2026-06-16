@@ -3,10 +3,10 @@
 Each tool maps to a runtime API endpoint. The agent calls these tools
 internally via httpx — the user never runs commands themselves.
 
-NOTE: MCP tools for external AI agents are now auto-generated from the
-FastAPI OpenAPI spec via fastapi-mcp (see amortized/mcp/server.py).
-These hand-written definitions remain for the internal chat agent's
-function-calling interface.
+DEPRECATED: These hand-written tool definitions are used only by the
+internal chat agent's function-calling interface. For external AI agents,
+use the MCP server (amortized/mcp/server.py) which provides 31 curated
+tools with proper descriptions and annotations.
 """
 
 from __future__ import annotations
