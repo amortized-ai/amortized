@@ -1,1 +1,1 @@
-"""MCP server auto-generated from the FastAPI OpenAPI spec."""
+"""MCP server for the Amortized runtime."""
