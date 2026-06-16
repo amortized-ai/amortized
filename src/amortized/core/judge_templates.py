@@ -26,6 +26,37 @@ def load_judge_template(name: str) -> dict[str, Any]:
         return result
 
 
+def translate_template_to_judge_config(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Translate raw template YAML into a JudgeConfig-compatible dict.
+
+    Returns (judge_config_dict, inference_defaults) where judge_config_dict
+    is suitable for JudgeConfig.from_dict() and inference_defaults contains
+    model/temperature from the template (to be overridden by request params).
+    """
+    if "rule_judge_params" in data:
+        return data, {}
+
+    cfg = data.get("config", data)
+    judge_section = cfg.get("judge", {})
+
+    judge_params: dict[str, Any] = {}
+    if judge_section.get("prompt"):
+        judge_params["prompt_template"] = judge_section["prompt"]
+    for key in ("system_instruction", "judgment_type", "response_format", "include_explanation"):
+        if cfg.get(key) is not None:
+            judge_params[key] = cfg[key]
+
+    inference_defaults: dict[str, Any] = {}
+    if judge_section.get("model"):
+        inference_defaults["model"] = judge_section["model"]
+    if cfg.get("temperature") is not None:
+        inference_defaults["temperature"] = cfg["temperature"]
+
+    return {"judge_params": judge_params}, inference_defaults
+
+
 def list_judge_templates() -> list[str]:
     """List available judge template names."""
     if not _TEMPLATES_DIR.is_dir():

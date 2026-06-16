@@ -10,6 +10,7 @@ from amortized.core.judge_templates import (
 )
 from amortized.core.judge_templates import (
     load_judge_template,
+    translate_template_to_judge_config,
 )
 from amortized.models import JudgeRequest, JudgeResult
 
@@ -35,7 +36,10 @@ async def judge_data(request: JudgeRequest) -> JudgeResult:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     try:
-        config = JudgeConfig(**template_data)
+        judge_config_dict, _inference_defaults = translate_template_to_judge_config(
+            template_data
+        )
+        config = JudgeConfig.from_dict(judge_config_dict)
         inference_config = LiteLLMInferenceConfig(
             model=request.model,
             api_base=request.api_base,
