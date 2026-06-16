@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import hmac
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -37,9 +38,15 @@ from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import register_backend
 from amortized.db import get_db, init_db
-from amortized.mcp.server import create_mcp_server
 from amortized.models import HealthResponse
 from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
+
+_USE_LEGACY_MCP = os.environ.get("AMORTIZED_LEGACY_MCP", "") == "1"
+
+if _USE_LEGACY_MCP:
+    from amortized.mcp.server_legacy import create_mcp_server
+else:
+    from amortized.mcp.server import init_mcp_client, mcp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -231,7 +238,12 @@ app.include_router(agent_routes.router)
 app.include_router(evaluators.router)
 app.include_router(settings.router)
 
-create_mcp_server(app)
+if _USE_LEGACY_MCP:
+    create_mcp_server(app)
+else:
+    init_mcp_client(app)
+    mcp_app = mcp.http_app(path="/", transport="streamable-http")
+    app.mount("/mcp", mcp_app)
 
 
 def _detect_gpu() -> dict[str, object]:
