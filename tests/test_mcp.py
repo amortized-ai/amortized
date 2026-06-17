@@ -58,11 +58,7 @@ async def db_ready() -> None:  # type: ignore[misc]
 @pytest.fixture
 async def mcp_lifespan() -> AsyncIterator[None]:
     """Start the MCP session manager lifespan for protocol-level tests."""
-    if mcp_server._mcp_http_app is None:
-        yield
-        return
-
-    ctx = mcp_server._mcp_http_app.router.lifespan_context(mcp_server._mcp_http_app)
+    ctx = mcp_server.mcp_http_app.router.lifespan_context(mcp_server.mcp_http_app)
     await ctx.__aenter__()
     yield
     with contextlib.suppress(RuntimeError):

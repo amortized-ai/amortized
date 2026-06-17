@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastmcp.utilities.lifespan import combine_lifespans
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from amortized.api import (
@@ -37,7 +38,7 @@ from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import register_backend
 from amortized.db import get_db, init_db
-from amortized.mcp.server import create_mcp_server_auto
+from amortized.mcp.server import create_mcp_server_auto, mcp_http_app
 from amortized.models import HealthResponse
 from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
 
@@ -118,15 +119,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_task = asyncio.create_task(worker_loop())
     heartbeat_task = asyncio.create_task(_monitor_heartbeats())
 
-    from amortized.mcp import server as mcp_mod
-
-    mcp_lifespan = (
-        mcp_mod._mcp_http_app.router.lifespan_context(_app)
-        if mcp_mod._mcp_http_app is not None
-        else contextlib.nullcontext()
-    )
-    async with mcp_lifespan:
-        yield
+    yield
 
     # Shutdown worker and heartbeat monitor
     worker_task.cancel()
@@ -142,7 +135,7 @@ app = FastAPI(
     title="Amortized Runtime",
     description="AI model customization runtime API",
     version="0.1.0",
-    lifespan=lifespan,
+    lifespan=combine_lifespans(lifespan, mcp_http_app.lifespan),
 )
 
 _cors_origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]

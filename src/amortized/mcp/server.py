@@ -31,7 +31,8 @@ mcp = FastMCP(
 
 _fastapi_app: FastAPI | None = None
 _transport: ASGITransport | None = None
-_mcp_http_app: Any = None
+
+mcp_http_app = mcp.http_app(path="/")
 
 
 def _get_auth_headers() -> dict[str, str]:
@@ -292,20 +293,19 @@ async def get_job_results(job_id: str) -> dict[str, Any]:
 
 
 def create_mcp_server(app: FastAPI) -> FastMCP:
-    """Initialise the fastmcp server and mount it on the FastAPI app at ``/mcp``.
+    """Mount the MCP HTTP app on the FastAPI app at ``/mcp``.
 
-    The caller must invoke the MCP HTTP app's lifespan from the parent app's
-    lifespan context — Starlette does not propagate lifespan events to mounted
-    sub-applications.  Access the sub-app via ``_mcp_http_app``.
+    The caller must wire ``mcp_http_app.lifespan`` into the parent app's
+    lifespan via ``combine_lifespans`` — Starlette does not propagate
+    lifespan events to mounted sub-applications.
     """
-    global _fastapi_app, _transport, _mcp_http_app
+    global _fastapi_app, _transport
     if _fastapi_app is not None:
         logger.warning("create_mcp_server called more than once; skipping duplicate mount")
         return mcp
     _fastapi_app = app
     _transport = ASGITransport(app=app)
-    _mcp_http_app = mcp.http_app(path="/")
-    app.mount("/mcp", _mcp_http_app)
+    app.mount("/mcp", mcp_http_app)
     return mcp
 
 
