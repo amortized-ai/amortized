@@ -9,11 +9,19 @@ import pytest
 from amortized.agent import (
     SYSTEM_PROMPT,
     AgentResult,
-    StreamEvent,
     _history_to_messages,
     process_message,
     stream_message,
 )
+from amortized.agent.protocol import EventType, StreamEvent
+from amortized.agent.schemas import (
+    TOOL_REGISTRY,
+    TOOLS,
+    PresentOptionsInput,
+    SubmitSdgJobInput,
+    ToolDef,
+)
+from amortized.agent.tools import execute_tool, tool_result_summary
 
 
 class TestSystemPrompt:
@@ -26,6 +34,9 @@ class TestSystemPrompt:
         assert "list_sdg_flows" in SYSTEM_PROMPT
         assert "submit_training_job" in SYSTEM_PROMPT
         assert "propose_action" in SYSTEM_PROMPT
+
+    def test_contains_present_options(self) -> None:
+        assert "present_options" in SYSTEM_PROMPT
 
     def test_contains_critical_rules(self) -> None:
         assert "NEVER ask the user to run commands" in SYSTEM_PROMPT
@@ -70,6 +81,133 @@ class TestHistoryToMessages:
         msgs = _history_to_messages(history)
         # system role from history is skipped, only our system prompt + user
         assert len(msgs) == 2
+
+
+class TestProtocol:
+    """Test SSE protocol types."""
+
+    def test_event_type_values(self) -> None:
+        assert EventType.metadata == "metadata"
+        assert EventType.thinking == "thinking"
+        assert EventType.tool_result == "tool_result"
+        assert EventType.delta == "delta"
+        assert EventType.action == "action"
+        assert EventType.options == "options"
+        assert EventType.done == "done"
+        assert EventType.error == "error"
+
+    def test_stream_event_model(self) -> None:
+        event = StreamEvent(type=EventType.delta, data={"text": "hello"})
+        assert event.type == EventType.delta
+        assert event.data == {"text": "hello"}
+
+    def test_stream_event_serialization(self) -> None:
+        event = StreamEvent(type=EventType.done, data={"full_text": "result"})
+        d = event.model_dump()
+        assert d["type"] == "done"
+        assert d["data"]["full_text"] == "result"
+
+
+class TestSchemas:
+    """Test Pydantic tool schemas."""
+
+    def test_tool_registry_count(self) -> None:
+        assert len(TOOL_REGISTRY) == 17
+
+    def test_tools_list_matches_registry(self) -> None:
+        assert len(TOOLS) == len(TOOL_REGISTRY)
+
+    def test_tool_def_to_openai_schema(self) -> None:
+        td = ToolDef("test_tool", "A test tool", SubmitSdgJobInput)
+        schema = td.to_openai_schema()
+        assert schema["type"] == "function"
+        assert schema["function"]["name"] == "test_tool"
+        assert schema["function"]["description"] == "A test tool"
+        assert "properties" in schema["function"]["parameters"]
+        assert "model" in schema["function"]["parameters"]["properties"]
+
+    def test_tool_def_no_input_model(self) -> None:
+        td = ToolDef("empty_tool", "No params")
+        schema = td.to_openai_schema()
+        assert schema["function"]["parameters"] == {"type": "object", "properties": {}}
+
+    def test_present_options_input(self) -> None:
+        inp = PresentOptionsInput(
+            prompt="Choose a model",
+            options=[{"label": "Qwen 1.5B"}, {"label": "Llama 7B"}],
+        )
+        assert inp.prompt == "Choose a model"
+        assert len(inp.options) == 2
+
+    def test_all_tools_have_names(self) -> None:
+        names = {t.name for t in TOOL_REGISTRY}
+        assert "list_sdg_flows" in names
+        assert "submit_sdg_job" in names
+        assert "submit_training_job" in names
+        assert "propose_action" in names
+        assert "present_options" in names
+        assert "list_api_keys" in names
+
+    def test_no_duplicate_tool_names(self) -> None:
+        names = [t.name for t in TOOL_REGISTRY]
+        assert len(names) == len(set(names))
+
+
+class TestToolExecution:
+    """Test tool execution dispatching."""
+
+    @pytest.mark.asyncio
+    async def test_propose_action_sentinel(self) -> None:
+        result = await execute_tool(
+            "propose_action",
+            {
+                "action_type": "submit_training_job",
+                "config": {"model": "test"},
+                "label": "Go",
+            },
+            repo=None,
+        )
+        assert result["__proposed_action__"] is True
+        assert result["action_type"] == "submit_training_job"
+
+    @pytest.mark.asyncio
+    async def test_present_options_sentinel(self) -> None:
+        result = await execute_tool(
+            "present_options",
+            {
+                "prompt": "Pick a model",
+                "options": [{"label": "Qwen"}, {"label": "Llama"}],
+            },
+            repo=None,
+        )
+        assert result["__present_options__"] is True
+        assert result["prompt"] == "Pick a model"
+        assert len(result["options"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool(self) -> None:
+        result = await execute_tool("nonexistent_tool", {}, repo=None)
+        assert "error" in result
+        assert "Unknown tool" in result["error"]
+
+
+class TestToolResultSummary:
+    """Test tool_result_summary function."""
+
+    def test_error_result(self) -> None:
+        assert tool_result_summary("any", {"error": "boom"}) == "Error: boom"
+
+    def test_list_jobs(self) -> None:
+        s = tool_result_summary("list_jobs", {"jobs": [{"id": "1"}, {"id": "2"}]})
+        assert s == "Found 2 job(s)"
+
+    def test_submit_job(self) -> None:
+        s = tool_result_summary("submit_training_job", {"id": "abc123"})
+        assert s == "Job created: abc123"
+
+    def test_estimate_vram(self) -> None:
+        s = tool_result_summary("estimate_vram", {"estimated_vram_gb": 3.5})
+        assert s == "Estimated VRAM: 3.5 GB"
 
 
 def _mock_choice(
@@ -121,13 +259,11 @@ class TestProcessMessage:
         client = AsyncMock()
         mock_build.return_value = client
 
-        # First call returns a tool call
         tc = _mock_tool_call("tc1", "list_sdg_flows", {})
         choice1 = _mock_choice(tool_calls=[tc], finish_reason="tool_calls")
         resp1 = MagicMock()
         resp1.choices = [choice1]
 
-        # Second call returns text
         choice2 = _mock_choice(content="Found 5 flows.")
         resp2 = MagicMock()
         resp2.choices = [choice2]
@@ -137,7 +273,7 @@ class TestProcessMessage:
 
         result = await process_message("list flows")
         assert result.text == "Found 5 flows."
-        mock_execute.assert_called_once_with("list_sdg_flows", {})
+        mock_execute.assert_called_once_with("list_sdg_flows", {}, None)
 
     @pytest.mark.asyncio
     @patch("amortized.agent.chat.execute_tool")
@@ -146,7 +282,6 @@ class TestProcessMessage:
         client = AsyncMock()
         mock_build.return_value = client
 
-        # First call: propose_action tool call
         tc = _mock_tool_call(
             "tc1",
             "propose_action",
@@ -160,7 +295,6 @@ class TestProcessMessage:
         resp1 = MagicMock()
         resp1.choices = [choice1]
 
-        # Second call: text response
         choice2 = _mock_choice(content="Ready to train. Click the button to confirm.")
         resp2 = MagicMock()
         resp2.choices = [choice2]
@@ -177,6 +311,41 @@ class TestProcessMessage:
         assert result.proposed_action is not None
         assert result.proposed_action["type"] == "submit_training_job"
         assert result.proposed_action["label"] == "Start Training"
+
+    @pytest.mark.asyncio
+    @patch("amortized.agent.chat.execute_tool")
+    @patch("amortized.agent.chat._build_client")
+    async def test_present_options(self, mock_build: MagicMock, mock_execute: AsyncMock) -> None:
+        client = AsyncMock()
+        mock_build.return_value = client
+
+        tc = _mock_tool_call(
+            "tc1",
+            "present_options",
+            {
+                "prompt": "Choose a model",
+                "options": [{"label": "Qwen 1.5B"}, {"label": "Llama 7B"}],
+            },
+        )
+        choice1 = _mock_choice(tool_calls=[tc], finish_reason="tool_calls")
+        resp1 = MagicMock()
+        resp1.choices = [choice1]
+
+        choice2 = _mock_choice(content="Let me know which model you prefer.")
+        resp2 = MagicMock()
+        resp2.choices = [choice2]
+
+        client.chat.completions.create = AsyncMock(side_effect=[resp1, resp2])
+        mock_execute.return_value = {
+            "__present_options__": True,
+            "prompt": "Choose a model",
+            "options": [{"label": "Qwen 1.5B"}, {"label": "Llama 7B"}],
+        }
+
+        result = await process_message("which model should I use?")
+        assert result.presented_options is not None
+        assert result.presented_options["prompt"] == "Choose a model"
+        assert len(result.presented_options["options"]) == 2
 
     @pytest.mark.asyncio
     @patch("amortized.agent.chat._build_client")
@@ -213,7 +382,6 @@ class TestStreamMessage:
         client = AsyncMock()
         mock_build.return_value = client
 
-        # Create mock streaming chunks
         chunk1 = MagicMock()
         chunk1.choices = [MagicMock()]
         chunk1.choices[0].delta.content = "Hello "
@@ -242,12 +410,12 @@ class TestStreamMessage:
         async for event in stream_message("hello"):
             events.append(event)
 
-        deltas = [e for e in events if e.type == "delta"]
+        deltas = [e for e in events if e.type == EventType.delta]
         assert len(deltas) == 2
         assert deltas[0].data["text"] == "Hello "
         assert deltas[1].data["text"] == "world"
 
-        done_events = [e for e in events if e.type == "done"]
+        done_events = [e for e in events if e.type == EventType.done]
         assert len(done_events) == 1
         assert done_events[0].data["full_text"] == "Hello world"
 
@@ -263,6 +431,6 @@ class TestStreamMessage:
         async for event in stream_message("hello"):
             events.append(event)
 
-        error_events = [e for e in events if e.type == "error"]
+        error_events = [e for e in events if e.type == EventType.error]
         assert len(error_events) == 1
         assert "API error" in error_events[0].data["error"]

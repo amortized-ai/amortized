@@ -20,6 +20,7 @@ from amortized.db import (
     update_conversation,
 )
 from amortized.db import get_db as _get_db
+from amortized.db.repository import Repository
 from amortized.models import (
     ChatRequest,
     ChatResponse,
@@ -88,7 +89,8 @@ async def chat(
         created_at=datetime.now(UTC).isoformat(),
     )
 
-    result: AgentResult = await process_message(request.message, history=history)
+    repo = Repository(db)
+    result: AgentResult = await process_message(request.message, history=history, repo=repo)
 
     suggested = None
     if result.proposed_action:
@@ -140,12 +142,14 @@ async def chat_stream(
         created_at=datetime.now(UTC).isoformat(),
     )
 
+    repo = Repository(db)
+
     # 1. Run the full agent loop and collect all events
     events: list[dict[str, object]] = []
     full_text = ""
 
     try:
-        async for event in stream_message(request.message, history=history):
+        async for event in stream_message(request.message, history=history, repo=repo):
             events.append({"type": event.type, "data": event.data})
             if event.type == "delta":
                 full_text += event.data.get("text", "")
