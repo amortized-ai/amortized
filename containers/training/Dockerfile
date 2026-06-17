@@ -42,6 +42,10 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 # Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
+# Patch: apply training_hub PR#98 fix — import unsloth before art in ART subprocess
+# This fixes GRPOConfig pickle error and GuidedDecodingParams import on older vLLM
+RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/training_hub/algorithms/lora_grpo.py'; code=open(path).read(); old='        try:\n            import art'; new='        try:\n            # Import unsloth first for vLLM/TRL compat patches (training_hub PR#98)\n            try:\n                import unsloth  # noqa: F401\n            except ImportError:\n                pass\n            import art'; code=code.replace(old, new, 1); open(path,'w').write(code); print('Patched lora_grpo.py with unsloth import')"
+
 # Disable Ray's uv_runtime_env_hook (crashes on pyproject.toml/working_dir detection)
 RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'; code=open(path).read(); code=re.sub(r'(def hook\([^)]*\)[^:]*:)\n', r'\1\n    return runtime_env  # disabled\n', code, count=1); open(path,'w').write(code); print('Patched Ray uv hook')"
 
