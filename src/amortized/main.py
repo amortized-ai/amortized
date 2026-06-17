@@ -118,7 +118,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_task = asyncio.create_task(worker_loop())
     heartbeat_task = asyncio.create_task(_monitor_heartbeats())
 
-    yield
+    from amortized.mcp import server as mcp_mod
+
+    mcp_lifespan = (
+        mcp_mod._mcp_http_app.router.lifespan_context(_app)
+        if mcp_mod._mcp_http_app is not None
+        else contextlib.nullcontext()
+    )
+    async with mcp_lifespan:
+        yield
 
     # Shutdown worker and heartbeat monitor
     worker_task.cancel()

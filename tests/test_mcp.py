@@ -1,12 +1,32 @@
 """Tests for the fastmcp MCP server and job management tools."""
 
+import contextlib
+import json
 import os
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import pytest
 
 from amortized.main import app
 from amortized.mcp import server as mcp_server
+
+
+def _parse_sse_json(text: str) -> Any:
+    """Extract the first JSON payload from an SSE response body."""
+    for line in text.strip().split("\n"):
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    raise ValueError(f"No data line in SSE response: {text[:200]}")
+
+
+def _parse_response(response: httpx.Response) -> Any:
+    """Parse a response that may be JSON or SSE-wrapped JSON."""
+    ct = response.headers.get("content-type", "")
+    if "event-stream" in ct:
+        return _parse_sse_json(response.text)
+    return response.json()
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +44,7 @@ def _use_temp_db(tmp_path: object) -> None:
     db_conn_mod.settings = new_settings
 
     mcp_server._fastapi_app = app
+    mcp_server._transport = httpx.ASGITransport(app=app)
 
 
 @pytest.fixture
@@ -34,19 +55,124 @@ async def db_ready() -> None:  # type: ignore[misc]
     yield  # type: ignore[misc]
 
 
+@pytest.fixture
+async def mcp_lifespan() -> AsyncIterator[None]:
+    """Start the MCP session manager lifespan for protocol-level tests."""
+    if mcp_server._mcp_http_app is None:
+        yield
+        return
+
+    ctx = mcp_server._mcp_http_app.router.lifespan_context(mcp_server._mcp_http_app)
+    await ctx.__aenter__()
+    yield
+    with contextlib.suppress(RuntimeError):
+        await ctx.__aexit__(None, None, None)
+
+
+_MCP_HEADERS = {
+    "Accept": "application/json, text/event-stream",
+    "Content-Type": "application/json",
+}
+
+
 # ---------------------------------------------------------------------------
 # Scaffold tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_mcp_endpoint_mounted() -> None:
-    """The /mcp endpoint is mounted and reachable."""
+async def test_mcp_endpoint_mounted(mcp_lifespan: None) -> None:
+    """The /mcp endpoint is mounted and responds to MCP initialize."""
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
     ) as client:
-        response = await client.get("/mcp")
-    assert response.status_code != 404
+        response = await client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1.0"},
+            }},
+            headers=_MCP_HEADERS,
+        )
+    assert response.status_code == 200
+    body = _parse_response(response)
+    assert body["result"]["serverInfo"]["name"] == "amortized"
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_list(mcp_lifespan: None) -> None:
+    """MCP tools/list returns all registered tools."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        init_resp = await client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1.0"},
+            }},
+            headers=_MCP_HEADERS,
+        )
+        assert init_resp.status_code == 200
+        session_id = init_resp.headers.get("mcp-session-id", "")
+
+        headers = {**_MCP_HEADERS}
+        if session_id:
+            headers["mcp-session-id"] = session_id
+
+        list_resp = await client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            headers=headers,
+        )
+    assert list_resp.status_code == 200
+    body = _parse_response(list_resp)
+    tool_names = [t["name"] for t in body["result"]["tools"]]
+    assert "submit_job" in tool_names
+    assert "list_jobs" in tool_names
+    assert "get_job" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_call_list_jobs(mcp_lifespan: None, db_ready: None) -> None:
+    """Calling list_jobs via MCP protocol returns an empty list."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        init_resp = await client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1.0"},
+            }},
+            headers=_MCP_HEADERS,
+        )
+        assert init_resp.status_code == 200
+        session_id = init_resp.headers.get("mcp-session-id", "")
+
+        headers = {**_MCP_HEADERS}
+        if session_id:
+            headers["mcp-session-id"] = session_id
+
+        call_resp = await client.post(
+            "/mcp/",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                "name": "list_jobs",
+                "arguments": {},
+            }},
+            headers=headers,
+        )
+    assert call_resp.status_code == 200
+    body = _parse_response(call_resp)
+    assert "result" in body
+    content = body["result"]["content"]
+    assert isinstance(content, list)
 
 
 @pytest.mark.asyncio
@@ -293,3 +419,47 @@ def test_summarise_metrics_decreasing_loss() -> None:
     assert result["total_steps"] == 3
     assert "decreasing" in result["trend"]
     assert result["latest"]["step"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Auth + MCP integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_call_with_api_key_set(db_ready: None) -> None:
+    """_call() works when AMORTIZED_API_KEY is set because it forwards auth."""
+    import amortized.config as config_mod
+    import amortized.main as main_mod
+
+    original_config = config_mod.settings.api_key
+    original_main = main_mod._settings.api_key
+    try:
+        config_mod.settings.api_key = "test-secret-key"
+        main_mod._settings.api_key = "test-secret-key"
+        result = await mcp_server._call("GET", "/api/v1/health")
+        assert result["status"] == "ok"
+    finally:
+        config_mod.settings.api_key = original_config
+        main_mod._settings.api_key = original_main
+
+
+@pytest.mark.asyncio
+async def test_call_with_api_key_rejects_without_header(db_ready: None) -> None:
+    """Requests without auth header are rejected when API key is set."""
+    import amortized.config as config_mod
+    import amortized.main as main_mod
+
+    original_config = config_mod.settings.api_key
+    original_main = main_mod._settings.api_key
+    try:
+        config_mod.settings.api_key = "test-secret-key"
+        main_mod._settings.api_key = "test-secret-key"
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/api/v1/jobs")
+        assert response.status_code == 401
+    finally:
+        config_mod.settings.api_key = original_config
+        main_mod._settings.api_key = original_main

@@ -30,6 +30,17 @@ mcp = FastMCP(
 )
 
 _fastapi_app: FastAPI | None = None
+_transport: ASGITransport | None = None
+_mcp_http_app: Any = None
+
+
+def _get_auth_headers() -> dict[str, str]:
+    """Return Authorization header if AMORTIZED_API_KEY is configured."""
+    from amortized.config import settings
+
+    if settings.api_key:
+        return {"Authorization": f"Bearer {settings.api_key}"}
+    return {}
 
 
 async def _call(
@@ -44,11 +55,14 @@ async def _call(
     Translates HTTP 4xx/5xx into ``ValueError`` with a structured message
     so that fastmcp surfaces the error to the MCP client cleanly.
     """
-    if _fastapi_app is None:
+    if _fastapi_app is None or _transport is None:
         raise RuntimeError("MCP server not initialised; call create_mcp_server first")
 
-    transport = ASGITransport(app=_fastapi_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://mcp") as client:
+    async with httpx.AsyncClient(
+        transport=_transport,
+        base_url="http://mcp",
+        headers=_get_auth_headers(),
+    ) as client:
         response = await client.request(method, path, params=params, json=json)
 
     if response.status_code >= 400:
@@ -62,7 +76,16 @@ async def _call(
             msg = "; ".join(str(m) for m in msg)
         details = body.get("details", [])
         if details:
-            detail_strs = [d.get("msg", str(d)) for d in details if isinstance(d, dict)]
+            detail_strs = []
+            for d in details:
+                if not isinstance(d, dict):
+                    continue
+                loc = d.get("loc")
+                m = d.get("msg", str(d))
+                if loc:
+                    detail_strs.append(f"{' -> '.join(str(p) for p in loc)}: {m}")
+                else:
+                    detail_strs.append(m)
             if detail_strs:
                 msg = f"{msg} ({'; '.join(detail_strs)})"
         raise ValueError(msg)
@@ -269,10 +292,20 @@ async def get_job_results(job_id: str) -> dict[str, Any]:
 
 
 def create_mcp_server(app: FastAPI) -> FastMCP:
-    """Initialise the fastmcp server and mount it on the FastAPI app at ``/mcp``."""
-    global _fastapi_app
+    """Initialise the fastmcp server and mount it on the FastAPI app at ``/mcp``.
+
+    The caller must invoke the MCP HTTP app's lifespan from the parent app's
+    lifespan context — Starlette does not propagate lifespan events to mounted
+    sub-applications.  Access the sub-app via ``_mcp_http_app``.
+    """
+    global _fastapi_app, _transport, _mcp_http_app
+    if _fastapi_app is not None:
+        logger.warning("create_mcp_server called more than once; skipping duplicate mount")
+        return mcp
     _fastapi_app = app
-    app.mount("/mcp", mcp.http_app())
+    _transport = ASGITransport(app=app)
+    _mcp_http_app = mcp.http_app(path="/")
+    app.mount("/mcp", _mcp_http_app)
     return mcp
 
 
