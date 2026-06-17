@@ -1,7 +1,7 @@
-"""OpenAI function-calling tool definitions and server-side execution.
+"""Tool execution — calls core/ functions directly via Repository.
 
-Each tool maps to a runtime API endpoint. The agent calls these tools
-internally via httpx — the user never runs commands themselves.
+Each tool maps to a core domain function. The agent calls these tools
+internally — the user never runs commands themselves.
 
 NOTE: MCP tools for external AI agents are now auto-generated from the
 FastAPI OpenAPI spec via fastapi-mcp (see amortized/mcp/server.py).
@@ -11,478 +11,43 @@ function-calling interface.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-import httpx
+from amortized.agent.schemas import TOOL_REGISTRY, TOOLS
 
 logger = logging.getLogger("amortized.agent.tools")
 
-RUNTIME_BASE = "http://localhost:8000"
 
-# ---------------------------------------------------------------------------
-# Tool definitions (OpenAI function-calling format)
-# ---------------------------------------------------------------------------
+def _is_path_allowed(path: Path) -> bool:
+    """Return True if *path* resolves inside data_dir or datasets_dir."""
+    import amortized.config as _config_mod
 
-TOOLS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_sdg_flows",
-            "description": "List available SDG (synthetic data generation) flows.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_sdg_job",
-            "description": (
-                "Submit a synthetic data generation job using asynth. "
-                "Use propose_action instead if you want the user to confirm first."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "model": {
-                        "type": "string",
-                        "description": "Teacher model name (e.g. openai/gpt-4o)",
-                    },
-                    "num_samples": {
-                        "type": "integer",
-                        "description": "Number of samples to generate (default: 100)",
-                    },
-                    "api_base": {
-                        "type": "string",
-                        "description": "Teacher model API base URL",
-                    },
-                    "api_key": {
-                        "type": "string",
-                        "description": "Teacher model API key",
-                    },
-                    "temperature": {
-                        "type": "number",
-                        "description": "Sampling temperature (default: 0.7)",
-                    },
-                    "max_tokens": {
-                        "type": "integer",
-                        "description": "Max tokens per LLM response",
-                    },
-                    "top_p": {
-                        "type": "number",
-                        "description": "Nucleus sampling parameter (0-1)",
-                    },
-                    "seed": {
-                        "type": "integer",
-                        "description": "Random seed for reproducibility",
-                    },
-                    "input_data": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": "Input dataset source configs (JSONL/CSV/HuggingFace)",
-                    },
-                    "strategy_params": {
-                        "type": "object",
-                        "description": "Raw asynth GeneralSynthesisParams (advanced)",
-                    },
-                },
-                "required": ["model"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "submit_training_job",
-            "description": (
-                "Submit a LoRA SFT training job via TRL. "
-                "Use propose_action instead if you want the user to confirm first."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "model_name_or_path": {
-                        "type": "string",
-                        "description": "HuggingFace model ID or local path",
-                    },
-                    "data_path": {
-                        "type": "string",
-                        "description": "Path to training data (JSONL)",
-                    },
-                    "output_dir": {
-                        "type": "string",
-                        "description": "Output directory for checkpoints",
-                    },
-                    "learning_rate": {
-                        "type": "number",
-                        "description": "Learning rate (default: 2e-4)",
-                    },
-                    "num_train_epochs": {
-                        "type": "integer",
-                        "description": "Number of training epochs (default: 3)",
-                    },
-                    "lora_r": {
-                        "type": "integer",
-                        "description": "LoRA rank (default: 16)",
-                    },
-                    "lora_alpha": {
-                        "type": "integer",
-                        "description": "LoRA alpha scaling factor (default: 32)",
-                    },
-                    "load_in_4bit": {
-                        "type": "boolean",
-                        "description": "Enable QLoRA 4-bit quantization",
-                    },
-                    "per_device_train_batch_size": {
-                        "type": "integer",
-                        "description": "Batch size per GPU (default: 2)",
-                    },
-                    "max_length": {
-                        "type": "integer",
-                        "description": "Maximum sequence length (default: 2048)",
-                    },
-                },
-                "required": ["model_name_or_path", "data_path", "output_dir"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_job_status",
-            "description": "Check the status and details of a specific job.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {
-                        "type": "string",
-                        "description": "The job ID to check",
-                    },
-                },
-                "required": ["job_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_job_metrics",
-            "description": "Get training metrics (loss, learning rate, epoch) for a job.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {
-                        "type": "string",
-                        "description": "The job ID to get metrics for",
-                    },
-                },
-                "required": ["job_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_jobs",
-            "description": "List all jobs, optionally filtered by status or type.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "type": "string",
-                        "enum": [
-                            "validating",
-                            "queued",
-                            "provisioning",
-                            "running",
-                            "succeeded",
-                            "failed",
-                            "cancelled",
-                        ],
-                        "description": "Filter by job status",
-                    },
-                    "type": {
-                        "type": "string",
-                        "enum": ["training", "sdg", "eval", "serve"],
-                        "description": "Filter by job type",
-                    },
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "estimate_vram",
-            "description": "Estimate GPU VRAM requirements for a training configuration.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "model_name_or_path": {
-                        "type": "string",
-                        "description": "HuggingFace model ID",
-                    },
-                    "lora_r": {
-                        "type": "integer",
-                        "description": "LoRA rank (default: 16)",
-                    },
-                    "batch_size": {
-                        "type": "integer",
-                        "description": "Batch size (default: 2)",
-                    },
-                    "max_length": {
-                        "type": "integer",
-                        "description": "Max sequence length (default: 2048)",
-                    },
-                    "load_in_4bit": {
-                        "type": "boolean",
-                        "description": "Use QLoRA 4-bit quantization",
-                    },
-                },
-                "required": ["model_name_or_path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_artifact_preview",
-            "description": (
-                "Preview the contents of a job artifact (first few lines of "
-                "generated data, metrics, etc). Use this to assess data quality, "
-                "check training metrics, or show the user a sample of generated data."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "job_id": {
-                        "type": "string",
-                        "description": "Job ID",
-                    },
-                    "artifact_id": {
-                        "type": "string",
-                        "description": (
-                            "Artifact ID (optional — if omitted, previews the main output file)"
-                        ),
-                    },
-                    "lines": {
-                        "type": "integer",
-                        "description": "Number of lines to preview (default 5, max 50)",
-                    },
-                },
-                "required": ["job_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_dataset",
-            "description": (
-                "Create a JSONL dataset file on disk. Use this to prepare seed "
-                "data for SDG flows. Each row should be a JSON object with the "
-                "columns required by the target SDG flow. Returns the file path "
-                "that can be used as dataset_path in submit_sdg_job."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": (
-                            "Filename for the dataset (e.g. pokemon_seed.jsonl). "
-                            "Will be saved in the datasets/ directory."
-                        ),
-                    },
-                    "rows": {
-                        "type": "array",
-                        "items": {"type": "object"},
-                        "description": (
-                            "Array of JSON objects, each representing one row of "
-                            "the dataset. Must include the columns required by "
-                            "the target SDG flow."
-                        ),
-                    },
-                },
-                "required": ["filename", "rows"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "preview_dataset",
-            "description": (
-                "Preview the first few rows of a dataset file. Use this to "
-                "verify seed data before submitting an SDG job."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the dataset file",
-                    },
-                    "rows": {
-                        "type": "integer",
-                        "description": "Number of rows to preview (default 3, max 10)",
-                    },
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "convert_dataset",
-            "description": (
-                "Convert an SDG output dataset to messages format for training. "
-                "Auto-detects the input format (question/answer, input/output, "
-                "prompt/response) and converts to the messages format required "
-                "by TRL."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "source_path": {
-                        "type": "string",
-                        "description": "Path to the SDG output dataset",
-                    },
-                    "output_filename": {
-                        "type": "string",
-                        "description": "Filename for the converted dataset",
-                    },
-                },
-                "required": ["source_path", "output_filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "judge_data",
-            "description": (
-                "Judge the quality of generated data using asynth's built-in judges. "
-                "Use after SDG to assess quality before training."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "template": {
-                        "type": "string",
-                        "description": (
-                            "Judge template (e.g. generic/safety, "
-                            "code/correctness, doc_qa/groundedness)"
-                        ),
-                    },
-                    "job_id": {
-                        "type": "string",
-                        "description": "Job ID whose output data to judge",
-                    },
-                    "model": {
-                        "type": "string",
-                        "description": "LLM model for judging",
-                    },
-                    "sample_size": {
-                        "type": "integer",
-                        "description": "Number of rows to judge (default: 10)",
-                    },
-                },
-                "required": ["template", "job_id", "model"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_judge_templates",
-            "description": "List available judge templates for assessing data quality.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_api_keys",
-            "description": (
-                "List configured LLM API keys. Shows provider names and "
-                "redacted preview (last 4 chars) — never the full key. "
-                "Check this before proposing SDG jobs to verify the needed "
-                "provider key is configured."
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_api_key",
-            "description": (
-                "Store an LLM provider API key on the server. The key is "
-                "encrypted at rest and injected automatically into SDG and "
-                "eval jobs. Supports any LiteLLM provider."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "provider": {
-                        "type": "string",
-                        "description": "Provider name (e.g. openai, anthropic, google)",
-                    },
-                    "key": {
-                        "type": "string",
-                        "description": "The API key value",
-                    },
-                },
-                "required": ["provider", "key"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "propose_action",
-            "description": (
-                "Propose an action for the user to confirm before executing. "
-                "Use this instead of directly calling submit_training_job or "
-                "submit_sdg_job so the user can review and approve the configuration."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action_type": {
-                        "type": "string",
-                        "enum": ["submit_training_job", "submit_sdg_job"],
-                        "description": "The action to propose",
-                    },
-                    "config": {
-                        "type": "object",
-                        "description": "The configuration for the action",
-                    },
-                    "label": {
-                        "type": "string",
-                        "description": "Human-readable button label (e.g. 'Start Training')",
-                    },
-                },
-                "required": ["action_type", "config", "label"],
-            },
-        },
-    },
-]
+    resolved = path.resolve()
+    allowed = [_config_mod.settings.data_dir.resolve()]
+    if _config_mod.settings.datasets_dir is not None:
+        allowed.append(_config_mod.settings.datasets_dir.resolve())
+    return any(resolved == d or d in resolved.parents for d in allowed)
 
 
-# ---------------------------------------------------------------------------
-# Tool execution
-# ---------------------------------------------------------------------------
+# Re-export for backward compatibility
+__all__ = ["TOOLS", "TOOL_REGISTRY", "execute_tool", "tool_result_summary"]
 
 
-async def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Execute a tool by calling the runtime API and return the result.
+async def execute_tool(
+    name: str,
+    arguments: dict[str, Any],
+    repo: Any,
+) -> dict[str, Any]:
+    """Execute a tool by calling core/ functions directly.
 
-    The ``propose_action`` tool is special — it returns a sentinel dict
-    that the caller inspects to build an SSE ``action`` event.
+    Sentinel tools (``propose_action``, ``present_options``) return
+    special dicts that the caller inspects to build SSE events.
     """
     if name == "propose_action":
         return {
@@ -492,177 +57,341 @@ async def execute_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             "label": arguments.get("label", "Confirm"),
         }
 
+    if name == "present_options":
+        return {
+            "__present_options__": True,
+            "prompt": arguments.get("prompt", ""),
+            "options": arguments.get("options", []),
+        }
+
+    _no_repo_tools = {
+        "list_sdg_flows",
+        "estimate_vram",
+        "create_dataset",
+        "preview_dataset",
+        "convert_dataset",
+        "list_judge_templates",
+    }
+    if repo is None and name not in _no_repo_tools and any(t.name == name for t in TOOL_REGISTRY):
+        return {"error": f"Tool '{name}' requires a database connection but none is available"}
+
     try:
-        async with httpx.AsyncClient(base_url=RUNTIME_BASE, timeout=60) as client:
-            return await _call_api(client, name, arguments)
-    except httpx.HTTPError as exc:
-        logger.exception("Tool %s HTTP error", name)
-        return {"error": f"API request failed: {exc}"}
+        return await _dispatch(repo, name, arguments)
     except Exception as exc:
-        logger.exception("Tool %s unexpected error", name)
+        logger.exception("Tool %s error", name)
         return {"error": str(exc)}
 
 
-async def _call_api(
-    client: httpx.AsyncClient,
+async def _dispatch(
+    repo: Any,
     name: str,
     args: dict[str, Any],
 ) -> dict[str, Any]:
-    """Dispatch a tool call to the correct runtime API endpoint."""
+    """Dispatch a tool call to the correct core function."""
     if name == "list_sdg_flows":
-        r = await client.get("/api/v1/flows")
-        r.raise_for_status()
-        data: dict[str, Any] = {"flows": r.json()}
-        return data
+        from amortized.api.flows import _discover_pipelines
+
+        pipelines = _discover_pipelines()
+        return {"flows": [p.model_dump() for p in pipelines]}
 
     if name == "submit_sdg_job":
-        r = await client.post("/api/v1/jobs/sdg", json=args)
-        r.raise_for_status()
-        result: dict[str, Any] = r.json()
-        return result
+        from amortized.core.jobs import create_job
+        from amortized.models import JobType
+
+        config = {k: v for k, v in args.items() if v is not None}
+        row = await create_job(repo, job_type=JobType.sdg, config=config)
+        return row
 
     if name == "submit_training_job":
-        r = await client.post("/api/v1/jobs/training", json=args)
-        r.raise_for_status()
-        result2: dict[str, Any] = r.json()
-        return result2
+        from amortized.core.jobs import create_job
+        from amortized.models import JobType
+
+        config = {k: v for k, v in args.items() if v is not None}
+        output_dir = config.pop("output_dir", None)
+        row = await create_job(
+            repo,
+            job_type=JobType.training,
+            config=config,
+            output_dir=output_dir,
+        )
+        return row
 
     if name == "check_job_status":
+        from amortized.core.jobs import get_job
+
         job_id = args["job_id"]
-        r = await client.get(f"/api/v1/jobs/{job_id}")
-        r.raise_for_status()
-        result3: dict[str, Any] = r.json()
-        return result3
+        job_row = await get_job(repo, job_id)
+        if job_row is None:
+            return {"error": f"Job {job_id} not found"}
+        return job_row
 
     if name == "get_job_metrics":
+        from amortized.core.jobs import get_job
+
         job_id = args["job_id"]
-        r = await client.get(f"/api/v1/jobs/{job_id}/metrics")
-        r.raise_for_status()
-        metrics_data: dict[str, Any] = {"metrics": r.json()}
-        return metrics_data
+        job_row = await get_job(repo, job_id)
+        if job_row is None:
+            return {"error": f"Job {job_id} not found"}
+        output_dir = job_row.get("output_dir")
+        if not output_dir:
+            return {"metrics": []}
+        metrics_path = Path(output_dir) / "training_metrics.jsonl"
+        if not metrics_path.exists():
+            return {"metrics": []}
+        metrics: list[dict[str, Any]] = []
+        for line in metrics_path.read_text().strip().splitlines():
+            if line.strip():
+                try:
+                    metrics.append(json.loads(line))
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return {"metrics": metrics}
 
     if name == "list_jobs":
-        params: dict[str, str] = {}
-        if "status" in args:
-            params["status"] = args["status"]
-        if "type" in args:
-            params["type"] = args["type"]
-        r = await client.get("/api/v1/jobs", params=params)
-        r.raise_for_status()
-        jobs_data: dict[str, Any] = {"jobs": r.json()}
-        return jobs_data
+        from amortized.core.jobs import list_jobs
+        from amortized.models import JobStatus, JobType
+
+        status = JobStatus(args["status"]) if "status" in args else None
+        job_type = JobType(args["type"]) if "type" in args else None
+        rows = await list_jobs(repo, status=status, job_type=job_type)
+        return {"jobs": rows}
 
     if name == "estimate_vram":
-        r = await client.post("/api/v1/estimate", json=args)
-        r.raise_for_status()
-        estimate_data: dict[str, Any] = r.json()
-        return estimate_data
+        from amortized.api.estimate import _estimate_vram
+        from amortized.models import MemoryEstimateRequest
+
+        req = MemoryEstimateRequest(
+            model_name_or_path=args["model_name_or_path"],
+            lora_r=args.get("lora_r", 16),
+            batch_size=args.get("batch_size", 2),
+            max_length=args.get("max_length", 2048),
+            load_in_4bit=args.get("load_in_4bit", False),
+        )
+        vram = _estimate_vram(req)
+        return {
+            "model_name_or_path": req.model_name_or_path,
+            "lora_r": req.lora_r,
+            "batch_size": req.batch_size,
+            "max_length": req.max_length,
+            "estimated_vram_gb": vram,
+            "load_in_4bit": req.load_in_4bit,
+        }
 
     if name == "create_dataset":
-        r = await client.post("/api/v1/datasets", json=args)
-        r.raise_for_status()
-        create_data: dict[str, Any] = r.json()
-        return create_data
+        import amortized.config as _config_mod
+
+        filename = Path(args["filename"]).name
+        if not filename.endswith(".jsonl"):
+            filename += ".jsonl"
+        configured = _config_mod.settings.datasets_dir
+        base = _config_mod.settings.data_dir / "datasets"
+        datasets_dir = configured if configured is not None else base
+        datasets_dir.mkdir(parents=True, exist_ok=True)
+        file_path = datasets_dir / filename
+        rows_data: list[dict[str, Any]] = args.get("rows", [])
+        if not rows_data:
+            return {"error": "rows must not be empty"}
+        with open(file_path, "w") as f:
+            for row in rows_data:
+                f.write(json.dumps(row) + "\n")
+        columns = list(rows_data[0].keys()) if rows_data else []
+        return {
+            "path": str(file_path),
+            "rows_written": len(rows_data),
+            "columns": columns,
+        }
 
     if name == "preview_dataset":
-        path = args["path"]
-        preview_params2: dict[str, Any] = {}
-        if "rows" in args:
-            preview_params2["rows"] = args["rows"]
-        r = await client.get(f"/api/v1/datasets/{path}/preview", params=preview_params2)
-        r.raise_for_status()
-        preview_result: dict[str, Any] = r.json()
-        return preview_result
+        path = Path(args["path"])
+        if not _is_path_allowed(path):
+            return {"error": "Path is outside the allowed data directories"}
+        if not path.exists():
+            return {"error": f"Dataset not found: {args['path']}"}
+        max_rows = min(args.get("rows", 3), 10)
+        parsed_rows: list[dict[str, Any]] = []
+        with open(path) as f:
+            for i, line in enumerate(f):
+                if i >= max_rows:
+                    break
+                line = line.strip()
+                if line:
+                    try:
+                        parsed_rows.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        columns = list(parsed_rows[0].keys()) if parsed_rows else []
+        return {
+            "path": str(path),
+            "rows": parsed_rows,
+            "columns": columns,
+            "total_rows_previewed": len(parsed_rows),
+        }
 
     if name == "convert_dataset":
-        r = await client.post("/api/v1/datasets/convert", json=args)
-        r.raise_for_status()
-        convert_data: dict[str, Any] = r.json()
-        return convert_data
+        import amortized.config as _config_mod
+        from amortized.api.datasets import _detect_format, _row_to_messages
+
+        source = Path(args["source_path"])
+        if not _is_path_allowed(source):
+            return {"error": "Source path is outside the allowed data directories"}
+        if not source.exists():
+            return {"error": f"Source dataset not found: {args['source_path']}"}
+        all_rows: list[dict[str, Any]] = []
+        with open(source) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        all_rows.append(json.loads(line))
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        if not all_rows:
+            return {"error": "Source dataset is empty"}
+        first_row = all_rows[0]
+        if "messages" in first_row:
+            converted = all_rows
+        else:
+            fmt = _detect_format(first_row, None)
+            if fmt is None:
+                return {"error": f"Cannot detect input format. Columns: {list(first_row.keys())}"}
+            user_col, asst_col = fmt
+            converted = [_row_to_messages(r, user_col, asst_col) for r in all_rows]
+        output_filename = Path(args["output_filename"]).name
+        if not output_filename.endswith(".jsonl"):
+            output_filename += ".jsonl"
+        configured = _config_mod.settings.datasets_dir
+        base = _config_mod.settings.data_dir / "datasets"
+        datasets_dir = configured if configured is not None else base
+        datasets_dir.mkdir(parents=True, exist_ok=True)
+        output_path = datasets_dir / output_filename
+        with open(output_path, "w") as f:
+            for r in converted:
+                f.write(json.dumps(r) + "\n")
+        return {
+            "path": str(output_path),
+            "rows_converted": len(converted),
+            "sample_row": converted[0],
+        }
 
     if name == "judge_data":
+        from amortized.core.artifacts import list_artifacts
+        from amortized.core.judge_templates import load_judge_template
+
         job_id = args["job_id"]
         sample_size = args.get("sample_size", 10)
-        r = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-        r.raise_for_status()
-        artifacts = r.json()
+        artifacts = await list_artifacts(repo, job_id)
         if not artifacts:
             return {"error": "No artifacts found for this job"}
-        artifact_id = artifacts[0]["id"]
-        r = await client.get(
-            f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
-            params={"lines": sample_size},
-        )
-        r.raise_for_status()
-        preview = r.json()
-        rows: list[dict[str, Any]] = []
-        for line in preview.get("lines", []):
-            try:
-                rows.append(json.loads(line))
-            except (json.JSONDecodeError, TypeError):
-                continue
-        if not rows:
+        judge_artifact = artifacts[0]
+        file_path = Path(judge_artifact["path"])
+        if not file_path.exists():
+            return {"error": "Artifact file not found on disk"}
+        data_rows: list[dict[str, Any]] = []
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= sample_size:
+                    break
+                line = line.rstrip("\n")
+                if line:
+                    try:
+                        data_rows.append(json.loads(line))
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+        if not data_rows:
             return {"error": "No parseable data rows in artifact"}
-        r = await client.post(
-            "/api/v1/judge",
-            json={
-                "template": args["template"],
-                "data": rows,
-                "model": args["model"],
+        try:
+            from asynth import JudgeConfig, LiteLLMInferenceConfig, create_judge
+        except ImportError:
+            return {"error": "asynth is not installed — judge functionality unavailable"}
+        template_data = load_judge_template(args["template"])
+        judge_config = JudgeConfig(**template_data)
+        inference_config = LiteLLMInferenceConfig(model=args["model"])
+        j = create_judge(judge_config, inference_config=inference_config)
+        judge_results: Any = await asyncio.to_thread(j.judge, data_rows)
+        serialized: list[dict[str, Any]] = []
+        for r in judge_results:
+            if hasattr(r, "model_dump"):
+                serialized.append(r.model_dump())
+            elif isinstance(r, dict):
+                serialized.append(r)
+            else:
+                serialized.append({"raw": str(r)})
+        passed = sum(1 for r in serialized if r.get("passed", False))
+        return {
+            "results": serialized,
+            "summary": {
+                "total": len(serialized),
+                "passed": passed,
+                "failed": len(serialized) - passed,
+                "pass_rate": passed / len(serialized) if serialized else 0,
             },
-        )
-        r.raise_for_status()
-        judge_result: dict[str, Any] = r.json()
-        return judge_result
+        }
 
     if name == "list_judge_templates":
-        r = await client.get("/api/v1/judge/templates")
-        r.raise_for_status()
-        templates_data: dict[str, Any] = {"templates": r.json()}
-        return templates_data
+        from amortized.core.judge_templates import list_judge_templates
+
+        templates = list_judge_templates()
+        return {"templates": [{"name": t} for t in templates]}
 
     if name == "list_api_keys":
-        r = await client.get("/api/v1/settings/api-keys")
-        r.raise_for_status()
-        return {"keys": r.json()}
+        keys = await repo.list_api_keys()
+        return {"keys": keys}
 
     if name == "add_api_key":
-        body = {
-            "name": args["provider"],
-            "provider": args["provider"],
-            "key": args["key"],
-        }
-        r = await client.post("/api/v1/settings/api-keys", json=body)
-        r.raise_for_status()
-        result_data: dict[str, Any] = r.json()
-        return result_data
+        key_row: dict[str, Any] = await repo.create_api_key(
+            key_id=str(uuid.uuid4()),
+            name=args["provider"],
+            provider=args["provider"],
+            key_value=args["key"],
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        return key_row
 
     if name == "read_artifact_preview":
+        from amortized.core.artifacts import get_artifact, list_artifacts
+
         job_id = args["job_id"]
         artifact_id = args.get("artifact_id")
-        preview_params: dict[str, Any] = {}
-        if "lines" in args:
-            preview_params["lines"] = args["lines"]
-        if artifact_id:
-            r = await client.get(
-                f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
-                params=preview_params,
-            )
-        else:
-            # No artifact_id — list artifacts and preview the first one
-            r = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-            r.raise_for_status()
-            artifacts = r.json()
+        max_lines = min(args.get("lines", 5), 50)
+        max_lines = max(1, max_lines)
+
+        if not artifact_id:
+            artifacts = await list_artifacts(repo, job_id)
             if not artifacts:
                 return {"error": "No artifacts found for this job"}
             artifact_id = artifacts[0]["id"]
-            r = await client.get(
-                f"/api/v1/jobs/{job_id}/artifacts/{artifact_id}/preview",
-                params=preview_params,
-            )
-        r.raise_for_status()
-        preview_data: dict[str, Any] = r.json()
-        return preview_data
+
+        artifact: dict[str, Any] | None = await get_artifact(repo, artifact_id)
+        if artifact is None:
+            return {"error": f"Artifact {artifact_id} not found"}
+
+        file_path = Path(artifact["path"])
+        if not file_path.exists():
+            return {"error": "Artifact file not found on disk"}
+
+        binary_exts = {".safetensors", ".bin", ".model", ".pt", ".gguf"}
+        if file_path.suffix.lower() in binary_exts:
+            return {
+                "type": "binary",
+                "format": file_path.suffix.lstrip("."),
+                "size": file_path.stat().st_size,
+                "filename": file_path.name,
+            }
+
+        preview_lines: list[str] = []
+        with open(file_path, encoding="utf-8", errors="replace") as f:
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    break
+                preview_lines.append(line.rstrip("\n"))
+
+        return {
+            "type": "text",
+            "format": file_path.suffix.lstrip("."),
+            "filename": file_path.name,
+            "lines": preview_lines,
+            "total_size": file_path.stat().st_size,
+        }
 
     return {"error": f"Unknown tool: {name}"}
 
