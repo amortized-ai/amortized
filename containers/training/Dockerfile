@@ -42,9 +42,22 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 # Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
-# Patch: apply training_hub PR#98 fix — import unsloth before art in ART subprocess
-# This fixes GRPOConfig pickle error and GuidedDecodingParams import on older vLLM
-RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/training_hub/algorithms/lora_grpo.py'; code=open(path).read(); old='        try:\n            import art'; new='        try:\n            # Import unsloth first for vLLM/TRL compat patches (training_hub PR#98)\n            try:\n                import unsloth  # noqa: F401\n            except ImportError:\n                pass\n            import art'; code=code.replace(old, new, 1); open(path,'w').write(code); print('Patched lora_grpo.py with unsloth import')"
+# Patch: apply training_hub PR#98 fixes:
+# 1. Import unsloth before art in subprocess (GRPOConfig pickle fix)
+# 2. Pass enforce_eager through to vLLM engine (torch.fx crash fix on newer drivers)
+RUN python3.11 -c "\
+import re; \
+path = '/usr/local/lib/python3.11/dist-packages/training_hub/algorithms/lora_grpo.py'; \
+code = open(path).read(); \
+code = code.replace( \
+    '        try:\n            import art', \
+    '        try:\n            try:\n                import unsloth\n            except ImportError:\n                pass\n            import art', \
+    1); \
+code = code.replace( \
+    'engine_kwargs = {\"gpu_memory_utilization\": gpu_memory_utilization}', \
+    'engine_kwargs = {\"gpu_memory_utilization\": gpu_memory_utilization}\n        if params.get(\"enforce_eager\"):\n            engine_kwargs[\"enforce_eager\"] = True'); \
+open(path, 'w').write(code); \
+print('Patched lora_grpo.py (PR#98: unsloth import + enforce_eager)')"
 
 # Disable Ray's uv_runtime_env_hook (crashes on pyproject.toml/working_dir detection)
 RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'; code=open(path).read(); code=re.sub(r'(def hook\([^)]*\)[^:]*:)\n', r'\1\n    return runtime_env  # disabled\n', code, count=1); open(path,'w').write(code); print('Patched Ray uv hook')"
