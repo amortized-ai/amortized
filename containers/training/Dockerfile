@@ -20,12 +20,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Constraints: pin verl<0.8 (0.8 has broken experimental imports),
-# transformers<5.0 (keeps torch at 2.10 which is stable with CUDA 12.6),
-# huggingface-hub<1.0 (hub 1.x introduces keras_nlp backend errors)
+# Constraints from proven working env (rh-h100-04 grpo_test_env.md):
+# - transformers<5.0 keeps torch at 2.10+cu128
+# - huggingface-hub<1.0 avoids keras_nlp backend errors
+# - openpipe-art==0.5.17 (0.5.18 has megatron import bug)
 RUN echo 'transformers<5.0' > /tmp/constraints.txt \
-    && echo 'verl<0.8' >> /tmp/constraints.txt \
-    && echo 'huggingface-hub<1.0' >> /tmp/constraints.txt
+    && echo 'huggingface-hub<1.0' >> /tmp/constraints.txt \
+    && echo 'openpipe-art==0.5.17' >> /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
@@ -33,15 +34,13 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed \
     "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 
-# vLLM 0.19 for GRPO rollout generation (compatible with torch 2.10)
-RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm>=0.19,<0.20"
+# vLLM 0.19.0 (NOT 0.19.1 or 0.23+) — proven compatible with torch 2.10+cu128
+RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 
-# Fix numpy: vLLM may leave numpy 2.x .so files alongside 1.x metadata.
-# Force-reinstall to ensure consistency.
+# Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
 # Disable Ray's uv_runtime_env_hook (crashes on pyproject.toml/working_dir detection)
-# Patch: insert 'return runtime_env' as first line of the hook function body
 RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'; code=open(path).read(); code=re.sub(r'(def hook\([^)]*\)[^:]*:)\n', r'\1\n    return runtime_env  # disabled\n', code, count=1); open(path,'w').write(code); print('Patched Ray uv hook')"
 
 FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
