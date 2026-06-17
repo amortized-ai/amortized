@@ -141,14 +141,17 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
             "teacher_name = config.get('teacher_model_name_or_path', model_name)\n"
             "\n"
             "# Load student and teacher models\n"
-            "student = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
-            "teacher = AutoModelForCausalLM.from_pretrained(teacher_name, torch_dtype='auto', device_map='auto')\n"
+            "student = AutoModelForCausalLM.from_pretrained(\n"
+            "    model_name, torch_dtype='auto', device_map='auto')\n"
+            "teacher = AutoModelForCausalLM.from_pretrained(\n"
+            "    teacher_name, torch_dtype='auto', device_map='auto')\n"
         )
     else:
         lines += (
             "\n"
             "# Load model\n"
-            "model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype='auto', device_map='auto')\n"
+            "model = AutoModelForCausalLM.from_pretrained(\n"
+            "    model_name, torch_dtype='auto', device_map='auto')\n"
         )
 
     lines += (
