@@ -56,6 +56,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY containers/shared/ /app/shared/
 WORKDIR /app
-CMD ["python3.11", "shared/training_runner.py"]
+CMD ["python3.11"]
