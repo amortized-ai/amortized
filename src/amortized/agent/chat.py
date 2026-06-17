@@ -5,14 +5,19 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from amortized.agent.tools import TOOLS, execute_tool, tool_result_summary
+from amortized.agent.protocol import EventType, StreamEvent
+from amortized.agent.schemas import TOOLS
+from amortized.agent.tools import execute_tool, tool_result_summary
 from amortized.config import settings
+
+if TYPE_CHECKING:
+    from amortized.db.repository import Repository
 
 logger = logging.getLogger("amortized.agent")
 
@@ -74,6 +79,9 @@ when explaining results.
 - Use sensible defaults — don't ask the user about lora_r, learning_rate, \
 batch_size, etc. unless they bring it up. Just pick good values.
 - You're a friendly expert guide, not a requirements-gathering bot.
+- When you want the user to choose between 2-4 options (e.g. model size, \
+approach, SDG flow), use the present_options tool to render clickable cards \
+instead of listing them in text.
 
 ## AVAILABLE TOOLS
 - **list_sdg_flows**: Discover available SDG flows for data generation
@@ -92,6 +100,7 @@ batch_size, etc. unless they bring it up. Just pick good values.
 - **list_api_keys**: Check which LLM provider keys are configured
 - **add_api_key**: Store a provider API key (encrypted, persists)
 - **propose_action**: Propose a job for user confirmation (renders as a button)
+- **present_options**: Present 2-4 options for the user to choose from (renders as cards)
 
 ## TRL KNOWLEDGE (LoRA SFT)
 
@@ -216,11 +225,14 @@ class AgentResult:
 
     text: str
     proposed_action: dict[str, Any] | None = None
+    presented_options: dict[str, Any] | None = None
 
 
 async def process_message(
     message: str,
     history: list[dict[str, str]] | None = None,
+    *,
+    repo: Repository | None = None,
 ) -> AgentResult:
     """Run the full agentic loop (non-streaming) and return the final response."""
     client = _build_client()
@@ -228,6 +240,7 @@ async def process_message(
     messages.append({"role": "user", "content": message})
 
     proposed_action: dict[str, Any] | None = None
+    presented_options: dict[str, Any] | None = None
     max_iterations = 20
 
     for _ in range(max_iterations):
@@ -239,7 +252,6 @@ async def process_message(
         choice = response.choices[0]
 
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-            # Append the assistant message with tool calls
             messages.append(choice.message)  # type: ignore[arg-type]
 
             for tc in choice.message.tool_calls:
@@ -247,7 +259,7 @@ async def process_message(
                 if fn is None:
                     continue
                 args = json.loads(fn.arguments) if fn.arguments else {}
-                result = await execute_tool(fn.name, args)
+                result = await execute_tool(fn.name, args, repo)
 
                 if result.get("__proposed_action__"):
                     proposed_action = {
@@ -257,6 +269,14 @@ async def process_message(
                     }
                     tool_content = json.dumps(
                         {"status": "proposed", "message": "Action proposed to user"}
+                    )
+                elif result.get("__present_options__"):
+                    presented_options = {
+                        "prompt": result["prompt"],
+                        "options": result["options"],
+                    }
+                    tool_content = json.dumps(
+                        {"status": "options_presented", "message": "Options shown to user"}
                     )
                 else:
                     tool_content = json.dumps(result)
@@ -270,10 +290,10 @@ async def process_message(
                 )
             continue
 
-        # Model responded with text — we're done
         return AgentResult(
             text=choice.message.content or "",
             proposed_action=proposed_action,
+            presented_options=presented_options,
         )
 
     return AgentResult(text="I've reached my processing limit. Please try again.")
@@ -284,17 +304,11 @@ async def process_message(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class StreamEvent:
-    """An event emitted during streaming."""
-
-    type: str  # "thinking", "tool_result", "delta", "action", "done", "error"
-    data: dict[str, Any] = field(default_factory=dict)
-
-
 async def stream_message(
     message: str,
     history: list[dict[str, str]] | None = None,
+    *,
+    repo: Repository | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Run the agentic loop with streaming, yielding events as they happen."""
     client = _build_client()
@@ -302,6 +316,7 @@ async def stream_message(
     messages.append({"role": "user", "content": message})
 
     proposed_action: dict[str, Any] | None = None
+    presented_options: dict[str, Any] | None = None
     full_text = ""
     max_iterations = 20
 
@@ -315,7 +330,6 @@ async def stream_message(
             )
             assert hasattr(stream, "__aiter__"), "Expected async stream"
 
-            # Accumulate the streamed response
             content_parts: list[str] = []
             tool_calls_acc: dict[int, dict[str, Any]] = {}
             finish_reason: str | None = None
@@ -328,13 +342,13 @@ async def stream_message(
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
 
-                # Stream text deltas
                 if delta.content:
                     content_parts.append(delta.content)
                     full_text += delta.content
-                    yield StreamEvent(type="delta", data={"text": delta.content})
+                    yield StreamEvent(
+                        type=EventType.delta, data={"text": delta.content}
+                    )
 
-                # Accumulate tool call chunks
                 if delta.tool_calls:
                     for tc_chunk in delta.tool_calls:
                         idx = tc_chunk.index
@@ -352,9 +366,7 @@ async def stream_message(
                             if tc_chunk.function.arguments:
                                 tool_calls_acc[idx]["arguments"] += tc_chunk.function.arguments
 
-            # If we got tool calls, execute them and continue
             if tool_calls_acc and finish_reason == "tool_calls":
-                # Build the assistant message with tool calls for history
                 tool_calls_list = []
                 for idx in sorted(tool_calls_acc.keys()):
                     tc_data = tool_calls_acc[idx]
@@ -378,14 +390,15 @@ async def stream_message(
                     assistant_msg["content"] = content_str
                 messages.append(assistant_msg)  # type: ignore[arg-type]
 
-                # Execute each tool call
                 for tc_data in tool_calls_list:
                     name = tc_data["function"]["name"]
-                    yield StreamEvent(type="thinking", data={"tool": name})
+                    yield StreamEvent(
+                        type=EventType.thinking, data={"tool": name}
+                    )
 
                     raw_args = tc_data["function"]["arguments"]
                     args = json.loads(raw_args) if raw_args else {}
-                    result = await execute_tool(name, args)
+                    result = await execute_tool(name, args, repo)
 
                     if result.get("__proposed_action__"):
                         proposed_action = {
@@ -397,12 +410,21 @@ async def stream_message(
                             {"status": "proposed", "message": "Action proposed to user"}
                         )
                         summary = "Action proposed for confirmation"
+                    elif result.get("__present_options__"):
+                        presented_options = {
+                            "prompt": result["prompt"],
+                            "options": result["options"],
+                        }
+                        tool_content = json.dumps(
+                            {"status": "options_presented", "message": "Options shown to user"}
+                        )
+                        summary = "Options presented to user"
                     else:
                         tool_content = json.dumps(result)
                         summary = tool_result_summary(name, result)
 
                     yield StreamEvent(
-                        type="tool_result",
+                        type=EventType.tool_result,
                         data={"tool": name, "summary": summary},
                     )
 
@@ -414,21 +436,22 @@ async def stream_message(
                         }
                     )
 
-                # Reset content for next iteration
                 content_parts = []
                 continue
 
-            # Model is done — no more tool calls
             break
 
         if proposed_action:
-            yield StreamEvent(type="action", data=proposed_action)
+            yield StreamEvent(type=EventType.action, data=proposed_action)
 
-        yield StreamEvent(type="done", data={"full_text": full_text})
+        if presented_options:
+            yield StreamEvent(type=EventType.options, data=presented_options)
+
+        yield StreamEvent(type=EventType.done, data={"full_text": full_text})
 
     except Exception as exc:
         logger.exception("Streaming agent error")
         yield StreamEvent(
-            type="error",
+            type=EventType.error,
             data={"error": f"Agent error: {exc}"},
         )
