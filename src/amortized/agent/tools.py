@@ -11,6 +11,7 @@ function-calling interface.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -21,6 +22,17 @@ from typing import Any
 from amortized.agent.schemas import TOOL_REGISTRY, TOOLS
 
 logger = logging.getLogger("amortized.agent.tools")
+
+
+def _is_path_allowed(path: Path) -> bool:
+    """Return True if *path* resolves inside data_dir or datasets_dir."""
+    import amortized.config as _config_mod
+
+    resolved = path.resolve()
+    allowed = [_config_mod.settings.data_dir.resolve()]
+    if _config_mod.settings.datasets_dir is not None:
+        allowed.append(_config_mod.settings.datasets_dir.resolve())
+    return any(resolved == d or d in resolved.parents for d in allowed)
 
 
 # Re-export for backward compatibility
@@ -51,6 +63,17 @@ async def execute_tool(
             "prompt": arguments.get("prompt", ""),
             "options": arguments.get("options", []),
         }
+
+    _no_repo_tools = {
+        "list_sdg_flows",
+        "estimate_vram",
+        "create_dataset",
+        "preview_dataset",
+        "convert_dataset",
+        "list_judge_templates",
+    }
+    if repo is None and name not in _no_repo_tools and any(t.name == name for t in TOOL_REGISTRY):
+        return {"error": f"Tool '{name}' requires a database connection but none is available"}
 
     try:
         return await _dispatch(repo, name, arguments)
@@ -180,6 +203,8 @@ async def _dispatch(
 
     if name == "preview_dataset":
         path = Path(args["path"])
+        if not _is_path_allowed(path):
+            return {"error": "Path is outside the allowed data directories"}
         if not path.exists():
             return {"error": f"Dataset not found: {args['path']}"}
         max_rows = min(args.get("rows", 3), 10)
@@ -207,6 +232,8 @@ async def _dispatch(
         from amortized.api.datasets import _detect_format, _row_to_messages
 
         source = Path(args["source_path"])
+        if not _is_path_allowed(source):
+            return {"error": "Source path is outside the allowed data directories"}
         if not source.exists():
             return {"error": f"Source dataset not found: {args['source_path']}"}
         all_rows: list[dict[str, Any]] = []
@@ -214,7 +241,10 @@ async def _dispatch(
             for line in f:
                 line = line.strip()
                 if line:
-                    all_rows.append(json.loads(line))
+                    try:
+                        all_rows.append(json.loads(line))
+                    except (json.JSONDecodeError, ValueError):
+                        continue
         if not all_rows:
             return {"error": "Source dataset is empty"}
         first_row = all_rows[0]
@@ -252,7 +282,6 @@ async def _dispatch(
         artifacts = await list_artifacts(repo, job_id)
         if not artifacts:
             return {"error": "No artifacts found for this job"}
-        artifact_id = artifacts[0]["id"]
         judge_artifact = artifacts[0]
         file_path = Path(judge_artifact["path"])
         if not file_path.exists():
@@ -278,7 +307,7 @@ async def _dispatch(
         judge_config = JudgeConfig(**template_data)
         inference_config = LiteLLMInferenceConfig(model=args["model"])
         j = create_judge(judge_config, inference_config=inference_config)
-        judge_results: Any = j.judge(data_rows)
+        judge_results: Any = await asyncio.to_thread(j.judge, data_rows)
         serialized: list[dict[str, Any]] = []
         for r in judge_results:
             if hasattr(r, "model_dump"):
