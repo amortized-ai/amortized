@@ -68,7 +68,10 @@ class LocalBackend:
             "AMORTIZED_WORK_DIR": work_dir,
             "AMORTIZED_CONFIG_PATH": config_path,
         }
-        filtered_spec_env = {k: v for k, v in spec.env.items() if k not in ("_config", "_run_script", "_run_config")}
+        skip_keys = ("_config", "_run_script", "_run_config")
+        filtered_spec_env = {
+            k: v for k, v in spec.env.items() if k not in skip_keys
+        }
         env = {**os.environ, **amortized_env, **filtered_spec_env}
 
         # Prepend venv bin dir to PATH so venv tools (trl, torchrun, accelerate, etc.) are found
