@@ -437,8 +437,8 @@ async def test_call_with_api_key_set(db_ready: None) -> None:
     try:
         config_mod.settings.api_key = "test-secret-key"
         main_mod._settings.api_key = "test-secret-key"
-        result = await mcp_server._call("GET", "/api/v1/health")
-        assert result["status"] == "ok"
+        result = await mcp_server._call("GET", "/api/v1/jobs")
+        assert isinstance(result, list)
     finally:
         config_mod.settings.api_key = original_config
         main_mod._settings.api_key = original_main
