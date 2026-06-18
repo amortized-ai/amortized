@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from amortized.agent.schemas import TOOL_REGISTRY, TOOLS
 
 logger = logging.getLogger("amortized.agent.tools")
@@ -74,6 +76,13 @@ async def execute_tool(
     }
     if repo is None and name not in _no_repo_tools and any(t.name == name for t in TOOL_REGISTRY):
         return {"error": f"Tool '{name}' requires a database connection but none is available"}
+
+    tool_def = next((t for t in TOOL_REGISTRY if t.name == name), None)
+    if tool_def is not None and tool_def.input_model is not None:
+        try:
+            tool_def.input_model.model_validate(arguments)
+        except ValidationError as ve:
+            return {"error": f"Invalid arguments for tool '{name}': {ve}"}
 
     try:
         return await _dispatch(repo, name, arguments)
