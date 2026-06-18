@@ -162,6 +162,7 @@ class SSHBackend:
                 network_flag = "--network host " if not port_flags else ""
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
+                    f"--ipc=host --pids-limit=-1 "
                     f"{network_flag}"
                     f"{port_flags + ' ' if port_flags else ''}"
                     f"-v {remote_dir}:/amortized/work "
