@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shlex
@@ -164,10 +165,8 @@ class SSHBackend:
                 )
 
                 home_dir = "~"
-                try:
+                with contextlib.suppress(Exception):
                     home_dir = await self._run(conn, "echo $HOME", check=True)
-                except Exception:
-                    pass
                 cmd_override = ""
                 if spec.command:
                     cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
