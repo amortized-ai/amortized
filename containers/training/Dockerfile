@@ -42,6 +42,10 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 # Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
+# Upgrade torch to cu129 build (official vLLM uses cu129; cu128 hangs on drivers 580+)
+# Extensions compiled with cu128 remain compatible via CUDA forward compat
+RUN python3.11 -m pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cu129
+
 # Patch: apply training_hub PR#98 fixes:
 # 1. Import unsloth before art in subprocess (GRPOConfig pickle fix)
 # 2. Pass enforce_eager through to vLLM engine (torch.fx crash fix on newer drivers)
