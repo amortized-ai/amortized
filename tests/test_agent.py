@@ -13,7 +13,12 @@ from amortized.agent import (
     process_message,
     stream_message,
 )
-from amortized.agent.protocol import EventType, StreamEvent
+from amortized.agent.protocol import (
+    DeltaEvent,
+    DoneEvent,
+    EventType,
+    StreamEvent,
+)
 from amortized.agent.schemas import (
     TOOL_REGISTRY,
     TOOLS,
@@ -97,12 +102,18 @@ class TestProtocol:
         assert EventType.error == "error"
 
     def test_stream_event_model(self) -> None:
-        event = StreamEvent(type=EventType.delta, data={"text": "hello"})
+        event = StreamEvent(
+            type=EventType.delta,
+            data=DeltaEvent(text="hello").model_dump(),
+        )
         assert event.type == EventType.delta
         assert event.data == {"text": "hello"}
 
     def test_stream_event_serialization(self) -> None:
-        event = StreamEvent(type=EventType.done, data={"full_text": "result"})
+        event = StreamEvent(
+            type=EventType.done,
+            data=DoneEvent(full_text="result").model_dump(),
+        )
         d = event.model_dump()
         assert d["type"] == "done"
         assert d["data"]["full_text"] == "result"

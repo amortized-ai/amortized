@@ -11,7 +11,17 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from amortized.agent.protocol import EventType, StreamEvent
+from amortized.agent.protocol import (
+    ActionEvent,
+    DeltaEvent,
+    DoneEvent,
+    ErrorEvent,
+    EventType,
+    OptionsEvent,
+    StreamEvent,
+    ThinkingEvent,
+    ToolResultEvent,
+)
 from amortized.agent.schemas import TOOLS
 from amortized.agent.tools import execute_tool, tool_result_summary
 from amortized.config import settings
@@ -346,7 +356,8 @@ async def stream_message(
                     content_parts.append(delta.content)
                     full_text += delta.content
                     yield StreamEvent(
-                        type=EventType.delta, data={"text": delta.content}
+                        type=EventType.delta,
+                        data=DeltaEvent(text=delta.content).model_dump(),
                     )
 
                 if delta.tool_calls:
@@ -393,7 +404,8 @@ async def stream_message(
                 for tc_data in tool_calls_list:
                     name = tc_data["function"]["name"]
                     yield StreamEvent(
-                        type=EventType.thinking, data={"tool": name}
+                        type=EventType.thinking,
+                        data=ThinkingEvent(tool=name).model_dump(),
                     )
 
                     raw_args = tc_data["function"]["arguments"]
@@ -425,7 +437,7 @@ async def stream_message(
 
                     yield StreamEvent(
                         type=EventType.tool_result,
-                        data={"tool": name, "summary": summary},
+                        data=ToolResultEvent(tool=name, summary=summary).model_dump(),
                     )
 
                     messages.append(
@@ -442,16 +454,25 @@ async def stream_message(
             break
 
         if proposed_action:
-            yield StreamEvent(type=EventType.action, data=proposed_action)
+            yield StreamEvent(
+                type=EventType.action,
+                data=ActionEvent(**proposed_action).model_dump(),
+            )
 
         if presented_options:
-            yield StreamEvent(type=EventType.options, data=presented_options)
+            yield StreamEvent(
+                type=EventType.options,
+                data=OptionsEvent(**presented_options).model_dump(),
+            )
 
-        yield StreamEvent(type=EventType.done, data={"full_text": full_text})
+        yield StreamEvent(
+            type=EventType.done,
+            data=DoneEvent(full_text=full_text).model_dump(),
+        )
 
     except Exception as exc:
         logger.exception("Streaming agent error")
         yield StreamEvent(
             type=EventType.error,
-            data={"error": f"Agent error: {exc}"},
+            data=ErrorEvent(error=f"Agent error: {exc}").model_dump(),
         )
