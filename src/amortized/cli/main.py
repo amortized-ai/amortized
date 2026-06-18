@@ -97,6 +97,7 @@ def _test_ssh(host: str, user: str | None = None) -> dict[str, Any]:
         ssh_target = f"{user}@{host}" if user else host
         cmd = [
             "ssh",
+            "-q",
             "-o",
             "ConnectTimeout=5",
             "-o",
