@@ -44,7 +44,7 @@ RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
 # Upgrade torch to cu129 build (official vLLM uses cu129; cu128 hangs on drivers 580+)
 # Extensions compiled with cu128 remain compatible via CUDA forward compat
-RUN python3.11 -m pip install --no-cache-dir torch==2.10.0 --index-url https://download.pytorch.org/whl/cu129
+RUN python3.11 -m pip install --no-cache-dir --force-reinstall torch==2.10.0 --index-url https://download.pytorch.org/whl/cu129
 
 # Patch: apply training_hub PR#98 fixes:
 # 1. Import unsloth before art in subprocess (GRPOConfig pickle fix)
