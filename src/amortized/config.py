@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         default="",
         description="OpenAI API key (reads AMORTIZED_OPENAI_API_KEY or OPENAI_API_KEY)",
     )
-    openai_model: str = "gpt-5-mini"
+    openai_model: str = "gpt-5.4"
     openai_base_url: str = "https://api.openai.com/v1"
 
     storage_backend: str = Field("local", description="Storage backend: local, s3, gcs")
