@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shlex
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -37,6 +38,18 @@ class SSHBackend:
 
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
+
+    async def _run(self, conn: Any, cmd: str, *, check: bool = False) -> str:
+        """Run a command over SSH, stripping MOTD/banner noise from stdout."""
+        marker = f"__amortized_{uuid.uuid4().hex[:12]}__"
+        wrapped = f"echo {marker}; {cmd}; echo {marker}"
+        result = await conn.run(wrapped, check=check)
+        stdout = result.stdout or ""
+        start = stdout.find(marker)
+        end = stdout.rfind(marker)
+        if start != -1 and end != -1 and start != end:
+            return stdout[start + len(marker) : end].strip()
+        return stdout.strip()
 
     async def _connect(self) -> Any:
         import asyncssh
@@ -152,8 +165,7 @@ class SSHBackend:
 
                 home_dir = "~"
                 try:
-                    home_result = await conn.run("echo $HOME", check=True)
-                    home_dir = home_result.stdout.strip()
+                    home_dir = await self._run(conn, "echo $HOME", check=True)
                 except Exception:
                     pass
                 cmd_override = ""
@@ -173,8 +185,7 @@ class SSHBackend:
                     f"-e AMORTIZED_CONFIG_PATH=/amortized/config.json "
                     f"{spec.image}{cmd_override}"
                 )
-                result = await conn.run(full_cmd, check=True)
-                container_id = result.stdout.strip()
+                container_id = await self._run(conn, full_cmd, check=True)
                 logger.info(
                     "Started container job %s on %s (container %s, %d secrets)",
                     spec.job_id,
@@ -199,8 +210,7 @@ class SSHBackend:
                     f"nohup {cmd_str} > stdout.log 2> stderr.log & echo $!"
                 )
 
-                result = await conn.run(full_cmd, check=True)
-                pid = int(result.stdout.strip())
+                pid = int(await self._run(conn, full_cmd, check=True))
 
                 logger.info(
                     "Started SSH job %s on %s with pid %d",
@@ -227,16 +237,16 @@ class SSHBackend:
 
         conn = await self._connect()
         try:
-            result = await conn.run(
-                f"kill -0 {handle.remote_pid} 2>/dev/null && echo alive || echo dead"
+            output = await self._run(
+                conn, f"kill -0 {handle.remote_pid} 2>/dev/null && echo alive || echo dead"
             )
-            output = result.stdout.strip()
 
             if output == "alive":
                 return BackendStatus(running=True)
 
-            exit_result = await conn.run(f"wait {handle.remote_pid} 2>/dev/null; echo $?")
-            exit_code_str = exit_result.stdout.strip()
+            exit_code_str = await self._run(
+                conn, f"wait {handle.remote_pid} 2>/dev/null; echo $?"
+            )
             try:
                 exit_code = int(exit_code_str)
             except ValueError:
@@ -250,11 +260,12 @@ class SSHBackend:
         conn = await self._connect()
         try:
             fmt = "'{{.State.Running}} {{.State.ExitCode}}'"
-            result = await conn.run(
+            output = await self._run(
+                conn,
                 f"{self._container_runtime} inspect --format {fmt} "
-                f"{handle.container_id} 2>/dev/null || echo 'error 1'"
+                f"{handle.container_id} 2>/dev/null || echo 'error 1'",
             )
-            parts = result.stdout.strip().split()
+            parts = output.split()
             if len(parts) >= 2 and parts[0] == "true":
                 return BackendStatus(running=True)
             exit_code = int(parts[1]) if len(parts) >= 2 else None
@@ -307,8 +318,9 @@ class SSHBackend:
 
         conn = await self._connect()
         try:
-            result = await conn.run(f"cat {handle.remote_dir}/stdout.log 2>/dev/null || true")
-            output = result.stdout or ""
+            output = await self._run(
+                conn, f"cat {handle.remote_dir}/stdout.log 2>/dev/null || true"
+            )
             for line in output.splitlines():
                 yield line
         finally:
