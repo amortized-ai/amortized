@@ -640,7 +640,7 @@ class TestBuildSynthConfig:
         assert result["inference_config"]["temperature"] == 0.7
         assert result["inference_config"]["max_concurrency"] == 16
         assert result["num_samples"] == 50
-        assert result["output_path"] == "/amortized/work/output/generated_data.jsonl"
+        assert result["output_path"] == "output/generated_data.jsonl"
 
     def test_optional_inference_fields(self) -> None:
         config: dict[str, Any] = {

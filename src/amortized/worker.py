@@ -404,7 +404,7 @@ def _build_synth_config(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "inference_config": inference_config,
         "num_samples": config.get("num_samples", 100),
-        "output_path": "/amortized/work/output/generated_data.jsonl",
+        "output_path": "output/generated_data.jsonl",
         "strategy_params": strategy_params,
     }
 
