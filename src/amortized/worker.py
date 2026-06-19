@@ -229,10 +229,7 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
             ")\n"
         )
 
-    lines += (
-        "trainer.train()\n"
-        "trainer.save_model(output_dir)\n"
-    )
+    lines += "trainer.train()\ntrainer.save_model(output_dir)\n"
 
     return lines
 
@@ -377,63 +374,39 @@ def _serve_config_yaml(config: dict[str, Any]) -> str:
     return result
 
 
-def _generate_container_script(job_type: str, config: dict[str, Any]) -> str:
-    """Generate a self-contained Python script for container execution."""
+def _generate_container_config(job_type: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Build an asynth-compatible config dict for container execution."""
     if job_type == JobType.sdg.value:
-        return _sdg_script()
-    if job_type == JobType.eval.value:
-        return _eval_script()
-    raise ValueError(f"No container script for job type: {job_type}")
+        return _build_synth_config(config)
+    raise ValueError(f"No container config for job type: {job_type}")
 
 
-def _sdg_script() -> str:
-    return """\
-import json, os
+def _build_synth_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Build an asynth-compatible synthesis config dict for CLI execution."""
+    inference_config: dict[str, Any] = {
+        "model": config["model"],
+        "temperature": config.get("temperature", 0.7),
+        "max_concurrency": config.get("max_concurrency", 16),
+        "num_retries": config.get("num_retries", 3),
+    }
+    for optional in ("max_tokens", "top_p", "seed", "api_base", "api_key"):
+        if config.get(optional) is not None:
+            inference_config[optional] = config[optional]
 
-config = json.load(open("/amortized/config.json"))["config"]
-if isinstance(config, str):
-    config = json.loads(config)
+    strategy_params = config.get("strategy_params", {})
+    if isinstance(strategy_params, dict):
+        strategy_params = dict(strategy_params)
+        if config.get("input_data") and "input_data" not in strategy_params:
+            strategy_params["input_data"] = config["input_data"]
+        if config.get("input_documents") and "input_documents" not in strategy_params:
+            strategy_params["input_documents"] = config["input_documents"]
 
-from asynth import LiteLLMInferenceConfig, SynthesisConfig, synthesize
-from asynth.configs.params.synthesis_params import GeneralSynthesisParams
-
-os.makedirs("/amortized/work/output", exist_ok=True)
-
-inference_config = LiteLLMInferenceConfig(
-    model=config["model"],
-    temperature=config.get("temperature", 0.7),
-    max_concurrency=config.get("max_concurrency", 16),
-    max_tokens=config.get("max_tokens"),
-    top_p=config.get("top_p"),
-    seed=config.get("seed"),
-    num_retries=config.get("num_retries", 3),
-    api_base=config.get("api_base"),
-    api_key=config.get("api_key"),
-)
-
-raw_strategy = config.get("strategy_params", {})
-if raw_strategy and isinstance(raw_strategy, dict):
-    merged = dict(raw_strategy)
-    if config.get("input_data") and "input_data" not in merged:
-        merged["input_data"] = config["input_data"]
-    if config.get("input_documents") and "input_documents" not in merged:
-        merged["input_documents"] = config["input_documents"]
-    if hasattr(GeneralSynthesisParams, "from_dict"):
-        strategy_params = GeneralSynthesisParams.from_dict(merged)
-    else:
-        strategy_params = GeneralSynthesisParams(**merged)
-else:
-    strategy_params = GeneralSynthesisParams()
-
-synth_config = SynthesisConfig(
-    num_samples=config.get("num_samples", 100),
-    output_path="/amortized/work/output/generated_data.jsonl",
-    inference_config=inference_config,
-    strategy_params=strategy_params,
-)
-
-synthesize(synth_config)
-"""
+    return {
+        "inference_config": inference_config,
+        "num_samples": config.get("num_samples", 100),
+        "output_path": "output/generated_data.jsonl",
+        "strategy_params": strategy_params,
+    }
 
 
 def _resolve_judge_template(config: dict[str, Any]) -> dict[str, Any]:
@@ -464,6 +437,26 @@ def _resolve_judge_template(config: dict[str, Any]) -> dict[str, Any]:
     config = {**config, "judge": merged_judge}
     logger.info("Resolved judge template '%s'", template_name)
     return config
+
+
+def _build_judge_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Build an asynth-compatible judge config dict for CLI execution."""
+    judge = config.get("judge", {})
+    result: dict[str, Any] = {
+        "judge_params": {
+            "prompt_template": judge.get("prompt", "Evaluate this response: {response}"),
+            "response_format": judge.get("response_format", "json"),
+            "judgment_type": judge.get("judgment_type", "bool"),
+            "include_explanation": judge.get("include_explanation", True),
+        },
+        "inference_config": {
+            "model": judge.get("model", "openai/gpt-4o-mini"),
+            "temperature": judge.get("temperature", 0.0),
+        },
+    }
+    if judge.get("system_instruction"):
+        result["judge_params"]["system_instruction"] = judge["system_instruction"]
+    return result
 
 
 def _eval_script() -> str:
@@ -576,33 +569,50 @@ if check_fields:
     ) if results else 0.0
 
 if judge_model:
-    from asynth import create_judge, JudgeConfig as AsynthJudgeConfig
-    from asynth.configs.params.judge_params import JudgeParams
-    from asynth.inference.litellm_engine import LiteLLMInferenceConfig
-
-    judge_params_kwargs = {
-        "prompt_template": judge_prompt,
-        "response_format": judge_response_format,
-        "judgment_type": judge_judgment_type,
-        "include_explanation": judge_include_explanation,
+    import yaml
+    judge_cfg = {
+        "judge_params": {
+            "prompt_template": judge_prompt,
+            "response_format": judge_response_format,
+            "judgment_type": judge_judgment_type,
+            "include_explanation": judge_include_explanation,
+        },
+        "inference_config": {
+            "model": judge_model,
+            "temperature": judge_temp,
+        },
     }
     if judge_system:
-        judge_params_kwargs["system_instruction"] = judge_system
-    jc = AsynthJudgeConfig(
-        judge_params=JudgeParams(**judge_params_kwargs),
-        inference_config=LiteLLMInferenceConfig(
-            model=judge_model,
-            temperature=judge_temp,
-        ),
-    )
-    j = create_judge(jc)
+        judge_cfg["judge_params"]["system_instruction"] = judge_system
+
+    # Write judge config
+    with open("/amortized/work/judge_config.yaml", "w") as jf:
+        yaml.dump(judge_cfg, jf)
+
+    # Write judge input data
     judge_data = [{"request": r["input"], "response": r["actual"]} for r in results]
-    judge_outputs = j.judge(judge_data)
+    with open("/amortized/work/judge_input.jsonl", "w") as jf:
+        for entry in judge_data:
+            jf.write(json.dumps(entry) + "\\n")
+
+    # Run asynth judge CLI
+    import subprocess
+    subprocess.run(
+        ["asynth", "judge",
+         "--config", "/amortized/work/judge_config.yaml",
+         "--data", "/amortized/work/judge_input.jsonl",
+         "--output", "/amortized/work/judge_output.json"],
+        check=True,
+    )
+
+    # Read judge results
+    with open("/amortized/work/judge_output.json") as jf:
+        judge_outputs = json.load(jf)
 
     for i, output in enumerate(judge_outputs):
-        results[i]["judge_passed"] = output.field_values.get("judgment", False)
-        results[i]["judge_score"] = output.field_scores.get("judgment", 0.0)
-        results[i]["judge_explanation"] = output.field_values.get("explanation", "")
+        results[i]["judge_passed"] = output.get("passed", False)
+        results[i]["judge_score"] = output.get("score", 0.0)
+        results[i]["judge_explanation"] = output.get("explanation", "")
 
     passed = sum(1 for r in results if r.get("judge_passed", False))
     scores = [r.get("judge_score", 0.0) for r in results if r.get("judge_score") is not None]
@@ -926,8 +936,14 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_env["_run_config"] = _serve_config_yaml(config)
         if config.get("gpu_ids"):
             spec_env["CUDA_VISIBLE_DEVICES"] = str(config["gpu_ids"])
+    elif image and job["type"] == JobType.sdg.value:
+        import yaml
+
+        synth_config = _generate_container_config(job["type"], config)
+        spec_env["_synth_config"] = yaml.dump(synth_config, default_flow_style=False)
+        cmd = ["asynth", "synthesize", "--config", "/amortized/work/synth_config.yaml"]
     elif image:
-        script = _generate_container_script(job["type"], config)
+        script = _eval_script()
         spec_env["_run_script"] = script
         cmd = ["python3", "/amortized/work/run.py"]
 
