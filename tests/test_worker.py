@@ -3,12 +3,14 @@
 import json
 import os
 import tempfile
+from typing import Any
 
 import httpx
 import pytest
 from conftest import requires_training_hub_functional
 
 from amortized.main import app
+from amortized.worker import _build_synth_config, _generate_container_config
 
 
 @pytest.fixture(autouse=True)
@@ -115,7 +117,7 @@ class TestWorkerJobExecution:
             assert response.status_code == 201
             job_id = response.json()["id"]
 
-            # Mock the subprocess to simulate SDG output instead of running real asynth
+            # Mock the subprocess to simulate asynth CLI output
             import subprocess as _subprocess
 
             _real_popen = _subprocess.Popen
@@ -126,7 +128,9 @@ class TestWorkerJobExecution:
                 import os as _os
 
                 _os.makedirs(str(work_dir), exist_ok=True)
-                out_path = _os.path.join(str(work_dir), "generated_data.jsonl")
+                output_subdir = _os.path.join(str(work_dir), "output")
+                _os.makedirs(output_subdir, exist_ok=True)
+                out_path = _os.path.join(output_subdir, "generated_data.jsonl")
                 with open(out_path, "w") as f:
                     for i in range(5):
                         f.write(_json.dumps({"q": f"q{i}", "a": f"a{i}"}) + "\n")
@@ -623,3 +627,74 @@ class TestSmartBackendRouting:
             assert data["status"] in ("succeeded", "failed")
         finally:
             config_mod.settings.default_backend = original
+
+
+class TestBuildSynthConfig:
+    """Test that _build_synth_config produces valid asynth CLI config dicts."""
+
+    def test_basic_config(self) -> None:
+        config: dict[str, Any] = {"model": "openai/gpt-4o", "num_samples": 50}
+        result = _build_synth_config(config)
+
+        assert result["inference_config"]["model"] == "openai/gpt-4o"
+        assert result["inference_config"]["temperature"] == 0.7
+        assert result["inference_config"]["max_concurrency"] == 16
+        assert result["num_samples"] == 50
+        assert result["output_path"] == "/amortized/work/output/generated_data.jsonl"
+
+    def test_optional_inference_fields(self) -> None:
+        config: dict[str, Any] = {
+            "model": "openai/gpt-4o",
+            "api_base": "http://localhost:8000/v1",
+            "api_key": "sk-test",
+            "max_tokens": 1024,
+            "top_p": 0.9,
+            "seed": 42,
+        }
+        result = _build_synth_config(config)
+        ic = result["inference_config"]
+
+        assert ic["api_base"] == "http://localhost:8000/v1"
+        assert ic["api_key"] == "sk-test"
+        assert ic["max_tokens"] == 1024
+        assert ic["top_p"] == 0.9
+        assert ic["seed"] == 42
+
+    def test_none_optionals_excluded(self) -> None:
+        config: dict[str, Any] = {"model": "openai/gpt-4o", "max_tokens": None}
+        result = _build_synth_config(config)
+        assert "max_tokens" not in result["inference_config"]
+
+    def test_strategy_params_passthrough(self) -> None:
+        strategy = {"sampled_attributes": [{"name": "domain", "values": ["science"]}]}
+        config: dict[str, Any] = {"model": "openai/gpt-4o", "strategy_params": strategy}
+        result = _build_synth_config(config)
+        assert result["strategy_params"]["sampled_attributes"] == strategy["sampled_attributes"]
+
+    def test_input_data_merged_into_strategy(self) -> None:
+        config: dict[str, Any] = {
+            "model": "openai/gpt-4o",
+            "strategy_params": {"sampled_attributes": []},
+            "input_data": [{"text": "hello"}],
+        }
+        result = _build_synth_config(config)
+        assert result["strategy_params"]["input_data"] == [{"text": "hello"}]
+
+    def test_input_documents_merged_into_strategy(self) -> None:
+        config: dict[str, Any] = {
+            "model": "openai/gpt-4o",
+            "strategy_params": {},
+            "input_documents": ["doc1.pdf"],
+        }
+        result = _build_synth_config(config)
+        assert result["strategy_params"]["input_documents"] == ["doc1.pdf"]
+
+    def test_generate_container_config_sdg(self) -> None:
+        config: dict[str, Any] = {"model": "openai/gpt-4o"}
+        result = _generate_container_config("sdg", config)
+        assert "inference_config" in result
+        assert "num_samples" in result
+
+    def test_generate_container_config_unknown_type(self) -> None:
+        with pytest.raises(ValueError, match="No container config"):
+            _generate_container_config("unknown", {})

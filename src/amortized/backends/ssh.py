@@ -103,7 +103,7 @@ class SSHBackend:
             filtered_spec_env = {
                 k: v
                 for k, v in spec.env.items()
-                if k not in ("_config", "_run_script", "_run_config")
+                if k not in ("_config", "_run_script", "_run_config", "_synth_config")
             }
             merged_env = {**amortized_env, **filtered_spec_env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)
@@ -134,6 +134,14 @@ class SSHBackend:
                 await conn.run(
                     f"cat > {remote_dir}/config.yaml << 'AMORTIZED_CONFIG_EOF'\n"
                     f"{run_config}\nAMORTIZED_CONFIG_EOF",
+                    check=True,
+                )
+
+            synth_config = spec.env.get("_synth_config")
+            if synth_config:
+                await conn.run(
+                    f"cat > {remote_dir}/synth_config.yaml << 'AMORTIZED_SYNTH_EOF'\n"
+                    f"{synth_config}\nAMORTIZED_SYNTH_EOF",
                     check=True,
                 )
 
@@ -244,9 +252,7 @@ class SSHBackend:
             if output == "alive":
                 return BackendStatus(running=True)
 
-            exit_code_str = await self._run(
-                conn, f"wait {handle.remote_pid} 2>/dev/null; echo $?"
-            )
+            exit_code_str = await self._run(conn, f"wait {handle.remote_pid} 2>/dev/null; echo $?")
             try:
                 exit_code = int(exit_code_str)
             except ValueError:
