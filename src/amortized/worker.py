@@ -100,9 +100,11 @@ _TRL_FIELD_MAP: dict[str, str] = {
 }
 
 _SCRIPT_ALGO_TRAINERS: dict[str, tuple[str, str]] = {
+    "sft": ("SFTTrainer", "SFTConfig"),
     "gkd": ("GKDTrainer", "GKDConfig"),
     "dpo": ("DPOTrainer", "DPOConfig"),
     "kto": ("KTOTrainer", "KTOConfig"),
+    "grpo": ("GRPOTrainer", "GRPOConfig"),
 }
 
 
@@ -1015,18 +1017,22 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
-        if algorithm in TRAINING_HUB_ALGOS:
+        if is_k8s:
+            trl_algo = {"sft": "sft", "lora_sft": "sft", "osft": "sft"}.get(algorithm, algorithm)
+            if trl_algo in ("sft", "dpo", "kto", "grpo", "gkd"):
+                script = _trl_trainer_script(trl_algo, config)
+            else:
+                script = _training_hub_script(algorithm)
+            spec_env["_run_script"] = script
+            cmd = ["python3.11", "/amortized/run.py"]
+        elif algorithm in TRAINING_HUB_ALGOS:
             script = _training_hub_script(algorithm)
             spec_env["_run_script"] = script
             cmd = ["python3.11", "/amortized/work/run.py"]
         elif algorithm in SCRIPT_ALGOS:
-            if is_k8s:
-                spec_env["_run_config"] = _trl_config_yaml(algorithm, config)
-                cmd = ["trl", algorithm, "--config", "/amortized/config.yaml"]
-            else:
-                script = _trl_trainer_script(algorithm, config)
-                spec_env["_run_script"] = script
-                cmd = ["python3.11", "/amortized/work/run.py"]
+            script = _trl_trainer_script(algorithm, config)
+            spec_env["_run_script"] = script
+            cmd = ["python3.11", "/amortized/work/run.py"]
         else:
             raise ValueError(f"Unknown training algorithm: {algorithm}")
     elif image and job["type"] == JobType.serve.value:
