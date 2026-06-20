@@ -36,9 +36,14 @@ spec:
             - "0.0.0.0"
             - "--port"
             - "5000"
+            - "--allowed-hosts"
+            - "*"
           ports:
             - name: http
               containerPort: 5000
+          env:
+            - name: MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE
+              value: "true"
           envFrom:
             - secretRef:
                 name: amortized-s3
