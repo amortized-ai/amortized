@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: amortized-studio
+  namespace: amortized
+  labels:
+    app: amortized
+    component: studio
+spec:
+  to:
+    kind: Service
+    name: amortized-studio
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

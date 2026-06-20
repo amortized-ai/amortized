@@ -106,17 +106,69 @@ _SCRIPT_ALGO_TRAINERS: dict[str, tuple[str, str]] = {
 }
 
 
-def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
-    """Generate a self-contained Python script for TRL trainer-based algorithms."""
-    trainer_class, config_class = _SCRIPT_ALGO_TRAINERS[algorithm]
+def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
+    """Translate amortized training config -> TRL CLI YAML config."""
+    import yaml
 
-    # GKD needs teacher model; DPO and KTO do not
+    trl_config: dict[str, Any] = {
+        "model_name_or_path": config.get("model_name_or_path", config.get("model_path", "")),
+        "output_dir": config.get("output_dir", "/amortized/work/output"),
+        "report_to": "mlflow",
+    }
+
+    data_path = config.get("data_path", config.get("dataset", ""))
+    trl_config["dataset_name"] = data_path
+
+    # GKD needs teacher model
+    if algorithm == "gkd" and config.get("teacher_model_name_or_path"):
+        trl_config["teacher_model_name_or_path"] = config["teacher_model_name_or_path"]
+
+    skip_keys = {
+        "algorithm",
+        "engine",
+        "data_path",
+        "dataset",
+        "model_name_or_path",
+        "model_path",
+        "teacher_model_name_or_path",
+        "use_peft",
+        "lora_r",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "qlora",
+        "bnb_4bit_quant_type",
+        "bnb_4bit_compute_dtype",
+    }
+    for key, value in config.items():
+        if key in skip_keys or value is None:
+            continue
+        mapped = _TRL_FIELD_MAP.get(key, key)
+        trl_config[mapped] = value
+
+    if config.get("use_peft") or config.get("lora_r"):
+        trl_config["peft_config"] = {
+            "r": config.get("lora_r", 16),
+            "lora_alpha": config.get("lora_alpha", 32),
+            "lora_dropout": config.get("lora_dropout", 0.05),
+            "target_modules": config.get("lora_target_modules", "all-linear"),
+        }
+
+    if config.get("qlora"):
+        trl_config.setdefault("peft_config", {})["use_bnb"] = True
+
+    result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+    return result
+
+
+def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
+    """Generate a self-contained Python script for TRL trainer-based algorithms (SSH path)."""
+    trainer_class, config_class = _SCRIPT_ALGO_TRAINERS[algorithm]
     needs_teacher = algorithm == "gkd"
 
     lines = (
         "import json, os, sys\n"
         "\n"
-        "# Ensure venv bin dir is in PATH\n"
         "bin_dir = os.path.dirname(sys.executable)\n"
         "os.environ['PATH'] = bin_dir + ':' + os.environ.get('PATH', '')\n"
         "os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')\n"
@@ -139,8 +191,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
     if needs_teacher:
         lines += (
             "teacher_name = config.get('teacher_model_name_or_path', model_name)\n"
-            "\n"
-            "# Load student and teacher models\n"
             "student = AutoModelForCausalLM.from_pretrained(\n"
             "    model_name, torch_dtype='auto', device_map='auto')\n"
             "teacher = AutoModelForCausalLM.from_pretrained(\n"
@@ -148,8 +198,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         )
     else:
         lines += (
-            "\n"
-            "# Load model\n"
             "model = AutoModelForCausalLM.from_pretrained(\n"
             "    model_name, torch_dtype='auto', device_map='auto')\n"
         )
@@ -159,7 +207,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "if tokenizer.pad_token is None:\n"
         "    tokenizer.pad_token = tokenizer.eos_token\n"
         "\n"
-        "# Load dataset\n"
         "data_path = config.get('data_path', config.get('dataset', ''))\n"
         "if os.path.isdir(data_path):\n"
         "    dataset = load_from_disk(data_path)\n"
@@ -168,7 +215,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "else:\n"
         "    dataset = load_dataset(data_path, split='train')\n"
         "\n"
-        "# Build trainer config\n"
         "trainer_kwargs = {\n"
         "    'output_dir': output_dir,\n"
         "    'report_to': 'none',\n"
@@ -185,7 +231,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "    elif key not in FIELD_MAP:\n"
         "        trainer_kwargs[key] = value\n"
         "\n"
-        "# Separate LoRA/PEFT params from trainer config\n"
         "peft_config = None\n"
         "lora_params = {}\n"
         "peft_keys = {'use_peft', 'lora_r', 'lora_alpha', 'lora_dropout', 'lora_target_modules'}\n"
@@ -230,7 +275,6 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         )
 
     lines += "trainer.train()\ntrainer.save_model(output_dir)\n"
-
     return lines
 
 
@@ -459,7 +503,35 @@ def _build_judge_config(config: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _eval_config_yaml(config: dict[str, Any]) -> str:
+    """Translate amortized eval config -> asynth judge YAML config."""
+    import yaml
+
+    judge_cfg = _build_judge_config(config)
+
+    eval_config: dict[str, Any] = {
+        **judge_cfg,
+        "dataset": config.get("dataset", ""),
+        "output_path": "/amortized/work/eval_results.json",
+    }
+
+    if config.get("model_endpoint"):
+        eval_config["model_endpoint"] = config["model_endpoint"]
+    if config.get("model_name"):
+        eval_config["model_name"] = config["model_name"]
+    if config.get("max_samples"):
+        eval_config["max_samples"] = config["max_samples"]
+    if config.get("temperature") is not None:
+        eval_config["temperature"] = config["temperature"]
+    if config.get("deterministic_checks"):
+        eval_config["deterministic_checks"] = config["deterministic_checks"]
+
+    result: str = yaml.dump(eval_config, default_flow_style=False, sort_keys=False)
+    return result
+
+
 def _eval_script() -> str:
+    """Generate eval Python script for SSH backend path."""
     return """\
 import json, os, re
 
@@ -585,17 +657,14 @@ if judge_model:
     if judge_system:
         judge_cfg["judge_params"]["system_instruction"] = judge_system
 
-    # Write judge config
     with open("/amortized/work/judge_config.yaml", "w") as jf:
         yaml.dump(judge_cfg, jf)
 
-    # Write judge input data
     judge_data = [{"request": r["input"], "response": r["actual"]} for r in results]
     with open("/amortized/work/judge_input.jsonl", "w") as jf:
         for entry in judge_data:
             jf.write(json.dumps(entry) + "\\n")
 
-    # Run asynth judge CLI
     import subprocess
     subprocess.run(
         ["asynth", "judge",
@@ -605,7 +674,6 @@ if judge_model:
         check=True,
     )
 
-    # Read judge results
     with open("/amortized/work/judge_output.json") as jf:
         judge_outputs = json.load(jf)
 
@@ -872,7 +940,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
         spec_ports = {}
 
-    backend_name = config_mod.settings.default_backend or "local"
+    backend_name = config_mod.settings.resolved_default_backend
     if isinstance(job.get("metadata"), dict):
         backend_name = job["metadata"].get("backend", backend_name)
 
@@ -913,7 +981,32 @@ async def _run_job(job: dict[str, Any]) -> None:
         if value:
             spec_env[env_name] = value
 
+    _PROVIDER_ENV_MAP = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "huggingface": "HF_TOKEN",
+    }
+    key_db = await _get_db()
+    try:
+        key_repo = Repository(key_db)
+        for provider, env_name in _PROVIDER_ENV_MAP.items():
+            if env_name not in spec_env:
+                key_row = await key_repo.get_api_key_for_provider(provider)
+                if key_row:
+                    from amortized.core.crypto import decrypt_value
+
+                    spec_env[env_name] = decrypt_value(key_row["key_value"])
+    finally:
+        await key_db.close()
+
+    if config_mod.settings.mlflow_tracking_uri:
+        spec_env["MLFLOW_TRACKING_URI"] = config_mod.settings.mlflow_tracking_uri
+        spec_env["MLFLOW_EXPERIMENT_NAME"] = f"amortized/{job['type']}/{job_id[:8]}"
+        if job["type"] == JobType.training.value:
+            spec_env["HF_MLFLOW_LOG_ARTIFACTS"] = "true"
+
     image = _JOB_TYPE_IMAGES.get(job["type"])
+    is_k8s = backend_name == "kubernetes"
 
     if job["type"] == JobType.eval.value:
         config = _resolve_judge_template(config)
@@ -927,9 +1020,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             spec_env["_run_script"] = script
             cmd = ["python3.11", "/amortized/work/run.py"]
         elif algorithm in SCRIPT_ALGOS:
-            script = _trl_trainer_script(algorithm, config)
-            spec_env["_run_script"] = script
-            cmd = ["python3.11", "/amortized/work/run.py"]
+            if is_k8s:
+                spec_env["_run_config"] = _trl_config_yaml(algorithm, config)
+                cmd = ["trl", algorithm, "--config", "/amortized/config.yaml"]
+            else:
+                script = _trl_trainer_script(algorithm, config)
+                spec_env["_run_script"] = script
+                cmd = ["python3.11", "/amortized/work/run.py"]
         else:
             raise ValueError(f"Unknown training algorithm: {algorithm}")
     elif image and job["type"] == JobType.serve.value:
@@ -941,11 +1038,16 @@ async def _run_job(job: dict[str, Any]) -> None:
 
         synth_config = _generate_container_config(job["type"], config)
         spec_env["_synth_config"] = yaml.dump(synth_config, default_flow_style=False)
-        cmd = ["asynth", "synthesize", "--config", "/amortized/work/synth_config.yaml"]
+        synth_config_path = "/amortized/synth_config.yaml" if is_k8s else "/amortized/work/synth_config.yaml"
+        cmd = ["asynth", "synthesize", "--config", synth_config_path]
     elif image:
-        script = _eval_script()
-        spec_env["_run_script"] = script
-        cmd = ["python3", "/amortized/work/run.py"]
+        if is_k8s:
+            spec_env["_run_config"] = _eval_config_yaml(config)
+            cmd = ["asynth", "judge", "--config", "/amortized/config.yaml"]
+        else:
+            script = _eval_script()
+            spec_env["_run_script"] = script
+            cmd = ["python3", "/amortized/work/run.py"]
 
     spec = JobSpec(
         job_id=job_id,
