@@ -937,7 +937,8 @@ async def _run_job(job: dict[str, Any]) -> None:
     if job["type"] == JobType.serve.value:
         port = int(config.get("port", 8000))
         spec_ports = {port: port}
-        cmd = ["--config", "/amortized/work/config.yaml"]
+        config_path = "/amortized/config.yaml" if (config_mod.settings.resolved_default_backend == "kubernetes") else "/amortized/work/config.yaml"
+        cmd = ["--config", config_path]
     else:
         cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
         spec_ports = {}
