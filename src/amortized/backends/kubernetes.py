@@ -118,6 +118,9 @@ class KubernetesBackend:
             V1EnvVar(name="AMORTIZED_WORK_DIR", value="/amortized/work"),
             V1EnvVar(name="AMORTIZED_CONFIG_PATH", value="/amortized/config.json"),
             V1EnvVar(name="AMORTIZED_EVENTS_URL", value=EVENTS_URL),
+            V1EnvVar(name="HOME", value="/amortized/work"),
+            V1EnvVar(name="HF_HOME", value="/amortized/work/.cache"),
+            V1EnvVar(name="TRANSFORMERS_CACHE", value="/amortized/work/.cache"),
         ]
 
         secret_name = f"{resource_name}-env"
@@ -236,18 +239,25 @@ class KubernetesBackend:
 
             # Set ownerReference on ConfigMap so it's GC'd with the Job
             job_uid = created_job.metadata.uid
-            owner_ref = V1OwnerReference(
-                api_version="batch/v1",
-                kind="Job",
-                name=resource_name,
-                uid=job_uid,
-            )
-            config_map.metadata.owner_references = [owner_ref]
-            await core.patch_namespaced_config_map(
-                f"{resource_name}-config",
-                self._namespace,
-                {"metadata": {"ownerReferences": [owner_ref.to_dict()]}},
-            )
+            try:
+                await core.patch_namespaced_config_map(
+                    f"{resource_name}-config",
+                    self._namespace,
+                    {
+                        "metadata": {
+                            "ownerReferences": [
+                                {
+                                    "apiVersion": "batch/v1",
+                                    "kind": "Job",
+                                    "name": resource_name,
+                                    "uid": job_uid,
+                                }
+                            ]
+                        }
+                    },
+                )
+            except Exception:
+                logger.warning("Failed to set ownerReference on ConfigMap — manual cleanup may be needed")
 
             logger.info("Created K8s Job %s for job %s", resource_name, spec.job_id)
 
