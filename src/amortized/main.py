@@ -52,6 +52,17 @@ def _load_backends() -> None:
     """Register compute backends from config file and always include local."""
     register_backend(LocalBackend())
 
+    if _settings.compute_backend == "kubernetes":
+        from amortized.backends.kubernetes import KubernetesBackend
+
+        backend = KubernetesBackend(
+            name="kubernetes",
+            namespace=_settings.compute_namespace,
+            image_registry=_settings.image_registry,
+        )
+        register_backend(backend)
+        logger.info("Registered Kubernetes backend (namespace=%s)", _settings.compute_namespace)
+
     config_path = Path.home() / ".amortized" / "config.yaml"
     if not config_path.exists():
         return

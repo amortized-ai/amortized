@@ -45,10 +45,19 @@ class Settings(BaseSettings):
         description="Env var names to forward to job containers",
     )
 
+    compute_backend: str = Field("local", description="Compute backend: local, ssh, kubernetes")
+    compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
+    image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
+    mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
+
     default_backend: str = Field(
         "",
-        description="Default compute backend for GPU jobs (reads AMORTIZED_DEFAULT_BACKEND)",
+        description="Default compute backend for GPU jobs (reads AMORTIZED_DEFAULT_BACKEND). Falls back to compute_backend if empty.",
     )
+
+    @property
+    def resolved_default_backend(self) -> str:
+        return self.default_backend or self.compute_backend or "local"
 
     model_config = {
         "env_prefix": "AMORTIZED_",

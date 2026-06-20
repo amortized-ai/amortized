@@ -32,3 +32,13 @@ Thumbs.db
 
 # Docker
 docker-compose*.yml
+
+# Environment / data
+.env
+data/
+
+# Deployment
+k8s/
+
+# Claude
+.claude/
