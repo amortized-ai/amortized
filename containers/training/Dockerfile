@@ -42,6 +42,9 @@ RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 # Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
 
+# S3/MinIO support for reading datasets and writing artifacts
+RUN python3.11 -m pip install --no-cache-dir s3fs fsspec mlflow boto3
+
 # Upgrade torch to cu129 build (official vLLM uses cu129; cu128 hangs on drivers 580+)
 # Extensions compiled with cu128 remain compatible via CUDA forward compat
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall torch==2.10.0 --index-url https://download.pytorch.org/whl/cu129

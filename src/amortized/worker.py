@@ -210,16 +210,23 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
         "    tokenizer.pad_token = tokenizer.eos_token\n"
         "\n"
         "data_path = config.get('data_path', config.get('dataset', ''))\n"
-        "if os.path.isdir(data_path):\n"
+        "if data_path.startswith('s3://'):\n"
+        "    dataset = load_dataset('json', data_files=data_path, split='train',\n"
+        "        storage_options={'endpoint_url': os.environ.get('FSSPEC_S3_ENDPOINT_URL', os.environ.get('AWS_S3_ENDPOINT_URL', '')),\n"
+        "                         'key': os.environ.get('AWS_ACCESS_KEY_ID', ''),\n"
+        "                         'secret': os.environ.get('AWS_SECRET_ACCESS_KEY', '')})\n"
+        "elif os.path.isdir(data_path):\n"
         "    dataset = load_from_disk(data_path)\n"
         "elif os.path.isfile(data_path):\n"
         "    dataset = load_dataset('json', data_files=data_path, split='train')\n"
         "else:\n"
         "    dataset = load_dataset(data_path, split='train')\n"
         "\n"
+        "import os as _os\n"
+        "_default_report = 'mlflow' if _os.environ.get('MLFLOW_TRACKING_URI') else 'none'\n"
         "trainer_kwargs = {\n"
         "    'output_dir': output_dir,\n"
-        "    'report_to': 'none',\n"
+        "    'report_to': _default_report,\n"
         "}\n"
         "FIELD_MAP = " + repr(_TRL_FIELD_MAP) + "\n"
         "SKIP_KEYS = {'algorithm', 'engine', 'data_path', 'dataset', 'model_name_or_path',\n"
@@ -276,7 +283,18 @@ def _trl_trainer_script(algorithm: str, config: dict[str, Any]) -> str:
             ")\n"
         )
 
-    lines += "trainer.train()\ntrainer.save_model(output_dir)\n"
+    lines += (
+        "trainer.train()\n"
+        "trainer.save_model(output_dir)\n"
+        "\n"
+        "# Upload model to MLflow if configured\n"
+        "if _os.environ.get('MLFLOW_TRACKING_URI'):\n"
+        "    import mlflow\n"
+        "    if mlflow.active_run():\n"
+        "        mlflow.log_artifact(output_dir, 'model')\n"
+        "        mlflow.log_param('model_name', model_name)\n"
+        "        print(f'Artifacts uploaded to MLflow: {mlflow.get_artifact_uri()}')\n"
+    )
     return lines
 
 
@@ -420,14 +438,14 @@ def _serve_config_yaml(config: dict[str, Any]) -> str:
     return result
 
 
-def _generate_container_config(job_type: str, config: dict[str, Any]) -> dict[str, Any]:
+def _generate_container_config(job_type: str, config: dict[str, Any], *, s3_output_path: str = "") -> dict[str, Any]:
     """Build an asynth-compatible config dict for container execution."""
     if job_type == JobType.sdg.value:
-        return _build_synth_config(config)
+        return _build_synth_config(config, s3_output_path=s3_output_path)
     raise ValueError(f"No container config for job type: {job_type}")
 
 
-def _build_synth_config(config: dict[str, Any]) -> dict[str, Any]:
+def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> dict[str, Any]:
     """Build an asynth-compatible synthesis config dict for CLI execution."""
     inference_config: dict[str, Any] = {
         "model": config["model"],
@@ -447,10 +465,11 @@ def _build_synth_config(config: dict[str, Any]) -> dict[str, Any]:
         if config.get("input_documents") and "input_documents" not in strategy_params:
             strategy_params["input_documents"] = config["input_documents"]
 
+    output_path = s3_output_path or "output/generated_data.jsonl"
     return {
         "inference_config": inference_config,
         "num_samples": config.get("num_samples", 100),
-        "output_path": "output/generated_data.jsonl",
+        "output_path": output_path,
         "strategy_params": strategy_params,
     }
 
@@ -793,15 +812,68 @@ async def _pick_pending_job() -> dict[str, Any] | None:
 
 
 async def _register_artifacts_for_job(
-    job_id: str, output_dir: str, *, job_type: str | None = None
+    job_id: str, output_dir: str, *, job_type: str | None = None, is_k8s: bool = False
 ) -> None:
-    """Scan output directory and register found artifacts via core layer."""
+    """Scan output directory (or S3 on K8s) and register found artifacts."""
     db = await _get_db()
     try:
         repo = Repository(db)
-        await register_artifacts_for_job(repo, job_id, output_dir, job_type=job_type)
+        if is_k8s:
+            await _register_s3_artifacts(repo, job_id, job_type=job_type)
+        else:
+            await register_artifacts_for_job(repo, job_id, output_dir, job_type=job_type)
     finally:
         await db.close()
+
+
+async def _register_s3_artifacts(
+    repo: Repository, job_id: str, *, job_type: str | None = None
+) -> None:
+    """Register artifacts from S3/MinIO for K8s jobs."""
+    import boto3
+
+    endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT") or config_mod.settings.storage_endpoint
+    bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket
+    if not endpoint or not bucket:
+        logger.warning("No S3 config — skipping artifact registration for %s", job_id)
+        return
+
+    s3 = boto3.client("s3", endpoint_url=endpoint)
+    prefix = f"artifacts/{job_id}/"
+    try:
+        resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    except Exception:
+        logger.warning("Failed to list S3 artifacts for %s", job_id, exc_info=True)
+        return
+
+    for obj in resp.get("Contents", []):
+        key = obj["Key"]
+        name = key.split("/")[-1]
+        s3_uri = f"s3://{bucket}/{key}"
+        size = obj.get("Size", 0)
+
+        if name.endswith(".jsonl"):
+            artifact_type = "dataset"
+        elif name.endswith(".json"):
+            artifact_type = "results"
+        elif "model" in key or "adapter" in key or "safetensors" in name:
+            artifact_type = "model"
+        else:
+            artifact_type = "file"
+
+        import uuid
+        from datetime import datetime, timezone
+
+        await repo.create_artifact(
+            artifact_id=str(uuid.uuid4()),
+            job_id=job_id,
+            artifact_type=artifact_type,
+            path=s3_uri,
+            name=name,
+            size=size,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        logger.info("Registered S3 artifact: %s (%s, %d bytes)", s3_uri, artifact_type, size)
 
 
 async def _register_log_artifacts(job_id: str, output_dir: str) -> None:
@@ -1043,7 +1115,12 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
-        synth_config = _generate_container_config(job["type"], config)
+        s3_output = ""
+        if is_k8s:
+            bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket or "amortized"
+            s3_output = f"s3://{bucket}/artifacts/{job_id}/output/generated_data.jsonl"
+
+        synth_config = _generate_container_config(job["type"], config, s3_output_path=s3_output)
         spec_env["_synth_config"] = yaml.dump(synth_config, default_flow_style=False)
         synth_config_path = "/amortized/synth_config.yaml" if is_k8s else "/amortized/work/synth_config.yaml"
         cmd = ["asynth", "synthesize", "--config", synth_config_path]
@@ -1115,7 +1192,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 status=JobStatus.succeeded,
                 completed_at=completed_at,
             )
-            await _register_artifacts_for_job(job_id, output_dir, job_type=job["type"])
+            await _register_artifacts_for_job(job_id, output_dir, job_type=job["type"], is_k8s=is_k8s)
             logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(

@@ -155,6 +155,8 @@ class KubernetesBackend:
         if spec.resources.cpus:
             resources.setdefault("requests", {})["cpu"] = str(spec.resources.cpus)
 
+        from kubernetes_asyncio.client import V1EnvFromSource, V1SecretEnvSource
+
         is_serve = bool(spec.ports)
         container = V1Container(
             name="job",
@@ -162,6 +164,7 @@ class KubernetesBackend:
             command=None if is_serve else (spec.command or None),
             args=spec.command if is_serve else None,
             env=env_vars,
+            env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
             volume_mounts=volume_mounts,
             resources=V1ResourceRequirements(**resources) if resources else None,
             working_dir="/amortized/work",
