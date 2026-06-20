@@ -121,6 +121,8 @@ class KubernetesBackend:
             V1EnvVar(name="HOME", value="/amortized/work"),
             V1EnvVar(name="HF_HOME", value="/amortized/work/.cache"),
             V1EnvVar(name="TRANSFORMERS_CACHE", value="/amortized/work/.cache"),
+            V1EnvVar(name="TORCHINDUCTOR_CACHE_DIR", value="/amortized/work/.cache/torchinductor"),
+            V1EnvVar(name="USER", value="amortized"),
         ]
 
         secret_name = f"{resource_name}-env"
@@ -153,10 +155,12 @@ class KubernetesBackend:
         if spec.resources.cpus:
             resources.setdefault("requests", {})["cpu"] = str(spec.resources.cpus)
 
+        is_serve = bool(spec.ports)
         container = V1Container(
             name="job",
             image=spec.image or f"{self._image_registry}/worker:latest",
-            command=spec.command or None,
+            command=None if is_serve else (spec.command or None),
+            args=spec.command if is_serve else None,
             env=env_vars,
             volume_mounts=volume_mounts,
             resources=V1ResourceRequirements(**resources) if resources else None,
