@@ -125,7 +125,7 @@ config:
           strip_whitespace: true
 
     transformed_attributes:
-      - id: conversation
+      - id: messages
         transformation_strategy:
           type: chat
           chat_transform:
@@ -136,7 +136,7 @@ config:
                 content: "{cleaned_answer}"
 
     passthrough_attributes:
-      - conversation
+      - messages
       - cleaned_question
       - cleaned_answer
       - difficulty

@@ -115,7 +115,7 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     trl_config: dict[str, Any] = {
         "model_name_or_path": config.get("model_name_or_path", config.get("model_path", "")),
         "output_dir": config.get("output_dir", "/amortized/work/output"),
-        "report_to": "mlflow",
+        "report_to": config.get("report_to", "none"),
     }
 
     data_path = config.get("data_path", config.get("dataset", ""))
@@ -133,7 +133,7 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
             ext, "json"
         )
         trl_config["dataset_name"] = builder
-        trl_config["dataset_kwargs"] = json.dumps({"data_files": local_path})
+        trl_config["dataset_kwargs"] = {"data_files": local_path}
     else:
         trl_config["dataset_name"] = data_path
 
@@ -1077,6 +1077,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "huggingface": "HF_TOKEN",
+        "openrouter": "OPENROUTER_API_KEY",
     }
     key_db = await _get_db()
     try:
@@ -1113,7 +1114,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             if data_path.startswith("s3://"):
                 spec_env["_s3_data_path"] = data_path
             spec_env["_run_config"] = _trl_config_yaml(trl_algo, config)
-            image = "docker.io/huggingface/trl:1.5.0"
+            image = "ghcr.io/amortized-ai/trl:1.5.0"
             cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
         elif algorithm in TRAINING_HUB_ALGOS:
             script = _training_hub_script(algorithm)
@@ -1144,7 +1145,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         synth_config_path = (
             "/amortized/synth_config.yaml" if is_k8s else "/amortized/work/synth_config.yaml"
         )
-        cmd = ["asynth", "synthesize", "--config", synth_config_path]
+        cmd = ["asynth", "synthesize", "--config", synth_config_path, "--verbose"]
     elif image:
         if is_k8s:
             spec_env["_run_config"] = _eval_config_yaml(config)
