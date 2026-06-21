@@ -129,7 +129,7 @@ class KubernetesBackend:
         filtered_env = {
             k: v
             for k, v in spec.env.items()
-            if k not in ("_config", "_run_script", "_run_config", "_synth_config")
+            if k not in ("_config", "_run_script", "_run_config", "_synth_config", "_s3_data_path")
         }
         for k in filtered_env:
             env_vars.append(
@@ -174,7 +174,25 @@ class KubernetesBackend:
         if spec.resources.gpus > 0:
             node_selector = {"nvidia.com/gpu.present": "true"}
 
+        init_containers = []
+        s3_data_path = spec.env.get("_s3_data_path", "")
+        if s3_data_path:
+            local_name = s3_data_path.split("/")[-1]
+            init_containers.append(V1Container(
+                name="s3-download",
+                image="docker.io/amazon/aws-cli:latest",
+                command=["sh", "-c",
+                         f"mkdir -p /amortized/work && "
+                         f"cd / && "
+                         f"aws s3 cp {s3_data_path} /amortized/work/{local_name} "
+                         f"--endpoint-url $AWS_S3_ENDPOINT && "
+                         f"ls -la /amortized/work/{local_name}"],
+                env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
+                volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
+            ))
+
         return V1PodSpec(
+            init_containers=init_containers or None,
             containers=[container],
             volumes=volumes,
             restart_policy="Never",
@@ -187,7 +205,7 @@ class KubernetesBackend:
         filtered_env = {
             k: v
             for k, v in spec.env.items()
-            if k not in ("_config", "_run_script", "_run_config", "_synth_config")
+            if k not in ("_config", "_run_script", "_run_config", "_synth_config", "_s3_data_path")
         }
         if not filtered_env:
             return
