@@ -81,13 +81,16 @@ class KubernetesBackend:
 
     def _build_pod_spec(self, spec: JobSpec, resource_name: str) -> Any:
         from kubernetes_asyncio.client import (
+            V1Capabilities,
             V1Container,
             V1EmptyDirVolumeSource,
             V1EnvVar,
             V1EnvVarSource,
+            V1PodSecurityContext,
             V1PodSpec,
             V1ResourceRequirements,
             V1SecretKeySelector,
+            V1SecurityContext,
             V1Volume,
             V1VolumeMount,
         )
@@ -157,6 +160,12 @@ class KubernetesBackend:
 
         from kubernetes_asyncio.client import V1EnvFromSource, V1SecretEnvSource
 
+        container_security_context = V1SecurityContext(
+            allow_privilege_escalation=False,
+            run_as_non_root=True,
+            capabilities=V1Capabilities(drop=["ALL"]),
+        )
+
         is_serve = bool(spec.ports)
         container = V1Container(
             name="job",
@@ -168,6 +177,7 @@ class KubernetesBackend:
             volume_mounts=volume_mounts,
             resources=V1ResourceRequirements(**resources) if resources else None,
             working_dir="/amortized/work",
+            security_context=container_security_context,
         )
 
         node_selector = None
@@ -178,18 +188,28 @@ class KubernetesBackend:
         s3_data_path = spec.env.get("_s3_data_path", "")
         if s3_data_path:
             local_name = s3_data_path.split("/")[-1]
-            init_containers.append(V1Container(
-                name="s3-download",
-                image="docker.io/amazon/aws-cli:latest",
-                command=["sh", "-c",
-                         f"mkdir -p /amortized/work && "
-                         f"cd / && "
-                         f"aws s3 cp {s3_data_path} /amortized/work/{local_name} "
-                         f"--endpoint-url $AWS_S3_ENDPOINT && "
-                         f"ls -la /amortized/work/{local_name}"],
-                env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
-                volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
-            ))
+            init_containers.append(
+                V1Container(
+                    name="s3-download",
+                    image="docker.io/amazon/aws-cli:latest",
+                    command=[
+                        "sh",
+                        "-c",
+                        f"mkdir -p /amortized/work && "
+                        f"cd / && "
+                        f"aws s3 cp {s3_data_path} /amortized/work/{local_name} "
+                        f"--endpoint-url $AWS_S3_ENDPOINT && "
+                        f"ls -la /amortized/work/{local_name}",
+                    ],
+                    env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
+                    volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
+                    security_context=container_security_context,
+                    resources=V1ResourceRequirements(
+                        requests={"cpu": "100m", "memory": "128Mi"},
+                        limits={"cpu": "500m", "memory": "512Mi"},
+                    ),
+                )
+            )
 
         return V1PodSpec(
             init_containers=init_containers or None,
@@ -197,6 +217,7 @@ class KubernetesBackend:
             volumes=volumes,
             restart_policy="Never",
             node_selector=node_selector,
+            security_context=V1PodSecurityContext(run_as_non_root=True),
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
@@ -229,7 +250,6 @@ class KubernetesBackend:
             V1Job,
             V1JobSpec,
             V1ObjectMeta,
-            V1OwnerReference,
         )
 
         resource_name = self._resource_name(spec.job_id)
@@ -282,7 +302,9 @@ class KubernetesBackend:
                     },
                 )
             except Exception:
-                logger.warning("Failed to set ownerReference on ConfigMap — manual cleanup may be needed")
+                logger.warning(
+                    "Failed to set ownerReference on ConfigMap — manual cleanup may be needed"
+                )
 
             logger.info("Created K8s Job %s for job %s", resource_name, spec.job_id)
 

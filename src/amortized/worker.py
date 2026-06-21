@@ -121,7 +121,19 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     data_path = config.get("data_path", config.get("dataset", ""))
     if data_path.startswith("s3://"):
         local_name = data_path.split("/")[-1]
-        trl_config["dataset_name"] = f"/amortized/work/{local_name}"
+        local_path = f"/amortized/work/{local_name}"
+    elif data_path.endswith((".jsonl", ".json", ".csv", ".parquet")):
+        local_path = data_path
+    else:
+        local_path = None
+
+    if local_path:
+        ext = local_path.rsplit(".", 1)[-1]
+        builder = {"jsonl": "json", "json": "json", "csv": "csv", "parquet": "parquet"}.get(
+            ext, "json"
+        )
+        trl_config["dataset_name"] = builder
+        trl_config["dataset_kwargs"] = json.dumps({"data_files": local_path})
     else:
         trl_config["dataset_name"] = data_path
 
@@ -433,7 +445,9 @@ def _serve_config_yaml(config: dict[str, Any]) -> str:
     return result
 
 
-def _generate_container_config(job_type: str, config: dict[str, Any], *, s3_output_path: str = "") -> dict[str, Any]:
+def _generate_container_config(
+    job_type: str, config: dict[str, Any], *, s3_output_path: str = ""
+) -> dict[str, Any]:
     """Build an asynth-compatible config dict for container execution."""
     if job_type == JobType.sdg.value:
         return _build_synth_config(config, s3_output_path=s3_output_path)
@@ -827,7 +841,11 @@ async def _register_s3_artifacts(
     """Register artifacts from S3/MinIO for K8s jobs."""
     import boto3
 
-    endpoint = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("AWS_S3_ENDPOINT") or config_mod.settings.storage_endpoint
+    endpoint = (
+        os.environ.get("AWS_S3_ENDPOINT_URL")
+        or os.environ.get("AWS_S3_ENDPOINT")
+        or config_mod.settings.storage_endpoint
+    )
     bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket
     if not endpoint or not bucket:
         logger.warning("No S3 config — skipping artifact registration for %s", job_id)
@@ -1004,7 +1022,11 @@ async def _run_job(job: dict[str, Any]) -> None:
     if job["type"] == JobType.serve.value:
         port = int(config.get("port", 8000))
         spec_ports = {port: port}
-        config_path = "/amortized/config.yaml" if (config_mod.settings.resolved_default_backend == "kubernetes") else "/amortized/work/config.yaml"
+        config_path = (
+            "/amortized/config.yaml"
+            if (config_mod.settings.resolved_default_backend == "kubernetes")
+            else "/amortized/work/config.yaml"
+        )
         cmd = ["--config", config_path]
     else:
         cmd = _build_runner_command({**job, "config": config, "output_dir": output_dir})
@@ -1091,8 +1113,8 @@ async def _run_job(job: dict[str, Any]) -> None:
             if data_path.startswith("s3://"):
                 spec_env["_s3_data_path"] = data_path
             spec_env["_run_config"] = _trl_config_yaml(trl_algo, config)
-            image = "ghcr.io/amortized-ai/trl:1.5.0"
-            cmd = ["python", "/opt/conda/lib/python3.11/site-packages/trl/scripts/sft.py", "--config", "/amortized/config.yaml"]
+            image = "docker.io/huggingface/trl:1.5.0"
+            cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
         elif algorithm in TRAINING_HUB_ALGOS:
             script = _training_hub_script(algorithm)
             spec_env["_run_script"] = script
@@ -1112,12 +1134,16 @@ async def _run_job(job: dict[str, Any]) -> None:
 
         s3_output = ""
         if is_k8s:
-            bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket or "amortized"
+            bucket = (
+                os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket or "amortized"
+            )
             s3_output = f"s3://{bucket}/artifacts/{job_id}/output/generated_data.jsonl"
 
         synth_config = _generate_container_config(job["type"], config, s3_output_path=s3_output)
         spec_env["_synth_config"] = yaml.dump(synth_config, default_flow_style=False)
-        synth_config_path = "/amortized/synth_config.yaml" if is_k8s else "/amortized/work/synth_config.yaml"
+        synth_config_path = (
+            "/amortized/synth_config.yaml" if is_k8s else "/amortized/work/synth_config.yaml"
+        )
         cmd = ["asynth", "synthesize", "--config", synth_config_path]
     elif image:
         if is_k8s:
@@ -1187,7 +1213,9 @@ async def _run_job(job: dict[str, Any]) -> None:
                 status=JobStatus.succeeded,
                 completed_at=completed_at,
             )
-            await _register_artifacts_for_job(job_id, output_dir, job_type=job["type"], is_k8s=is_k8s)
+            await _register_artifacts_for_job(
+                job_id, output_dir, job_type=job["type"], is_k8s=is_k8s
+            )
             logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(
