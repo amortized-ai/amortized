@@ -12,3 +12,4 @@ data:
   AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"
   AMORTIZED_MLFLOW_TRACKING_URI: "http://mlflow.amortized.svc.cluster.local:5000"
   AMORTIZED_EXTERNAL_URL: "http://amortized-server.amortized.svc.cluster.local:8000"
+  AMORTIZED_S3_BUCKET: "amortized"
