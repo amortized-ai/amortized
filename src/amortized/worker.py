@@ -119,7 +119,11 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     }
 
     data_path = config.get("data_path", config.get("dataset", ""))
-    trl_config["dataset_name"] = data_path
+    if data_path.startswith("s3://"):
+        local_name = data_path.split("/")[-1]
+        trl_config["dataset_name"] = f"/amortized/work/{local_name}"
+    else:
+        trl_config["dataset_name"] = data_path
 
     # GKD needs teacher model
     if algorithm == "gkd" and config.get("teacher_model_name_or_path"):
@@ -133,14 +137,6 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         "model_name_or_path",
         "model_path",
         "teacher_model_name_or_path",
-        "use_peft",
-        "lora_r",
-        "lora_alpha",
-        "lora_dropout",
-        "lora_target_modules",
-        "qlora",
-        "bnb_4bit_quant_type",
-        "bnb_4bit_compute_dtype",
     }
     for key, value in config.items():
         if key in skip_keys or value is None:
@@ -148,16 +144,11 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         mapped = _TRL_FIELD_MAP.get(key, key)
         trl_config[mapped] = value
 
-    if config.get("use_peft") or config.get("lora_r"):
-        trl_config["peft_config"] = {
-            "r": config.get("lora_r", 16),
-            "lora_alpha": config.get("lora_alpha", 32),
-            "lora_dropout": config.get("lora_dropout", 0.05),
-            "target_modules": config.get("lora_target_modules", "all-linear"),
-        }
+    if config.get("lora_target_modules") and isinstance(config["lora_target_modules"], list):
+        trl_config["lora_target_modules"] = " ".join(config["lora_target_modules"])
 
     if config.get("qlora"):
-        trl_config.setdefault("peft_config", {})["use_bnb"] = True
+        trl_config["load_in_4bit"] = True
 
     result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
     return result
@@ -1096,12 +1087,12 @@ async def _run_job(job: dict[str, Any]) -> None:
         algorithm = config.get("algorithm", "sft")
         if is_k8s:
             trl_algo = {"sft": "sft", "lora_sft": "sft", "osft": "sft"}.get(algorithm, algorithm)
-            if trl_algo in ("sft", "dpo", "kto", "grpo", "gkd"):
-                script = _trl_trainer_script(trl_algo, config)
-            else:
-                script = _training_hub_script(algorithm)
-            spec_env["_run_script"] = script
-            cmd = ["python3.11", "/amortized/run.py"]
+            data_path = config.get("data_path", config.get("dataset", ""))
+            if data_path.startswith("s3://"):
+                spec_env["_s3_data_path"] = data_path
+            spec_env["_run_config"] = _trl_config_yaml(trl_algo, config)
+            image = "ghcr.io/amortized-ai/trl:1.5.0"
+            cmd = ["python", "/opt/conda/lib/python3.11/site-packages/trl/scripts/sft.py", "--config", "/amortized/config.yaml"]
         elif algorithm in TRAINING_HUB_ALGOS:
             script = _training_hub_script(algorithm)
             spec_env["_run_script"] = script
