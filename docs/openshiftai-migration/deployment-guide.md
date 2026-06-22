@@ -24,19 +24,19 @@ oc new-project amortized-jobs   # compute: training, SDG, eval Jobs + serve Depl
 oc project amortized
 
 # Apply secrets (S3/MinIO credentials for both namespaces)
-oc apply -f k8s/s3-secret.yaml
-oc apply -f k8s/s3-secret-jobs.yaml
+oc apply -f k8s/dev/s3-secret.yaml
+oc apply -f k8s/dev/s3-secret-jobs.yaml
 
 # Deploy MinIO (S3-compatible object store)
-oc apply -f k8s/minio-pvc.yaml
-oc apply -f k8s/minio-deployment.yaml
-oc apply -f k8s/minio-service.yaml
+oc apply -f k8s/dev/minio-pvc.yaml
+oc apply -f k8s/dev/minio-deployment.yaml
+oc apply -f k8s/dev/minio-service.yaml
 
 # Deploy MLflow (experiment tracking + artifact store)
-oc apply -f k8s/mlflow-pvc.yaml
-oc apply -f k8s/mlflow-deployment.yaml
-oc apply -f k8s/mlflow-service.yaml
-oc apply -f k8s/mlflow-route.yaml
+oc apply -f k8s/dev/mlflow-pvc.yaml
+oc apply -f k8s/dev/mlflow-deployment.yaml
+oc apply -f k8s/dev/mlflow-service.yaml
+oc apply -f k8s/dev/mlflow-route.yaml
 
 # Wait for pods to be ready
 oc get pods -n amortized -w
@@ -89,14 +89,14 @@ oc get route mlflow -n amortized -o jsonpath='{.spec.host}'
 
 ```bash
 # ServiceAccount for the amortized server
-oc apply -f k8s/serviceaccount.yaml
+oc apply -f k8s/base/serviceaccount.yaml
 
 # RBAC — grants amortized-server permission to create Jobs, Deployments,
 # Services, Secrets, ConfigMaps in the amortized-jobs namespace
-oc apply -f k8s/rbac.yaml
+oc apply -f k8s/base/rbac.yaml
 
 # ConfigMap — server configuration (compute backend, MLflow URI, etc.)
-oc apply -f k8s/configmap.yaml
+oc apply -f k8s/base/configmap.yaml
 ```
 
 ## Step 7: Build and Push Server Image
@@ -128,9 +128,9 @@ docker push $REGISTRY/amortized/amortized:latest
 ## Step 8: Deploy Server
 
 ```bash
-oc apply -f k8s/server-pvc.yaml
-oc apply -f k8s/server-deployment.yaml
-oc apply -f k8s/server-service.yaml
+oc apply -f k8s/base/server-pvc.yaml
+oc apply -f k8s/base/server-deployment.yaml
+oc apply -f k8s/base/server-service.yaml
 
 # Wait for server to be ready
 oc wait --for=condition=available deploy/amortized-server -n amortized --timeout=120s
@@ -149,9 +149,9 @@ docker build -t ghcr.io/amortized-ai/studio:latest .
 docker push ghcr.io/amortized-ai/studio:latest
 
 # Deploy
-oc apply -f k8s/studio-deployment.yaml
-oc apply -f k8s/studio-service.yaml
-oc apply -f k8s/studio-route.yaml
+oc apply -f k8s/base/studio-deployment.yaml
+oc apply -f k8s/base/studio-service.yaml
+oc apply -f k8s/base/studio-route.yaml
 
 # Get the Studio URL
 oc get route amortized-studio -n amortized -o jsonpath='{.spec.host}'

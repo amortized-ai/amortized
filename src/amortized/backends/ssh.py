@@ -121,14 +121,6 @@ class SSHBackend:
                 check=True,
             )
 
-            run_script = spec.env.get("_run_script")
-            if run_script:
-                await conn.run(
-                    f"cat > {remote_dir}/run.py << 'AMORTIZED_SCRIPT_EOF'\n"
-                    f"{run_script}\nAMORTIZED_SCRIPT_EOF",
-                    check=True,
-                )
-
             run_config = spec.env.get("_run_config")
             if run_config:
                 await conn.run(
@@ -178,6 +170,14 @@ class SSHBackend:
                 cmd_override = ""
                 if spec.command:
                     cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
+                config_mounts = ""
+                if run_config:
+                    config_mounts += f"-v {remote_dir}/config.yaml:/amortized/config.yaml:ro "
+                if synth_config:
+                    config_mounts += (
+                        f"-v {remote_dir}/synth_config.yaml:/amortized/synth_config.yaml:ro "
+                    )
+
                 network_flag = "--network host " if not port_flags else ""
                 full_cmd = (
                     f"{self._container_runtime} run -d --gpus all "
@@ -186,6 +186,7 @@ class SSHBackend:
                     f"{port_flags + ' ' if port_flags else ''}"
                     f"-v {remote_dir}:/amortized/work "
                     f"-v {config_path}:/amortized/config.json "
+                    f"{config_mounts}"
                     f"-v {home_dir}:{home_dir}:ro "
                     f"{infra_flags} "
                     f"{secret_flags} "
