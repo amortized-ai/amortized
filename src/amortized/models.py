@@ -146,6 +146,7 @@ class Job(BaseModel):
     completed_at: str | None = None
     error: str | None = None
     output_dir: str | None = None
+    mlflow_run_id: str = ""
 
 
 class ArtifactRequest(BaseModel):

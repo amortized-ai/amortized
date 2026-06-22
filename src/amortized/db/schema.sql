@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     error TEXT,
     pid INTEGER,
     output_dir TEXT,
+    mlflow_run_id TEXT DEFAULT '',
     backend_handle TEXT
 );
 

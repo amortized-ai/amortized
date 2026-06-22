@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     storage_bucket: str = Field("", description="S3/GCS bucket name")
     storage_prefix: str = Field("artifacts/", description="Key prefix for cloud storage")
     storage_region: str = Field("us-east-1", description="AWS region for S3")
+    storage_endpoint: str = Field("", description="S3-compatible endpoint URL (e.g., MinIO)")
 
     external_url: str = Field("", description="Externally reachable server URL")
 
