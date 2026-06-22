@@ -90,6 +90,7 @@ class Repository:
         completed_at: str | None = None,
         error: str | None = None,
         pid: int | None = None,
+        mlflow_run_id: str | None = None,
     ) -> dict[str, Any] | None:
         fields = ["status = ?", "updated_at = ?"]
         params: list[Any] = [status.value, updated_at]
@@ -106,6 +107,9 @@ class Repository:
         if pid is not None:
             fields.append("pid = ?")
             params.append(pid)
+        if mlflow_run_id is not None:
+            fields.append("mlflow_run_id = ?")
+            params.append(mlflow_run_id)
 
         params.append(job_id)
         await self.conn.execute(

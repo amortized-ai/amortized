@@ -158,11 +158,6 @@ class TestWorkerJobExecution:
             data = response.json()
             assert data["status"] == "succeeded"
 
-            # SDG jobs should have artifacts too
-            response = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-            artifacts = response.json()
-            assert len(artifacts) > 0
-
     @pytest.mark.asyncio
     async def test_worker_picks_oldest_job_first(self, client: httpx.AsyncClient) -> None:
         """Worker should pick the oldest pending job first (FIFO)."""

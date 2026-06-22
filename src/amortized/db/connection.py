@@ -30,6 +30,7 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
 _MIGRATIONS: list[tuple[str, str, str]] = [
     ("jobs", "backend_handle", "ALTER TABLE jobs ADD COLUMN backend_handle TEXT"),
     ("artifacts", "producer_job", "ALTER TABLE artifacts ADD COLUMN producer_job TEXT"),
+    ("jobs", "mlflow_run_id", "ALTER TABLE jobs ADD COLUMN mlflow_run_id TEXT DEFAULT ''"),
 ]
 
 
@@ -110,6 +111,7 @@ async def update_job_status(
     completed_at: str | None = None,
     error: str | None = None,
     pid: int | None = None,
+    mlflow_run_id: str | None = None,
 ) -> dict[str, Any] | None:
     return await Repository(db).update_job_status(
         job_id,
@@ -119,6 +121,7 @@ async def update_job_status(
         completed_at=completed_at,
         error=error,
         pid=pid,
+        mlflow_run_id=mlflow_run_id,
     )
 
 
