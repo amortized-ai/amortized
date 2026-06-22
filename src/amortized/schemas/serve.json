@@ -27,6 +27,10 @@
       "type": "integer",
       "minimum": 1,
       "description": "Number of GPUs for tensor parallelism"
+    },
+    "training_job_id": {
+      "type": "string",
+      "description": "ID of a completed training job. Automatically resolves base model and adapter path from MLflow."
     }
   },
   "additionalProperties": true
