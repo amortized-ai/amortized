@@ -1,3 +1,5 @@
+> **SUPERSEDED** — Implementation is complete. See `prd-openshift.md` and `deployment-guide.md`. This doc is kept for historical reference.
+
 # ROSA Implementation Plan — Deploying Amortized on OpenShift
 
 Based on deep scans of all 3 repos + ROSA cluster inventory.

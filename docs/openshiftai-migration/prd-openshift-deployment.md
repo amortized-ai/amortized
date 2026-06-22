@@ -1,3 +1,5 @@
+> **SUPERSEDED** — Replaced by `prd-openshift.md` which reflects the implemented architecture. This doc is kept for historical reference.
+
 # PRD: Deploy Amortized on OpenShift AI / ROSA
 
 ## Problem Statement

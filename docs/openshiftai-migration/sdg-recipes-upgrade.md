@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** SDG recipes should use `messages` (not `conversation`) as the chat transform output column for TRL compatibility. asynth is now v0.1.10 with MLflow, S3, and datasets as core dependencies.
+
 # SDG Recipes Upgrade Plan
 
 Upgrade the 7 existing SDG recipes in `recipes/sdg/` to match Oumi's quality, and add 3 missing templates. The Oumi originals are at `/Users/shiv/workspace/oumi/configs/examples/synthesis/`.

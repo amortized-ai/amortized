@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** Training now uses TRL CLI with YAML configs (`trl sft --config config.yaml`), not generated Python scripts. The `report_to` field defaults to `mlflow` when MLflow is configured. See `architecture-decisions.md` (AD-2, AD-5).
+
 # Training Recipes Upgrade Plan
 
 Upgrade the training recipes in `recipes/training/` and `recipes/models/` to cover the full set of TRL-supported algorithms, with proper parameterization and model-specific presets.

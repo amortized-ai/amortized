@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** SDG recipes now use `messages` column (not `conversation`) for TRL compatibility. Default model should be `openrouter/openai/gpt-4o-mini` (not `gpt-5.4`). Training configs use TRL CLI YAML format (not generated Python scripts).
+
 # End-to-End Examples Upgrade Plan
 
 Upgrade the 2 existing projects in `examples/` and add new ones. Each project bundles `synth.yaml` + `train.yaml` + `eval.yaml` + `README.md` — a complete pipeline from data generation to trained, evaluated task model.
