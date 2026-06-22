@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -64,14 +65,6 @@ _TRL_FIELD_MAP: dict[str, str] = {
     "bf16": "bf16",
 }
 
-_SCRIPT_ALGO_TRAINERS: dict[str, tuple[str, str]] = {
-    "sft": ("SFTTrainer", "SFTConfig"),
-    "gkd": ("GKDTrainer", "GKDConfig"),
-    "dpo": ("DPOTrainer", "DPOConfig"),
-    "kto": ("KTOTrainer", "KTOConfig"),
-    "grpo": ("GRPOTrainer", "GRPOConfig"),
-}
-
 
 def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     """Translate amortized training config -> TRL CLI YAML config."""
@@ -80,7 +73,9 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     trl_config: dict[str, Any] = {
         "model_name_or_path": config.get("model_name_or_path", config.get("model_path", "")),
         "output_dir": config.get("output_dir", "/amortized/work/output"),
-        "report_to": config.get("report_to", "none"),
+        "report_to": config.get(
+            "report_to", "mlflow" if config_mod.settings.mlflow_tracking_uri else "none"
+        ),
     }
 
     data_path = config.get("data_path", config.get("dataset", ""))
@@ -465,6 +460,21 @@ async def _resolve_artifact_refs(config: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
+async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
+    """Extract MLflow run ID from job logs if available."""
+    try:
+        log_lines: list[str] = []
+        async for line in backend.logs(handle):
+            log_lines.append(line)
+            if len(log_lines) > 200:
+                log_lines = log_lines[-200:]
+        log_text = "\n".join(log_lines)
+        match = re.search(r"/runs/([a-f0-9]{32})", log_text)
+        return match.group(1) if match else ""
+    except Exception:
+        return ""
+
+
 async def _run_job(job: dict[str, Any]) -> None:
     """Dispatch a job via ComputeBackend and poll until completion."""
     job_id = job["id"]
@@ -664,10 +674,14 @@ async def _run_job(job: dict[str, Any]) -> None:
                 logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
 
         if status.exit_code == 0:
+            mlflow_run_id = ""
+            if job["type"] == JobType.training.value:
+                mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             await _update_job(
                 job_id,
                 status=JobStatus.succeeded,
                 completed_at=completed_at,
+                mlflow_run_id=mlflow_run_id,
             )
             logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:

@@ -31,6 +31,7 @@ ARTIFACT_PATTERNS: dict[str, list[str]] = {
 }
 
 
+# Deprecated: not called anywhere — kept for potential future use
 async def register_artifacts_for_job(
     repo: Repository,
     job_id: str,
@@ -109,6 +110,7 @@ async def register_artifacts_for_job(
     return registered
 
 
+# Deprecated: not called anywhere — kept for potential future use
 async def register_log_artifacts(
     repo: Repository, job_id: str, output_dir: str
 ) -> list[dict[str, Any]]:

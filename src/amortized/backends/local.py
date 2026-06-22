@@ -42,9 +42,6 @@ class LocalBackend:
             json.dump(config_data, f)
 
         # Write special env var payloads to files in work_dir
-        if "_run_script" in spec.env:
-            with open(os.path.join(work_dir, "run.py"), "w") as f:
-                f.write(spec.env["_run_script"])
         if "_run_config" in spec.env:
             with open(os.path.join(work_dir, "config.yaml"), "w") as f:
                 f.write(spec.env["_run_config"])
@@ -54,8 +51,7 @@ class LocalBackend:
 
         # Transform container paths to local paths in the command
         command = [
-            part.replace("/amortized/work/run.py", os.path.join(work_dir, "run.py"))
-            .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
+            part.replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
             .replace(
                 "/amortized/work/synth_config.yaml", os.path.join(work_dir, "synth_config.yaml")
             )
@@ -77,7 +73,7 @@ class LocalBackend:
         filtered_spec_env = {
             k: v
             for k, v in spec.env.items()
-            if k not in ("_config", "_run_script", "_run_config", "_synth_config")
+            if k not in ("_config", "_run_config", "_synth_config")
         }
         env = {**os.environ, **amortized_env, **filtered_spec_env}
 

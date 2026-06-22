@@ -103,7 +103,7 @@ class SSHBackend:
             filtered_spec_env = {
                 k: v
                 for k, v in spec.env.items()
-                if k not in ("_config", "_run_script", "_run_config", "_synth_config")
+                if k not in ("_config", "_run_config", "_synth_config")
             }
             merged_env = {**amortized_env, **filtered_spec_env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)

@@ -64,10 +64,6 @@ class KubernetesBackend:
         if synth_config:
             data["synth_config.yaml"] = synth_config
 
-        run_script = spec.env.get("_run_script")
-        if run_script:
-            data["run.py"] = run_script
-
         raw_config: object = spec.env.get("_config", {})
         if isinstance(raw_config, str):
             raw_config = json.loads(raw_config)
