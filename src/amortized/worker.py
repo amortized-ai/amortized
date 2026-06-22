@@ -49,6 +49,11 @@ async def _get_db() -> aiosqlite.Connection:
     return db
 
 
+async def _get_repo() -> tuple[aiosqlite.Connection, Repository]:
+    db = await _get_db()
+    return db, Repository(db)
+
+
 def _serialize_handle(handle: BackendHandle) -> str:
     return json.dumps(
         {
@@ -74,40 +79,21 @@ async def _update_job(
     backend_handle: str | None = None,
     mlflow_run_id: str | None = None,
 ) -> None:
-    """Update job status in the database and emit a state_change event."""
-    db = await _get_db()
+    """Update job status via Repository and emit a state_change event."""
+    db, repo = await _get_repo()
     try:
         now = datetime.now(UTC).isoformat()
-        fields = ["status = ?", "updated_at = ?"]
-        params: list[Any] = [status.value, now]
-
-        if started_at is not None:
-            fields.append("started_at = ?")
-            params.append(started_at)
-        if completed_at is not None:
-            fields.append("completed_at = ?")
-            params.append(completed_at)
-        if error is not None:
-            fields.append("error = ?")
-            params.append(error)
-        if pid is not None:
-            fields.append("pid = ?")
-            params.append(pid)
-        if backend_handle is not None:
-            fields.append("backend_handle = ?")
-            params.append(backend_handle)
-        if mlflow_run_id is not None:
-            fields.append("mlflow_run_id = ?")
-            params.append(mlflow_run_id)
-
-        params.append(job_id)
-        await db.execute(
-            f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?",
-            params,
+        await repo.update_job_status(
+            job_id,
+            status=status,
+            updated_at=now,
+            started_at=started_at,
+            completed_at=completed_at,
+            error=error,
+            pid=pid,
+            backend_handle=backend_handle,
+            mlflow_run_id=mlflow_run_id,
         )
-        await db.commit()
-
-        repo = Repository(db)
         event_data: dict[str, Any] = {"status": status.value}
         if error is not None:
             event_data["error"] = error
@@ -118,9 +104,8 @@ async def _update_job(
 
 async def _pick_pending_job() -> dict[str, Any] | None:
     """Pick the oldest queued job from the database."""
-    db = await _get_db()
+    db, repo = await _get_repo()
     try:
-        repo = Repository(db)
         return await repo.pick_pending_job()
     finally:
         await db.close()
@@ -173,21 +158,19 @@ async def _resolve_artifact_refs(config: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, str) or not value.startswith("artifact:"):
             continue
         artifact_id = value[len("artifact:") :]
-        db = await _get_db()
+        db, repo = await _get_repo()
         try:
-            cursor = await db.execute(
-                "SELECT a.path, j.backend_handle, j.output_dir "
-                "FROM artifacts a LEFT JOIN jobs j ON a.job_id = j.id "
-                "WHERE a.id = ?",
-                (artifact_id,),
-            )
-            row = await cursor.fetchone()
+            row = await repo.get_artifact_with_job_context(artifact_id)
         finally:
             await db.close()
         if not row:
             logger.warning("Artifact %s not found", artifact_id)
             continue
-        local_path, handle_json, local_output_dir = row
+        local_path, handle_json, local_output_dir = (
+            row["path"],
+            row["backend_handle"],
+            row["output_dir"],
+        )
         # For remote backends, resolve to the remote path
         if handle_json and local_output_dir and local_path.startswith(local_output_dir):
             handle_data = json.loads(handle_json)
@@ -213,9 +196,8 @@ async def _resolve_artifact_refs(config: dict[str, Any]) -> dict[str, Any]:
 
 async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
     """Look up a completed training job for serve model resolution."""
-    db = await _get_db()
+    db, repo = await _get_repo()
     try:
-        repo = Repository(db)
         job = await repo.get_job(training_job_id)
         if not job:
             raise ValueError(f"Training job not found: {training_job_id}")
@@ -279,13 +261,15 @@ async def _run_job(job: dict[str, Any]) -> None:
     base_dir = job.get("output_dir") or str(config_mod.settings.data_dir / dir_name)
     output_dir = os.path.abspath(os.path.expanduser(os.path.join(base_dir, job_id)))
 
-    db = await _get_db()
+    db, repo = await _get_repo()
     try:
-        await db.execute(
-            "UPDATE jobs SET output_dir = ? WHERE id = ?",
-            (output_dir, job_id),
+        now_for_dir = datetime.now(UTC).isoformat()
+        await repo.update_job_status(
+            job_id,
+            status=JobStatus(job["status"]),
+            updated_at=now_for_dir,
+            output_dir=output_dir,
         )
-        await db.commit()
     finally:
         await db.close()
 
@@ -354,9 +338,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         "huggingface": "HF_TOKEN",
         "openrouter": "OPENROUTER_API_KEY",
     }
-    key_db = await _get_db()
+    key_db, key_repo = await _get_repo()
     try:
-        key_repo = Repository(key_db)
         for provider, env_name in _PROVIDER_ENV_MAP.items():
             if env_name not in spec_env:
                 key_row = await key_repo.get_api_key_for_provider(provider)
@@ -543,21 +526,17 @@ async def _run_job(job: dict[str, Any]) -> None:
 
 async def cleanup_orphaned_jobs() -> None:
     """Handle 'running' jobs on startup: use backend handles first, fall back to PID checks."""
-    db = await _get_db()
+    db, repo = await _get_repo()
     try:
-        cursor = await db.execute(
-            "SELECT id, pid, type, output_dir, config, backend_handle FROM jobs WHERE status = ?",
-            (JobStatus.running.value,),
-        )
-        rows = await cursor.fetchall()
+        running_jobs = await repo.list_jobs(status=JobStatus.running)
         now = datetime.now(UTC).isoformat()
 
-        for row in rows:
-            job_id = row["id"]
-            pid = row["pid"]
-            job_type = row["type"]
-            output_dir = row["output_dir"]
-            handle_json = row["backend_handle"]
+        for job in running_jobs:
+            job_id = job["id"]
+            pid = job.get("pid")
+            job_type = job["type"]
+            output_dir = job.get("output_dir")
+            handle_json = job.get("backend_handle")
 
             if not output_dir:
                 orphan_dir_names = {
@@ -589,20 +568,14 @@ async def cleanup_orphaned_jobs() -> None:
             if alive:
                 logger.info("Re-adopted running job %s (pid=%s)", job_id, pid)
             else:
-                await db.execute(
-                    """UPDATE jobs SET status = ?, updated_at = ?, completed_at = ?,
-                       error = ? WHERE id = ?""",
-                    (
-                        JobStatus.failed.value,
-                        now,
-                        now,
-                        "Orphaned job — process no longer running",
-                        job_id,
-                    ),
+                await repo.update_job_status(
+                    job_id,
+                    status=JobStatus.failed,
+                    updated_at=now,
+                    completed_at=now,
+                    error="Orphaned job — process no longer running",
                 )
                 logger.warning("Marked orphaned job %s (pid=%s) as failed", job_id, pid)
-
-        await db.commit()
     finally:
         await db.close()
 
@@ -653,9 +626,8 @@ async def _monitor_heartbeats(poll_interval: float = 60.0, timeout: float = 300.
     """Check running jobs for stale heartbeats and probe backend on timeout."""
     while True:
         try:
-            db = await _get_db()
+            db, repo = await _get_repo()
             try:
-                repo = Repository(db)
                 running_jobs = await repo.list_jobs(status=JobStatus.running)
                 for job in running_jobs:
                     latest_event = await repo.get_latest_event(job["id"])
@@ -680,12 +652,13 @@ async def _monitor_heartbeats(poll_interval: float = 60.0, timeout: float = 300.
                     if not bs.running:
                         now = datetime.now(UTC).isoformat()
                         error_msg = f"Process died silently (exit_code={bs.exit_code})"
-                        await db.execute(
-                            """UPDATE jobs SET status = ?, updated_at = ?, completed_at = ?,
-                               error = ? WHERE id = ?""",
-                            (JobStatus.failed.value, now, now, error_msg, job["id"]),
+                        await repo.update_job_status(
+                            job["id"],
+                            status=JobStatus.failed,
+                            updated_at=now,
+                            completed_at=now,
+                            error=error_msg,
                         )
-                        await db.commit()
                         await emit_event(
                             repo,
                             job["id"],

@@ -91,6 +91,8 @@ class Repository:
         error: str | None = None,
         pid: int | None = None,
         mlflow_run_id: str | None = None,
+        backend_handle: str | None = None,
+        output_dir: str | None = None,
     ) -> dict[str, Any] | None:
         fields = ["status = ?", "updated_at = ?"]
         params: list[Any] = [status.value, updated_at]
@@ -110,6 +112,12 @@ class Repository:
         if mlflow_run_id is not None:
             fields.append("mlflow_run_id = ?")
             params.append(mlflow_run_id)
+        if backend_handle is not None:
+            fields.append("backend_handle = ?")
+            params.append(backend_handle)
+        if output_dir is not None:
+            fields.append("output_dir = ?")
+            params.append(output_dir)
 
         params.append(job_id)
         await self.conn.execute(
@@ -195,6 +203,19 @@ class Repository:
         cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
         return [_row_to_artifact(row) for row in rows]
+
+    async def get_artifact_with_job_context(self, artifact_id: str) -> dict[str, Any] | None:
+        """Return artifact path along with producing job's backend_handle and output_dir."""
+        cursor = await self.conn.execute(
+            "SELECT a.path, j.backend_handle, j.output_dir "
+            "FROM artifacts a LEFT JOIN jobs j ON a.job_id = j.id "
+            "WHERE a.id = ?",
+            (artifact_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {"path": row[0], "backend_handle": row[1], "output_dir": row[2]}
 
     async def delete_artifact(self, artifact_id: str) -> bool:
         cursor = await self.conn.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,))
