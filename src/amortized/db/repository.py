@@ -119,6 +119,16 @@ class Repository:
         await self.conn.commit()
         return await self.get_job(job_id)
 
+    async def pick_pending_job(self) -> dict[str, Any] | None:
+        cursor = await self.conn.execute(
+            "SELECT * FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1",
+            ("queued",),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_job(row)
+
     # ---- Artifacts ----
 
     async def create_artifact(
