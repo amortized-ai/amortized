@@ -173,6 +173,7 @@ class KubernetesBackend:
         container = V1Container(
             name="job",
             image=spec.image or f"{self._image_registry}/worker:latest",
+            image_pull_policy="Always",
             command=None if is_serve else (spec.command or None),
             args=spec.command if is_serve else None,
             env=env_vars,
