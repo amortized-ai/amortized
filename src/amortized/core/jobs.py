@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import os
+import signal
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from amortized.backends import BackendHandle
+from amortized.core.compute import get_backend
 from amortized.core.events import emit_event
 from amortized.core.job_types import (
     UnknownJobTypeError,
@@ -136,8 +142,6 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
     now = datetime.now(UTC).isoformat()
 
     if current_status == JobStatus.running.value:
-        from amortized.worker import cancel_job_via_backend, kill_job_process
-
         handle_json = row.get("backend_handle")
         cancelled = await cancel_job_via_backend(job_id, handle_json)
         if not cancelled:
@@ -211,6 +215,63 @@ async def resume_job(
     updated = await repo.get_job(job_id)
     assert updated is not None
     return updated
+
+
+def _deserialize_handle(raw: str | None) -> BackendHandle | None:
+    if not raw:
+        return None
+    d = json.loads(raw)
+    raw_secrets = d.get("secret_names")
+    secret_names = [tuple(s) for s in raw_secrets] if raw_secrets else None
+    return BackendHandle(
+        backend_name=d["backend_name"],
+        job_id=d["job_id"],
+        remote_pid=d.get("remote_pid"),
+        remote_dir=d.get("remote_dir"),
+        container_id=d.get("container_id"),
+        scheduler_id=d.get("scheduler_id"),
+        secret_names=secret_names,
+    )
+
+
+async def cancel_job_via_backend(job_id: str, handle_json: str | None) -> bool:
+    """Cancel a job via its stored BackendHandle. Returns True if cancelled."""
+    handle = _deserialize_handle(handle_json)
+    if handle is None:
+        return False
+    try:
+        backend = get_backend(handle.backend_name)
+        await backend.cancel(handle)
+        return True
+    except (KeyError, OSError):
+        return False
+
+
+async def kill_job_process(pid: int, timeout: float = 5.0) -> bool:
+    """Kill a job subprocess by PID. Fallback when no backend handle is stored."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return False
+
+    loop = asyncio.get_event_loop()
+    start = loop.time()
+
+    while True:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
+
+        elapsed = loop.time() - start
+        if elapsed >= timeout:
+            import contextlib
+
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGKILL)
+            return True
+
+        await asyncio.sleep(0.1)
 
 
 class JobNotFoundError(Exception):

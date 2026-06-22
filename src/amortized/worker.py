@@ -24,7 +24,8 @@ from amortized.core.config_translator import (
     _trl_config_yaml,
 )
 from amortized.core.events import emit_event
-from amortized.db.repository import Repository, _row_to_job
+from amortized.core.jobs import _deserialize_handle
+from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
 logger = logging.getLogger("amortized.worker")
@@ -59,23 +60,6 @@ def _serialize_handle(handle: BackendHandle) -> str:
             "scheduler_id": handle.scheduler_id,
             "secret_names": handle.secret_names,
         }
-    )
-
-
-def _deserialize_handle(raw: str | None) -> BackendHandle | None:
-    if not raw:
-        return None
-    d = json.loads(raw)
-    raw_secrets = d.get("secret_names")
-    secret_names = [tuple(s) for s in raw_secrets] if raw_secrets else None
-    return BackendHandle(
-        backend_name=d["backend_name"],
-        job_id=d["job_id"],
-        remote_pid=d.get("remote_pid"),
-        remote_dir=d.get("remote_dir"),
-        container_id=d.get("container_id"),
-        scheduler_id=d.get("scheduler_id"),
-        secret_names=secret_names,
     )
 
 
@@ -136,14 +120,8 @@ async def _pick_pending_job() -> dict[str, Any] | None:
     """Pick the oldest queued job from the database."""
     db = await _get_db()
     try:
-        cursor = await db.execute(
-            "SELECT * FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1",
-            (JobStatus.queued.value,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return _row_to_job(row)
+        repo = Repository(db)
+        return await repo.pick_pending_job()
     finally:
         await db.close()
 
@@ -561,48 +539,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             error=str(exc),
         )
         logger.exception("Job %s failed with exception", job_id)
-
-
-async def cancel_job_via_backend(job_id: str, handle_json: str | None) -> bool:
-    """Cancel a job via its stored BackendHandle. Returns True if cancelled."""
-    handle = _deserialize_handle(handle_json)
-    if handle is None:
-        return False
-    try:
-        backend = get_backend(handle.backend_name)
-        await backend.cancel(handle)
-        return True
-    except (KeyError, OSError):
-        return False
-
-
-async def kill_job_process(pid: int, timeout: float = 5.0) -> bool:
-    """Kill a job subprocess by PID. Fallback when no backend handle is stored."""
-    import signal
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        return False
-
-    loop = asyncio.get_event_loop()
-    start = loop.time()
-
-    while True:
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return True
-
-        elapsed = loop.time() - start
-        if elapsed >= timeout:
-            import contextlib
-
-            with contextlib.suppress(OSError):
-                os.kill(pid, signal.SIGKILL)
-            return True
-
-        await asyncio.sleep(0.1)
 
 
 async def cleanup_orphaned_jobs() -> None:
