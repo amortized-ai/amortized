@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import os
 import signal
@@ -37,17 +36,10 @@ class LocalBackend:
         os.makedirs(work_dir, exist_ok=True)
 
         config_path = os.path.join(work_dir, "config.json")
-        config_data: dict[str, object] = {"config": spec.env.get("_config", {}), "artifacts": {}}
-        with open(config_path, "w") as f:
-            json.dump(config_data, f)
-
-        # Write special env var payloads to files in work_dir
-        if "_run_config" in spec.env:
-            with open(os.path.join(work_dir, "config.yaml"), "w") as f:
-                f.write(spec.env["_run_config"])
-        if "_synth_config" in spec.env:
-            with open(os.path.join(work_dir, "synth_config.yaml"), "w") as f:
-                f.write(spec.env["_synth_config"])
+        for filename, content in spec.config_files.items():
+            filepath = os.path.join(work_dir, filename)
+            with open(filepath, "w") as f:
+                f.write(content)
 
         # Transform container paths to local paths in the command
         command = [
@@ -70,12 +62,7 @@ class LocalBackend:
             "AMORTIZED_WORK_DIR": work_dir,
             "AMORTIZED_CONFIG_PATH": config_path,
         }
-        filtered_spec_env = {
-            k: v
-            for k, v in spec.env.items()
-            if k not in ("_config", "_run_config", "_synth_config")
-        }
-        env = {**os.environ, **amortized_env, **filtered_spec_env}
+        env = {**os.environ, **amortized_env, **spec.env}
 
         # Prepend venv bin dir to PATH so venv tools (trl, torchrun, accelerate, etc.) are found
         venv_bin = os.path.dirname(sys.executable)

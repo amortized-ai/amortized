@@ -44,6 +44,13 @@ class Resources:
 
 
 @dataclass
+class S3Download:
+    s3_uri: str
+    local_path: str
+    is_directory: bool = False
+
+
+@dataclass
 class JobSpec:
     job_id: str
     command: list[str]
@@ -53,6 +60,8 @@ class JobSpec:
     timeout: int | None = None
     resources: Resources = field(default_factory=Resources)
     ports: dict[int, int] = field(default_factory=dict)
+    config_files: dict[str, str] = field(default_factory=dict)
+    s3_downloads: list[S3Download] = field(default_factory=list)
 
 
 @runtime_checkable

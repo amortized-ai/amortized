@@ -13,7 +13,7 @@ from typing import Any
 import aiosqlite
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, BackendStatus, Capability, JobSpec
+from amortized.backends import BackendHandle, BackendStatus, Capability, JobSpec, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.config_translator import (
     _TRL_ALGO_MAP,
@@ -361,7 +361,10 @@ async def _run_job(job: dict[str, Any]) -> None:
     if job["type"] == JobType.eval.value:
         config = _resolve_judge_template(config)
 
-    spec_env["_config"] = json.dumps(config)
+    config_files: dict[str, str] = {
+        "config.json": json.dumps({"config": config, "artifacts": {}}),
+    }
+    s3_downloads: list[S3Download] = []
 
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
@@ -370,8 +373,14 @@ async def _run_job(job: dict[str, Any]) -> None:
             raise ValueError(f"Unknown training algorithm: {algorithm}")
         data_path = config.get("data_path", config.get("dataset", ""))
         if data_path.startswith("s3://"):
-            spec_env["_s3_data_path"] = data_path
-        spec_env["_run_config"] = _trl_config_yaml(trl_algo, config)
+            local_name = data_path.split("/")[-1]
+            s3_downloads.append(
+                S3Download(
+                    s3_uri=data_path,
+                    local_path=f"/amortized/work/{local_name}",
+                )
+            )
+        config_files["config.yaml"] = _trl_config_yaml(trl_algo, config)
         cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.serve.value:
         if config.get("training_job_id"):
@@ -387,7 +396,13 @@ async def _run_job(job: dict[str, Any]) -> None:
                 if mlflow_run_id:
                     artifact_uri = await _resolve_mlflow_artifact_uri(mlflow_run_id)
                     if artifact_uri:
-                        spec_env["_s3_model_path"] = artifact_uri
+                        s3_downloads.append(
+                            S3Download(
+                                s3_uri=artifact_uri,
+                                local_path="/amortized/work/model",
+                                is_directory=True,
+                            )
+                        )
                         logger.info(
                             "Resolved model from training job %s: %s",
                             config["training_job_id"],
@@ -402,7 +417,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 )
                 return
 
-        spec_env["_run_config"] = _serve_config_yaml(config)
+        config_files["config.yaml"] = _serve_config_yaml(config)
         if config.get("gpu_ids"):
             spec_env["CUDA_VISIBLE_DEVICES"] = str(config["gpu_ids"])
         cmd = ["--config", "/amortized/config.yaml"]
@@ -415,10 +430,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             s3_output = f"s3://{bucket}/artifacts/{job_id}/output/generated_data.jsonl"
 
         synth_config = _generate_container_config(job["type"], config, s3_output_path=s3_output)
-        spec_env["_synth_config"] = yaml.dump(synth_config, default_flow_style=False)
+        config_files["synth_config.yaml"] = yaml.dump(synth_config, default_flow_style=False)
         cmd = ["asynth", "synthesize", "--config", "/amortized/synth_config.yaml", "--verbose"]
     elif image:
-        spec_env["_run_config"] = _eval_config_yaml(config)
+        config_files["config.yaml"] = _eval_config_yaml(config)
         cmd = ["asynth", "judge", "--config", "/amortized/config.yaml"]
 
     spec = JobSpec(
@@ -428,6 +443,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         work_dir=output_dir,
         image=image,
         ports=spec_ports,
+        config_files=config_files,
+        s3_downloads=s3_downloads,
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import shlex
 import uuid
@@ -100,40 +99,12 @@ class SSHBackend:
                 amortized_env["WORLD_SIZE"] = str(spec.resources.nodes)
                 amortized_env["RANK"] = "0"
                 amortized_env["LOCAL_RANK"] = "0"
-            filtered_spec_env = {
-                k: v
-                for k, v in spec.env.items()
-                if k not in ("_config", "_run_config", "_synth_config")
-            }
-            merged_env = {**amortized_env, **filtered_spec_env}
+            merged_env = {**amortized_env, **spec.env}
             await conn.run(f"mkdir -p {remote_dir}", check=True)
 
-            raw_config: object = spec.env.get("_config", {})
-            if isinstance(raw_config, str):
-                raw_config = json.loads(raw_config)
-            config_data: dict[str, object] = {
-                "config": raw_config,
-                "artifacts": {},
-            }
-            config_json = json.dumps(config_data)
-            await conn.run(
-                f"cat > {config_path} << 'AMORTIZED_EOF'\n{config_json}\nAMORTIZED_EOF",
-                check=True,
-            )
-
-            run_config = spec.env.get("_run_config")
-            if run_config:
+            for filename, content in spec.config_files.items():
                 await conn.run(
-                    f"cat > {remote_dir}/config.yaml << 'AMORTIZED_CONFIG_EOF'\n"
-                    f"{run_config}\nAMORTIZED_CONFIG_EOF",
-                    check=True,
-                )
-
-            synth_config = spec.env.get("_synth_config")
-            if synth_config:
-                await conn.run(
-                    f"cat > {remote_dir}/synth_config.yaml << 'AMORTIZED_SYNTH_EOF'\n"
-                    f"{synth_config}\nAMORTIZED_SYNTH_EOF",
+                    f"cat > {remote_dir}/{filename} << 'AMORTIZED_EOF'\n{content}\nAMORTIZED_EOF",
                     check=True,
                 )
 
@@ -146,7 +117,7 @@ class SSHBackend:
                 )
 
                 secret_names: list[tuple[str, str]] = []
-                for k, v in filtered_spec_env.items():
+                for k, v in spec.env.items():
                     secret_name = f"amortized-{spec.job_id[:8]}-{k.lower().replace('_', '-')}"
                     await conn.run(
                         f"printf '%s' {shlex.quote(v)} | "
@@ -170,13 +141,11 @@ class SSHBackend:
                 cmd_override = ""
                 if spec.command:
                     cmd_override = " " + " ".join(shlex.quote(c) for c in spec.command)
-                config_mounts = ""
-                if run_config:
-                    config_mounts += f"-v {remote_dir}/config.yaml:/amortized/config.yaml:ro "
-                if synth_config:
-                    config_mounts += (
-                        f"-v {remote_dir}/synth_config.yaml:/amortized/synth_config.yaml:ro "
-                    )
+                config_mounts = " ".join(
+                    f"-v {remote_dir}/{fn}:/amortized/{fn}:ro" for fn in spec.config_files
+                )
+                if config_mounts:
+                    config_mounts += " "
 
                 network_flag = "--network host " if not port_flags else ""
                 full_cmd = (
@@ -185,7 +154,6 @@ class SSHBackend:
                     f"{network_flag}"
                     f"{port_flags + ' ' if port_flags else ''}"
                     f"-v {remote_dir}:/amortized/work "
-                    f"-v {config_path}:/amortized/config.json "
                     f"{config_mounts}"
                     f"-v {home_dir}:{home_dir}:ro "
                     f"{infra_flags} "

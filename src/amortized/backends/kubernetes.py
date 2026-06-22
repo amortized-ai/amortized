@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -54,28 +53,13 @@ class KubernetesBackend:
     def _build_config_map(self, spec: JobSpec, resource_name: str) -> dict[str, Any]:
         from kubernetes_asyncio.client import V1ConfigMap, V1ObjectMeta
 
-        data: dict[str, str] = {}
-
-        run_config = spec.env.get("_run_config")
-        if run_config:
-            data["config.yaml"] = run_config
-
-        synth_config = spec.env.get("_synth_config")
-        if synth_config:
-            data["synth_config.yaml"] = synth_config
-
-        raw_config: object = spec.env.get("_config", {})
-        if isinstance(raw_config, str):
-            raw_config = json.loads(raw_config)
-        data["config.json"] = json.dumps({"config": raw_config, "artifacts": {}})
-
         return V1ConfigMap(
             metadata=V1ObjectMeta(
                 name=f"{resource_name}-config",
                 namespace=self._namespace,
                 labels=self._labels(spec.job_id),
             ),
-            data=data,
+            data=dict(spec.config_files),
         )
 
     def _build_pod_spec(self, spec: JobSpec, resource_name: str) -> Any:
@@ -128,20 +112,7 @@ class KubernetesBackend:
         ]
 
         secret_name = f"{resource_name}-env"
-        filtered_env = {
-            k: v
-            for k, v in spec.env.items()
-            if k
-            not in (
-                "_config",
-                "_run_script",
-                "_run_config",
-                "_synth_config",
-                "_s3_data_path",
-                "_s3_model_path",
-            )
-        }
-        for k in filtered_env:
+        for k in spec.env:
             env_vars.append(
                 V1EnvVar(
                     name=k,
@@ -193,44 +164,19 @@ class KubernetesBackend:
             node_selector = {"nvidia.com/gpu.present": "true"}
 
         init_containers = []
-        s3_data_path = spec.env.get("_s3_data_path", "")
-        if s3_data_path:
-            local_name = s3_data_path.split("/")[-1]
+        for download in spec.s3_downloads:
+            s3_cmd = "aws s3 sync" if download.is_directory else "aws s3 cp"
             init_containers.append(
                 V1Container(
-                    name="s3-download",
+                    name=f"s3-download-{len(init_containers)}",
                     image="docker.io/amazon/aws-cli:latest",
                     command=[
                         "sh",
                         "-c",
-                        f"mkdir -p /amortized/work && "
-                        f"cd / && "
-                        f"aws s3 cp {s3_data_path} /amortized/work/{local_name} "
+                        f"mkdir -p {download.local_path} && cd / && "
+                        f"{s3_cmd} {download.s3_uri} {download.local_path} "
                         f"--endpoint-url $AWS_S3_ENDPOINT && "
-                        f"ls -la /amortized/work/{local_name}",
-                    ],
-                    env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
-                    volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
-                    security_context=container_security_context,
-                    resources=V1ResourceRequirements(
-                        requests={"cpu": "100m", "memory": "128Mi"},
-                        limits={"cpu": "500m", "memory": "512Mi"},
-                    ),
-                )
-            )
-
-        s3_model_path = spec.env.get("_s3_model_path", "")
-        if s3_model_path:
-            init_containers.append(
-                V1Container(
-                    name="s3-model-download",
-                    image="docker.io/amazon/aws-cli:latest",
-                    command=[
-                        "sh",
-                        "-c",
-                        f"aws s3 sync {s3_model_path} /amortized/work/model "
-                        f"--endpoint-url $AWS_S3_ENDPOINT && "
-                        f"ls -la /amortized/work/model/",
+                        f"ls -la {download.local_path}",
                     ],
                     env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
                     volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
@@ -254,20 +200,7 @@ class KubernetesBackend:
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
         from kubernetes_asyncio.client import CoreV1Api, V1ObjectMeta, V1Secret
 
-        filtered_env = {
-            k: v
-            for k, v in spec.env.items()
-            if k
-            not in (
-                "_config",
-                "_run_script",
-                "_run_config",
-                "_synth_config",
-                "_s3_data_path",
-                "_s3_model_path",
-            )
-        }
-        if not filtered_env:
+        if not spec.env:
             return
 
         secret = V1Secret(
@@ -276,7 +209,7 @@ class KubernetesBackend:
                 namespace=self._namespace,
                 labels=self._labels(spec.job_id),
             ),
-            string_data=filtered_env,
+            string_data=dict(spec.env),
         )
 
         core = CoreV1Api(api_client)
