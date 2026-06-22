@@ -460,6 +460,44 @@ async def _resolve_artifact_refs(config: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
+async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
+    """Look up a completed training job for serve model resolution."""
+    db = await _get_db()
+    try:
+        repo = Repository(db)
+        job = await repo.get_job(training_job_id)
+        if not job:
+            raise ValueError(f"Training job not found: {training_job_id}")
+        if job["status"] != "succeeded":
+            raise ValueError(f"Training job has not succeeded (status: {job['status']})")
+        return job
+    finally:
+        await db.close()
+
+
+async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
+    """Query MLflow for the artifact URI of a training run."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri or not mlflow_run_id:
+        return ""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{tracking_uri}/api/2.0/mlflow/runs/get",
+                params={"run_id": mlflow_run_id},
+            )
+            resp.raise_for_status()
+            run = resp.json()["run"]
+            return run["info"]["artifact_uri"]
+    except Exception:
+        logger.warning(
+            "Failed to resolve MLflow artifact URI for run %s", mlflow_run_id, exc_info=True
+        )
+        return ""
+
+
 async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
     """Extract MLflow run ID from job logs if available."""
     try:
@@ -602,6 +640,34 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_env["_run_config"] = _trl_config_yaml(trl_algo, config)
         cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.serve.value:
+        if config.get("training_job_id"):
+            try:
+                training_job = await _get_training_job_for_serve(config["training_job_id"])
+                training_config = training_job.get("config", {})
+                if isinstance(training_config, str):
+                    training_config = json.loads(training_config)
+                if not config.get("model_name_or_path"):
+                    config["model_name_or_path"] = training_config.get("model_name_or_path", "")
+                config["adapter_path"] = "/amortized/work/model"
+                mlflow_run_id = training_job.get("mlflow_run_id", "")
+                if mlflow_run_id:
+                    artifact_uri = await _resolve_mlflow_artifact_uri(mlflow_run_id)
+                    if artifact_uri:
+                        spec_env["_s3_model_path"] = artifact_uri
+                        logger.info(
+                            "Resolved model from training job %s: %s",
+                            config["training_job_id"],
+                            artifact_uri,
+                        )
+            except ValueError as exc:
+                await _update_job(
+                    job_id,
+                    status=JobStatus.failed,
+                    completed_at=datetime.now(UTC).isoformat(),
+                    error=str(exc),
+                )
+                return
+
         spec_env["_run_config"] = _serve_config_yaml(config)
         if config.get("gpu_ids"):
             spec_env["CUDA_VISIBLE_DEVICES"] = str(config["gpu_ids"])

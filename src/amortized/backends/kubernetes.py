@@ -131,7 +131,15 @@ class KubernetesBackend:
         filtered_env = {
             k: v
             for k, v in spec.env.items()
-            if k not in ("_config", "_run_script", "_run_config", "_synth_config", "_s3_data_path")
+            if k
+            not in (
+                "_config",
+                "_run_script",
+                "_run_config",
+                "_synth_config",
+                "_s3_data_path",
+                "_s3_model_path",
+            )
         }
         for k in filtered_env:
             env_vars.append(
@@ -211,6 +219,29 @@ class KubernetesBackend:
                 )
             )
 
+        s3_model_path = spec.env.get("_s3_model_path", "")
+        if s3_model_path:
+            init_containers.append(
+                V1Container(
+                    name="s3-model-download",
+                    image="docker.io/amazon/aws-cli:latest",
+                    command=[
+                        "sh",
+                        "-c",
+                        f"aws s3 sync {s3_model_path} /amortized/work/model "
+                        f"--endpoint-url $AWS_S3_ENDPOINT && "
+                        f"ls -la /amortized/work/model/",
+                    ],
+                    env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
+                    volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
+                    security_context=container_security_context,
+                    resources=V1ResourceRequirements(
+                        requests={"cpu": "100m", "memory": "128Mi"},
+                        limits={"cpu": "500m", "memory": "512Mi"},
+                    ),
+                )
+            )
+
         return V1PodSpec(
             init_containers=init_containers or None,
             containers=[container],
@@ -226,7 +257,15 @@ class KubernetesBackend:
         filtered_env = {
             k: v
             for k, v in spec.env.items()
-            if k not in ("_config", "_run_script", "_run_config", "_synth_config", "_s3_data_path")
+            if k
+            not in (
+                "_config",
+                "_run_script",
+                "_run_config",
+                "_synth_config",
+                "_s3_data_path",
+                "_s3_model_path",
+            )
         }
         if not filtered_env:
             return
