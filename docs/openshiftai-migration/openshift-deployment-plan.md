@@ -1,3 +1,5 @@
+> **SUPERSEDED** — OpenShift deployment is implemented. See `prd-openshift.md` and `architecture-decisions.md`. This doc is kept for historical reference.
+
 # OpenShift/ROSA Deployment Plan
 
 How a platform engineer deploys amortized for a data science team on OpenShift AI / ROSA.

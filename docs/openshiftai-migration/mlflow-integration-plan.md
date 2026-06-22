@@ -1,3 +1,5 @@
+> **SUPERSEDED** — MLflow is now fully integrated. See `architecture-decisions.md` (AD-3: MLflow is the artifact store). This doc is kept for historical reference.
+
 # MLflow Integration Plan
 
 Deep research across 105 agents + codebase scan of amortized and asynth repos.

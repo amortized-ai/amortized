@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** Judge templates still live in asynth. Migration to amortized is deferred — asynth is now the canonical location for all SDG and eval logic.
+
 # Judge Templates Migration: asynth → amortized
 
 Move all judge YAML templates out of the asynth package into amortized. asynth becomes a pure Python library with zero bundled config files — just like TRL provides trainer classes but no YAML recipes.

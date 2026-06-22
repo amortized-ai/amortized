@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** Agent architecture is unchanged by the OpenShift migration. The agent runs inside the amortized server and calls the same API regardless of backend.
+
 # Agent Architecture — Research & Recommendation
 
 ## Current State

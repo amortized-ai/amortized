@@ -1,3 +1,5 @@
+> **Note (2026-06-22):** The K8s backend is now fully implemented (`src/amortized/backends/kubernetes.py`). See `architecture-decisions.md` for the current compute backend design. Docker, RunPod, and SkyPilot backends from this plan are deferred.
+
 # Compute Backend Upgrade Plan
 
 Deep comparison of Granite.Build's environment abstraction vs amortized's compute backends, with a concrete upgrade plan.
