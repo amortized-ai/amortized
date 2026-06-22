@@ -9,7 +9,7 @@ from pathlib import Path
 import aiosqlite
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from amortized.db import get_job
+from amortized.db import Repository
 from amortized.models import JobStatus, JobType
 
 logger = logging.getLogger("amortized.api.ws")
@@ -38,7 +38,7 @@ async def _stream_training_metrics(websocket: WebSocket, output_dir: str, job_id
         # Check job status
         db = await _get_db_connection()
         try:
-            job = await get_job(db, job_id)
+            job = await Repository(db).get_job(job_id)
         finally:
             await db.close()
 
@@ -83,7 +83,7 @@ async def _stream_sdg_progress(websocket: WebSocket, output_dir: str, job_id: st
     while True:
         db = await _get_db_connection()
         try:
-            job = await get_job(db, job_id)
+            job = await Repository(db).get_job(job_id)
         finally:
             await db.close()
 
@@ -142,7 +142,7 @@ async def stream_job_metrics(websocket: WebSocket, job_id: str) -> None:
         # Look up the job
         db = await _get_db_connection()
         try:
-            job = await get_job(db, job_id)
+            job = await Repository(db).get_job(job_id)
         finally:
             await db.close()
 
