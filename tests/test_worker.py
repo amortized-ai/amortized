@@ -9,8 +9,8 @@ import httpx
 import pytest
 from conftest import requires_training_hub_functional
 
+from amortized.core.config_translator import _build_synth_config, _generate_container_config
 from amortized.main import app
-from amortized.worker import _build_synth_config, _generate_container_config
 
 
 @pytest.fixture(autouse=True)

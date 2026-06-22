@@ -11,14 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from amortized.agent import AgentResult, process_message, stream_message
-from amortized.db import (
-    create_conversation,
-    create_message,
-    get_conversation,
-    list_conversations,
-    list_messages,
-    update_conversation,
-)
+from amortized.db import Repository
 from amortized.db import get_db as _get_db
 from amortized.models import (
     ChatRequest,
@@ -53,18 +46,19 @@ async def _ensure_conversation(
 ) -> str:
     """Create or update a conversation, returning the conversation ID."""
     now = datetime.now(UTC).isoformat()
+    repo = Repository(db)
     if conversation_id:
-        conv = await get_conversation(db, conversation_id)
+        conv = await repo.get_conversation(conversation_id)
         if conv is None:
-            await create_conversation(
-                db, conversation_id=conversation_id, title=title, created_at=now
+            await repo.create_conversation(
+                conversation_id=conversation_id, title=title, created_at=now
             )
         else:
-            await update_conversation(db, conversation_id, updated_at=now)
+            await repo.update_conversation(conversation_id, updated_at=now)
         return conversation_id
 
     new_id = str(uuid.uuid4())
-    await create_conversation(db, conversation_id=new_id, title=title, created_at=now)
+    await repo.create_conversation(conversation_id=new_id, title=title, created_at=now)
     return new_id
 
 
@@ -75,12 +69,12 @@ async def chat(
 ) -> ChatResponse:
     """Send a message to the agent and get a response."""
     conversation_id = await _ensure_conversation(db, request.conversation_id, request.message[:50])
+    repo = Repository(db)
 
-    existing_msgs = await list_messages(db, conversation_id)
+    existing_msgs = await repo.list_messages(conversation_id)
     history = _history_from_messages(existing_msgs)
 
-    await create_message(
-        db,
+    await repo.create_message(
         message_id=str(uuid.uuid4()),
         conversation_id=conversation_id,
         role=MessageRole.user.value,
@@ -98,8 +92,7 @@ async def chat(
             label=result.proposed_action["label"],
         )
 
-    await create_message(
-        db,
+    await repo.create_message(
         message_id=str(uuid.uuid4()),
         conversation_id=conversation_id,
         role=MessageRole.assistant.value,
@@ -127,12 +120,12 @@ async def chat_stream(
     always saved regardless of whether the client disconnects mid-stream.
     """
     conversation_id = await _ensure_conversation(db, request.conversation_id, request.message[:50])
+    repo = Repository(db)
 
-    existing_msgs = await list_messages(db, conversation_id)
+    existing_msgs = await repo.list_messages(conversation_id)
     history = _history_from_messages(existing_msgs)
 
-    await create_message(
-        db,
+    await repo.create_message(
         message_id=str(uuid.uuid4()),
         conversation_id=conversation_id,
         role=MessageRole.user.value,
@@ -159,8 +152,7 @@ async def chat_stream(
 
     # 2. Save assistant response BEFORE streaming to client
     if full_text:
-        await create_message(
-            db,
+        await repo.create_message(
             message_id=str(uuid.uuid4()),
             conversation_id=conversation_id,
             role=MessageRole.assistant.value,
@@ -191,7 +183,7 @@ async def get_conversations(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> list[Conversation]:
     """List all conversations."""
-    rows = await list_conversations(db)
+    rows = await Repository(db).list_conversations()
     return [Conversation(**row) for row in rows]
 
 
@@ -201,11 +193,12 @@ async def get_conversation_detail(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> ConversationDetail:
     """Get a conversation with its message history."""
-    conv = await get_conversation(db, conversation_id)
+    repo = Repository(db)
+    conv = await repo.get_conversation(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    msgs = await list_messages(db, conversation_id)
+    msgs = await repo.list_messages(conversation_id)
     messages = [Message(**m) for m in msgs]
 
     return ConversationDetail(
