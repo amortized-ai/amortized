@@ -224,11 +224,12 @@ class TestLocalBackend:
     async def test_submit_writes_config_json(self, tmp_path: object) -> None:
         backend = LocalBackend()
         work_dir = str(tmp_path) + "/job-config"
+        config_payload = {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
         spec = JobSpec(
             job_id="config-job",
             command=["python", "-c", "print('done')"],
             work_dir=work_dir,
-            env={"_config": {"model_name_or_path": "test/model"}},
+            config_files={"config.json": json.dumps(config_payload)},
         )
 
         await backend.submit(spec)
@@ -237,7 +238,7 @@ class TestLocalBackend:
         with open(config_path) as f:
             config_data = json.load(f)
 
-        assert config_data == {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
+        assert config_data == config_payload
 
     @pytest.mark.asyncio
     async def test_logs_no_dir(self) -> None:
@@ -278,7 +279,7 @@ class TestSSHBackend:
         assert handle.remote_pid == 12345
         assert handle.remote_dir == "~/amortized-jobs/ssh-job-1"
         assert handle.container_id is None
-        assert mock_conn.run.call_count == 3
+        assert mock_conn.run.call_count == 2
 
     @pytest.mark.asyncio
     async def test_submit_sets_env_vars(self) -> None:
@@ -297,7 +298,7 @@ class TestSSHBackend:
             )
             await backend.submit(spec)
 
-        nohup_call = mock_conn.run.call_args_list[2]
+        nohup_call = mock_conn.run.call_args_list[1]
         cmd = nohup_call[0][0]
         assert "AMORTIZED_JOB_ID=env-ssh-job" in cmd
         assert "AMORTIZED_WORK_DIR=" in cmd
@@ -314,11 +315,12 @@ class TestSSHBackend:
         mock_conn.run = AsyncMock(return_value=mock_result)
         mock_conn.close = MagicMock()
 
+        config_payload = {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
         with patch.object(backend, "_connect", return_value=mock_conn):
             spec = JobSpec(
                 job_id="config-ssh-job",
                 command=["python", "train.py"],
-                env={"_config": {"model_name_or_path": "test/model"}},
+                config_files={"config.json": json.dumps(config_payload)},
             )
             await backend.submit(spec)
 
@@ -326,7 +328,7 @@ class TestSSHBackend:
         cmd = config_call[0][0]
         json_str = cmd.split("<< 'AMORTIZED_EOF'\n")[1].split("\nAMORTIZED_EOF")[0]
         parsed = json.loads(json_str)
-        assert parsed == {"config": {"model_name_or_path": "test/model"}, "artifacts": {}}
+        assert parsed == config_payload
 
     @pytest.mark.asyncio
     async def test_submit_docker_mode(self) -> None:
