@@ -272,72 +272,23 @@ _TRAINING_HUB_SKIP_KEYS = {
 }
 
 
-def _training_hub_script(algorithm: str) -> str:
-    return (
-        "import json, os, sys\n"
-        "\n"
-        "# Ensure venv bin dir is in PATH (needed for torchrun, verl, etc.)\n"
-        "bin_dir = os.path.dirname(sys.executable)\n"
-        "os.environ['PATH'] = bin_dir + ':' + os.environ.get('PATH', '')\n"
-        "\n"
-        "config_path = os.environ.get('AMORTIZED_CONFIG_PATH', '/amortized/config.json')\n"
-        "config = json.load(open(config_path))['config']\n"
-        "if isinstance(config, str):\n"
-        "    config = json.loads(config)\n"
-        f"from training_hub import {algorithm}\n"
-        "\n"
-        "FIELD_MAP = " + repr(_TRAINING_HUB_FIELD_MAP) + "\n"
-        "SKIP_KEYS = " + repr(_TRAINING_HUB_SKIP_KEYS) + "\n"
-        "\n"
-        "kwargs = {}\n"
-        "output_dir = config.get('output_dir', '/amortized/work')\n"
-        "for key, value in config.items():\n"
-        "    if key in SKIP_KEYS or value is None:\n"
-        "        continue\n"
-        "    if key == 'load_in_4bit' and value:\n"
-        "        kwargs['load_in_4bit'] = True\n"
-        "        continue\n"
-        "    mapped = FIELD_MAP.get(key)\n"
-        "    if mapped:\n"
-        "        kwargs[mapped] = value\n"
-        "    elif key not in FIELD_MAP:\n"
-        "        kwargs[key] = value\n"
-        "\n"
-        "# Algorithm-specific defaults\n"
-        f"if '{algorithm}' == 'sft':\n"
-        "    kwargs.setdefault('effective_batch_size', kwargs.get('micro_batch_size', 2) * 4)\n"
-        "    kwargs.setdefault('data_output_dir', os.path.join(output_dir, 'processed_data'))\n"
-        "    kwargs.setdefault('max_batch_len', 60000)\n"
-        "    # sft doesn't use micro_batch_size - it uses effective_batch_size\n"
-        "    kwargs.pop('micro_batch_size', None)\n"
-        "    kwargs.setdefault('max_seq_len', 2048)\n"
-        "\n"
-        f"elif '{algorithm}' == 'osft':\n"
-        "    kwargs.setdefault('unfreeze_rank_ratio', 0.1)\n"
-        "    kwargs.setdefault('effective_batch_size', kwargs.get('micro_batch_size', 2) * 4)\n"
-        "    kwargs.setdefault('max_tokens_per_gpu', 4096)\n"
-        "    kwargs.setdefault('max_seq_len', kwargs.pop('max_seq_len', 2048))\n"
-        "    kwargs.setdefault('learning_rate', 2e-5)\n"
-        "    kwargs.pop('micro_batch_size', None)\n"
-        "\n"
-        f"elif '{algorithm}' == 'gepa':\n"
-        "    # gepa has completely different params\n"
-        "    kwargs = {\n"
-        "        'seed_candidate': config.get('seed_candidate', ''),\n"
-        "        'task_lm': config.get('task_lm', config.get('model_name_or_path', '')),\n"
-        "        'data_path': kwargs.get('data_path'),\n"
-        "        'output_dir': output_dir,\n"
-        "    }\n"
-        "    # seed_candidate must be dict[str, str]; wrap bare strings\n"
-        "    if isinstance(kwargs.get('seed_candidate'), str):\n"
-        "        kwargs['seed_candidate'] = {'system': kwargs['seed_candidate']}\n"
-        "    # Pass through any gepa-specific params\n"
-        "    for k in ('evaluator', 'reflection_lm', 'api_base', 'max_metric_calls', 'seed'):\n"
-        "        if config.get(k) is not None:\n"
-        "            kwargs[k] = config[k]\n"
-        "\n"
-        f"{algorithm}(**kwargs)\n"
-    )
+def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
+    """Generate a YAML config file for the thub CLI."""
+    import yaml
+
+    thub_config: dict[str, Any] = {}
+
+    for key, value in config.items():
+        if key in _TRAINING_HUB_SKIP_KEYS or value is None:
+            continue
+        th_key = _TRAINING_HUB_FIELD_MAP.get(key, key)
+        thub_config[th_key] = value
+
+    if "ckpt_output_dir" not in thub_config and "output_dir" in config:
+        thub_config["ckpt_output_dir"] = config["output_dir"]
+
+    result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
+    return result
 
 
 _SERVE_FIELD_MAP: dict[str, str] = {
@@ -923,9 +874,10 @@ async def _run_job(job: dict[str, Any]) -> None:
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
         if algorithm in TRAINING_HUB_ALGOS:
-            script = _training_hub_script(algorithm)
-            spec_env["_run_script"] = script
-            cmd = ["python3.11", "/amortized/work/run.py"]
+            thub_yaml = _training_hub_config_yaml(algorithm, config)
+            spec_env["_run_config"] = thub_yaml
+            thub_subcommand = algorithm.replace("_", "-")
+            cmd = ["thub", thub_subcommand, "--config", "/amortized/work/config.yaml"]
         elif algorithm in SCRIPT_ALGOS:
             script = _trl_trainer_script(algorithm, config)
             spec_env["_run_script"] = script

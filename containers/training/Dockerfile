@@ -32,9 +32,9 @@ RUN echo 'transformers<5.0' > /tmp/constraints.txt \
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
-    "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
+    "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@feat/cli"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed \
-    "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
+    "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@feat/cli"
 
 # vLLM 0.19.0 (NOT 0.19.1 or 0.23+) — proven compatible with torch 2.10+cu128
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
