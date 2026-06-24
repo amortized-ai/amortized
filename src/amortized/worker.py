@@ -284,8 +284,15 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         th_key = _TRAINING_HUB_FIELD_MAP.get(key, key)
         thub_config[th_key] = value
 
-    if "ckpt_output_dir" not in thub_config and "output_dir" in config:
-        thub_config["ckpt_output_dir"] = config["output_dir"]
+    # gepa uses output_dir; all other training-hub algos use ckpt_output_dir
+    if algorithm == "gepa":
+        if "output_dir" not in thub_config and "ckpt_output_dir" in thub_config:
+            thub_config["output_dir"] = thub_config.pop("ckpt_output_dir")
+        elif "output_dir" not in thub_config and "output_dir" in config:
+            thub_config["output_dir"] = config["output_dir"]
+    else:
+        if "ckpt_output_dir" not in thub_config and "output_dir" in config:
+            thub_config["ckpt_output_dir"] = config["output_dir"]
 
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result
