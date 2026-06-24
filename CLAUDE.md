@@ -34,7 +34,7 @@ python scripts/export_openapi.py  # regenerate openapi/v1.json
 
 4 job types: `training`, `sdg`, `eval`, `serve`. Each maps to a container image:
 
-- Training: `docker.io/huggingface/trl:1.5.0` — worker generates TRL YAML config
+- Training: `ghcr.io/amortized-ai/training:latest` — worker generates YAML config, runs `thub <algo> --config config.yaml`
 - SDG: `ghcr.io/amortized-ai/asynth` — worker generates YAML config, runs `asynth synthesize --config`
 - Eval: `ghcr.io/amortized-ai/asynth` — worker generates Python script (deterministic checks + model inference), judge portion calls `asynth judge` CLI
 - Serve: `docker.io/vllm/vllm-openai` — worker generates vLLM YAML config
@@ -43,7 +43,7 @@ No custom containers. The worker generates configs/scripts and the SSH backend w
 
 ## Key Patterns
 
-- **Config generation**: `_training_config_yaml()`, `_serve_config_yaml()`, `_build_synth_config()`, `_eval_script()` in `worker.py`
+- **Config generation**: `_training_hub_config_yaml()`, `_trl_trainer_script()`, `_serve_config_yaml()`, `_build_synth_config()`, `_eval_script()` in `worker.py`
 - **Artifact refs**: `artifact:<uuid>` in configs, resolved by worker to remote paths via `_resolve_artifact_refs()`
 - **Training artifacts**: single directory-level "model" artifact per job (not per-file)
 - **Judge templates**: loaded from `templates/eval/` by `core/judge_templates.py`, resolved at dispatch time by `_resolve_judge_template()`
