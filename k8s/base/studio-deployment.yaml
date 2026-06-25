@@ -31,6 +31,10 @@ spec:
               value: "amortized-server"
             - name: BACKEND_PORT
               value: "8000"
+            - name: OPENCODE_HOST
+              value: "opencode"
+            - name: OPENCODE_PORT
+              value: "4096"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
