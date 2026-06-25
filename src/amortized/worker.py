@@ -277,6 +277,13 @@ async def _run_job(job: dict[str, Any]) -> None:
     if job["type"] == JobType.training.value or "output_dir" not in config:
         config = {**config, "output_dir": output_dir}
 
+    backend_name = config_mod.settings.resolved_default_backend
+    if isinstance(job.get("metadata"), dict):
+        backend_name = job["metadata"].get("backend", backend_name)
+
+    if backend_name == "kubernetes" and job["type"] == JobType.training.value:
+        config = {**config, "output_dir": "/amortized/work/output"}
+
     for key, value in list(config.items()):
         if isinstance(value, str) and value.startswith("~"):
             config = {**config, key: os.path.expanduser(value)}
@@ -290,10 +297,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_ports = {}
 
     cmd: list[str] = []
-
-    backend_name = config_mod.settings.resolved_default_backend
-    if isinstance(job.get("metadata"), dict):
-        backend_name = job["metadata"].get("backend", backend_name)
 
     try:
         backend = get_backend(backend_name)
