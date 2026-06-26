@@ -24,11 +24,14 @@ spec:
         - name: opencode
           image: ghcr.io/anomalyco/opencode:latest
           imagePullPolicy: Always
-          command: ["opencode", "serve", "--port", "4096"]
+          command: ["opencode", "serve", "--port", "4096", "--hostname", "0.0.0.0"]
+          workingDir: /app/workspace
           ports:
             - name: http
               containerPort: 4096
           env:
+            - name: HOME
+              value: /tmp
             - name: GOOGLE_CLOUD_PROJECT
               valueFrom:
                 secretKeyRef:
@@ -42,8 +45,13 @@ spec:
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /app/gcp/credentials.json
           volumeMounts:
-            - name: config
-              mountPath: /app/workspace
+            - name: opencode-config
+              mountPath: /app/workspace/.opencode.json
+              subPath: .opencode.json
+              readOnly: true
+            - name: opencode-config
+              mountPath: /app/workspace/.opencode/agents/morty.md
+              subPath: morty.md
               readOnly: true
             - name: gcp-credentials
               mountPath: /app/gcp
@@ -72,7 +80,7 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
       volumes:
-        - name: config
+        - name: opencode-config
           configMap:
             name: opencode-config
         - name: gcp-credentials
