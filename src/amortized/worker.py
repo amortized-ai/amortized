@@ -246,6 +246,65 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
         return ""
 
 
+async def _register_job_artifacts(
+    job: dict[str, Any], mlflow_run_id: str, completed_at: str
+) -> None:
+    """Register job output artifacts in the database after successful completion."""
+    job_id = job["id"]
+    job_type = job["type"]
+
+    artifact_path = ""
+    artifact_type = "file"
+    artifact_name = ""
+
+    if job_type == JobType.sdg.value:
+        bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket
+        if bucket:
+            artifact_path = f"s3://{bucket}/artifacts/{job_id}/output/generated_data.jsonl"
+        else:
+            artifact_path = job.get("output_dir", "")
+            if artifact_path:
+                artifact_path = os.path.join(artifact_path, "generated_data.jsonl")
+        artifact_type = "dataset"
+        artifact_name = "generated_data.jsonl"
+    elif job_type == JobType.training.value and mlflow_run_id:
+        artifact_uri = await _resolve_mlflow_artifact_uri(mlflow_run_id)
+        if artifact_uri:
+            artifact_path = artifact_uri
+            artifact_type = "model"
+            artifact_name = "adapter"
+    elif job_type == JobType.eval.value:
+        bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket
+        if bucket:
+            artifact_path = f"s3://{bucket}/artifacts/{job_id}/output/results.jsonl"
+        artifact_type = "results"
+        artifact_name = "eval_results.jsonl"
+
+    if not artifact_path:
+        return
+
+    try:
+        db, repo = await _get_repo()
+        try:
+            import uuid
+
+            await repo.create_artifact(
+                artifact_id=str(uuid.uuid4()),
+                job_id=job_id,
+                artifact_type=artifact_type,
+                path=artifact_path,
+                name=artifact_name,
+                location="s3" if artifact_path.startswith("s3://") else "local",
+                created_at=completed_at,
+                metadata={"mlflow_run_id": mlflow_run_id} if mlflow_run_id else None,
+            )
+            logger.info("Registered artifact for job %s: %s", job_id, artifact_name)
+        finally:
+            await db.close()
+    except Exception:
+        logger.warning("Failed to register artifact for job %s", job_id, exc_info=True)
+
+
 async def _run_job(job: dict[str, Any]) -> None:
     """Dispatch a job via ComputeBackend and poll until completion."""
     job_id = job["id"]
@@ -495,7 +554,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 
         if status.exit_code == 0:
             mlflow_run_id = ""
-            if job["type"] == JobType.training.value:
+            if job["type"] in (JobType.training.value, JobType.sdg.value, JobType.eval.value):
                 mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             await _update_job(
                 job_id,
@@ -503,6 +562,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 completed_at=completed_at,
                 mlflow_run_id=mlflow_run_id,
             )
+            await _register_job_artifacts(job, mlflow_run_id, completed_at)
             logger.info("Job %s succeeded", job_id)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(
