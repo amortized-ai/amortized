@@ -1,19 +1,18 @@
-"""Job management endpoints — thin HTTP wrapper over core domain logic."""
+"""Job management endpoints — unified CRUD."""
 
-import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
-from amortized.core.artifacts import get_artifact as core_get_artifact
-from amortized.core.artifacts import list_artifacts as core_list_artifacts
+from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
+    _deserialize_handle,
 )
 from amortized.core.jobs import (
     cancel_job as core_cancel_job,
@@ -27,28 +26,26 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
-from amortized.core.jobs import (
-    resume_job as core_resume_job,
-)
 from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
-    Artifact,
-    ArtifactPreview,
-    ComputeSpec,
+    DryRunResponse,
+    EvalJobConfig,
     Job,
+    JobRequest,
     JobStatus,
     JobType,
-    ResumeRequest,
     SynthJobConfig,
     TrainingJobConfig,
-    TrainingMetric,
 )
+from amortized.worker import _resolve_mlflow_artifact_uri
 
 logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+
+_SENSITIVE_CONFIG_KEYS = frozenset({"api_key", "api_secret", "token", "password"})
 
 
 def _job_response(row: dict[str, Any]) -> Job:
@@ -56,58 +53,75 @@ def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-def _build_metadata(compute: ComputeSpec | None, metadata: dict[str, Any] | None) -> dict[str, Any]:
-    merged = dict(metadata) if metadata else {}
-    if compute:
-        if compute.backend != "local":
-            merged["backend"] = compute.backend
-        if compute.gpus > 0:
-            merged["gpus"] = compute.gpus
-        if compute.gpu_type:
-            merged["gpu_type"] = compute.gpu_type
-    return merged
+def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
+    try:
+        if job_type == JobType.training:
+            TrainingJobConfig(**config)
+        elif job_type == JobType.sdg:
+            SynthJobConfig(**config)
+        elif job_type == JobType.eval:
+            EvalJobConfig(**config)
+    except ValidationError as exc:
+        return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
+    return []
 
 
-@router.post("/training", status_code=201, response_model=Job)
-async def create_training_job(
-    config: TrainingJobConfig,
+def _strip_secrets(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Remove sensitive keys from config, return (clean_config, secrets)."""
+    clean = {}
+    secrets: dict[str, str] = {}
+    for k, v in config.items():
+        if k in _SENSITIVE_CONFIG_KEYS and isinstance(v, str) and v:
+            secrets[k] = v
+        else:
+            clean[k] = v
+    return clean, secrets
+
+
+@router.post("", status_code=201, response_model=Job, operation_id="create_job")
+async def create_job(
+    request: JobRequest,
+    http_request: Request,
     db: aiosqlite.Connection = Depends(_get_db),
-) -> Job:
+) -> Job | JSONResponse:
+    job_type = request.type
+
+    errors = _validate_config(job_type, request.config)
+
+    if request.dry_run:
+        dry_resp = DryRunResponse(
+            valid=not errors,
+            errors=errors,
+            warnings=[],
+            type=job_type.value,
+            config=redact_config(request.config),
+        )
+        return JSONResponse(content=dry_resp.model_dump(), status_code=200)
+
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    clean_config, secrets = _strip_secrets(request.config)
+
+    user_id = http_request.headers.get("X-Forwarded-User", "")
+
     repo = Repository(db)
-    metadata = _build_metadata(config.compute, config.metadata)
     try:
         row = await core_create_job(
             repo,
-            job_type=JobType.training,
-            config=config.model_dump(exclude_none=True, exclude={"compute", "metadata"}),
-            output_dir=config.output_dir,
-            metadata=metadata or None,
+            job_type=job_type,
+            config=clean_config,
+            recipe=request.recipe,
+            parent_job_id=request.parent_job_id,
+            user_id=user_id,
+            secrets=secrets,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _job_response(row)
 
 
-@router.post("/sdg", status_code=201, response_model=Job)
-async def create_sdg_job(
-    config: SynthJobConfig,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> Job:
-    repo = Repository(db)
-    metadata = _build_metadata(config.compute, config.metadata)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType.sdg,
-            config=config.model_dump(exclude_none=True, exclude={"compute", "metadata"}),
-            metadata=metadata or None,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _job_response(row)
-
-
-@router.get("", response_model=list[Job])
+@router.get("", response_model=list[Job], operation_id="list_jobs")
 async def get_jobs(
     status: JobStatus | None = None,
     type: JobType | None = None,
@@ -118,7 +132,7 @@ async def get_jobs(
     return [_job_response(row) for row in rows]
 
 
-@router.get("/{job_id}", response_model=Job)
+@router.get("/{job_id}", response_model=Job, operation_id="get_job")
 async def get_job_detail(
     job_id: str,
     db: aiosqlite.Connection = Depends(_get_db),
@@ -130,186 +144,11 @@ async def get_job_detail(
     return _job_response(row)
 
 
-@router.get("/{job_id}/metrics", response_model=list[TrainingMetric])
-async def get_job_metrics(
-    job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> list[TrainingMetric]:
-    repo = Repository(db)
-    row = await core_get_job(repo, job_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-    if row["type"] != JobType.training.value:
-        raise HTTPException(status_code=400, detail="Metrics only available for training jobs")
-
-    output_dir = row.get("output_dir")
-    if not output_dir:
-        return []
-
-    metrics_path = Path(output_dir) / "training_metrics.jsonl"
-    if not metrics_path.exists():
-        return []
-
-    metrics: list[TrainingMetric] = []
-    for line in metrics_path.read_text().strip().splitlines():
-        if line.strip():
-            try:
-                data = json.loads(line)
-                metrics.append(TrainingMetric(**data))
-            except (json.JSONDecodeError, KeyError, ValueError):
-                continue
-    return metrics
-
-
-@router.get("/{job_id}/results")
-async def get_job_results(
-    job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> dict[str, Any]:
-    """Get structured eval results for a job."""
-    repo = Repository(db)
-    row = await core_get_job(repo, job_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-    if row["type"] != JobType.eval.value:
-        raise HTTPException(status_code=400, detail="Results only available for eval jobs")
-
-    output_dir = row.get("output_dir")
-    if not output_dir:
-        raise HTTPException(status_code=404, detail="No output directory for this job")
-
-    results_path = Path(output_dir) / "eval_results.json"
-    if not results_path.exists():
-        raise HTTPException(status_code=404, detail="Eval results not found")
-
-    result: dict[str, Any] = json.loads(results_path.read_text())
-    return result
-
-
-@router.get("/{job_id}/artifacts", response_model=list[Artifact])
-async def get_job_artifacts(
-    job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> list[Artifact]:
-    repo = Repository(db)
-    row = await core_get_job(repo, job_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-    rows = await core_list_artifacts(repo, job_id)
-    artifacts = []
-    for r in rows:
-        a = Artifact(**r)
-        a.download_url = f"/api/v1/artifacts/{a.id}/download"
-        artifacts.append(a)
-    return artifacts
-
-
-@router.get("/{job_id}/artifacts/{artifact_id}/preview", response_model=ArtifactPreview)
-async def preview_artifact(
-    job_id: str,
-    artifact_id: str,
-    lines: int = 5,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> dict[str, Any]:
-    """Preview the contents of an artifact file."""
-    lines = max(1, min(lines, 50))
-    repo = Repository(db)
-
-    row = await core_get_job(repo, job_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-    artifact = await core_get_artifact(repo, artifact_id)
-    if artifact is None or artifact["job_id"] != job_id:
-        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
-
-    file_path = Path(artifact["path"])
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Artifact file not found on disk")
-
-    binary_exts = {".safetensors", ".bin", ".model", ".pt", ".gguf"}
-    if file_path.suffix.lower() in binary_exts:
-        return {
-            "type": "binary",
-            "format": file_path.suffix.lstrip("."),
-            "size": file_path.stat().st_size,
-            "filename": file_path.name,
-        }
-
-    preview_lines: list[str] = []
-    try:
-        with open(file_path, encoding="utf-8", errors="replace") as f:
-            for i, line in enumerate(f):
-                if i >= lines:
-                    break
-                preview_lines.append(line.rstrip("\n"))
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to read artifact: {exc}") from exc
-
-    return {
-        "type": "text",
-        "format": file_path.suffix.lstrip("."),
-        "filename": file_path.name,
-        "lines": preview_lines,
-        "total_size": file_path.stat().st_size,
-    }
-
-
-@router.get("/{job_id}/artifacts/{artifact_id}/download")
-async def download_artifact(
-    job_id: str,
-    artifact_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> FileResponse:
-    repo = Repository(db)
-
-    row = await core_get_job(repo, job_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-
-    artifact = await core_get_artifact(repo, artifact_id)
-    if artifact is None or artifact["job_id"] != job_id:
-        raise HTTPException(status_code=404, detail=f"Artifact {artifact_id} not found")
-
-    file_path = Path(artifact["path"])
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Artifact file not found on disk")
-
-    return FileResponse(
-        path=file_path,
-        filename=file_path.name,
-        media_type="application/octet-stream",
-    )
-
-
-@router.post("/{job_id}/resume", response_model=Job)
-async def resume_job(
-    job_id: str,
-    request: ResumeRequest | None = None,
-    db: aiosqlite.Connection = Depends(_get_db),
-) -> Job:
-    repo = Repository(db)
-    try:
-        row = await core_resume_job(
-            repo,
-            job_id,
-            checkpoint_id=request.checkpoint_id if request else None,
-        )
-    except JobNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from exc
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _job_response(row)
-
-
-@router.delete("/{job_id}", response_model=Job)
+@router.delete("/{job_id}", response_model=Job, operation_id="cancel_job")
 async def cancel_job(
     job_id: str,
     db: aiosqlite.Connection = Depends(_get_db),
-) -> Any:
+) -> Job:
     repo = Repository(db)
     try:
         row = await core_cancel_job(repo, job_id)
@@ -318,3 +157,65 @@ async def cancel_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _job_response(row)
+
+
+@router.get("/{job_id}/logs", operation_id="get_job_logs")
+async def get_job_logs(
+    job_id: str,
+    tail: int = 100,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> dict[str, Any]:
+    repo = Repository(db)
+    row = await core_get_job(repo, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    handle = _deserialize_handle(row.get("backend_handle"))
+    if handle is None:
+        msg = "No backend handle — job may not have started"
+        return {"job_id": job_id, "logs": [], "message": msg}
+
+    try:
+        backend = get_backend(handle.backend_name)
+    except KeyError:
+        msg = f"Backend {handle.backend_name!r} not available"
+        return {"job_id": job_id, "logs": [], "message": msg}
+
+    lines: list[str] = []
+    try:
+        async for line in backend.logs(handle):
+            lines.append(line)
+            if len(lines) > tail:
+                lines = lines[-tail:]
+    except Exception as exc:
+        logger.warning("Failed to fetch logs for job %s: %s", job_id, exc)
+        return {"job_id": job_id, "logs": [], "message": str(exc)}
+
+    return {"job_id": job_id, "logs": lines}
+
+
+@router.get("/{job_id}/artifacts", operation_id="get_job_artifacts")
+async def get_job_artifacts(
+    job_id: str,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> dict[str, Any]:
+    """Return MLflow artifact URI for a completed job."""
+    repo = Repository(db)
+    row = await core_get_job(repo, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    mlflow_run_id = row.get("mlflow_run_id", "")
+    if not mlflow_run_id:
+        return {
+            "job_id": job_id,
+            "artifact_uri": "",
+            "message": "No MLflow run ID — job may not have completed",
+        }
+
+    artifact_uri = await _resolve_mlflow_artifact_uri(mlflow_run_id)
+    return {
+        "job_id": job_id,
+        "mlflow_run_id": mlflow_run_id,
+        "artifact_uri": artifact_uri,
+    }
