@@ -71,27 +71,7 @@ def load_recipe(
         parent = load_recipe(parent_name, recipes_dir=base_dir, _chain=_chain)
         raw = _deep_merge(parent, raw)
 
-    job_type = raw.get("type")
-    if job_type:
-        _validate_merged_config(job_type, raw.get("config", {}))
-
     return raw
-
-
-def _validate_merged_config(job_type: str, config: dict[str, Any]) -> None:
-    """Validate merged recipe config against the job type's JSON Schema."""
-    from amortized.core.job_types import UnknownJobTypeError, validate_config
-
-    try:
-        errors = validate_config(job_type, config)
-    except UnknownJobTypeError:
-        return
-    if errors:
-        logger.warning(
-            "Recipe config validation warnings for type '%s': %s",
-            job_type,
-            "; ".join(errors),
-        )
 
 
 def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
@@ -118,6 +98,7 @@ def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
                     "name": name,
                     "description": raw.get("description", ""),
                     "type": raw.get("type", ""),
+                    "config": raw.get("config", {}),
                 }
             )
     return results

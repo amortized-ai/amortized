@@ -6,10 +6,8 @@ from pydantic import ValidationError
 from amortized.models import (
     JobStatus,
     JobType,
-    MemoryEstimateRequest,
     SynthJobConfig,
     TrainingJobConfig,
-    TrainingMetric,
 )
 
 
@@ -38,23 +36,18 @@ class TestTrainingJobConfig:
             lora_alpha=64,
             load_in_4bit=True,
             per_device_train_batch_size=4,
-            batch_size=8,
             max_length=4096,
             gradient_checkpointing=True,
-            model_max_length=8192,
         )
         assert config.lora_r == 32
         assert config.load_in_4bit is True
-        assert config.batch_size == 8
         assert config.gradient_checkpointing is True
-        assert config.model_max_length == 8192
 
     def test_missing_required_field(self) -> None:
         with pytest.raises(ValidationError):
             TrainingJobConfig(  # type: ignore[call-arg]
                 model_name_or_path="test",
                 data_path="test",
-                # missing algorithm
             )
 
     def test_invalid_lora_r(self) -> None:
@@ -81,9 +74,7 @@ class TestTrainingJobConfig:
 
 class TestSynthJobConfig:
     def test_minimal_config(self) -> None:
-        config = SynthJobConfig(
-            model="openai/gpt-4o",
-        )
+        config = SynthJobConfig(model="openai/gpt-4o")
         assert config.model == "openai/gpt-4o"
         assert config.api_base is None
         assert config.num_samples == 100
@@ -107,26 +98,6 @@ class TestSynthJobConfig:
             SynthJobConfig()  # type: ignore[call-arg]
 
 
-class TestMemoryEstimateRequest:
-    def test_defaults(self) -> None:
-        req = MemoryEstimateRequest(model_name_or_path="test/model")
-        assert req.lora_r == 16
-        assert req.batch_size == 2
-        assert req.max_length == 2048
-        assert req.load_in_4bit is False
-
-    def test_custom_values(self) -> None:
-        req = MemoryEstimateRequest(
-            model_name_or_path="test/model",
-            lora_r=64,
-            batch_size=8,
-            max_length=4096,
-            load_in_4bit=True,
-        )
-        assert req.lora_r == 64
-        assert req.load_in_4bit is True
-
-
 class TestEnums:
     def test_job_status_values(self) -> None:
         assert JobStatus.queued.value == "queued"
@@ -135,22 +106,8 @@ class TestEnums:
         assert JobStatus.succeeded.value == "succeeded"
         assert JobStatus.failed.value == "failed"
         assert JobStatus.cancelled.value == "cancelled"
-        # Backward-compat aliases
-        assert JobStatus.pending is JobStatus.queued
-        assert JobStatus.completed is JobStatus.succeeded
 
     def test_job_type_values(self) -> None:
         assert JobType.training.value == "training"
         assert JobType.sdg.value == "sdg"
-
-
-class TestTrainingMetric:
-    def test_full_metric(self) -> None:
-        metric = TrainingMetric(step=10, loss=2.345, epoch=1.0, learning_rate=1e-5, max_steps=1000)
-        assert metric.step == 10
-        assert metric.loss == 2.345
-
-    def test_minimal_metric(self) -> None:
-        metric = TrainingMetric(step=1, loss=3.0)
-        assert metric.epoch is None
-        assert metric.learning_rate is None
+        assert JobType.eval.value == "eval"

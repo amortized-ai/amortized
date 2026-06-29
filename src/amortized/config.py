@@ -7,53 +7,29 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Runtime configuration loaded from environment variables."""
-
     host: str = "0.0.0.0"
     port: int = 8000
     db_path: Path = Path("./data/amortized.db")
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
-    schemas_dir: Path | None = None
-    datasets_dir: Path | None = None
 
-    api_key: str = Field(
-        default="",
-        description="API key for auth (empty = no auth, reads AMORTIZED_API_KEY)",
-    )
-    cors_origins: str = Field(
-        default="*",
-        description="Comma-separated allowed CORS origins",
-    )
-
-    openai_api_key: str = Field(
-        default="",
-        description="OpenAI API key (reads AMORTIZED_OPENAI_API_KEY or OPENAI_API_KEY)",
-    )
-    openai_model: str = "gpt-5-mini"
-    openai_base_url: str = "https://api.openai.com/v1"
-
-    storage_backend: str = Field("local", description="Storage backend: local, s3, gcs")
-    storage_bucket: str = Field("", description="S3/GCS bucket name")
-    storage_prefix: str = Field("artifacts/", description="Key prefix for cloud storage")
-    storage_region: str = Field("us-east-1", description="AWS region for S3")
-    storage_endpoint: str = Field("", description="S3-compatible endpoint URL (e.g., MinIO)")
-
-    external_url: str = Field("", description="Externally reachable server URL")
+    api_key: str = Field(default="", description="API key for auth (empty = no auth)")
+    cors_origins: str = Field(default="*", description="Comma-separated allowed CORS origins")
 
     forward_env: list[str] = Field(
-        default_factory=list,
-        description="Env var names to forward to job containers",
+        default_factory=list, description="Env var names to forward to job containers"
     )
 
     compute_backend: str = Field("local", description="Compute backend: local, ssh, kubernetes")
     compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
+    storage_bucket: str = Field("", description="S3 bucket name for artifact storage")
+
+    external_url: str = Field("", description="Externally reachable server URL")
 
     default_backend: str = Field(
-        "",
-        description="Default compute backend for GPU jobs (reads AMORTIZED_DEFAULT_BACKEND). Falls back to compute_backend if empty.",
+        "", description="Default compute backend (falls back to compute_backend if empty)"
     )
 
     @property
@@ -66,14 +42,4 @@ class Settings(BaseSettings):
     }
 
 
-def _load_settings() -> Settings:
-    """Load settings, falling back OPENAI_API_KEY if AMORTIZED_OPENAI_API_KEY is unset."""
-    import os
-
-    s = Settings()
-    if not s.openai_api_key:
-        s.openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    return s
-
-
-settings = _load_settings()
+settings = Settings()

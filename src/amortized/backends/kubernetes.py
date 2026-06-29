@@ -16,7 +16,6 @@ from amortized.backends import (
 
 logger = logging.getLogger("amortized.backends.kubernetes")
 
-EVENTS_URL = "http://amortized-server.amortized.svc.cluster.local:8000/api/v1/events/ingest"
 _LABEL_APP = "amortized"
 
 
@@ -35,8 +34,13 @@ class KubernetesBackend:
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
 
-    def _labels(self, job_id: str) -> dict[str, str]:
-        return {"app": _LABEL_APP, "amortized/job-id": job_id}
+    def _labels(self, job_id: str, job_type: str = "", user_id: str = "") -> dict[str, str]:
+        labels: dict[str, str] = {"app": _LABEL_APP, "amortized/job-id": job_id}
+        if job_type:
+            labels["amortized/job-type"] = job_type
+        if user_id:
+            labels["amortized/user"] = user_id
+        return labels
 
     def _resource_name(self, job_id: str) -> str:
         return f"amortized-{job_id[:53]}"
@@ -57,7 +61,7 @@ class KubernetesBackend:
             metadata=V1ObjectMeta(
                 name=f"{resource_name}-config",
                 namespace=self._namespace,
-                labels=self._labels(spec.job_id),
+                labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
             ),
             data=dict(spec.config_files),
         )
@@ -103,7 +107,6 @@ class KubernetesBackend:
             V1EnvVar(name="AMORTIZED_JOB_ID", value=spec.job_id),
             V1EnvVar(name="AMORTIZED_WORK_DIR", value="/amortized/work"),
             V1EnvVar(name="AMORTIZED_CONFIG_PATH", value="/amortized/config.json"),
-            V1EnvVar(name="AMORTIZED_EVENTS_URL", value=EVENTS_URL),
             V1EnvVar(name="HOME", value="/amortized/work"),
             V1EnvVar(name="HF_HOME", value="/amortized/work/.cache"),
             V1EnvVar(name="TRANSFORMERS_CACHE", value="/amortized/work/.cache"),
@@ -144,13 +147,11 @@ class KubernetesBackend:
             capabilities=V1Capabilities(drop=["ALL"]),
         )
 
-        is_serve = bool(spec.ports)
         container = V1Container(
             name="job",
             image=spec.image or f"{self._image_registry}/worker:latest",
             image_pull_policy="Always",
-            command=None if is_serve else (spec.command or None),
-            args=spec.command if is_serve else None,
+            command=spec.command or None,
             env=env_vars,
             env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
             volume_mounts=volume_mounts,
@@ -207,7 +208,7 @@ class KubernetesBackend:
             metadata=V1ObjectMeta(
                 name=f"{resource_name}-env",
                 namespace=self._namespace,
-                labels=self._labels(spec.job_id),
+                labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
             ),
             string_data=dict(spec.env),
         )
@@ -242,10 +243,13 @@ class KubernetesBackend:
             metadata=V1ObjectMeta(
                 name=resource_name,
                 namespace=self._namespace,
-                labels=self._labels(spec.job_id),
+                labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
             ),
             spec=V1JobSpec(
-                template={"metadata": {"labels": self._labels(spec.job_id)}, "spec": pod_spec},
+                template={
+                    "metadata": {"labels": self._labels(spec.job_id, spec.job_type, spec.user_id)},
+                    "spec": pod_spec,
+                },
                 backoff_limit=0,
                 ttl_seconds_after_finished=3600,
             ),
@@ -271,9 +275,25 @@ class KubernetesBackend:
                     }
                 },
             )
+            await core.patch_namespaced_secret(
+                f"{resource_name}-env",
+                self._namespace,
+                {
+                    "metadata": {
+                        "ownerReferences": [
+                            {
+                                "apiVersion": "batch/v1",
+                                "kind": "Job",
+                                "name": resource_name,
+                                "uid": job_uid,
+                            }
+                        ]
+                    }
+                },
+            )
         except Exception:
             logger.warning(
-                "Failed to set ownerReference on ConfigMap — manual cleanup may be needed"
+                "Failed to set ownerReferences on ConfigMap/Secret — manual cleanup may be needed"
             )
 
         logger.info("Created K8s Job %s for job %s", resource_name, spec.job_id)
@@ -285,101 +305,15 @@ class KubernetesBackend:
             container_id="job",
         )
 
-    async def _submit_deployment(self, spec: JobSpec) -> BackendHandle:
-        from kubernetes_asyncio.client import (
-            AppsV1Api,
-            CoreV1Api,
-            V1Deployment,
-            V1DeploymentSpec,
-            V1LabelSelector,
-            V1ObjectMeta,
-            V1PodTemplateSpec,
-            V1Service,
-            V1ServicePort,
-            V1ServiceSpec,
-        )
-
-        resource_name = self._resource_name(spec.job_id)
-        api_client = await self._get_client()
-
-        core = CoreV1Api(api_client)
-        apps = AppsV1Api(api_client)
-
-        await self._create_secret(spec, resource_name, api_client)
-
-        config_map = self._build_config_map(spec, resource_name)
-        await core.create_namespaced_config_map(self._namespace, config_map)
-
-        pod_spec = self._build_pod_spec(spec, resource_name)
-        pod_spec.restart_policy = "Always"
-
-        deployment = V1Deployment(
-            metadata=V1ObjectMeta(
-                name=resource_name,
-                namespace=self._namespace,
-                labels=self._labels(spec.job_id),
-            ),
-            spec=V1DeploymentSpec(
-                replicas=1,
-                selector=V1LabelSelector(match_labels=self._labels(spec.job_id)),
-                template=V1PodTemplateSpec(
-                    metadata=V1ObjectMeta(labels=self._labels(spec.job_id)),
-                    spec=pod_spec,
-                ),
-            ),
-        )
-
-        await apps.create_namespaced_deployment(self._namespace, deployment)
-
-        if spec.ports:
-            service_ports = [
-                V1ServicePort(
-                    name=f"port-{container_port}",
-                    port=container_port,
-                    target_port=container_port,
-                )
-                for container_port in spec.ports.values()
-            ]
-            service = V1Service(
-                metadata=V1ObjectMeta(
-                    name=resource_name,
-                    namespace=self._namespace,
-                    labels=self._labels(spec.job_id),
-                ),
-                spec=V1ServiceSpec(
-                    selector=self._labels(spec.job_id),
-                    ports=service_ports,
-                ),
-            )
-            await core.create_namespaced_service(self._namespace, service)
-
-        logger.info("Created K8s Deployment %s for job %s", resource_name, spec.job_id)
-
-        return BackendHandle(
-            backend_name=self.name,
-            job_id=spec.job_id,
-            scheduler_id=resource_name,
-            container_id="deployment",
-        )
-
     async def submit(self, spec: JobSpec) -> BackendHandle:
-        is_serve = bool(spec.ports)
-        if is_serve:
-            return await self._submit_deployment(spec)
         return await self._submit_job(spec)
 
     async def status(self, handle: BackendHandle) -> BackendStatus:
-        kind = handle.container_id
         resource_name = handle.scheduler_id
         if not resource_name:
             return BackendStatus(running=False, error="No scheduler_id")
 
         api_client = await self._get_client()
-        if kind == "deployment":
-            return await self._deployment_status(resource_name, api_client)
-        return await self._job_status(resource_name, api_client)
-
-    async def _job_status(self, resource_name: str, api_client: Any) -> BackendStatus:
         from kubernetes_asyncio.client import BatchV1Api
 
         batch = BatchV1Api(api_client)
@@ -395,65 +329,13 @@ class KubernetesBackend:
             return BackendStatus(running=False, exit_code=1, error="Job failed")
         return BackendStatus(running=True)
 
-    async def _deployment_status(self, resource_name: str, api_client: Any) -> BackendStatus:
-        from kubernetes_asyncio.client import AppsV1Api, CoreV1Api
-
-        apps = AppsV1Api(api_client)
-        try:
-            deployment = await apps.read_namespaced_deployment(resource_name, self._namespace)
-        except Exception as e:
-            return BackendStatus(running=False, error=str(e))
-
-        conditions = deployment.status.conditions or []
-        for cond in conditions:
-            if cond.type == "Available" and cond.status == "True":
-                return BackendStatus(running=True)
-
-        core = CoreV1Api(api_client)
-        try:
-            job_id = deployment.metadata.labels.get("amortized/job-id", "")
-            pods = await core.list_namespaced_pod(
-                self._namespace,
-                label_selector=f"amortized/job-id={job_id}",
-            )
-            for pod in pods.items:
-                for cs in pod.status.container_statuses or []:
-                    if (
-                        cs.state
-                        and cs.state.waiting
-                        and cs.state.waiting.reason == "CrashLoopBackOff"
-                    ):
-                        return BackendStatus(
-                            running=False,
-                            exit_code=1,
-                            error="CrashLoopBackOff",
-                        )
-        except Exception:
-            pass
-
-        # No conditions yet — deployment is still spinning up
-        return BackendStatus(running=True, error="provisioning")
-
     async def cancel(self, handle: BackendHandle) -> None:
-        kind = handle.container_id
         resource_name = handle.scheduler_id
         if not resource_name:
             return
 
         api_client = await self._get_client()
-        if kind == "deployment":
-            await self._cancel_deployment(resource_name, api_client)
-        else:
-            await self._cancel_job(resource_name, api_client)
-
-        from kubernetes_asyncio.client import CoreV1Api
-
-        core = CoreV1Api(api_client)
-        with contextlib.suppress(Exception):
-            await core.delete_namespaced_secret(f"{resource_name}-env", self._namespace)
-
-    async def _cancel_job(self, resource_name: str, api_client: Any) -> None:
-        from kubernetes_asyncio.client import BatchV1Api
+        from kubernetes_asyncio.client import BatchV1Api, CoreV1Api
 
         batch = BatchV1Api(api_client)
         try:
@@ -466,21 +348,9 @@ class KubernetesBackend:
         except Exception:
             logger.exception("Failed to delete Job %s", resource_name)
 
-    async def _cancel_deployment(self, resource_name: str, api_client: Any) -> None:
-        from kubernetes_asyncio.client import AppsV1Api, CoreV1Api
-
-        apps = AppsV1Api(api_client)
         core = CoreV1Api(api_client)
-        try:
-            await apps.delete_namespaced_deployment(resource_name, self._namespace)
-            logger.info("Deleted K8s Deployment %s", resource_name)
-        except Exception:
-            logger.exception("Failed to delete Deployment %s", resource_name)
-        try:
-            await core.delete_namespaced_service(resource_name, self._namespace)
-            logger.info("Deleted K8s Service %s", resource_name)
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            await core.delete_namespaced_secret(f"{resource_name}-env", self._namespace)
 
     async def logs(self, handle: BackendHandle) -> AsyncIterator[str]:
         resource_name = handle.scheduler_id

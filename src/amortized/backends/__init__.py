@@ -62,6 +62,8 @@ class JobSpec:
     ports: dict[int, int] = field(default_factory=dict)
     config_files: dict[str, str] = field(default_factory=dict)
     s3_downloads: list[S3Download] = field(default_factory=list)
+    job_type: str = ""
+    user_id: str = ""
 
 
 @runtime_checkable

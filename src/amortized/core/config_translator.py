@@ -94,38 +94,6 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     return result
 
 
-_SERVE_FIELD_MAP: dict[str, str] = {
-    "model_name_or_path": "model",
-    "served_model_name": "served-model-name",
-    "tensor_parallel_size": "tensor-parallel-size",
-}
-
-_SERVE_SKIP_KEYS = {"adapter_path", "output_dir", "gpu_ids"}
-
-
-def _serve_config_yaml(config: dict[str, Any]) -> str:
-    vllm_config: dict[str, Any] = {"host": "0.0.0.0"}
-
-    served_name = config.get("served_model_name", "default")
-    adapter_path = config.get("adapter_path")
-
-    if adapter_path:
-        vllm_config["enable-lora"] = True
-        vllm_config["lora-modules"] = f"{served_name}={adapter_path}"
-
-    for key, value in config.items():
-        if key in _SERVE_SKIP_KEYS or value is None:
-            continue
-        vllm_field = _SERVE_FIELD_MAP.get(key)
-        if vllm_field:
-            vllm_config[vllm_field] = value
-        elif key not in _SERVE_FIELD_MAP:
-            vllm_config[key] = value
-
-    result: str = yaml.dump(vllm_config, default_flow_style=False, sort_keys=False)
-    return result
-
-
 def _generate_container_config(
     job_type: str, config: dict[str, Any], *, s3_output_path: str = ""
 ) -> dict[str, Any]:
@@ -143,13 +111,46 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
         "max_concurrency": config.get("max_concurrency", 16),
         "num_retries": config.get("num_retries", 3),
     }
-    for optional in ("max_tokens", "top_p", "seed", "api_base", "api_key"):
+    for optional in ("max_tokens", "top_p", "seed", "api_base"):
         if config.get(optional) is not None:
             inference_config[optional] = config[optional]
 
     strategy_params = config.get("strategy_params", {})
     if isinstance(strategy_params, dict):
         strategy_params = dict(strategy_params)
+        if config.get("task_description") and "generated_attributes" not in strategy_params:
+            task = config["task_description"]
+            strategy_params["sampled_attributes"] = strategy_params.get(
+                "sampled_attributes",
+                [
+                    {
+                        "id": "scenario",
+                        "name": "scenario",
+                        "description": f"Scenario variation for: {task}",
+                        "possible_values": [
+                            {"id": "a", "name": "typical", "description": "A typical case"},
+                            {"id": "b", "name": "edge_case", "description": "An edge case"},
+                            {"id": "c", "name": "ambiguous", "description": "An ambiguous case"},
+                        ],
+                    }
+                ],
+            )
+            strategy_params["generated_attributes"] = [
+                {
+                    "id": "messages",
+                    "instruction_messages": [
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Generate a realistic training example for: {task}. "
+                                f"The scenario type is: {{scenario}}. "
+                                f"Output a single JSON array of message objects, "
+                                f"each with 'role' (user/assistant) and 'content' keys."
+                            ),
+                        }
+                    ],
+                }
+            ]
         if config.get("input_data") and "input_data" not in strategy_params:
             strategy_params["input_data"] = config["input_data"]
         if config.get("input_documents") and "input_documents" not in strategy_params:

@@ -16,30 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import (
-    agent_routes,
-    artifacts,
-    compute,
-    datasets,
-    estimate,
-    evaluators,
-    event_ingest,
-    events,
-    flows,
-    job_types,
-    jobs,
-    judge,
-    recipes,
-    settings,
-    ws,
-)
+from amortized.api import jobs, recipes
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
-from amortized.core.compute import register_backend
-from amortized.db import get_db, init_db
+from amortized.core.compute import get_all_backends, register_backend
+from amortized.db import init_db
 from amortized.mcp.server import create_mcp_server
-from amortized.models import HealthResponse
-from amortized.worker import _monitor_heartbeats, cleanup_orphaned_jobs, worker_loop
+from amortized.models import ConfigResponse, HealthResponse
+from amortized.worker import cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,7 +33,6 @@ logger = logging.getLogger("amortized")
 
 
 def _load_backends() -> None:
-    """Register compute backends from config file and always include local."""
     register_backend(LocalBackend())
 
     if _settings.compute_backend == "kubernetes":
@@ -84,15 +67,11 @@ def _load_backends() -> None:
 
     default = config.get("compute", {}).get("default_backend", "")
     if default:
-        from amortized.config import settings
-
-        settings.default_backend = default
+        _settings.default_backend = default
 
     forward_env = config.get("forward_env", [])
     if forward_env:
-        from amortized.config import settings
-
-        settings.forward_env = forward_env
+        _settings.forward_env = forward_env
         logger.info("Forwarding %d env vars to job containers", len(forward_env))
 
     backends = config.get("compute", {}).get("backends", {})
@@ -117,34 +96,25 @@ def _load_backends() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize database and start background worker on startup."""
     await init_db()
-    async for db in get_db():
-        await evaluators.seed_default_evaluators(db)
     await cleanup_orphaned_jobs()
     _load_backends()
     logger.info("Amortized runtime started")
 
-    # Start background worker and heartbeat monitor
     worker_task = asyncio.create_task(worker_loop())
-    heartbeat_task = asyncio.create_task(_monitor_heartbeats())
 
     yield
 
-    # Shutdown worker and heartbeat monitor
     worker_task.cancel()
-    heartbeat_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
-    with contextlib.suppress(asyncio.CancelledError):
-        await heartbeat_task
     logger.info("Amortized runtime shutting down")
 
 
 app = FastAPI(
-    title="Amortized Runtime",
-    description="AI model customization runtime API",
-    version="0.1.0",
+    title="Amortized",
+    description="Control plane for building task models",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -187,15 +157,6 @@ async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    if isinstance(exc.detail, list):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "code": f"http_{exc.status_code}",
-                "message": "Request failed",
-                "details": [{"msg": str(e)} for e in exc.detail],
-            },
-        )
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
@@ -225,28 +186,13 @@ async def validation_exception_handler(
 
 
 app.include_router(jobs.router)
-app.include_router(job_types.router)
-app.include_router(job_types.job_types_router)
-app.include_router(events.router)
-app.include_router(event_ingest.router)
-app.include_router(artifacts.router)
-app.include_router(flows.router)
-app.include_router(estimate.router)
-app.include_router(datasets.router)
-app.include_router(ws.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
-app.include_router(compute.router)
-app.include_router(judge.router)
-app.include_router(agent_routes.router)
-app.include_router(evaluators.router)
-app.include_router(settings.router)
 
 create_mcp_server(app)
 
 
 def _detect_gpu() -> dict[str, object]:
-    """Detect GPU availability."""
     try:
         import torch
 
@@ -261,7 +207,6 @@ def _detect_gpu() -> dict[str, object]:
     except ImportError:
         pass
 
-    # Fallback: check for nvidia-smi
     nvidia_smi = shutil.which("nvidia-smi")
     return {
         "available": nvidia_smi is not None,
@@ -271,12 +216,25 @@ def _detect_gpu() -> dict[str, object]:
     }
 
 
-@app.get("/api/v1/health", response_model=HealthResponse)
+@app.get("/api/v1/health", response_model=HealthResponse, operation_id="health")
 async def health() -> dict[str, object]:
-    """Health check endpoint with GPU info."""
-    logger.info("Health check requested")
     return {
         "status": "ok",
         "timestamp": datetime.now(UTC).isoformat(),
         "gpu": _detect_gpu(),
     }
+
+
+@app.get("/api/v1/config", response_model=ConfigResponse, operation_id="get_config")
+async def get_config() -> ConfigResponse:
+    mlflow_gateway_uri = ""
+    if _settings.mlflow_tracking_uri:
+        mlflow_gateway_uri = f"{_settings.mlflow_tracking_uri}/gateway/v1"
+    return ConfigResponse(
+        default_compute_backend=_settings.resolved_default_backend,
+        compute_namespace=_settings.compute_namespace,
+        mlflow_tracking_uri=_settings.mlflow_tracking_uri,
+        mlflow_gateway_uri=mlflow_gateway_uri,
+        image_registry=_settings.image_registry,
+        available_backends=list(get_all_backends().keys()),
+    )

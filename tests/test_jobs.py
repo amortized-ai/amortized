@@ -1,21 +1,16 @@
 """Tests for job CRUD API endpoints."""
 
-import json
 import os
-import tempfile
 
 import httpx
 import pytest
-from conftest import requires_training_hub_functional
 
 from amortized.main import app
 
 
 @pytest.fixture(autouse=True)
 def _use_temp_db(tmp_path: object) -> None:
-    """Use a temporary database for each test."""
     import amortized.config as config_mod
-    import amortized.db as db_mod
     import amortized.db.connection as db_conn_mod
 
     db_path = str(tmp_path) + "/test.db"
@@ -23,7 +18,6 @@ def _use_temp_db(tmp_path: object) -> None:
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
-    db_mod.settings = new_settings
     db_conn_mod.settings = new_settings
 
 
@@ -38,16 +32,18 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         yield c  # type: ignore[misc]
 
 
-class TestCreateTrainingJob:
+class TestCreateJob:
     @pytest.mark.asyncio
     async def test_create_training_job(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
-                "data_path": "./data.jsonl",
-                "output_dir": "./outputs",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+                    "data_path": "./data.jsonl",
+                },
             },
         )
         assert response.status_code == 201
@@ -58,60 +54,12 @@ class TestCreateTrainingJob:
         assert data["id"]
 
     @pytest.mark.asyncio
-    async def test_create_training_job_with_hyperparams(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "meta-llama/Llama-3-8B",
-                "data_path": "./data.jsonl",
-                "output_dir": "./outputs",
-                "learning_rate": 1e-4,
-                "lora_r": 32,
-                "load_in_4bit": True,
-            },
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["config"]["lora_r"] == 32
-        assert data["config"]["load_in_4bit"] is True
-
-    @pytest.mark.asyncio
-    async def test_create_training_job_with_compute(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
-                "data_path": "./data.jsonl",
-                "compute": {"backend": "ssh", "gpus": 2},
-                "metadata": {"team": "ml"},
-            },
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["metadata"]["backend"] == "ssh"
-        assert data["metadata"]["gpus"] == 2
-        assert data["metadata"]["team"] == "ml"
-        assert "compute" not in data["config"]
-        assert "metadata" not in data["config"]
-
-    @pytest.mark.asyncio
-    async def test_create_training_job_validation_error(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={"model_name_or_path": "test"},  # missing required fields
-        )
-        assert response.status_code == 422
-
-
-class TestCreateSDGJob:
-    @pytest.mark.asyncio
     async def test_create_sdg_job(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs/sdg",
+            "/api/v1/jobs",
             json={
-                "model": "openai/gpt-4o",
+                "type": "sdg",
+                "config": {"model": "openai/gpt-4o"},
             },
         )
         assert response.status_code == 201
@@ -121,35 +69,68 @@ class TestCreateSDGJob:
         assert data["config"]["model"] == "openai/gpt-4o"
 
     @pytest.mark.asyncio
-    async def test_create_sdg_job_with_compute(self, client: httpx.AsyncClient) -> None:
+    async def test_create_with_recipe(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs/sdg",
+            "/api/v1/jobs",
             json={
-                "model": "openai/gpt-4o",
-                "compute": {"backend": "ssh", "gpus": 1, "gpu_type": "A100"},
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
+                "recipe": "models/qwen-1.5b-lora",
             },
         )
         assert response.status_code == 201
-        data = response.json()
-        assert data["metadata"]["backend"] == "ssh"
-        assert data["metadata"]["gpus"] == 1
-        assert data["metadata"]["gpu_type"] == "A100"
-        assert "compute" not in data["config"]
+        assert response.json()["recipe"] == "models/qwen-1.5b-lora"
 
     @pytest.mark.asyncio
-    async def test_create_sdg_job_with_metadata(self, client: httpx.AsyncClient) -> None:
+    async def test_create_with_parent_job_id(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs/sdg",
+            "/api/v1/jobs",
             json={
-                "model": "openai/gpt-4o",
-                "compute": {"backend": "ssh"},
-                "metadata": {"project": "demo"},
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
+                "parent_job_id": "abc-123",
             },
         )
         assert response.status_code == 201
+        assert response.json()["parent_job_id"] == "abc-123"
+
+    @pytest.mark.asyncio
+    async def test_create_unknown_type(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "unknown",
+                "config": {},
+            },
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_dry_run(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
         data = response.json()
-        assert data["metadata"]["backend"] == "ssh"
-        assert data["metadata"]["project"] == "demo"
+        assert data["dry_run"] is True
+        assert data["valid"] is True
 
 
 class TestListJobs:
@@ -162,19 +143,21 @@ class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_after_create(self, client: httpx.AsyncClient) -> None:
         await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
             },
         )
         await client.post(
-            "/api/v1/jobs/sdg",
+            "/api/v1/jobs",
             json={
-                "pipeline": "conversation",
-                "model": "test",
+                "type": "sdg",
+                "config": {"model": "test"},
             },
         )
         response = await client.get("/api/v1/jobs")
@@ -185,19 +168,21 @@ class TestListJobs:
     @pytest.mark.asyncio
     async def test_filter_by_type(self, client: httpx.AsyncClient) -> None:
         await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
             },
         )
         await client.post(
-            "/api/v1/jobs/sdg",
+            "/api/v1/jobs",
             json={
-                "pipeline": "conversation",
-                "model": "test",
+                "type": "sdg",
+                "config": {"model": "test"},
             },
         )
         response = await client.get("/api/v1/jobs?type=training")
@@ -211,16 +196,17 @@ class TestGetJob:
     @pytest.mark.asyncio
     async def test_get_existing_job(self, client: httpx.AsyncClient) -> None:
         create_resp = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
             },
         )
         job_id = create_resp.json()["id"]
-
         response = await client.get(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
         assert response.json()["id"] == job_id
@@ -235,16 +221,17 @@ class TestCancelJob:
     @pytest.mark.asyncio
     async def test_cancel_pending_job(self, client: httpx.AsyncClient) -> None:
         create_resp = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
             },
         )
         job_id = create_resp.json()["id"]
-
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
         assert response.json()["status"] == "cancelled"
@@ -255,228 +242,53 @@ class TestCancelJob:
         assert response.status_code == 404
 
 
-class TestJobMetrics:
-    @pytest.mark.asyncio
-    async def test_metrics_no_file(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "/tmp/nonexistent",
-            },
-        )
-        job_id = create_resp.json()["id"]
-
-        response = await client.get(f"/api/v1/jobs/{job_id}/metrics")
-        assert response.status_code == 200
-        assert response.json() == []
-
-    @pytest.mark.asyncio
-    async def test_metrics_with_file(self, client: httpx.AsyncClient) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            metrics_path = os.path.join(tmpdir, "training_metrics.jsonl")
-            with open(metrics_path, "w") as f:
-                f.write(json.dumps({"step": 1, "loss": 3.5, "epoch": 0.1}) + "\n")
-                f.write(json.dumps({"step": 2, "loss": 3.2, "epoch": 0.2}) + "\n")
-
-            create_resp = await client.post(
-                "/api/v1/jobs/training",
-                json={
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                    "output_dir": tmpdir,
-                },
-            )
-            job_id = create_resp.json()["id"]
-
-            response = await client.get(f"/api/v1/jobs/{job_id}/metrics")
-            assert response.status_code == 200
-            metrics = response.json()
-            assert len(metrics) == 2
-            assert metrics[0]["step"] == 1
-            assert metrics[1]["loss"] == 3.2
-
-    @pytest.mark.asyncio
-    async def test_metrics_sdg_job_rejected(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs/sdg",
-            json={
-                "pipeline": "conversation",
-                "model": "openai/gpt-4o",
-            },
-        )
-        job_id = create_resp.json()["id"]
-
-        response = await client.get(f"/api/v1/jobs/{job_id}/metrics")
-        assert response.status_code == 400
-
-
-class TestJobArtifacts:
-    @pytest.mark.asyncio
-    async def test_artifacts_empty(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
-            },
-        )
-        job_id = create_resp.json()["id"]
-
-        response = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-        assert response.status_code == 200
-        assert response.json() == []
-
-
 class TestConfigRedaction:
     @pytest.mark.asyncio
-    async def test_api_key_redacted_in_get(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs/sdg",
-            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+    async def test_api_key_stripped_from_stored_config(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+            },
         )
-        assert create_resp.status_code == 201
-        job_id = create_resp.json()["id"]
+        assert response.status_code == 201
+        assert "api_key" not in response.json()["config"]
 
+    @pytest.mark.asyncio
+    async def test_api_key_not_in_get(self, client: httpx.AsyncClient) -> None:
+        create_resp = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+            },
+        )
+        job_id = create_resp.json()["id"]
         response = await client.get(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
-        assert response.json()["config"]["api_key"] == "***redacted***"
-
-    @pytest.mark.asyncio
-    async def test_api_key_redacted_in_create_response(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/sdg",
-            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
-        )
-        assert response.status_code == 201
-        assert response.json()["config"]["api_key"] == "***redacted***"
-
-    @pytest.mark.asyncio
-    async def test_api_key_redacted_in_list(self, client: httpx.AsyncClient) -> None:
-        await client.post(
-            "/api/v1/jobs/sdg",
-            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
-        )
-        response = await client.get("/api/v1/jobs")
-        assert response.status_code == 200
-        jobs = response.json()
-        assert len(jobs) == 1
-        assert jobs[0]["config"]["api_key"] == "***redacted***"
-
-    @pytest.mark.asyncio
-    async def test_no_api_key_unchanged(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/sdg",
-            json={"model": "openai/gpt-4o", "num_samples": 50},
-        )
-        assert response.status_code == 201
-        config = response.json()["config"]
-        assert config["model"] == "openai/gpt-4o"
-        assert config["num_samples"] == 50
-        assert "api_key" not in config
-
-    @pytest.mark.asyncio
-    async def test_other_fields_not_redacted(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/sdg",
-            json={"model": "openai/gpt-4o", "api_key": "sk-secret-123", "num_samples": 100},
-        )
-        assert response.status_code == 201
-        config = response.json()["config"]
-        assert config["api_key"] == "***redacted***"
-        assert config["model"] == "openai/gpt-4o"
-        assert config["num_samples"] == 100
-
-
-class TestFlows:
-    @pytest.mark.asyncio
-    async def test_list_flows(self, client: httpx.AsyncClient) -> None:
-        response = await client.get("/api/v1/flows")
-        assert response.status_code == 200
-        pipelines = response.json()
-        assert isinstance(pipelines, list)
-        for pipeline in pipelines:
-            assert "name" in pipeline
-            assert "description" in pipeline
-            assert "supports_multi_turn" in pipeline
-
-
-@requires_training_hub_functional
-class TestEstimate:
-    @pytest.mark.asyncio
-    async def test_estimate_memory(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/estimate",
-            json={
-                "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
-                "lora_r": 16,
-                "batch_size": 2,
-                "max_length": 2048,
-            },
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "estimated_vram_gb" in data
-        assert data["model_name_or_path"] == "Qwen/Qwen2.5-1.5B-Instruct"
-        assert data["estimated_vram_gb"] > 0
-
-    @pytest.mark.asyncio
-    async def test_estimate_qlora(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/estimate",
-            json={
-                "model_name_or_path": "meta-llama/Llama-3-8B",
-                "load_in_4bit": True,
-            },
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["load_in_4bit"] is True
+        assert "api_key" not in response.json()["config"]
 
 
 class TestErrorFieldSerialization:
     @pytest.mark.asyncio
     async def test_error_is_null_not_string_none(self, client: httpx.AsyncClient) -> None:
         create_resp = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
             },
         )
-        assert create_resp.status_code == 201
         job_id = create_resp.json()["id"]
-
         response = await client.get(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["error"] is None
-        assert data["error"] != "None"
-
-    @pytest.mark.asyncio
-    async def test_error_null_in_list_response(self, client: httpx.AsyncClient) -> None:
-        await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test",
-                "data_path": "test",
-                "output_dir": "test",
-            },
-        )
-        response = await client.get("/api/v1/jobs")
-        assert response.status_code == 200
-        jobs = response.json()
-        assert len(jobs) == 1
-        assert jobs[0]["error"] is None
-        assert jobs[0]["error"] != "None"
 
 
 class TestHealth:
@@ -488,3 +300,43 @@ class TestHealth:
         assert data["status"] == "ok"
         assert "gpu" in data
         assert "timestamp" in data
+
+
+class TestConfig:
+    @pytest.mark.asyncio
+    async def test_config_endpoint(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/config")
+        assert response.status_code == 200
+        data = response.json()
+        assert "default_compute_backend" in data
+        assert "compute_namespace" in data
+        assert "mlflow_tracking_uri" in data
+        assert "mlflow_gateway_uri" in data
+        assert "available_backends" in data
+        assert "version" in data
+
+
+class TestJobLogs:
+    @pytest.mark.asyncio
+    async def test_logs_no_handle(self, client: httpx.AsyncClient) -> None:
+        create_resp = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test",
+                    "data_path": "test",
+                },
+            },
+        )
+        job_id = create_resp.json()["id"]
+        response = await client.get(f"/api/v1/jobs/{job_id}/logs")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["logs"] == []
+
+    @pytest.mark.asyncio
+    async def test_logs_nonexistent_job(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/jobs/nonexistent/logs")
+        assert response.status_code == 404

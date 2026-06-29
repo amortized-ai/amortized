@@ -25,8 +25,8 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
         app,
         name="amortized",
         description=(
-            "Amortized — AI model customization runtime."
-            " Submit training/SDG jobs, track progress, manage artifacts."
+            "Amortized — control plane for building task models."
+            " Submit SDG, training, and eval jobs. Browse recipes. Track job lifecycle."
         ),
         describe_all_responses=True,
         describe_full_response_schema=True,
