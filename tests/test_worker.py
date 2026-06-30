@@ -257,12 +257,13 @@ class TestTrainingHubConfig:
         assert "use_peft" not in parsed
         assert "qlora" not in parsed
 
-    def test_thub_algos_use_thub_command(self) -> None:
-        from amortized.worker import THUB_ALGOS, TRL_ONLY_ALGOS
+    def test_thub_config_handles_any_algorithm(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
 
-        assert "sft" in THUB_ALGOS
-        assert "lora_sft" in THUB_ALGOS
-        assert "grpo" in THUB_ALGOS
-        assert "gepa" in THUB_ALGOS
-        assert "dpo" in TRL_ONLY_ALGOS
-        assert "kto" in TRL_ONLY_ALGOS
+        algos = ("sft", "lora_sft", "osft", "grpo", "lora_grpo", "gepa", "dpo", "kto")
+        for algo in algos:
+            cfg = {"model_name_or_path": "test", "algorithm": algo}
+            result = _training_hub_config_yaml(algo, cfg)
+            parsed = yaml.safe_load(result)
+            assert parsed["model_path"] == "test"
+            assert "algorithm" not in parsed

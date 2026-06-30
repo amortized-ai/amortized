@@ -14,11 +14,9 @@ import amortized.config as config_mod
 from amortized.backends import BackendHandle, Capability, JobSpec, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.config_translator import (
-    _TRL_ALGO_MAP,
     _eval_config_yaml,
     _generate_container_config,
     _resolve_judge_template,
-    _trl_config_yaml,
 )
 from amortized.core.jobs import _deserialize_handle
 from amortized.db.repository import Repository
@@ -32,8 +30,6 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
     "eval": "ghcr.io/amortized-ai/asynth:latest",
 }
 
-THUB_ALGOS = {"sft", "osft", "lora_sft", "grpo", "lora_grpo", "gepa"}
-TRL_ONLY_ALGOS = {"gkd", "dpo", "kto"}
 
 _TRAINING_HUB_FIELD_MAP: dict[str, str] = {
     "model_name_or_path": "model_path",
@@ -331,30 +327,9 @@ async def _run_job(job: dict[str, Any]) -> None:
             s3_downloads.append(
                 S3Download(s3_uri=data_path, local_path=f"/amortized/work/{local_name}")
             )
-        if algorithm in THUB_ALGOS:
-            config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
-            thub_subcommand = algorithm.replace("_", "-")
-            cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
-        elif algorithm in TRL_ONLY_ALGOS:
-            trl_algo = _TRL_ALGO_MAP.get(algorithm)
-            if trl_algo is None:
-                await _update_job(
-                    job_id,
-                    status=JobStatus.failed.value,
-                    completed_at=datetime.now(UTC).isoformat(),
-                    error=f"Unknown TRL algorithm: {algorithm}",
-                )
-                return
-            config_files["config.yaml"] = _trl_config_yaml(trl_algo, config)
-            cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
-        else:
-            await _update_job(
-                job_id,
-                status=JobStatus.failed.value,
-                completed_at=datetime.now(UTC).isoformat(),
-                error=f"Unknown training algorithm: {algorithm}",
-            )
-            return
+        config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
+        thub_subcommand = algorithm.replace("_", "-")
+        cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
