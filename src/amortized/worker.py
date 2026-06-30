@@ -27,10 +27,53 @@ from amortized.models import JobStatus, JobType
 logger = logging.getLogger("amortized.worker")
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
-    "training": "ghcr.io/amortized-ai/trl:1.5.0",
+    "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/asynth:latest",
     "eval": "ghcr.io/amortized-ai/asynth:latest",
 }
+
+TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
+TRL_ALGOS = {"gkd", "dpo", "kto"}
+
+_TRAINING_HUB_FIELD_MAP: dict[str, str] = {
+    "model_name_or_path": "model_path",
+    "num_train_epochs": "num_epochs",
+    "per_device_train_batch_size": "micro_batch_size",
+    "max_length": "max_seq_len",
+    "output_dir": "ckpt_output_dir",
+}
+
+_TRAINING_HUB_SKIP_KEYS = {
+    "algorithm",
+    "engine",
+    "use_peft",
+    "qlora",
+    "bnb_4bit_quant_type",
+    "bnb_4bit_compute_dtype",
+    "lora_target_modules",
+}
+
+
+def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
+    import yaml
+
+    thub_config: dict[str, Any] = {}
+    for key, value in config.items():
+        if key in _TRAINING_HUB_SKIP_KEYS or value is None:
+            continue
+        th_key = _TRAINING_HUB_FIELD_MAP.get(key, key)
+        thub_config[th_key] = value
+
+    if algorithm == "gepa":
+        if "output_dir" not in thub_config and "ckpt_output_dir" in thub_config:
+            thub_config["output_dir"] = thub_config.pop("ckpt_output_dir")
+        elif "output_dir" not in thub_config and "output_dir" in config:
+            thub_config["output_dir"] = config["output_dir"]
+    else:
+        if "ckpt_output_dir" not in thub_config and "output_dir" in config:
+            thub_config["ckpt_output_dir"] = config["output_dir"]
+
+    return yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
 
 
 async def _get_db() -> aiosqlite.Connection:
@@ -282,8 +325,29 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     if image and job["type"] == JobType.training.value:
         algorithm = config.get("algorithm", "sft")
-        trl_algo = _TRL_ALGO_MAP.get(algorithm)
-        if trl_algo is None:
+        data_path = config.get("data_path", config.get("dataset", ""))
+        if data_path.startswith("s3://"):
+            local_name = data_path.split("/")[-1]
+            s3_downloads.append(
+                S3Download(s3_uri=data_path, local_path=f"/amortized/work/{local_name}")
+            )
+        if algorithm in TRAINING_HUB_ALGOS:
+            config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
+            thub_subcommand = algorithm.replace("_", "-")
+            cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
+        elif algorithm in TRL_ALGOS:
+            trl_algo = _TRL_ALGO_MAP.get(algorithm)
+            if trl_algo is None:
+                await _update_job(
+                    job_id,
+                    status=JobStatus.failed.value,
+                    completed_at=datetime.now(UTC).isoformat(),
+                    error=f"Unknown TRL algorithm: {algorithm}",
+                )
+                return
+            config_files["config.yaml"] = _trl_config_yaml(trl_algo, config)
+            cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
+        else:
             await _update_job(
                 job_id,
                 status=JobStatus.failed.value,
@@ -291,14 +355,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error=f"Unknown training algorithm: {algorithm}",
             )
             return
-        data_path = config.get("data_path", config.get("dataset", ""))
-        if data_path.startswith("s3://"):
-            local_name = data_path.split("/")[-1]
-            s3_downloads.append(
-                S3Download(s3_uri=data_path, local_path=f"/amortized/work/{local_name}")
-            )
-        config_files["config.yaml"] = _trl_config_yaml(trl_algo, config)
-        cmd = ["trl", trl_algo, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 

@@ -20,12 +20,11 @@ pytest tests/ -x -q            # test
 
 ## Architecture
 
-4 job types, each dispatched as a K8s Job (or Deployment for serve), configured via YAML:
+3 job types (v1), each dispatched as a K8s Job, configured via YAML:
 
-- Training: `ghcr.io/amortized-ai/trl:1.5.0` — `trl {algo} --config config.yaml`
+- Training: `ghcr.io/amortized-ai/training:latest` — `thub <algo> --config config.yaml` (training-hub) or `trl <algo> --config config.yaml` (TRL)
 - SDG: `ghcr.io/amortized-ai/asynth:latest` — `asynth synthesize --config config.yaml`
 - Eval: `ghcr.io/amortized-ai/asynth:latest` — `asynth judge --config config.yaml`
-- Serve: `docker.io/vllm/vllm-openai` — `vllm serve --config config.yaml`
 
 Config-only, no generated Python scripts. Single code path for all backends (K8s, SSH, local).
 
