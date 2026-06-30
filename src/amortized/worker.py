@@ -32,8 +32,8 @@ _JOB_TYPE_IMAGES: dict[str, str] = {
     "eval": "ghcr.io/amortized-ai/asynth:latest",
 }
 
-TRAINING_HUB_ALGOS = {"lora_sft", "sft", "osft", "grpo", "lora_grpo", "gepa"}
-TRL_ALGOS = {"gkd", "dpo", "kto"}
+THUB_ALGOS = {"sft", "osft", "lora_sft", "grpo", "lora_grpo", "gepa"}
+TRL_ONLY_ALGOS = {"gkd", "dpo", "kto"}
 
 _TRAINING_HUB_FIELD_MAP: dict[str, str] = {
     "model_name_or_path": "model_path",
@@ -331,11 +331,11 @@ async def _run_job(job: dict[str, Any]) -> None:
             s3_downloads.append(
                 S3Download(s3_uri=data_path, local_path=f"/amortized/work/{local_name}")
             )
-        if algorithm in TRAINING_HUB_ALGOS:
+        if algorithm in THUB_ALGOS:
             config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
             thub_subcommand = algorithm.replace("_", "-")
             cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
-        elif algorithm in TRL_ALGOS:
+        elif algorithm in TRL_ONLY_ALGOS:
             trl_algo = _TRL_ALGO_MAP.get(algorithm)
             if trl_algo is None:
                 await _update_job(

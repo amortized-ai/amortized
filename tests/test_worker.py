@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
+import yaml
 
 from amortized.core.config_translator import _build_synth_config, _generate_container_config
 from amortized.main import app
@@ -203,3 +204,65 @@ class TestBuildSynthConfig:
     def test_generate_container_config_unknown_type(self) -> None:
         with pytest.raises(ValueError, match="No container config"):
             _generate_container_config("unknown", {})
+
+
+class TestTrainingHubConfig:
+    def test_thub_config_yaml_sft(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "Qwen/Qwen3-0.6B",
+            "data_path": "/data/train.jsonl",
+            "num_train_epochs": 3,
+            "per_device_train_batch_size": 2,
+            "learning_rate": 0.0002,
+            "output_dir": "/output",
+        }
+        result = _training_hub_config_yaml("sft", config)
+        parsed = yaml.safe_load(result)
+        assert parsed["model_path"] == "Qwen/Qwen3-0.6B"
+        assert parsed["data_path"] == "/data/train.jsonl"
+        assert parsed["num_epochs"] == 3
+        assert parsed["micro_batch_size"] == 2
+        assert parsed["ckpt_output_dir"] == "/output"
+        assert "algorithm" not in parsed
+
+    def test_thub_config_yaml_gepa_output_dir(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "gepa",
+            "model_name_or_path": "Qwen/Qwen3-0.6B",
+            "output_dir": "/output",
+        }
+        result = _training_hub_config_yaml("gepa", config)
+        parsed = yaml.safe_load(result)
+        assert parsed["output_dir"] == "/output"
+        assert "ckpt_output_dir" not in parsed
+
+    def test_thub_config_skips_keys(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "test",
+            "engine": "vllm",
+            "use_peft": True,
+            "qlora": True,
+        }
+        result = _training_hub_config_yaml("sft", config)
+        parsed = yaml.safe_load(result)
+        assert "engine" not in parsed
+        assert "use_peft" not in parsed
+        assert "qlora" not in parsed
+
+    def test_thub_algos_use_thub_command(self) -> None:
+        from amortized.worker import THUB_ALGOS, TRL_ONLY_ALGOS
+
+        assert "sft" in THUB_ALGOS
+        assert "lora_sft" in THUB_ALGOS
+        assert "grpo" in THUB_ALGOS
+        assert "gepa" in THUB_ALGOS
+        assert "dpo" in TRL_ONLY_ALGOS
+        assert "kto" in TRL_ONLY_ALGOS
