@@ -230,7 +230,7 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
 
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
-        data_file = f"{artifact_uri}/generated_data.jsonl"
+        data_file = f"{artifact_uri}/generated_data/generated_data.jsonl"
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
             config["data_path"] = data_file
@@ -347,12 +347,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
-        bucket = os.environ.get("AWS_S3_BUCKET") or config_mod.settings.storage_bucket
-        s3_output = ""
-        if bucket:
-            s3_output = f"s3://{bucket}/artifacts/{job_id}/output/generated_data.jsonl"
-
-        synth_config = _generate_container_config(job["type"], config, s3_output_path=s3_output)
+        synth_config = _generate_container_config(job["type"], config)
         config_files["synth_config.yaml"] = yaml.dump(synth_config, default_flow_style=False)
         cmd = ["asynth", "synthesize", "--config", "/amortized/synth_config.yaml", "--verbose"]
     elif image and job["type"] == JobType.eval.value:
