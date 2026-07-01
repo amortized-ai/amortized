@@ -174,7 +174,7 @@ class KubernetesBackend:
                     command=[
                         "sh",
                         "-c",
-                        f"mkdir -p {download.local_path} && cd / && "
+                        f"mkdir -p $(dirname {download.local_path}) && cd / && "
                         f"{s3_cmd} {download.s3_uri} {download.local_path} "
                         f"--endpoint-url $AWS_S3_ENDPOINT && "
                         f"ls -la {download.local_path}",

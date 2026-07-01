@@ -137,7 +137,7 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
             )
             strategy_params["generated_attributes"] = [
                 {
-                    "id": "messages",
+                    "id": "raw_messages",
                     "instruction_messages": [
                         {
                             "role": "user",
@@ -149,6 +149,11 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                             ),
                         }
                     ],
+                    "postprocessing_params": {
+                        "id": "messages",
+                        "parse_json": True,
+                        "keep_original_text_attribute": False,
+                    },
                 }
             ]
         if config.get("input_data") and "input_data" not in strategy_params:
