@@ -224,9 +224,12 @@ class TestTrainingHubConfig:
         assert parsed["model_path"] == "Qwen/Qwen3-0.6B"
         assert parsed["data_path"] == "/data/train.jsonl"
         assert parsed["num_epochs"] == 3
-        assert parsed["micro_batch_size"] == 2
+        assert parsed["effective_batch_size"] == 8
         assert parsed["ckpt_output_dir"] == "/output"
+        assert parsed["max_seq_len"] == 2048
+        assert parsed["max_batch_len"] == 60000
         assert "algorithm" not in parsed
+        assert "micro_batch_size" not in parsed
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
         from amortized.worker import _training_hub_config_yaml

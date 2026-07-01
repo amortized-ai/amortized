@@ -57,17 +57,30 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     for key, value in config.items():
         if key in _TRAINING_HUB_SKIP_KEYS or value is None:
             continue
+        if key == "output_dir" and algorithm == "gepa":
+            thub_config["output_dir"] = value
+            continue
         th_key = _TRAINING_HUB_FIELD_MAP.get(key, key)
         thub_config[th_key] = value
 
+    output_dir = config.get("output_dir", "/amortized/work/output")
     if algorithm == "gepa":
-        if "output_dir" not in thub_config and "ckpt_output_dir" in thub_config:
-            thub_config["output_dir"] = thub_config.pop("ckpt_output_dir")
-        elif "output_dir" not in thub_config and "output_dir" in config:
-            thub_config["output_dir"] = config["output_dir"]
+        thub_config.setdefault("output_dir", output_dir)
     else:
-        if "ckpt_output_dir" not in thub_config and "output_dir" in config:
-            thub_config["ckpt_output_dir"] = config["output_dir"]
+        thub_config.setdefault("ckpt_output_dir", output_dir)
+        thub_config.setdefault("data_output_dir", output_dir + "/processed_data")
+
+    if algorithm in ("sft", "lora_sft"):
+        batch = thub_config.pop("micro_batch_size", 2)
+        thub_config.setdefault("effective_batch_size", batch * 4)
+        thub_config.setdefault("max_seq_len", 2048)
+        thub_config.setdefault("max_batch_len", 60000)
+    elif algorithm == "osft":
+        batch = thub_config.pop("micro_batch_size", 2)
+        thub_config.setdefault("effective_batch_size", batch * 4)
+        thub_config.setdefault("max_seq_len", 2048)
+        thub_config.setdefault("max_tokens_per_gpu", 4096)
+        thub_config.setdefault("learning_rate", 2e-5)
 
     return yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
 
@@ -218,7 +231,8 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
         data_file = f"{artifact_uri}/generated_data.jsonl"
-        if not config.get("data_path"):
+        existing = config.get("data_path", "")
+        if not existing or not existing.startswith("s3://"):
             config["data_path"] = data_file
             logger.info("Injected SDG data path from parent: %s", data_file)
     elif job["type"] == JobType.eval.value and parent["type"] == "training":
