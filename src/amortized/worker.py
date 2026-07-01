@@ -338,9 +338,9 @@ async def _run_job(job: dict[str, Any]) -> None:
         data_path = config.get("data_path", config.get("dataset", ""))
         if data_path.startswith("s3://"):
             local_name = data_path.split("/")[-1]
-            s3_downloads.append(
-                S3Download(s3_uri=data_path, local_path=f"/amortized/work/{local_name}")
-            )
+            local_path = f"/amortized/work/{local_name}"
+            s3_downloads.append(S3Download(s3_uri=data_path, local_path=local_path))
+            config = {**config, "data_path": local_path}
         config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
         thub_subcommand = algorithm.replace("_", "-")
         cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
