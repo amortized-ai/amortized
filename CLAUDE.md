@@ -57,26 +57,24 @@ Amortized plugs into existing S3 and MLflow (AD-1). Platform engineer provides e
 
 ## Key Patterns
 
-- **Config translation**: `_trl_config_yaml()`, `_serve_config_yaml()`, `_build_synth_config()`, `_eval_config_yaml()` in `worker.py`
-- **MLflow run tracking**: `mlflow_run_id` stored on job record, resolved for serve jobs via `_resolve_mlflow_artifact_uri()`
-- **Serve from training**: `training_job_id` in serve config → worker resolves base model + adapter from MLflow
-- **Init containers**: S3 data download (`_s3_data_path`) and model download (`_s3_model_path`) via `aws s3 cp/sync`
+- **Config translation**: `_training_hub_config_yaml()` and `_build_synth_config()`, `_eval_config_yaml()` in `worker.py`
+- **MLflow run tracking**: `mlflow_run_id` stored on job record, resolved via `_resolve_mlflow_artifact_uri()`
+- **Parent job chaining**: `parent_job_id` links SDG→Training→Eval; worker resolves upstream MLflow artifacts
+- **Init containers**: S3 data download via `aws s3 cp/sync` for training data from MLflow artifact store
 - **Judge templates**: loaded from `templates/eval/` by `core/judge_templates.py`
 - **Recipes**: loaded from `templates/` and `examples/` via `core/recipes.py`, support `extends:` for inheritance
-- **Credentials**: API keys stored encrypted in DB, injected as per-job K8s Secrets at dispatch time
+- **Credentials**: API keys stripped from config before DB storage, injected as per-job K8s Secrets
 
 ## Architecture Decisions
 
-See `docs/openshiftai-migration/architecture-decisions.md` for the full list:
+See `docs/architecture/adr-001-control-plane.md` for the full list.
 
+Key decisions for v1:
 - AD-1: Plug into infrastructure, don't bundle it
 - AD-2: Single code path, no branching
-- AD-3: MLflow is the artifact store
-- AD-4: mlflow_run_id on jobs
-- AD-5: TRL 1.5.0 with thin custom image
-- AD-6: Polling for now, push-based later
-- AD-7: No serve monitor on K8s
-- AD-8: Reuse K8s API client
+- AD-3: MLflow is the artifact store (no direct S3 writes)
+- AD-4: Polling for now, push-based later
+- AD-11: No serve jobs (MaaS handles serving)
 
 ## Code Style
 

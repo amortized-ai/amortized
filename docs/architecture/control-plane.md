@@ -90,16 +90,15 @@ with mlflow.start_run(run_name=f"sdg-{job_id[:8]}"):
     mlflow.log_input(dataset, context="training_data")        # dataset lineage
 ```
 
-**Training Jobs** (TRL / Training Hub):
+**Training Jobs** (Training Hub / thub CLI):
 ```yaml
-# TRL config — auto-logs to MLflow via HuggingFace MLflowCallback
-report_to: mlflow
+# Training Hub auto-logs to MLflow via instructlab-training MLflow callback
 # Env vars set by amortized:
 #   MLFLOW_TRACKING_URI=http://mlflow:5000
 #   MLFLOW_EXPERIMENT_NAME=amortized/training/{job_id[:8]}
 #   HF_MLFLOW_LOG_ARTIFACTS=true  ← uploads model weights to MLflow artifact store
 ```
-TRL's MLflowCallback automatically logs: loss per step, learning_rate, epoch, eval metrics, and model artifacts when `HF_MLFLOW_LOG_ARTIFACTS=true`.
+Training Hub's instructlab-training backend automatically logs: loss per step, learning_rate, epoch, and eval metrics to MLflow. Model artifacts are uploaded by the thub CLI after training completes.
 
 **Eval Jobs**:
 ```python
@@ -166,7 +165,7 @@ Every job container dispatched by amortized receives:
 | `MLFLOW_TRACKING_URI` | `http://mlflow.{namespace}.svc:5000` | MLflow server address |
 | `MLFLOW_EXPERIMENT_NAME` | `amortized/{job_type}/{job_id[:8]}` | Experiment grouping |
 | `MLFLOW_S3_ENDPOINT_URL` | `http://minio.{namespace}.svc:9000` | S3 endpoint for MinIO (MLflow reads this, not `AWS_S3_ENDPOINT_URL`) |
-| `HF_MLFLOW_LOG_ARTIFACTS` | `true` (training only) | Tell TRL to upload model weights to MLflow |
+| `HF_MLFLOW_LOG_ARTIFACTS` | `true` (training only) | Tell training backend to upload model weights to MLflow |
 | `AWS_ACCESS_KEY_ID` | from K8s Secret | S3 credentials |
 | `AWS_SECRET_ACCESS_KEY` | from K8s Secret | S3 credentials |
 
@@ -218,9 +217,9 @@ Studio UI queries MLflow for:
 - `MLFLOW_S3_ENDPOINT_URL` (not `AWS_S3_ENDPOINT_URL`) is what MLflow reads for MinIO
 - `FSSPEC_S3_ENDPOINT_URL` is what s3fs/asynth reads for MinIO (separate env var)
 - MLflow security middleware blocks internal cluster requests by default — use `--allowed-hosts *` or `MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true`
-- TRL 1.5.1+ has a `kernels` import bug — pin to 1.5.0
+- Training Hub installed from `amortized-ai/training_hub` fork (includes thub CLI + MLflow artifact upload)
 - `mlflow.log_artifact()` with S3 paths requires `boto3` in the container
-- `report_to: mlflow` in TRL only works when `mlflow` package is installed in the training container and `MLFLOW_TRACKING_URI` is set
+- MLflow logging requires `mlflow` package in the training container and `MLFLOW_TRACKING_URI` env var
 
 ---
 
@@ -272,7 +271,7 @@ Three job types, submitted sequentially. No pipeline DAG. No serving (Red Hat Ma
 | Type | Container Image | What It Runs | Output |
 |---|---|---|---|
 | **SDG** | `ghcr.io/amortized-ai/asynth:latest` | `asynth synthesize --config config.yaml` | generated_data.jsonl → S3 + MLflow |
-| **Training** | `ghcr.io/amortized-ai/trl:1.5.0` | `trl sft --config config.yaml` | LoRA adapter → S3 + MLflow Model Registry |
+| **Training** | `ghcr.io/amortized-ai/training:latest` | `thub <algo> --config config.yaml` | LoRA adapter → S3 + MLflow Model Registry |
 | **Eval** | `ghcr.io/amortized-ai/asynth:latest` | `asynth judge --config config.yaml` | eval_results.jsonl → S3 + MLflow |
 
 #### Job Table Schema
@@ -547,7 +546,7 @@ We evaluated what each data connection needs and found that RHOAI and MLflow alr
 |---|---|---|
 | **S3 credentials** | RHOAI data connections (K8s Secret with `opendatahub.io/connection-type-ref: s3`) | Nothing — reference the namespace's data connection Secret in job pods |
 | **S3 read/write** | MLflow artifact store (stores/retrieves via S3) + init containers (`aws s3 cp/sync`) | Nothing — MLflow handles artifact I/O, init containers handle bulk data download |
-| **HuggingFace models** | Auto-download via `model_name_or_path` in TRL / Training Hub containers | Nothing — pass-through config parameter |
+| **HuggingFace models** | Auto-download via `model_path` in Training Hub containers | Nothing — pass-through config parameter |
 | **HuggingFace datasets** | `datasets` library in containers, `input_data` in SDG config | Nothing — pass-through config parameter |
 | **Document ingestion** | Docling (Python library included in SDG container image) | Nothing — user uploads docs, SDG flow uses Docling to extract text |
 | **LLM provider API keys** | MLflow AI Gateway (see below) | Nothing — no custom key store |
@@ -1194,7 +1193,7 @@ The exact rendering format (markdown conventions vs structured JSON in tool resu
 - **Skills** (to be defined) — Workflow steps, confirmation gates, specialized guidance for SDG/training/eval
 - **Studio components** — Plan checklist, confirmation cards, job cards, approval buttons
 - **OpenCode deployment** — K8s Deployment + ConfigMap + Secret for LLM credentials
-- **AGENTS.md / instructions** — Domain knowledge about asynth, Training Hub, TRL field names, recommended models
+- **AGENTS.md / instructions** — Domain knowledge about asynth, Training Hub, thub CLI field names, recommended models
 
 ---
 
