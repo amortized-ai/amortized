@@ -27,3 +27,5 @@ CONTEXT.md
 
 .playwright-mcp/
 studio-*.png
+.claude/
+.refactory/
