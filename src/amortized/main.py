@@ -82,7 +82,7 @@ def _load_backends() -> None:
         if backend_type == "ssh":
             from amortized.backends.ssh import SSHBackend
 
-            backend = SSHBackend(
+            backend = SSHBackend(  # type: ignore[assignment]
                 host=spec["host"],
                 user=spec.get("user"),
                 key_path=spec.get("key_path"),

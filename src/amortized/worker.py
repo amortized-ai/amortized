@@ -82,7 +82,8 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
 
-    return yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
+    result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
+    return result
 
 
 async def _get_db() -> aiosqlite.Connection:
@@ -141,7 +142,8 @@ async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
             )
             resp.raise_for_status()
             run = resp.json()["run"]
-            return run["info"]["artifact_uri"]
+            uri: str = run["info"]["artifact_uri"]
+            return uri
     except Exception:
         logger.warning(
             "Failed to resolve MLflow artifact URI for run %s", mlflow_run_id, exc_info=True
