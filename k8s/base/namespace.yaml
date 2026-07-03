@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized
+  labels:
+    app: amortized
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-jobs
+  labels:
+    app: amortized

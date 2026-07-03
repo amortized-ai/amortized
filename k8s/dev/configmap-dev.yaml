@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-dev-config
+  namespace: amortized
+  labels:
+    app: amortized
+data:
+  AMORTIZED_MLFLOW_TRACKING_URI: "http://mlflow.amortized.svc.cluster.local:5000"
+  AMORTIZED_S3_BUCKET: "amortized"

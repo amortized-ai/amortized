@@ -24,3 +24,8 @@ uv.lock
 runtime/
 2026-06-02-amortized-design.md
 CONTEXT.md
+
+.playwright-mcp/
+studio-*.png
+.claude/
+.refactory/

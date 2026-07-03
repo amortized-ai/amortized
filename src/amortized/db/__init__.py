@@ -1,5 +1,5 @@
-"""Database layer for job and artifact persistence."""
+"""Database layer for job persistence."""
 
-from amortized.config import settings as settings
-from amortized.db.connection import *  # noqa: F403
+from amortized.db.connection import get_db as get_db
+from amortized.db.connection import init_db as init_db
 from amortized.db.repository import Repository as Repository
