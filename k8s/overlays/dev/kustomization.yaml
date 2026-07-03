@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  # Dev-only: bundled MinIO + MLflow (production brings their own)
+  - minio.yaml
+  - mlflow.yaml
+  - s3-secret.yaml
+  - s3-secret-jobs.yaml
+
+patches:
+  # Set MLflow URI and S3 bucket for dev
+  - target:
+      kind: ConfigMap
+      name: amortized-config
+    patch: |
+      - op: replace
+        path: /data/AMORTIZED_MLFLOW_TRACKING_URI
+        value: "http://mlflow.amortized.svc.cluster.local:5000"
+      - op: replace
+        path: /data/AMORTIZED_S3_BUCKET
+        value: "amortized"
+  # Use IfNotPresent for kind (images loaded via `kind load docker-image`)
+  - target:
+      kind: Deployment
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent

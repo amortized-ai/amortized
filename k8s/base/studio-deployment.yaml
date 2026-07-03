@@ -35,6 +35,10 @@ spec:
               value: "opencode"
             - name: OPENCODE_PORT
               value: "4096"
+            - name: MLFLOW_HOST
+              value: "mlflow"
+            - name: MLFLOW_PORT
+              value: "5000"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
