@@ -1,0 +1,100 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e33]:
+            - link "Datasets" [ref=e34] [cursor=pointer]:
+              - /url: /datasets
+              - img [ref=e35]
+              - generic [ref=e39]: Datasets
+          - listitem [ref=e40]:
+            - link "Models" [ref=e41] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e42]
+              - generic [ref=e45]: Models
+          - listitem [ref=e46]:
+            - link "Recipes" [ref=e47] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e48]
+              - generic [ref=e50]: Recipes
+          - listitem [ref=e51]:
+            - link "Settings" [active] [ref=e52] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e53]
+              - generic [ref=e56]: Settings
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - button "Toggle Sidebar" [ref=e59]:
+          - img
+          - generic [ref=e60]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e61]:
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - link "Home" [ref=e64] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e65]
+            - listitem [ref=e594]:
+              - img [ref=e595]
+            - listitem [ref=e597]:
+              - link "Settings" [disabled] [ref=e598]
+        - generic [ref=e73]:
+          - button "Create" [ref=e74]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e147]
+          - button "Toggle theme" [ref=e76]:
+            - img
+            - generic [ref=e77]: Toggle theme
+          - link "Settings" [ref=e78] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e79]
+            - generic [ref=e82]: Settings
+      - main [ref=e83]:
+        - generic [ref=e599]:
+          - heading "Settings" [level=1] [ref=e602]
+          - button "All systems ready" [ref=e604] [cursor=pointer]:
+            - img [ref=e605]
+            - img [ref=e607]
+            - generic [ref=e610]: All systems ready
+          - generic [ref=e611]:
+            - tablist [ref=e612]:
+              - tab "System" [selected] [ref=e613]
+              - tab "AI Gateway" [ref=e614]
+            - tabpanel "System" [ref=e615]:
+              - generic [ref=e616]:
+                - generic [ref=e618]: Platform Configuration
+                - generic [ref=e620]:
+                  - generic [ref=e621]:
+                    - term [ref=e622]: MLflow Tracking URI
+                    - definition [ref=e623]: http://mlflow.amortized.svc.cluster.local:5000
+                  - generic [ref=e624]:
+                    - term [ref=e625]: MLflow Gateway URI
+                    - definition [ref=e626]: http://mlflow.amortized.svc.cluster.local:5000/gateway/v1
+                  - generic [ref=e627]:
+                    - term [ref=e628]: Default Compute Backend
+                    - definition [ref=e629]: kubernetes
+                  - generic [ref=e630]:
+                    - term [ref=e631]: Version
+                    - definition [ref=e632]: 1.0.0
+    - generic [ref=e144]:
+      - heading "Command Palette" [level=2] [ref=e145]
+      - paragraph [ref=e146]: Search for a command to run...
+  - region "Notifications alt+T"

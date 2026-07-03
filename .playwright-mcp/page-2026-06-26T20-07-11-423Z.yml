@@ -1,0 +1,284 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e34]:
+            - button "Data" [ref=e35]:
+              - img [ref=e36]
+              - generic [ref=e40]: Data
+              - img [ref=e41]
+          - listitem [ref=e43]:
+            - link "Models" [ref=e44] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e45]
+              - generic [ref=e48]: Models
+          - listitem [ref=e49]:
+            - link "Evaluators" [ref=e50] [cursor=pointer]:
+              - /url: /evaluators
+              - img [ref=e51]
+              - generic [ref=e55]: Evaluators
+          - listitem [ref=e56]:
+            - link "Evaluations" [ref=e57] [cursor=pointer]:
+              - /url: /evaluations
+              - img [ref=e58]
+              - generic [ref=e60]: Evaluations
+          - listitem [ref=e61]:
+            - link "Recipes" [ref=e62] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e63]
+              - generic [ref=e65]: Recipes
+          - listitem [ref=e66]:
+            - link "Settings" [ref=e67] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e68]
+              - generic [ref=e71]: Settings
+    - main [ref=e72]:
+      - generic [ref=e73]:
+        - button "Toggle Sidebar" [ref=e74]:
+          - img
+          - generic [ref=e75]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e76]:
+          - list [ref=e77]:
+            - listitem [ref=e78]:
+              - link "Home" [ref=e79] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e80]
+            - listitem [ref=e83]:
+              - img [ref=e84]
+            - listitem [ref=e86]:
+              - link "Chat" [disabled] [ref=e87]
+        - generic [ref=e88]:
+          - button "Create" [ref=e89]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e303]
+          - button "Toggle theme" [ref=e91]:
+            - img
+            - generic [ref=e92]: Toggle theme
+          - link "Settings" [ref=e93] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e94]
+            - generic [ref=e97]: Settings
+      - main [ref=e98]:
+        - generic [ref=e99]:
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - generic [ref=e102]: Conversations
+              - button "New conversation" [ref=e103]:
+                - img
+            - generic [ref=e107]:
+              - button "New conversation" [ref=e304]:
+                - img [ref=e305]
+                - generic [ref=e307]: New conversation
+              - button "List all jobs" [ref=e108]:
+                - img [ref=e109]
+                - generic [ref=e111]: List all jobs
+          - generic [ref=e112]:
+            - generic [ref=e113]:
+              - generic [ref=e114]: Chat
+              - button "New" [active] [ref=e115]:
+                - img
+                - text: New
+            - generic [ref=e119]:
+              - generic [ref=e122]: List all jobs
+              - generic [ref=e125]: List all jobs on the platform
+              - generic [ref=e127]:
+                - generic [ref=e128]:
+                  - paragraph [ref=e129]: "Here is a summary of all jobs on the platform:"
+                  - table [ref=e130]:
+                    - rowgroup [ref=e131]:
+                      - row "# ID (short) Type Status Model / Algorithm Created" [ref=e132]:
+                        - columnheader "#" [ref=e133]
+                        - columnheader "ID (short)" [ref=e134]
+                        - columnheader "Type" [ref=e135]
+                        - columnheader "Status" [ref=e136]
+                        - columnheader "Model / Algorithm" [ref=e137]
+                        - columnheader "Created" [ref=e138]
+                    - rowgroup [ref=e139]:
+                      - 'row "1 `4a413ee5` training succeeded sft / Qwen3-0.6B 2026-06-25" [ref=e140]':
+                        - cell "1" [ref=e141]
+                        - 'cell "`4a413ee5`" [ref=e142]':
+                          - code [ref=e143]: "`4a413ee5`"
+                        - cell "training" [ref=e144]
+                        - cell "succeeded" [ref=e145]:
+                          - strong [ref=e146]: succeeded
+                        - cell "sft / Qwen3-0.6B" [ref=e147]
+                        - cell "2026-06-25" [ref=e148]
+                      - 'row "2 `c785f0f4` training failed sft / Qwen2.5-1.5B-Instruct 2026-06-25" [ref=e149]':
+                        - cell "2" [ref=e150]
+                        - 'cell "`c785f0f4`" [ref=e151]':
+                          - code [ref=e152]: "`c785f0f4`"
+                        - cell "training" [ref=e153]
+                        - cell "failed" [ref=e154]:
+                          - strong [ref=e155]: failed
+                        - cell "sft / Qwen2.5-1.5B-Instruct" [ref=e156]
+                        - cell "2026-06-25" [ref=e157]
+                      - 'row "3 `6545f8bc` training failed sft / Qwen2.5-1.5B-Instruct 2026-06-25" [ref=e158]':
+                        - cell "3" [ref=e159]
+                        - 'cell "`6545f8bc`" [ref=e160]':
+                          - code [ref=e161]: "`6545f8bc`"
+                        - cell "training" [ref=e162]
+                        - cell "failed" [ref=e163]:
+                          - strong [ref=e164]: failed
+                        - cell "sft / Qwen2.5-1.5B-Instruct" [ref=e165]
+                        - cell "2026-06-25" [ref=e166]
+                      - 'row "4 `471dd206` training failed sft / Qwen2.5-1.5B-Instruct 2026-06-25" [ref=e167]':
+                        - cell "4" [ref=e168]
+                        - 'cell "`471dd206`" [ref=e169]':
+                          - code [ref=e170]: "`471dd206`"
+                        - cell "training" [ref=e171]
+                        - cell "failed" [ref=e172]:
+                          - strong [ref=e173]: failed
+                        - cell "sft / Qwen2.5-1.5B-Instruct" [ref=e174]
+                        - cell "2026-06-25" [ref=e175]
+                      - 'row "5 `db22c4f3` training failed sft / Qwen2.5-1.5B-Instruct 2026-06-25" [ref=e176]':
+                        - cell "5" [ref=e177]
+                        - 'cell "`db22c4f3`" [ref=e178]':
+                          - code [ref=e179]: "`db22c4f3`"
+                        - cell "training" [ref=e180]
+                        - cell "failed" [ref=e181]:
+                          - strong [ref=e182]: failed
+                        - cell "sft / Qwen2.5-1.5B-Instruct" [ref=e183]
+                        - cell "2026-06-25" [ref=e184]
+                      - 'row "6 `1a07f36a` training failed sft / Qwen2.5-1.5B-Instruct 2026-06-25" [ref=e185]':
+                        - cell "6" [ref=e186]
+                        - 'cell "`1a07f36a`" [ref=e187]':
+                          - code [ref=e188]: "`1a07f36a`"
+                        - cell "training" [ref=e189]
+                        - cell "failed" [ref=e190]:
+                          - strong [ref=e191]: failed
+                        - cell "sft / Qwen2.5-1.5B-Instruct" [ref=e192]
+                        - cell "2026-06-25" [ref=e193]
+                      - 'row "7 `d81647e4` sdg succeeded openai/gpt-4o-mini 2026-06-25" [ref=e194]':
+                        - cell "7" [ref=e195]
+                        - 'cell "`d81647e4`" [ref=e196]':
+                          - code [ref=e197]: "`d81647e4`"
+                        - cell "sdg" [ref=e198]
+                        - cell "succeeded" [ref=e199]:
+                          - strong [ref=e200]: succeeded
+                        - cell "openai/gpt-4o-mini" [ref=e201]
+                        - cell "2026-06-25" [ref=e202]
+                      - 'row "8 `f892a397` training succeeded sft / Qwen3-0.6B 2026-06-22" [ref=e203]':
+                        - cell "8" [ref=e204]
+                        - 'cell "`f892a397`" [ref=e205]':
+                          - code [ref=e206]: "`f892a397`"
+                        - cell "training" [ref=e207]
+                        - cell "succeeded" [ref=e208]:
+                          - strong [ref=e209]: succeeded
+                        - cell "sft / Qwen3-0.6B" [ref=e210]
+                        - cell "2026-06-22" [ref=e211]
+                      - 'row "9 `c4b68ab1` sdg succeeded openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e212]':
+                        - cell "9" [ref=e213]
+                        - 'cell "`c4b68ab1`" [ref=e214]':
+                          - code [ref=e215]: "`c4b68ab1`"
+                        - cell "sdg" [ref=e216]
+                        - cell "succeeded" [ref=e217]:
+                          - strong [ref=e218]: succeeded
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e219]
+                        - cell "2026-06-22" [ref=e220]
+                      - 'row "10 `9b31a4eb` sdg failed openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e221]':
+                        - cell "10" [ref=e222]
+                        - 'cell "`9b31a4eb`" [ref=e223]':
+                          - code [ref=e224]: "`9b31a4eb`"
+                        - cell "sdg" [ref=e225]
+                        - cell "failed" [ref=e226]:
+                          - strong [ref=e227]: failed
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e228]
+                        - cell "2026-06-22" [ref=e229]
+                      - 'row "11 `25a76891` sdg failed openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e230]':
+                        - cell "11" [ref=e231]
+                        - 'cell "`25a76891`" [ref=e232]':
+                          - code [ref=e233]: "`25a76891`"
+                        - cell "sdg" [ref=e234]
+                        - cell "failed" [ref=e235]:
+                          - strong [ref=e236]: failed
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e237]
+                        - cell "2026-06-22" [ref=e238]
+                      - 'row "12 `61817ba6` sdg failed openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e239]':
+                        - cell "12" [ref=e240]
+                        - 'cell "`61817ba6`" [ref=e241]':
+                          - code [ref=e242]: "`61817ba6`"
+                        - cell "sdg" [ref=e243]
+                        - cell "failed" [ref=e244]:
+                          - strong [ref=e245]: failed
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e246]
+                        - cell "2026-06-22" [ref=e247]
+                      - 'row "13 `e52eb467` sdg failed openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e248]':
+                        - cell "13" [ref=e249]
+                        - 'cell "`e52eb467`" [ref=e250]':
+                          - code [ref=e251]: "`e52eb467`"
+                        - cell "sdg" [ref=e252]
+                        - cell "failed" [ref=e253]:
+                          - strong [ref=e254]: failed
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e255]
+                        - cell "2026-06-22" [ref=e256]
+                      - 'row "14 `0ea2b83e` training failed sft / Qwen3-0.6B 2026-06-22" [ref=e257]':
+                        - cell "14" [ref=e258]
+                        - 'cell "`0ea2b83e`" [ref=e259]':
+                          - code [ref=e260]: "`0ea2b83e`"
+                        - cell "training" [ref=e261]
+                        - cell "failed" [ref=e262]:
+                          - strong [ref=e263]: failed
+                        - cell "sft / Qwen3-0.6B" [ref=e264]
+                        - cell "2026-06-22" [ref=e265]
+                      - 'row "15 `d085dfe2` sdg succeeded openrouter/openai/gpt-4o-mini 2026-06-22" [ref=e266]':
+                        - cell "15" [ref=e267]
+                        - 'cell "`d085dfe2`" [ref=e268]':
+                          - code [ref=e269]: "`d085dfe2`"
+                        - cell "sdg" [ref=e270]
+                        - cell "succeeded" [ref=e271]:
+                          - strong [ref=e272]: succeeded
+                        - cell "openrouter/openai/gpt-4o-mini" [ref=e273]
+                        - cell "2026-06-22" [ref=e274]
+                  - paragraph [ref=e275]:
+                    - strong [ref=e276]: "Summary:"
+                  - list [ref=e277]:
+                    - listitem [ref=e278]:
+                      - strong [ref=e279]: "Total jobs:"
+                      - text: 15 (plus likely more — the response was truncated)
+                    - listitem [ref=e280]:
+                      - strong [ref=e281]: "Types:"
+                      - text: SDG (data generation) and Training
+                    - listitem [ref=e282]:
+                      - strong [ref=e283]: "Succeeded:"
+                      - text: 5 jobs
+                    - listitem [ref=e284]:
+                      - strong [ref=e285]: "Failed:"
+                      - text: 10+ jobs
+                  - paragraph [ref=e286]: The response was truncated, so there may be additional older jobs. Let me know if you'd like details on any specific job.
+                - generic [ref=e288]:
+                  - button "**Total jobs:** 15 (plus likely more — the response was truncated)" [ref=e289] [cursor=pointer]:
+                    - generic [ref=e290]: "**Total jobs:** 15 (plus likely more — the response was truncated)"
+                  - button "**Types:** SDG (data generation) and Training" [ref=e291] [cursor=pointer]:
+                    - generic [ref=e292]: "**Types:** SDG (data generation) and Training"
+                  - button "**Succeeded:** 5 jobs" [ref=e293] [cursor=pointer]:
+                    - generic [ref=e294]: "**Succeeded:** 5 jobs"
+                  - button "**Failed:** 10+ jobs" [ref=e295] [cursor=pointer]:
+                    - generic [ref=e296]: "**Failed:** 10+ jobs"
+            - generic [ref=e298]:
+              - textbox "Message input" [ref=e299]:
+                - /placeholder: Type a message...
+              - button "Send message" [disabled]:
+                - img
+    - generic [ref=e300]:
+      - heading "Command Palette" [level=2] [ref=e301]
+      - paragraph [ref=e302]: Search for a command to run...
+  - region "Notifications alt+T"

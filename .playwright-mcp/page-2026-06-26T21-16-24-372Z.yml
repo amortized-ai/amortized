@@ -1,0 +1,174 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e34]:
+            - button "Data" [ref=e35]:
+              - img [ref=e36]
+              - generic [ref=e40]: Data
+              - img [ref=e41]
+          - listitem [ref=e43]:
+            - link "Models" [ref=e44] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e45]
+              - generic [ref=e48]: Models
+          - listitem [ref=e49]:
+            - link "Evaluators" [ref=e50] [cursor=pointer]:
+              - /url: /evaluators
+              - img [ref=e51]
+              - generic [ref=e55]: Evaluators
+          - listitem [ref=e56]:
+            - link "Evaluations" [ref=e57] [cursor=pointer]:
+              - /url: /evaluations
+              - img [ref=e58]
+              - generic [ref=e60]: Evaluations
+          - listitem [ref=e61]:
+            - link "Recipes" [ref=e62] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e63]
+              - generic [ref=e65]: Recipes
+          - listitem [ref=e66]:
+            - link "Settings" [ref=e67] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e68]
+              - generic [ref=e71]: Settings
+    - main [ref=e72]:
+      - generic [ref=e73]:
+        - button "Toggle Sidebar" [ref=e74]:
+          - img
+          - generic [ref=e75]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e76]:
+          - list [ref=e77]:
+            - listitem [ref=e78]:
+              - link "Home" [ref=e79] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e80]
+            - listitem [ref=e83]:
+              - img [ref=e84]
+            - listitem [ref=e86]:
+              - link "Chat" [disabled] [ref=e87]
+        - generic [ref=e88]:
+          - button "Create" [ref=e89]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e145]
+          - button "Toggle theme" [ref=e91]:
+            - img
+            - generic [ref=e92]: Toggle theme
+          - link "Settings" [ref=e93] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e94]
+            - generic [ref=e97]: Settings
+      - main [ref=e98]:
+        - generic [ref=e99]:
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - generic [ref=e102]: Conversations
+              - button "New conversation" [ref=e103]:
+                - img
+            - generic [ref=e107]:
+              - button "hi! who are you and what can you do?" [ref=e150]:
+                - img [ref=e147]
+                - generic [ref=e149]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e108]:
+                - img [ref=e109]
+                - generic [ref=e111]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e112]:
+                - img [ref=e113]
+                - generic [ref=e115]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e116]:
+                - img [ref=e117]
+                - generic [ref=e119]: hi! who are you and what can you do?
+              - button "I want to build a ticket classifier. Run the examp" [ref=e120]:
+                - img [ref=e121]
+                - generic [ref=e123]: I want to build a ticket classifier. Run the examp
+              - button "List all jobs" [ref=e124]:
+                - img [ref=e125]
+                - generic [ref=e127]: List all jobs
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]: Chat
+              - button "New" [ref=e131]:
+                - img
+                - text: New
+            - generic [ref=e135]:
+              - generic [ref=e138]: hi! who are you and what can you do?
+              - generic [ref=e153]: hi! who are you and what can you do?
+              - generic [ref=e156]:
+                - paragraph [ref=e157]:
+                  - text: Hey there! 👋 I'm
+                  - strong [ref=e158]: Morty
+                  - text: — the Amortized Studio assistant, specialized in helping you build
+                  - strong [ref=e159]: task models
+                  - text: ": small, fine-tuned LLMs that replace expensive frontier model API calls for specific tasks."
+                - paragraph [ref=e160]: "Here's what I can help you do:"
+                - table [ref=e161]:
+                  - rowgroup [ref=e162]:
+                    - row "Capability What it means" [ref=e163]:
+                      - columnheader "Capability" [ref=e164]
+                      - columnheader "What it means" [ref=e165]
+                  - rowgroup [ref=e166]:
+                    - row "🧪 Generate training data Use a teacher model (GPT-4o, Claude, etc.) to synthesize high-quality training examples" [ref=e167]:
+                      - cell "🧪 Generate training data" [ref=e168]:
+                        - text: 🧪
+                        - strong [ref=e169]: Generate training data
+                      - cell "Use a teacher model (GPT-4o, Claude, etc.) to synthesize high-quality training examples" [ref=e170]
+                    - row "🏋️ Fine-tune models Run LoRA SFT training on small, efficient base models (Qwen, Llama, etc.)" [ref=e171]:
+                      - cell "🏋️ Fine-tune models" [ref=e172]:
+                        - text: 🏋️
+                        - strong [ref=e173]: Fine-tune models
+                      - cell "Run LoRA SFT training on small, efficient base models (Qwen, Llama, etc.)" [ref=e174]
+                    - row "📊 Evaluate quality Judge model outputs, run evals, inspect metrics" [ref=e175]:
+                      - cell "📊 Evaluate quality" [ref=e176]:
+                        - text: 📊
+                        - strong [ref=e177]: Evaluate quality
+                      - cell "Judge model outputs, run evals, inspect metrics" [ref=e178]
+                    - row "🚀 Serve models Deploy your trained model via vLLM on your cluster" [ref=e179]:
+                      - cell "🚀 Serve models" [ref=e180]:
+                        - text: 🚀
+                        - strong [ref=e181]: Serve models
+                      - cell "Deploy your trained model via vLLM on your cluster" [ref=e182]
+                    - row "🔍 Debug jobs Check logs, diagnose failures, fix configs" [ref=e183]:
+                      - cell "🔍 Debug jobs" [ref=e184]:
+                        - text: 🔍
+                        - strong [ref=e185]: Debug jobs
+                      - cell "Check logs, diagnose failures, fix configs" [ref=e186]
+                    - row "🗂️ Manage artifacts Browse datasets, checkpoints, and job outputs" [ref=e187]:
+                      - cell "🗂️ Manage artifacts" [ref=e188]:
+                        - text: 🗂️
+                        - strong [ref=e189]: Manage artifacts
+                      - cell "Browse datasets, checkpoints, and job outputs" [ref=e190]
+                - paragraph [ref=e191]:
+                  - text: "The idea is simple: instead of paying for GPT-4o on every API call, you"
+                  - strong [ref=e192]: train a tiny model once
+                  - text: to handle that specific task — then run it yourself for a fraction of the cost.
+                - paragraph [ref=e193]:
+                  - strong [ref=e194]: What task are you looking to automate?
+                  - text: "For example: classification, extraction, summarization, routing, Q&A — tell me what you're working on and we'll get started! 🚀"
+            - generic [ref=e140]:
+              - textbox "Message input" [ref=e141]:
+                - /placeholder: Type a message...
+              - button "Send message" [disabled]:
+                - img
+    - generic [ref=e142]:
+      - heading "Command Palette" [level=2] [ref=e143]
+      - paragraph [ref=e144]: Search for a command to run...
+  - region "Notifications alt+T"

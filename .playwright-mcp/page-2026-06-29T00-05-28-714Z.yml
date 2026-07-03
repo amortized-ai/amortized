@@ -1,0 +1,171 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e33]:
+            - link "Datasets" [ref=e34] [cursor=pointer]:
+              - /url: /datasets
+              - img [ref=e35]
+              - generic [ref=e39]: Datasets
+          - listitem [ref=e40]:
+            - link "Models" [ref=e41] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e42]
+              - generic [ref=e45]: Models
+          - listitem [ref=e46]:
+            - link "Recipes" [ref=e47] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e48]
+              - generic [ref=e50]: Recipes
+          - listitem [ref=e51]:
+            - link "Settings" [ref=e52] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e53]
+              - generic [ref=e56]: Settings
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - button "Toggle Sidebar" [ref=e59]:
+          - img
+          - generic [ref=e60]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e61]:
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - link "Home" [ref=e64] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e65]
+            - listitem [ref=e68]:
+              - img [ref=e69]
+            - listitem [ref=e71]:
+              - link "Chat" [disabled] [ref=e72]
+        - generic [ref=e73]:
+          - button "Create" [ref=e74]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e75]
+          - button "Toggle theme" [ref=e76]:
+            - img
+            - generic [ref=e77]: Toggle theme
+          - link "Settings" [ref=e78] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e79]
+            - generic [ref=e82]: Settings
+      - main [ref=e83]:
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: Conversations
+              - button "New conversation" [ref=e88]:
+                - img
+            - generic [ref=e92]:
+              - button "I need an AI that classifies customer support tick" [ref=e93]:
+                - img [ref=e94]
+                - generic [ref=e96]: I need an AI that classifies customer support tick
+              - button "I need an AI that classifies customer support tick" [ref=e97]:
+                - img [ref=e98]
+                - generic [ref=e100]: I need an AI that classifies customer support tick
+              - button "New conversation" [ref=e101]:
+                - img [ref=e102]
+                - generic [ref=e104]: New conversation
+              - button "Submit an SDG job using the examples/ticket-classi" [ref=e105]:
+                - img [ref=e106]
+                - generic [ref=e108]: Submit an SDG job using the examples/ticket-classi
+              - button "Generate 50 training samples for sentiment classif" [ref=e109]:
+                - img [ref=e110]
+                - generic [ref=e112]: Generate 50 training samples for sentiment classif
+              - button "I want to build a sentiment classifier. Generate 5" [ref=e113]:
+                - img [ref=e114]
+                - generic [ref=e116]: I want to build a sentiment classifier. Generate 5
+              - button "list all my jobs" [ref=e117]:
+                - img [ref=e118]
+                - generic [ref=e120]: list all my jobs
+              - button "hi! who are you and what can you do?" [ref=e121]:
+                - img [ref=e122]
+                - generic [ref=e124]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e125]:
+                - img [ref=e126]
+                - generic [ref=e128]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e129]:
+                - img [ref=e130]
+                - generic [ref=e132]: hi! who are you and what can you do?
+              - button "hi! who are you and what can you do?" [ref=e133]:
+                - img [ref=e134]
+                - generic [ref=e136]: hi! who are you and what can you do?
+              - button "I want to build a ticket classifier. Run the examp" [ref=e137]:
+                - img [ref=e138]
+                - generic [ref=e140]: I want to build a ticket classifier. Run the examp
+              - button "List all jobs" [ref=e141]:
+                - img [ref=e142]
+                - generic [ref=e144]: List all jobs
+          - generic [ref=e145]:
+            - generic [ref=e146]:
+              - generic [ref=e147]: Chat
+              - button "New" [ref=e148]:
+                - img
+                - text: New
+            - generic [ref=e152]:
+              - generic [ref=e155]: I need an AI that classifies customer support tickets into billing, technical, and general inquiry categories. Can you help me build one?
+              - generic [ref=e158]:
+                - paragraph [ref=e159]: Great task for a small fine-tuned model! This is a classic classification problem that works really well with LoRA SFT.
+                - paragraph [ref=e160]: Let me start by checking what's available on your platform.
+                - paragraph [ref=e161]:
+                  - text: There's a perfect pre-built recipe for exactly this —
+                  - code [ref=e162]: "`examples/ticket-classifier/synth`"
+                  - text: . Let me also check your API keys before we kick off data generation.
+                - paragraph [ref=e163]:
+                  - text: You're all set — OpenAI key is configured, and the recipe uses
+                  - code [ref=e164]: "`gpt-4o-mini`"
+                  - text: as the teacher model.
+                - paragraph [ref=e165]: "Here's what the SDG job will do:"
+                - table [ref=e166]:
+                  - rowgroup [ref=e167]:
+                    - row "Setting Value" [ref=e168]:
+                      - columnheader "Setting" [ref=e169]
+                      - columnheader "Value" [ref=e170]
+                  - rowgroup [ref=e171]:
+                    - 'row "Recipe `examples/ticket-classifier/synth`" [ref=e172]':
+                      - cell "Recipe" [ref=e173]
+                      - 'cell "`examples/ticket-classifier/synth`" [ref=e174]':
+                        - code [ref=e175]: "`examples/ticket-classifier/synth`"
+                    - 'row "Teacher model `openai/gpt-4o-mini`" [ref=e176]':
+                      - cell "Teacher model" [ref=e177]
+                      - 'cell "`openai/gpt-4o-mini`" [ref=e178]':
+                        - code [ref=e179]: "`openai/gpt-4o-mini`"
+                    - 'row "Categories `billing`, `technical`, `general_inquiry`" [ref=e180]':
+                      - cell "Categories" [ref=e181]
+                      - 'cell "`billing`, `technical`, `general_inquiry`" [ref=e182]':
+                        - code [ref=e183]: "`billing`"
+                        - text: ","
+                        - code [ref=e184]: "`technical`"
+                        - text: ","
+                        - code [ref=e185]: "`general_inquiry`"
+                    - row "Samples 500" [ref=e186]:
+                      - cell "Samples" [ref=e187]
+                      - cell "500" [ref=e188]
+                - paragraph [ref=e189]: This will generate 500 labeled support tickets as training data. Ready to submit the data generation job?
+            - generic [ref=e191]:
+              - textbox "Message input" [ref=e192]:
+                - /placeholder: Type a message...
+              - button "Send message" [disabled]:
+                - img
+    - generic [ref=e193]:
+      - heading "Command Palette" [level=2] [ref=e194]
+      - paragraph [ref=e195]: Search for a command to run...
+  - region "Notifications alt+T"

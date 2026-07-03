@@ -1,0 +1,296 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: Amortized Studio
+            - generic:
+              - generic:
+                - generic: Navigation
+                - generic:
+                  - list:
+                    - listitem:
+                      - link:
+                        - /url: /overview
+                        - img
+                        - generic: Overview
+                    - listitem:
+                      - link:
+                        - /url: /chat
+                        - img
+                        - generic: Chat
+                    - listitem:
+                      - link:
+                        - /url: /jobs
+                        - img
+                        - generic: Jobs
+                    - listitem:
+                      - link:
+                        - /url: /datasets
+                        - img
+                        - generic: Datasets
+                    - listitem:
+                      - link:
+                        - /url: /models
+                        - img
+                        - generic: Models
+                    - listitem:
+                      - link:
+                        - /url: /recipes
+                        - img
+                        - generic: Recipes
+                    - listitem:
+                      - link:
+                        - /url: /settings
+                        - img
+                        - generic: Settings
+      - main:
+        - generic:
+          - button:
+            - img
+            - generic: Toggle Sidebar
+          - navigation:
+            - list:
+              - listitem:
+                - link:
+                  - /url: /overview
+                  - img
+              - listitem:
+                - img
+              - listitem:
+                - link [disabled]: Jobs
+          - generic:
+            - button:
+              - img
+              - text: Create
+            - button:
+              - img
+              - generic: Toggle theme
+            - link:
+              - /url: /settings
+              - img
+              - generic: Settings
+        - main:
+          - generic:
+            - generic:
+              - generic:
+                - heading [level=1]: Jobs
+            - generic:
+              - generic:
+                - generic: "Type:"
+                - toolbar:
+                  - button: Training
+                  - button: SDG
+                  - button: Eval
+              - generic:
+                - generic: "Status:"
+                - toolbar:
+                  - button: Queued
+                  - button: Provisioning
+                  - button: Running
+                  - button: Succeeded
+                  - button: Failed
+                  - button: Cancelled
+            - generic:
+              - generic:
+                - generic:
+                  - table:
+                    - rowgroup:
+                      - row:
+                        - columnheader:
+                          - button:
+                            - text: Name
+                            - img
+                        - columnheader:
+                          - button:
+                            - text: Type
+                            - img
+                        - columnheader:
+                          - button:
+                            - text: Status
+                            - img
+                        - columnheader: ID
+                        - columnheader:
+                          - button:
+                            - text: Elapsed
+                            - img
+                        - columnheader:
+                          - button:
+                            - text: Created
+                            - img
+                    - rowgroup:
+                      - button:
+                        - cell: 3d185495-6ef4-4cce-a499-11cbc841265e
+                        - cell:
+                          - generic: SDG
+                        - cell:
+                          - generic: Succeeded
+                        - cell:
+                          - button:
+                            - text: 3d185495…
+                            - img
+                        - cell: 38s
+                        - cell: Jun 26, 2026, 10:03 PM
+                      - button:
+                        - cell: 8e82772a-8d1e-4e4c-bba5-937594b14fc2
+                        - cell:
+                          - generic: SDG
+                        - cell:
+                          - generic: Failed
+                        - cell:
+                          - button:
+                            - text: 8e82772a…
+                            - img
+                        - cell: 15s
+                        - cell: Jun 26, 2026, 10:03 PM
+                      - button:
+                        - cell: 5f9796aa-cbbb-4e2e-9849-418595b06888
+                        - cell:
+                          - generic: SDG
+                        - cell:
+                          - generic: Succeeded
+                        - cell:
+                          - button:
+                            - text: 5f9796aa…
+                            - img
+                        - cell: 2m 20s
+                        - cell: Jun 26, 2026, 9:28 PM
+                      - button:
+                        - cell: 9d22a88e-9595-4570-ad0d-ffdfd9b5caa9
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Succeeded
+                        - cell:
+                          - button:
+                            - text: 9d22a88e…
+                            - img
+                        - cell: 1m 44s
+                        - cell: Jun 26, 2026, 4:08 PM
+                      - button:
+                        - cell: 32c5af20-2711-485a-b5d4-20ea0477f179
+                        - cell:
+                          - generic: SDG
+                        - cell:
+                          - generic: Succeeded
+                        - cell:
+                          - button:
+                            - text: 32c5af20…
+                            - img
+                        - cell: 19s
+                        - cell: Jun 26, 2026, 4:07 PM
+                      - button:
+                        - cell: 4a413ee5-5d77-4696-8564-8042d9796acc
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Succeeded
+                        - cell:
+                          - button:
+                            - text: 4a413ee5…
+                            - img
+                        - cell: 48s
+                        - cell: Jun 25, 2026, 2:08 AM
+                      - button:
+                        - cell: c785f0f4-5b8c-43f8-876d-d5a0a520559e
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Failed
+                        - cell:
+                          - button:
+                            - text: c785f0f4…
+                            - img
+                        - cell: 19s
+                        - cell: Jun 25, 2026, 2:07 AM
+                      - button:
+                        - cell: 6545f8bc-554b-4506-9a68-43e35012d8b7
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Failed
+                        - cell:
+                          - button:
+                            - text: 6545f8bc…
+                            - img
+                        - cell: 32s
+                        - cell: Jun 25, 2026, 1:49 AM
+                      - button:
+                        - cell: 471dd206-9cf4-40a5-9ba3-27c7aff5bc0d
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Failed
+                        - cell:
+                          - button:
+                            - text: 471dd206…
+                            - img
+                        - cell: 18s
+                        - cell: Jun 25, 2026, 1:49 AM
+                      - button:
+                        - cell: db22c4f3-b81a-43c5-bfb1-1f09e3e518d2
+                        - cell:
+                          - generic: Training
+                        - cell:
+                          - generic: Failed
+                        - cell:
+                          - button:
+                            - text: db22c4f3…
+                            - img
+                        - cell: 18s
+                        - cell: Jun 25, 2026, 1:45 AM
+              - generic:
+                - generic: Page 1 of 8
+                - generic:
+                  - button [disabled]:
+                    - img
+                  - button:
+                    - img
+      - generic:
+        - heading [level=2]: Command Palette
+        - paragraph: Search for a command to run...
+    - region "Notifications alt+T"
+  - dialog "3d185495-6ef4-4cce-a499-11cbc841265e" [ref=e175]:
+    - button "Close" [active] [ref=e176]:
+      - img [ref=e177]
+      - generic [ref=e180]: Close
+    - generic [ref=e181]:
+      - heading "3d185495-6ef4-4cce-a499-11cbc841265e" [level=2] [ref=e182]
+      - paragraph [ref=e183]:
+        - generic [ref=e184]: SDG
+        - generic [ref=e185]: Succeeded
+    - generic [ref=e186]:
+      - tablist [ref=e187]:
+        - tab "Overview" [selected] [ref=e188]
+        - tab "Logs" [ref=e189]
+        - tab "Metrics" [ref=e190]
+        - tab "Config" [ref=e191]
+      - tabpanel "Overview" [ref=e192]:
+        - generic [ref=e193]:
+          - generic [ref=e194]:
+            - generic [ref=e195]: ID
+            - generic [ref=e196]: 3d185495-6ef4-4cce-a499-11cbc841265e
+          - generic [ref=e197]:
+            - generic [ref=e198]: Type
+            - generic [ref=e199]: sdg
+          - generic [ref=e200]:
+            - generic [ref=e201]: Status
+            - generic [ref=e202]: succeeded
+          - generic [ref=e203]:
+            - generic [ref=e204]: Created
+            - generic [ref=e205]: Jun 26, 2026, 10:03 PM
+          - generic [ref=e206]:
+            - generic [ref=e207]: Started
+            - generic [ref=e208]: Jun 26, 2026, 10:03 PM
+          - generic [ref=e209]:
+            - generic [ref=e210]: Completed
+            - generic [ref=e211]: Jun 26, 2026, 10:04 PM
+          - generic [ref=e212]:
+            - generic [ref=e213]: Duration
+            - generic [ref=e214]: 38s
+          - generic [ref=e215]:
+            - generic [ref=e216]: MLflow Run
+            - generic [ref=e217]: 4256a4caeaef44b281517032711aea63

@@ -1,0 +1,918 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - img "profile picture" [ref=e7]
+          - link "sanj.dev" [ref=e9] [cursor=pointer]:
+            - /url: /
+          - paragraph [ref=e11]: filtering noise
+        - list [ref=e12]:
+          - listitem [ref=e13]:
+            - link "Linkedin" [ref=e14] [cursor=pointer]:
+              - /url: https://www.linkedin.com/in/sanj2sanj/
+              - generic [ref=e15]: 
+          - listitem [ref=e16]:
+            - link "GitHub" [ref=e17] [cursor=pointer]:
+              - /url: https://github.com/sanj2sanj
+              - generic [ref=e18]: 
+          - listitem [ref=e19]:
+            - link "e-mail" [ref=e20] [cursor=pointer]:
+              - /url: mailto:hello@sanj.dev
+              - generic [ref=e21]: 
+        - paragraph [ref=e22]:
+          - link "CTO advisory, trading systems, data platforms →" [ref=e23] [cursor=pointer]:
+            - /url: /work-with-me/
+      - list [ref=e25]:
+        - listitem [ref=e26]: © sanj.dev 2026
+  - main [ref=e27]:
+    - navigation [ref=e30]:
+      - list [ref=e31]:
+        - listitem [ref=e32]:
+          - link "Home" [ref=e33] [cursor=pointer]:
+            - /url: /
+        - listitem [ref=e34]:
+          - link "Posts" [ref=e35] [cursor=pointer]:
+            - /url: /post/
+        - listitem [ref=e36]:
+          - link "About" [ref=e37] [cursor=pointer]:
+            - /url: /about/
+      - list [ref=e38]:
+        - listitem [ref=e39]:
+          - button "Search" [ref=e41] [cursor=pointer]:
+            - img [ref=e42]
+        - listitem [ref=e45]:
+          - button "Switch Theme" [ref=e47] [cursor=pointer]:
+            - generic [ref=e48]: 
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - 'heading "AIDER VS OPENCODE VS CLAUDE CODE: WHICH WINS IN JUNE 2026?" [level=1] [ref=e51]'
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - emphasis [ref=e54]: 
+            - text: 25/2/2026
+          - listitem [ref=e55]:
+            - emphasis
+            - text: Updated 13/6/2026
+          - listitem [ref=e56]:
+            - emphasis [ref=e57]: 
+            - text: 22-minute read
+          - listitem [ref=e58]:
+            - emphasis
+            - text: 4538 words
+        - paragraph [ref=e59]: The AI coding assistant landscape has moved decisively out of the IDE and back into the terminal. While GitHub Copilot and Cursor still dominate integrated environments, a new class of autonomous, agentic CLI tools has emerged that can read your entire codebase, run shell commands, execute tests, iterate on failures, and commit clean diffs — all from a single natural-language prompt. The problem is that there are now at least ten serious contenders, and picking the wrong one for your workflow wastes real time.
+        - paragraph [ref=e60]:
+          - strong [ref=e61]: "Update: June 2026."
+          - text: "Since the original February publication, Claude Opus 4.8 shipped with 88.6% on SWE-bench, Google renamed Gemini CLI to Antigravity CLI, OpenAI’s Codex CLI took the #1 spot on Terminal-Bench 2.1, and four new CLI agents entered the market. All data in this article reflects June 2026 reality — version numbers, benchmarks, pricing, and star counts are current as of this update."
+        - paragraph [ref=e62]:
+          - strong [ref=e63]: Who Is This Guide For?
+        - paragraph [ref=e64]: This is for you if you’re a developer comparing CLI AI assistants for your daily workflow, an engineer deciding between Claude Code, OpenCode, Codex, or Aider for your team, a technical lead evaluating AI tools for a production codebase, or anyone trying to figure out which CLI agent gives you the most intelligence per dollar in June 2026. Sound like you? Let’s dive in.
+        - paragraph [ref=e65]: By the end of this, you’ll know the key differences between all ten major CLI AI assistants, which tool fits your specific workflow and budget, the real-world performance data from the latest SWE-bench and Terminal-Bench benchmarks, how the Gemini→Antigravity transition changes the free-tier landscape, and exactly where your money gets the most coding intelligence.
+        - paragraph [ref=e66]: I’ve spent months rotating between these tools across production repos, Hugo sites, Kubernetes manifests, and Go microservices. Here’s the June 2026 landscape, verified against each project’s official documentation and GitHub releases.
+        - heading "Quick Comparison Table" [level=2] [ref=e67]
+        - table [ref=e68]:
+          - rowgroup [ref=e69]:
+            - row "Feature Claude Code Codex CLI Antigravity OpenCode Aider Goose Cursor CLI" [ref=e70]:
+              - columnheader "Feature" [ref=e71]
+              - columnheader "Claude Code" [ref=e72]
+              - columnheader "Codex CLI" [ref=e73]
+              - columnheader "Antigravity" [ref=e74]
+              - columnheader "OpenCode" [ref=e75]
+              - columnheader "Aider" [ref=e76]
+              - columnheader "Goose" [ref=e77]
+              - columnheader "Cursor CLI" [ref=e78]
+          - rowgroup [ref=e79]:
+            - row "Pricing $100-200/mo (Max) $20/mo (Plus) Free tier Free/API key API key Free $20/mo" [ref=e80]:
+              - cell "Pricing" [ref=e81]:
+                - strong [ref=e82]: Pricing
+              - cell "$100-200/mo (Max)" [ref=e83]
+              - cell "$20/mo (Plus)" [ref=e84]
+              - cell "Free tier" [ref=e85]
+              - cell "Free/API key" [ref=e86]
+              - cell "API key" [ref=e87]
+              - cell "Free" [ref=e88]
+              - cell "$20/mo" [ref=e89]
+            - row "Best For Autonomous debugging Speed + accuracy Free experimentation Provider flexibility Git-native workflows System architecture IDE-to-CLI flow" [ref=e90]:
+              - cell "Best For" [ref=e91]:
+                - strong [ref=e92]: Best For
+              - cell "Autonomous debugging" [ref=e93]
+              - cell "Speed + accuracy" [ref=e94]
+              - cell "Free experimentation" [ref=e95]
+              - cell "Provider flexibility" [ref=e96]
+              - cell "Git-native workflows" [ref=e97]
+              - cell "System architecture" [ref=e98]
+              - cell "IDE-to-CLI flow" [ref=e99]
+            - row "Git Integration Good Good Basic Good Excellent Good Good" [ref=e100]:
+              - cell "Git Integration" [ref=e101]:
+                - strong [ref=e102]: Git Integration
+              - cell "Good" [ref=e103]
+              - cell "Good" [ref=e104]
+              - cell "Basic" [ref=e105]
+              - cell "Good" [ref=e106]
+              - cell "Excellent" [ref=e107]:
+                - strong [ref=e108]: Excellent
+              - cell "Good" [ref=e109]
+              - cell "Good" [ref=e110]
+            - row "Local Models No No No Yes (75+ providers) Yes (Ollama) Yes No" [ref=e111]:
+              - cell "Local Models" [ref=e112]:
+                - strong [ref=e113]: Local Models
+              - cell "No" [ref=e114]
+              - cell "No" [ref=e115]
+              - cell "No" [ref=e116]
+              - cell "Yes (75+ providers)" [ref=e117]
+              - cell "Yes (Ollama)" [ref=e118]
+              - cell "Yes" [ref=e119]
+              - cell "No" [ref=e120]
+            - row "MCP Support Yes No Yes Yes No Yes Yes" [ref=e121]:
+              - cell "MCP Support" [ref=e122]:
+                - strong [ref=e123]: MCP Support
+              - cell "Yes" [ref=e124]
+              - cell "No" [ref=e125]
+              - cell "Yes" [ref=e126]
+              - cell "Yes" [ref=e127]
+              - cell "No" [ref=e128]
+              - cell "Yes" [ref=e129]
+              - cell "Yes" [ref=e130]
+            - row "Stars 96K 35K 99K 172K 44K 38K 42K" [ref=e131]:
+              - cell "Stars" [ref=e132]:
+                - strong [ref=e133]: Stars
+              - cell "96K" [ref=e134]
+              - cell "35K" [ref=e135]
+              - cell "99K" [ref=e136]
+              - cell "172K" [ref=e137]
+              - cell "44K" [ref=e138]
+              - cell "38K" [ref=e139]
+              - cell "42K" [ref=e140]
+            - row "Top Model Opus 4.8 GPT-5.5 Gemini 3 Any Any Any GPT-5.5" [ref=e141]:
+              - cell "Top Model" [ref=e142]:
+                - strong [ref=e143]: Top Model
+              - cell "Opus 4.8" [ref=e144]
+              - cell "GPT-5.5" [ref=e145]
+              - cell "Gemini 3" [ref=e146]
+              - cell "Any" [ref=e147]
+              - cell "Any" [ref=e148]
+              - cell "Any" [ref=e149]
+              - cell "GPT-5.5" [ref=e150]
+            - row "SWE-bench 88.6% 82.1% 63.8% Varies Varies N/A 82.1%" [ref=e151]:
+              - cell "SWE-bench" [ref=e152]:
+                - strong [ref=e153]: SWE-bench
+              - cell "88.6%" [ref=e154]:
+                - strong [ref=e155]: 88.6%
+              - cell "82.1%" [ref=e156]
+              - cell "63.8%" [ref=e157]
+              - cell "Varies" [ref=e158]
+              - cell "Varies" [ref=e159]
+              - cell "N/A" [ref=e160]
+              - cell "82.1%" [ref=e161]
+            - row "Terminal-Bench 78.9% 83.4% N/A Varies Varies N/A N/A" [ref=e162]:
+              - cell "Terminal-Bench" [ref=e163]:
+                - strong [ref=e164]: Terminal-Bench
+              - cell "78.9%" [ref=e165]
+              - cell "83.4%" [ref=e166]:
+                - strong [ref=e167]: 83.4%
+              - cell "N/A" [ref=e168]
+              - cell "Varies" [ref=e169]
+              - cell "Varies" [ref=e170]
+              - cell "N/A" [ref=e171]
+              - cell "N/A" [ref=e172]
+        - paragraph [ref=e173]:
+          - strong [ref=e174]: "TL;DR:"
+          - text: Want best intelligence-per-dollar? → Codex CLI (included with ChatGPT Plus). Want free? → Antigravity CLI. Want Git safety? → Aider. Want provider independence? → OpenCode. Want full autonomy? → Claude Code. Want IDE-native CLI? → Cursor CLI.
+        - paragraph [ref=e175]:
+          - emphasis [ref=e176]:
+            - text: "Sources:"
+            - link "SWE-Bench Verified Leaderboard" [ref=e177] [cursor=pointer]:
+              - /url: https://www.marc0.dev/en/leaderboard
+            - text: ","
+            - link "Terminal-Bench 2.1" [ref=e178] [cursor=pointer]:
+              - /url: https://terminalbench.com
+            - text: ","
+            - link "Aider Leaderboards" [ref=e179] [cursor=pointer]:
+              - /url: https://aider.chat/docs/leaderboards/
+            - text: ","
+            - link "Morphllm Agent Rankings" [ref=e180] [cursor=pointer]:
+              - /url: https://www.morphllm.com/best-ai-coding-agents-2026
+        - paragraph [ref=e181]:
+          - strong [ref=e182]: "Agents vs. Models: Know the Difference."
+          - text: "Before we dive in, a distinction that trips up every comparison article: the"
+          - emphasis [ref=e183]: agent
+          - text: is the CLI tool — the harness that reads your files, executes shell commands, manages Git, and orchestrates the workflow. The
+          - emphasis [ref=e184]: model
+          - text: is the AI brain plugged into that harness — Opus 4.8, GPT-5.5, Gemini 3. The benchmark scores in the table above reflect the
+          - emphasis [ref=e185]: agent+model combination
+          - text: ", not the model in isolation. Claude Code with Opus 4.8 scores 88.6% on SWE-bench because of both the model’s reasoning AND the agent’s scaffolding. The same model plugged into a weaker harness would score lower. Throughout this article, I’ll name both components: the tool you install, and the model you configure it to use."
+        - heading "Why the Terminal Is Winning Again" [level=2] [ref=e186]
+        - paragraph [ref=e187]: I keep coming back to terminal-first agents for two reasons. First, context boundaries are explicit. An IDE extension tends to “help” by analyzing whatever file is open, even when it’s irrelevant. A CLI agent operates on the files it decides are necessary for the problem you describe, and nothing else.
+        - paragraph [ref=e188]:
+          - text: "Second, these aren’t auto-completers anymore. Claude Code, OpenCode, and Goose are fully autonomous agents: they plan, execute shell commands, read outputs, fix failures, and loop until the tests pass. That level of autonomy simply doesn’t exist in a tab-completion plugin. If you’ve worked with the"
+          - link "Model Context Protocol (MCP)" [ref=e189] [cursor=pointer]:
+            - /url: https://en.wikipedia.org/wiki/Model_Context_Protocol
+          - text: — which I covered in my
+          - link "earlier deep dive on MCP" [ref=e190] [cursor=pointer]:
+            - /url: /post/2025-03-09-key-insights-on-the-anthropic-model-context-protocol
+          - text: / — you’ll recognize these tools as MCP clients on steroids.
+        - paragraph [ref=e191]: "The Heavyweights: Claude Code and Codex CLI"
+        - paragraph [ref=e192]: When the foundation model providers ship their own CLI agents, the integration depth is unmatched. As of June 2026, the two heaviest hitters are Claude Code and Codex CLI — and they’ve swapped positions on the benchmark leaderboard.
+        - heading "Claude Code" [level=3] [ref=e193]
+        - paragraph [ref=e194]:
+          - link "Claude Code" [ref=e195] [cursor=pointer]:
+            - /url: https://github.com/anthropics/claude-code
+          - text: (the agent — 96K stars, 8k forks) remains the gold standard for autonomous debugging. As of June 2026, the agent is at
+          - strong [ref=e196]: v2.1.172
+          - text: "with 250+ releases. The model powering it:"
+          - strong [ref=e197]: Claude Opus 4.8
+          - text: achieves an 88.6% score on SWE-Bench Verified — a nearly 8-point jump from Opus 4.6 in April. That’s the agent+model combo that currently holds the SWE-bench crown.
+          - 'link "Source: SWE-Bench leaderboard" [ref=e198] [cursor=pointer]':
+            - /url: https://www.marc0.dev/en/leaderboard
+        - paragraph [ref=e199]:
+          - strong [ref=e200]: "Installation (as of June 2026):"
+        - code [ref=e203]:
+          - generic [ref=e205]: "# macOS / Linux (recommended)"
+          - generic [ref=e207]: curl -fsSL https://claude.ai/install.sh | bash
+          - generic [ref=e210]: "# Homebrew"
+          - generic [ref=e212]: brew install --cask claude-code
+          - generic [ref=e215]: "# Windows"
+          - generic [ref=e217]: winget install Anthropic.ClaudeCode
+        - paragraph [ref=e218]:
+          - strong [ref=e219]: "A quick note on the Pro tier situation:"
+          - text: On April 21, 2026, Anthropic quietly removed Claude Code from the $20/month Pro tier — restricting it to the $100-200/month Max plan. After community backlash, access was restored. The episode exposed how fragile provider-locked workflows can be. If you’re building production tooling around Claude Code, budget for the Max plan or keep a backup agent in your toolkit.
+          - 'link "Source: Anthropic April 23 postmortem" [ref=e220] [cursor=pointer]':
+            - /url: https://www.anthropic.com/engineering/april-23-postmortem
+        - paragraph [ref=e221]:
+          - strong [ref=e222]: "What makes it stand out:"
+          - text: "Claude Code’s multi-step reasoning remains the strongest in this category. I regularly point it at a failing test suite with zero context and watch it navigate the call stack across multiple files, identify the root cause, deploy a fix, and verify it — autonomously. Key features as of June 2026:"
+        - list [ref=e223]:
+          - listitem [ref=e224]:
+            - strong [ref=e225]: Skills as workflow packages
+            - text: ": Anthropic transformed Skills from simple instructions into full workflow packages bundling commands, scripts, and context — executable on demand."
+          - listitem [ref=e226]:
+            - strong [ref=e227]: Nested sub-agents
+            - text: "(v2.1.172): Sub-agents can now spawn their own sub-agents, creating AI agent hierarchies for complex parallel tasks."
+          - listitem [ref=e228]:
+            - strong [ref=e229]: Background agents
+            - text: ": Sub-agents run concurrently without blocking your main conversation."
+          - listitem [ref=e230]:
+            - strong [ref=e231]: Hooks
+            - text: ": Deterministic automation at lifecycle points — auto-run linters, formatters, or test suites on every change. HTTP hooks can POST JSON to external services."
+          - listitem [ref=e232]:
+            - strong [ref=e233]: Plugins
+            - text: ": Shareable packages bundling slash commands, MCP servers, agents, and hooks into installable units."
+          - listitem [ref=e234]:
+            - strong [ref=e235]: Remote control
+            - text: "(research preview): Continue local coding sessions from a mobile device or any browser."
+          - listitem [ref=e236]:
+            - strong [ref=e237]: Checkpoints
+            - text: ": Automatic code state snapshots before changes, enabling easy rollback."
+          - listitem [ref=e238]:
+            - strong [ref=e239]: Worktree isolation
+            - text: ": Agents work in dedicated Git worktrees to prevent conflicts."
+        - paragraph [ref=e240]:
+          - strong [ref=e241]: "Claude Fable 5 (New):"
+          - text: "Anthropic shipped Fable 5 on June 9, 2026 — a Mythos-class model available across all Claude surfaces including Claude Code. It’s the same underlying architecture as Mythos 5 but with guardrails, priced at $50/million output tokens (roughly 2x Opus). Early impressions from Simon Willison describe it as “relentlessly proactive” — it doesn’t wait for you to ask, it identifies problems and proposes solutions unprompted. For coding, this means it can spot architectural issues in your codebase that you didn’t explicitly ask about. The catch: it’s expensive, and you need a Max plan to access it in Claude Code."
+          - 'link "Source: Simon Willison, “Claude Fable 5”" [ref=e242] [cursor=pointer]':
+            - /url: https://simonwillison.net/2026/Jun/9/claude-fable-5/
+        - heading "June 2026 Benchmark Performance" [level=2] [ref=e243]
+        - paragraph [ref=e244]: "Here’s how the underlying models perform on standardized coding tasks, based on the most recent data:"
+        - heading "SWE-Bench Verified (real-world GitHub issue resolution)" [level=3] [ref=e245]
+        - table [ref=e246]:
+          - rowgroup [ref=e247]:
+            - row "Model/Agent Score" [ref=e248]:
+              - columnheader "Model/Agent" [ref=e249]
+              - columnheader "Score" [ref=e250]
+          - rowgroup [ref=e251]:
+            - row "Claude Opus 4.8 88.6%" [ref=e252]:
+              - cell "Claude Opus 4.8" [ref=e253]
+              - cell "88.6%" [ref=e254]
+            - row "MiniMax M2.5 80.2%" [ref=e255]:
+              - cell "MiniMax M2.5" [ref=e256]
+              - cell "80.2%" [ref=e257]
+            - row "GPT-5.5 (Codex CLI) 82.1%" [ref=e258]:
+              - cell "GPT-5.5 (Codex CLI)" [ref=e259]
+              - cell "82.1%" [ref=e260]
+            - row "Gemini 3 Pro 63.8%" [ref=e261]:
+              - cell "Gemini 3 Pro" [ref=e262]
+              - cell "63.8%" [ref=e263]
+        - heading "Terminal-Bench 2.1 (real CLI agent task completion)" [level=3] [ref=e264]
+        - table [ref=e265]:
+          - rowgroup [ref=e266]:
+            - row "Agent Score" [ref=e267]:
+              - columnheader "Agent" [ref=e268]
+              - columnheader "Score" [ref=e269]
+          - rowgroup [ref=e270]:
+            - row "Codex CLI (GPT-5.5) 83.4%" [ref=e271]:
+              - cell "Codex CLI (GPT-5.5)" [ref=e272]
+              - cell "83.4%" [ref=e273]
+            - row "Claude Code (Opus 4.8) 78.9%" [ref=e274]:
+              - cell "Claude Code (Opus 4.8)" [ref=e275]
+              - cell "78.9%" [ref=e276]
+        - paragraph [ref=e277]:
+          - emphasis [ref=e278]:
+            - text: "Sources:"
+            - link "SWE-Bench Verified Leaderboard" [ref=e279] [cursor=pointer]:
+              - /url: https://www.marc0.dev/en/leaderboard
+            - text: ","
+            - link "Morphllm Benchmark Rankings" [ref=e280] [cursor=pointer]:
+              - /url: https://www.morphllm.com/best-ai-coding-agents-2026
+        - paragraph [ref=e281]: "The benchmarks tell a nuanced story. Claude Opus 4.8 dominates SWE-bench — the measure of raw code-fixing ability. But Codex CLI with GPT-5.5 leads Terminal-Bench, which tests the full agent stack: planning, tool use, shell execution, and multi-step reasoning. Agent scaffolding matters enormously — the same model can score 10-20 points higher with a well-designed harness around it."
+        - paragraph [ref=e282]:
+          - strong [ref=e283]: "Where it struggles:"
+          - text: The subscription gate remains a barrier for casual use. And for smaller, focused tasks, the autonomy can be overkill — sometimes you just want a quick edit, not a planning session.
+        - heading "Antigravity CLI (Formerly Gemini CLI)" [level=3] [ref=e284]
+        - paragraph [ref=e285]:
+          - text: Google’s
+          - link "Gemini CLI" [ref=e286] [cursor=pointer]:
+            - /url: https://github.com/google-gemini/gemini-cli
+          - text: (99K stars, 12.6k forks) has been rebranded to
+          - strong [ref=e287]: Antigravity CLI
+          - text: as of mid-2026 and moved from an npm-distributed tool to a native binary. The old npm package still works for legacy users, but new installs use platform-native scripts.
+          - 'link "Source: Antigravity CLI docs" [ref=e288] [cursor=pointer]':
+            - /url: https://antigravity.google/docs/cli-install
+        - paragraph [ref=e289]:
+          - strong [ref=e290]: "Installation:"
+        - code [ref=e293]:
+          - generic [ref=e295]: "# Run instantly without installing"
+          - generic [ref=e297]: curl -fsSL https://antigravity.google/install.sh | bash
+          - generic [ref=e300]: "# Global install via npm"
+          - generic [ref=e302]: sudo apt install antigravity
+          - generic [ref=e305]: "# macOS / Linux"
+        - paragraph [ref=e306]: Authenticate with a personal Google account (OAuth), a Gemini API key, or Vertex AI credentials.
+        - paragraph [ref=e307]:
+          - strong [ref=e308]: "What makes it stand out:"
+          - text: The free tier remains the most generous in the market — 60 requests per minute and 1,000 requests per day with a personal Google account, powered by
+          - strong [ref=e309]: Gemini 3
+          - text: models with a
+          - strong [ref=e310]: 1M token context window
+          - text: . No credit card required. This is the lowest-friction entry point for anyone wanting to try agentic CLI coding.
+        - paragraph [ref=e311]: "Key features as of June 2026:"
+        - list [ref=e312]:
+          - listitem [ref=e313]:
+            - strong [ref=e314]: Built-in Google Search grounding
+            - text: ": Queries augmented with real-time web information."
+          - listitem [ref=e315]:
+            - strong [ref=e316]: Multimodal input
+            - text: ": Generate apps from PDFs, images, or hand-drawn sketches."
+          - listitem [ref=e317]:
+            - strong [ref=e318]: GEMINI.md files
+            - text: ": Project-level context files that tailor the agent’s behavior."
+          - listitem [ref=e319]:
+            - strong [ref=e320]: GitHub Action integration
+            - text: ": Automated PR reviews and issue triage."
+          - listitem [ref=e321]:
+            - strong [ref=e322]: MCP extensibility
+            - text: ": Connect to external tools and media generation."
+        - paragraph [ref=e323]:
+          - strong [ref=e324]: "What to watch:"
+          - text: The Antigravity rebrand suggests Google is preparing the CLI for a future where it can use models beyond Gemini. For now, the free tier works exactly as it always has — just under a new name.
+        - paragraph [ref=e325]:
+          - strong [ref=e326]: "Where it struggles:"
+          - text: The search grounding can pull focus from local codebase context. For heavy production use, Vertex AI pricing may apply beyond the free tier.
+        - 'heading "The Open Source Contenders: OpenCode, Aider, and Goose" [level=2] [ref=e327]'
+        - paragraph [ref=e328]: If you want provider independence, local model support, or community-driven development, these three are leading the pack.
+        - 'heading "Aider vs OpenCode: Head-to-Head" [level=3] [ref=e329]'
+        - paragraph [ref=e330]: Here’s the direct comparison that matters if you’re choosing between these two — the most searched CLI AI tools in this space.
+        - table [ref=e331]:
+          - rowgroup [ref=e332]:
+            - row "Feature Aider OpenCode" [ref=e333]:
+              - columnheader "Feature" [ref=e334]
+              - columnheader "Aider" [ref=e335]
+              - columnheader "OpenCode" [ref=e336]
+          - rowgroup [ref=e337]:
+            - row "Pricing API key only API key + optional ChatGPT/Copilot subscription" [ref=e338]:
+              - cell "Pricing" [ref=e339]:
+                - strong [ref=e340]: Pricing
+              - cell "API key only" [ref=e341]
+              - cell "API key + optional ChatGPT/Copilot subscription" [ref=e342]
+            - row "Git Integration First-class (auto-commit every edit) Good (manual commits)" [ref=e343]:
+              - cell "Git Integration" [ref=e344]:
+                - strong [ref=e345]: Git Integration
+              - cell "First-class (auto-commit every edit)" [ref=e346]
+              - cell "Good (manual commits)" [ref=e347]
+            - row "Provider Support Any OpenAI-compatible API (75+) 75+ providers including local Ollama" [ref=e348]:
+              - cell "Provider Support" [ref=e349]:
+                - strong [ref=e350]: Provider Support
+              - cell "Any OpenAI-compatible API (75+)" [ref=e351]
+              - cell "75+ providers including local Ollama" [ref=e352]
+            - row "Setup Friction Low (pip/uv install) Medium (provider config required)" [ref=e353]:
+              - cell "Setup Friction" [ref=e354]:
+                - strong [ref=e355]: Setup Friction
+              - cell "Low (pip/uv install)" [ref=e356]
+              - cell "Medium (provider config required)" [ref=e357]
+            - row "Autonomy Model Pair programmer (incremental edits) Build agent (full automation)" [ref=e358]:
+              - cell "Autonomy Model" [ref=e359]:
+                - strong [ref=e360]: Autonomy Model
+              - cell "Pair programmer (incremental edits)" [ref=e361]
+              - cell "Build agent (full automation)" [ref=e362]
+            - row "Best For Git-disciplined, reviewable changes Multi-file scaffolding, rapid iteration" [ref=e363]:
+              - cell "Best For" [ref=e364]:
+                - strong [ref=e365]: Best For
+              - cell "Git-disciplined, reviewable changes" [ref=e366]
+              - cell "Multi-file scaffolding, rapid iteration" [ref=e367]
+            - row "MCP Support No (as of Apr 2026) Yes" [ref=e368]:
+              - cell "MCP Support" [ref=e369]:
+                - strong [ref=e370]: MCP Support
+              - cell "No (as of Apr 2026)" [ref=e371]
+              - cell "Yes" [ref=e372]
+            - row "Stars 44K 172K" [ref=e373]:
+              - cell "Stars" [ref=e374]:
+                - strong [ref=e375]: Stars
+              - cell "44K" [ref=e376]
+              - cell "172K" [ref=e377]
+        - paragraph [ref=e378]:
+          - strong [ref=e379]: "When to pick Aider:"
+          - text: You want bulletproof Git history. Every change is automatically committed with a descriptive message — you can always
+          - code [ref=e380]: git revert
+          - text: or
+          - code [ref=e381]: git log
+          - text: your way out of any mistake. You prefer incremental, file-level edits over full automation. You need the strongest lint-and-test loop (runs after every change). You value the Structured Mode for tracking progress across long coding sessions.
+        - paragraph [ref=e382]:
+          - strong [ref=e383]: "When to pick OpenCode:"
+          - text: You want provider flexibility — use your existing ChatGPT Plus or Copilot subscription, or switch between Claude, GPT, Gemini, Groq, and local Ollama without reconfiguration. You need the
+          - code [ref=e384]: build
+          - text: agent for scaffolding new services from scratch. You want MCP extensibility for connecting external tools. You prefer the TUI + desktop app combo over pure CLI.
+        - paragraph [ref=e385]:
+          - strong [ref=e386]: "The 2026 wild card:"
+          - text: In early 2026, Anthropic briefly blocked OpenCode from accessing the Claude API. Access was restored after community backlash, but it exposed the fragility of provider-dependent tools. Aider’s any-OpenAI-compatible-API approach is more resilient here — your models keep working even if a provider changes their terms.
+          - 'link "Source: NxCode" [ref=e387] [cursor=pointer]':
+            - /url: https://www.nxcode.io/resources/news/aider-vs-opencode-ai-coding-cli-2026
+        - paragraph [ref=e388]:
+          - strong [ref=e389]: "Bottom line:"
+          - text: Aider is the safer bet for Git discipline and provider resilience. OpenCode wins on flexibility and multi-model convenience. If you’re already paying for ChatGPT Plus, OpenCode effectively costs nothing extra. If you’re budget-conscious and have your own API keys, Aider’s Git-native workflow is worth the learning curve.
+        - 'heading "OpenCode: The Provider-Agnostic Powerhouse" [level=3] [ref=e390]'
+        - paragraph [ref=e391]:
+          - link "OpenCode" [ref=e392] [cursor=pointer]:
+            - /url: https://opencode.ai/
+          - text: "(GitHub:"
+          - link "anomalyco/opencode" [ref=e393] [cursor=pointer]:
+            - /url: https://github.com/anomalyco/opencode
+          - text: ) has exploded in popularity —
+          - strong [ref=e394]: 172K stars
+          - text: (up from 131K in April), 778+ contributors, 800+ releases, and over 2.5 million monthly active developers. It’s built by the team behind
+          - link "SST" [ref=e395] [cursor=pointer]:
+            - /url: https://sst.dev
+          - text: and
+          - link "terminal.shop" [ref=e396] [cursor=pointer]:
+            - /url: https://terminal.shop
+          - text: . As of June 2026, it includes free models and is MIT-licensed.
+          - 'link "Source: OpenCode GitHub" [ref=e397] [cursor=pointer]':
+            - /url: https://github.com/anomalyco/opencode
+        - paragraph [ref=e398]:
+          - strong [ref=e399]: "Installation:"
+        - code [ref=e402]:
+          - generic [ref=e404]: "# Quick install"
+          - generic [ref=e406]: curl -fsSL https://opencode.ai/install | bash
+          - generic [ref=e409]: "# Homebrew (macOS/Linux, recommended — always up to date)"
+          - generic [ref=e411]: brew install anomalyco/tap/opencode
+          - generic [ref=e414]: "# npm"
+          - generic [ref=e416]: npm i -g opencode-ai@latest
+          - generic [ref=e419]: "# Windows"
+          - generic [ref=e421]: scoop install opencode
+        - paragraph [ref=e422]:
+          - strong [ref=e423]: "What makes it stand out:"
+          - text: OpenCode’s defining philosophy is provider independence. It supports
+          - strong [ref=e424]: 75+ LLM providers
+          - text: through
+          - link "Models.dev" [ref=e425] [cursor=pointer]:
+            - /url: https://models.dev
+          - text: ", including Claude, GPT, Gemini, Groq, AWS Bedrock, Azure OpenAI, OpenRouter, and local models via Ollama. You can even log in with your existing"
+          - strong [ref=e426]: GitHub Copilot
+          - text: or
+          - strong [ref=e427]: ChatGPT Plus/Pro
+          - text: subscriptions — no separate API key needed.
+        - paragraph [ref=e428]: "Key features:"
+        - list [ref=e429]:
+          - listitem [ref=e430]:
+            - strong [ref=e431]: Built-in agents
+            - text: ": Two switchable agents —"
+            - code [ref=e432]: build
+            - text: (full-access development) and
+            - code [ref=e433]: plan
+            - text: (read-only analysis, denies file edits, asks permission before running commands). Toggle with
+            - code [ref=e434]: Tab
+            - text: .
+          - listitem [ref=e435]:
+            - strong [ref=e436]:
+              - code [ref=e437]: "@general"
+              - text: subagent
+            - text: ": Invoke with"
+            - code [ref=e438]: "@general"
+            - text: in messages for complex multi-step searches and tasks.
+          - listitem [ref=e439]:
+            - strong [ref=e440]: Native LSP integration
+            - text: ": Automatically detects and loads the correct Language Server for the LLM, providing type checking, cross-file dependency awareness, and architectural consistency."
+          - listitem [ref=e441]:
+            - strong [ref=e442]: Multi-session
+            - text: ": Run multiple agents in parallel on the same project without conflicts — one refactoring while another writes tests."
+          - listitem [ref=e443]:
+            - strong [ref=e444]: Desktop app (beta)
+            - text: ": Available for macOS, Windows, and Linux alongside the terminal interface and IDE extension."
+          - listitem [ref=e445]:
+            - strong [ref=e446]: Share links
+            - text: ": Share any session via link for debugging or reference."
+          - listitem [ref=e447]:
+            - strong [ref=e448]: Client/server architecture
+            - text: ": The TUI is just one frontend. OpenCode can run on your machine while you drive it remotely from a mobile app."
+          - listitem [ref=e449]:
+            - strong [ref=e450]: OpenCode Zen
+            - text: ": A curated set of models benchmarked specifically for coding agents, removing the guesswork of model selection."
+          - listitem [ref=e451]:
+            - strong [ref=e452]: Privacy-first
+            - text: ": No code or context data is stored externally."
+        - paragraph [ref=e453]:
+          - strong [ref=e454]: "Where it struggles:"
+          - text: The sheer breadth of provider support means configuration can be overwhelming for newcomers. And while the
+          - code [ref=e455]: plan
+          - text: agent is excellent for exploration, the
+          - code [ref=e456]: build
+          - text: agent can occasionally be too aggressive with file modifications if you’re not careful with your prompts.
+        - 'heading "Aider: The Git-Native Pair Programmer" [level=3] [ref=e457]'
+        - paragraph [ref=e458]:
+          - link "Aider" [ref=e459] [cursor=pointer]:
+            - /url: https://aider.chat/
+          - text: "(GitHub:"
+          - link "Aider-AI/aider" [ref=e460] [cursor=pointer]:
+            - /url: https://github.com/Aider-AI/aider
+          - text: ) remains the gold standard for developers who want bulletproof Git integration and precise, reviewable AI edits. As of August 2025, v0.86.0 added support for all GPT-5 models, Grok-4, and Gemini 2.5 Flash Lite. It has 42.4K stars and 130+ contributors.
+        - paragraph [ref=e461]:
+          - strong [ref=e462]: "Installation:"
+        - code [ref=e465]:
+          - generic [ref=e467]: "# Recommended: isolated install via uv"
+          - generic [ref=e469]: uv tool install aider-chat
+          - generic [ref=e471]: aider
+          - generic [ref=e474]: "# Or via pip/pipx"
+          - generic [ref=e476]: pipx install aider-chat
+        - paragraph [ref=e477]:
+          - strong [ref=e478]: "What makes it stand out:"
+          - text: Aider’s killer feature is that it treats Git as a first-class citizen. Every change is automatically committed with a descriptive, well-formatted commit message. You can
+          - code [ref=e479]: git diff
+          - text: ","
+          - code [ref=e480]: git log
+          - text: ", and"
+          - code [ref=e481]: git revert
+          - text: AI changes with standard tools — meaning there’s always a clean undo path. No other tool in this list matches Aider’s discipline here.
+          - 'link "Source: Aider docs" [ref=e482] [cursor=pointer]':
+            - /url: https://aider.chat/docs/
+        - paragraph [ref=e483]: "Key features and recent additions:"
+        - list [ref=e484]:
+          - listitem [ref=e485]:
+            - strong [ref=e486]: Structured Mode
+            - text: ": A plan-based approach that tracks progress, maintains context across coding sessions, and breaks complex features into managed tasks with automated checklist updates. This is Aider’s answer to the “lost context” problem."
+          - listitem [ref=e487]:
+            - strong [ref=e488]: 130+ language support
+            - text: ": Version 0.77.0 (March 2025) added 130 languages with linter support and 20 with repo-map support."
+            - 'link "Source: Aider releases" [ref=e489] [cursor=pointer]':
+              - /url: https://github.com/Aider-AI/aider/releases
+          - listitem [ref=e490]:
+            - strong [ref=e491]: IDE watch mode
+            - text: ": Add"
+            - code [ref=e492]: "# aider: ..."
+            - text: comments in your IDE, and Aider picks them up and acts on them automatically.
+          - listitem [ref=e493]:
+            - strong [ref=e494]: Images and web pages
+            - text: ": Add visual context — screenshots, reference docs, architecture diagrams — directly into the chat."
+          - listitem [ref=e495]:
+            - strong [ref=e496]: Voice-to-code
+            - text: ": Speak your coding requests aloud for hands-free development."
+          - listitem [ref=e497]:
+            - strong [ref=e498]: Broad model support
+            - text: ": Works with Claude Sonnet 4/Opus 4, GPT-5, Gemini 2.5/3, DeepSeek R1 & V3, Grok models, and local Ollama instances."
+            - 'link "Source: Aider LLM support" [ref=e499] [cursor=pointer]':
+              - /url: https://aider.chat/docs/
+          - listitem [ref=e500]:
+            - strong [ref=e501]:
+              - code [ref=e502]: /thinking-tokens
+              - text: and
+              - code [ref=e503]: /reasoning-effort
+            - text: ": In-chat commands for fine-grained control over model reasoning depth."
+          - listitem [ref=e504]:
+            - strong [ref=e505]: Repo map
+            - text: ": Builds a structural map of your entire codebase, helping the model understand cross-file relationships even in large monorepos."
+          - listitem [ref=e506]:
+            - strong [ref=e507]: Automatic linting and testing
+            - text: ": Runs your linter and test suite after every change, then fixes detected issues automatically."
+        - paragraph [ref=e508]:
+          - strong [ref=e509]: "Where it struggles:"
+          - text: Aider is a pair programmer, not a fully autonomous agent. It excels at focused, file-level edits but isn’t designed for the kind of system-wide orchestration that Claude Code or Goose handle. If you need to scaffold a complete new service from scratch, Aider’s incremental approach can feel limiting.
+        - 'heading "Codex CLI: The New Speed King" [level=3] [ref=e510]'
+        - paragraph [ref=e511]:
+          - link "Codex CLI" [ref=e512] [cursor=pointer]:
+            - /url: https://github.com/openai/codex
+          - text: (the agent, built in Rust) is OpenAI’s terminal coding agent. As of June 2026 it took the
+          - strong [ref=e513]: "#1 spot on Terminal-Bench 2.1"
+          - text: "at 83.4% — outpacing Claude Code at 78.9%. The model:"
+          - strong [ref=e514]: GPT-5.5
+          - text: ", OpenAI’s latest code-optimized model. Unlike SWE-bench (which primarily measures the model’s code-fixing ability), Terminal-Bench tests the"
+          - emphasis [ref=e515]: entire agent stack
+          - text: — planning, tool use, shell execution, and multi-step reasoning. Codex CLI + GPT-5.5 wins here.
+          - 'link "Source: Morphllm" [ref=e516] [cursor=pointer]':
+            - /url: https://www.morphllm.com/best-ai-coding-agents-2026
+        - paragraph [ref=e517]:
+          - strong [ref=e518]: "Installation:"
+        - code [ref=e521]:
+          - generic [ref=e523]: "# macOS"
+          - generic [ref=e525]: brew install openai-codex-cli
+          - generic [ref=e528]: "# Or download from GitHub releases"
+          - generic [ref=e530]: curl -L https://github.com/openai/codex/releases/latest/download/codex-x86_64-apple-darwin.tar.gz | tar -xz
+        - paragraph [ref=e531]:
+          - strong [ref=e532]: "What makes it stand out:"
+          - text: Codex CLI with GPT-5.5 delivers the best raw coding speed in the market. On SWE-bench, GPT-5.5 scores 82.1%. More importantly, Terminal-Bench 2.1 — which tests the
+          - emphasis [ref=e533]: entire agent stack
+          - text: including planning, tool use, and shell execution — puts Codex CLI clearly in the lead.
+        - paragraph [ref=e534]: "Key features:"
+        - list [ref=e535]:
+          - listitem [ref=e536]:
+            - strong [ref=e537]: Three-tier permission system
+            - text: ": Read-only, auto (approves safe commands), and full autonomy."
+          - listitem [ref=e538]:
+            - strong [ref=e539]: Included with ChatGPT Plus ($20/month)
+            - text: ": If you already have a ChatGPT subscription, Codex CLI costs nothing extra."
+          - listitem [ref=e540]:
+            - strong [ref=e541]: 75% prompt caching
+            - text: ": API calls with cached prompts cost $1.50/$6 per million tokens — the cheapest option for heavy users."
+            - 'link "Source: OpenAI pricing" [ref=e542] [cursor=pointer]':
+              - /url: https://developers.openai.com/codex/pricing/
+          - listitem [ref=e543]:
+            - strong [ref=e544]: Fast and lightweight
+            - text: ": Built in Rust, near-instant startup."
+        - paragraph [ref=e545]:
+          - strong [ref=e546]: "Where it struggles:"
+          - text: Codex CLI locks you into OpenAI’s ecosystem — no local models, no alternative providers. If Claude Opus 4.8 leapfrogs GPT-5.5 next month, you can’t just swap the model. And it still lacks MCP support, which limits extensibility.
+        - 'heading "Goose: The Autonomous System Architect" [level=3] [ref=e547]'
+        - paragraph [ref=e548]:
+          - link "Goose" [ref=e549] [cursor=pointer]:
+            - /url: https://github.com/block/goose
+          - text: (33.6K stars, 3.1k forks) is Block’s (formerly Square) open-source AI agent, designed for complex, system-level automation. As of March 2026, v1.28.0 added adversarial agent protection, Claude adaptive thinking support, and MCP Apps migration. Block deployed it to all 12,000 employees by October 2025, with engineers reporting 8–10 hours saved per week.
+          - 'link "Source: Block blog" [ref=e550] [cursor=pointer]':
+            - /url: https://github.com/block/goose
+        - paragraph [ref=e551]:
+          - strong [ref=e552]: "Installation:"
+        - code [ref=e555]:
+          - generic [ref=e557]: "# macOS via Homebrew"
+          - generic [ref=e559]: brew install block-goose-cli
+          - generic [ref=e562]: "# See full installation guide:"
+          - generic [ref=e564]: "# https://block.github.io/goose/docs/getting-started/installation"
+        - paragraph [ref=e565]:
+          - strong [ref=e566]: "What makes it stand out:"
+          - text: Goose is built for planning and orchestration at scale. It doesn’t just edit code — it designs systems. Before touching anything, Goose asks clarifying questions and breaks requests into verifiable steps. This structured approach makes it exceptionally good at scaffolding new microservices, orchestrating deployments, or migrating between frameworks. If you’re running complex infrastructure — something I’ve written about in my
+          - link "Kustomize vs Helm comparison" [ref=e567] [cursor=pointer]:
+            - /url: /post/kustomize-vs-helm-2026
+          - text: / — Goose integrates naturally into that workflow.
+        - paragraph [ref=e568]: "Key features:"
+        - list [ref=e569]:
+          - listitem [ref=e570]:
+            - strong [ref=e571]: Recipes
+            - text: ": Reusable, pre-defined workflows that can run as sub-agents. Think of them as composable automation playbooks."
+          - listitem [ref=e572]:
+            - strong [ref=e573]: MCP-UI rendering
+            - text: ": The desktop GUI renders interactive MCP-UI widgets — visual dashboards, forms, progress bars — not just text. This is unique among CLI agents."
+          - listitem [ref=e574]:
+            - strong [ref=e575]: Custom Distributions
+            - text: ": Build your own branded Goose distro with preconfigured providers, extensions, and branding. Ideal for platform engineering teams standardizing on a specific toolchain."
+          - listitem [ref=e576]:
+            - strong [ref=e577]: Desktop app + CLI
+            - text: ": Available as both, giving flexibility depending on the task."
+          - listitem [ref=e578]:
+            - strong [ref=e579]: Multi-model configuration
+            - text: ": Use different LLMs for different tasks within a single session to optimize cost and capability."
+          - listitem [ref=e580]:
+            - strong [ref=e581]: Responsible AI guide
+            - text: ": Ships with formal documentation on"
+            - link "safe AI-assisted coding practices" [ref=e582] [cursor=pointer]:
+              - /url: https://goose-docs.ai/
+            - text: .
+        - paragraph [ref=e583]:
+          - strong [ref=e584]: "2026 roadmap highlights:"
+        - list [ref=e585]:
+          - listitem [ref=e586]:
+            - strong [ref=e587]: Meta-agent orchestration
+            - text: ": Multiple sub-agents running in parallel with task and progress tracking."
+          - listitem [ref=e588]:
+            - strong [ref=e589]: Built-in local inference
+            - text: ": Ship open model downloads directly in the app — no external API needed."
+          - listitem [ref=e590]:
+            - strong [ref=e591]: Peer-to-peer compute
+            - text: ": Exploring decentralized compute for distributed agent workloads."
+        - paragraph [ref=e592]:
+          - strong [ref=e593]: "Where it struggles:"
+          - text: Goose’s planning-first approach can feel slow for simple, surgical edits. When I just want to rename a function across three files, I don’t need a structured plan — I need Aider. Goose also has a steeper learning curve than the other tools due to its recipe and extension system.
+        - 'heading "New on the Scene: Cursor CLI, Kilo, Grok Build, Qwen Code" [level=2] [ref=e594]'
+        - paragraph [ref=e595]: "The CLI coding space is moving fast enough that new entrants appear quarterly. Here are four worth watching as of June 2026:"
+        - paragraph [ref=e596]:
+          - strong [ref=e597]: Cursor CLI.
+          - text: "Cursor — the IDE that’s been eating VS Code’s lunch — now ships a CLI agent alongside its editor. If you’re already in the Cursor ecosystem, it’s a natural extension: same model routing, same keyboard shortcuts, but terminal-native. Priced at $20/month for Pro."
+        - paragraph [ref=e598]:
+          - strong [ref=e599]: Kilo CLI.
+          - text: "A newcomer from kilo.ai that positions itself as a “best of both worlds” agent — fast startup like Codex, planning capabilities like Goose. Too early for reliable benchmark data, but the approach is interesting: it can hot-swap between models mid-task based on complexity. Free tier available."
+        - paragraph [ref=e600]:
+          - strong [ref=e601]: Grok Build.
+          - text: xAI’s entry into coding agents, leveraging the Grok 4 model. Currently in preview with limited availability. Notable for its massive context window (2M tokens) and real-time web access via X/Twitter data integration. Unclear pricing as of June 2026.
+        - paragraph [ref=e602]:
+          - strong [ref=e603]: Qwen Code.
+          - text: Alibaba’s Qwen team released an open-source coding CLI built on their Qwen 3-Coder model. It’s the only major entrant with first-class Chinese/English bilingual support, and it’s fully open-source (Apache 2.0). Still early — weaker on SWE-bench than Western models, but improving fast.
+        - paragraph [ref=e604]:
+          - strong [ref=e605]: Pi
+          - text: (
+          - link "pi.dev" [ref=e606] [cursor=pointer]:
+            - /url: https://pi.dev/
+          - text: "). An MIT-licensed, ultra-minimal agent harness from earendil-works that’s been getting attention from the developer community. Unlike the heavyweights, Pi strips the agent down to its essentials — a thin TypeScript layer over 15+ model providers (Anthropic, OpenAI, Google, etc.) with four modes: interactive, JSON, RPC, and SDK. Armin Ronacher (creator of Flask) described it as “a glimpse into the future of software.” It’s also the engine powering OpenClaw. Best for developers who want full control over their agent behavior without a framework dictating the workflow."
+          - 'link "Source: Pi docs" [ref=e607] [cursor=pointer]':
+            - /url: https://pi.dev/
+          - text: ","
+          - link "Armin Ronacher’s review" [ref=e608] [cursor=pointer]:
+            - /url: https://lucumr.pocoo.org/2026/1/31/pi/
+        - paragraph [ref=e609]: None of these five are ready to displace the top-tier tools yet, but Cursor CLI and Pi are the ones to watch. Cursor’s existing user base gives it distribution muscle; Pi’s minimal philosophy and extensibility make it the most hackable agent in the space.
+        - 'heading "Cost vs. Intelligence: Where Your Money Actually Goes" [level=2] [ref=e610]'
+        - paragraph [ref=e611]: "Let’s cut through the marketing. Here’s what you’re actually paying for intelligence, expressed as cost per percentage point of SWE-bench score. Remember: these are agent+model combos, not raw model costs."
+        - table [ref=e612]:
+          - rowgroup [ref=e613]:
+            - row "Agent + Model Monthly Cost SWE-bench Cost per Point Verdict" [ref=e614]:
+              - columnheader "Agent + Model" [ref=e615]
+              - columnheader "Monthly Cost" [ref=e616]
+              - columnheader "SWE-bench" [ref=e617]
+              - columnheader "Cost per Point" [ref=e618]
+              - columnheader "Verdict" [ref=e619]
+          - rowgroup [ref=e620]:
+            - row "Antigravity CLI + Gemini 3 $0 63.8% $0.00 Best free option, but the intelligence gap is real" [ref=e621]:
+              - cell "Antigravity CLI + Gemini 3" [ref=e622]:
+                - strong [ref=e623]: Antigravity CLI + Gemini 3
+              - cell "$0" [ref=e624]
+              - cell "63.8%" [ref=e625]
+              - cell "$0.00" [ref=e626]
+              - cell "Best free option, but the intelligence gap is real" [ref=e627]
+            - row "OpenCode + any model via API ~$5-15/mo Depends on model Varies Best flexibility per dollar" [ref=e628]:
+              - cell "OpenCode + any model via API" [ref=e629]:
+                - strong [ref=e630]: OpenCode + any model via API
+              - cell "~$5-15/mo" [ref=e631]
+              - cell "Depends on model" [ref=e632]
+              - cell "Varies" [ref=e633]
+              - cell "Best flexibility per dollar" [ref=e634]
+            - row "Codex CLI + GPT-5.5 $20/mo (ChatGPT Plus) 82.1% $0.24/point Best intelligence-per-dollar" [ref=e635]:
+              - cell "Codex CLI + GPT-5.5" [ref=e636]:
+                - strong [ref=e637]: Codex CLI + GPT-5.5
+              - cell "$20/mo (ChatGPT Plus)" [ref=e638]
+              - cell "82.1%" [ref=e639]
+              - cell "$0.24/point" [ref=e640]
+              - cell "Best intelligence-per-dollar" [ref=e641]:
+                - strong [ref=e642]: Best intelligence-per-dollar
+            - row "Claude Code + Opus 4.8 $100-200/mo (Max) 88.6% $1.13-2.26/point Best raw intelligence, premium price" [ref=e643]:
+              - cell "Claude Code + Opus 4.8" [ref=e644]:
+                - strong [ref=e645]: Claude Code + Opus 4.8
+              - cell "$100-200/mo (Max)" [ref=e646]
+              - cell "88.6%" [ref=e647]
+              - cell "$1.13-2.26/point" [ref=e648]
+              - cell "Best raw intelligence, premium price" [ref=e649]
+            - row "Claude Code + Fable 5 $100-200/mo + API ~92% (est.) $2.00+/point Elite tier — your money buys proactivity" [ref=e650]:
+              - cell "Claude Code + Fable 5" [ref=e651]:
+                - strong [ref=e652]: Claude Code + Fable 5
+              - cell "$100-200/mo + API" [ref=e653]
+              - cell "~92% (est.)" [ref=e654]
+              - cell "$2.00+/point" [ref=e655]
+              - cell "Elite tier — your money buys proactivity" [ref=e656]
+        - paragraph [ref=e657]: The economics shift dramatically depending on your subscription stack. If you already pay for ChatGPT Plus ($20/mo) and have a Copilot subscription, you’re effectively getting Codex CLI and OpenCode for free. Claude Code Max at $100-200/month is a league above in cost — but for professional developers billing $100+/hour, even one hour saved per month justifies it.
+        - blockquote [ref=e658]:
+          - paragraph [ref=e659]: The real cost optimization isn’t picking one tool — it’s using the right tool for the right task. Use Antigravity for quick experiments, Aider for surgical Git edits, Codex for speed, and Claude Code when you need the heavy artillery. You don’t use a flamethrower to light a candle.
+        - heading "Failure Modes and How to Handle Them" [level=2] [ref=e660]
+        - paragraph [ref=e661]: "Every AI CLI agent will fail. Here’s what I’ve run into repeatedly and how to recover:"
+        - paragraph [ref=e662]:
+          - strong [ref=e663]: The infinite refactor loop.
+          - text: An autonomous agent gets stuck trying to fix a failing test, introducing new bugs to solve the previous one. Claude Code and OpenCode’s
+          - code [ref=e664]: build
+          - text: agent are both susceptible.
+        - list [ref=e665]:
+          - listitem [ref=e666]:
+            - text: Set hard limits on iteration depth. Step in with
+            - code [ref=e667]: Ctrl+C
+            - text: ", run"
+            - code [ref=e668]: git stash
+            - text: or
+            - code [ref=e669]: git reset --hard HEAD~3
+            - text: to wipe the hallucinated changes, and restart with a significantly more specific prompt.
+        - paragraph [ref=e670]:
+          - strong [ref=e671]: Context bloat.
+          - text: Pointing any agent at the root of a monorepo and saying “fix the build” will burn through tokens reading
+          - code [ref=e672]: node_modules
+          - text: ", build artifacts, and vendor directories."
+        - list [ref=e673]:
+          - listitem [ref=e674]:
+            - text: Maintain strict
+            - code [ref=e675]: .gitignore
+            - text: and
+            - code [ref=e676]: .aiderignore
+            - text: "(Aider) or equivalent ignore files. Be surgical: “Look only in"
+            - code [ref=e677]: pkg/auth/
+            - text: and fix the JWT validation logic.”
+        - paragraph [ref=e678]:
+          - strong [ref=e679]: Provider authentication breaks mid-session.
+          - text: Rate limits, expired OAuth tokens, or rotated API keys kill your flow without warning.
+        - list [ref=e680]:
+          - listitem [ref=e681]: Use environment variables or credential managers rather than interactive login flows. For team setups, centralize auth through MCP servers.
+        - paragraph [ref=e682]:
+          - strong [ref=e683]: The model hallucinates a dependency.
+          - text: The agent recommends installing a package that doesn’t exist, or references an API that was removed two versions ago.
+        - list [ref=e684]:
+          - listitem [ref=e685]:
+            - text: Always verify
+            - code [ref=e686]: npm install
+            - text: /
+            - code [ref=e687]: pip install
+            - text: commands before running them. Cross-reference with the official docs. I’ve written more about this class of risk in my piece on
+            - link "why AI code assistants still fail at complex debugging" [ref=e688] [cursor=pointer]:
+              - /url: /post/ai-code-assistants-failing-complex-debugging
+            - text: /.
+        - 'heading "The 2026 Trend: From Single Agent to AI Teams" [level=2] [ref=e689]'
+        - paragraph [ref=e690]:
+          - text: The biggest shift happening in 2026 is the move from single-agent workflows to
+          - strong [ref=e691]: multi-agent orchestration
+          - text: . You’re no longer “pair programming” with one AI — you’re managing parallel agents working in isolated git worktrees, each handling different aspects of a project. According to industry analysis, 84% of developers now use AI tools in their workflow.
+          - 'link "Source: CoderCops" [ref=e692] [cursor=pointer]':
+            - /url: https://www.codercops.com/blog/developer-ai-adoption-84-percent-2026
+        - paragraph [ref=e693]:
+          - strong [ref=e694]: "Why this matters:"
+          - text: "As Addy Osmani noted, “Sub-agents: Monolithic assistants are out.” The future is about coordinating specialized agents: one for testing, one for refactoring, one for documentation, all running concurrently."
+        - paragraph [ref=e695]:
+          - strong [ref=e696]: "What’s emerging:"
+        - list [ref=e697]:
+          - listitem [ref=e698]:
+            - strong [ref=e699]: Claude Code’s subagents
+            - text: already let you spawn specialized parallel AI agents for distinct tasks within a single session.
+          - listitem [ref=e700]:
+            - strong [ref=e701]: Goose’s recipes
+            - text: let you define reusable multi-step workflows that act as pre-configured agent teams.
+          - listitem [ref=e702]:
+            - strong [ref=e703]: Worktree isolation
+            - text: — Claude Code and Aider both support agents working in dedicated Git worktrees to prevent conflicts, enabling true parallel development.
+          - listitem [ref=e704]:
+            - strong [ref=e705]: Meta-agent orchestration
+            - text: — Goose’s roadmap includes multiple sub-agents running in parallel with task and progress tracking.
+        - paragraph [ref=e706]: This is the next frontier. If you’re building serious software in 2026, expect to manage a small team of AI agents rather than a single assistant.
+        - heading "Which Tool Should You Actually Use?" [level=2] [ref=e707]
+        - paragraph [ref=e708]: "After months of daily use across all ten, here’s my honest take as of June 2026:"
+        - table [ref=e709]:
+          - rowgroup [ref=e710]:
+            - row "Scenario Best tool Why" [ref=e711]:
+              - columnheader "Scenario" [ref=e712]
+              - columnheader "Best tool" [ref=e713]
+              - columnheader "Why" [ref=e714]
+          - rowgroup [ref=e715]:
+            - row "Maximum raw intelligence, autonomous debugging Claude Code v2.1.172 + Opus 4.8 88.6% SWE-bench, nested sub-agents" [ref=e716]:
+              - cell "Maximum raw intelligence, autonomous debugging" [ref=e717]
+              - cell "Claude Code v2.1.172 + Opus 4.8" [ref=e718]:
+                - strong [ref=e719]: Claude Code v2.1.172 + Opus 4.8
+              - cell "88.6% SWE-bench, nested sub-agents" [ref=e720]
+            - 'row "Best intelligence-per-dollar Codex CLI + GPT-5.5 Terminal-Bench #1, $20/mo via ChatGPT Plus" [ref=e721]':
+              - cell "Best intelligence-per-dollar" [ref=e722]
+              - cell "Codex CLI + GPT-5.5" [ref=e723]:
+                - strong [ref=e724]: Codex CLI + GPT-5.5
+              - 'cell "Terminal-Bench #1, $20/mo via ChatGPT Plus" [ref=e725]'
+            - row "Zero-cost access to a capable agent Antigravity CLI Free Gemini 3 tier, 1M context, no credit card" [ref=e726]:
+              - cell "Zero-cost access to a capable agent" [ref=e727]
+              - cell "Antigravity CLI" [ref=e728]:
+                - strong [ref=e729]: Antigravity CLI
+              - cell "Free Gemini 3 tier, 1M context, no credit card" [ref=e730]
+            - row "Provider independence + existing subscriptions OpenCode 172K stars, 75+ providers, free models included" [ref=e731]:
+              - cell "Provider independence + existing subscriptions" [ref=e732]
+              - cell "OpenCode" [ref=e733]:
+                - strong [ref=e734]: OpenCode
+              - cell "172K stars, 75+ providers, free models included" [ref=e735]
+            - row "Precise, Git-safe, reviewable edits Aider Every change is a clean, revertible commit" [ref=e736]:
+              - cell "Precise, Git-safe, reviewable edits" [ref=e737]
+              - cell "Aider" [ref=e738]:
+                - strong [ref=e739]: Aider
+              - cell "Every change is a clean, revertible commit" [ref=e740]
+            - row "System architecture and orchestration Goose Planning-first with recipes and MCP-UI" [ref=e741]:
+              - cell "System architecture and orchestration" [ref=e742]
+              - cell "Goose" [ref=e743]:
+                - strong [ref=e744]: Goose
+              - cell "Planning-first with recipes and MCP-UI" [ref=e745]
+            - row "Elite proactivity (money no object) Claude Code + Fable 5 Mythos-class model spots issues you didn’t ask about" [ref=e746]:
+              - cell "Elite proactivity (money no object)" [ref=e747]
+              - cell "Claude Code + Fable 5" [ref=e748]:
+                - strong [ref=e749]: Claude Code + Fable 5
+              - cell "Mythos-class model spots issues you didn’t ask about" [ref=e750]
+        - heading "Quick Start Guide (2026)" [level=3] [ref=e751]
+        - paragraph [ref=e752]: "If you’re short on time, here’s the 60-second setup for each:"
+        - code [ref=e755]:
+          - generic [ref=e757]: "# Claude Code (v2.1.172) - Requires Max subscription ($100-200/mo)"
+          - generic [ref=e759]: curl -fsSL https://claude.ai/install.sh | bash
+          - generic [ref=e762]: "# Antigravity CLI (formerly Gemini CLI) - FREE tier"
+          - generic [ref=e764]: curl -fsSL https://antigravity.google/install.sh | bash
+          - generic [ref=e767]: "# Codex CLI - Included with ChatGPT Plus ($20/mo)"
+          - generic [ref=e769]: brew install openai-codex-cli
+          - generic [ref=e772]: "# OpenCode - Free + reuse existing subscriptions"
+          - generic [ref=e774]: curl -fsSL https://opencode.ai/install | bash
+          - generic [ref=e777]: "# Aider - Git-native, free tool (pay for API)"
+          - generic [ref=e779]: uv tool install aider-chat
+          - generic [ref=e782]: "# Goose - System orchestration"
+          - generic [ref=e784]: brew install block-goose-cli
+        - paragraph [ref=e785]:
+          - text: These tools are converging fast. By the end of 2026, the feature gaps will narrow further. The real differentiator will be which one fits the way
+          - emphasis [ref=e786]: you
+          - text: already work — and how much intelligence you’re willing to pay for.
+      - generic [ref=e788]:
+        - link "#ai" [ref=e789] [cursor=pointer]:
+          - /url: /tags/ai/
+        - link "#cli-tools" [ref=e790] [cursor=pointer]:
+          - /url: /tags/cli-tools/
+        - link "#comparison" [ref=e791] [cursor=pointer]:
+          - /url: /tags/comparison/
+        - link "#developer-tools" [ref=e792] [cursor=pointer]:
+          - /url: /tags/developer-tools/
