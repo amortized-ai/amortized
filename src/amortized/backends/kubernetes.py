@@ -50,11 +50,11 @@ class KubernetesBackend:
             from kubernetes_asyncio import config
             from kubernetes_asyncio.client import ApiClient
 
-            config.load_incluster_config()
+            config.load_incluster_config()  # type: ignore[no-untyped-call]
             self._client = ApiClient()
         return self._client
 
-    def _build_config_map(self, spec: JobSpec, resource_name: str) -> dict[str, Any]:
+    def _build_config_map(self, spec: JobSpec, resource_name: str) -> Any:
         from kubernetes_asyncio.client import V1ConfigMap, V1ObjectMeta
 
         return V1ConfigMap(
@@ -85,7 +85,7 @@ class KubernetesBackend:
         volumes = [
             V1Volume(
                 name="config",
-                config_map={"name": f"{resource_name}-config"},
+                config_map={"name": f"{resource_name}-config"},  # type: ignore[arg-type]
             ),
             V1Volume(
                 name="work",
@@ -164,7 +164,7 @@ class KubernetesBackend:
         if spec.resources.gpus > 0:
             node_selector = {"nvidia.com/gpu.present": "true"}
 
-        init_containers = []
+        init_containers: list[Any] = []
         for download in spec.s3_downloads:
             s3_cmd = "aws s3 sync" if download.is_directory else "aws s3 cp"
             init_containers.append(
@@ -246,7 +246,7 @@ class KubernetesBackend:
                 labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
             ),
             spec=V1JobSpec(
-                template={
+                template={  # type: ignore[arg-type]
                     "metadata": {"labels": self._labels(spec.job_id, spec.job_type, spec.user_id)},
                     "spec": pod_spec,
                 },
