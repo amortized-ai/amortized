@@ -209,6 +209,7 @@ class TestRecipeAPI:
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
                 },
+                "dry_run": True,
             },
         )
         assert resp.status_code == 200
@@ -218,18 +219,19 @@ class TestRecipeAPI:
         assert "id" not in data
 
     @pytest.mark.asyncio
-    async def test_submit_recipe_dry_run_invalid(self, client: httpx.AsyncClient) -> None:
+    async def test_submit_recipe_dry_run_returns_config(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
                 "recipe": "templates/training/lora-sft",
                 "overrides": {},
+                "dry_run": True,
             },
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["valid"] is False
-        assert len(data["errors"]) > 0
+        assert data["dry_run"] is True
+        assert data["type"] == "training"
 
     @pytest.mark.asyncio
     async def test_submit_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:

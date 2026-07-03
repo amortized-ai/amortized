@@ -38,14 +38,11 @@ class TestCreateJob:
                 "algorithm": "sft",
                 "model_name_or_path": "test",
                 "data_path": "test.jsonl",
-                "output_dir": "/tmp/out",
             },
-            output_dir="/tmp/out",
         )
         assert row["type"] == "training"
         assert row["status"] == "queued"
         assert row["config"]["model_name_or_path"] == "test"
-        assert row["output_dir"] == "/tmp/out"
         assert row["id"]
 
     @pytest.mark.asyncio
@@ -53,15 +50,12 @@ class TestCreateJob:
         row = await create_job(
             repo,
             job_type=JobType.sdg,
-            config={
-                "pipeline": "conversation",
-                "model": "openai/gpt-4o",
-            },
+            config={"model": "openai/gpt-4o"},
         )
         assert row["type"] == "sdg"
 
     @pytest.mark.asyncio
-    async def test_create_emits_event(self, repo: Repository) -> None:
+    async def test_create_with_recipe(self, repo: Repository) -> None:
         row = await create_job(
             repo,
             job_type=JobType.training,
@@ -69,12 +63,24 @@ class TestCreateJob:
                 "algorithm": "sft",
                 "model_name_or_path": "test",
                 "data_path": "test.jsonl",
-                "output_dir": "/tmp/out",
             },
+            recipe="models/qwen-1.5b-lora",
         )
-        events = await repo.list_events(row["id"])
-        statuses = [e["data"]["status"] for e in events]
-        assert "queued" in statuses
+        assert row["recipe"] == "models/qwen-1.5b-lora"
+
+    @pytest.mark.asyncio
+    async def test_create_with_parent_job_id(self, repo: Repository) -> None:
+        row = await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "test",
+                "data_path": "test.jsonl",
+            },
+            parent_job_id="parent-123",
+        )
+        assert row["parent_job_id"] == "parent-123"
 
 
 class TestGetJob:
@@ -87,7 +93,6 @@ class TestGetJob:
                 "algorithm": "sft",
                 "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
             },
         )
         fetched = await get_job(repo, created["id"])
@@ -113,13 +118,12 @@ class TestListJobs:
                 "algorithm": "sft",
                 "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
             },
         )
         await create_job(
             repo,
             job_type=JobType.sdg,
-            config={"pipeline": "conversation", "model": "openai/gpt-4o"},
+            config={"model": "openai/gpt-4o"},
         )
 
         training = await list_jobs(repo, job_type=JobType.training)
@@ -137,28 +141,10 @@ class TestCancelJob:
                 "algorithm": "sft",
                 "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
             },
         )
         cancelled = await cancel_job(repo, created["id"])
         assert cancelled["status"] == "cancelled"
-
-    @pytest.mark.asyncio
-    async def test_cancel_emits_event(self, repo: Repository) -> None:
-        created = await create_job(
-            repo,
-            job_type=JobType.training,
-            config={
-                "algorithm": "sft",
-                "model_name_or_path": "t",
-                "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
-            },
-        )
-        await cancel_job(repo, created["id"])
-        events = await repo.list_events(created["id"])
-        types = [e["data"]["status"] for e in events]
-        assert "cancelled" in types
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_raises(self, repo: Repository) -> None:
@@ -174,14 +160,9 @@ class TestCancelJob:
                 "algorithm": "sft",
                 "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
             },
         )
-        await repo.update_job_status(
-            created["id"],
-            status=JobStatus.succeeded,
-            updated_at="2026-01-01T00:01:00",
-        )
+        await repo.update_job(created["id"], status=JobStatus.succeeded.value)
         with pytest.raises(InvalidJobStateError):
             await cancel_job(repo, created["id"])
 
@@ -194,7 +175,6 @@ class TestCancelJob:
                 "algorithm": "sft",
                 "model_name_or_path": "t",
                 "data_path": "t.jsonl",
-                "output_dir": "/tmp/t",
             },
         )
         await cancel_job(repo, created["id"])

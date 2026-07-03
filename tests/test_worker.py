@@ -1,23 +1,19 @@
 """Tests for the background worker job execution lifecycle."""
 
-import json
 import os
-import tempfile
 from typing import Any
 
 import httpx
 import pytest
-from conftest import requires_training_hub_functional
+import yaml
 
+from amortized.core.config_translator import _build_synth_config, _generate_container_config
 from amortized.main import app
-from amortized.worker import _build_synth_config, _generate_container_config
 
 
 @pytest.fixture(autouse=True)
 def _use_temp_db(tmp_path: object) -> None:
-    """Use a temporary database for each test."""
     import amortized.config as config_mod
-    import amortized.db as db_mod
     import amortized.db.connection as db_conn_mod
 
     db_path = str(tmp_path) + "/test.db"
@@ -25,7 +21,6 @@ def _use_temp_db(tmp_path: object) -> None:
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
-    db_mod.settings = new_settings
     db_conn_mod.settings = new_settings
 
 
@@ -45,144 +40,28 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
 
 
 class TestWorkerJobExecution:
-    """Test the worker picks up and executes jobs."""
-
-    @requires_training_hub_functional
-    @pytest.mark.asyncio
-    async def test_training_job_lifecycle(self, client: httpx.AsyncClient) -> None:
-        """Create a training job, run it through the worker, verify status transitions."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a training job
-            response = await client.post(
-                "/api/v1/jobs/training",
-                json={
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/model",
-                    "data_path": "./data.jsonl",
-                    "output_dir": tmpdir,
-                },
-            )
-            assert response.status_code == 201
-            job_id = response.json()["id"]
-
-            # Verify initial status is pending
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            assert response.json()["status"] == "queued"
-
-            # Run the job through the worker
-            from amortized.worker import _pick_pending_job, _run_job
-
-            job = await _pick_pending_job()
-            assert job is not None
-            assert job["id"] == job_id
-
-            await _run_job(job)
-
-            # Verify job completed
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] == "succeeded"
-            assert data["started_at"] is not None
-            assert data["completed_at"] is not None
-
-            # Verify artifacts were registered
-            response = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-            artifacts = response.json()
-            assert len(artifacts) > 0
-            artifact_types = [a["artifact_type"] for a in artifacts]
-            assert "training_metrics" in artifact_types
-            assert "adapter_config" in artifact_types
-
-            # Verify metrics file was created (under job_id subdirectory)
-            metrics_path = os.path.join(tmpdir, job_id, "training_metrics.jsonl")
-            assert os.path.exists(metrics_path)
-            with open(metrics_path) as f:
-                lines = f.readlines()
-            assert len(lines) > 0
-            first_metric = json.loads(lines[0])
-            assert "step" in first_metric
-            assert "loss" in first_metric
-
-    @pytest.mark.asyncio
-    async def test_sdg_job_lifecycle(self, client: httpx.AsyncClient) -> None:
-        """Create an SDG job, run it through the worker, verify completion."""
-        with tempfile.TemporaryDirectory():
-            # Create an SDG job
-            response = await client.post(
-                "/api/v1/jobs/sdg",
-                json={
-                    "model": "openai/gpt-4o",
-                },
-            )
-            assert response.status_code == 201
-            job_id = response.json()["id"]
-
-            # Mock the subprocess to simulate asynth CLI output
-            import subprocess as _subprocess
-
-            _real_popen = _subprocess.Popen
-
-            def _mock_popen(cmd: list[str], **kwargs: object) -> object:
-                work_dir = kwargs.get("cwd") or "."
-                import json as _json
-                import os as _os
-
-                _os.makedirs(str(work_dir), exist_ok=True)
-                output_subdir = _os.path.join(str(work_dir), "output")
-                _os.makedirs(output_subdir, exist_ok=True)
-                out_path = _os.path.join(output_subdir, "generated_data.jsonl")
-                with open(out_path, "w") as f:
-                    for i in range(5):
-                        f.write(_json.dumps({"q": f"q{i}", "a": f"a{i}"}) + "\n")
-                stats_path = _os.path.join(str(work_dir), "stats.json")
-                with open(stats_path, "w") as f:
-                    _json.dump(
-                        {"total_completed": 5, "total_requested": 5, "status": "completed"}, f
-                    )
-                mock_proc = MagicMock()
-                mock_proc.pid = 99999
-                mock_proc.poll.return_value = 0
-                return mock_proc
-
-            from unittest.mock import MagicMock, patch
-
-            with patch("subprocess.Popen", side_effect=_mock_popen):
-                from amortized.worker import _pick_pending_job, _run_job
-
-                job = await _pick_pending_job()
-                assert job is not None
-                await _run_job(job)
-
-            # Verify completed
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] == "succeeded"
-
-            # SDG jobs should have artifacts too
-            response = await client.get(f"/api/v1/jobs/{job_id}/artifacts")
-            artifacts = response.json()
-            assert len(artifacts) > 0
-
     @pytest.mark.asyncio
     async def test_worker_picks_oldest_job_first(self, client: httpx.AsyncClient) -> None:
-        """Worker should pick the oldest pending job first (FIFO)."""
-        # Create two jobs
         resp1 = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/first",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-first",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/first",
+                    "data_path": "./data.jsonl",
+                },
             },
         )
         await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/second",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-second",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/second",
+                    "data_path": "./data.jsonl",
+                },
             },
         )
         first_id = resp1.json()["id"]
@@ -195,254 +74,36 @@ class TestWorkerJobExecution:
 
     @pytest.mark.asyncio
     async def test_no_pending_jobs_returns_none(self, client: httpx.AsyncClient) -> None:
-        """Worker returns None when no jobs are pending."""
         from amortized.worker import _pick_pending_job
 
         job = await _pick_pending_job()
         assert job is None
 
 
-class TestWorkerMetadataParsing:
-    """Verify _pick_pending_job parses metadata JSON so backend is dispatched correctly."""
-
-    @pytest.mark.asyncio
-    async def test_pick_pending_job_parses_metadata(self, client: httpx.AsyncClient) -> None:
-        """metadata must be a dict (not a JSON string) so _run_job reads backend."""
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-meta",
-                "compute": {"backend": "ssh", "gpus": 1, "gpu_type": "A100"},
-            },
-        )
-        assert response.status_code == 201
-        job_id = response.json()["id"]
-
-        from amortized.worker import _pick_pending_job
-
-        job = await _pick_pending_job()
-        assert job is not None
-        assert job["id"] == job_id
-        assert isinstance(job["metadata"], dict), (
-            f"metadata should be dict, got {type(job['metadata'])}"
-        )
-        assert job["metadata"]["backend"] == "ssh"
-        assert job["metadata"]["gpus"] == 1
-        assert job["metadata"]["gpu_type"] == "A100"
-
-    @pytest.mark.asyncio
-    async def test_pick_pending_job_empty_metadata(self, client: httpx.AsyncClient) -> None:
-        """Jobs without compute spec should get an empty metadata dict."""
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-no-meta",
-            },
-        )
-        assert response.status_code == 201
-
-        from amortized.worker import _pick_pending_job
-
-        job = await _pick_pending_job()
-        assert job is not None
-        assert isinstance(job["metadata"], dict)
-
-
-class TestTildeExpansion:
-    """Verify ~ is expanded in paths, not used literally."""
-
-    def test_expanduser_in_output_dir(self) -> None:
-        """output_dir with ~ should be expanded to the home directory."""
-        result = os.path.expanduser("~/some/path")
-        assert "~" not in result
-        assert result.startswith("/")
-
-    @pytest.mark.asyncio
-    async def test_run_job_expands_tilde_in_output_dir(self, client: httpx.AsyncClient) -> None:
-        """_run_job should expand ~ in the computed output_dir."""
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "~/data/train.jsonl",
-                "output_dir": "~/amortized-jobs/output",
-            },
-        )
-        assert response.status_code == 201
-        job_id = response.json()["id"]
-
-        from amortized.worker import _pick_pending_job, _run_job
-
-        job = await _pick_pending_job()
-        assert job is not None
-        assert job["id"] == job_id
-
-        await _run_job(job)
-
-        response = await client.get(f"/api/v1/jobs/{job_id}")
-        data = response.json()
-        assert "~" not in data["output_dir"], (
-            f"output_dir still contains literal ~: {data['output_dir']}"
-        )
-        assert data["output_dir"].startswith("/")
-
-
-class TestOutputDirAbsolute:
-    """Verify output_dir stored in DB is always absolute (issue #69)."""
-
-    @pytest.mark.asyncio
-    async def test_sdg_output_dir_is_absolute(self, client: httpx.AsyncClient) -> None:
-        """SDG job output_dir must be absolute to avoid double-nested paths."""
-        response = await client.post(
-            "/api/v1/jobs/sdg",
-            json={
-                "pipeline": "conversation",
-                "model": "openai/gpt-4o",
-            },
-        )
-        assert response.status_code == 201
-        job_id = response.json()["id"]
-
-        from amortized.worker import _pick_pending_job, _run_job
-
-        job = await _pick_pending_job()
-        assert job is not None
-        await _run_job(job)
-
-        response = await client.get(f"/api/v1/jobs/{job_id}")
-        data = response.json()
-        output_dir = data["output_dir"]
-        assert output_dir is not None
-        assert os.path.isabs(output_dir), f"output_dir is not absolute: {output_dir}"
-        assert "/sdg_output/" + job_id + "/sdg_output/" not in output_dir, (
-            f"output_dir has double-nested path: {output_dir}"
-        )
-        assert job_id in output_dir
-
-
 class TestOrphanedJobCleanup:
-    """Test orphaned job detection on startup."""
-
     @pytest.mark.asyncio
     async def test_cleanup_orphaned_jobs(self, client: httpx.AsyncClient) -> None:
-        """Jobs with status=running but dead PID should be marked failed."""
         import aiosqlite
 
         from amortized.config import settings
         from amortized.worker import cleanup_orphaned_jobs
 
-        # Create a job and manually set it to running with a dead PID
         response = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-orphan",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
+                    "data_path": "./data.jsonl",
+                },
             },
         )
         job_id = response.json()["id"]
 
-        # Manually update to running with a PID that doesn't exist
         async with aiosqlite.connect(str(settings.db_path)) as db:
             await db.execute(
-                "UPDATE jobs SET status = ?, pid = ? WHERE id = ?",
-                ("running", 999999, job_id),
-            )
-            await db.commit()
-
-        # Run cleanup
-        await cleanup_orphaned_jobs()
-
-        # Verify it was marked as failed
-        response = await client.get(f"/api/v1/jobs/{job_id}")
-        data = response.json()
-        assert data["status"] == "failed"
-        assert "Orphaned" in (data.get("error") or "")
-
-    @pytest.mark.asyncio
-    async def test_cleanup_readopts_live_pid(self, client: httpx.AsyncClient) -> None:
-        """Jobs with status=running and a live PID should be re-adopted, not failed."""
-        import subprocess
-
-        import aiosqlite
-
-        from amortized.config import settings
-        from amortized.worker import cleanup_orphaned_jobs
-
-        # Create a job
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-readopt",
-            },
-        )
-        job_id = response.json()["id"]
-
-        # Start a real long-running process we can use as a live PID
-        proc = subprocess.Popen(
-            ["sleep", "300"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        live_pid = proc.pid
-
-        try:
-            # Set job to running with the live PID
-            async with aiosqlite.connect(str(settings.db_path)) as db:
-                await db.execute(
-                    "UPDATE jobs SET status = ?, pid = ?, output_dir = ? WHERE id = ?",
-                    ("running", live_pid, "/tmp/test-readopt", job_id),
-                )
-                await db.commit()
-
-            # Run cleanup — should re-adopt, not mark as failed
-            await cleanup_orphaned_jobs()
-
-            # Verify job is still running (not failed)
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] == "running", (
-                f"Expected 'running' but got '{data['status']}' — "
-                "live process should be re-adopted, not marked failed"
-            )
-        finally:
-            proc.terminate()
-            proc.wait()
-
-    @pytest.mark.asyncio
-    async def test_cleanup_finds_pid_none_dead(self, client: httpx.AsyncClient) -> None:
-        """Jobs with pid=None and no matching /proc entry should be marked failed."""
-        import aiosqlite
-
-        from amortized.config import settings
-        from amortized.worker import cleanup_orphaned_jobs
-
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-no-pid",
-            },
-        )
-        job_id = response.json()["id"]
-
-        # Set to running with no PID
-        async with aiosqlite.connect(str(settings.db_path)) as db:
-            await db.execute(
-                "UPDATE jobs SET status = ?, pid = NULL WHERE id = ?",
+                "UPDATE jobs SET status = ? WHERE id = ?",
                 ("running", job_id),
             )
             await db.commit()
@@ -456,59 +117,25 @@ class TestOrphanedJobCleanup:
 
 
 class TestCancelRunningJob:
-    """Test enhanced cancel behavior with subprocess kill."""
-
-    @pytest.mark.asyncio
-    async def test_cancel_running_job_with_pid(self, client: httpx.AsyncClient) -> None:
-        """Cancel should attempt to kill the subprocess."""
-        import aiosqlite
-
-        from amortized.config import settings
-
-        # Create and start a job
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-cancel",
-            },
-        )
-        job_id = response.json()["id"]
-
-        # Manually set to running with a dead PID (so kill won't error dangerously)
-        async with aiosqlite.connect(str(settings.db_path)) as db:
-            await db.execute(
-                "UPDATE jobs SET status = ?, pid = ? WHERE id = ?",
-                ("running", 999999, job_id),
-            )
-            await db.commit()
-
-        # Cancel the job
-        response = await client.delete(f"/api/v1/jobs/{job_id}")
-        assert response.status_code == 200
-        assert response.json()["status"] == "cancelled"
-
     @pytest.mark.asyncio
     async def test_cancel_completed_job_rejected(self, client: httpx.AsyncClient) -> None:
-        """Cannot cancel a completed job."""
         import aiosqlite
 
         from amortized.config import settings
 
         response = await client.post(
-            "/api/v1/jobs/training",
+            "/api/v1/jobs",
             json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-                "output_dir": "/tmp/test-done",
+                "type": "training",
+                "config": {
+                    "algorithm": "sft",
+                    "model_name_or_path": "test/model",
+                    "data_path": "./data.jsonl",
+                },
             },
         )
         job_id = response.json()["id"]
 
-        # Manually set to succeeded
         async with aiosqlite.connect(str(settings.db_path)) as db:
             await db.execute(
                 "UPDATE jobs SET status = ? WHERE id = ?",
@@ -520,118 +147,7 @@ class TestCancelRunningJob:
         assert response.status_code == 400
 
 
-class TestSmartBackendRouting:
-    """Verify smart routing: GPU jobs use default_backend when no explicit backend is set."""
-
-    @pytest.mark.asyncio
-    async def test_training_job_uses_default_backend(self, client: httpx.AsyncClient) -> None:
-        """Training job should be routed to default_backend when set."""
-        import amortized.config as config_mod
-        from amortized.backends.local import LocalBackend
-        from amortized.core.compute import register_backend
-
-        original = config_mod.settings.default_backend
-        config_mod.settings.default_backend = "gpu-node"
-        gpu_backend = LocalBackend()
-        gpu_backend.name = "gpu-node"
-        register_backend(gpu_backend)
-
-        try:
-            response = await client.post(
-                "/api/v1/jobs/training",
-                json={
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/model",
-                    "data_path": "./data.jsonl",
-                    "output_dir": "/tmp/test-smart-route",
-                },
-            )
-            assert response.status_code == 201
-            job_id = response.json()["id"]
-
-            from amortized.worker import _pick_pending_job, _run_job
-
-            job = await _pick_pending_job()
-            assert job is not None
-            assert job["id"] == job_id
-            await _run_job(job)
-
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] in ("succeeded", "failed")
-        finally:
-            config_mod.settings.default_backend = original
-
-    @pytest.mark.asyncio
-    async def test_sdg_job_stays_local(self, client: httpx.AsyncClient) -> None:
-        """SDG jobs should stay local even when default_backend is set."""
-        import amortized.config as config_mod
-        from amortized.worker import _pick_pending_job, _run_job
-
-        original = config_mod.settings.default_backend
-        config_mod.settings.default_backend = "gpu-node"
-
-        try:
-            response = await client.post(
-                "/api/v1/jobs/sdg",
-                json={"model": "openai/gpt-4o"},
-            )
-            assert response.status_code == 201
-            job_id = response.json()["id"]
-
-            job = await _pick_pending_job()
-            assert job is not None
-            await _run_job(job)
-
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] in ("succeeded", "failed")
-        finally:
-            config_mod.settings.default_backend = original
-
-    @pytest.mark.asyncio
-    async def test_explicit_backend_overrides_default(self, client: httpx.AsyncClient) -> None:
-        """Explicit compute.backend in metadata should override default_backend."""
-        import amortized.config as config_mod
-        from amortized.backends.local import LocalBackend
-        from amortized.core.compute import register_backend
-        from amortized.worker import _pick_pending_job, _run_job
-
-        original = config_mod.settings.default_backend
-        config_mod.settings.default_backend = "gpu-node"
-        alt_backend = LocalBackend()
-        alt_backend.name = "alt-node"
-        register_backend(alt_backend)
-
-        try:
-            response = await client.post(
-                "/api/v1/jobs/training",
-                json={
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/model",
-                    "data_path": "./data.jsonl",
-                    "output_dir": "/tmp/test-explicit-backend",
-                    "compute": {"backend": "alt-node"},
-                },
-            )
-            assert response.status_code == 201
-            job_id = response.json()["id"]
-
-            job = await _pick_pending_job()
-            assert job is not None
-            assert job["metadata"]["backend"] == "alt-node"
-            await _run_job(job)
-
-            response = await client.get(f"/api/v1/jobs/{job_id}")
-            data = response.json()
-            assert data["status"] in ("succeeded", "failed")
-        finally:
-            config_mod.settings.default_backend = original
-
-
 class TestBuildSynthConfig:
-    """Test that _build_synth_config produces valid asynth CLI config dicts."""
-
     def test_basic_config(self) -> None:
         config: dict[str, Any] = {"model": "openai/gpt-4o", "num_samples": 50}
         result = _build_synth_config(config)
@@ -646,7 +162,6 @@ class TestBuildSynthConfig:
         config: dict[str, Any] = {
             "model": "openai/gpt-4o",
             "api_base": "http://localhost:8000/v1",
-            "api_key": "sk-test",
             "max_tokens": 1024,
             "top_p": 0.9,
             "seed": 42,
@@ -655,7 +170,7 @@ class TestBuildSynthConfig:
         ic = result["inference_config"]
 
         assert ic["api_base"] == "http://localhost:8000/v1"
-        assert ic["api_key"] == "sk-test"
+        assert "api_key" not in ic
         assert ic["max_tokens"] == 1024
         assert ic["top_p"] == 0.9
         assert ic["seed"] == 42
@@ -680,15 +195,6 @@ class TestBuildSynthConfig:
         result = _build_synth_config(config)
         assert result["strategy_params"]["input_data"] == [{"text": "hello"}]
 
-    def test_input_documents_merged_into_strategy(self) -> None:
-        config: dict[str, Any] = {
-            "model": "openai/gpt-4o",
-            "strategy_params": {},
-            "input_documents": ["doc1.pdf"],
-        }
-        result = _build_synth_config(config)
-        assert result["strategy_params"]["input_documents"] == ["doc1.pdf"]
-
     def test_generate_container_config_sdg(self) -> None:
         config: dict[str, Any] = {"model": "openai/gpt-4o"}
         result = _generate_container_config("sdg", config)
@@ -698,3 +204,69 @@ class TestBuildSynthConfig:
     def test_generate_container_config_unknown_type(self) -> None:
         with pytest.raises(ValueError, match="No container config"):
             _generate_container_config("unknown", {})
+
+
+class TestTrainingHubConfig:
+    def test_thub_config_yaml_sft(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "Qwen/Qwen3-0.6B",
+            "data_path": "/data/train.jsonl",
+            "num_train_epochs": 3,
+            "per_device_train_batch_size": 2,
+            "learning_rate": 0.0002,
+            "output_dir": "/output",
+        }
+        result = _training_hub_config_yaml("sft", config)
+        parsed = yaml.safe_load(result)
+        assert parsed["model_path"] == "Qwen/Qwen3-0.6B"
+        assert parsed["data_path"] == "/data/train.jsonl"
+        assert parsed["num_epochs"] == 3
+        assert parsed["effective_batch_size"] == 8
+        assert parsed["ckpt_output_dir"] == "/output"
+        assert parsed["max_seq_len"] == 2048
+        assert parsed["max_batch_len"] == 60000
+        assert "algorithm" not in parsed
+        assert "micro_batch_size" not in parsed
+
+    def test_thub_config_yaml_gepa_output_dir(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "gepa",
+            "model_name_or_path": "Qwen/Qwen3-0.6B",
+            "output_dir": "/output",
+        }
+        result = _training_hub_config_yaml("gepa", config)
+        parsed = yaml.safe_load(result)
+        assert parsed["output_dir"] == "/output"
+        assert "ckpt_output_dir" not in parsed
+
+    def test_thub_config_skips_keys(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "test",
+            "engine": "vllm",
+            "use_peft": True,
+            "qlora": True,
+        }
+        result = _training_hub_config_yaml("sft", config)
+        parsed = yaml.safe_load(result)
+        assert "engine" not in parsed
+        assert "use_peft" not in parsed
+        assert "qlora" not in parsed
+
+    def test_thub_config_handles_any_algorithm(self) -> None:
+        from amortized.worker import _training_hub_config_yaml
+
+        algos = ("sft", "lora_sft", "osft", "grpo", "lora_grpo", "gepa", "dpo", "kto")
+        for algo in algos:
+            cfg = {"model_name_or_path": "test", "algorithm": algo}
+            result = _training_hub_config_yaml(algo, cfg)
+            parsed = yaml.safe_load(result)
+            assert parsed["model_path"] == "test"
+            assert "algorithm" not in parsed

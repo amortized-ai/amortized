@@ -32,15 +32,18 @@ RUN echo 'transformers<5.0' > /tmp/constraints.txt \
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
-    "training-hub[grpo,lora,gepa] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@feat/cli"
+    "training-hub[grpo,lora,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
 RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed \
-    "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@feat/cli"
+    "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/amortized-ai/training_hub.git@main"
 
 # vLLM 0.19.0 (NOT 0.19.1 or 0.23+) — proven compatible with torch 2.10+cu128
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
 
 # Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
 RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
+
+# S3/MinIO support for reading datasets and writing artifacts
+RUN python3.11 -m pip install --no-cache-dir s3fs fsspec mlflow boto3
 
 # Upgrade torch to cu129 build (official vLLM uses cu129; cu128 hangs on drivers 580+)
 # Extensions compiled with cu128 remain compatible via CUDA forward compat

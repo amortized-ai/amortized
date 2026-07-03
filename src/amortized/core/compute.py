@@ -33,6 +33,10 @@ def check_capabilities(backend: ComputeBackend, required: set[Capability]) -> No
         raise MissingCapabilityError(backend.name, missing)
 
 
+def get_all_backends() -> dict[str, ComputeBackend]:
+    return dict(_backends)
+
+
 def list_backends() -> list[dict[str, object]]:
     return [
         {

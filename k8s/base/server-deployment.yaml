@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-server
+  namespace: amortized
+  labels:
+    app: amortized
+    component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: server
+    spec:
+      serviceAccountName: amortized-server
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: server
+          image: ghcr.io/amortized-ai/amortized:latest
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: amortized-config
+            - secretRef:
+                name: amortized-s3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: amortized-server-data
