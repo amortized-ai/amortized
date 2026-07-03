@@ -1,0 +1,1770 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Skip to navigation" [ref=e6] [cursor=pointer]:
+          - /url: "#pfe-navigation"
+        - link "Skip to content" [ref=e7] [cursor=pointer]:
+          - /url: "#main-content"
+        - navigation "Featured links" [ref=e8]:
+          - paragraph [ref=e9]: Featured links
+          - list [ref=e11]:
+            - listitem [ref=e12]:
+              - link "Red Hat Summit" [ref=e13] [cursor=pointer]:
+                - /url: https://www.redhat.com/en/summit
+                - img "Red Hat Summit" [ref=e14]
+            - listitem [ref=e15]:
+              - link "Support" [ref=e16] [cursor=pointer]:
+                - /url: https://access.redhat.com/
+            - listitem [ref=e17]:
+              - link "Console" [ref=e18] [cursor=pointer]:
+                - /url: https://console.redhat.com/
+            - listitem [ref=e19]:
+              - link "Developers" [ref=e20] [cursor=pointer]:
+                - /url: https://developers.redhat.com/
+            - listitem [ref=e21]:
+              - link "Start a trial" [ref=e22] [cursor=pointer]:
+                - /url: https://www.redhat.com/en/products/trials
+            - listitem [ref=e23]:
+              - button "All Red Hat" [ref=e24] [cursor=pointer]:
+                - text: All Red Hat
+                - img [ref=e25]
+      - banner [ref=e27]:
+        - navigation "Main" [ref=e29]:
+          - link "Red Hat Documentation" [ref=e31] [cursor=pointer]:
+            - /url: /en
+            - img "Red Hat Documentation" [ref=e32]
+          - generic [ref=e34]:
+            - navigation [ref=e35]:
+              - list [ref=e36]:
+                - listitem [ref=e37]:
+                  - button "AI" [ref=e38] [cursor=pointer]
+                - listitem [ref=e39]:
+                  - button "Learn" [ref=e40] [cursor=pointer]
+                - listitem [ref=e41]:
+                  - button "Documentation" [ref=e42] [cursor=pointer]
+                - listitem [ref=e43]:
+                  - button "Resources" [ref=e44] [cursor=pointer]
+            - generic [ref=e45]:
+              - generic:
+                - generic [ref=e47]:
+                  - search [ref=e48]:
+                    - generic [ref=e49]:
+                      - img [ref=e52]
+                      - textbox "Search within product" [ref=e54]
+                      - generic:
+                        - button "Submit search" [disabled]:
+                          - generic:
+                            - generic:
+                              - img
+                  - button "Close Search" [ref=e55] [cursor=pointer]:
+                    - img [ref=e58]
+                - button "English" [ref=e61] [cursor=pointer]:
+                  - generic [ref=e62]:
+                    - generic:
+                      - img
+                  - text: English
+          - link "Log In" [ref=e64] [cursor=pointer]:
+            - /url: https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/auth?client_id=07dcd1c4-ddd5-4b17-9fcc-96134d1b458a&redirect_uri=https%3A%2F%2Fdocs.redhat.com%2Fen%2Fdocumentation%2Fred_hat_openshift_ai_self-managed%2F3.3%2Fhtml%2Fmanaging_openshift_ai%2Fmanaging-distributed-workloads_managing-rhoai&state=a5bfe976-cb8f-4324-a38e-066fd2b2d9ea&response_mode=query&response_type=code&scope=openid%20email%20profile%20id.organization%20id.roles%20api.ask_red_hat&nonce=9986025e-7329-446e-b09b-595012c41e95&code_challenge=LKz_8EuspWTIdDiKSVt7KVxobmmLD6A9w8gCgYZjnt8&code_challenge_method=S256
+            - generic:
+              - img
+            - text: Log In
+      - main [ref=e65]:
+        - generic [ref=e68]:
+          - navigation "Breadcrumb" [ref=e70]:
+            - list [ref=e71]:
+              - listitem [ref=e72]:
+                - link "Home" [ref=e73] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e74]:
+                - link "Products" [ref=e75] [cursor=pointer]:
+                  - /url: /en/products
+              - listitem [ref=e76]:
+                - link "Red Hat OpenShift AI Self-Managed" [ref=e77] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/
+              - listitem [ref=e78]:
+                - link "3.3" [ref=e79] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/
+              - listitem [ref=e80]:
+                - link "Administer OpenShift AI platform access, apps, and operations" [ref=e81] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/
+              - listitem [ref=e82]: Chapter 9. Managing distributed workloads
+          - generic [ref=e83]:
+            - generic "Ask AI Assistant" [ref=e84]:
+              - button "Ask AI" [ref=e85] [cursor=pointer]:
+                - generic:
+                  - img
+                - generic [ref=e86]: Ask AI
+            - button "Toggle AI Options" [ref=e87]:
+              - img [ref=e90]
+          - button "Toggle theme" [ref=e94] [cursor=pointer]:
+            - generic [ref=e95]:
+              - generic:
+                - generic:
+                  - generic:
+                    - img
+            - img [ref=e98]
+        - generic [ref=e100]:
+          - complementary "left navigation" [ref=e101]:
+            - generic [ref=e102]:
+              - button "toggle left menu" [expanded] [ref=e103] [cursor=pointer]:
+                - img [ref=e106]
+              - heading "Red Hat OpenShift AI Self-Managed" [level=2] [ref=e109]
+              - generic [ref=e111]:
+                - img [ref=e115]
+                - textbox "Search input" [ref=e117]:
+                  - /placeholder: Filter table of contents
+              - navigation "Table of contents" [ref=e119]:
+                - list [ref=e120]:
+                  - listitem [ref=e121]:
+                    - link "Managing OpenShift AI" [ref=e122] [cursor=pointer]:
+                      - /url: /documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/index
+                  - listitem [ref=e123]:
+                    - link "Preface" [ref=e124] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/pr01
+                  - listitem [ref=e125]:
+                    - group [ref=e126]:
+                      - generic "1. Managing users and groups" [ref=e127] [cursor=pointer]
+                  - listitem [ref=e128]:
+                    - group [ref=e129]:
+                      - generic "2. Creating custom workbench images" [ref=e130] [cursor=pointer]
+                  - listitem [ref=e131]:
+                    - group [ref=e132]:
+                      - generic "3. Managing applications that show in the dashboard" [ref=e133] [cursor=pointer]
+                  - listitem [ref=e134]:
+                    - link "4. Creating project-scoped resources" [ref=e135] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/creating-project-scoped-resources_managing-rhoai
+                  - listitem [ref=e136]:
+                    - link "5. Allocating additional resources to OpenShift AI users" [ref=e137] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/allocating-additional-resources-to-users_managing-rhoai
+                  - listitem [ref=e138]:
+                    - group [ref=e139]:
+                      - generic "6. Customizing component deployment resources" [ref=e140] [cursor=pointer]
+                  - listitem [ref=e141]:
+                    - group [ref=e142]:
+                      - generic "7. Enabling accelerators" [ref=e143] [cursor=pointer]
+                  - listitem [ref=e144]:
+                    - group [ref=e145]:
+                      - generic "8. Managing workloads with Kueue" [ref=e146] [cursor=pointer]
+                  - listitem [ref=e147]:
+                    - group [ref=e148]:
+                      - generic "9. Managing distributed workloads" [ref=e149] [cursor=pointer]
+                      - list [ref=e150]:
+                        - listitem [ref=e151]:
+                          - link "Managing distributed workloads" [ref=e152] [cursor=pointer]:
+                            - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-distributed-workloads_managing-rhoai
+                        - listitem [ref=e153]:
+                          - link "9.1. Configuring quota management for distributed workloads" [ref=e154] [cursor=pointer]:
+                            - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-distributed-workloads_managing-rhoai#configuring-quota-management-for-distributed-workloads_managing-rhoai
+                        - listitem [ref=e155]:
+                          - group [ref=e156]:
+                            - generic "9.2. Example Kueue resource configurations for distributed workloads" [ref=e157] [cursor=pointer]
+                        - listitem [ref=e158]:
+                          - link "9.3. Configuring a cluster for RDMA" [ref=e159] [cursor=pointer]:
+                            - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-distributed-workloads_managing-rhoai#configuring-a-cluster-for-rdma_managing-rhoai
+                        - listitem [ref=e160]:
+                          - group [ref=e161]:
+                            - generic "9.4. Troubleshooting common problems with distributed workloads for administrators" [ref=e162] [cursor=pointer]
+                  - listitem [ref=e163]:
+                    - group [ref=e164]:
+                      - generic "10. Configuring a central authentication service for an external OIDC identity provider" [ref=e165] [cursor=pointer]
+                  - listitem [ref=e166]:
+                    - group [ref=e167]:
+                      - generic "11. Backing up data" [ref=e168] [cursor=pointer]
+                  - listitem [ref=e169]:
+                    - group [ref=e170]:
+                      - generic "12. Managing observability" [ref=e171] [cursor=pointer]
+                  - listitem [ref=e172]:
+                    - group [ref=e173]:
+                      - generic "13. Viewing logs and audit records" [ref=e174] [cursor=pointer]
+                  - listitem [ref=e175]:
+                    - link "Legal Notice" [ref=e176] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/legal-notice
+          - generic [ref=e177]:
+            - navigation [ref=e178]:
+              - generic [ref=e179]: Format
+              - combobox "Format" [ref=e180]:
+                - option "Multi-page" [selected]
+                - option "Single-page"
+                - option "View full doc as PDF"
+              - button "Share Feedback" [ref=e1975] [cursor=pointer]:
+                - generic:
+                  - generic: Share Feedback
+            - navigation [ref=e182]:
+              - group [ref=e184]:
+                - generic "On this page" [ref=e185] [cursor=pointer]:
+                  - img [ref=e188]
+                  - generic [ref=e190]: On this page
+            - article [ref=e191]:
+              - generic [ref=e192]:
+                - heading "Chapter 9. Managing distributed workloads" [level=1] [ref=e193]
+                - separator [ref=e194]
+                - generic [ref=e196]:
+                  - paragraph [ref=e197]:
+                    - text: In OpenShift AI, distributed workloads like
+                    - code [ref=e198]: PyTorchJob
+                    - text: ","
+                    - code [ref=e199]: RayJob
+                    - text: ", and"
+                    - code [ref=e200]: RayCluster
+                    - text: are created and managed by their respective workload operators. Kueue provides queueing and admission control and integrates with these operators to decide when workloads can run based on cluster-wide quotas.
+                  - paragraph [ref=e201]: You can perform advanced configuration for your distributed workloads environment, such as configuring quota management or setting up a cluster for RDMA.
+                  - generic [ref=e202]:
+                    - heading "9.1. Configuring quota management for distributed workloads Copy link to clipboard" [level=2] [ref=e206]:
+                      - link "9.1. Configuring quota management for distributed workloads" [ref=e207] [cursor=pointer]:
+                        - /url: "#configuring-quota-management-for-distributed-workloads_managing-rhoai"
+                      - generic "Copy link to clipboard" [ref=e211] [cursor=pointer]:
+                        - button "Copy link" [ref=e212]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e213]: Configure quotas for distributed workloads by creating Kueue resources. Quotas ensure that you can share resources between several projects.
+                    - generic [ref=e214]:
+                      - paragraph [ref=e215]:
+                        - strong [ref=e216]: Prerequisites
+                      - list [ref=e217]:
+                        - listitem [ref=e218]:
+                          - text: You have logged in to OpenShift with the
+                          - code [ref=e219]: cluster-admin
+                          - text: role.
+                        - listitem [ref=e220]:
+                          - paragraph [ref=e221]:
+                            - text: You have installed the OpenShift CLI (
+                            - code [ref=e222]: oc
+                            - text: ") as described in the appropriate documentation for your cluster:"
+                          - list [ref=e224]:
+                            - listitem [ref=e225]:
+                              - link "Installing the OpenShift CLI" [ref=e226] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/cli_tools/openshift-cli-oc#installing-openshift-cli
+                              - text: for OpenShift Container Platform
+                            - listitem [ref=e227]:
+                              - link "Installing the OpenShift CLI" [ref=e228] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_service_on_aws/4/html/cli_tools/openshift-cli-oc#installing-openshift-cli
+                              - text: for Red Hat OpenShift Service on AWS
+                        - listitem [ref=e229]:
+                          - text: You have installed and activated the Red Hat build of Kueue Operator as described in
+                          - link "Configuring workload management with Kueue" [ref=e230] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-workloads-with-kueue#configuring-workload-management-with-kueue_kueue
+                          - text: .
+                        - listitem [ref=e231]:
+                          - text: You have installed the required distributed workloads components as described in
+                          - link "Installing the distributed workloads components" [ref=e232] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                          - text: (for disconnected environments, see
+                          - link "Installing the distributed workloads components" [ref=e233] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/installing_and_uninstalling_openshift_ai_self-managed_in_a_disconnected_environment/installing-the-distributed-workloads-components_install
+                          - text: ).
+                        - listitem [ref=e234]:
+                          - text: You have created a project that contains a workbench, and the workbench is running a default workbench image that contains the CodeFlare SDK, for example, the
+                          - strong [ref=e236]: Standard Data Science
+                          - text: workbench. For information about how to create a project, see
+                          - link "Creating a project" [ref=e237] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_on_projects/using-projects_projects#creating-a-project_projects
+                          - text: .
+                        - listitem [ref=e238]: You have sufficient resources. In addition to the base OpenShift AI resources, you need 1.6 vCPU and 2 GiB memory to deploy the distributed workloads infrastructure.
+                        - listitem [ref=e239]:
+                          - text: The resources are physically available in the cluster. For more information about Kueue resources, see the
+                          - link "Red Hat build of Kueue documentation" [ref=e240] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ai_workloads/red-hat-build-of-kueue
+                          - text: .
+                        - listitem [ref=e241]:
+                          - paragraph [ref=e242]:
+                            - text: If you want to use graphics processing units (GPUs), you have enabled GPU support in OpenShift AI. If you use NVIDIA GPUs, see
+                            - link "Enabling NVIDIA GPUs" [ref=e243] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/enabling-accelerators#enabling-nvidia-gpus_managing-rhoai
+                            - text: . If you use AMD GPUs, see
+                            - link "AMD GPU integration" [ref=e244] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/enabling-accelerators#amd-gpu-integration_managing-rhoai
+                            - text: .
+                          - alert [ref=e246]:
+                            - generic [ref=e249]:
+                              - generic [ref=e252]: Note
+                              - paragraph [ref=e255]: In OpenShift AI 3.3, Red Hat supports only NVIDIA GPU accelerators and AMD GPU accelerators for distributed workloads.
+                    - generic [ref=e256]:
+                      - paragraph [ref=e257]:
+                        - strong [ref=e258]: Procedure
+                      - list [ref=e259]:
+                        - listitem [ref=e260]:
+                          - paragraph [ref=e261]:
+                            - text: In a terminal window, if you are not already logged in to your OpenShift cluster as a cluster administrator, log in to the OpenShift CLI (
+                            - code [ref=e262]: oc
+                            - text: ") as shown in the following example:"
+                          - generic [ref=e265]:
+                            - code [ref=e269]:
+                              - text: $ oc login
+                              - emphasis [ref=e270]: <openshift_cluster_url>
+                              - text: "-u"
+                              - emphasis [ref=e271]: <admin_username>
+                              - text: "-p"
+                              - emphasis [ref=e272]: <password>
+                            - generic [ref=e273]:
+                              - button "Copy to Clipboard" [ref=e277]:
+                                - img [ref=e278]
+                              - button [ref=e284]
+                        - listitem [ref=e287]:
+                          - paragraph [ref=e288]: "Verify that a resource flavor exists or create a custom one, as follows:"
+                          - list [ref=e290]:
+                            - listitem [ref=e291]:
+                              - paragraph [ref=e292]:
+                                - text: Check whether a
+                                - code [ref=e293]: ResourceFlavor
+                                - text: "already exists:"
+                              - generic [ref=e296]:
+                                - code [ref=e300]:
+                                  - generic [ref=e301]: $ oc get resourceflavors
+                                - generic [ref=e302]:
+                                  - button "Copy to Clipboard" [ref=e306]:
+                                    - img [ref=e307]
+                                  - button [ref=e313]
+                            - listitem [ref=e316]:
+                              - paragraph [ref=e317]:
+                                - text: If a
+                                - code [ref=e318]: ResourceFlavor
+                                - text: "already exists and you need to modify it, edit it in place:"
+                              - generic [ref=e321]:
+                                - code [ref=e325]:
+                                  - generic [ref=e326]:
+                                    - text: $
+                                    - generic [ref=e327]: oc edit resourceflavor <existing_resourceflavor_name>
+                                - generic [ref=e328]:
+                                  - button "Copy to Clipboard" [ref=e332]:
+                                    - img [ref=e333]
+                                  - button [ref=e339]
+                            - listitem [ref=e342]:
+                              - paragraph [ref=e343]:
+                                - text: If a
+                                - code [ref=e344]: ResourceFlavor
+                                - text: does not exist or you want a custom one, create a file called
+                                - code [ref=e345]: default_flavor.yaml
+                                - text: "and populate it with the following content:"
+                              - generic [ref=e346]:
+                                - paragraph [ref=e347]:
+                                  - strong [ref=e348]: Empty Kueue resource flavor
+                                - paragraph
+                                - generic [ref=e351]:
+                                  - code [ref=e355]:
+                                    - generic [ref=e356]: apiVersion
+                                    - generic [ref=e357]: ":"
+                                    - text: kueue.x
+                                    - generic [ref=e358]: "-"
+                                    - text: k8s.io/v1beta1
+                                    - generic [ref=e359]: kind
+                                    - generic [ref=e360]: ":"
+                                    - text: ResourceFlavor
+                                    - generic [ref=e361]: metadata
+                                    - generic [ref=e362]: ":"
+                                    - generic [ref=e363]: name
+                                    - generic [ref=e364]: ":"
+                                    - text: <example_resource_flavor
+                                    - generic [ref=e365]: ">"
+                                  - generic [ref=e366]:
+                                    - button "Copy to Clipboard" [ref=e370]:
+                                      - img [ref=e371]
+                                    - button [ref=e377]
+                              - paragraph [ref=e380]:
+                                - text: For more examples, see
+                                - emphasis [ref=e382]: Example Kueue resource configurations
+                                - text: .
+                            - listitem [ref=e383]:
+                              - paragraph [ref=e384]: "Perform one of the following actions:"
+                              - list [ref=e386]:
+                                - listitem [ref=e387]: If you are modifying the existing resource flavor, save the changes.
+                                - listitem [ref=e388]:
+                                  - paragraph [ref=e389]:
+                                    - text: If you are creating a new resource flavor, apply the configuration to create the
+                                    - code [ref=e390]: ResourceFlavor
+                                    - text: "object:"
+                                  - generic [ref=e393]:
+                                    - code [ref=e397]:
+                                      - generic [ref=e398]:
+                                        - text: $
+                                        - generic [ref=e399]: oc apply -f default_flavor.yaml
+                                    - generic [ref=e400]:
+                                      - button "Copy to Clipboard" [ref=e404]:
+                                        - img [ref=e405]
+                                      - button [ref=e411]
+                        - listitem [ref=e414]:
+                          - paragraph [ref=e415]: "Verify that a default cluster queue exists or create a custom one, as follows:"
+                          - alert [ref=e417]:
+                            - generic [ref=e420]:
+                              - generic [ref=e423]: Note
+                              - paragraph [ref=e426]: OpenShift AI automatically created a default cluster queue when the Kueue integration was activated. You can verify and modify the default cluster queue, or create a custom one.
+                          - list [ref=e428]:
+                            - listitem [ref=e429]:
+                              - paragraph [ref=e430]:
+                                - text: Check whether a
+                                - code [ref=e431]: ClusterQueue
+                                - text: "already exists:"
+                              - generic [ref=e434]:
+                                - code [ref=e438]:
+                                  - generic [ref=e439]: $ oc get clusterqueues
+                                - generic [ref=e440]:
+                                  - button "Copy to Clipboard" [ref=e444]:
+                                    - img [ref=e445]
+                                  - button [ref=e451]
+                            - listitem [ref=e454]:
+                              - paragraph [ref=e455]:
+                                - text: If a
+                                - code [ref=e456]: ClusterQueue
+                                - text: "already exists and you need to modify it (for example, to change the resources), edit it in place:"
+                              - generic [ref=e459]:
+                                - code [ref=e463]:
+                                  - generic [ref=e464]:
+                                    - text: $
+                                    - generic [ref=e465]: oc edit clusterqueue <existing_clusterqueue_name>
+                                - generic [ref=e466]:
+                                  - button "Copy to Clipboard" [ref=e470]:
+                                    - img [ref=e471]
+                                  - button [ref=e477]
+                            - listitem [ref=e480]:
+                              - paragraph [ref=e481]:
+                                - text: If a
+                                - code [ref=e482]: ClusterQueue
+                                - text: does not exist or you want a custom one, create a file called
+                                - code [ref=e483]: cluster_queue.yaml
+                                - text: "and populate it with the following content:"
+                              - generic [ref=e484]:
+                                - paragraph [ref=e485]:
+                                  - strong [ref=e486]: Example cluster queue
+                                - paragraph
+                                - generic [ref=e489]:
+                                  - generic [ref=e491]:
+                                    - code [ref=e493]:
+                                      - generic [ref=e494]: apiVersion
+                                      - generic [ref=e495]: ":"
+                                      - text: kueue.x
+                                      - generic [ref=e496]: "-"
+                                      - text: k8s.io/v1beta1
+                                      - generic [ref=e497]: kind
+                                      - generic [ref=e498]: ":"
+                                      - text: ClusterQueue
+                                      - generic [ref=e499]: metadata
+                                      - generic [ref=e500]: ":"
+                                      - generic [ref=e501]: name
+                                      - generic [ref=e502]: ":"
+                                      - text: <example_cluster_queue
+                                      - generic [ref=e503]: ">"
+                                      - generic [ref=e504]: spec
+                                      - generic [ref=e505]: ":"
+                                      - generic [ref=e506]: namespaceSelector
+                                      - generic [ref=e507]: ":"
+                                      - generic [ref=e508]: "{"
+                                      - generic [ref=e509]: "}"
+                                    - generic [ref=e510]: "1"
+                                    - code [ref=e512]:
+                                      - generic [ref=e513]: resourceGroups
+                                      - generic [ref=e514]: ":"
+                                      - generic [ref=e515]: "-"
+                                      - generic [ref=e516]: coveredResources
+                                      - generic [ref=e517]: ":"
+                                      - generic [ref=e518]: "["
+                                      - generic [ref=e519]: "\"cpu\""
+                                      - generic [ref=e520]: ","
+                                      - generic [ref=e521]: "\"memory\""
+                                      - generic [ref=e522]: ","
+                                      - generic [ref=e523]: "\"nvidia.com/gpu\""
+                                      - generic [ref=e524]: "]"
+                                    - generic [ref=e525]: "2"
+                                    - code [ref=e527]:
+                                      - generic [ref=e528]: flavors
+                                      - generic [ref=e529]: ":"
+                                      - generic [ref=e530]: "-"
+                                      - generic [ref=e531]: name
+                                      - generic [ref=e532]: ":"
+                                      - generic [ref=e533]: "\"<resource_flavor_name>\""
+                                    - generic [ref=e534]: "3"
+                                    - code [ref=e536]:
+                                      - generic [ref=e537]: resources
+                                      - generic [ref=e538]: ":"
+                                    - generic [ref=e539]: "4"
+                                    - code [ref=e541]:
+                                      - generic [ref=e542]: "-"
+                                      - generic [ref=e543]: name
+                                      - generic [ref=e544]: ":"
+                                      - generic [ref=e545]: "\"cpu\""
+                                      - generic [ref=e546]: nominalQuota
+                                      - generic [ref=e547]: ":"
+                                      - generic [ref=e548]: "9"
+                                      - generic [ref=e549]: "-"
+                                      - generic [ref=e550]: name
+                                      - generic [ref=e551]: ":"
+                                      - generic [ref=e552]: "\"memory\""
+                                      - generic [ref=e553]: nominalQuota
+                                      - generic [ref=e554]: ":"
+                                      - text: 36Gi
+                                      - generic [ref=e555]: "-"
+                                      - generic [ref=e556]: name
+                                      - generic [ref=e557]: ":"
+                                      - generic [ref=e558]: "\"nvidia.com/gpu\""
+                                      - generic [ref=e559]: nominalQuota
+                                      - generic [ref=e560]: ":"
+                                      - generic [ref=e561]: "5"
+                                  - generic [ref=e562]:
+                                    - button "Copy to Clipboard" [ref=e566]:
+                                      - img [ref=e567]
+                                    - button [ref=e573]
+                                  - button "Show less" [expanded] [ref=e576]:
+                                    - generic [ref=e577]: Show less
+                                    - img [ref=e578]
+                              - generic [ref=e581]:
+                                - term [ref=e582]:
+                                  - link "1" [ref=e583] [cursor=pointer]:
+                                    - /url: "#CO1-1"
+                                    - generic [ref=e584]: "1"
+                                - definition [ref=e585]:
+                                  - generic [ref=e586]:
+                                    - text: Defines which namespaces can use the resources governed by this cluster queue. An empty
+                                    - code [ref=e587]: namespaceSelector
+                                    - text: as shown in the example means that all namespaces can use these resources.
+                                - term [ref=e588]:
+                                  - link "2" [ref=e589] [cursor=pointer]:
+                                    - /url: "#CO1-2"
+                                    - generic [ref=e590]: "2"
+                                - definition [ref=e591]:
+                                  - generic [ref=e592]:
+                                    - text: Defines the resource types governed by the cluster queue. This example
+                                    - code [ref=e593]: ClusterQueue
+                                    - text: object governs CPU, memory, and GPU resources. If you use AMD GPUs, replace
+                                    - code [ref=e594]: nvidia.com/gpu
+                                    - text: with
+                                    - code [ref=e595]: amd.com/gpu
+                                    - text: in the example code.
+                                - term [ref=e596]:
+                                  - link "3" [ref=e597] [cursor=pointer]:
+                                    - /url: "#CO1-3"
+                                    - generic [ref=e598]: "3"
+                                - definition [ref=e599]:
+                                  - generic [ref=e600]: Defines the resource flavor that is applied to the resource types listed. In this example, the <resource_flavor_name> resource flavor is applied to CPU, memory, and GPU resources.
+                                - term [ref=e601]:
+                                  - link "4" [ref=e602] [cursor=pointer]:
+                                    - /url: "#CO1-4"
+                                    - generic [ref=e603]: "4"
+                                - definition [ref=e604]:
+                                  - generic [ref=e605]: Defines the resource requirements for admitting jobs. The cluster queue will start a distributed workload only if the total required resources are within these quota limits.
+                            - listitem [ref=e606]:
+                              - paragraph [ref=e607]:
+                                - text: Replace the example quota values (9 CPUs, 36 GiB memory, and 5 NVIDIA GPUs) with the appropriate values for your cluster queue. If you use AMD GPUs, replace
+                                - code [ref=e608]: nvidia.com/gpu
+                                - text: with
+                                - code [ref=e609]: amd.com/gpu
+                                - text: in the example code. For more examples, see
+                                - emphasis [ref=e611]: Example Kueue resource configurations
+                                - text: .
+                              - paragraph [ref=e612]:
+                                - text: You must specify a quota for each resource that the user can request, even if the requested value is 0, by updating the
+                                - code [ref=e613]: spec.resourceGroups
+                                - text: "section as follows:"
+                              - list [ref=e615]:
+                                - listitem [ref=e616]:
+                                  - text: Include the resource name in the
+                                  - code [ref=e617]: coveredResources
+                                  - text: list.
+                                - listitem [ref=e618]:
+                                  - text: Specify the resource
+                                  - code [ref=e619]: name
+                                  - text: and
+                                  - code [ref=e620]: nominalQuota
+                                  - text: in the
+                                  - code [ref=e621]: flavors.resources
+                                  - text: section, even if the
+                                  - code [ref=e622]: nominalQuota
+                                  - text: value is 0.
+                            - listitem [ref=e623]:
+                              - paragraph [ref=e624]: "Perform one of the following actions:"
+                              - list [ref=e626]:
+                                - listitem [ref=e627]: If you are modifying the existing cluster queue, save the changes.
+                                - listitem [ref=e628]:
+                                  - paragraph [ref=e629]:
+                                    - text: If you are creating a new cluster queue, apply the configuration to create the
+                                    - code [ref=e630]: ClusterQueue
+                                    - text: "object:"
+                                  - generic [ref=e633]:
+                                    - code [ref=e637]:
+                                      - generic [ref=e638]:
+                                        - text: $
+                                        - generic [ref=e639]: oc apply -f cluster_queue.yaml
+                                    - generic [ref=e640]:
+                                      - button "Copy to Clipboard" [ref=e644]:
+                                        - img [ref=e645]
+                                      - button [ref=e651]
+                        - listitem [ref=e654]:
+                          - paragraph [ref=e655]: "Verify that a local queue that points to your cluster queue exists for your project namespace, or create a custom one, as follows:"
+                          - alert [ref=e657]:
+                            - generic [ref=e660]:
+                              - generic [ref=e663]: Note
+                              - paragraph [ref=e666]: If Kueue is enabled in the OpenShift AI dashboard, new projects created from the dashboard are automatically configured for Kueue management. In those namespaces, a default local queue might already exist. You can verify and modify the local queue, or create a custom one.
+                          - list [ref=e668]:
+                            - listitem [ref=e669]:
+                              - paragraph [ref=e670]:
+                                - text: Check whether a
+                                - code [ref=e671]: LocalQueue
+                                - text: "already exists for your project namespace:"
+                              - generic [ref=e674]:
+                                - code [ref=e678]:
+                                  - generic [ref=e679]:
+                                    - text: $
+                                    - generic [ref=e680]: oc get localqueues -n <project_namespace>
+                                - generic [ref=e681]:
+                                  - button "Copy to Clipboard" [ref=e685]:
+                                    - img [ref=e686]
+                                  - button [ref=e692]
+                            - listitem [ref=e695]:
+                              - paragraph [ref=e696]:
+                                - text: If a
+                                - code [ref=e697]: LocalQueue
+                                - text: already exists and you need to modify it (for example, to point to a different
+                                - code [ref=e698]: ClusterQueue
+                                - text: "), edit it in place:"
+                              - generic [ref=e701]:
+                                - code [ref=e705]:
+                                  - generic [ref=e706]:
+                                    - text: $
+                                    - generic [ref=e707]: oc edit localqueue <existing_localqueue_name> -n <project_namespace>
+                                - generic [ref=e708]:
+                                  - button "Copy to Clipboard" [ref=e712]:
+                                    - img [ref=e713]
+                                  - button [ref=e719]
+                            - listitem [ref=e722]:
+                              - paragraph [ref=e723]:
+                                - text: If a
+                                - code [ref=e724]: LocalQueue
+                                - text: does not exist or you want a custom one, create a file called
+                                - code [ref=e725]: local_queue.yaml
+                                - text: "and populate it with the following content:"
+                              - generic [ref=e726]:
+                                - paragraph [ref=e727]:
+                                  - strong [ref=e728]: Example local queue
+                                - paragraph
+                                - generic [ref=e731]:
+                                  - code [ref=e735]:
+                                    - generic [ref=e736]: apiVersion
+                                    - generic [ref=e737]: ":"
+                                    - text: kueue.x
+                                    - generic [ref=e738]: "-"
+                                    - text: k8s.io/v1beta1
+                                    - generic [ref=e739]: kind
+                                    - generic [ref=e740]: ":"
+                                    - text: LocalQueue
+                                    - generic [ref=e741]: metadata
+                                    - generic [ref=e742]: ":"
+                                    - generic [ref=e743]: name
+                                    - generic [ref=e744]: ":"
+                                    - text: <example_local_queue
+                                    - generic [ref=e745]: ">"
+                                    - generic [ref=e746]: namespace
+                                    - generic [ref=e747]: ":"
+                                    - text: <project_namespace
+                                    - generic [ref=e748]: ">"
+                                    - generic [ref=e749]: spec
+                                    - generic [ref=e750]: ":"
+                                    - generic [ref=e751]: clusterQueue
+                                    - generic [ref=e752]: ":"
+                                    - text: <cluster_queue_name
+                                    - generic [ref=e753]: ">"
+                                  - generic [ref=e754]:
+                                    - button "Copy to Clipboard" [ref=e758]:
+                                      - img [ref=e759]
+                                    - button [ref=e765]
+                                  - button "Show less" [expanded] [ref=e768]:
+                                    - generic [ref=e769]: Show less
+                                    - img [ref=e770]
+                            - listitem [ref=e772]:
+                              - text: Replace the
+                              - code [ref=e773]: name
+                              - text: ","
+                              - code [ref=e774]: namespace
+                              - text: ", and"
+                              - code [ref=e775]: clusterQueue
+                              - text: values accordingly.
+                            - listitem [ref=e776]:
+                              - paragraph [ref=e777]: "Perform one of the following actions:"
+                              - list [ref=e779]:
+                                - listitem [ref=e780]: If you are modifying an existing local queue, save the changes.
+                                - listitem [ref=e781]:
+                                  - paragraph [ref=e782]:
+                                    - text: If you are creating a new local queue, apply the configuration to create the
+                                    - code [ref=e783]: LocalQueue
+                                    - text: "object:"
+                                  - generic [ref=e786]:
+                                    - code [ref=e790]:
+                                      - generic [ref=e791]:
+                                        - text: $
+                                        - generic [ref=e792]: oc apply -f local_queue.yaml
+                                    - generic [ref=e793]:
+                                      - button "Copy to Clipboard" [ref=e797]:
+                                        - img [ref=e798]
+                                      - button [ref=e804]
+                    - generic [ref=e807]:
+                      - paragraph [ref=e808]:
+                        - strong [ref=e809]: Verification
+                      - paragraph [ref=e810]: "Check the status of the local queue in a project, as follows:"
+                    - generic [ref=e813]:
+                      - code [ref=e817]:
+                        - generic [ref=e818]:
+                          - text: $
+                          - generic [ref=e819]: oc get localqueues -n <project_namespace>
+                      - generic [ref=e820]:
+                        - button "Copy to Clipboard" [ref=e824]:
+                          - img [ref=e825]
+                        - button [ref=e831]
+                    - complementary [ref=e834]:
+                      - paragraph [ref=e835]:
+                        - strong [ref=e836]: Additional resources
+                      - list [ref=e837]:
+                        - listitem [ref=e838]:
+                          - link "Red Hat build of Kueue documentation" [ref=e839] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ai_workloads/red-hat-build-of-kueue
+                        - listitem [ref=e840]:
+                          - link "Kueue documentation" [ref=e841] [cursor=pointer]:
+                            - /url: https://kueue.sigs.k8s.io/docs/concepts/
+                  - generic [ref=e842]:
+                    - heading "9.2. Example Kueue resource configurations for distributed workloads Copy link to clipboard" [level=2] [ref=e846]:
+                      - link "9.2. Example Kueue resource configurations for distributed workloads" [ref=e847] [cursor=pointer]:
+                        - /url: "#ref-example-kueue-resource-configurations_managing-rhoai"
+                      - generic "Copy link to clipboard" [ref=e851] [cursor=pointer]:
+                        - button "Copy link" [ref=e852]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e853]: You can use these example configurations as a starting point for creating Kueue resources to manage your distributed training workloads.
+                    - paragraph [ref=e854]: These examples show how to configure Kueue resource flavors and cluster queues for common distributed training scenarios.
+                    - alert [ref=e856]:
+                      - generic [ref=e859]:
+                        - generic [ref=e862]: Note
+                        - paragraph [ref=e865]: In OpenShift AI 3.3, Red Hat does not support shared cohorts.
+                    - generic [ref=e866]:
+                      - heading "9.2.1. NVIDIA GPUs without shared cohort Copy link to clipboard" [level=3] [ref=e870]:
+                        - link "9.2.1. NVIDIA GPUs without shared cohort" [ref=e871] [cursor=pointer]:
+                          - /url: "#nvidia_gpus_without_shared_cohort"
+                        - generic "Copy link to clipboard" [ref=e875] [cursor=pointer]:
+                          - button "Copy link" [ref=e876]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e877]:
+                        - heading "9.2.1.1. NVIDIA RTX A400 GPU resource flavor Copy link to clipboard" [level=4] [ref=e881]:
+                          - link "9.2.1.1. NVIDIA RTX A400 GPU resource flavor" [ref=e882] [cursor=pointer]:
+                            - /url: "#nvidia_rtx_a400_gpu_resource_flavor"
+                          - generic "Copy link to clipboard" [ref=e886] [cursor=pointer]:
+                            - button "Copy link" [ref=e887]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e890]:
+                          - code [ref=e894]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ResourceFlavor metadata: name:"
+                            - generic [ref=e895]: "\"a400node\""
+                            - text: "spec: nodeLabels: instance-type: nvidia-a400-node tolerations: - key:"
+                            - generic [ref=e896]: "\"HasGPU\""
+                            - text: "operator:"
+                            - generic [ref=e897]: "\"Exists\""
+                            - text: "effect:"
+                            - generic [ref=e898]: "\"NoSchedule\""
+                          - generic [ref=e899]:
+                            - button "Copy to Clipboard" [ref=e903]:
+                              - img [ref=e904]
+                            - button [ref=e910]
+                          - button "Show less" [expanded] [ref=e913]:
+                            - generic [ref=e914]: Show less
+                            - img [ref=e915]
+                      - generic [ref=e917]:
+                        - heading "9.2.1.2. NVIDIA RTX A1000 GPU resource flavor Copy link to clipboard" [level=4] [ref=e921]:
+                          - link "9.2.1.2. NVIDIA RTX A1000 GPU resource flavor" [ref=e922] [cursor=pointer]:
+                            - /url: "#nvidia_rtx_a1000_gpu_resource_flavor"
+                          - generic "Copy link to clipboard" [ref=e926] [cursor=pointer]:
+                            - button "Copy link" [ref=e927]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e930]:
+                          - code [ref=e934]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ResourceFlavor metadata: name:"
+                            - generic [ref=e935]: "\"a1000node\""
+                            - text: "spec: nodeLabels: instance-type: nvidia-a1000-node tolerations: - key:"
+                            - generic [ref=e936]: "\"HasGPU\""
+                            - text: "operator:"
+                            - generic [ref=e937]: "\"Exists\""
+                            - text: "effect:"
+                            - generic [ref=e938]: "\"NoSchedule\""
+                          - generic [ref=e939]:
+                            - button "Copy to Clipboard" [ref=e943]:
+                              - img [ref=e944]
+                            - button [ref=e950]
+                          - button "Show less" [expanded] [ref=e953]:
+                            - generic [ref=e954]: Show less
+                            - img [ref=e955]
+                      - generic [ref=e957]:
+                        - heading "9.2.1.3. NVIDIA RTX A400 GPU cluster queue Copy link to clipboard" [level=4] [ref=e961]:
+                          - link "9.2.1.3. NVIDIA RTX A400 GPU cluster queue" [ref=e962] [cursor=pointer]:
+                            - /url: "#nvidia_rtx_a400_gpu_cluster_queue"
+                          - generic "Copy link to clipboard" [ref=e966] [cursor=pointer]:
+                            - button "Copy link" [ref=e967]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e970]:
+                          - code [ref=e974]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ClusterQueue metadata: name:"
+                            - generic [ref=e975]: "\"a400queue\""
+                            - text: "spec: namespaceSelector:"
+                            - generic [ref=e976]: "{"
+                            - generic [ref=e977]: "}"
+                            - generic [ref=e978]: "# match all."
+                            - text: "resourceGroups: - coveredResources:"
+                            - generic [ref=e979]: "["
+                            - generic [ref=e980]: "\"cpu\""
+                            - text: ","
+                            - generic [ref=e981]: "\"memory\""
+                            - text: ","
+                            - generic [ref=e982]: "\"nvidia.com/gpu\""
+                            - generic [ref=e983]: "]"
+                            - text: "flavors: - name:"
+                            - generic [ref=e984]: "\"a400node\""
+                            - text: "resources: - name:"
+                            - generic [ref=e985]: "\"cpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e986]: "16"
+                            - text: "- name:"
+                            - generic [ref=e987]: "\"memory\""
+                            - text: "nominalQuota: 64Gi - name:"
+                            - generic [ref=e988]: "\"nvidia.com/gpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e989]: "2"
+                          - generic [ref=e990]:
+                            - button "Copy to Clipboard" [ref=e994]:
+                              - img [ref=e995]
+                            - button [ref=e1001]
+                          - button "Show less" [expanded] [ref=e1004]:
+                            - generic [ref=e1005]: Show less
+                            - img [ref=e1006]
+                      - generic [ref=e1008]:
+                        - heading "9.2.1.4. NVIDIA RTX A1000 GPU cluster queue Copy link to clipboard" [level=4] [ref=e1012]:
+                          - link "9.2.1.4. NVIDIA RTX A1000 GPU cluster queue" [ref=e1013] [cursor=pointer]:
+                            - /url: "#nvidia_rtx_a1000_gpu_cluster_queue"
+                          - generic "Copy link to clipboard" [ref=e1017] [cursor=pointer]:
+                            - button "Copy link" [ref=e1018]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e1021]:
+                          - code [ref=e1025]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ClusterQueue metadata: name:"
+                            - generic [ref=e1026]: "\"a1000queue\""
+                            - text: "spec: namespaceSelector:"
+                            - generic [ref=e1027]: "{"
+                            - generic [ref=e1028]: "}"
+                            - generic [ref=e1029]: "# match all."
+                            - text: "resourceGroups: - coveredResources:"
+                            - generic [ref=e1030]: "["
+                            - generic [ref=e1031]: "\"cpu\""
+                            - text: ","
+                            - generic [ref=e1032]: "\"memory\""
+                            - text: ","
+                            - generic [ref=e1033]: "\"nvidia.com/gpu\""
+                            - generic [ref=e1034]: "]"
+                            - text: "flavors: - name:"
+                            - generic [ref=e1035]: "\"a1000node\""
+                            - text: "resources: - name:"
+                            - generic [ref=e1036]: "\"cpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1037]: "16"
+                            - text: "- name:"
+                            - generic [ref=e1038]: "\"memory\""
+                            - text: "nominalQuota: 64Gi - name:"
+                            - generic [ref=e1039]: "\"nvidia.com/gpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1040]: "2"
+                          - generic [ref=e1041]:
+                            - button "Copy to Clipboard" [ref=e1045]:
+                              - img [ref=e1046]
+                            - button [ref=e1052]
+                          - button "Show less" [expanded] [ref=e1055]:
+                            - generic [ref=e1056]: Show less
+                            - img [ref=e1057]
+                    - generic [ref=e1059]:
+                      - heading "9.2.2. NVIDIA GPUs and AMD GPUs without shared cohort Copy link to clipboard" [level=3] [ref=e1063]:
+                        - link "9.2.2. NVIDIA GPUs and AMD GPUs without shared cohort" [ref=e1064] [cursor=pointer]:
+                          - /url: "#nvidia_gpus_and_amd_gpus_without_shared_cohort"
+                        - generic "Copy link to clipboard" [ref=e1068] [cursor=pointer]:
+                          - button "Copy link" [ref=e1069]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e1070]:
+                        - heading "9.2.2.1. AMD GPU resource flavor Copy link to clipboard" [level=4] [ref=e1074]:
+                          - link "9.2.2.1. AMD GPU resource flavor" [ref=e1075] [cursor=pointer]:
+                            - /url: "#amd_gpu_resource_flavor"
+                          - generic "Copy link to clipboard" [ref=e1079] [cursor=pointer]:
+                            - button "Copy link" [ref=e1080]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e1083]:
+                          - code [ref=e1087]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ResourceFlavor metadata: name:"
+                            - generic [ref=e1088]: "\"amd-node\""
+                            - text: "spec: nodeLabels: instance-type: amd-node tolerations: - key:"
+                            - generic [ref=e1089]: "\"HasGPU\""
+                            - text: "operator:"
+                            - generic [ref=e1090]: "\"Exists\""
+                            - text: "effect:"
+                            - generic [ref=e1091]: "\"NoSchedule\""
+                          - generic [ref=e1092]:
+                            - button "Copy to Clipboard" [ref=e1096]:
+                              - img [ref=e1097]
+                            - button [ref=e1103]
+                          - button "Show less" [expanded] [ref=e1106]:
+                            - generic [ref=e1107]: Show less
+                            - img [ref=e1108]
+                      - generic [ref=e1110]:
+                        - heading "9.2.2.2. NVIDIA GPU resource flavor Copy link to clipboard" [level=4] [ref=e1114]:
+                          - link "9.2.2.2. NVIDIA GPU resource flavor" [ref=e1115] [cursor=pointer]:
+                            - /url: "#nvidia_gpu_resource_flavor"
+                          - generic "Copy link to clipboard" [ref=e1119] [cursor=pointer]:
+                            - button "Copy link" [ref=e1120]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e1123]:
+                          - code [ref=e1127]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ResourceFlavor metadata: name:"
+                            - generic [ref=e1128]: "\"nvidia-node\""
+                            - text: "spec: nodeLabels: instance-type: nvidia-node tolerations: - key:"
+                            - generic [ref=e1129]: "\"HasGPU\""
+                            - text: "operator:"
+                            - generic [ref=e1130]: "\"Exists\""
+                            - text: "effect:"
+                            - generic [ref=e1131]: "\"NoSchedule\""
+                          - generic [ref=e1132]:
+                            - button "Copy to Clipboard" [ref=e1136]:
+                              - img [ref=e1137]
+                            - button [ref=e1143]
+                          - button "Show less" [expanded] [ref=e1146]:
+                            - generic [ref=e1147]: Show less
+                            - img [ref=e1148]
+                      - generic [ref=e1150]:
+                        - heading "9.2.2.3. AMD GPU cluster queue Copy link to clipboard" [level=4] [ref=e1154]:
+                          - link "9.2.2.3. AMD GPU cluster queue" [ref=e1155] [cursor=pointer]:
+                            - /url: "#amd_gpu_cluster_queue"
+                          - generic "Copy link to clipboard" [ref=e1159] [cursor=pointer]:
+                            - button "Copy link" [ref=e1160]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e1163]:
+                          - code [ref=e1167]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ClusterQueue metadata: name:"
+                            - generic [ref=e1168]: "\"team-a-amd-queue\""
+                            - text: "spec: namespaceSelector:"
+                            - generic [ref=e1169]: "{"
+                            - generic [ref=e1170]: "}"
+                            - generic [ref=e1171]: "# match all."
+                            - text: "resourceGroups: - coveredResources:"
+                            - generic [ref=e1172]: "["
+                            - generic [ref=e1173]: "\"cpu\""
+                            - text: ","
+                            - generic [ref=e1174]: "\"memory\""
+                            - text: ","
+                            - generic [ref=e1175]: "\"amd.com/gpu\""
+                            - generic [ref=e1176]: "]"
+                            - text: "flavors: - name:"
+                            - generic [ref=e1177]: "\"amd-node\""
+                            - text: "resources: - name:"
+                            - generic [ref=e1178]: "\"cpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1179]: "16"
+                            - text: "- name:"
+                            - generic [ref=e1180]: "\"memory\""
+                            - text: "nominalQuota: 64Gi - name:"
+                            - generic [ref=e1181]: "\"amd.com/gpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1182]: "2"
+                          - generic [ref=e1183]:
+                            - button "Copy to Clipboard" [ref=e1187]:
+                              - img [ref=e1188]
+                            - button [ref=e1194]
+                          - button "Show less" [expanded] [ref=e1197]:
+                            - generic [ref=e1198]: Show less
+                            - img [ref=e1199]
+                      - generic [ref=e1201]:
+                        - heading "9.2.2.4. NVIDIA GPU cluster queue Copy link to clipboard" [level=4] [ref=e1205]:
+                          - link "9.2.2.4. NVIDIA GPU cluster queue" [ref=e1206] [cursor=pointer]:
+                            - /url: "#nvidia_gpu_cluster_queue"
+                          - generic "Copy link to clipboard" [ref=e1210] [cursor=pointer]:
+                            - button "Copy link" [ref=e1211]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e1214]:
+                          - code [ref=e1218]:
+                            - text: "apiVersion: kueue.x-k8s.io/v1beta1 kind: ClusterQueue metadata: name:"
+                            - generic [ref=e1219]: "\"team-a-nvidia-queue\""
+                            - text: "spec: namespaceSelector:"
+                            - generic [ref=e1220]: "{"
+                            - generic [ref=e1221]: "}"
+                            - generic [ref=e1222]: "# match all."
+                            - text: "resourceGroups: - coveredResources:"
+                            - generic [ref=e1223]: "["
+                            - generic [ref=e1224]: "\"cpu\""
+                            - text: ","
+                            - generic [ref=e1225]: "\"memory\""
+                            - text: ","
+                            - generic [ref=e1226]: "\"nvidia.com/gpu\""
+                            - generic [ref=e1227]: "]"
+                            - text: "flavors: - name:"
+                            - generic [ref=e1228]: "\"nvidia-node\""
+                            - text: "resources: - name:"
+                            - generic [ref=e1229]: "\"cpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1230]: "16"
+                            - text: "- name:"
+                            - generic [ref=e1231]: "\"memory\""
+                            - text: "nominalQuota: 64Gi - name:"
+                            - generic [ref=e1232]: "\"nvidia.com/gpu\""
+                            - text: "nominalQuota:"
+                            - generic [ref=e1233]: "2"
+                          - generic [ref=e1234]:
+                            - button "Copy to Clipboard" [ref=e1238]:
+                              - img [ref=e1239]
+                            - button [ref=e1245]
+                          - button "Show less" [expanded] [ref=e1248]:
+                            - generic [ref=e1249]: Show less
+                            - img [ref=e1250]
+                        - complementary [ref=e1252]:
+                          - paragraph [ref=e1253]:
+                            - strong [ref=e1254]: Additional resources
+                          - list [ref=e1255]:
+                            - listitem [ref=e1256]:
+                              - link "Red Hat build of Kueue documentation" [ref=e1257] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ai_workloads/red-hat-build-of-kueue
+                            - listitem [ref=e1258]:
+                              - link "Resource Flavor" [ref=e1259] [cursor=pointer]:
+                                - /url: https://kueue.sigs.k8s.io/docs/concepts/resource_flavor/
+                              - text: in the Kueue documentation
+                            - listitem [ref=e1260]:
+                              - link "Cluster Queue" [ref=e1261] [cursor=pointer]:
+                                - /url: https://kueue.sigs.k8s.io/docs/concepts/cluster_queue/
+                              - text: in the Kueue documentation
+                  - generic [ref=e1262]:
+                    - heading "9.3. Configuring a cluster for RDMA Copy link to clipboard" [level=2] [ref=e1266]:
+                      - link "9.3. Configuring a cluster for RDMA" [ref=e1267] [cursor=pointer]:
+                        - /url: "#configuring-a-cluster-for-rdma_managing-rhoai"
+                      - generic "Copy link to clipboard" [ref=e1271] [cursor=pointer]:
+                        - button "Copy link" [ref=e1272]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e1273]: NVIDIA GPUDirect RDMA uses Remote Direct Memory Access (RDMA) to provide direct GPU interconnect. To configure a cluster for RDMA, a cluster administrator must install and configure several Operators.
+                    - generic [ref=e1274]:
+                      - paragraph [ref=e1275]:
+                        - strong [ref=e1276]: Prerequisites
+                      - list [ref=e1277]:
+                        - listitem [ref=e1278]: You can access an OpenShift cluster as a cluster administrator.
+                        - listitem [ref=e1279]: Your cluster has multiple worker nodes with supported NVIDIA GPUs, and can access a compatible NVIDIA accelerated networking platform.
+                        - listitem [ref=e1280]:
+                          - text: You have installed Red Hat OpenShift AI with the required distributed training components as described in
+                          - link "Installing the distributed workloads components" [ref=e1281] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                          - text: (for disconnected environments, see
+                          - link "Installing the distributed workloads components" [ref=e1282] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/installing_and_uninstalling_openshift_ai_self-managed_in_a_disconnected_environment/installing-the-distributed-workloads-components_install
+                          - text: ).
+                        - listitem [ref=e1283]:
+                          - text: You have configured the distributed training resources as described in
+                          - link "Managing distributed workloads" [ref=e1284] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-distributed-workloads_managing-rhoai
+                          - text: .
+                    - generic [ref=e1285]:
+                      - paragraph [ref=e1286]:
+                        - strong [ref=e1287]: Procedure
+                      - list [ref=e1288]:
+                        - listitem [ref=e1289]: Log in to the OpenShift Console as a cluster administrator.
+                        - listitem [ref=e1290]:
+                          - paragraph [ref=e1291]: Enable NVIDIA GPU support in OpenShift AI.
+                          - paragraph [ref=e1292]:
+                            - text: This process includes installing the Node Feature Discovery Operator and the NVIDIA GPU Operator. For more information, see
+                            - link "Enabling NVIDIA GPUs" [ref=e1293] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/enabling-accelerators#enabling-nvidia-gpus_managing-rhoai
+                            - text: .
+                          - alert [ref=e1295]:
+                            - generic [ref=e1298]:
+                              - generic [ref=e1301]: Note
+                              - paragraph [ref=e1304]:
+                                - text: After the NVIDIA GPU Operator is installed, ensure that
+                                - code [ref=e1305]: rdma
+                                - text: is set to
+                                - code [ref=e1306]: enabled
+                                - text: in your
+                                - code [ref=e1307]: ClusterPolicy
+                                - text: custom resource instance.
+                        - listitem [ref=e1308]:
+                          - paragraph [ref=e1309]: "To simplify the management of NVIDIA networking resources, install and configure the NVIDIA Network Operator, as follows:"
+                          - list [ref=e1311]:
+                            - listitem [ref=e1312]:
+                              - text: Install the NVIDIA Network Operator, as described in
+                              - link "Adding Operators to a cluster" [ref=e1313] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/administrator-tasks#olm-adding-operators-to-a-cluster
+                              - text: in the OpenShift documentation.
+                            - listitem [ref=e1314]:
+                              - text: Configure the NVIDIA Network Operator, as described in the deployment examples in the
+                              - link "Network Operator Application Notes" [ref=e1315] [cursor=pointer]:
+                                - /url: https://docs.nvidia.com/networking/display/cokan10/network+operator
+                              - text: in the NVIDIA documentation.
+                        - listitem [ref=e1316]:
+                          - paragraph [ref=e1317]: "[Optional] To use Single Root I/O Virtualization (SR-IOV) deployment modes, complete the following steps:"
+                          - list [ref=e1319]:
+                            - listitem [ref=e1320]:
+                              - text: Install the SR-IOV Network Operator, as described in the
+                              - link "Installing the SR-IOV Network Operator" [ref=e1321] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking_operators/sr-iov-operator#installing-sriov-operator
+                              - text: section in the OpenShift documentation.
+                            - listitem [ref=e1322]:
+                              - text: Configure the SR-IOV Network Operator, as described in the
+                              - link "Configuring the SR-IOV Network Operator" [ref=e1323] [cursor=pointer]:
+                                - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking_operators/sr-iov-operator#configuring-sriov-operator
+                              - text: section in the OpenShift documentation.
+                        - listitem [ref=e1324]:
+                          - paragraph [ref=e1325]: "Use the Machine Configuration Operator to increase the limit of pinned memory for non-root users in the container engine (CRI-O) configuration, as follows:"
+                          - list [ref=e1327]:
+                            - listitem [ref=e1328]:
+                              - text: In the OpenShift Console, in the
+                              - strong [ref=e1330]: Administrator
+                              - text: perspective, click
+                              - strong [ref=e1332]:
+                                - text: Compute
+                                - text: MachineConfigs
+                              - text: .
+                            - listitem [ref=e1333]:
+                              - text: Click
+                              - strong [ref=e1335]: Create MachineConfig
+                              - text: .
+                            - listitem [ref=e1336]:
+                              - paragraph [ref=e1337]: "Replace the placeholder text with the following content:"
+                              - generic [ref=e1338]:
+                                - paragraph [ref=e1339]:
+                                  - strong [ref=e1340]: Example machine configuration
+                                - paragraph
+                                - generic [ref=e1343]:
+                                  - code [ref=e1347]: "apiVersion: machineconfiguration.openshift.io/v1 kind: MachineConfig metadata: labels: machineconfiguration.openshift.io/role: worker name: 02-worker-container-runtime spec: config: ignition: version: 3.2.0 storage: files: - contents: inline: | [crio.runtime] default_ulimits = [ \"memlock=-1:-1\" ] mode: 420 overwrite: true path: /etc/crio/crio.conf.d/10-custom"
+                                  - generic [ref=e1348]:
+                                    - button "Copy to Clipboard" [ref=e1352]:
+                                      - img [ref=e1353]
+                                    - button [ref=e1359]
+                                  - button "Show less" [expanded] [ref=e1362]:
+                                    - generic [ref=e1363]: Show less
+                                    - img [ref=e1364]
+                            - listitem [ref=e1366]:
+                              - text: Edit the
+                              - code [ref=e1367]: default_ulimits
+                              - text: entry to specify an appropriate value for your configuration. For more information about default limits, see the
+                              - link "Set default ulimits on CRIO Using machine config" [ref=e1368] [cursor=pointer]:
+                                - /url: https://access.redhat.com/solutions/6243491
+                              - text: Knowledgebase solution.
+                            - listitem [ref=e1369]:
+                              - text: Click
+                              - strong [ref=e1371]: Create
+                              - text: .
+                            - listitem [ref=e1372]: Restart the worker nodes to apply the machine configuration.
+                          - paragraph [ref=e1373]: This configuration enables non-root users to run the training job with RDMA in the most restrictive OpenShift default security context.
+                    - generic [ref=e1374]:
+                      - paragraph [ref=e1375]:
+                        - strong [ref=e1376]: Verification
+                      - list [ref=e1377]:
+                        - listitem [ref=e1378]:
+                          - paragraph [ref=e1379]: "Verify that the Operators are installed correctly, as follows:"
+                          - list [ref=e1381]:
+                            - listitem [ref=e1382]:
+                              - text: In the OpenShift Console, in the
+                              - strong [ref=e1384]: Administrator
+                              - text: perspective, click
+                              - strong [ref=e1386]:
+                                - text: Workloads
+                                - text: Pods
+                              - text: .
+                            - listitem [ref=e1387]:
+                              - text: Select your project from the
+                              - strong [ref=e1389]: Project
+                              - text: list.
+                            - listitem [ref=e1390]: Verify that a pod is running for each of the newly installed Operators.
+                        - listitem [ref=e1391]:
+                          - paragraph [ref=e1392]: "Verify that RDMA is being used, as follows:"
+                          - list [ref=e1394]:
+                            - listitem [ref=e1395]:
+                              - paragraph [ref=e1396]:
+                                - text: Edit the
+                                - code [ref=e1397]: PyTorchJob
+                                - text: resource to set the
+                                - code [ref=e1398]: "*NCCL_DEBUG*"
+                                - text: environment variable to
+                                - code [ref=e1399]: INFO
+                                - text: ", as shown in the following example:"
+                              - generic [ref=e1400]:
+                                - paragraph [ref=e1401]:
+                                  - strong [ref=e1402]: Setting the NCCL debug level to INFO
+                                - paragraph
+                                - generic [ref=e1405]:
+                                  - code [ref=e1409]: "spec: containers: - command: - /bin/bash - -c - \"your container command\" env: - name: NCCL_SOCKET_IFNAME value: \"net1\" - name: NCCL_IB_HCA value: \"mlx5_1\" - name: NCCL_DEBUG value: \"INFO\""
+                                  - generic [ref=e1410]:
+                                    - button "Copy to Clipboard" [ref=e1414]:
+                                      - img [ref=e1415]
+                                    - button [ref=e1421]
+                                  - button "Show less" [expanded] [ref=e1424]:
+                                    - generic [ref=e1425]: Show less
+                                    - img [ref=e1426]
+                            - listitem [ref=e1428]: Run the PyTorch job.
+                            - listitem [ref=e1429]:
+                              - paragraph [ref=e1430]: "Check that the pod logs include an entry similar to the following text:"
+                              - generic [ref=e1431]:
+                                - paragraph [ref=e1432]:
+                                  - strong [ref=e1433]: Example pod log entry
+                                - paragraph
+                                - generic [ref=e1436]:
+                                  - code [ref=e1440]: "NCCL INFO NET/IB : Using [0]mlx5_1:1/RoCE [RO]"
+                                  - generic [ref=e1441]:
+                                    - button "Copy to Clipboard" [ref=e1445]:
+                                      - img [ref=e1446]
+                                    - button [ref=e1452]
+                    - complementary [ref=e1455]:
+                      - paragraph [ref=e1456]:
+                        - strong [ref=e1457]: Additional resources
+                      - list [ref=e1458]:
+                        - listitem [ref=e1459]:
+                          - link "Machine configuration" [ref=e1460] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_configuration
+                          - text: in the OpenShift documentation
+                        - listitem [ref=e1461]:
+                          - link "Managing security context constraints" [ref=e1462] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/authentication_and_authorization/managing-pod-security-policies
+                          - text: in the OpenShift documentation
+                  - generic [ref=e1463]:
+                    - heading "9.4. Troubleshooting common problems with distributed workloads for administrators Copy link to clipboard" [level=2] [ref=e1467]:
+                      - link "9.4. Troubleshooting common problems with distributed workloads for administrators" [ref=e1468] [cursor=pointer]:
+                        - /url: "#troubleshooting-common-problems-with-distributed-workloads-for-administrators_managing-rhoai"
+                      - generic "Copy link to clipboard" [ref=e1472] [cursor=pointer]:
+                        - button "Copy link" [ref=e1473]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e1474]: If your users are experiencing errors in Red Hat OpenShift AI relating to distributed workloads, read this section to understand what could be causing the problem, and how to resolve the problem.
+                    - paragraph [ref=e1475]: If the problem is not documented here or in the release notes, contact Red Hat Support.
+                    - generic [ref=e1476]:
+                      - heading "9.4.1. A user’s Ray cluster is in a suspended state Copy link to clipboard" [level=3] [ref=e1480]:
+                        - link "9.4.1. A user’s Ray cluster is in a suspended state" [ref=e1481] [cursor=pointer]:
+                          - /url: "#a_users_ray_cluster_is_in_a_suspended_state"
+                        - generic "Copy link to clipboard" [ref=e1485] [cursor=pointer]:
+                          - button "Copy link" [ref=e1486]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e1487]:
+                        - paragraph [ref=e1488]:
+                          - strong [ref=e1489]: Problem
+                        - paragraph [ref=e1490]: The resource quota specified in the cluster queue configuration might be insufficient, or the resource flavor might not yet be created.
+                      - generic [ref=e1491]:
+                        - paragraph [ref=e1492]:
+                          - strong [ref=e1493]: Diagnosis
+                        - paragraph [ref=e1494]:
+                          - text: The user’s Ray cluster head pod or worker pods remain in a suspended state. Check the status of the
+                          - code [ref=e1495]: Workload
+                          - text: resource that is created with the
+                          - code [ref=e1496]: RayCluster
+                          - text: resource. The
+                          - code [ref=e1497]: status.conditions.message
+                          - text: "field provides the reason for the suspended state, as shown in the following example:"
+                      - generic [ref=e1500]:
+                        - code [ref=e1504]:
+                          - text: "status: conditions: - lastTransitionTime:"
+                          - generic [ref=e1505]: "'2024-05-29T13:05:09Z'"
+                          - text: "message:"
+                          - generic [ref=e1506]: "'couldn'"
+                          - text: "'t assign flavors to pod"
+                          - generic [ref=e1507]: set
+                          - text: "small-group-jobtest12: insufficient"
+                          - generic [ref=e1508]: quota
+                          - generic [ref=e1509]: for
+                          - text: nvidia.com/gpu
+                          - generic [ref=e1510]: in
+                          - text: flavor default-flavor
+                          - generic [ref=e1511]: in
+                          - text: ClusterQueue'
+                        - generic [ref=e1512]:
+                          - button "Copy to Clipboard" [ref=e1516]:
+                            - img [ref=e1517]
+                          - button [ref=e1523]
+                      - generic [ref=e1526]:
+                        - paragraph [ref=e1527]:
+                          - strong [ref=e1528]: Resolution
+                        - list [ref=e1529]:
+                          - listitem [ref=e1530]:
+                            - paragraph [ref=e1531]: "Check whether the resource flavor is created, as follows:"
+                            - list [ref=e1533]:
+                              - listitem [ref=e1534]:
+                                - text: In the OpenShift console, select the user’s project from the
+                                - strong [ref=e1536]: Project
+                                - text: list.
+                              - listitem [ref=e1537]:
+                                - text: Click
+                                - strong [ref=e1539]:
+                                  - text: Home
+                                  - text: Search
+                                - text: ", and from the"
+                                - strong [ref=e1541]: Resources
+                                - text: list, select
+                                - strong [ref=e1543]: ResourceFlavor
+                                - text: .
+                              - listitem [ref=e1544]: If necessary, create the resource flavor.
+                          - listitem [ref=e1545]: Check the cluster queue configuration in the user’s code, to ensure that the resources that they requested are within the limits defined for the project.
+                          - listitem [ref=e1546]: If necessary, increase the resource quota.
+                      - paragraph [ref=e1547]:
+                        - text: For information about configuring resource flavors and quotas, see
+                        - link "Configuring quota management for distributed workloads" [ref=e1548] [cursor=pointer]:
+                          - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-distributed-workloads_managing-rhoai#configuring-quota-management-for-distributed-workloads_managing-rhoai
+                        - text: .
+                    - generic [ref=e1549]:
+                      - heading "9.4.2. A user’s Ray cluster is in a failed state Copy link to clipboard" [level=3] [ref=e1553]:
+                        - link "9.4.2. A user’s Ray cluster is in a failed state" [ref=e1554] [cursor=pointer]:
+                          - /url: "#a_users_ray_cluster_is_in_a_failed_state"
+                        - generic "Copy link to clipboard" [ref=e1558] [cursor=pointer]:
+                          - button "Copy link" [ref=e1559]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e1560]:
+                        - paragraph [ref=e1561]:
+                          - strong [ref=e1562]: Problem
+                        - paragraph [ref=e1563]: The user might have insufficient resources.
+                      - generic [ref=e1564]:
+                        - paragraph [ref=e1565]:
+                          - strong [ref=e1566]: Diagnosis
+                        - paragraph [ref=e1567]:
+                          - text: The user’s Ray cluster head pod or worker pods are not running. When a Ray cluster is created, it initially enters a
+                          - code [ref=e1568]: failed
+                          - text: state. This failed state usually resolves after the reconciliation process completes and the Ray cluster pods are running.
+                      - generic [ref=e1569]:
+                        - paragraph [ref=e1570]:
+                          - strong [ref=e1571]: Resolution
+                        - paragraph [ref=e1572]: "If the failed state persists, complete the following steps:"
+                      - list [ref=e1574]:
+                        - listitem [ref=e1575]:
+                          - text: In the OpenShift console, select the user’s project from the
+                          - strong [ref=e1577]: Project
+                          - text: list.
+                        - listitem [ref=e1578]:
+                          - text: Click
+                          - strong [ref=e1580]:
+                            - text: Workloads
+                            - text: Pods
+                          - text: .
+                        - listitem [ref=e1581]: Click the user’s pod name to open the pod details page.
+                        - listitem [ref=e1582]:
+                          - text: Click the
+                          - strong [ref=e1584]: Events
+                          - text: tab, and review the pod events to identify the cause of the problem.
+                        - listitem [ref=e1585]:
+                          - text: Check the status of the
+                          - code [ref=e1586]: Workload
+                          - text: resource that is created with the
+                          - code [ref=e1587]: RayCluster
+                          - text: resource. The
+                          - code [ref=e1588]: status.conditions.message
+                          - text: field provides the reason for the failed state.
+                    - generic [ref=e1589]:
+                      - heading "9.4.3. A user’s Ray cluster does not start Copy link to clipboard" [level=3] [ref=e1593]:
+                        - link "9.4.3. A user’s Ray cluster does not start" [ref=e1594] [cursor=pointer]:
+                          - /url: "#a_users_ray_cluster_does_not_start"
+                        - generic "Copy link to clipboard" [ref=e1598] [cursor=pointer]:
+                          - button "Copy link" [ref=e1599]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e1600]:
+                        - paragraph [ref=e1601]:
+                          - strong [ref=e1602]: Problem
+                        - paragraph [ref=e1603]:
+                          - text: After the user runs the
+                          - code [ref=e1604]: cluster.apply()
+                          - text: command, when they run either the
+                          - code [ref=e1605]: cluster.details()
+                          - text: command or the
+                          - code [ref=e1606]: cluster.status()
+                          - text: command, the Ray cluster status remains as
+                          - code [ref=e1607]: Starting
+                          - text: instead of changing to
+                          - code [ref=e1608]: Ready
+                          - text: . No pods are created.
+                      - generic [ref=e1609]:
+                        - paragraph [ref=e1610]:
+                          - strong [ref=e1611]: Diagnosis
+                        - paragraph [ref=e1612]:
+                          - text: Check the status of the
+                          - code [ref=e1613]: Workload
+                          - text: resource that is created with the
+                          - code [ref=e1614]: RayCluster
+                          - text: resource. The
+                          - code [ref=e1615]: status.conditions.message
+                          - text: field provides the reason for remaining in the
+                          - code [ref=e1616]: Starting
+                          - text: state. Similarly, check the
+                          - code [ref=e1617]: status.conditions.message
+                          - text: field for the
+                          - code [ref=e1618]: RayCluster
+                          - text: resource.
+                      - generic [ref=e1619]:
+                        - paragraph [ref=e1620]:
+                          - strong [ref=e1621]: Resolution
+                        - list [ref=e1622]:
+                          - listitem [ref=e1623]:
+                            - text: In the OpenShift console, select the user’s project from the
+                            - strong [ref=e1625]: Project
+                            - text: list.
+                          - listitem [ref=e1626]:
+                            - text: Click
+                            - strong [ref=e1628]:
+                              - text: Workloads
+                              - text: Pods
+                            - text: .
+                          - listitem [ref=e1629]: Verify that the KubeRay pod is running. If necessary, restart the KubeRay pod.
+                          - listitem [ref=e1630]: Review the logs for the KubeRay pod to identify errors.
+                    - generic [ref=e1631]:
+                      - heading "9.4.4. A user cannot create a Ray cluster or submit jobs Copy link to clipboard" [level=3] [ref=e1635]:
+                        - link "9.4.4. A user cannot create a Ray cluster or submit jobs" [ref=e1636] [cursor=pointer]:
+                          - /url: "#a_user_cannot_create_a_ray_cluster_or_submit_jobs"
+                        - generic "Copy link to clipboard" [ref=e1640] [cursor=pointer]:
+                          - button "Copy link" [ref=e1641]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e1642]:
+                        - paragraph [ref=e1643]:
+                          - strong [ref=e1644]: Problem
+                        - paragraph [ref=e1645]:
+                          - text: After the user runs the
+                          - code [ref=e1646]: cluster.apply()
+                          - text: "command, an error similar to the following text is shown:"
+                      - generic [ref=e1649]:
+                        - code [ref=e1653]:
+                          - text: "RuntimeError: Failed to get RayCluster CustomResourceDefinition:"
+                          - generic [ref=e1654]: (
+                          - generic [ref=e1655]: "403"
+                          - generic [ref=e1656]: )
+                          - text: "Reason: Forbidden HTTP response body:"
+                          - generic [ref=e1657]: "{"
+                          - generic [ref=e1658]: "\"kind\""
+                          - generic [ref=e1659]: ":"
+                          - generic [ref=e1660]: "\"Status\""
+                          - text: ","
+                          - generic [ref=e1661]: "\"apiVersion\""
+                          - generic [ref=e1662]: ":"
+                          - generic [ref=e1663]: "\"v1\""
+                          - text: ","
+                          - generic [ref=e1664]: "\"metadata\""
+                          - text: ":"
+                          - generic [ref=e1665]: "{"
+                          - generic [ref=e1666]: "}"
+                          - text: ","
+                          - generic [ref=e1667]: "\"status\""
+                          - generic [ref=e1668]: ":"
+                          - generic [ref=e1669]: "\"Failure\""
+                          - text: ","
+                          - generic [ref=e1670]: "\"message\""
+                          - generic [ref=e1671]: ":"
+                          - generic [ref=e1673]:
+                            - text: "\"rayclusters.ray.io is forbidden: User"
+                            - generic "\\\"" [ref=e1674]
+                            - text: system:serviceaccount:regularuser-project:regularuser-workbench
+                            - generic "\\\"" [ref=e1675]
+                            - text: cannot list resource
+                            - generic "\\\"" [ref=e1676]
+                            - text: rayclusters
+                            - generic "\\\"" [ref=e1677]
+                            - text: in API group
+                            - generic "\\\"" [ref=e1678]
+                            - text: ray.io
+                            - generic "\\\"" [ref=e1679]
+                            - text: in the namespace
+                            - generic "\\\"" [ref=e1680]
+                            - text: regularuser-project
+                            - generic "\\\"" [ref=e1681]
+                            - text: "\""
+                          - text: ","
+                          - generic [ref=e1682]: "\"reason\""
+                          - generic [ref=e1683]: ":"
+                          - generic [ref=e1684]: "\"Forbidden\""
+                          - text: ","
+                          - generic [ref=e1685]: "\"details\""
+                          - text: ":"
+                          - generic [ref=e1686]: "{"
+                          - generic [ref=e1687]: "\"group\""
+                          - generic [ref=e1688]: ":"
+                          - generic [ref=e1689]: "\"ray.io\""
+                          - text: ","
+                          - generic [ref=e1690]: "\"kind\""
+                          - generic [ref=e1691]: ":"
+                          - generic [ref=e1692]: "\"rayclusters\""
+                          - generic [ref=e1693]: "}"
+                          - text: ","
+                          - generic [ref=e1694]: "\"code\""
+                          - text: :403
+                          - generic [ref=e1695]: "}"
+                        - generic [ref=e1696]:
+                          - button "Copy to Clipboard" [ref=e1700]:
+                            - img [ref=e1701]
+                          - button [ref=e1707]
+                      - generic [ref=e1710]:
+                        - paragraph [ref=e1711]:
+                          - strong [ref=e1712]: Diagnosis
+                        - paragraph [ref=e1713]:
+                          - text: The correct OpenShift login credentials are not specified in the
+                          - code [ref=e1714]: TokenAuthentication
+                          - text: section of the user’s notebook code.
+                      - generic [ref=e1715]:
+                        - paragraph [ref=e1716]:
+                          - strong [ref=e1717]: Resolution
+                        - list [ref=e1718]:
+                          - listitem [ref=e1719]:
+                            - paragraph [ref=e1720]: "Advise the user to identify and specify the correct OpenShift login credentials as follows:"
+                            - list [ref=e1722]:
+                              - listitem [ref=e1723]:
+                                - text: In the OpenShift console header, click your username and click
+                                - strong [ref=e1725]: Copy login command
+                                - text: .
+                              - listitem [ref=e1726]: In the new tab that opens, log in as the user whose credentials you want to use.
+                              - listitem [ref=e1727]:
+                                - text: Click
+                                - strong [ref=e1729]: Display Token
+                                - text: .
+                              - listitem [ref=e1730]:
+                                - text: From the
+                                - strong [ref=e1732]: Log in with this token
+                                - text: section, copy the
+                                - code [ref=e1733]: token
+                                - text: and
+                                - code [ref=e1734]: server
+                                - text: values.
+                              - listitem [ref=e1735]:
+                                - paragraph [ref=e1736]:
+                                  - text: Specify the copied
+                                  - code [ref=e1737]: token
+                                  - text: and
+                                  - code [ref=e1738]: server
+                                  - text: "values in your notebook code as follows:"
+                                - generic [ref=e1741]:
+                                  - code [ref=e1745]:
+                                    - text: auth
+                                    - generic [ref=e1746]: =
+                                    - text: TokenAuthentication
+                                    - generic [ref=e1747]: (
+                                    - text: token
+                                    - generic [ref=e1748]: =
+                                    - generic [ref=e1749]:
+                                      - text: "\""
+                                      - emphasis [ref=e1750]: <token>
+                                    - generic [ref=e1751]: "\", server = \""
+                                    - generic [ref=e1752]:
+                                      - emphasis [ref=e1753]: <server>
+                                      - text: "\""
+                                    - text: ","
+                                    - generic [ref=e1754]: skip_tls
+                                    - generic [ref=e1755]: =
+                                    - text: "False"
+                                    - generic [ref=e1756]: )
+                                    - text: auth.login
+                                    - generic [ref=e1757]: (
+                                    - generic [ref=e1758]: )
+                                  - generic [ref=e1759]:
+                                    - button "Copy to Clipboard" [ref=e1763]:
+                                      - img [ref=e1764]
+                                    - button [ref=e1770]
+                                  - button "Show less" [expanded] [ref=e1773]:
+                                    - generic [ref=e1774]: Show less
+                                    - img [ref=e1775]
+                          - listitem [ref=e1777]:
+                            - text: Verify that the user has the correct permissions and is part of the
+                            - code [ref=e1778]: rhods-users
+                            - text: group.
+                    - complementary [ref=e1779]:
+                      - heading "9.4.5. Additional resources Copy link to clipboard" [level=3] [ref=e1783]:
+                        - link "9.4.5. Additional resources" [ref=e1784] [cursor=pointer]:
+                          - /url: "#troubleshooting-common-problems-with-distributed-workloads-for-administrators_managing-rhoai_945-additional-resources"
+                        - generic "Copy link to clipboard" [ref=e1788] [cursor=pointer]:
+                          - button "Copy link" [ref=e1789]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - list [ref=e1791]:
+                        - listitem [ref=e1792]:
+                          - link "Troubleshooting common problems with distributed workloads for users" [ref=e1793] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/troubleshooting-common-problems-with-distributed-workloads-for-users_distributed-workloads
+                        - listitem [ref=e1794]:
+                          - link "Troubleshooting common problems with Kueue" [ref=e1795] [cursor=pointer]:
+                            - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-workloads-with-kueue#troubleshooting-common-problems-with-Kueue_kueue
+                - navigation "pagination" [ref=e1796]:
+                  - link "Previous" [ref=e1799] [cursor=pointer]:
+                    - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/managing-workloads-with-kueue
+                  - link "Next" [ref=e1802] [cursor=pointer]:
+                    - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/managing_openshift_ai/configuring-external-oidc-provider_managing-rhoai
+      - contentinfo [ref=e1804]:
+        - heading "Red Hat footer" [level=2]
+        - generic [ref=e1805]:
+          - generic [ref=e1807]:
+            - link "Red Hat logo" [ref=e1811] [cursor=pointer]:
+              - /url: /en
+              - img "Red Hat logo" [ref=e1812]
+            - list "Red Hat social media links" [ref=e1816]:
+              - generic:
+                - generic:
+                  - generic:
+                    - listitem [ref=e1817]:
+                      - link "Github" [ref=e1819] [cursor=pointer]:
+                        - /url: https://github.com/redhat-documentation
+                        - img [ref=e1822]
+                    - listitem [ref=e1824]:
+                      - link "reddit" [ref=e1825] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/redhat/
+                        - img "reddit" [ref=e1826]
+                    - listitem [ref=e1827]:
+                      - link "Youtube" [ref=e1829] [cursor=pointer]:
+                        - /url: https://www.youtube.com/@redhat
+                        - img [ref=e1832]
+                    - listitem [ref=e1834]:
+                      - link "Twitter" [ref=e1836] [cursor=pointer]:
+                        - /url: https://twitter.com/RedHat
+                        - img [ref=e1839]
+          - generic [ref=e1842]:
+            - generic [ref=e1845]:
+              - generic:
+                - heading "Learn" [level=3] [ref=e1846]
+                - list "Learn" [ref=e1847]:
+                  - listitem [ref=e1848]:
+                    - link "Developer resources" [ref=e1849] [cursor=pointer]:
+                      - /url: https://developers.redhat.com/learn
+                  - listitem [ref=e1850]:
+                    - link "Cloud learning hub" [ref=e1851] [cursor=pointer]:
+                      - /url: /learn/learning-paths
+                  - listitem [ref=e1852]:
+                    - link "Interactive labs" [ref=e1853] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/interactive-labs
+                  - listitem [ref=e1854]:
+                    - link "Training and certification" [ref=e1855] [cursor=pointer]:
+                      - /url: https://www.redhat.com/services/training-and-certification
+                  - listitem [ref=e1856]:
+                    - link "Customer support" [ref=e1857] [cursor=pointer]:
+                      - /url: https://access.redhat.com/support
+                  - listitem [ref=e1858]:
+                    - link "See all documentation" [ref=e1859] [cursor=pointer]:
+                      - /url: /en/products
+                - heading "Try, buy, & sell" [level=3] [ref=e1860]
+                - list "Try, buy, & sell" [ref=e1861]:
+                  - listitem [ref=e1862]:
+                    - link "Product trial center" [ref=e1863] [cursor=pointer]:
+                      - /url: https://redhat.com/en/products/trials
+                  - listitem [ref=e1864]:
+                    - link "Red Hat Ecosystem Catalog" [ref=e1865] [cursor=pointer]:
+                      - /url: https://catalog.redhat.com/
+                  - listitem [ref=e1866]:
+                    - link "Red Hat Store" [ref=e1867] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/store
+                - heading "Communities" [level=3] [ref=e1870]
+                - list "Communities" [ref=e1871]:
+                  - listitem [ref=e1872]:
+                    - link "Customer Portal Community" [ref=e1873] [cursor=pointer]:
+                      - /url: https://access.redhat.com/community
+                  - listitem [ref=e1874]:
+                    - link "Events" [ref=e1875] [cursor=pointer]:
+                      - /url: https://www.redhat.com/events
+                  - listitem [ref=e1876]:
+                    - link "How we contribute" [ref=e1877] [cursor=pointer]:
+                      - /url: https://www.redhat.com/about/our-community-contributions
+            - generic [ref=e1878]:
+              - generic:
+                - generic [ref=e1880]:
+                  - heading "About Red Hat" [level=3] [ref=e1882]
+                  - paragraph [ref=e1884]: We deliver hardened solutions that make it easier for enterprises to work across platforms and environments, from the core datacenter to the network edge.
+                - generic [ref=e1886]:
+                  - heading "Making open source more inclusive" [level=3] [ref=e1888]
+                  - paragraph [ref=e1890]:
+                    - text: Red Hat is committed to replacing problematic language in our code, documentation, and web properties. For more details, see the
+                    - link "Red Hat Blog" [ref=e1891] [cursor=pointer]:
+                      - /url: " https://www.redhat.com/en/blog/making-open-source-more-inclusive-eradicating-problematic-language"
+                    - text: .
+                - generic [ref=e1893]:
+                  - heading "About Red Hat Documentation" [level=3] [ref=e1895]
+                  - paragraph [ref=e1897]:
+                    - text: We help Red Hat users innovate and achieve their goals with our products and services with content they can trust.
+                    - link "Explore our recent updates" [ref=e1898] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/blog/whats-new-docsredhatcom
+                    - text: .
+                - link "Legal Notice" [ref=e1902] [cursor=pointer]:
+                  - /url: /en/legal-notice
+                - generic [ref=e1904]:
+                  - heading "Theme" [level=3] [ref=e1906]
+                  - button "Toggle theme" [ref=e1910] [cursor=pointer]
+          - generic [ref=e1911]:
+            - heading "Red Hat footer" [level=2]
+            - generic [ref=e1913]:
+              - link "Visit Red Hat" [ref=e1916] [cursor=pointer]:
+                - /url: https://redhat.com
+                - img "Red Hat logo" [ref=e1917]
+              - list "Red Hat legal and privacy links" [ref=e1923]:
+                - listitem [ref=e1924]:
+                  - link "About Red Hat" [ref=e1925] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/company
+                - listitem [ref=e1926]:
+                  - link "Jobs" [ref=e1927] [cursor=pointer]:
+                    - /url: https://redhat.com/en/jobs
+                - listitem [ref=e1928]:
+                  - link "Events" [ref=e1929] [cursor=pointer]:
+                    - /url: https://redhat.com/en/events
+                - listitem [ref=e1930]:
+                  - link "Locations" [ref=e1931] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/office-locations
+                - listitem [ref=e1932]:
+                  - link "Contact Red Hat" [ref=e1933] [cursor=pointer]:
+                    - /url: https://redhat.com/en/contact
+                - listitem [ref=e1934]:
+                  - link "Red Hat Blog" [ref=e1935] [cursor=pointer]:
+                    - /url: https://redhat.com/en/blog
+                - listitem [ref=e1936]:
+                  - link "Inclusion at Red Hat" [ref=e1937] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/our-culture/diversity-equity-inclusion
+                - listitem [ref=e1938]:
+                  - link "Cool Stuff Store" [ref=e1939] [cursor=pointer]:
+                    - /url: https://coolstuff.redhat.com/
+                - listitem [ref=e1940]:
+                  - link "Red Hat Summit" [ref=e1941] [cursor=pointer]:
+                    - /url: https://www.redhat.com/en/summit
+              - generic [ref=e1944]:
+                - generic:
+                  - link "All systems operational" [ref=e1976] [cursor=pointer]:
+                    - /url: https://status.redhat.com
+                    - text: All systems operational
+                  - generic [ref=e1948]:
+                    - generic: © 2026 Red Hat
+                  - list "Red Hat legal and privacy links" [ref=e1949]:
+                    - listitem [ref=e1950]:
+                      - link "Privacy statement" [ref=e1951] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/privacy-policy
+                    - listitem [ref=e1952]:
+                      - link "Terms of use" [ref=e1953] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/terms-use
+                    - listitem [ref=e1954]:
+                      - link "All policies and guidelines" [ref=e1955] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/all-policies-guidelines
+                    - listitem [ref=e1956]:
+                      - link "Digital accessibility" [ref=e1957] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/digital-accessibility
+                    - listitem [ref=e1958]:
+                      - link "Cookie Preferences, opens a dedicated popup modal window" [ref=e1960] [cursor=pointer]: Cookie preferences
+    - generic [ref=e1964]:
+      - generic [ref=e1965]:
+        - heading "How we use cookies" [level=2] [ref=e1966]
+        - text: We use cookies on our websites to deliver our online services. Details about how we use cookies and how you may disable them are set out in our
+        - link "Privacy Statement" [ref=e1967] [cursor=pointer]:
+          - /url: http://www.redhat.com/en/about/privacy-policy#cookies
+        - text: . By using this website you agree to our use of cookies.
+      - generic [ref=e1968]:
+        - button "Close" [ref=e1969] [cursor=pointer]:
+          - img "Close" [ref=e1970]
+        - button "Accept All" [ref=e1971]
+        - button "More Options" [ref=e1972]
+  - status

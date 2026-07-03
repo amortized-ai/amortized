@@ -1,0 +1,59 @@
+[    4143ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ https://accounts.google.com/v3/signin/identifier?continue=https://accounts.google.com/signin/chrome/sync/finish?est%3DANsSoylp4MwZtjeCj40Ehw4_iRUPkO5yipg4_VGTI4TH1ooxmWiULXTg2D5OBquGaftFqWqWVj30CdD0cli4ns4%26continue%3Dhttps://www.google.com/&ssp=1&theme=mn&flowName=GlifDesktopChromeSync&dsh=S775569648:1782590447639478:0
+[    4146ms] [LOG] %c%s color: red; background: yellow; font-size: 24px; WARNING! @ https://www.gstatic.com/_/mss/boq-identity/_/js/k=boq-identity.AccountsSignInUi.en_US.1dwkazA86mY.es5.O/am=EQ0AAAAwULyQAcD-_28AAAIIsh3wPQugCRA6AAAAAAAAAABgAQAAGgE/d=1/excm=_b,_tp,identifierview/ed=1/dg=0/wt=2/ujg=1/rs=AOaEmlGHS4J4Klucmvy-5q65t7CXZRG44Q/dti=1/m=_b,_tp:551
+[    4146ms] [LOG] %c%s font-size: 18px; Using this console may allow attackers to impersonate you and steal your information using an attack called Self-XSS.
+Do not enter or paste code that you do not understand. @ https://www.gstatic.com/_/mss/boq-identity/_/js/k=boq-identity.AccountsSignInUi.en_US.1dwkazA86mY.es5.O/am=EQ0AAAAwULyQAcD-_28AAAIIsh3wPQugCRA6AAAAAAAAAABgAQAAGgE/d=1/excm=_b,_tp,identifierview/ed=1/dg=0/wt=2/ujg=1/rs=AOaEmlGHS4J4Klucmvy-5q65t7CXZRG44Q/dti=1/m=_b,_tp:551
+[   11916ms] [WARNING] Blocked aria-hidden on an element because its descendant retained focus. The focus must not be hidden from assistive technology users. Avoid using aria-hidden on a focused element or its ancestor. Consider using the inert attribute instead, which will also prevent focus. For more details, see the aria-hidden section of the WAI-ARIA specification at https://w3c.github.io/aria/#aria-hidden.
+Element with focus: <div.VfPpkd-qNpTzb-P1ekSe VfPpkd-qNpTzb-P1ekSe-OWXEXe-A9y3zc VfPpkd-qNpTzb-P1ekSe-OWXEXe-OiiCO-IhfUye>
+Ancestor with aria-hidden: <div.wuMMWb> @ https://accounts.google.com/v3/signin/identifier?continue=https://accounts.google.com/signin/chrome/sync/finish?est%3DANsSoylp4MwZtjeCj40Ehw4_iRUPkO5yipg4_VGTI4TH1ooxmWiULXTg2D5OBquGaftFqWqWVj30CdD0cli4ns4%26continue%3Dhttps://www.google.com/&ssp=1&theme=mn&flowName=GlifDesktopChromeSync&dsh=S775569648:1782590447639478:0
+[   23635ms] [ERROR] Framing 'https://ogs.google.com/' violates the following report-only Content Security Policy directive: "frame-ancestors 'self'". The violation has been logged, but no further action has been taken.
+ @ :0
+[   23635ms] [ERROR] Framing 'https://ogs.google.com/' violates the following report-only Content Security Policy directive: "frame-ancestors 'self'". The violation has been logged, but no further action has been taken.
+ @ :0
+[   23636ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://csp.withgoogle.com/csp/frame-ancestors/a00d54fdef4a77536baac3725d1409f8:0
+[   36569ms] [INFO] ignoring probably-harmless call to browser_history.update: #organization/bots/all-bots @ https://ava.local:8443/static/webpack-bundles/app.560f7c2cbda07d532282.js:0
+[  710830ms] [INFO] Autofocus processing was blocked because a document already has a focused element. @ https://ava.local:8443/#narrow/is/starred:0
+[ 1541827ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=false&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1543234ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1545121ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1547075ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1550037ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1554885ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1559939ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1568389ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1583041ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1596699ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1597758ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1624137ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1652489ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1656703ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1689754ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1716711ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1769851ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1776701ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1828056ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1836710ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1890582ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 1896704ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1956712ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 1962906ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2016715ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 2031315ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2076709ms] [ERROR] Failed to load resource: the server responded with a status of 400 () @ https://ava.local:8443/json/users/me/presence:0
+[ 2121112ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2136839ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/users/me/presence:0
+[ 2201724ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/users/me/presence:0
+[ 2201840ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2256844ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/users/me/presence:0
+[ 2260100ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2321719ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/users/me/presence:0
+[ 2325240ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2376843ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/users/me/presence:0
+[ 2391447ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2436716ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/users/me/presence:0
+[ 2475507ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2496864ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_CLOSED @ https://ava.local:8443/json/users/me/presence:0
+[ 2527751ms] [ERROR] Failed to load resource: net::ERR_CERT_COMMON_NAME_INVALID @ https://ava.local:8443/json/events?dont_block=true&queue_id=c8528d84-cdef-4198-8c09-2b0f56fe452d&last_event_id=39&client_gravatar=true&slim_presence=true:0
+[ 2561735ms] [ERROR] Failed to load resource: net::ERR_CERT_COMMON_NAME_INVALID @ https://ava.local:8443/json/users/me/presence:0
+[ 2607662ms] [ERROR] Failed to load resource: net::ERR_CERT_COMMON_NAME_INVALID @ https://ava.local:8443/json/users/me/presence:0
+[ 2609982ms] [LOG] Setting reload_in_progress in beforeunload handler @ https://ava.local:8443/static/webpack-bundles/app.560f7c2cbda07d532282.js:0
+[ 2609982ms] [LOG] Cleaning up our event queue @ https://ava.local:8443/static/webpack-bundles/app.560f7c2cbda07d532282.js:0

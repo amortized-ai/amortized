@@ -1,0 +1,2079 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - link "Skip to navigation" [ref=e6] [cursor=pointer]:
+          - /url: "#pfe-navigation"
+        - link "Skip to content" [ref=e7] [cursor=pointer]:
+          - /url: "#main-content"
+        - navigation "Featured links" [ref=e8]:
+          - paragraph [ref=e9]: Featured links
+          - list [ref=e11]:
+            - listitem [ref=e12]:
+              - link "Red Hat Summit" [ref=e13] [cursor=pointer]:
+                - /url: https://www.redhat.com/en/summit
+                - img "Red Hat Summit" [ref=e14]
+            - listitem [ref=e15]:
+              - link "Support" [ref=e16] [cursor=pointer]:
+                - /url: https://access.redhat.com/
+            - listitem [ref=e17]:
+              - link "Console" [ref=e18] [cursor=pointer]:
+                - /url: https://console.redhat.com/
+            - listitem [ref=e19]:
+              - link "Developers" [ref=e20] [cursor=pointer]:
+                - /url: https://developers.redhat.com/
+            - listitem [ref=e21]:
+              - link "Start a trial" [ref=e22] [cursor=pointer]:
+                - /url: https://www.redhat.com/en/products/trials
+            - listitem [ref=e23]:
+              - button "All Red Hat" [ref=e24] [cursor=pointer]:
+                - text: All Red Hat
+                - img [ref=e25]
+      - banner [ref=e27]:
+        - navigation "Main" [ref=e1474]:
+          - link "Red Hat Documentation" [ref=e1476] [cursor=pointer]:
+            - /url: /en
+            - img "Red Hat Documentation" [ref=e1477]
+          - navigation [ref=e1480]:
+            - list [ref=e1481]:
+              - listitem [ref=e1482]:
+                - button "AI" [ref=e1483] [cursor=pointer]
+              - listitem [ref=e1484]:
+                - button "Learn" [ref=e1485] [cursor=pointer]
+              - listitem [ref=e1486]:
+                - button "Documentation" [ref=e1487] [cursor=pointer]
+              - listitem [ref=e1488]:
+                - button "Resources" [ref=e1489] [cursor=pointer]
+      - main [ref=e29]:
+        - generic [ref=e32]:
+          - navigation "Breadcrumb" [ref=e1490]:
+            - list [ref=e34]:
+              - listitem [ref=e35]:
+                - link "Home" [ref=e36] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e37]:
+                - link "Products" [ref=e38] [cursor=pointer]:
+                  - /url: /en/products
+              - listitem [ref=e39]:
+                - link "Red Hat OpenShift AI Self-Managed" [ref=e40] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/
+              - listitem [ref=e41]:
+                - link "3.3" [ref=e42] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/
+              - listitem [ref=e43]:
+                - link "Accelerate data processing and training with distributed workloads" [ref=e44] [cursor=pointer]:
+                  - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/
+              - listitem [ref=e45]: Chapter 6. Running Kubeflow Trainer v2-based distributed training workloads
+          - button "Toggle theme" [ref=e1493] [cursor=pointer]:
+            - img [ref=e1496]
+        - generic [ref=e46]:
+          - complementary "left navigation" [ref=e47]:
+            - generic [ref=e48]:
+              - button "toggle left menu" [expanded] [ref=e49] [cursor=pointer]:
+                - img [ref=e1500]
+              - heading "Red Hat OpenShift AI Self-Managed" [level=2] [ref=e51]
+              - generic [ref=e53]:
+                - img [ref=e1505]
+                - textbox "Search input" [ref=e54]:
+                  - /placeholder: Filter table of contents
+              - navigation "Table of contents" [ref=e56]:
+                - list [ref=e57]:
+                  - listitem [ref=e58]:
+                    - link "Working with distributed workloads" [ref=e59] [cursor=pointer]:
+                      - /url: /documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/index
+                  - listitem [ref=e60]:
+                    - link "Preface" [ref=e61] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/pr01
+                  - listitem [ref=e62]:
+                    - group [ref=e63]:
+                      - generic "1. Overview of distributed workloads" [ref=e64] [cursor=pointer]
+                  - listitem [ref=e65]:
+                    - group [ref=e66]:
+                      - generic "2. Preparing the distributed training environment" [ref=e67] [cursor=pointer]
+                  - listitem [ref=e68]:
+                    - group [ref=e69]:
+                      - generic "3. Configuring RoCE networking for distributed LLM deployments" [ref=e70] [cursor=pointer]
+                  - listitem [ref=e71]:
+                    - group [ref=e72]:
+                      - generic "4. Running Ray-based distributed workloads" [ref=e73] [cursor=pointer]
+                  - listitem [ref=e74]:
+                    - group [ref=e75]:
+                      - generic "5. Running Training Operator-based distributed training workloads" [ref=e76] [cursor=pointer]
+                  - listitem [ref=e77]:
+                    - group [ref=e78]:
+                      - generic "6. Running Kubeflow Trainer v2-based distributed training workloads" [ref=e79] [cursor=pointer]
+                      - list [ref=e80]:
+                        - listitem [ref=e81]:
+                          - link "Running Kubeflow Trainer v2-based distributed training workloads" [ref=e82] [cursor=pointer]:
+                            - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/running-kubeflow-trainerv2_distributed-workloads
+                        - listitem [ref=e83]:
+                          - group [ref=e84]:
+                            - generic "6.1. Understanding and using training runtimes" [ref=e85] [cursor=pointer]
+                        - listitem [ref=e86]:
+                          - group [ref=e87]:
+                            - generic "6.2. Using Kubeflow Trainer v2 to run distributed training workloads" [ref=e88] [cursor=pointer]
+                        - listitem [ref=e89]:
+                          - group [ref=e90]:
+                            - generic "6.3. Using the Kubeflow SDK to run distributed training workloads" [ref=e91] [cursor=pointer]
+                        - listitem [ref=e92]:
+                          - group [ref=e93]:
+                            - generic "6.4. Fine-tuning a model by using Kubeflow Trainer v2" [ref=e94] [cursor=pointer]
+                        - listitem [ref=e95]:
+                          - group [ref=e96]:
+                            - generic "6.5. Example Kubeflow Trainer TrainJob resources" [ref=e97] [cursor=pointer]
+                  - listitem [ref=e98]:
+                    - group [ref=e99]:
+                      - generic "7. Monitoring distributed workloads" [ref=e100] [cursor=pointer]
+                  - listitem [ref=e101]:
+                    - group [ref=e102]:
+                      - generic "8. Troubleshooting common problems with distributed workloads for users" [ref=e103] [cursor=pointer]
+                  - listitem [ref=e104]:
+                    - link "Legal Notice" [ref=e105] [cursor=pointer]:
+                      - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/legal-notice
+          - generic [ref=e106]:
+            - navigation [ref=e107]:
+              - generic [ref=e108]: Format
+              - combobox "Format" [disabled] [ref=e109]:
+                - option "Multi-page" [selected]
+                - option "Single-page"
+                - option "View full doc as PDF"
+            - navigation [ref=e110]:
+              - group [ref=e1507]:
+                - generic "On this page" [ref=e1508] [cursor=pointer]:
+                  - img [ref=e1511]
+                  - generic [ref=e1513]: On this page
+            - article [ref=e174]:
+              - generic [ref=e175]:
+                - heading "Chapter 6. Running Kubeflow Trainer v2-based distributed training workloads" [level=1] [ref=e176]
+                - separator [ref=e177]
+                - generic [ref=e179]:
+                  - paragraph [ref=e180]: You can run distributed training workloads on Red Hat OpenShift AI by using Kubeflow Trainer v2. Kubeflow Trainer v2 replaces the framework-specific custom resource definitions (CRDs) from Training Operator v1, such as PyTorchJob, with a unified TrainJob API and pre-built ClusterTrainingRuntime infrastructure templates.
+                  - generic [ref=e181]:
+                    - heading "6.1. Understanding and using training runtimes Copy link to clipboard" [level=2] [ref=e1514]:
+                      - link "6.1. Understanding and using training runtimes" [ref=e186] [cursor=pointer]:
+                        - /url: "#understanding-and-using-training-runtimes_distributed-workloads"
+                      - generic "Copy link to clipboard" [ref=e1518] [cursor=pointer]:
+                        - button "Copy link" [ref=e1519]:
+                          - generic "Copy link" [ref=e1520]:
+                            - img [ref=e1522]
+                    - paragraph [ref=e187]: Kubeflow Trainer v2 uses training runtimes to define the distributed training infrastructure for your training jobs. Runtimes encapsulate best practices for distributed training, including PyTorch distributed configuration, torchrun setup, environment variables, and container image defaults.
+                    - paragraph [ref=e188]: This section describes how to view the pre-built ClusterTrainingRuntime resources provided by Red Hat OpenShift AI, and how to create custom namespace-scoped TrainingRuntime resources when you need project-specific configuration.
+                    - generic [ref=e189]:
+                      - heading "6.1.1. Understanding ClusterTrainingRuntimes Copy link to clipboard" [level=3] [ref=e1524]:
+                        - link "6.1.1. Understanding ClusterTrainingRuntimes" [ref=e194] [cursor=pointer]:
+                          - /url: "#understanding-cluster-training-runtimes_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1528] [cursor=pointer]:
+                          - button "Copy link" [ref=e1529]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e195]:
+                        - text: ClusterTrainingRuntimes are cluster-scoped infrastructure templates that define the distributed training environment for your training jobs. They are created by the platform administrator and are available to all projects in the cluster. They replace the per-job infrastructure configuration that was required in Training Operator v1 (
+                        - code [ref=e196]: PyTorchJob
+                        - text: ), where you had to specify the full pod specification, environment variables, and distributed training setup for every job.
+                      - paragraph [ref=e197]:
+                        - text: With Kubeflow Trainer v2, your TrainJob resource references a
+                        - code [ref=e198]: ClusterTrainingRuntime
+                        - text: through the
+                        - code [ref=e199]: runtimeRef
+                        - text: field. The runtime handles the complexity of configuring
+                        - code [ref=e200]: torchrun
+                        - text: ", environment variables("
+                        - code [ref=e201]: MASTER_ADDR
+                        - text: ","
+                        - code [ref=e202]: MASTER_PORT
+                        - text: ), node coordination, and container image defaults, so you can focus on your training code and resource requirements.
+                      - paragraph [ref=e203]: "Red Hat OpenShift AI provides the following pre-built ClusterTrainingRuntimes:"
+                      - generic [ref=e204]:
+                        - button "Expand" [ref=e1530] [cursor=pointer]:
+                          - generic:
+                            - generic: Expand
+                        - table [ref=e207]:
+                          - rowgroup [ref=e211]:
+                            - row "Runtime Description" [ref=e212]:
+                              - columnheader "Runtime" [ref=e213]
+                              - columnheader "Description" [ref=e214]
+                          - rowgroup [ref=e215]:
+                            - row "torch-distributed General-purpose PyTorch distributed training with CUDA support" [ref=e216]:
+                              - cell "torch-distributed" [ref=e217]:
+                                - paragraph [ref=e218]:
+                                  - code [ref=e219]: torch-distributed
+                              - cell "General-purpose PyTorch distributed training with CUDA support" [ref=e220]:
+                                - paragraph [ref=e221]: General-purpose PyTorch distributed training with CUDA support
+                            - row "torch-distributed-rocm PyTorch distributed training for AMD ROCm GPUs" [ref=e222]:
+                              - cell "torch-distributed-rocm" [ref=e223]:
+                                - paragraph [ref=e224]:
+                                  - code [ref=e225]: torch-distributed-rocm
+                              - cell "PyTorch distributed training for AMD ROCm GPUs" [ref=e226]:
+                                - paragraph [ref=e227]: PyTorch distributed training for AMD ROCm GPUs
+                            - row "torch-distributed-cuda128-torch29-py312 PyTorch 2.9 with CUDA 12.8, Python 3.12" [ref=e228]:
+                              - cell "torch-distributed-cuda128-torch29-py312" [ref=e229]:
+                                - paragraph [ref=e230]:
+                                  - code [ref=e231]: torch-distributed-cuda128-torch29-py312
+                              - cell "PyTorch 2.9 with CUDA 12.8, Python 3.12" [ref=e232]:
+                                - paragraph [ref=e233]: PyTorch 2.9 with CUDA 12.8, Python 3.12
+                            - row "training-hub Training Hub runtime with built-in fine-tuning algorithms (OSFT, SFT)" [ref=e234]:
+                              - cell "training-hub" [ref=e235]:
+                                - paragraph [ref=e236]:
+                                  - code [ref=e237]: training-hub
+                              - cell "Training Hub runtime with built-in fine-tuning algorithms (OSFT, SFT)" [ref=e238]:
+                                - paragraph [ref=e239]: Training Hub runtime with built-in fine-tuning algorithms (OSFT, SFT)
+                            - row "training-hub-th05-cuda128-torch29-py312 Training Hub runtime with CUDA 12.8, PyTorch 2.9, Python 3.12" [ref=e240]:
+                              - cell "training-hub-th05-cuda128-torch29-py312" [ref=e241]:
+                                - paragraph [ref=e242]:
+                                  - code [ref=e243]: training-hub-th05-cuda128-torch29-py312
+                              - cell "Training Hub runtime with CUDA 12.8, PyTorch 2.9, Python 3.12" [ref=e244]:
+                                - paragraph [ref=e245]: Training Hub runtime with CUDA 12.8, PyTorch 2.9, Python 3.12
+                        - button "Show more" [ref=e246] [cursor=pointer]:
+                          - generic [ref=e247]: Show more
+                      - generic [ref=e248]:
+                        - heading "6.1.1.1. Viewing available runtimes Copy link to clipboard" [level=4] [ref=e1532]:
+                          - link "6.1.1.1. Viewing available runtimes" [ref=e253] [cursor=pointer]:
+                            - /url: "#viewing-available-runtimes_distributed-workloads"
+                          - generic "Copy link to clipboard" [ref=e1536] [cursor=pointer]:
+                            - button "Copy link" [ref=e1537]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - generic [ref=e254]:
+                          - paragraph [ref=e255]:
+                            - strong [ref=e256]: Prerequisites
+                          - list [ref=e257]:
+                            - listitem [ref=e258]:
+                              - text: You have installed the OpenShift CLI (
+                              - code [ref=e259]: oc
+                              - text: ).
+                            - listitem [ref=e260]: You have access to an OpenShift cluster with Red Hat OpenShift AI installed.
+                        - generic [ref=e261]:
+                          - paragraph [ref=e262]:
+                            - strong [ref=e263]: Procedure
+                          - paragraph [ref=e264]: "To list the available ClusterTrainingRuntimes in your cluster, run the following command:"
+                        - generic [ref=e1538]:
+                          - code [ref=e268]: oc get clustertrainingruntime
+                          - generic [ref=e1541]:
+                            - button "Copy to Clipboard" [ref=e1545]:
+                              - img [ref=e1546]
+                            - button [ref=e1552]
+                        - paragraph [ref=e269]: "Example output:"
+                        - generic [ref=e1555]:
+                          - code [ref=e273]: NAME AGE torch-distributed 5m torch-distributed-rocm 5m torch-distributed-th03-cuda128-torch28-py312 5m training-hub 5m training-hub03-cuda128-torch28-py312 5m
+                          - generic [ref=e1558]:
+                            - button "Copy to Clipboard" [ref=e1562]:
+                              - img [ref=e1563]
+                            - button [ref=e1569]
+                          - button "Show less" [expanded] [ref=e1572]:
+                            - generic [ref=e1573]: Show less
+                            - img [ref=e1574]
+                        - paragraph [ref=e274]: "To view the details of a specific runtime, run the following command:"
+                        - generic [ref=e1576]:
+                          - code [ref=e278]: oc get clustertrainingruntime torch-distributed -o yaml
+                          - generic [ref=e1579]:
+                            - button "Copy to Clipboard" [ref=e1583]:
+                              - img [ref=e1584]
+                            - button [ref=e1590]
+                    - generic [ref=e279]:
+                      - heading "6.1.2. ClusterTrainingRuntime structure Copy link to clipboard" [level=3] [ref=e1593]:
+                        - link "6.1.2. ClusterTrainingRuntime structure" [ref=e284] [cursor=pointer]:
+                          - /url: "#cluster-training-runtime-structure_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1597] [cursor=pointer]:
+                          - button "Copy link" [ref=e1598]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e285]:
+                        - text: The following example shows the structure of the
+                        - code [ref=e286]: torch-distributed
+                        - text: ClusterTrainingRuntime. This runtime is pre-installed in Red Hat OpenShift AI and handles PyTorch distributed training configuration, including
+                        - code [ref=e287]: torchrun
+                        - text: "setup, environment variables, and node coordination:"
+                      - generic [ref=e1599]:
+                        - code [ref=e291]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: ClusterTrainingRuntime metadata: name: torch-distributed spec: mlPolicy: torch: numProcPerNode: auto template: spec: replicatedJobs: - name: Node template: spec: template: spec: containers: - name: trainer env: - name: MASTER_ADDR value: \"$(JOB_NAME)-node-0-0.$(JOB_NAME)\" - name: MASTER_PORT value: \"29500\" command: - torchrun"
+                        - generic [ref=e1602]:
+                          - button "Copy to Clipboard" [ref=e1606]:
+                            - img [ref=e1607]
+                          - button [ref=e1613]
+                        - button "Show less" [expanded] [ref=e1616]:
+                          - generic [ref=e1617]: Show less
+                          - img [ref=e1618]
+                      - alert [ref=e1620]:
+                        - generic [ref=e1623]:
+                          - generic [ref=e293]: Note
+                          - paragraph [ref=e295]:
+                            - text: You do not need to create the
+                            - code [ref=e296]: torch-distributed
+                            - text: ClusterTrainingRuntime. It is provided out of the box when the platform administrator enables the Kubeflow Trainer component in the DataScienceCluster. Only the platform administrator creates or modifies ClusterTrainingRuntimes.
+                    - generic [ref=e297]:
+                      - heading "6.1.3. How runtimeRef connects a TrainJob to a runtime Copy link to clipboard" [level=3] [ref=e1627]:
+                        - link "6.1.3. How runtimeRef connects a TrainJob to a runtime" [ref=e302] [cursor=pointer]:
+                          - /url: "#how-runtimeRef-connects-a-trainJob-to-a-runtime_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1631] [cursor=pointer]:
+                          - button "Copy link" [ref=e1632]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e303]:
+                        - text: In your
+                        - code [ref=e304]: TrainJob
+                        - text: resource, you reference a runtime using the
+                        - code [ref=e305]: runtimeRef
+                        - text: "field. This field specifies the name and kind of the runtime to use:"
+                      - generic [ref=e1633]:
+                        - code [ref=e309]: "spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime"
+                        - generic [ref=e1636]:
+                          - button "Copy to Clipboard" [ref=e1640]:
+                            - img [ref=e1641]
+                          - button [ref=e1647]
+                      - paragraph [ref=e310]: "where:"
+                      - generic [ref=e312]:
+                        - term [ref=e313]:
+                          - code [ref=e315]: kind
+                        - definition [ref=e316]:
+                          - list [ref=e318]:
+                            - listitem [ref=e319]:
+                              - code [ref=e320]: ClusterTrainingRuntime
+                              - text: A cluster-scoped runtime available to all projects. These are the pre-built runtimes provided by Red Hat OpenShift AI.
+                            - listitem [ref=e321]:
+                              - code [ref=e322]: TrainingRuntime
+                              - text: A namespace-scoped runtime that you create in your own project. See
+                              - strong [ref=e324]: Creating a custom TrainingRuntime resource
+                              - text: below for details.
+                    - generic [ref=e325]:
+                      - heading "6.1.4. Creating a custom TrainingRuntime resource Copy link to clipboard" [level=3] [ref=e1650]:
+                        - link "6.1.4. Creating a custom TrainingRuntime resource" [ref=e330] [cursor=pointer]:
+                          - /url: "#creating-a-custom-training-runtime-resource_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1654] [cursor=pointer]:
+                          - button "Copy link" [ref=e1655]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e331]:
+                        - text: A
+                        - strong [ref=e333]: project administrator
+                        - text: can create a namespace-scoped
+                        - code [ref=e334]: TrainingRuntime
+                        - text: resource when they need a custom training environment that differs from the pre-built
+                        - code [ref=e335]: ClusterTrainingRuntime
+                        - text: resources provided by the platform.
+                      - paragraph [ref=e336]:
+                        - text: A
+                        - code [ref=e337]: TrainingRuntime
+                        - text: "is useful when you need to:"
+                      - list [ref=e339]:
+                        - listitem [ref=e340]: Use a custom container image with additional libraries or dependencies pre-installed.
+                        - listitem [ref=e341]: Set custom environment variables for all training pods.
+                        - listitem [ref=e342]: Define default resource requests and limits specific to your project.
+                        - listitem [ref=e343]: Configure custom volume mounts or init containers.
+                      - alert [ref=e1656]:
+                        - generic [ref=e1659]:
+                          - generic [ref=e345]: Note
+                          - paragraph [ref=e347]:
+                            - text: For most use cases, the pre-built
+                            - code [ref=e348]: ClusterTrainingRuntime
+                            - text: resources are sufficient. Create a custom
+                            - code [ref=e349]: TrainingRuntime
+                            - text: only when you need project-specific configuration that cannot be overridden in the
+                            - code [ref=e350]: TrainJob
+                            - text: resource.
+                      - generic [ref=e351]:
+                        - paragraph [ref=e352]:
+                          - strong [ref=e353]: Prerequisites
+                        - list [ref=e354]:
+                          - listitem [ref=e355]:
+                            - text: Your platform administrator has installed Red Hat OpenShift AI with the required distributed training components as described in
+                            - link "Installing the distributed workloads components" [ref=e356] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.16/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                            - text: (for disconnected environments, see
+                            - link "Installing the distributed workloads components" [ref=e357] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.16/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                            - text: ). *You can access the OpenShift Console for the cluster where OpenShift AI is installed.
+                          - listitem [ref=e358]:
+                            - paragraph [ref=e359]: You have project administrator access for the project where you want to create the TrainingRuntime.
+                            - list [ref=e361]:
+                              - listitem [ref=e362]: If you created the project, you automatically have administrator access.
+                              - listitem [ref=e363]: If you did not create the project, the platform administrator must give you project administrator access.
+                      - generic [ref=e364]:
+                        - paragraph [ref=e365]:
+                          - strong [ref=e366]: Procedure
+                        - list [ref=e367]:
+                          - listitem [ref=e368]: Log in to the OpenShift Console.
+                          - listitem [ref=e369]:
+                            - paragraph [ref=e370]:
+                              - text: Create a
+                              - code [ref=e371]: TrainingRuntime
+                              - text: "resource, as follows:"
+                            - list [ref=e373]:
+                              - listitem [ref=e374]:
+                                - text: In the Administrator perspective, click
+                                - strong [ref=e376]: Home
+                                - text: ">"
+                                - strong [ref=e378]: Search
+                                - text: .
+                              - listitem [ref=e379]:
+                                - text: From the
+                                - strong [ref=e381]: Project
+                                - text: list, select your project.
+                              - listitem [ref=e382]:
+                                - text: Click the
+                                - strong [ref=e384]: Resources
+                                - text: list, and in the search field, type
+                                - code [ref=e385]: TrainingRuntime
+                                - text: .
+                              - listitem [ref=e386]:
+                                - text: Select
+                                - strong [ref=e388]: TrainingRuntime
+                                - text: ", and click"
+                                - strong [ref=e390]: Create TrainingRuntime
+                                - text: . The Create TrainingRuntime page opens, with default YAML code automatically added.
+                              - listitem [ref=e391]:
+                                - paragraph [ref=e392]:
+                                  - text: Replace the default YAML code with your custom runtime definition. The following example shows a custom
+                                  - code [ref=e393]: TrainingRuntime
+                                  - text: "with a custom container image and default resource configuration:"
+                                - generic [ref=e1663]:
+                                  - code [ref=e397]:
+                                    - generic [ref=e1666]: apiVersion
+                                    - generic [ref=e1667]: ":"
+                                    - text: trainer.kubeflow.org/v1alpha1
+                                    - generic [ref=e1668]: kind
+                                    - generic [ref=e1669]: ":"
+                                    - text: TrainingRuntime
+                                    - generic [ref=e1670]: metadata
+                                    - generic [ref=e1671]: ":"
+                                    - generic [ref=e1672]: name
+                                    - generic [ref=e1673]: ":"
+                                    - text: custom
+                                    - generic [ref=e1674]: "-"
+                                    - text: torch
+                                    - generic [ref=e1675]: "-"
+                                    - text: runtime
+                                    - generic [ref=e1676]: namespace
+                                    - generic [ref=e1677]: ":"
+                                    - text: my
+                                    - generic [ref=e1678]: "-"
+                                    - text: project
+                                    - generic [ref=e1679]: spec
+                                    - generic [ref=e1680]: ":"
+                                    - generic [ref=e1681]: mlPolicy
+                                    - generic [ref=e1682]: ":"
+                                    - generic [ref=e1683]: torch
+                                    - generic [ref=e1684]: ":"
+                                    - generic [ref=e1685]: numProcPerNode
+                                    - generic [ref=e1686]: ":"
+                                    - text: auto
+                                    - generic [ref=e1687]: template
+                                    - generic [ref=e1688]: ":"
+                                    - generic [ref=e1689]: spec
+                                    - generic [ref=e1690]: ":"
+                                    - generic [ref=e1691]: replicatedJobs
+                                    - generic [ref=e1692]: ":"
+                                    - generic [ref=e1693]: "-"
+                                    - generic [ref=e1694]: name
+                                    - generic [ref=e1695]: ":"
+                                    - text: Node
+                                    - generic [ref=e1696]: template
+                                    - generic [ref=e1697]: ":"
+                                    - generic [ref=e1698]: spec
+                                    - generic [ref=e1699]: ":"
+                                    - generic [ref=e1700]: template
+                                    - generic [ref=e1701]: ":"
+                                    - generic [ref=e1702]: spec
+                                    - generic [ref=e1703]: ":"
+                                    - generic [ref=e1704]: containers
+                                    - generic [ref=e1705]: ":"
+                                    - generic [ref=e1706]: "-"
+                                    - generic [ref=e1707]: name
+                                    - generic [ref=e1708]: ":"
+                                    - text: trainer
+                                    - generic [ref=e1709]: image
+                                    - generic [ref=e1710]: ":"
+                                    - text: registry.redhat.io/rhoai/odh
+                                    - generic [ref=e1711]: "-"
+                                    - text: training
+                                    - generic [ref=e1712]: "-"
+                                    - text: cuda128
+                                    - generic [ref=e1713]: "-"
+                                    - text: torch28
+                                    - generic [ref=e1714]: "-"
+                                    - text: py312
+                                    - generic [ref=e1715]: "-"
+                                    - text: rhel9
+                                    - generic [ref=e1716]: ":"
+                                    - text: v3.0
+                                    - generic [ref=e1717]: env
+                                    - generic [ref=e1718]: ":"
+                                    - generic [ref=e1719]: "-"
+                                    - generic [ref=e1720]: name
+                                    - generic [ref=e1721]: ":"
+                                    - text: MASTER_ADDR
+                                    - generic [ref=e1722]: value
+                                    - generic [ref=e1723]: ":"
+                                    - generic [ref=e1724]: "\"$(JOB_NAME)-node-0-0.$(JOB_NAME)\""
+                                    - generic [ref=e1725]: "-"
+                                    - generic [ref=e1726]: name
+                                    - generic [ref=e1727]: ":"
+                                    - text: MASTER_PORT
+                                    - generic [ref=e1728]: value
+                                    - generic [ref=e1729]: ":"
+                                    - generic [ref=e1730]: "\"29500\""
+                                    - generic [ref=e1731]: "-"
+                                    - generic [ref=e1732]: name
+                                    - generic [ref=e1733]: ":"
+                                    - text: MY_CUSTOM_ENV_VAR
+                                    - generic [ref=e1734]: value
+                                    - generic [ref=e1735]: ":"
+                                    - generic [ref=e1736]: "\"my-custom-value\""
+                                    - generic [ref=e1737]: command
+                                    - generic [ref=e1738]: ":"
+                                    - generic [ref=e1739]: "-"
+                                    - text: torchrun
+                                    - generic [ref=e1740]: resources
+                                    - generic [ref=e1741]: ":"
+                                    - generic [ref=e1742]: requests
+                                    - generic [ref=e1743]: ":"
+                                    - generic [ref=e1744]: cpu
+                                    - generic [ref=e1745]: ":"
+                                    - generic [ref=e1746]: "\"4\""
+                                    - generic [ref=e1747]: memory
+                                    - generic [ref=e1748]: ":"
+                                    - generic [ref=e1749]: "\"16Gi\""
+                                    - generic [ref=e1750]: limits
+                                    - generic [ref=e1751]: ":"
+                                    - generic [ref=e1752]: cpu
+                                    - generic [ref=e1753]: ":"
+                                    - generic [ref=e1754]: "\"4\""
+                                    - generic [ref=e1755]: memory
+                                    - generic [ref=e1756]: ":"
+                                    - generic [ref=e1757]: "\"16Gi\""
+                                  - generic [ref=e1758]:
+                                    - button "Copy to Clipboard" [ref=e1762]:
+                                      - img [ref=e1763]
+                                    - button [ref=e1769]
+                                  - button "Show less" [expanded] [ref=e1772]:
+                                    - generic [ref=e1773]: Show less
+                                    - img [ref=e1774]
+                              - listitem [ref=e398]:
+                                - text: Click
+                                - strong [ref=e400]: Create
+                                - text: .
+                      - generic [ref=e401]:
+                        - paragraph [ref=e402]:
+                          - strong [ref=e403]: Verification
+                        - list [ref=e404]:
+                          - listitem [ref=e405]:
+                            - paragraph [ref=e406]: "Using the user interface:"
+                            - list [ref=e408]:
+                              - listitem [ref=e409]:
+                                - text: In the OpenShift Console, in the Administrator perspective, click
+                                - strong [ref=e411]: Home
+                                - text: ">"
+                                - strong [ref=e413]: Search
+                                - text: .
+                              - listitem [ref=e414]:
+                                - text: From the
+                                - strong [ref=e416]: Project
+                                - text: list, select your project.
+                              - listitem [ref=e417]:
+                                - text: Click the
+                                - strong [ref=e419]: Resources
+                                - text: list and search for
+                                - strong [ref=e421]: TrainingRuntime
+                                - text: .
+                              - listitem [ref=e422]: Verify that your custom runtime appears in the list.
+                          - listitem [ref=e423]: "Using the CLI:"
+                      - generic [ref=e1776]:
+                        - code [ref=e427]: oc get trainingruntime -n <your-namespace>
+                        - generic [ref=e1779]:
+                          - button "Copy to Clipboard" [ref=e1783]:
+                            - img [ref=e1784]
+                          - button [ref=e1790]
+                  - generic [ref=e428]:
+                    - heading "6.2. Using Kubeflow Trainer v2 to run distributed training workloads Copy link to clipboard" [level=2] [ref=e1793]:
+                      - link "6.2. Using Kubeflow Trainer v2 to run distributed training workloads" [ref=e433] [cursor=pointer]:
+                        - /url: "#using-kubeflow-trainerv2-to-run-distributed-training-workloads_distributed-workloads"
+                      - generic "Copy link to clipboard" [ref=e1797] [cursor=pointer]:
+                        - button "Copy link" [ref=e1798]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e434]:
+                      - text: You can use Kubeflow Trainer v2 to run distributed PyTorch training workloads on Red Hat OpenShift AI. This section describes how to create a TrainJob resource by using the OpenShift Console or the OpenShift CLI (
+                      - code [ref=e435]: oc
+                      - text: ).
+                    - paragraph [ref=e436]: A TrainJob resource references a ClusterTrainingRuntime (or custom TrainingRuntime) that provides the distributed training infrastructure, so you only need to specify your training code, the number of nodes, and resource requirements.
+                    - generic [ref=e437]:
+                      - heading "6.2.1. Creating a Kubeflow Trainer TrainJob resource Copy link to clipboard" [level=3] [ref=e1799]:
+                        - link "6.2.1. Creating a Kubeflow Trainer TrainJob resource" [ref=e442] [cursor=pointer]:
+                          - /url: "#creating-a-kubeflow-trainer-trainJob-resource_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1803] [cursor=pointer]:
+                          - button "Copy link" [ref=e1804]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e443]: You can create a TrainJob resource to run a distributed PyTorch training job by using the OpenShift Console.
+                      - generic [ref=e444]:
+                        - paragraph [ref=e445]:
+                          - strong [ref=e446]: Prerequisites
+                        - list [ref=e447]:
+                          - listitem [ref=e448]: You can access an OpenShift cluster that has multiple worker nodes with supported NVIDIA GPUs or AMD GPUs.
+                          - listitem [ref=e449]:
+                            - paragraph [ref=e450]: "Your cluster administrator has configured the cluster as follows:"
+                            - list [ref=e452]:
+                              - listitem [ref=e453]: Installed Red Hat OpenShift AI with the required distributed training components.
+                              - listitem [ref=e454]: Configured the distributed training resources.
+                              - listitem [ref=e455]: Installed the JobSet Operator from OLM.
+                              - listitem [ref=e456]:
+                                - text: A ClusterTrainingRuntime is available in your cluster (for example, torch-distributed). To verify, run
+                                - code [ref=e457]: oc get clustertrainingruntime
+                                - text: .
+                          - listitem [ref=e458]:
+                            - paragraph [ref=e459]: You have administrator access for the project.
+                            - list [ref=e461]:
+                              - listitem [ref=e462]: If you created the project, you automatically have administrator access.
+                              - listitem [ref=e463]: If you did not create the project, your cluster administrator must give you administrator access.
+                      - generic [ref=e464]:
+                        - paragraph [ref=e465]:
+                          - strong [ref=e466]: Procedure
+                        - list [ref=e467]:
+                          - listitem [ref=e468]: Log in to the OpenShift Console.
+                          - listitem [ref=e469]:
+                            - paragraph [ref=e470]: "Create a TrainJob resource, as follows:"
+                            - list [ref=e472]:
+                              - listitem [ref=e473]:
+                                - text: In the Administrator perspective, click
+                                - strong [ref=e475]: Home
+                                - strong [ref=e477]: Search
+                                - text: .
+                              - listitem [ref=e478]: From the Project list, select your project.
+                              - listitem [ref=e479]:
+                                - text: Click the
+                                - strong [ref=e481]: Resources
+                                - text: list, and in the search field, type Job.
+                          - listitem [ref=e482]:
+                            - text: Select
+                            - strong [ref=e484]: TrainJob
+                            - text: ", and click"
+                            - strong [ref=e486]: Create TrainJob
+                            - text: . The Create TrainJob page opens, with default YAML code automatically added.
+                          - listitem [ref=e487]:
+                            - paragraph [ref=e488]: "Update the metadata to replace the name and namespace values with the values for your environment, as shown in the following example:"
+                            - generic [ref=e1805]:
+                              - code [ref=e492]: "metadata: name: pytorch-multi-node-job namespace: test-namespace"
+                              - generic [ref=e1808]:
+                                - button "Copy to Clipboard" [ref=e1812]:
+                                  - img [ref=e1813]
+                                - button [ref=e1819]
+                          - listitem [ref=e493]:
+                            - paragraph [ref=e494]: "Configure the runtime reference to specify which ClusterTrainingRuntime to use, as shown in the following example:"
+                            - generic [ref=e1822]:
+                              - code [ref=e498]: "spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime"
+                              - generic [ref=e1825]:
+                                - button "Copy to Clipboard" [ref=e1829]:
+                                  - img [ref=e1830]
+                                - button [ref=e1836]
+                          - listitem [ref=e499]:
+                            - paragraph [ref=e500]: "Configure the trainer section with your ClusterTrainingRuntime name, command, and the number of distributed training nodes, as shown in the following example:"
+                            - generic [ref=e1839]:
+                              - code [ref=e504]: "spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"python\", \"/workspace/scripts/train.py\"] numNodes: 3"
+                              - generic [ref=e1842]:
+                                - button "Copy to Clipboard" [ref=e1846]:
+                                  - img [ref=e1847]
+                                - button [ref=e1853]
+                              - button "Show less" [expanded] [ref=e1856]:
+                                - generic [ref=e1857]: Show less
+                                - img [ref=e1858]
+                            - paragraph [ref=e505]: "where:"
+                            - generic [ref=e507]:
+                              - term [ref=e508]:
+                                - code [ref=e510]: numNodes
+                              - definition [ref=e511]:
+                                - text: Specifies the total number of distributed training nodes. This replaces the separate Master and Worker replica specifications used in Training Operator v1. For example, a v1 job with 1 Master and 2 Workers is equivalent to
+                                - code [ref=e512]: "numNodes: 3"
+                                - text: in v2.
+                          - listitem [ref=e513]:
+                            - paragraph [ref=e514]: "To use a ConfigMap resource to provide the training script for the TrainJob pods, add the ConfigMap volume mount information, as shown in the following example:"
+                            - generic [ref=e1860]:
+                              - code [ref=e518]: "spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"python\", \"/workspace/scripts/train.py\"] numNodes: 3 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace/scripts"
+                              - generic [ref=e1863]:
+                                - button "Copy to Clipboard" [ref=e1867]:
+                                  - img [ref=e1868]
+                                - button [ref=e1874]
+                              - button "Show less" [expanded] [ref=e1877]:
+                                - generic [ref=e1878]: Show less
+                                - img [ref=e1879]
+                          - listitem [ref=e519]:
+                            - paragraph [ref=e520]: "Add the appropriate resource constraints for your environment, as shown in the following example:"
+                            - generic [ref=e1881]:
+                              - code [ref=e524]: "spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"python\", \"/workspace/scripts/train.py\"] numNodes: 3 resourcesPerNode: requests: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 limits: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace/scripts"
+                              - generic [ref=e1884]:
+                                - button "Copy to Clipboard" [ref=e1888]:
+                                  - img [ref=e1889]
+                                - button [ref=e1895]
+                              - button "Show less" [expanded] [ref=e1898]:
+                                - generic [ref=e1899]: Show less
+                                - img [ref=e1900]
+                            - paragraph [ref=e525]: "where:"
+                            - generic [ref=e527]:
+                              - term [ref=e528]:
+                                - code [ref=e530]: resourcesPerNode
+                              - definition [ref=e531]: applies the same resource requests and limits to every training node. This replaces the per-replica resource configuration used in Training Operator v1, where you had to specify resources separately for the Master and each Worker.
+                          - listitem [ref=e532]:
+                            - text: Click
+                            - strong [ref=e534]: Create
+                            - text: .
+                      - generic [ref=e535]:
+                        - paragraph [ref=e536]:
+                          - strong [ref=e537]: Verification
+                        - list [ref=e538]:
+                          - listitem [ref=e539]: In the OpenShift Console, open the Administrator perspective.
+                          - listitem [ref=e540]:
+                            - paragraph [ref=e541]: From the Project list, select your project.
+                            - list [ref=e543]:
+                              - listitem [ref=e544]:
+                                - text: Click
+                                - strong [ref=e546]: Home
+                                - text: ">"
+                                - strong [ref=e548]: Search
+                                - text: ">"
+                                - strong [ref=e550]: TrainJob
+                                - text: and verify that the job was created.
+                              - listitem [ref=e551]:
+                                - text: Click
+                                - strong [ref=e553]: Workloads
+                                - text: ">"
+                                - strong [ref=e555]: Pods
+                                - text: and verify that the requested training node pods are running.
+                          - listitem [ref=e556]: (Optional) If you enabled progress tracking, navigate to the OpenShift AI dashboard, click Model training, and verify that real-time progress metrics are displayed.
+                    - generic [ref=e557]:
+                      - heading "6.2.2. Creating a Kubeflow Trainer TrainJob resource by using the CLI Copy link to clipboard" [level=3] [ref=e1902]:
+                        - link "6.2.2. Creating a Kubeflow Trainer TrainJob resource by using the CLI" [ref=e562] [cursor=pointer]:
+                          - /url: "#creating-a-kubeflow-trainer-TrainJob-resource-by-using-the-cli_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e1906] [cursor=pointer]:
+                          - button "Copy link" [ref=e1907]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e563]:
+                        - text: You can use the OpenShift CLI (
+                        - code [ref=e564]: oc
+                        - text: ) to create a TrainJob resource to run a distributed PyTorch training job.
+                      - generic [ref=e565]:
+                        - paragraph [ref=e566]:
+                          - strong [ref=e567]: Prerequisites
+                        - list [ref=e568]:
+                          - listitem [ref=e569]: You can access an OpenShift cluster that has multiple worker nodes with supported NVIDIA GPUs or AMD GPUs.
+                          - listitem [ref=e570]:
+                            - paragraph [ref=e571]: "Your cluster administrator has configured the cluster as follows:"
+                            - list [ref=e573]:
+                              - listitem [ref=e574]:
+                                - text: Installed Red Hat OpenShift AI with the required distributed training components, as described in
+                                - link "Installing the distributed workloads components" [ref=e575] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.2/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                                - text: .
+                              - listitem [ref=e576]:
+                                - text: Configured the distributed training resources, as described in
+                                - link "Managing distributed workloads" [ref=e577] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.2/html/working_with_distributed_workloads/index
+                                - text: .
+                              - listitem [ref=e578]:
+                                - text: Installed the JobSet Operator from OLM, as described in
+                                - link "Installing the JobSet Operator" [ref=e579] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/ai_workloads/jobset-operator
+                                - text: .
+                          - listitem [ref=e580]:
+                            - paragraph [ref=e581]:
+                              - text: A ClusterTrainingRuntime is available in your cluster (for example,
+                              - code [ref=e582]: torch-distributed
+                              - text: "). To verify, run:"
+                            - generic [ref=e1908]:
+                              - code [ref=e586]: oc get clustertrainingruntime
+                              - generic [ref=e1911]:
+                                - button "Copy to Clipboard" [ref=e1915]:
+                                  - img [ref=e1916]
+                                - button [ref=e1922]
+                          - listitem [ref=e587]:
+                            - paragraph [ref=e588]: You have administrator access for the project.
+                            - list [ref=e590]:
+                              - listitem [ref=e591]: If you created the project, you automatically have administrator access.
+                              - listitem [ref=e592]: If you did not create the project, your cluster administrator must give you administrator access.
+                          - listitem [ref=e593]:
+                            - paragraph [ref=e594]:
+                              - text: You have installed the OpenShift CLI (
+                              - code [ref=e595]: oc
+                              - text: ") as described in the appropriate documentation for your cluster:"
+                            - list [ref=e597]:
+                              - listitem [ref=e598]: Installing the OpenShift CLI for OpenShift Container Platform
+                              - listitem [ref=e599]: Installing the OpenShift CLI for Red Hat OpenShift Service on AWS
+                      - generic [ref=e600]:
+                        - paragraph [ref=e601]:
+                          - strong [ref=e602]: Procedure
+                        - list [ref=e603]:
+                          - listitem [ref=e604]:
+                            - paragraph [ref=e605]:
+                              - text: Log in to the OpenShift CLI (
+                              - code [ref=e606]: oc
+                              - text: "):"
+                            - generic [ref=e1925]:
+                              - code [ref=e610]:
+                                - text: oc login
+                                - generic [ref=e1928]: "--token"
+                                - generic [ref=e1929]: =
+                                - generic [ref=e1930]: <
+                                - text: token
+                                - generic [ref=e1931]: ">"
+                                - generic [ref=e1932]: "--server"
+                                - generic [ref=e1933]: =
+                                - generic [ref=e1934]: <
+                                - text: server
+                                - generic [ref=e1935]: ">"
+                              - generic [ref=e1936]:
+                                - button "Copy to Clipboard" [ref=e1940]:
+                                  - img [ref=e1941]
+                                - button [ref=e1947]
+                          - listitem [ref=e611]:
+                            - paragraph [ref=e612]:
+                              - text: Create a file named
+                              - code [ref=e613]: train.py
+                              - text: "and populate it with your training script, as follows:"
+                            - generic [ref=e1950]:
+                              - code [ref=e617]: cat <<EOF > train.py <paste your content here> EOF
+                              - generic [ref=e1953]:
+                                - button "Copy to Clipboard" [ref=e1957]:
+                                  - img [ref=e1958]
+                                - button [ref=e1964]
+                          - listitem [ref=e618]:
+                            - paragraph [ref=e619]: "Create a ConfigMap resource to store the training script, as follows:"
+                            - generic [ref=e1967]:
+                              - code [ref=e623]: oc create configmap training-script-configmap --from-file=train.py -n <your-namespace>
+                              - generic [ref=e1970]:
+                                - button "Copy to Clipboard" [ref=e1974]:
+                                  - img [ref=e1975]
+                                - button [ref=e1981]
+                            - paragraph [ref=e624]: Replace <your-namespace> with the name of your project.
+                          - listitem [ref=e625]:
+                            - paragraph [ref=e626]: "Create a file named trainjob.yaml to define the distributed training job setup, as follows:"
+                            - generic [ref=e1984]:
+                              - code [ref=e630]: "cat <<'EOF' > trainjob.yaml apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-multi-node-job namespace: <your-namespace> spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"python\", \"/workspace/scripts/train.py\"] numNodes: 3 resourcesPerNode: requests: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 limits: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace/scripts EOF"
+                              - generic [ref=e1987]:
+                                - button "Copy to Clipboard" [ref=e1991]:
+                                  - img [ref=e1992]
+                                - button [ref=e1998]
+                              - button "Show less" [expanded] [ref=e2001]:
+                                - generic [ref=e2002]: Show less
+                                - img [ref=e2003]
+                            - paragraph [ref=e631]:
+                              - text: Replace
+                              - code [ref=e632]: <your-namespace>
+                              - text: with the name of your project. Update the numNodes, resource constraints, and image as needed for your environment.
+                          - listitem [ref=e633]:
+                            - paragraph [ref=e634]: "Create the distributed training job, as follows:"
+                            - generic [ref=e2005]:
+                              - code [ref=e638]: oc apply -f trainjob.yaml
+                              - generic [ref=e2008]:
+                                - button "Copy to Clipboard" [ref=e2012]:
+                                  - img [ref=e2013]
+                                - button [ref=e2019]
+                          - listitem [ref=e639]:
+                            - paragraph [ref=e640]: "Monitor the running distributed training job, as follows:"
+                            - generic [ref=e2022]:
+                              - code [ref=e644]: oc get trainjob -n <your-namespace>
+                              - generic [ref=e2025]:
+                                - button "Copy to Clipboard" [ref=e2029]:
+                                  - img [ref=e2030]
+                                - button [ref=e2036]
+                            - paragraph [ref=e645]:
+                              - text: Replace
+                              - code [ref=e646]: <your-namespace>
+                              - text: with the name of your project.
+                          - listitem [ref=e647]:
+                            - paragraph [ref=e648]: "Check the pod status, as follows:"
+                            - generic [ref=e2039]:
+                              - code [ref=e652]: oc logs <pod-name> -n <your-namespace>
+                              - generic [ref=e2042]:
+                                - button "Copy to Clipboard" [ref=e2046]:
+                                  - img [ref=e2047]
+                                - button [ref=e2053]
+                          - listitem [ref=e653]:
+                            - text: Replace
+                            - code [ref=e654]: <pod-name>
+                            - text: with the name of the pod and
+                            - code [ref=e655]: <your-namespace>
+                            - text: with the name of your project.
+                    - generic [ref=e656]:
+                      - heading "6.2.3. Suspending a training job Copy link to clipboard" [level=3] [ref=e2056]:
+                        - link "6.2.3. Suspending a training job" [ref=e661] [cursor=pointer]:
+                          - /url: "#suspending-a-training-job"
+                        - generic "Copy link to clipboard" [ref=e2060] [cursor=pointer]:
+                          - button "Copy link" [ref=e2061]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e662]: You can suspend a running TrainJob to pause training and free up cluster resources. If JIT checkpointing is configured, the training state is automatically saved before the pods are terminated.
+                      - generic [ref=e663]:
+                        - paragraph [ref=e664]:
+                          - strong [ref=e665]: Prerequisites
+                        - list [ref=e666]:
+                          - listitem [ref=e667]:
+                            - text: You have an active
+                            - code [ref=e668]: TrainJob
+                            - text: currently running on the OpenShift cluster.
+                          - listitem [ref=e669]: You have configured JIT (Just-In-Time) checkpointing in your training script.
+                          - listitem [ref=e670]: You have confirmed that your training script is configured to handle the SIGTERM signal.
+                          - listitem [ref=e671]:
+                            - text: You have the OpenShift CLI (
+                            - code [ref=e672]: oc
+                            - text: ) installed and are logged in with a user that has patch permissions for the
+                            - code [ref=e673]: TrainJob
+                            - text: resource in the target namespace.
+                      - generic [ref=e674]:
+                        - paragraph [ref=e675]:
+                          - strong [ref=e676]: Procedure
+                        - paragraph [ref=e677]: "Run the following command:"
+                      - generic [ref=e2062]:
+                        - code [ref=e681]:
+                          - text: oc patch trainjob pytorch-multi-node-job -n <your-namespace> --type=merge -p
+                          - emphasis [ref=e682]: "{\"spec\":{\"suspend\":true}}"
+                        - generic [ref=e2065]:
+                          - button "Copy to Clipboard" [ref=e2069]:
+                            - img [ref=e2070]
+                          - button [ref=e2076]
+                    - generic [ref=e683]:
+                      - heading "6.2.4. Resuming a training job Copy link to clipboard" [level=3] [ref=e2079]:
+                        - link "6.2.4. Resuming a training job" [ref=e688] [cursor=pointer]:
+                          - /url: "#resuming-a-training-job"
+                        - generic "Copy link to clipboard" [ref=e2083] [cursor=pointer]:
+                          - button "Copy link" [ref=e2084]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e689]:
+                        - paragraph [ref=e690]:
+                          - strong [ref=e691]: Prerequisites
+                        - list [ref=e692]:
+                          - listitem [ref=e693]:
+                            - text: You have a TrainJob that is currently in a suspended state (
+                            - code [ref=e694]: "spec.suspend: true"
+                            - text: ).
+                          - listitem [ref=e695]: You have a Persistent Volume Claim (PVC) or S3-compatible storage containing the latest saved checkpoint files from the previous session.
+                          - listitem [ref=e696]: Your training script is configured to automatically detect and load the most recent checkpoint from the designated storage path upon startup.
+                          - listitem [ref=e697]: The cluster has sufficient available resources to fulfill the original resource requests of the job.
+                      - generic [ref=e698]:
+                        - paragraph [ref=e699]:
+                          - strong [ref=e700]: Procedure
+                        - paragraph [ref=e701]: "Run the following command:"
+                      - generic [ref=e2085]:
+                        - code [ref=e705]:
+                          - text: oc patch trainjob pytorch-multi-node-job -n <your-namespace> --type=merge -p
+                          - emphasis [ref=e706]: "{\"spec\":{\"suspend\":false}}"
+                        - generic [ref=e2088]:
+                          - button "Copy to Clipboard" [ref=e2092]:
+                            - img [ref=e2093]
+                          - button [ref=e2099]
+                      - paragraph [ref=e707]: When resumed, the job automatically loads the latest checkpoint and continues training from where it stopped.
+                      - paragraph [ref=e708]:
+                        - text: For more information about JIT checkpointing and suspend/resume, see
+                        - link "Using RHAI trainers for progress tracking and checkpointing" [ref=e709] [cursor=pointer]:
+                          - /url: https://access.redhat.com/articles/7136179
+                        - text: .
+                    - generic [ref=e710]:
+                      - heading "6.2.5. Deleting a training job Copy link to clipboard" [level=3] [ref=e2102]:
+                        - link "6.2.5. Deleting a training job" [ref=e715] [cursor=pointer]:
+                          - /url: "#deleting-a-training-job"
+                        - generic "Copy link to clipboard" [ref=e2106] [cursor=pointer]:
+                          - button "Copy link" [ref=e2107]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - generic [ref=e716]:
+                        - paragraph [ref=e717]:
+                          - strong [ref=e718]: Prerequisites
+                        - list [ref=e719]:
+                          - listitem [ref=e720]:
+                            - text: You have identified the name of the
+                            - code [ref=e721]: TrainJob
+                            - text: and the namespace where it is deployed.
+                          - listitem [ref=e722]:
+                            - text: You have the OpenShift CLI (
+                            - code [ref=e723]: oc
+                            - text: ) installed and are logged in with a user that has delete permissions for the TrainJob resource.
+                      - generic [ref=e724]:
+                        - paragraph [ref=e725]:
+                          - strong [ref=e726]: Procedure
+                        - paragraph [ref=e727]: "Run the following command:"
+                      - generic [ref=e2108]:
+                        - code [ref=e731]: oc delete trainjob/pytorch-multi-node-job -n <your-namespace>
+                        - generic [ref=e2111]:
+                          - button "Copy to Clipboard" [ref=e2115]:
+                            - img [ref=e2116]
+                          - button [ref=e2122]
+                      - paragraph [ref=e732]: where
+                      - generic [ref=e734]:
+                        - term [ref=e735]:
+                          - code [ref=e737]: <your-namespace>
+                        - definition [ref=e738]: is the name of your project.
+                  - generic [ref=e739]:
+                    - heading "6.3. Using the Kubeflow SDK to run distributed training workloads Copy link to clipboard" [level=2] [ref=e2125]:
+                      - link "6.3. Using the Kubeflow SDK to run distributed training workloads" [ref=e744] [cursor=pointer]:
+                        - /url: "#using-the-kubeflow-sdk-to-run-distributed-training-workloads-v2_distributed-workloads"
+                      - generic "Copy link to clipboard" [ref=e2129] [cursor=pointer]:
+                        - button "Copy link" [ref=e2130]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e745]: You can use the Kubeflow Python SDK to create and manage TrainJob resources programmatically from an OpenShift AI workbench. The SDK provides a higher-level interface that handles the creation of the TrainJob resource, configures the distributed training environment, and sets up communication between nodes.
+                    - paragraph [ref=e746]: When you use the SDK with Red Hat OpenShift AI trainers (TransformersTrainer or TrainingHubTrainer), progress tracking and JIT checkpointing are enabled by default.
+                    - generic [ref=e747]:
+                      - heading "6.3.1. Creating a Kubeflow Trainer TrainJob resource by using the SDK Copy link to clipboard" [level=3] [ref=e2131]:
+                        - link "6.3.1. Creating a Kubeflow Trainer TrainJob resource by using the SDK" [ref=e752] [cursor=pointer]:
+                          - /url: "#creating-a-kubeflow-trainer-trainjob-resource-by-using-the-sdk_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2135] [cursor=pointer]:
+                          - button "Copy link" [ref=e2136]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e753]: You can create a TrainJob resource programmatically by using the Kubeflow SDK from an OpenShift AI workbench.
+                      - generic [ref=e754]:
+                        - paragraph [ref=e755]:
+                          - strong [ref=e756]: Prerequisites
+                        - list [ref=e757]:
+                          - listitem [ref=e758]: You can access an OpenShift cluster that has multiple worker nodes with supported NVIDIA GPUs or AMD GPUs.
+                          - listitem [ref=e759]:
+                            - paragraph [ref=e760]: "Your cluster administrator has configured the cluster as follows:"
+                            - list [ref=e762]:
+                              - listitem [ref=e763]:
+                                - text: Installed Red Hat OpenShift AI with the required distributed training components, as described in
+                                - link "Installing the distributed workloads components" [ref=e764] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.16/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                                - text: (for disconnected environments, see
+                                - link "Installing the distributed workloads components" [ref=e765] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.16/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                                - text: ).
+                              - listitem [ref=e766]:
+                                - text: Configured the distributed training resources, as described in
+                                - link "Managing distributed workloads" [ref=e767] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/2.16/html/managing_openshift_ai/managing_distributed_workloads
+                                - text: .
+                              - listitem [ref=e768]:
+                                - text: Installed the JobSet Operator from OLM, as described in
+                                - link "Installing the JobSet Operator" [ref=e769] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/ai_workloads/jobset-operator#js-install
+                                - text: .
+                              - listitem [ref=e770]: Configured RBAC permissions for SDK access to ClusterTrainingRuntime resources, as described in Configuring User Permissions for SDK Access in the Installation Guide.
+                          - listitem [ref=e771]:
+                            - text: A ClusterTrainingRuntime is available in your cluster (for example,
+                            - code [ref=e772]: torch-distributed
+                            - text: ). To verify, run
+                            - code [ref=e773]: oc get clustertrainingruntime
+                            - text: .
+                          - listitem [ref=e774]: You can access an OpenShift AI workbench with Python 3.9 or later.
+                          - listitem [ref=e775]:
+                            - paragraph [ref=e776]: "You have installed the Kubeflow SDK:"
+                            - generic [ref=e2137]:
+                              - code [ref=e780]: pip install kubeflow --index-url https://console.redhat.com/api/pypi/public-rhai/rhoai/3.2/cuda12.9-ubi9/simple/
+                              - generic [ref=e2140]:
+                                - button "Copy to Clipboard" [ref=e2144]:
+                                  - img [ref=e2145]
+                                - button [ref=e2151]
+                            - paragraph [ref=e781]: "Verify the installation:"
+                            - generic [ref=e2154]:
+                              - code [ref=e785]: pip show kubeflow
+                              - generic [ref=e2157]:
+                                - button "Copy to Clipboard" [ref=e2161]:
+                                  - img [ref=e2162]
+                                - button [ref=e2168]
+                            - paragraph [ref=e786]: "Example output:"
+                            - generic [ref=e2171]:
+                              - code [ref=e790]: "Name: kubeflow Version: 0.2.1+rhai0"
+                              - generic [ref=e2174]:
+                                - button "Copy to Clipboard" [ref=e2178]:
+                                  - img [ref=e2179]
+                                - button [ref=e2185]
+                      - generic [ref=e791]:
+                        - paragraph [ref=e792]:
+                          - strong [ref=e793]: Procedure
+                        - list [ref=e794]:
+                          - listitem [ref=e795]:
+                            - paragraph [ref=e796]: "Obtain the API server URL and authentication token from your OpenShift cluster, as follows:"
+                            - generic [ref=e2188]:
+                              - code [ref=e800]: "# Get the API server URL oc whoami --show-server # Get your authentication token oc whoami --show-token"
+                              - generic [ref=e2191]:
+                                - button "Copy to Clipboard" [ref=e2195]:
+                                  - img [ref=e2196]
+                                - button [ref=e2202]
+                            - alert [ref=e2205]:
+                              - generic [ref=e2208]:
+                                - generic [ref=e802]: Note
+                                - paragraph [ref=e804]: If your cluster uses a self-signed certificate, you must set configuration.verify_ssl = False in your code to avoid SSL verification errors.
+                          - listitem [ref=e805]:
+                            - paragraph [ref=e806]: "In your workbench, create a Python script or notebook cell and define your training function, configure authentication, and submit the training job, as follows:"
+                            - generic [ref=e2212]:
+                              - code [ref=e810]:
+                                - text: "from kubernetes import client from kubeflow.trainer import TrainerClient from kubeflow.trainer.rhai import TransformersTrainer from kubeflow.common.types import KubernetesBackendConfig # Define your training function def train_func(): from transformers import ( AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments, ) from datasets import load_dataset # Load model and tokenizer model = AutoModelForSequenceClassification.from_pretrained( \"bert-base-uncased\", num_labels=2 ) tokenizer = AutoTokenizer.from_pretrained(\"bert-base-uncased\") # Load and tokenize dataset dataset = load_dataset(\"imdb\", split=\"train[:1000]\") def tokenize_function(examples): return tokenizer( examples[\"text\"], padding=\"max_length\", truncation=True, max_length=512 ) tokenized_dataset = dataset.map(tokenize_function, batched=True) # Configure training training_args = TrainingArguments( output_dir=\"/tmp/output\", num_train_epochs=3, per_device_train_batch_size=8, ) # Train trainer = Trainer( model=model, args=training_args, train_dataset=tokenized_dataset ) trainer.train() # Configure authentication for the workbench api_server = \"<your-api-server-url>\" # e.g., \"https://api.cluster.example.com:6443\" token = \"<your-bearer-token>\" configuration = client.Configuration() configuration.host = api_server configuration.api_key = {\"authorization\": f\"Bearer {token}\"} # Uncomment the following line if your cluster uses a self-signed certificate # configuration.verify_ssl = False # Create the client with authentication trainer_client = TrainerClient( backend_config=KubernetesBackendConfig(client_configuration=configuration) ) # Create the trainer configuration trainer = TransformersTrainer( func=train_func, num_nodes=2, resources_per_node={\"nvidia.com/gpu\": 1}, ) # Get the runtime and submit the training job runtime = trainer_client.backend.get_runtime(\"torch-distributed\") job_name = trainer_client.train(trainer=trainer, runtime=runtime) print(f\"Job"
+                                - emphasis [ref=e811]: "{job_name}"
+                                - text: submitted!")
+                              - generic [ref=e2215]:
+                                - button "Copy to Clipboard" [ref=e2219]:
+                                  - img [ref=e2220]
+                                - button [ref=e2226]
+                              - button "Show less" [expanded] [ref=e2229]:
+                                - generic [ref=e2230]: Show less
+                                - img [ref=e2231]
+                            - paragraph [ref=e812]:
+                              - text: Replace
+                              - code [ref=e813]: <your-api-server-url>
+                              - text: with the API server URL from step 1 and
+                              - code [ref=e814]: <your-bearer-token>
+                              - text: with the authentication token from step 1.
+                            - paragraph [ref=e815]: "The TransformersTrainer parameters are:"
+                            - generic [ref=e816]:
+                              - button "Expand" [ref=e2233] [cursor=pointer]:
+                                - generic:
+                                  - generic: Expand
+                              - table [ref=e819]:
+                                - rowgroup [ref=e824]:
+                                  - row "Parameter Type Description" [ref=e825]:
+                                    - columnheader "Parameter" [ref=e826]
+                                    - columnheader "Type" [ref=e827]
+                                    - columnheader "Description" [ref=e828]
+                                - rowgroup [ref=e829]:
+                                  - row "func Callable The Python function contains your training code." [ref=e830]:
+                                    - cell "func" [ref=e831]:
+                                      - paragraph [ref=e832]:
+                                        - code [ref=e833]: func
+                                    - cell "Callable" [ref=e834]:
+                                      - paragraph [ref=e835]:
+                                        - code [ref=e836]: Callable
+                                    - cell "The Python function contains your training code." [ref=e837]:
+                                      - paragraph [ref=e838]: The Python function contains your training code.
+                                  - 'row "num_nodes int Number of distributed training nodes (default: 1)." [ref=e839]':
+                                    - cell "num_nodes" [ref=e840]:
+                                      - paragraph [ref=e841]:
+                                        - code [ref=e842]: num_nodes
+                                    - cell "int" [ref=e843]:
+                                      - paragraph [ref=e844]:
+                                        - code [ref=e845]: int
+                                    - 'cell "Number of distributed training nodes (default: 1)." [ref=e846]':
+                                      - paragraph [ref=e847]: "Number of distributed training nodes (default: 1)."
+                                  - 'row "resources_per_node dict Resource requests per node, for example \"nvidia.com/gpu\": 1, \"memory\": \"16Gi\"." [ref=e848]':
+                                    - cell "resources_per_node" [ref=e849]:
+                                      - paragraph [ref=e850]:
+                                        - code [ref=e851]: resources_per_node
+                                    - cell "dict" [ref=e852]:
+                                      - paragraph [ref=e853]:
+                                        - code [ref=e854]: dict
+                                    - 'cell "Resource requests per node, for example \"nvidia.com/gpu\": 1, \"memory\": \"16Gi\"." [ref=e855]':
+                                      - paragraph [ref=e856]:
+                                        - text: Resource requests per node, for example
+                                        - code [ref=e857]: "\"nvidia.com/gpu\": 1, \"memory\": \"16Gi\""
+                                        - text: .
+                              - button "Show more" [ref=e858] [cursor=pointer]:
+                                - generic [ref=e859]: Show more
+                      - generic [ref=e860]:
+                        - paragraph [ref=e861]:
+                          - strong [ref=e862]: Verification
+                        - list [ref=e863]:
+                          - listitem [ref=e864]:
+                            - paragraph [ref=e865]: "Verify that the job was submitted by checking the job status:"
+                            - generic [ref=e2235]:
+                              - code [ref=e869]: "job = trainer_client.get_job(job_name) print(f\" Status: {job.status}\")"
+                              - generic [ref=e2238]:
+                                - button "Copy to Clipboard" [ref=e2242]:
+                                  - img [ref=e2243]
+                                - button [ref=e2249]
+                          - listitem [ref=e870]:
+                            - paragraph [ref=e871]: "Verify that the training pods are running:"
+                            - generic [ref=e2252]:
+                              - code [ref=e875]: oc get pods -n <your-namespace> -l job-name=<job-name>
+                              - generic [ref=e2255]:
+                                - button "Copy to Clipboard" [ref=e2259]:
+                                  - img [ref=e2260]
+                                - button [ref=e2266]
+                            - paragraph [ref=e876]:
+                              - text: Replace
+                              - code [ref=e877]: <your-namespace>
+                              - text: with the name of your project and
+                              - code [ref=e878]: <job-name>
+                              - text: with the name of your training job.
+                          - listitem [ref=e879]: (Optional) Verify that real-time progress metrics are displayed for your training job. Navigate to the OpenShift AI dashboard and click TrainingJobs to view these metrics.
+                    - generic [ref=e880]:
+                      - heading "6.3.2. Configuring JIT checkpointing with a PVC Copy link to clipboard" [level=3] [ref=e2269]:
+                        - link "6.3.2. Configuring JIT checkpointing with a PVC" [ref=e885] [cursor=pointer]:
+                          - /url: "#configuring-jit-checkpointing-with-a-pvc_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2273] [cursor=pointer]:
+                          - button "Copy link" [ref=e2274]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e886]:
+                        - text: To enable JIT checkpointing with persistent storage, use the
+                        - code [ref=e887]: pvc://
+                        - text: URI scheme in the output_dir parameter of the
+                        - code [ref=e888]: TransformersTrainer
+                        - text: . The SDK automatically mounts the PVC on all training pods.
+                      - alert [ref=e2275]:
+                        - generic [ref=e2278]:
+                          - generic [ref=e890]: Note
+                          - paragraph [ref=e892]: Your project must have a PersistentVolumeClaim (PVC) with ReadWriteMany (RWX) access mode.
+                      - generic [ref=e2282]:
+                        - code [ref=e896]: "trainer = TransformersTrainer( func=train_func, num_nodes=2, resources_per_node={\"nvidia.com/gpu\": 1}, output_dir=\"pvc://training-checkpoints/checkpoints\", )"
+                        - generic [ref=e2285]:
+                          - button "Copy to Clipboard" [ref=e2289]:
+                            - img [ref=e2290]
+                          - button [ref=e2296]
+                        - button "Show less" [expanded] [ref=e2299]:
+                          - generic [ref=e2300]: Show less
+                          - img [ref=e2301]
+                      - paragraph [ref=e897]:
+                        - strong [ref=e899]: When JIT checkpointing is configured
+                        - text: ":"
+                      - paragraph [ref=e900]:
+                        - text: If pods receive a termination signal (SIGTERM), the trainer automatically saves a checkpoint. When the job restarts, training automatically resumes from the latest checkpoint. For more information about progress tracking and JIT checkpointing, see
+                        - link "Using RHAI trainers for progress tracking and checkpointing" [ref=e901] [cursor=pointer]:
+                          - /url: https://access.redhat.com/articles/7136179
+                        - text: .
+                    - generic [ref=e902]:
+                      - heading "6.3.3. Disabling progress tracking Copy link to clipboard" [level=3] [ref=e2303]:
+                        - link "6.3.3. Disabling progress tracking" [ref=e907] [cursor=pointer]:
+                          - /url: "#disabling-progress-tracking_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2307] [cursor=pointer]:
+                          - button "Copy link" [ref=e2308]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e908]:
+                        - text: Progress tracking is enabled by default when using RHAI trainers. To disable progress tracking, set
+                        - code [ref=e909]: enable_progression_tracking=False
+                        - text: ":"
+                      - generic [ref=e2309]:
+                        - code [ref=e913]: "trainer = TransformersTrainer( func=train_func, num_nodes=2, resources_per_node={\"nvidia.com/gpu\": 1}, enable_progression_tracking=False, )"
+                        - generic [ref=e2312]:
+                          - button "Copy to Clipboard" [ref=e2316]:
+                            - img [ref=e2317]
+                          - button [ref=e2323]
+                        - button "Show less" [expanded] [ref=e2326]:
+                          - generic [ref=e2327]: Show less
+                          - img [ref=e2328]
+                  - generic [ref=e914]:
+                    - heading "6.4. Fine-tuning a model by using Kubeflow Trainer v2 Copy link to clipboard" [level=2] [ref=e2330]:
+                      - link "6.4. Fine-tuning a model by using Kubeflow Trainer v2" [ref=e919] [cursor=pointer]:
+                        - /url: "#fine-tuning-a-model-by-using-kubeflow-trainerv2_distributed-workloads"
+                      - generic "Copy link to clipboard" [ref=e2334] [cursor=pointer]:
+                        - button "Copy link" [ref=e2335]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e920]: Fine-tuning is the process of customizing a Large Language Model (LLM) for a specific task by using labelled data. You can use Kubeflow Trainer v2 with Training Hub runtimes and the Kubeflow Python SDK to fine-tune LLMs in Red Hat OpenShift AI.
+                    - paragraph [ref=e921]: "Red Hat OpenShift AI supports the following fine-tuning algorithms through Training Hub:"
+                    - generic [ref=e923]:
+                      - term [ref=e924]: Orthogonal Subspace Fine-Tuning (OSFT)
+                      - definition [ref=e925]: Enables continual learning of pre-trained or instruction-tuned models without catastrophic forgetting. OSFT does not require a supplementary dataset to maintain the distribution of the original model.
+                      - term [ref=e926]: Supervised Fine-Tuning (SFT)
+                      - definition [ref=e927]: Standard fine-tuning for task adaptation using PyTorch Fully Sharded Data Parallel (FSDP) to distribute training across multiple GPUs and nodes.
+                    - generic [ref=e928]:
+                      - heading "6.4.1. Configuring the fine-tuning job Copy link to clipboard" [level=3] [ref=e2336]:
+                        - link "6.4.1. Configuring the fine-tuning job" [ref=e933] [cursor=pointer]:
+                          - /url: "#configuring-the-fine-tuning-job-v2_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2340] [cursor=pointer]:
+                          - button "Copy link" [ref=e2341]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e934]: Before you can use a training job to fine-tune a model, you must configure the training job. You must set the training parameters, select the fine-tuning algorithm, and configure the Kubeflow SDK.
+                      - alert [ref=e2342]:
+                        - generic [ref=e2345]:
+                          - generic [ref=e936]: Note
+                          - paragraph [ref=e938]: The code in this procedure specifies how to configure an example fine-tuning job. If you have the specified resources, you can run the example code without editing it. Alternatively, you can modify the example code to specify the appropriate configuration for your fine-tuning job.
+                      - generic [ref=e939]:
+                        - paragraph [ref=e940]:
+                          - strong [ref=e941]: Prerequisites
+                        - list [ref=e942]:
+                          - listitem [ref=e943]:
+                            - paragraph [ref=e944]: You can access an OpenShift cluster that has sufficient worker nodes with supported accelerators to run your training or tuning job.
+                            - list [ref=e946]:
+                              - listitem [ref=e947]: "For the OSFT example: 2 nodes with 2 NVIDIA L40/L40S GPUs each (4 GPUs total), 4 CPUs and 32 GiB memory per node."
+                              - listitem [ref=e948]: "For the SFT example: 2 nodes with 2 NVIDIA GPUs each (Ampere-based or newer recommended), 4 CPUs and 64 GiB memory per node."
+                          - listitem [ref=e949]:
+                            - paragraph [ref=e950]: "Your cluster administrator has configured the cluster as follows:"
+                            - list [ref=e952]:
+                              - listitem [ref=e953]:
+                                - text: Installed Red Hat OpenShift AI with the required distributed training components, as described in
+                                - link "Installing the distributed workloads components" [ref=e954] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.0/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                                - text: (for disconnected environments, see
+                                - link "Installing the distributed workloads components" [ref=e955] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.0/html/installing_and_uninstalling_openshift_ai_self-managed/installing-the-distributed-workloads-components_install
+                                - text: ).
+                              - listitem [ref=e956]: Configured the distributed training resources.
+                              - listitem [ref=e957]:
+                                - text: Installed the JobSet Operator from OLM, as described in
+                                - link "Installing the JobSet Operator" [ref=e958] [cursor=pointer]:
+                                  - /url: https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/ai_workloads/jobset-operator#js-install
+                                - text: .
+                              - listitem [ref=e959]: Configured RBAC permissions for SDK access to ClusterTrainingRuntime resources.
+                          - listitem [ref=e960]:
+                            - text: A training-hub ClusterTrainingRuntime is available in your cluster. To verify, run
+                            - code [ref=e961]: oc get clustertrainingruntime training-hub
+                            - text: .
+                          - listitem [ref=e962]:
+                            - text: You can access a workbench that is suitable for distributed training, as described in
+                            - link "Creating a workbench for distributed training" [ref=e963] [cursor=pointer]:
+                              - /url: https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.0/html-single/creating_a_workbench/index
+                            - text: .
+                          - listitem [ref=e964]: You can access a dynamic storage provisioner that supports ReadWriteMany (RWX) Persistent Volume Claim (PVC) provisioning, such as Red Hat OpenShift Data Foundation.
+                          - listitem [ref=e965]:
+                            - paragraph [ref=e966]: You have administrator access for the project.
+                            - list [ref=e968]:
+                              - listitem [ref=e969]: If you created the project, you automatically have administrator access.
+                              - listitem [ref=e970]: If you did not create the project, your cluster administrator must give you administrator access.
+                      - generic [ref=e971]:
+                        - paragraph [ref=e972]:
+                          - strong [ref=e973]: Procedure
+                        - list [ref=e974]:
+                          - listitem [ref=e975]: "Open the workbench:"
+                          - listitem [ref=e976]: Log in to the Red Hat OpenShift AI web console.
+                          - listitem [ref=e977]:
+                            - text: Click
+                            - strong [ref=e979]: Projects
+                            - text: and click your project.
+                          - listitem [ref=e980]:
+                            - text: Click the
+                            - strong [ref=e982]: Workbenches
+                            - text: tab.
+                          - listitem [ref=e983]: Ensure that the workbench uses a storage class with RWX capability.
+                          - listitem [ref=e984]: If your workbench is not already running, start the workbench.
+                          - listitem [ref=e985]:
+                            - text: Click the
+                            - strong [ref=e987]: Open
+                            - text: link to open the IDE in a new window.
+                          - listitem [ref=e988]:
+                            - text: Click
+                            - strong [ref=e990]: File
+                            - text: ">"
+                            - strong [ref=e992]: New
+                            - text: ">"
+                            - strong [ref=e994]: Notebook
+                            - text: .
+                          - listitem [ref=e995]:
+                            - paragraph [ref=e996]: "Install the required packages. In a notebook cell, add the code to install the dependencies, as follows:"
+                            - generic [ref=e2349]:
+                              - code [ref=e1000]: "!pip install kubeflow --index-url https://console.redhat.com/api/pypi/public-rhai/rhoai/3.2/cuda12.9-ubi9/simple/ !pip install training-hub==0.3.0"
+                              - generic [ref=e2352]:
+                                - button "Copy to Clipboard" [ref=e2356]:
+                                  - img [ref=e2357]
+                                - button [ref=e2363]
+                          - listitem [ref=e1001]:
+                            - text: Select the cell, and click
+                            - strong [ref=e1003]: Run
+                            - text: ">"
+                            - strong [ref=e1005]: Run selected cell
+                            - text: .
+                          - listitem [ref=e1006]:
+                            - paragraph [ref=e1007]: "Configure the Kubeflow SDK client authentication by creating a cell with the following content:"
+                            - generic [ref=e2366]:
+                              - code [ref=e1011]: "from kubernetes import client as k8s from kubeflow.common.types import KubernetesBackendConfig from kubeflow.trainer import TrainerClient api_server = \"<API_SERVER>\" token = \"<TOKEN>\" configuration = k8s.Configuration() configuration.host = api_server configuration.api_key = {\"authorization\": f\"Bearer {token}\"} # Uncomment if your cluster API server uses a self-signed certificate # configuration.verify_ssl = False backend_cfg = KubernetesBackendConfig(client_configuration=configuration) client = TrainerClient(backend_cfg)"
+                              - generic [ref=e2369]:
+                                - button "Copy to Clipboard" [ref=e2373]:
+                                  - img [ref=e2374]
+                                - button [ref=e2380]
+                              - button "Show less" [expanded] [ref=e2383]:
+                                - generic [ref=e2384]: Show less
+                                - img [ref=e2385]
+                          - listitem [ref=e1012]:
+                            - text: Edit the
+                            - code [ref=e1013]: api_server
+                            - text: and
+                            - code [ref=e1014]: token
+                            - text: parameters to enter the values to authenticate to your OpenShift cluster. Run the cell to configure the SDK client authentication.
+                          - listitem [ref=e1015]:
+                            - paragraph [ref=e1016]: "Verify that a Training Hub runtime is available, as follows:"
+                            - generic [ref=e2387]:
+                              - code [ref=e1020]: "for runtime in client.list_runtimes(): print(\"Found runtime: \" + str(runtime)) if runtime.name == \"training-hub\": th_runtime = runtime print(\"Selected runtime: \" + str(th_runtime))"
+                              - generic [ref=e2390]:
+                                - button "Copy to Clipboard" [ref=e2394]:
+                                  - img [ref=e2395]
+                                - button [ref=e2401]
+                          - listitem [ref=e1021]:
+                            - paragraph [ref=e1022]: "Set the training parameters. The training parameters depend on the fine-tuning algorithm you choose. See the following sections for algorithm-specific configuration:"
+                            - list [ref=e1024]:
+                              - listitem [ref=e1025]: OSFT training parameters for OSFT fine-tuning
+                              - listitem [ref=e1026]: SFT training parameters for SFT fine-tuning
+                          - listitem [ref=e1027]:
+                            - text: Click
+                            - strong [ref=e1029]: File
+                            - text: ">"
+                            - strong [ref=e1031]: Save Notebook As
+                            - text: ", enter an appropriate file name, and click"
+                            - strong [ref=e1033]: Save
+                            - text: .
+                      - generic [ref=e1034]:
+                        - heading "6.4.1.1. OSFT training parameters for OSFT fine-tuning Copy link to clipboard" [level=4] [ref=e2404]:
+                          - link "6.4.1.1. OSFT training parameters for OSFT fine-tuning" [ref=e1039] [cursor=pointer]:
+                            - /url: "#osft-training-parameters-for-OSFT-fine-tuning_distributed-workloads"
+                          - generic "Copy link to clipboard" [ref=e2408] [cursor=pointer]:
+                            - button "Copy link" [ref=e2409]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - paragraph [ref=e1040]: "Create a cell with the following content to set the OSFT training parameters:"
+                        - generic [ref=e2410]:
+                          - code [ref=e1044]: "params = { # Model + Data Paths \"model_path\": \"Qwen/Qwen2.5-1.5B-Instruct\", \"data_path\": \"/mnt/shared/table-gpt-data/train/train_All_5000.jsonl\", \"ckpt_output_dir\": \"/mnt/shared/checkpoints-logs-dir\", \"data_output_path\": \"/mnt/shared/osft-json/_data\", # Training Hyperparameters \"unfreeze_rank_ratio\": 0.25, # OSFT-specific: controls the subspace dimension \"effective_batch_size\": 128, \"learning_rate\": 5.0e-6, \"num_epochs\": 1, \"lr_scheduler\": \"cosine\", \"warmup_steps\": 0, \"seed\": 42, # Performance Hyperparameters \"use_liger\": True, # OSFT-specific: enables Liger kernel optimization \"max_tokens_per_gpu\": 64000, \"max_seq_len\": 8192, # Checkpointing Settings \"save_final_checkpoint\": True, \"checkpoint_at_epoch\": False, # Distributed training (delegated to Kubeflow Trainer) \"nproc_per_node\": 2, \"nnodes\": 2, }"
+                          - generic [ref=e2413]:
+                            - button "Copy to Clipboard" [ref=e2417]:
+                              - img [ref=e2418]
+                            - button [ref=e2424]
+                          - button "Show less" [expanded] [ref=e2427]:
+                            - generic [ref=e2428]: Show less
+                            - img [ref=e2429]
+                        - paragraph [ref=e1045]: "Optional: Edit the parameters to suit your model, dataset, and resources."
+                      - generic [ref=e1046]:
+                        - heading "6.4.1.2. SFT training parameters for SFT fine-tuning Copy link to clipboard" [level=4] [ref=e2431]:
+                          - link "6.4.1.2. SFT training parameters for SFT fine-tuning" [ref=e1051] [cursor=pointer]:
+                            - /url: "#sft-training-parameters-for-sft-fine-tuning_distributed-workloads"
+                          - generic "Copy link to clipboard" [ref=e2435] [cursor=pointer]:
+                            - button "Copy link" [ref=e2436]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - paragraph [ref=e1052]: "Create a cell with the following content to set the SFT training parameters:"
+                        - generic [ref=e2437]:
+                          - code [ref=e1056]: "training_parameters = { # Model + Data Paths \"model_path\": \"/mnt/shared/Qwen/Qwen2.5-1.5B-Instruct\", \"data_path\": \"/mnt/shared/table-gpt-data/train/train_All_5000.jsonl\", \"ckpt_output_dir\": \"/mnt/shared/checkpoints\", \"data_output_dir\": \"/mnt/shared/traininghub-sft-data\", # Training Hyperparameters \"effective_batch_size\": 128, \"learning_rate\": 5e-6, \"num_epochs\": 1, \"lr_scheduler\": \"cosine\", \"warmup_steps\": 0, \"seed\": 42, # Performance Hyperparameters \"max_tokens_per_gpu\": 10000, \"max_seq_len\": 8192, # Checkpointing Settings \"checkpoint_at_epoch\": True, \"accelerate_full_state_at_epoch\": False, # FSDP Configuration \"fsdp_options\": { \"sharding_strategy\": \"FULL_SHARD\", }, \"nproc_per_node\": 1, \"nnodes\": 2, }"
+                          - generic [ref=e2440]:
+                            - button "Copy to Clipboard" [ref=e2444]:
+                              - img [ref=e2445]
+                            - button [ref=e2451]
+                          - button "Show less" [expanded] [ref=e2454]:
+                            - generic [ref=e2455]: Show less
+                            - img [ref=e2456]
+                        - paragraph [ref=e1057]: "Optional: Edit the parameters to suit your model, dataset, and resources."
+                      - generic [ref=e1058]:
+                        - heading "6.4.1.3. Example fine-tuning notebooks Copy link to clipboard" [level=4] [ref=e2458]:
+                          - link "6.4.1.3. Example fine-tuning notebooks" [ref=e1063] [cursor=pointer]:
+                            - /url: "#example-fine-tuning-notebooks_distributed-workloads"
+                          - generic "Copy link to clipboard" [ref=e2462] [cursor=pointer]:
+                            - button "Copy link" [ref=e2463]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - paragraph [ref=e1064]: "For complete, runnable example notebooks, see the following resources:"
+                        - list [ref=e1066]:
+                          - listitem [ref=e1067]:
+                            - paragraph [ref=e1068]:
+                              - link "OSFT Continual Learning example" [ref=e1069] [cursor=pointer]:
+                                - /url: https://github.com/red-hat-data-services/red-hat-ai-examples/tree/main/examples/fine-tuning/rhoai-3.2/osft
+                              - text: — Fine-tune Qwen/Qwen2.5-1.5B-Instruct with OSFT for continual learning without catastrophic forgetting. Includes model evaluation before and after fine-tuning.
+                            - list [ref=e1071]:
+                              - listitem [ref=e1072]:
+                                - text: "Notebook:"
+                                - code [ref=e1073]: osft-example.ipynb
+                              - listitem [ref=e1074]: "Hardware: 2 nodes x 2 GPUs (L40/L40S or equivalent), 4 GPUs total"
+                          - listitem [ref=e1075]:
+                            - paragraph [ref=e1076]:
+                              - link "SFT with Training Hub example" [ref=e1077] [cursor=pointer]:
+                                - /url: https://github.com/red-hat-data-services/red-hat-ai-examples/tree/main/examples/fine-tuning/rhoai-3.2/training-hub/sft
+                              - text: — Fine-tune Qwen/Qwen2.5-1.5B-Instruct with SFT and PyTorch FSDP for distributed training.
+                            - list [ref=e1079]:
+                              - listitem [ref=e1080]:
+                                - text: "Notebook:"
+                                - code [ref=e1081]: sft.ipynb
+                              - listitem [ref=e1082]: "Hardware: validated with Qwen2.5 1.5B, 7B, and 14B models on 4x NVIDIA A100/80GB"
+                      - generic [ref=e1083]:
+                        - heading "6.4.1.4. Training data format Copy link to clipboard" [level=4] [ref=e2464]:
+                          - link "6.4.1.4. Training data format" [ref=e1088] [cursor=pointer]:
+                            - /url: "#training-data-format_distributed-workloads"
+                          - generic "Copy link to clipboard" [ref=e2468] [cursor=pointer]:
+                            - button "Copy link" [ref=e2469]:
+                              - generic:
+                                - generic:
+                                  - generic "Copy link"
+                        - paragraph [ref=e1089]:
+                          - text: Training Hub fine-tuning algorithms support training data in JSON Lines (
+                          - code [ref=e1090]: .jsonl
+                          - text: ") format with a messages structure:"
+                        - generic [ref=e2470]:
+                          - code [ref=e1094]: "{\"messages\": [{\"role\": \"system\", \"content\": \"You are a helpful assistant.\"}, {\"role\": \"user\", \"content\": \"Hello!\"}, {\"role\": \"assistant\", \"content\": \"Hi there! How can I help you?\"}]} {\"messages\": [{\"role\": \"user\", \"content\": \"What is OSFT?\"}, {\"role\": \"assistant\", \"content\": \"OSFT stands for Orthogonal Subspace Fine-Tuning...\"}]}"
+                          - generic [ref=e2473]:
+                            - button "Copy to Clipboard" [ref=e2477]:
+                              - img [ref=e2478]
+                            - button [ref=e2484]
+                    - generic [ref=e1095]:
+                      - heading "6.4.2. Running the fine-tuning job Copy link to clipboard" [level=3] [ref=e2487]:
+                        - link "6.4.2. Running the fine-tuning job" [ref=e1100] [cursor=pointer]:
+                          - /url: "#running-the-fine-tuning-job-v2_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2491] [cursor=pointer]:
+                          - button "Copy link" [ref=e2492]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1101]: When you run a training job to fine-tune a model, you must specify the resources needed, provide any authorization credentials required, and configure shared storage for datasets, models, and checkpoints.
+                      - alert [ref=e2493]:
+                        - generic [ref=e2496]:
+                          - generic [ref=e1103]: Note
+                          - paragraph [ref=e1105]: The code in this procedure specifies how to run the example fine-tuning job. If you have the specified resources, you can run the example code without editing it. Alternatively, you can modify the example code to specify the appropriate details for your fine-tuning job.
+                      - generic [ref=e1106]:
+                        - paragraph [ref=e1107]:
+                          - strong [ref=e1108]: Prerequisites
+                        - list [ref=e1109]:
+                          - listitem [ref=e1110]: You have acces to an OpenShift cluster that has sufficient worker nodes with supported accelerators to run your training or tuning job.
+                          - listitem [ref=e1111]: You have access to a workbench that is suitable for distributed training, as described in Creating a workbench for distributed training.
+                          - listitem [ref=e1112]:
+                            - paragraph [ref=e1113]: You have administrator access for the project.
+                            - list [ref=e1115]:
+                              - listitem [ref=e1116]: If you created the project, you automatically have administrator access.
+                              - listitem [ref=e1117]: If you did not create the project, your cluster administrator must give you administrator access.
+                          - listitem [ref=e1118]: You have access to a model.
+                          - listitem [ref=e1119]: You have access to data that you can use to fine-tune the model.
+                          - listitem [ref=e1120]: You have configured the fine-tuning job as described in Configuring the fine-tuning job.
+                          - listitem [ref=e1121]: You can access a dynamic storage provisioner that supports ReadWriteMany (RWX) Persistent Volume Claim (PVC) provisioning, such as Red Hat OpenShift Data Foundation.
+                          - listitem [ref=e1122]: A PersistentVolumeClaim resource named shared with RWX access mode is attached to your workbench.
+                          - listitem [ref=e1123]: If using a gated model from the Hugging Face Hub, you have a Hugging Face account and access token. For more information, search for "user access tokens" in the Hugging Face documentation.
+                      - generic [ref=e1124]:
+                        - paragraph [ref=e1125]:
+                          - strong [ref=e1126]: Procedure
+                        - list [ref=e1127]:
+                          - listitem [ref=e1128]:
+                            - paragraph [ref=e1129]: "Open the workbench, as follows:"
+                            - list [ref=e1131]:
+                              - listitem [ref=e1132]: Log in to the Red Hat OpenShift AI web console.
+                              - listitem [ref=e1133]:
+                                - text: Click
+                                - strong [ref=e1135]: Projects
+                                - text: and click your project.
+                              - listitem [ref=e1136]: Click the Workbenches tab. If your workbench is not already running, start the workbench.
+                              - listitem [ref=e1137]: Click the Open link to open the IDE in a new window.
+                              - listitem [ref=e1138]:
+                                - text: Click
+                                - strong [ref=e1140]: File
+                                - text: ">"
+                                - strong [ref=e1142]: Open
+                                - text: ", and open the Jupyter notebook that you used to configure the fine-tuning job."
+                          - listitem [ref=e1143]: Create a cell to run the job.
+                          - listitem [ref=e1144]:
+                            - paragraph [ref=e1145]: "Depending on your fine-tuning method, add the code for either OSFT or SFT:"
+                            - list [ref=e1147]:
+                              - listitem [ref=e1148]:
+                                - paragraph [ref=e1149]: "To enable OSFT fine-tuning, add:"
+                                - generic [ref=e2500]:
+                                  - code [ref=e1153]: "from kubeflow.trainer.rhai import TrainingHubAlgorithms, TrainingHubTrainer from kubeflow.trainer.options.kubernetes import ( ContainerOverride, PodSpecOverride, PodTemplateOverride, PodTemplateOverrides, ) PVC_NAME = \"shared\" job_name = client.train( trainer=TrainingHubTrainer( algorithm=TrainingHubAlgorithms.OSFT, func_args=params, env={ \"HF_HOME\": \"/mnt/shared/huggingface\", \"TRITON_CACHE_DIR\": \"/mnt/shared/.triton\", \"XDG_CACHE_HOME\": \"/opt/app-root/src/.cache\", \"NCCL_DEBUG\": \"INFO\", }, resources_per_node={ \"nvidia.com/gpu\": 2, \"memory\": \"32Gi\", \"cpu\": 4, }, ), options=[ PodTemplateOverrides( PodTemplateOverride( target_jobs=[\"node\"], spec=PodSpecOverride( volumes=[ { \"name\": \"work\", \"persistentVolumeClaim\": {\"claimName\": PVC_NAME}, }, ], containers=[ ContainerOverride( name=\"node\", volume_mounts=[ { \"name\": \"work\", \"mountPath\": \"/mnt/shared\", }, ], ), ], ), ) ) ], runtime=th_runtime, )"
+                                  - generic [ref=e2503]:
+                                    - button "Copy to Clipboard" [ref=e2507]:
+                                      - img [ref=e2508]
+                                    - button [ref=e2514]
+                                  - button "Show less" [expanded] [ref=e2517]:
+                                    - generic [ref=e2518]: Show less
+                                    - img [ref=e2519]
+                              - listitem [ref=e1154]:
+                                - paragraph [ref=e1155]: "To enable SFT fine-tuning, add:"
+                                - generic [ref=e2521]:
+                                  - code [ref=e1159]: "from kubeflow.trainer.rhai import TrainingHubAlgorithms, TrainingHubTrainer from kubeflow.trainer.options.kubernetes import ( ContainerOverride, PodSpecOverride, PodTemplateOverride, PodTemplateOverrides, ) PVC_NAME = \"shared\" job_name = client.train( trainer=TrainingHubTrainer( algorithm=TrainingHubAlgorithms.SFT, func_args=training_parameters, env={ \"HF_HOME\": \"/mnt/shared/huggingface\", \"TRITON_CACHE_DIR\": \"/mnt/shared/.triton\", \"XDG_CACHE_HOME\": \"/opt/app-root/src/.cache\", \"NCCL_DEBUG\": \"INFO\", }, resources_per_node={ \"nvidia.com/gpu\": 2, \"memory\": \"64Gi\", \"cpu\": 4, }, ), options=[ PodTemplateOverrides( PodTemplateOverride( target_jobs=[\"node\"], spec=PodSpecOverride( volumes=[ { \"name\": \"work\", \"persistentVolumeClaim\": {\"claimName\": PVC_NAME}, }, ], containers=[ ContainerOverride( name=\"node\", volume_mounts=[ { \"name\": \"work\", \"mountPath\": \"/mnt/shared\", }, ], ), ], ), ) ) ], runtime=th_runtime, )"
+                                  - generic [ref=e2524]:
+                                    - button "Copy to Clipboard" [ref=e2528]:
+                                      - img [ref=e2529]
+                                    - button [ref=e2535]
+                                  - button "Show less" [expanded] [ref=e2538]:
+                                    - generic [ref=e2539]: Show less
+                                    - img [ref=e2540]
+                      - paragraph [ref=e1160]: "where:"
+                      - generic [ref=e1162]:
+                        - term [ref=e1163]:
+                          - code [ref=e1165]: resources_per_node
+                        - definition [ref=e1166]:
+                          - text: values should be updated according to the job requirements and the resources available. If you use AMD accelerators, in the
+                          - code [ref=e1167]: resources_per_node
+                          - text: entry, change
+                          - code [ref=e1168]: nvidia.com/gpu
+                          - text: to
+                          - code [ref=e1169]: amd.com/gpu
+                          - text: . If the RWX PersistentVolumeClaim resource attached to your workbench has a different name instead of shared, update the
+                          - code [ref=e1170]: PVC_NAME
+                          - text: value and the
+                          - code [ref=e1171]: mountPath
+                          - text: as needed. If using a gated Hugging Face model, add
+                          - code [ref=e1172]: "\"HF_TOKEN\": \"<your-token>\""
+                          - text: to the env dictionary.
+                      - generic [ref=e1173]:
+                        - paragraph [ref=e1174]:
+                          - strong [ref=e1175]: Verification
+                        - paragraph [ref=e1176]: "View the progress of the job as follows:"
+                      - list [ref=e1178]:
+                        - listitem [ref=e1179]:
+                          - paragraph [ref=e1180]: "Create a cell with the following content:"
+                          - generic [ref=e2542]:
+                            - code [ref=e1184]: "for logline in client.get_job_logs(job_name, follow=True): print(logline, end=\"\")"
+                            - generic [ref=e2545]:
+                              - button "Copy to Clipboard" [ref=e2549]:
+                                - img [ref=e2550]
+                              - button [ref=e2556]
+                        - listitem [ref=e1185]: Run the cell to view the job progress.
+                        - listitem [ref=e1186]:
+                          - paragraph [ref=e1187]: "(Optional) Check the final job status:"
+                          - generic [ref=e2559]:
+                            - code [ref=e1191]: "job = client.get_job(job_name) print(f\"Name: {job.name}\") print(f\"Status: {job.status}\") print(f\"Nodes: {job.num_nodes}\") print(f\"Runtime: {job.runtime.name}\")"
+                            - generic [ref=e2562]:
+                              - button "Copy to Clipboard" [ref=e2566]:
+                                - img [ref=e2567]
+                              - button [ref=e2573]
+                    - generic [ref=e1192]:
+                      - heading "6.4.3. Deleting the fine-tuning job Copy link to clipboard" [level=3] [ref=e2576]:
+                        - link "6.4.3. Deleting the fine-tuning job" [ref=e1197] [cursor=pointer]:
+                          - /url: "#deleting-the-fine-tuning-job-v2_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2580] [cursor=pointer]:
+                          - button "Copy link" [ref=e2581]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1198]: When you no longer need the fine-tuning job, delete the job to release the resources.
+                      - generic [ref=e1199]:
+                        - paragraph [ref=e1200]:
+                          - strong [ref=e1201]: Procedure
+                        - list [ref=e1202]:
+                          - listitem [ref=e1203]: Log in to the Red Hat OpenShift AI web console.
+                          - listitem [ref=e1204]:
+                            - text: Click
+                            - strong [ref=e1206]: Projects
+                            - text: and click your project.
+                          - listitem [ref=e1207]:
+                            - text: Click the
+                            - strong [ref=e1209]: Workbenches
+                            - text: tab. If your workbench is not already running, start the workbench.
+                          - listitem [ref=e1210]:
+                            - text: Click the
+                            - strong [ref=e1212]: Open
+                            - text: link to open the IDE in a new window.
+                          - listitem [ref=e1213]:
+                            - text: Click
+                            - strong [ref=e1215]: File
+                            - text: ">"
+                            - strong [ref=e1217]: Open
+                            - text: ", and open the Jupyter notebook that you used to configure and run the fine-tuning job."
+                          - listitem [ref=e1218]:
+                            - paragraph [ref=e1219]: "Create a cell with the following content:"
+                            - generic [ref=e2582]:
+                              - code [ref=e1223]: client.delete_job(name=job_name)
+                              - generic [ref=e2585]:
+                                - button "Copy to Clipboard" [ref=e2589]:
+                                  - img [ref=e2590]
+                                - button [ref=e2596]
+                          - listitem [ref=e1224]: Run the cell to delete the job.
+                      - generic [ref=e1225]:
+                        - paragraph [ref=e1226]:
+                          - strong [ref=e1227]: Verification
+                        - list [ref=e1228]:
+                          - listitem [ref=e1229]:
+                            - text: In the OpenShift Console, in the Administrator perspective, click
+                            - strong [ref=e1231]: Workloads
+                            - text: ">"
+                            - strong [ref=e1233]: Jobs
+                            - text: .
+                          - listitem [ref=e1234]:
+                            - text: From the
+                            - strong [ref=e1236]: Project
+                            - text: list, select your project.
+                          - listitem [ref=e1237]: Verify that the specified job is not listed.
+                  - generic [ref=e1238]:
+                    - heading "6.5. Example Kubeflow Trainer TrainJob resources Copy link to clipboard" [level=2] [ref=e2599]:
+                      - link "6.5. Example Kubeflow Trainer TrainJob resources" [ref=e1243] [cursor=pointer]:
+                        - /url: "#example-kubeflow-trainer-trainJob-resources_distributed-workloads"
+                      - generic "Copy link to clipboard" [ref=e2603] [cursor=pointer]:
+                        - button "Copy link" [ref=e2604]:
+                          - generic:
+                            - generic:
+                              - generic "Copy link"
+                    - paragraph [ref=e1244]: This section provides example TrainJob resources and training scripts for common distributed training scenarios with Kubeflow Trainer v2.
+                    - generic [ref=e1245]:
+                      - heading "6.5.1. Example TrainJob resource for multi-node training Copy link to clipboard" [level=3] [ref=e2605]:
+                        - link "6.5.1. Example TrainJob resource for multi-node training" [ref=e1250] [cursor=pointer]:
+                          - /url: "#example-trainJob-resource-for-multi-node-training_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2609] [cursor=pointer]:
+                          - button "Copy link" [ref=e2610]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1251]: "The following example shows a complete TrainJob resource for multi-node distributed PyTorch training using a ConfigMap to provide the training script:"
+                      - generic [ref=e2611]:
+                        - code [ref=e1255]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-multi-node-job namespace: test-namespace annotations: trainer.opendatahub.io/progression-tracking: \"true\" spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"torchrun\", \"/workspace/train.py\"] numNodes: 3 resourcesPerNode: requests: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 limits: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace"
+                        - generic [ref=e2614]:
+                          - button "Copy to Clipboard" [ref=e2618]:
+                            - img [ref=e2619]
+                          - button [ref=e2625]
+                        - button "Show less" [expanded] [ref=e2628]:
+                          - generic [ref=e2629]: Show less
+                          - img [ref=e2630]
+                    - generic [ref=e1256]:
+                      - heading "6.5.2. Example TrainJob with a minimal training script Copy link to clipboard" [level=3] [ref=e2632]:
+                        - link "6.5.2. Example TrainJob with a minimal training script" [ref=e1261] [cursor=pointer]:
+                          - /url: "#example-trainJob-with-a-minimal-training-script_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2636] [cursor=pointer]:
+                          - button "Copy link" [ref=e2637]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1262]:
+                        - text: The following example uses a small training script in a ConfigMap and runs it with
+                        - code [ref=e1263]: torchrun
+                        - text: . The runtime sets up distributed training for you, so you do not need to set any environment variables. The script is mounted into the pod using
+                        - code [ref=e1264]: podTemplateOverrides
+                        - text: ", which works with the default"
+                        - code [ref=e1265]: torch-distributed
+                        - text: runtime with container name
+                        - code [ref=e1266]: node
+                        - text: .
+                      - paragraph [ref=e1267]: Apply the ConfigMap first, then the TrainJob.
+                      - list [ref=e1269]:
+                        - listitem [ref=e1270]:
+                          - paragraph [ref=e1271]: "Create a ConfigMap with the training script:"
+                          - generic [ref=e2638]:
+                            - code [ref=e1275]:
+                              - text: "apiVersion: v1 kind: ConfigMap metadata: name: minimal-train-script namespace: test-namespace data: train.py: | import torch import torch.distributed as dist dist.init_process_group(backend=\"nccl\") rank = dist.get_rank() world_size = dist.get_world_size() print(f\"Rank {rank}/{world_size}\") print(f\"PyTorch: {torch."
+                              - emphasis [ref=e1276]: version
+                              - text: "}, CUDA: {torch.cuda.is_available()}\") if torch.cuda.is_available(): print(f\"GPU: {torch.cuda.get_device_name(0)}\") tensor = torch.ones(1).cuda() * rank dist.all_reduce(tensor) print(f\"Rank {rank}: all_reduce result = {tensor.item()}\") dist.destroy_process_group() print(\"Done.\")"
+                            - generic [ref=e2641]:
+                              - button "Copy to Clipboard" [ref=e2645]:
+                                - img [ref=e2646]
+                              - button [ref=e2652]
+                            - button "Show less" [expanded] [ref=e2655]:
+                              - generic [ref=e2656]: Show less
+                              - img [ref=e2657]
+                        - listitem [ref=e1277]:
+                          - paragraph [ref=e1278]: "Create the TrainJob:"
+                          - paragraph [ref=e1279]:
+                            - text: Use
+                            - code [ref=e1280]: podTemplateOverrides
+                            - text: to add the ConfigMap volume and mount it into the trainer container. The target job name
+                            - code [ref=e1281]: node
+                            - text: matches the default
+                            - code [ref=e1282]: torch-distributed
+                            - text: runtime.
+                          - generic [ref=e2659]:
+                            - code [ref=e1286]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-minimal-example namespace: test-namespace spec: runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"torchrun\", \"/workspace/train.py\"] numNodes: 2 resourcesPerNode: requests: nvidia.com/gpu: 1 limits: nvidia.com/gpu: 1 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: script-volume configMap: name: minimal-train-script containers: - name: node volumeMounts: - name: script-volume mountPath: /workspace"
+                            - generic [ref=e2662]:
+                              - button "Copy to Clipboard" [ref=e2666]:
+                                - img [ref=e2667]
+                              - button [ref=e2673]
+                            - button "Show less" [expanded] [ref=e2676]:
+                              - generic [ref=e2677]: Show less
+                              - img [ref=e2678]
+                    - generic [ref=e1287]:
+                      - heading "6.5.3. Example TrainJob resource with custom TrainingRuntime (no environment variables needed) Copy link to clipboard" [level=3] [ref=e2680]:
+                        - link "6.5.3. Example TrainJob resource with custom TrainingRuntime (no environment variables needed)" [ref=e1292] [cursor=pointer]:
+                          - /url: "#example-trainJob-resource-with-custom-training-runtime_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2684] [cursor=pointer]:
+                          - button "Copy link" [ref=e2685]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1293]:
+                        - text: The following example shows a
+                        - code [ref=e1294]: TrainJob
+                        - text: resource that references a custom namespace-scoped
+                        - code [ref=e1295]: TrainingRuntime
+                        - text: . Use
+                        - code [ref=e1296]: podTemplateOverrides
+                        - text: to mount the script. Set
+                        - code [ref=e1297]: targetJobs
+                        - text: and the container
+                        - code [ref=e1298]: name
+                        - text: "to match your custom runtime template. Here, node is used as the trainer job and container name:"
+                      - generic [ref=e2686]:
+                        - code [ref=e1302]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-custom-runtime-example namespace: my-project spec: runtimeRef: name: custom-torch-runtime kind: TrainingRuntime trainer: command: [\"torchrun\", \"/workspace/train.py\"] numNodes: 2 resourcesPerNode: requests: cpu: \"8\" memory: \"32Gi\" nvidia.com/gpu: 4 limits: cpu: \"8\" memory: \"32Gi\" nvidia.com/gpu: 4 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace"
+                        - generic [ref=e2689]:
+                          - button "Copy to Clipboard" [ref=e2693]:
+                            - img [ref=e2694]
+                          - button [ref=e2700]
+                        - button "Show less" [expanded] [ref=e2703]:
+                          - generic [ref=e2704]: Show less
+                          - img [ref=e2705]
+                      - paragraph [ref=e1303]: "where:"
+                      - generic [ref=e1305]:
+                        - term [ref=e1306]:
+                          - code [ref=e1308]: "kind: TrainingRuntime"
+                        - definition [ref=e1309]:
+                          - text: indicates that the runtime is namespace-scoped. Ensure that you have created the custom
+                          - code [ref=e1310]: TrainingRuntime
+                          - text: resource in the same namespace. See Understanding and using training runtimes for details. If your runtime uses a different replicated job or container name, change
+                          - code [ref=e1311]: targetJobs
+                          - text: and
+                          - code [ref=e1312]: containers[].name
+                          - text: accordingly.
+                    - generic [ref=e1313]:
+                      - heading "6.5.4. Example TrainJob resource with suspend enabled Copy link to clipboard" [level=3] [ref=e2707]:
+                        - link "6.5.4. Example TrainJob resource with suspend enabled" [ref=e1318] [cursor=pointer]:
+                          - /url: "#example-trainJob-resource-with-suspend-enabled_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2711] [cursor=pointer]:
+                          - button "Copy link" [ref=e2712]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1319]: "The following example shows a TrainJob resource that is created in a suspended state. This is useful when you want to define a job before starting it:"
+                      - generic [ref=e2713]:
+                        - code [ref=e1323]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-suspended-example namespace: test-namespace annotations: trainer.opendatahub.io/progression-tracking: \"true\" spec: suspend: true runtimeRef: name: torch-distributed kind: ClusterTrainingRuntime trainer: command: [\"python\", \"/workspace/scripts/train.py\"] numNodes: 2 resourcesPerNode: requests: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 limits: cpu: \"4\" memory: \"8Gi\" nvidia.com/gpu: 2 volumeMounts: - name: training-script-volume mountPath: /workspace volumes: - name: training-script-volume configMap: name: training-script-configmap"
+                        - generic [ref=e2716]:
+                          - button "Copy to Clipboard" [ref=e2720]:
+                            - img [ref=e2721]
+                          - button [ref=e2727]
+                        - button "Show less" [expanded] [ref=e2730]:
+                          - generic [ref=e2731]: Show less
+                          - img [ref=e2732]
+                      - paragraph [ref=e1324]: "To start the job:"
+                      - generic [ref=e2734]:
+                        - code [ref=e1328]:
+                          - text: oc patch trainjob pytorch-suspended-example -n test-namespace --type=merge -p
+                          - emphasis [ref=e1329]: "{\"spec\":{\"suspend\":false}}"
+                        - generic [ref=e2737]:
+                          - button "Copy to Clipboard" [ref=e2741]:
+                            - img [ref=e2742]
+                          - button [ref=e2748]
+                    - generic [ref=e1330]:
+                      - heading "6.5.5. Example PyTorch training script Copy link to clipboard" [level=3] [ref=e2751]:
+                        - link "6.5.5. Example PyTorch training script" [ref=e1335] [cursor=pointer]:
+                          - /url: "#example-pytorch-training-script_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2755] [cursor=pointer]:
+                          - button "Copy link" [ref=e2756]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1336]: "The following example shows a simple distributed PyTorch training script that you can store in a ConfigMap:"
+                      - generic [ref=e2757]:
+                        - code [ref=e1340]:
+                          - text: "apiVersion: v1 kind: ConfigMap metadata: name: training-script-configmap namespace: test-namespace data: train.py: | import os import torch import torch.nn as nn import torch.distributed as dist from torch.nn.parallel import DistributedDataParallel as DDP from torch.utils.data import DataLoader, TensorDataset, DistributedSampler def main(): # Initialize distributed training dist.init_process_group(backend=\"nccl\") rank = dist.get_rank() world_size = dist.get_world_size() local_rank = int(os.environ.get(\"LOCAL_RANK\", 0)) torch.cuda.set_device(local_rank) print(f\"Rank {rank}/{world_size}, Local Rank: {local_rank}\") # Create a simple model model = nn.Sequential( nn.Linear(10, 128), nn.ReLU(), nn.Linear(128, 1), ).cuda(local_rank) model = DDP(model, device_ids=[local_rank]) # Create synthetic dataset X = torch.randn(1000, 10) y = torch.randn(1000, 1) dataset = TensorDataset(X, y) sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank) dataloader = DataLoader(dataset, batch_size=32, sampler=sampler) # Training loop optimizer = torch.optim.Adam(model.parameters(), lr=0.001) criterion = nn.MSELoss() for epoch in range(10): sampler.set_epoch(epoch) total_loss = 0 for batch_X, batch_y in dataloader: batch_X = batch_X.cuda(local_rank) batch_y = batch_y.cuda(local_rank) optimizer.zero_grad() output = model(batch_X) loss = criterion(output, batch_y) loss.backward() optimizer.step() total_loss += loss.item() if rank == 0: print(f\"Epoch {epoch+1}/10, Loss: {total_loss/len(dataloader):.4f}\") dist.destroy_process_group() if rank == 0: print(\"Training complete!\") if"
+                          - emphasis [ref=e1341]: name
+                          - text: == "
+                          - emphasis [ref=e1342]: main
+                          - text: "\": main()"
+                        - generic [ref=e2760]:
+                          - button "Copy to Clipboard" [ref=e2764]:
+                            - img [ref=e2765]
+                          - button [ref=e2771]
+                        - button "Show less" [expanded] [ref=e2774]:
+                          - generic [ref=e2775]: Show less
+                          - img [ref=e2776]
+                    - generic [ref=e1343]:
+                      - heading "6.5.6. Example HuggingFace Transformers training script Copy link to clipboard" [level=3] [ref=e2778]:
+                        - link "6.5.6. Example HuggingFace Transformers training script" [ref=e1348] [cursor=pointer]:
+                          - /url: "#example-huggingface-transformers-training-script_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2782] [cursor=pointer]:
+                          - button "Copy link" [ref=e2783]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1349]: "The following example shows a HuggingFace Transformers training script for fine-tuning BERT on the IMDB dataset:"
+                      - generic [ref=e2784]:
+                        - code [ref=e1353]:
+                          - text: "apiVersion: v1 kind: ConfigMap metadata: name: transformers-training-script namespace: test-namespace data: train.py: | from transformers import ( AutoModelForSequenceClassification, AutoTokenizer, Trainer, TrainingArguments, ) from datasets import load_dataset def main(): # Load model and tokenizer model_name = \"bert-base-uncased\" model = AutoModelForSequenceClassification.from_pretrained( model_name, num_labels=2 ) tokenizer = AutoTokenizer.from_pretrained(model_name) # Load and tokenize dataset dataset = load_dataset(\"imdb\", split=\"train[:2000]\") def tokenize_function(examples): return tokenizer( examples[\"text\"], padding=\"max_length\", truncation=True, max_length=512, ) tokenized_dataset = dataset.map(tokenize_function, batched=True) # Configure training training_args = TrainingArguments( output_dir=\"/tmp/output\", num_train_epochs=3, per_device_train_batch_size=8, logging_steps=10, save_strategy=\"epoch\", ) # Create trainer and train trainer = Trainer( model=model, args=training_args, train_dataset=tokenized_dataset, ) trainer.train() print(\"Training complete!\") if"
+                          - emphasis [ref=e1354]: name
+                          - text: == "
+                          - emphasis [ref=e1355]: main
+                          - text: "\": main()"
+                        - generic [ref=e2787]:
+                          - button "Copy to Clipboard" [ref=e2791]:
+                            - img [ref=e2792]
+                          - button [ref=e2798]
+                        - button "Show less" [expanded] [ref=e2801]:
+                          - generic [ref=e2802]: Show less
+                          - img [ref=e2803]
+                    - generic [ref=e1356]:
+                      - heading "6.5.7. Example TrainJob resource for AMD ROCm GPUs Copy link to clipboard" [level=3] [ref=e2805]:
+                        - link "6.5.7. Example TrainJob resource for AMD ROCm GPUs" [ref=e1361] [cursor=pointer]:
+                          - /url: "#example-trainjob-resource-for-amd-rocm-gpus_distributed-workloads"
+                        - generic "Copy link to clipboard" [ref=e2809] [cursor=pointer]:
+                          - button "Copy link" [ref=e2810]:
+                            - generic:
+                              - generic:
+                                - generic "Copy link"
+                      - paragraph [ref=e1362]:
+                        - text: The following example shows a
+                        - code [ref=e1363]: TrainJob
+                        - text: resource configured for AMD ROCm GPUs. The script is mounted using
+                        - code [ref=e1364]: podTemplateOverrides
+                        - text: because the target job name
+                        - code [ref=e1365]: node
+                        - text: "matches the default ROCm runtime:"
+                      - generic [ref=e2811]:
+                        - code [ref=e1369]: "apiVersion: trainer.kubeflow.org/v1alpha1 kind: TrainJob metadata: name: pytorch-rocm-example namespace: test-namespace spec: runtimeRef: name: torch-distributed-rocm kind: ClusterTrainingRuntime trainer: command: [\"torchrun\", \"/workspace/train.py\"] numNodes: 2 resourcesPerNode: requests: cpu: \"4\" memory: \"8Gi\" amd.com/gpu: 1 limits: cpu: \"4\" memory: \"8Gi\" amd.com/gpu: 1 podTemplateOverrides: - targetJobs: - name: node spec: volumes: - name: training-script-volume configMap: name: training-script-configmap containers: - name: node volumeMounts: - name: training-script-volume mountPath: /workspace"
+                        - generic [ref=e2814]:
+                          - button "Copy to Clipboard" [ref=e2818]:
+                            - img [ref=e2819]
+                          - button [ref=e2825]
+                        - button "Show less" [expanded] [ref=e2828]:
+                          - generic [ref=e2829]: Show less
+                          - img [ref=e2830]
+                      - paragraph [ref=e1370]: "where:"
+                      - generic [ref=e1372]:
+                        - term [ref=e1373]:
+                          - code [ref=e1375]: torch-distributed-rocm
+                        - definition [ref=e1376]:
+                          - text: ClusterTrainingRuntime is specifically configured for AMD ROCm GPUs. The GPU resource request uses
+                          - code [ref=e1377]: amd.com/gpu
+                          - text: instead of
+                          - code [ref=e1378]: nvidia.com/gpu
+                          - text: .
+                - navigation "pagination" [ref=e1379]:
+                  - link "Previous" [ref=e1381] [cursor=pointer]:
+                    - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/running-kfto-based-distributed-training-workloads_distributed-workloads
+                  - link "Next" [ref=e1383] [cursor=pointer]:
+                    - /url: /en/documentation/red_hat_openshift_ai_self-managed/3.3/html/working_with_distributed_workloads/monitoring-distributed-workloads_distributed-workloads
+      - contentinfo [ref=e2834]:
+        - heading "Red Hat footer" [level=2]
+        - generic [ref=e2835]:
+          - generic [ref=e2837]:
+            - link "Red Hat logo" [ref=e1385] [cursor=pointer]:
+              - /url: /en
+              - img "Red Hat logo" [ref=e1386]
+            - list "Red Hat social media links" [ref=e2844]:
+              - generic:
+                - generic:
+                  - generic:
+                    - listitem [ref=e2845]:
+                      - link "Github" [ref=e2847] [cursor=pointer]:
+                        - /url: https://github.com/redhat-documentation
+                        - img [ref=e2850]
+                    - listitem [ref=e1389]:
+                      - link "reddit" [ref=e1390] [cursor=pointer]:
+                        - /url: https://www.reddit.com/r/redhat/
+                        - img "reddit" [ref=e1391]
+                    - listitem [ref=e2852]:
+                      - link "Youtube" [ref=e2854] [cursor=pointer]:
+                        - /url: https://www.youtube.com/@redhat
+                        - img [ref=e2857]
+                    - listitem [ref=e2859]:
+                      - link "Twitter" [ref=e2861] [cursor=pointer]:
+                        - /url: https://twitter.com/RedHat
+                        - img [ref=e2864]
+          - generic [ref=e2867]:
+            - generic [ref=e2870]:
+              - generic:
+                - heading "Learn" [level=3] [ref=e1396]
+                - list "Learn" [ref=e2871]:
+                  - listitem [ref=e1398]:
+                    - link "Developer resources" [ref=e1399] [cursor=pointer]:
+                      - /url: https://developers.redhat.com/learn
+                  - listitem [ref=e1400]:
+                    - link "Cloud learning hub" [ref=e1401] [cursor=pointer]:
+                      - /url: /learn/learning-paths
+                  - listitem [ref=e1402]:
+                    - link "Interactive labs" [ref=e1403] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/interactive-labs
+                  - listitem [ref=e1404]:
+                    - link "Training and certification" [ref=e1405] [cursor=pointer]:
+                      - /url: https://www.redhat.com/services/training-and-certification
+                  - listitem [ref=e1406]:
+                    - link "Customer support" [ref=e1407] [cursor=pointer]:
+                      - /url: https://access.redhat.com/support
+                  - listitem [ref=e1408]:
+                    - link "See all documentation" [ref=e1409] [cursor=pointer]:
+                      - /url: /en/products
+                - heading "Try, buy, & sell" [level=3] [ref=e1410]
+                - list "Try, buy, & sell" [ref=e2872]:
+                  - listitem [ref=e1412]:
+                    - link "Product trial center" [ref=e1413] [cursor=pointer]:
+                      - /url: https://redhat.com/en/products/trials
+                  - listitem [ref=e1414]:
+                    - link "Red Hat Ecosystem Catalog" [ref=e1415] [cursor=pointer]:
+                      - /url: https://catalog.redhat.com/
+                  - listitem [ref=e1416]:
+                    - link "Red Hat Store" [ref=e1417] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/store
+                  - listitem [ref=e1418]:
+                    - link "Buy online (Japan)" [ref=e1419] [cursor=pointer]:
+                      - /url: https://www.redhat.com/about/japan-buy
+                - heading "Communities" [level=3] [ref=e1420]
+                - list "Communities" [ref=e2873]:
+                  - listitem [ref=e1422]:
+                    - link "Customer Portal Community" [ref=e1423] [cursor=pointer]:
+                      - /url: https://access.redhat.com/community
+                  - listitem [ref=e1424]:
+                    - link "Events" [ref=e1425] [cursor=pointer]:
+                      - /url: https://www.redhat.com/events
+                  - listitem [ref=e1426]:
+                    - link "How we contribute" [ref=e1427] [cursor=pointer]:
+                      - /url: https://www.redhat.com/about/our-community-contributions
+            - generic [ref=e2874]:
+              - generic:
+                - generic [ref=e2875]:
+                  - heading "About Red Hat" [level=3] [ref=e1429]
+                  - paragraph [ref=e1430]: We deliver hardened solutions that make it easier for enterprises to work across platforms and environments, from the core datacenter to the network edge.
+                - generic [ref=e2878]:
+                  - heading "Making open source more inclusive" [level=3] [ref=e1432]
+                  - paragraph [ref=e1433]:
+                    - text: Red Hat is committed to replacing problematic language in our code, documentation, and web properties. For more details, see the
+                    - link "Red Hat Blog" [ref=e1434] [cursor=pointer]:
+                      - /url: " https://www.redhat.com/en/blog/making-open-source-more-inclusive-eradicating-problematic-language"
+                    - text: .
+                - generic [ref=e2881]:
+                  - heading "About Red Hat Documentation" [level=3] [ref=e1436]
+                  - paragraph [ref=e1437]:
+                    - text: We help Red Hat users innovate and achieve their goals with our products and services with content they can trust.
+                    - link "Explore our recent updates" [ref=e1438] [cursor=pointer]:
+                      - /url: https://www.redhat.com/en/blog/whats-new-docsredhatcom
+                    - text: .
+                - link "Legal Notice" [ref=e1440] [cursor=pointer]:
+                  - /url: /en/legal-notice
+                - generic [ref=e2886]:
+                  - heading "Theme" [level=3] [ref=e1442]
+                  - generic [ref=e1443]:
+                    - generic:
+                      - button "Toggle theme"
+          - generic [ref=e1444]:
+            - heading "Red Hat footer" [level=2]
+            - generic [ref=e2890]:
+              - link "Visit Red Hat" [ref=e2893] [cursor=pointer]:
+                - /url: https://redhat.com
+                - img "Red Hat logo" [ref=e2894]
+              - list "Red Hat legal and privacy links" [ref=e2900]:
+                - listitem [ref=e1446]:
+                  - link "About Red Hat" [ref=e1447] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/company
+                - listitem [ref=e1448]:
+                  - link "Jobs" [ref=e1449] [cursor=pointer]:
+                    - /url: https://redhat.com/en/jobs
+                - listitem [ref=e1450]:
+                  - link "Events" [ref=e1451] [cursor=pointer]:
+                    - /url: https://redhat.com/en/events
+                - listitem [ref=e1452]:
+                  - link "Locations" [ref=e1453] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/office-locations
+                - listitem [ref=e1454]:
+                  - link "Contact Red Hat" [ref=e1455] [cursor=pointer]:
+                    - /url: https://redhat.com/en/contact
+                - listitem [ref=e1456]:
+                  - link "Red Hat Blog" [ref=e1457] [cursor=pointer]:
+                    - /url: https://redhat.com/en/blog
+                - listitem [ref=e1458]:
+                  - link "Inclusion at Red Hat" [ref=e1459] [cursor=pointer]:
+                    - /url: https://redhat.com/en/about/our-culture/diversity-equity-inclusion
+                - listitem [ref=e1460]:
+                  - link "Cool Stuff Store" [ref=e1461] [cursor=pointer]:
+                    - /url: https://coolstuff.redhat.com/
+                - listitem [ref=e1462]:
+                  - link "Red Hat Summit" [ref=e1463] [cursor=pointer]:
+                    - /url: https://www.redhat.com/en/summit
+              - generic [ref=e2903]:
+                - generic:
+                  - generic [ref=e2904]:
+                    - generic: © 2026 Red Hat
+                  - list "Red Hat legal and privacy links" [ref=e2905]:
+                    - listitem [ref=e1465]:
+                      - link "Privacy statement" [ref=e1466] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/privacy-policy
+                    - listitem [ref=e1467]:
+                      - link "Terms of use" [ref=e1468] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/terms-use
+                    - listitem [ref=e1469]:
+                      - link "All policies and guidelines" [ref=e1470] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/all-policies-guidelines
+                    - listitem [ref=e1471]:
+                      - link "Digital accessibility" [ref=e1472] [cursor=pointer]:
+                        - /url: https://redhat.com/en/about/digital-accessibility
+                    - listitem [ref=e2906]:
+                      - link "Cookie Preferences, opens a dedicated popup modal window" [ref=e2908] [cursor=pointer]: Cookie preferences
+    - generic [ref=e2911]:
+      - generic [ref=e2912]:
+        - heading "How we use cookies" [level=2] [ref=e2913]
+        - text: We use cookies on our websites to deliver our online services. Details about how we use cookies and how you may disable them are set out in our
+        - link "Privacy Statement" [ref=e2914] [cursor=pointer]:
+          - /url: http://www.redhat.com/en/about/privacy-policy#cookies
+        - text: . By using this website you agree to our use of cookies.
+      - generic [ref=e2915]:
+        - button "Close" [ref=e2916] [cursor=pointer]:
+          - img "Close" [ref=e2917]
+        - button "Accept All" [ref=e2918]
+        - button "More Options" [ref=e2919]
+  - status

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="curve-a" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+  <!-- Concept A: Amortization curve forming a lowercase "a" -->
+  <g transform="translate(56, 56) scale(3.2)">
+    <!-- The descending curve that forms the back of the "a" -->
+    <path d="M 95 28 C 95 12, 78 4, 62 4 C 40 4, 24 18, 24 40 C 24 62, 40 76, 62 76 C 78 76, 92 68, 95 56"
+          stroke="url(#curve-a)" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <!-- The vertical stem of the "a" with descending curve tail -->
+    <path d="M 95 20 L 95 76 C 95 88, 100 100, 112 108"
+          stroke="url(#curve-a)" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <!-- Small dot at the tail end — the cheap endpoint -->
+    <circle cx="112" cy="108" r="6" fill="#0D9488"/>
+    <!-- Larger dot at the start — the expensive origin -->
+    <circle cx="95" cy="20" r="4" fill="#F59E0B" opacity="0.6"/>
+  </g>
+</svg>

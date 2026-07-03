@@ -1,0 +1,254 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e33]:
+            - link "Datasets" [ref=e34] [cursor=pointer]:
+              - /url: /datasets
+              - img [ref=e35]
+              - generic [ref=e39]: Datasets
+          - listitem [ref=e40]:
+            - link "Models" [ref=e41] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e42]
+              - generic [ref=e45]: Models
+          - listitem [ref=e46]:
+            - link "Recipes" [active] [ref=e47] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e48]
+              - generic [ref=e50]: Recipes
+          - listitem [ref=e51]:
+            - link "Settings" [ref=e52] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e53]
+              - generic [ref=e56]: Settings
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - button "Toggle Sidebar" [ref=e59]:
+          - img
+          - generic [ref=e60]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e61]:
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - link "Home" [ref=e64] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e65]
+            - listitem [ref=e409]:
+              - img [ref=e410]
+            - listitem [ref=e412]:
+              - link "Recipes" [disabled] [ref=e413]
+        - generic [ref=e73]:
+          - button "Create" [ref=e74]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e147]
+          - button "Toggle theme" [ref=e76]:
+            - img
+            - generic [ref=e77]: Toggle theme
+          - link "Settings" [ref=e78] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e79]
+            - generic [ref=e82]: Settings
+      - main [ref=e83]:
+        - generic [ref=e414]:
+          - generic [ref=e415]:
+            - heading "Recipes" [level=1] [ref=e417]
+            - button "New Recipe" [ref=e419]
+          - tablist [ref=e421]:
+            - tab "All" [selected] [ref=e422]
+            - tab "Training" [ref=e423]
+            - tab "SDG" [ref=e424]
+            - tab "Eval" [ref=e425]
+          - generic [ref=e426]:
+            - table [ref=e428]:
+              - rowgroup [ref=e429]:
+                - row "Name Type Description Version" [ref=e430]:
+                  - columnheader "Name" [ref=e431]
+                  - columnheader "Type" [ref=e432]
+                  - columnheader "Description" [ref=e433]
+                  - columnheader "Version" [ref=e434]
+              - rowgroup [ref=e435]:
+                - 'button "Classification Accuracy Eval Evaluates classification tasks using both deterministic field matching and LLM-as-judge verification. Parses structured fields from model output (lines matching \"Field: value\"), then uses a judge model to assess whether the classifications are correct and well-reasoned. Fill in deterministic_checks with the classification fields your model outputs (e.g., [{field: category, type: exact_match}]). The judge provides a secondary quality check beyond exact matching." [ref=e436] [cursor=pointer]':
+                  - cell "Classification Accuracy" [ref=e437]
+                  - cell "Eval" [ref=e438]:
+                    - generic [ref=e439]: Eval
+                  - 'cell "Evaluates classification tasks using both deterministic field matching and LLM-as-judge verification. Parses structured fields from model output (lines matching \"Field: value\"), then uses a judge model to assess whether the classifications are correct and well-reasoned. Fill in deterministic_checks with the classification fields your model outputs (e.g., [{field: category, type: exact_match}]). The judge provides a secondary quality check beyond exact matching." [ref=e440]'
+                  - cell [ref=e441]
+                - button "Code Correctness Eval —" [ref=e442] [cursor=pointer]:
+                  - cell "Code Correctness" [ref=e443]
+                  - cell "Eval" [ref=e444]:
+                    - generic [ref=e445]: Eval
+                  - cell "—" [ref=e446]
+                  - cell [ref=e447]
+                - button "Code Maintainability Eval —" [ref=e448] [cursor=pointer]:
+                  - cell "Code Maintainability" [ref=e449]
+                  - cell "Eval" [ref=e450]:
+                    - generic [ref=e451]: Eval
+                  - cell "—" [ref=e452]
+                  - cell [ref=e453]
+                - button "Code Performance Eval —" [ref=e454] [cursor=pointer]:
+                  - cell "Code Performance" [ref=e455]
+                  - cell "Eval" [ref=e456]:
+                    - generic [ref=e457]: Eval
+                  - cell "—" [ref=e458]
+                  - cell [ref=e459]
+                - button "Code Quality Eval —" [ref=e460] [cursor=pointer]:
+                  - cell "Code Quality" [ref=e461]
+                  - cell "Eval" [ref=e462]:
+                    - generic [ref=e463]: Eval
+                  - cell "—" [ref=e464]
+                  - cell [ref=e465]
+                - button "Code Security Eval —" [ref=e466] [cursor=pointer]:
+                  - cell "Code Security" [ref=e467]
+                  - cell "Eval" [ref=e468]:
+                    - generic [ref=e469]: Eval
+                  - cell "—" [ref=e470]
+                  - cell [ref=e471]
+                - button "Completeness Eval Evaluate whether an answer completely covers all key points from the context" [ref=e472] [cursor=pointer]:
+                  - cell "Completeness" [ref=e473]
+                  - cell "Eval" [ref=e474]:
+                    - generic [ref=e475]: Eval
+                  - cell "Evaluate whether an answer completely covers all key points from the context" [ref=e476]
+                  - cell [ref=e477]
+                - button "Equivalence Eval Evaluate whether a fine-tuned model's response is semantically equivalent to the teacher model's expected response" [ref=e478] [cursor=pointer]:
+                  - cell "Equivalence" [ref=e479]
+                  - cell "Eval" [ref=e480]:
+                    - generic [ref=e481]: Eval
+                  - cell "Evaluate whether a fine-tuned model's response is semantically equivalent to the teacher model's expected response" [ref=e482]
+                  - cell [ref=e483]
+                - 'button "Exact Match Eval Deterministic exact-match evaluation. Parses structured fields from model output (lines matching \"Field: value\") and compares them against ground-truth labels. No LLM judge needed — accuracy is computed programmatically. Fill in deterministic_checks with the field names your model outputs (e.g., [{field: urgency, type: exact_match}]). The evaluator expects the model to produce one \"FieldName: value\" line per field in its response. Matching is case-insensitive and strips whitespace." [ref=e484] [cursor=pointer]':
+                  - cell "Exact Match" [ref=e485]
+                  - cell "Eval" [ref=e486]:
+                    - generic [ref=e487]: Eval
+                  - 'cell "Deterministic exact-match evaluation. Parses structured fields from model output (lines matching \"Field: value\") and compares them against ground-truth labels. No LLM judge needed — accuracy is computed programmatically. Fill in deterministic_checks with the field names your model outputs (e.g., [{field: urgency, type: exact_match}]). The evaluator expects the model to produce one \"FieldName: value\" line per field in its response. Matching is case-insensitive and strips whitespace." [ref=e488]'
+                  - cell [ref=e489]
+                - button "Format Compliance Eval Judge whether a response adheres to required output formatting and structural rules" [ref=e490] [cursor=pointer]:
+                  - cell "Format Compliance" [ref=e491]
+                  - cell "Eval" [ref=e492]:
+                    - generic [ref=e493]: Eval
+                  - cell "Judge whether a response adheres to required output formatting and structural rules" [ref=e494]
+                  - cell [ref=e495]
+                - button "Groundedness Eval Evaluate whether all claims in an answer are grounded in the provided context" [ref=e496] [cursor=pointer]:
+                  - cell "Groundedness" [ref=e497]
+                  - cell "Eval" [ref=e498]:
+                    - generic [ref=e499]: Eval
+                  - cell "Evaluate whether all claims in an answer are grounded in the provided context" [ref=e500]
+                  - cell [ref=e501]
+                - button "Instruction Following Eval Judge whether a response strictly follows the user's instructions" [ref=e502] [cursor=pointer]:
+                  - cell "Instruction Following" [ref=e503]
+                  - cell "Eval" [ref=e504]:
+                    - generic [ref=e505]: Eval
+                  - cell "Judge whether a response strictly follows the user's instructions" [ref=e506]
+                  - cell [ref=e507]
+                - button "Llm Judge Eval General-purpose LLM-as-judge evaluation. Uses a teacher model to score model responses on quality, correctness, and helpfulness. This is the go-to template for custom evaluation — adapt the judge prompt and system_instruction to match your task's criteria." [ref=e508] [cursor=pointer]:
+                  - cell "Llm Judge" [ref=e509]
+                  - cell "Eval" [ref=e510]:
+                    - generic [ref=e511]: Eval
+                  - cell "General-purpose LLM-as-judge evaluation. Uses a teacher model to score model responses on quality, correctness, and helpfulness. This is the go-to template for custom evaluation — adapt the judge prompt and system_instruction to match your task's criteria." [ref=e512]
+                  - cell [ref=e513]
+                - button "Regex Match Phone Eval —" [ref=e514] [cursor=pointer]:
+                  - cell "Regex Match Phone" [ref=e515]
+                  - cell "Eval" [ref=e516]:
+                    - generic [ref=e517]: Eval
+                  - cell "—" [ref=e518]
+                  - cell [ref=e519]
+                - button "Regex No Error Keywords Eval —" [ref=e520] [cursor=pointer]:
+                  - cell "Regex No Error Keywords" [ref=e521]
+                  - cell "Eval" [ref=e522]:
+                    - generic [ref=e523]: Eval
+                  - cell "—" [ref=e524]
+                  - cell [ref=e525]
+                - button "Relevance Eval —" [ref=e526] [cursor=pointer]:
+                  - cell "Relevance" [ref=e527]
+                  - cell "Eval" [ref=e528]:
+                    - generic [ref=e529]: Eval
+                  - cell "—" [ref=e530]
+                  - cell [ref=e531]
+                - button "Safety Eval Judge whether a response is safe and free from harmful content" [ref=e532] [cursor=pointer]:
+                  - cell "Safety" [ref=e533]
+                  - cell "Eval" [ref=e534]:
+                    - generic [ref=e535]: Eval
+                  - cell "Judge whether a response is safe and free from harmful content" [ref=e536]
+                  - cell [ref=e537]
+                - button "Topic Adherence Eval —" [ref=e538] [cursor=pointer]:
+                  - cell "Topic Adherence" [ref=e539]
+                  - cell "Eval" [ref=e540]:
+                    - generic [ref=e541]: Eval
+                  - cell "—" [ref=e542]
+                  - cell [ref=e543]
+                - button "Truthfulness Eval Judge whether a response is factually accurate and free from hallucinations" [ref=e544] [cursor=pointer]:
+                  - cell "Truthfulness" [ref=e545]
+                  - cell "Eval" [ref=e546]:
+                    - generic [ref=e547]: Eval
+                  - cell "Judge whether a response is factually accurate and free from hallucinations" [ref=e548]
+                  - cell [ref=e549]
+                - button "Classification SDG Generate customer support ticket classification training data — tickets with urgency and topic labels" [ref=e550] [cursor=pointer]:
+                  - cell "Classification" [ref=e551]
+                  - cell "SDG" [ref=e552]:
+                    - generic [ref=e553]: SDG
+                  - cell "Generate customer support ticket classification training data — tickets with urgency and topic labels" [ref=e554]
+                  - cell [ref=e555]
+                - button "Conversation SDG Generate variable-length multi-turn customer support conversations with turn planning" [ref=e556] [cursor=pointer]:
+                  - cell "Conversation" [ref=e557]
+                  - cell "SDG" [ref=e558]:
+                    - generic [ref=e559]: SDG
+                  - cell "Generate variable-length multi-turn customer support conversations with turn planning" [ref=e560]
+                  - cell [ref=e561]
+                - button "Data Augmentation SDG Augment an existing dataset through instruction rephrasing and related task generation" [ref=e562] [cursor=pointer]:
+                  - cell "Data Augmentation" [ref=e563]
+                  - cell "SDG" [ref=e564]:
+                    - generic [ref=e565]: SDG
+                  - cell "Augment an existing dataset through instruction rephrasing and related task generation" [ref=e566]
+                  - cell [ref=e567]
+                - button "Domain Qa SDG Generate domain-specific medical QA pairs conditioned on specialty, context, and complexity" [ref=e568] [cursor=pointer]:
+                  - cell "Domain Qa" [ref=e569]
+                  - cell "SDG" [ref=e570]:
+                    - generic [ref=e571]: SDG
+                  - cell "Generate domain-specific medical QA pairs conditioned on specialty, context, and complexity" [ref=e572]
+                  - cell [ref=e573]
+                - button "Dynamic Few Shot SDG Generate diverse tasks using dynamic few-shot sampling from an example pool" [ref=e574] [cursor=pointer]:
+                  - cell "Dynamic Few Shot" [ref=e575]
+                  - cell "SDG" [ref=e576]:
+                    - generic [ref=e577]: SDG
+                  - cell "Generate diverse tasks using dynamic few-shot sampling from an example pool" [ref=e578]
+                  - cell [ref=e579]
+                - button "Extraction SDG Generate entity extraction training data — extract structured fields from text" [ref=e580] [cursor=pointer]:
+                  - cell "Extraction" [ref=e581]
+                  - cell "SDG" [ref=e582]:
+                    - generic [ref=e583]: SDG
+                  - cell "Generate entity extraction training data — extract structured fields from text" [ref=e584]
+                  - cell [ref=e585]
+            - navigation "pagination" [ref=e586]:
+              - list [ref=e587]:
+                - listitem [ref=e588]:
+                  - generic "Go to previous page":
+                    - img
+                    - generic: Previous
+                - listitem [ref=e589]:
+                  - generic [ref=e590]: Page 1 of 3
+                - listitem [ref=e591]:
+                  - generic "Go to next page" [ref=e592] [cursor=pointer]:
+                    - generic [ref=e593]: Next
+                    - img
+    - generic [ref=e144]:
+      - heading "Command Palette" [level=2] [ref=e145]
+      - paragraph [ref=e146]: Search for a command to run...
+  - region "Notifications alt+T"

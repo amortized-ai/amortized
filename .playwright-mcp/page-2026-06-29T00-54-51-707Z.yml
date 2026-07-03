@@ -1,0 +1,189 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e7]:
+      - generic [ref=e10]: Amortized Studio
+      - generic [ref=e12]:
+        - generic [ref=e13]: Navigation
+        - list [ref=e15]:
+          - listitem [ref=e16]:
+            - link "Overview" [ref=e17] [cursor=pointer]:
+              - /url: /overview
+              - img [ref=e18]
+              - generic [ref=e21]: Overview
+          - listitem [ref=e22]:
+            - link "Chat" [ref=e23] [cursor=pointer]:
+              - /url: /chat
+              - img [ref=e24]
+              - generic [ref=e26]: Chat
+          - listitem [ref=e27]:
+            - link "Jobs" [ref=e28] [cursor=pointer]:
+              - /url: /jobs
+              - img [ref=e29]
+              - generic [ref=e32]: Jobs
+          - listitem [ref=e33]:
+            - link "Datasets" [ref=e34] [cursor=pointer]:
+              - /url: /datasets
+              - img [ref=e35]
+              - generic [ref=e39]: Datasets
+          - listitem [ref=e40]:
+            - link "Models" [ref=e41] [cursor=pointer]:
+              - /url: /models
+              - img [ref=e42]
+              - generic [ref=e45]: Models
+          - listitem [ref=e46]:
+            - link "Recipes" [ref=e47] [cursor=pointer]:
+              - /url: /recipes
+              - img [ref=e48]
+              - generic [ref=e50]: Recipes
+          - listitem [ref=e51]:
+            - link "Settings" [ref=e52] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e53]
+              - generic [ref=e56]: Settings
+    - main [ref=e57]:
+      - generic [ref=e58]:
+        - button "Toggle Sidebar" [ref=e59]:
+          - img
+          - generic [ref=e60]: Toggle Sidebar
+        - navigation "breadcrumb" [ref=e61]:
+          - list [ref=e62]:
+            - listitem [ref=e63]:
+              - link "Home" [ref=e64] [cursor=pointer]:
+                - /url: /overview
+                - img [ref=e65]
+            - listitem [ref=e355]:
+              - img [ref=e356]
+            - listitem [ref=e358]:
+              - link "Jobs" [disabled] [ref=e359]
+        - generic [ref=e73]:
+          - button "Create" [ref=e74]:
+            - img
+            - text: Create
+          - generic "Connected" [ref=e147]
+          - button "Toggle theme" [ref=e76]:
+            - img
+            - generic [ref=e77]: Toggle theme
+          - link "Settings" [ref=e78] [cursor=pointer]:
+            - /url: /settings
+            - img [ref=e79]
+            - generic [ref=e82]: Settings
+      - main [ref=e83]:
+        - generic [ref=e543]:
+          - heading "Jobs" [level=1] [ref=e546]
+          - generic [ref=e547]:
+            - generic [ref=e548]:
+              - generic [ref=e549]: "Type:"
+              - toolbar [ref=e550]:
+                - button "Training" [ref=e551]
+                - button "SDG" [ref=e552]
+                - button "Eval" [ref=e553]
+            - generic [ref=e554]:
+              - generic [ref=e555]: "Status:"
+              - toolbar [ref=e556]:
+                - button "Queued" [ref=e557]
+                - button "Provisioning" [ref=e558]
+                - button "Running" [ref=e559]
+                - button "Succeeded" [ref=e560]
+                - button "Failed" [ref=e561]
+                - button "Cancelled" [ref=e562]
+          - table [ref=e566]:
+            - rowgroup [ref=e567]:
+              - row "Name Type Status ID Elapsed Created" [ref=e568]:
+                - columnheader "Name" [ref=e569]:
+                  - button "Name" [ref=e570]:
+                    - text: Name
+                    - img [ref=e571]
+                - columnheader "Type" [ref=e574]:
+                  - button "Type" [ref=e575]:
+                    - text: Type
+                    - img [ref=e576]
+                - columnheader "Status" [ref=e579]:
+                  - button "Status" [ref=e580]:
+                    - text: Status
+                    - img [ref=e581]
+                - columnheader "ID" [ref=e584]
+                - columnheader "Elapsed" [ref=e585]:
+                  - button "Elapsed" [ref=e586]:
+                    - text: Elapsed
+                    - img [ref=e587]
+                - columnheader "Created" [ref=e590]:
+                  - button "Created" [ref=e591]:
+                    - text: Created
+                    - img [ref=e592]
+            - rowgroup [ref=e595]:
+              - button "007b9f11-51ec-4141-96ea-9c7f0932b4ef SDG Succeeded Copy job ID 007b9f11-51ec-4141-96ea-9c7f0932b4ef 18s Jun 28, 2026, 7:50 PM" [ref=e596] [cursor=pointer]:
+                - cell "007b9f11-51ec-4141-96ea-9c7f0932b4ef" [ref=e597]
+                - cell "SDG" [ref=e598]:
+                  - generic [ref=e599]: SDG
+                - cell "Succeeded" [ref=e600]:
+                  - generic [ref=e601]: Succeeded
+                - cell "Copy job ID 007b9f11-51ec-4141-96ea-9c7f0932b4ef" [ref=e602]:
+                  - button "Copy job ID 007b9f11-51ec-4141-96ea-9c7f0932b4ef" [ref=e603]:
+                    - text: 007b9f11…
+                    - img [ref=e604]
+                - cell "18s" [ref=e607]
+                - cell "Jun 28, 2026, 7:50 PM" [ref=e608]
+              - button "fd82e831-7b40-4301-a8fa-12a958f9d0da SDG Failed Copy job ID fd82e831-7b40-4301-a8fa-12a958f9d0da 15s Jun 28, 2026, 7:49 PM" [ref=e609] [cursor=pointer]:
+                - cell "fd82e831-7b40-4301-a8fa-12a958f9d0da" [ref=e610]
+                - cell "SDG" [ref=e611]:
+                  - generic [ref=e612]: SDG
+                - cell "Failed" [ref=e613]:
+                  - generic [ref=e614]: Failed
+                - cell "Copy job ID fd82e831-7b40-4301-a8fa-12a958f9d0da" [ref=e615]:
+                  - button "Copy job ID fd82e831-7b40-4301-a8fa-12a958f9d0da" [ref=e616]:
+                    - text: fd82e831…
+                    - img [ref=e617]
+                - cell "15s" [ref=e620]
+                - cell "Jun 28, 2026, 7:49 PM" [ref=e621]
+              - button "30f3ac00-3226-4173-9470-b6923f620ce2 SDG Failed Copy job ID 30f3ac00-3226-4173-9470-b6923f620ce2 15s Jun 28, 2026, 7:43 PM" [ref=e622] [cursor=pointer]:
+                - cell "30f3ac00-3226-4173-9470-b6923f620ce2" [ref=e623]
+                - cell "SDG" [ref=e624]:
+                  - generic [ref=e625]: SDG
+                - cell "Failed" [ref=e626]:
+                  - generic [ref=e627]: Failed
+                - cell "Copy job ID 30f3ac00-3226-4173-9470-b6923f620ce2" [ref=e628]:
+                  - button "Copy job ID 30f3ac00-3226-4173-9470-b6923f620ce2" [ref=e629]:
+                    - text: 30f3ac00…
+                    - img [ref=e630]
+                - cell "15s" [ref=e633]
+                - cell "Jun 28, 2026, 7:43 PM" [ref=e634]
+              - button "be3a4bc9-bde3-4000-b197-f8f348c78e2b SDG Failed Copy job ID be3a4bc9-bde3-4000-b197-f8f348c78e2b 15s Jun 28, 2026, 7:35 PM" [ref=e635] [cursor=pointer]:
+                - cell "be3a4bc9-bde3-4000-b197-f8f348c78e2b" [ref=e636]
+                - cell "SDG" [ref=e637]:
+                  - generic [ref=e638]: SDG
+                - cell "Failed" [ref=e639]:
+                  - generic [ref=e640]: Failed
+                - cell "Copy job ID be3a4bc9-bde3-4000-b197-f8f348c78e2b" [ref=e641]:
+                  - button "Copy job ID be3a4bc9-bde3-4000-b197-f8f348c78e2b" [ref=e642]:
+                    - text: be3a4bc9…
+                    - img [ref=e643]
+                - cell "15s" [ref=e646]
+                - cell "Jun 28, 2026, 7:35 PM" [ref=e647]
+              - button "9ba1b67a-004e-4b65-9572-f7feb89d4588 SDG Failed Copy job ID 9ba1b67a-004e-4b65-9572-f7feb89d4588 14s Jun 28, 2026, 7:32 PM" [ref=e648] [cursor=pointer]:
+                - cell "9ba1b67a-004e-4b65-9572-f7feb89d4588" [ref=e649]
+                - cell "SDG" [ref=e650]:
+                  - generic [ref=e651]: SDG
+                - cell "Failed" [ref=e652]:
+                  - generic [ref=e653]: Failed
+                - cell "Copy job ID 9ba1b67a-004e-4b65-9572-f7feb89d4588" [ref=e654]:
+                  - button "Copy job ID 9ba1b67a-004e-4b65-9572-f7feb89d4588" [ref=e655]:
+                    - text: 9ba1b67a…
+                    - img [ref=e656]
+                - cell "14s" [ref=e659]
+                - cell "Jun 28, 2026, 7:32 PM" [ref=e660]
+              - button "88f36392-9241-4505-85e3-9429c0919287 SDG Failed Copy job ID 88f36392-9241-4505-85e3-9429c0919287 15s Jun 28, 2026, 7:31 PM" [ref=e661] [cursor=pointer]:
+                - cell "88f36392-9241-4505-85e3-9429c0919287" [ref=e662]
+                - cell "SDG" [ref=e663]:
+                  - generic [ref=e664]: SDG
+                - cell "Failed" [ref=e665]:
+                  - generic [ref=e666]: Failed
+                - cell "Copy job ID 88f36392-9241-4505-85e3-9429c0919287" [ref=e667]:
+                  - button "Copy job ID 88f36392-9241-4505-85e3-9429c0919287" [ref=e668]:
+                    - text: 88f36392…
+                    - img [ref=e669]
+                - cell "15s" [ref=e672]
+                - cell "Jun 28, 2026, 7:31 PM" [ref=e673]
+    - generic [ref=e144]:
+      - heading "Command Palette" [level=2] [ref=e145]
+      - paragraph [ref=e146]: Search for a command to run...
+  - region "Notifications alt+T"
