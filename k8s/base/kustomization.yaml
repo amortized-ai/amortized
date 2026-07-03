@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - configmap.yaml
+  - server-pvc.yaml
+  - server-deployment.yaml
+  - server-service.yaml
+  - studio-deployment.yaml
+  - studio-service.yaml
+  - opencode-configmap.yaml
+  - opencode-secret.yaml
+  - opencode-deployment.yaml
+  - opencode-service.yaml
