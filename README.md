@@ -4,22 +4,40 @@
 
 ---
 
-A control plane for building small, fine-tuned models that replace expensive frontier model calls for specific tasks (classification, extraction, routing, summarization). Deployed on OpenShift.
+Every AI agent has tasks that don't need a frontier model. Classification, extraction, routing, summarization — these are specific, repeatable, and learnable. A small fine-tuned model can do them faster, cheaper, and more reliably than a general-purpose API.
 
-**SDG → Training → Eval** — each step is a K8s Job. MLflow tracks all artifacts. [Studio](https://github.com/amortized-ai/studio) provides the UI.
+**Amortized builds these task models.** You describe the task, it generates training data from a teacher model, fine-tunes a small student model, and evaluates whether the student matches the teacher. The result: a model you own that runs on your infrastructure, costs a fraction per inference, and doesn't break when the API provider changes.
 
-## Quick Start
+The name comes from finance — amortization spreads a large upfront cost across many future uses. Here, the "cost" is the frontier model's capability, and the "uses" are every future inference by the cheaper task model.
+
+## Get Started
 
 ```bash
-uv pip install -e '.[dev]'
-amortized config   # configure compute backend
-amortized up       # start server on :8000
+pip install -e .
+amortized config   # configure GPU backend
+amortized up       # start server
 ```
 
-## Docs
+## Run an Example
 
-- [Architecture](docs/architecture/control-plane.md)
-- [Architecture Decisions](docs/architecture/adr-001-control-plane.md)
+```bash
+amortized submit sdg --recipe examples/ticket-classifier/synth --confirm
+amortized submit training --recipe examples/ticket-classifier/train --data <id> --confirm
+amortized submit serve --model Qwen/Qwen2.5-1.5B-Instruct --adapter <id> --confirm
+amortized submit eval --recipe examples/ticket-classifier/eval --serve <id> --confirm
+```
+
+See [examples/](examples/) for end-to-end projects: ticket classifier, intent router, entity extractor, summarizer, content moderator, and model distillation.
+
+## CLI
+
+```bash
+amortized --help       # see all commands
+amortized jobs         # list all jobs
+amortized logs <id>    # stream job events
+amortized cancel <id>  # stop a job
+amortized artifacts    # list outputs
+```
 
 ## License
 
