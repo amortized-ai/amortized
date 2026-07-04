@@ -21,10 +21,13 @@ patches:
       - op: replace
         path: /data/AMORTIZED_S3_BUCKET
         value: "amortized"
-  # Use IfNotPresent for kind (images loaded via `kind load docker-image`)
+  # Dev: IfNotPresent for kind, relax security for images that run as root
   - target:
       kind: Deployment
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
+      - op: replace
+        path: /spec/template/spec/securityContext/runAsNonRoot
+        value: false
