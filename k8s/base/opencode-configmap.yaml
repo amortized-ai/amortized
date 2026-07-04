@@ -16,11 +16,6 @@ data:
           "type": "remote",
           "url": "http://amortized-server.amortized.svc.cluster.local:8000/mcp",
           "enabled": true
-        },
-        "mlflow": {
-          "type": "remote",
-          "url": "http://127.0.0.1:5002/sse",
-          "enabled": true
         }
       },
       "agent": {
