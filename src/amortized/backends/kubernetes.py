@@ -164,6 +164,10 @@ class KubernetesBackend:
         if spec.resources.gpus > 0:
             node_selector = {"nvidia.com/gpu.present": "true"}
 
+        init_security_context = V1SecurityContext(
+            allow_privilege_escalation=False,
+        )
+
         init_containers: list[Any] = []
         for download in spec.s3_downloads:
             s3_cmd = "aws s3 sync" if download.is_directory else "aws s3 cp"
@@ -181,7 +185,7 @@ class KubernetesBackend:
                     ],
                     env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
                     volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
-                    security_context=container_security_context,
+                    security_context=init_security_context,
                     resources=V1ResourceRequirements(
                         requests={"cpu": "100m", "memory": "128Mi"},
                         limits={"cpu": "500m", "memory": "512Mi"},
