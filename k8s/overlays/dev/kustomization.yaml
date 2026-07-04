@@ -8,6 +8,8 @@ resources:
   - mlflow.yaml
   - s3-secret.yaml
   - s3-secret-jobs.yaml
+  - minio-init.yaml
+  # Dev-only: OpenAI-based OpenCode config (production uses Vertex AI)
 
 patches:
   # Set MLflow URI and S3 bucket for dev
