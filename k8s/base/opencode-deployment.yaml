@@ -46,7 +46,7 @@ spec:
               value: /app/gcp/credentials.json
           volumeMounts:
             - name: opencode-config
-              mountPath: /app/workspace/.opencode.json
+              mountPath: /app/workspace/opencode.json
               subPath: .opencode.json
               readOnly: true
             - name: opencode-config
