@@ -106,7 +106,7 @@ def _generate_container_config(
 def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> dict[str, Any]:
     """Build an asynth-compatible synthesis config dict for CLI execution."""
     inference_config: dict[str, Any] = {
-        "model": config["model"],
+        "model": config.get("model", "openai/gpt-4o-mini"),
         "temperature": config.get("temperature", 0.7),
         "max_concurrency": config.get("max_concurrency", 16),
         "num_retries": config.get("num_retries", 3),

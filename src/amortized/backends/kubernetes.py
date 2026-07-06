@@ -143,7 +143,6 @@ class KubernetesBackend:
 
         container_security_context = V1SecurityContext(
             allow_privilege_escalation=False,
-            run_as_non_root=True,
             capabilities=V1Capabilities(drop=["ALL"]),
         )
 
@@ -161,11 +160,14 @@ class KubernetesBackend:
         )
 
         node_selector = None
+        runtime_class_name = None
         if spec.resources.gpus > 0:
             node_selector = {"nvidia.com/gpu.present": "true"}
+            runtime_class_name = "nvidia"
 
         init_security_context = V1SecurityContext(
             allow_privilege_escalation=False,
+            run_as_non_root=False,
         )
 
         init_containers: list[Any] = []
@@ -199,7 +201,8 @@ class KubernetesBackend:
             volumes=volumes,
             restart_policy="Never",
             node_selector=node_selector,
-            security_context=V1PodSecurityContext(run_as_non_root=True),
+            runtime_class_name=runtime_class_name,
+            security_context=V1PodSecurityContext(run_as_non_root=False),
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
