@@ -1,7 +1,7 @@
 CLUSTER_NAME  := amortized
 IMAGE_TAG     := kind-$(shell git rev-parse --short HEAD)
 KUBECTL       := kubectl --context kind-$(CLUSTER_NAME)
-STUDIO_DIR    := $(shell cd .. && pwd)/studio
+STUDIO_DIR    ?= $(shell cd .. && pwd)/studio
 STUDIO_REPO   := https://github.com/amortized-ai/studio
 REPO_ROOT     := $(shell pwd)
 
