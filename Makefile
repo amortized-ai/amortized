@@ -117,14 +117,6 @@ load-deps: ## Load third-party images into kind
 # Deploy prod
 # ──────────────────────────────────────────────
 
-define apply_patched
-	@sed \
-		-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
-		-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
-		-e '/^\( *\)image: /{n;/imagePullPolicy/!s/^\( *\)/\1imagePullPolicy: IfNotPresent\n\1/;}' \
-		$(1) | $(KUBECTL) apply -f -
-endef
-
 deploy: ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
@@ -134,14 +126,17 @@ deploy: ## Deploy prod stack (amortized namespace)
 		case "$$(basename $$f)" in \
 			*route*|*opencode*|namespace.yaml) continue ;; \
 		esac; \
-		$(call apply_patched,$$f) \
+		sed \
+			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
+			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
+			"$$f" | $(KUBECTL) apply -f -; \
 	done
 	@# Dev infra: MinIO + MLflow (skip routes)
 	@for f in k8s/dev/*.yaml; do \
 		case "$$(basename $$f)" in \
 			*route*) continue ;; \
 		esac; \
-		$(call apply_patched,$$f) \
+		$(KUBECTL) apply -f "$$f"; \
 	done
 	@# Kind-specific: NodePorts + GPU quotas
 	$(KUBECTL) apply -f k8s/kind/nodeport-services.yaml
@@ -152,9 +147,11 @@ deploy: ## Deploy prod stack (amortized namespace)
 	@# Create MinIO bucket
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
-	@$(KUBECTL) -n amortized exec deploy/minio -- sh -c \
-		'mc alias set local http://localhost:9000 minioadmin minioadmin >/dev/null 2>&1 && mc mb local/amortized --ignore-existing >/dev/null 2>&1' \
-		|| echo "  Warning: could not create MinIO bucket (mc not available in image). Create manually."
+	@$(KUBECTL) run minio-init --rm -i --restart=Never \
+		--image=$(AWSCLI_IMAGE) \
+		--namespace=amortized \
+		--overrides='{"spec":{"containers":[{"name":"minio-init","image":"$(AWSCLI_IMAGE)","command":["sh","-c","aws --endpoint-url http://minio.amortized.svc.cluster.local:9000 s3 mb s3://amortized 2>/dev/null || true"],"env":[{"name":"AWS_ACCESS_KEY_ID","value":"minioadmin"},{"name":"AWS_SECRET_ACCESS_KEY","value":"minioadmin"}]}]}}' \
+		|| echo "  Warning: could not create MinIO bucket. Create manually."
 	@# Wait for rollouts
 	@echo "Waiting for deployments..."
 	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
@@ -169,7 +166,10 @@ deploy: ## Deploy prod stack (amortized namespace)
 deploy-dev: ## Deploy dev stack (amortized-dev namespace, shares MinIO/MLflow)
 	@echo "Deploying dev stack..."
 	@for f in k8s/kind/dev/*.yaml; do \
-		$(call apply_patched,$$f) \
+		sed \
+			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
+			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
+			"$$f" | $(KUBECTL) apply -f -; \
 	done
 	$(KUBECTL) apply -f k8s/kind/gpu-quota.yaml
 	@echo "Waiting for dev deployments..."
