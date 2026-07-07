@@ -14,7 +14,7 @@ spec:
   ports:
     - port: 8080
       targetPort: http
-      nodePort: 30080
+      nodePort: 31080
 ---
 apiVersion: v1
 kind: Service
@@ -32,7 +32,7 @@ spec:
   ports:
     - port: 8000
       targetPort: http
-      nodePort: 30081
+      nodePort: 31081
 ---
 apiVersion: v1
 kind: Service
@@ -50,4 +50,4 @@ spec:
   ports:
     - port: 5000
       targetPort: http
-      nodePort: 30082
+      nodePort: 31082

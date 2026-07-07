@@ -184,12 +184,12 @@ deploy-dev: ## Deploy dev stack (amortized-dev namespace, shares MinIO/MLflow)
 test-server: build-server load-server deploy-dev ## Build server from current branch + deploy to dev
 	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-server
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
-	@echo "Dev server updated. API at http://localhost:30091"
+	@echo "Dev server updated. API at http://localhost:31091"
 
 test-studio: build-studio load-studio deploy-dev ## Build studio from current branch + deploy to dev
 	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-studio
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
-	@echo "Dev studio updated. UI at http://localhost:30090"
+	@echo "Dev studio updated. UI at http://localhost:31090"
 
 # ──────────────────────────────────────────────
 # Teardown
@@ -229,12 +229,12 @@ status: ## Show cluster status, pods, and access URLs
 	@$(KUBECTL) get pods -n amortized-dev-jobs 2>/dev/null || true
 	@echo ""
 	@echo "=== Access ==="
-	@echo "  Prod Studio:  http://localhost:30080"
-	@echo "  Prod API:     http://localhost:30081"
-	@echo "  MLflow:       http://localhost:30082"
-	@echo "  Dev Studio:   http://localhost:30090"
-	@echo "  Dev API:      http://localhost:30091"
+	@echo "  Prod Studio:  http://localhost:31080"
+	@echo "  Prod API:     http://localhost:31081"
+	@echo "  MLflow:       http://localhost:31082"
+	@echo "  Dev Studio:   http://localhost:31090"
+	@echo "  Dev API:      http://localhost:31091"
 	@echo ""
 	@echo "  SSH tunnel:"
-	@echo "    ssh -L 30080:localhost:30080 -L 30081:localhost:30081 -L 30082:localhost:30082 \\"
-	@echo "        -L 30090:localhost:30090 -L 30091:localhost:30091 user@169.62.17.147"
+	@echo "    ssh -L 31080:localhost:31080 -L 31081:localhost:31081 -L 31082:localhost:31082 \\"
+	@echo "        -L 31090:localhost:31090 -L 31091:localhost:31091 user@169.62.17.147"
