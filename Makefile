@@ -1,0 +1,240 @@
+CLUSTER_NAME  := amortized
+IMAGE_TAG     := kind-$(shell git rev-parse --short HEAD)
+KUBECTL       := kubectl --context kind-$(CLUSTER_NAME)
+STUDIO_DIR    := $(shell cd .. && pwd)/studio
+STUDIO_REPO   := https://github.com/amortized-ai/studio
+REPO_ROOT     := $(shell pwd)
+
+# Third-party images to pre-load into kind
+MINIO_IMAGE   := quay.io/minio/minio:latest
+MLFLOW_IMAGE  := ghcr.io/mlflow/mlflow:latest
+AWSCLI_IMAGE  := docker.io/amazon/aws-cli:latest
+NVIDIA_DP_IMAGE := nvcr.io/nvidia/k8s-device-plugin:v0.17.0
+TRAINING_IMAGE := ghcr.io/amortized-ai/training:latest
+ASYNTH_IMAGE  := ghcr.io/amortized-ai/asynth:latest
+
+.PHONY: help up build build-server build-studio pull-images \
+        load load-server load-studio load-deps \
+        deploy deploy-dev \
+        test-server test-studio \
+        cluster gpu \
+        down destroy status
+
+# ──────────────────────────────────────────────
+# Help
+# ──────────────────────────────────────────────
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+
+# ──────────────────────────────────────────────
+# Full setup
+# ──────────────────────────────────────────────
+
+up: cluster gpu build load deploy status ## Create cluster, build images, deploy prod stack
+
+# ──────────────────────────────────────────────
+# Cluster lifecycle
+# ──────────────────────────────────────────────
+
+cluster: ## Create kind cluster with GPU support
+	@if kind get clusters 2>/dev/null | grep -q "^$(CLUSTER_NAME)$$"; then \
+		echo "Cluster '$(CLUSTER_NAME)' already exists, skipping."; \
+	else \
+		echo "Creating kind cluster '$(CLUSTER_NAME)'..."; \
+		kind create cluster --name $(CLUSTER_NAME) --config k8s/kind/kind-config.yaml; \
+	fi
+
+gpu: ## Deploy NVIDIA device plugin for GPU scheduling
+	@echo "Loading NVIDIA device plugin image..."
+	@docker pull $(NVIDIA_DP_IMAGE) 2>/dev/null || true
+	@kind load docker-image $(NVIDIA_DP_IMAGE) --name $(CLUSTER_NAME) 2>/dev/null
+	$(KUBECTL) apply -f k8s/kind/nvidia-device-plugin.yaml
+	@echo "Waiting for NVIDIA device plugin..."
+	@$(KUBECTL) -n kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=120s
+	@echo "GPU allocatable:"
+	@$(KUBECTL) get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}'
+
+# ──────────────────────────────────────────────
+# Build
+# ──────────────────────────────────────────────
+
+build: build-server build-studio pull-images ## Build all images
+
+build-server: ## Build amortized server image
+	@echo "Building amortized-server:$(IMAGE_TAG)..."
+	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
+
+build-studio: ## Build studio image (expects ../studio/)
+	@if [ ! -d "$(STUDIO_DIR)" ]; then \
+		echo "Cloning studio repository to $(STUDIO_DIR)..."; \
+		git clone $(STUDIO_REPO) $(STUDIO_DIR); \
+	fi
+	@cp studio/Dockerfile $(STUDIO_DIR)/Dockerfile.kind
+	@cp studio/nginx.conf.template $(STUDIO_DIR)/nginx.conf.template
+	@echo "Building amortized-studio:$(IMAGE_TAG)..."
+	docker build -t amortized-studio:$(IMAGE_TAG) -f $(STUDIO_DIR)/Dockerfile.kind $(STUDIO_DIR)
+
+pull-images: ## Pull third-party images (MinIO, MLflow, training, etc.)
+	@echo "Pulling third-party images..."
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE); do \
+		docker pull $$img 2>/dev/null || true; \
+	done
+	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
+	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+		if ! docker image inspect $$img >/dev/null 2>&1; then \
+			echo "  Pulling $$img..."; \
+			docker pull $$img; \
+		else \
+			echo "  $$img already present."; \
+		fi; \
+	done
+
+# ──────────────────────────────────────────────
+# Load into kind
+# ──────────────────────────────────────────────
+
+load: load-server load-studio load-deps ## Load all images into kind
+
+load-server: ## Load server image into kind
+	kind load docker-image amortized-server:$(IMAGE_TAG) --name $(CLUSTER_NAME)
+
+load-studio: ## Load studio image into kind
+	kind load docker-image amortized-studio:$(IMAGE_TAG) --name $(CLUSTER_NAME)
+
+load-deps: ## Load third-party images into kind
+	@echo "Loading third-party images into kind..."
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE); do \
+		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
+	done
+	@echo "Loading ML images into kind (training is ~12GB, be patient)..."
+	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
+	done
+
+# ──────────────────────────────────────────────
+# Deploy prod
+# ──────────────────────────────────────────────
+
+define apply_patched
+	@sed \
+		-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
+		-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
+		-e '/^\( *\)image: /{n;/imagePullPolicy/!s/^\( *\)/\1imagePullPolicy: IfNotPresent\n\1/;}' \
+		$(1) | $(KUBECTL) apply -f -
+endef
+
+deploy: ## Deploy prod stack (amortized namespace)
+	@echo "Deploying prod stack..."
+	@# Namespaces
+	$(KUBECTL) apply -f k8s/base/namespace.yaml
+	@# Base manifests (skip routes and opencode)
+	@for f in k8s/base/*.yaml; do \
+		case "$$(basename $$f)" in \
+			*route*|*opencode*|namespace.yaml) continue ;; \
+		esac; \
+		$(call apply_patched,$$f) \
+	done
+	@# Dev infra: MinIO + MLflow (skip routes)
+	@for f in k8s/dev/*.yaml; do \
+		case "$$(basename $$f)" in \
+			*route*) continue ;; \
+		esac; \
+		$(call apply_patched,$$f) \
+	done
+	@# Kind-specific: NodePorts + GPU quotas
+	$(KUBECTL) apply -f k8s/kind/nodeport-services.yaml
+	$(KUBECTL) apply -f k8s/kind/gpu-quota.yaml
+	@# Patch prod configmap for kind
+	$(KUBECTL) patch configmap amortized-config -n amortized --type merge \
+		-p '{"data":{"AMORTIZED_MLFLOW_TRACKING_URI":"http://mlflow.amortized.svc.cluster.local:5000","AMORTIZED_S3_BUCKET":"amortized","AMORTIZED_IMAGE_PULL_POLICY":"IfNotPresent"}}'
+	@# Create MinIO bucket
+	@echo "Waiting for MinIO to be ready..."
+	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
+	@$(KUBECTL) -n amortized exec deploy/minio -- sh -c \
+		'mc alias set local http://localhost:9000 minioadmin minioadmin >/dev/null 2>&1 && mc mb local/amortized --ignore-existing >/dev/null 2>&1' \
+		|| echo "  Warning: could not create MinIO bucket (mc not available in image). Create manually."
+	@# Wait for rollouts
+	@echo "Waiting for deployments..."
+	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
+	@$(KUBECTL) -n amortized rollout status deployment/amortized-server --timeout=120s
+	@$(KUBECTL) -n amortized rollout status deployment/amortized-studio --timeout=120s
+	@echo "Prod stack deployed."
+
+# ──────────────────────────────────────────────
+# Deploy dev
+# ──────────────────────────────────────────────
+
+deploy-dev: ## Deploy dev stack (amortized-dev namespace, shares MinIO/MLflow)
+	@echo "Deploying dev stack..."
+	@for f in k8s/kind/dev/*.yaml; do \
+		$(call apply_patched,$$f) \
+	done
+	$(KUBECTL) apply -f k8s/kind/gpu-quota.yaml
+	@echo "Waiting for dev deployments..."
+	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
+	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
+	@echo "Dev stack deployed."
+
+# ──────────────────────────────────────────────
+# PR testing shortcuts
+# ──────────────────────────────────────────────
+
+test-server: build-server load-server deploy-dev ## Build server from current branch + deploy to dev
+	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-server
+	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
+	@echo "Dev server updated. API at http://localhost:30091"
+
+test-studio: build-studio load-studio deploy-dev ## Build studio from current branch + deploy to dev
+	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-studio
+	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
+	@echo "Dev studio updated. UI at http://localhost:30090"
+
+# ──────────────────────────────────────────────
+# Teardown
+# ──────────────────────────────────────────────
+
+down: ## Delete dev namespaces (keep prod and cluster)
+	@echo "Tearing down dev namespace..."
+	$(KUBECTL) delete namespace amortized-dev amortized-dev-jobs --ignore-not-found
+	@echo "Dev namespace removed. Prod untouched."
+
+destroy: ## Delete the entire kind cluster
+	@echo "Destroying kind cluster '$(CLUSTER_NAME)'..."
+	kind delete cluster --name $(CLUSTER_NAME)
+
+# ──────────────────────────────────────────────
+# Status
+# ──────────────────────────────────────────────
+
+status: ## Show cluster status, pods, and access URLs
+	@echo ""
+	@echo "=== Cluster ==="
+	@kind get clusters 2>/dev/null || echo "No kind clusters"
+	@echo ""
+	@echo "=== GPU Nodes ==="
+	@$(KUBECTL) get nodes -o custom-columns="NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu" 2>/dev/null || true
+	@echo ""
+	@echo "=== Pods (amortized) ==="
+	@$(KUBECTL) get pods -n amortized 2>/dev/null || true
+	@echo ""
+	@echo "=== Pods (amortized-jobs) ==="
+	@$(KUBECTL) get pods -n amortized-jobs 2>/dev/null || true
+	@echo ""
+	@echo "=== Pods (amortized-dev) ==="
+	@$(KUBECTL) get pods -n amortized-dev 2>/dev/null || true
+	@echo ""
+	@echo "=== Pods (amortized-dev-jobs) ==="
+	@$(KUBECTL) get pods -n amortized-dev-jobs 2>/dev/null || true
+	@echo ""
+	@echo "=== Access ==="
+	@echo "  Prod Studio:  http://localhost:30080"
+	@echo "  Prod API:     http://localhost:30081"
+	@echo "  MLflow:       http://localhost:30082"
+	@echo "  Dev Studio:   http://localhost:30090"
+	@echo "  Dev API:      http://localhost:30091"
+	@echo ""
+	@echo "  SSH tunnel:"
+	@echo "    ssh -L 30080:localhost:30080 -L 30081:localhost:30081 -L 30082:localhost:30082 \\"
+	@echo "        -L 30090:localhost:30090 -L 30091:localhost:30091 user@169.62.17.147"
