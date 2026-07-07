@@ -171,7 +171,7 @@ deploy-dev: ## Deploy dev stack (amortized-dev namespace, shares MinIO/MLflow)
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
 			"$$f" | $(KUBECTL) apply -f -; \
 	done
-	$(KUBECTL) apply -f k8s/kind/gpu-quota.yaml
+	$(KUBECTL) apply -f k8s/kind/dev/gpu-quota.yaml
 	@echo "Waiting for dev deployments..."
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
