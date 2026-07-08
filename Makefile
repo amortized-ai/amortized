@@ -9,7 +9,7 @@ REPO_ROOT     := $(shell pwd)
 MINIO_IMAGE   := quay.io/minio/minio:latest
 MLFLOW_IMAGE  := ghcr.io/mlflow/mlflow:latest
 AWSCLI_IMAGE  := docker.io/amazon/aws-cli:latest
-NVIDIA_DP_IMAGE := nvcr.io/nvidia/k8s-device-plugin:v0.17.0
+NVIDIA_DP_IMAGE := nvcr.io/nvidia/k8s-device-plugin:v0.19.3
 TRAINING_IMAGE := ghcr.io/amortized-ai/training:latest
 ASYNTH_IMAGE  := ghcr.io/amortized-ai/asynth:latest
 
@@ -46,13 +46,28 @@ cluster: ## Create kind cluster with GPU support
 		kind create cluster --name $(CLUSTER_NAME) --config k8s/kind/kind-config.yaml; \
 	fi
 
-gpu: ## Deploy NVIDIA device plugin for GPU scheduling
+gpu: ## Install NVIDIA runtime in worker + deploy device plugin
+	@echo "Installing NVIDIA Container Toolkit in worker node..."
+	@docker exec $(CLUSTER_NAME)-worker bash -c '\
+		apt-get update -qq && \
+		apt-get install -y -qq curl gpg >/dev/null 2>&1 && \
+		curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null && \
+		curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+			sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" > /etc/apt/sources.list.d/nvidia-container-toolkit.list && \
+		apt-get update -qq && \
+		apt-get install -y -qq nvidia-container-toolkit >/dev/null 2>&1 && \
+		nvidia-ctk runtime configure --runtime=containerd --set-as-default && \
+		systemctl restart containerd && \
+		sleep 3 && \
+		systemctl restart kubelet'
 	@echo "Loading NVIDIA device plugin image..."
 	@docker pull $(NVIDIA_DP_IMAGE) 2>/dev/null || true
 	@kind load docker-image $(NVIDIA_DP_IMAGE) --name $(CLUSTER_NAME) 2>/dev/null
 	$(KUBECTL) apply -f k8s/kind/nvidia-device-plugin.yaml
 	@echo "Waiting for NVIDIA device plugin..."
 	@$(KUBECTL) -n kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=120s
+	@echo "Waiting for GPU detection..."
+	@sleep 15
 	@echo "GPU allocatable:"
 	@$(KUBECTL) get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}'
 
@@ -144,6 +159,12 @@ deploy: ## Deploy prod stack (amortized namespace)
 	@# Patch prod configmap for kind
 	$(KUBECTL) patch configmap amortized-config -n amortized --type merge \
 		-p '{"data":{"AMORTIZED_MLFLOW_TRACKING_URI":"http://mlflow.amortized.svc.cluster.local:5000","AMORTIZED_S3_BUCKET":"amortized","AMORTIZED_IMAGE_PULL_POLICY":"IfNotPresent"}}'
+	@# Kind-specific patches: remove runAsNonRoot (MinIO/MLflow run as root), fix opencode host
+	@for dep in minio mlflow amortized-server amortized-studio; do \
+		$(KUBECTL) -n amortized patch deployment $$dep --type json \
+			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
+	done
+	$(KUBECTL) -n amortized set env deployment/amortized-studio OPENCODE_HOST=127.0.0.1
 	@# Create MinIO bucket
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
