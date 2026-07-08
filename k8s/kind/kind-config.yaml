@@ -19,3 +19,6 @@ nodes:
         hostPort: 31091
         protocol: TCP
   - role: worker
+    extraMounts:
+      - hostPath: /dev/null
+        containerPath: /var/run/nvidia-container-devices/all
