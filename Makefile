@@ -12,6 +12,10 @@ AWSCLI_IMAGE  := docker.io/amazon/aws-cli:latest
 NVIDIA_DP_IMAGE := nvcr.io/nvidia/k8s-device-plugin:v0.19.3
 TRAINING_IMAGE := ghcr.io/amortized-ai/training:latest
 ASYNTH_IMAGE  := ghcr.io/amortized-ai/asynth:latest
+OPENCODE_IMAGE := ghcr.io/anomalyco/opencode:latest
+
+# Source cluster for OpenCode credentials (existing deployment)
+CREDS_CLUSTER := kind-amortized-dev
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
@@ -93,7 +97,7 @@ build-studio: ## Build studio image (expects ../studio/)
 
 pull-images: ## Pull third-party images (MinIO, MLflow, training, etc.)
 	@echo "Pulling third-party images..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
 		docker pull $$img 2>/dev/null || true; \
 	done
 	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
@@ -120,7 +124,7 @@ load-studio: ## Load studio image into kind
 
 load-deps: ## Load third-party images into kind
 	@echo "Loading third-party images into kind..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 	@echo "Loading ML images into kind (training is ~12GB, be patient)..."
@@ -136,15 +140,24 @@ deploy: ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# Base manifests (skip routes and opencode)
+	@# Base manifests (skip routes and opencode secret — creds come from existing cluster)
 	@for f in k8s/base/*.yaml; do \
 		case "$$(basename $$f)" in \
-			*route*|*opencode*|namespace.yaml) continue ;; \
+			*route*|opencode-secret.yaml|namespace.yaml) continue ;; \
 		esac; \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
+			-e 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' \
 			"$$f" | $(KUBECTL) apply -f -; \
+	done
+	@# Copy OpenCode credentials from existing cluster
+	@echo "Copying OpenCode credentials from $(CREDS_CLUSTER)..."
+	@for secret in opencode-gcp opencode-llm; do \
+		kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret -o json 2>/dev/null | \
+			jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
+			$(KUBECTL) apply -f - 2>/dev/null || \
+			echo "  Warning: could not copy $$secret from $(CREDS_CLUSTER). OpenCode may not start."; \
 	done
 	@# Dev infra: MinIO + MLflow (skip routes)
 	@for f in k8s/dev/*.yaml; do \
@@ -160,11 +173,10 @@ deploy: ## Deploy prod stack (amortized namespace)
 	$(KUBECTL) patch configmap amortized-config -n amortized --type merge \
 		-p '{"data":{"AMORTIZED_MLFLOW_TRACKING_URI":"http://mlflow.amortized.svc.cluster.local:5000","AMORTIZED_S3_BUCKET":"amortized","AMORTIZED_IMAGE_PULL_POLICY":"IfNotPresent"}}'
 	@# Kind-specific patches: remove runAsNonRoot (MinIO/MLflow run as root), fix opencode host
-	@for dep in minio mlflow amortized-server amortized-studio; do \
+	@for dep in minio mlflow amortized-server amortized-studio opencode; do \
 		$(KUBECTL) -n amortized patch deployment $$dep --type json \
 			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
 	done
-	$(KUBECTL) -n amortized set env deployment/amortized-studio OPENCODE_HOST=127.0.0.1
 	@# Create MinIO bucket
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
@@ -178,6 +190,7 @@ deploy: ## Deploy prod stack (amortized namespace)
 	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
 	@$(KUBECTL) -n amortized rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized rollout status deployment/amortized-studio --timeout=120s
+	@$(KUBECTL) -n amortized rollout status deployment/opencode --timeout=120s
 	@echo "Prod stack deployed."
 
 # ──────────────────────────────────────────────
