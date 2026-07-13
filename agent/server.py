@@ -39,6 +39,7 @@ MCP_AMORTIZED_URL = os.environ.get(
     "http://amortized-server.amortized.svc.cluster.local:8000/mcp",
 )
 MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
+WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 
@@ -143,7 +144,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         permission_mode="acceptEdits",
         setting_sources=[],
         model=model,
-        cwd="/app/workspace",
+        cwd=WORKSPACE_DIR,
         mcp_servers={
             "amortized": {
                 "type": "http",
