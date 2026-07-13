@@ -23,6 +23,8 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
     query,
 )
 from fastapi import FastAPI, HTTPException
