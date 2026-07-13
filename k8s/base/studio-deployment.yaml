@@ -31,9 +31,12 @@ spec:
               value: "amortized-server"
             - name: BACKEND_PORT
               value: "8000"
-            - name: OPENCODE_HOST
+            # Agent backend — switch by changing AGENT_HOST:
+            #   opencode:    AGENT_HOST=opencode
+            #   claude-code: AGENT_HOST=claude-code
+            - name: AGENT_HOST
               value: "opencode"
-            - name: OPENCODE_PORT
+            - name: AGENT_PORT
               value: "4096"
             - name: MLFLOW_HOST
               value: "mlflow"
