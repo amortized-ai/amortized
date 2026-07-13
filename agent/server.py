@@ -116,6 +116,10 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if not user_text:
         raise HTTPException(status_code=400, detail="no text part in message")
 
+    model = MODEL
+    if body.model and body.model.modelID:
+        model = body.model.modelID.replace("@default", "")
+
     sdk_session_id = _session_map.get(session_id)
 
     options = ClaudeAgentOptions(
@@ -123,7 +127,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         allowed_tools=["mcp__*"],
         permission_mode="acceptEdits",
         setting_sources=[],
-        model=MODEL,
+        model=model,
         cwd="/app/workspace",
         mcp_servers={
             "amortized": {
@@ -179,7 +183,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
             result_info = {
                 "providerID": "google-vertex-anthropic",
-                "modelID": MODEL,
+                "modelID": model,
                 "cost": cost,
                 "tokens": {
                     "input": input_tokens,
@@ -197,7 +201,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if not result_info:
         result_info = {
             "providerID": "google-vertex-anthropic",
-            "modelID": MODEL,
+            "modelID": model,
             "cost": 0,
             "tokens": {"input": 0, "output": 0, "reasoning": 0},
             "finish": "stop",
