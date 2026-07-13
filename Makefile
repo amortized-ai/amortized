@@ -1,21 +1,21 @@
-CLUSTER_NAME  := amortized
-IMAGE_TAG     := kind-$(shell git rev-parse --short HEAD)
+CLUSTER_NAME  ?= amortized
+IMAGE_TAG     ?= kind-$(shell git rev-parse --short HEAD)
 KUBECTL       := kubectl --context kind-$(CLUSTER_NAME)
 STUDIO_DIR    ?= $(shell cd .. && pwd)/studio
-STUDIO_REPO   := https://github.com/amortized-ai/studio
+STUDIO_REPO   ?= https://github.com/amortized-ai/studio
 REPO_ROOT     := $(shell pwd)
 
 # Third-party images to pre-load into kind
-MINIO_IMAGE   := quay.io/minio/minio:latest
-MLFLOW_IMAGE  := ghcr.io/mlflow/mlflow:latest
-AWSCLI_IMAGE  := docker.io/amazon/aws-cli:latest
-NVIDIA_DP_IMAGE := nvcr.io/nvidia/k8s-device-plugin:v0.19.3
-TRAINING_IMAGE := ghcr.io/amortized-ai/training:latest
-ASYNTH_IMAGE  := ghcr.io/amortized-ai/asynth:latest
-OPENCODE_IMAGE := ghcr.io/anomalyco/opencode:latest
+MINIO_IMAGE   ?= quay.io/minio/minio:latest
+MLFLOW_IMAGE  ?= ghcr.io/mlflow/mlflow:latest
+AWSCLI_IMAGE  ?= docker.io/amazon/aws-cli:latest
+NVIDIA_DP_IMAGE ?= nvcr.io/nvidia/k8s-device-plugin:v0.19.3
+TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
+ASYNTH_IMAGE  ?= ghcr.io/amortized-ai/asynth:latest
+OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 
 # Source cluster for OpenCode credentials (existing deployment)
-CREDS_CLUSTER := kind-amortized-dev
+CREDS_CLUSTER ?= kind-amortized-dev
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
