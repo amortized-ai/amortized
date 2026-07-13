@@ -15,3 +15,6 @@ resources:
   - opencode-secret.yaml
   - opencode-deployment.yaml
   - opencode-service.yaml
+  - morty-configmap.yaml
+  - claude-code-deployment.yaml
+  - claude-code-service.yaml
