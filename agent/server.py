@@ -42,6 +42,19 @@ MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 
+
+def _detect_provider_id() -> str:
+    if os.environ.get("CLAUDE_CODE_USE_VERTEX"):
+        return "google-vertex-anthropic"
+    if os.environ.get("CLAUDE_CODE_USE_BEDROCK"):
+        return "amazon-bedrock-anthropic"
+    if os.environ.get("CLAUDE_CODE_USE_FOUNDRY"):
+        return "microsoft-foundry-anthropic"
+    return "anthropic"
+
+
+PROVIDER_ID = _detect_provider_id()
+
 _session_map: dict[str, str] = {}
 _map_lock = asyncio.Lock()
 _morty_prompt: str = ""
@@ -184,7 +197,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
                 output_tokens = getattr(usage, "output_tokens", 0) or 0
 
             result_info = {
-                "providerID": "google-vertex-anthropic",
+                "providerID": PROVIDER_ID,
                 "modelID": model,
                 "cost": cost,
                 "tokens": {
@@ -202,7 +215,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     if not result_info:
         result_info = {
-            "providerID": "google-vertex-anthropic",
+            "providerID": PROVIDER_ID,
             "modelID": model,
             "cost": 0,
             "tokens": {"input": 0, "output": 0, "reasoning": 0},
@@ -220,5 +233,5 @@ async def _persist_session(external_id: str, sdk_session_id: str) -> None:
             return
         _session_map[external_id] = sdk_session_id
         tmp = SESSION_MAP_PATH.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(_session_map))
-        tmp.replace(SESSION_MAP_PATH)
+        await asyncio.to_thread(tmp.write_text, json.dumps(_session_map))
+        await asyncio.to_thread(tmp.replace, SESSION_MAP_PATH)
