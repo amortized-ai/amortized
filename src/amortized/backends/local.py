@@ -43,7 +43,9 @@ class LocalBackend:
 
         # Transform container paths to local paths in the command
         command = [
-            part.replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
+            part.replace("/amortized/config.yaml", os.path.join(work_dir, "config.yaml"))
+            .replace("/amortized/synth_config.yaml", os.path.join(work_dir, "synth_config.yaml"))
+            .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
             .replace(
                 "/amortized/work/synth_config.yaml", os.path.join(work_dir, "synth_config.yaml")
             )
@@ -63,6 +65,9 @@ class LocalBackend:
             "AMORTIZED_CONFIG_PATH": config_path,
         }
         env = {**os.environ, **amortized_env, **spec.env}
+
+        if "MLFLOW_TRACKING_URI" not in spec.env:
+            env.pop("MLFLOW_TRACKING_URI", None)
 
         # Prepend venv bin dir to PATH so venv tools (trl, torchrun, accelerate, etc.) are found
         venv_bin = os.path.dirname(sys.executable)
@@ -127,10 +132,12 @@ class LocalBackend:
         if handle.remote_dir is None:
             return
 
-        stdout_path = os.path.join(handle.remote_dir, "stdout.log")
-        if not os.path.exists(stdout_path):
-            return
-
-        with open(stdout_path) as f:
-            for line in f:
-                yield line.rstrip("\n")
+        for filename in ("stdout.log", "stderr.log"):
+            log_path = os.path.join(handle.remote_dir, filename)
+            if not os.path.exists(log_path) or os.path.getsize(log_path) == 0:
+                continue
+            if filename == "stderr.log":
+                yield "--- stderr ---"
+            with open(log_path) as f:
+                for line in f:
+                    yield line.rstrip("\n")
