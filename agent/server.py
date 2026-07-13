@@ -23,8 +23,6 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
-    ToolResultMessage,
-    ToolUseMessage,
     query,
 )
 from fastapi import FastAPI, HTTPException
@@ -151,26 +149,23 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
             for block in message.content:
                 if isinstance(block, TextBlock):
                     response_parts.append({"type": "text", "text": block.text})
-
-        elif isinstance(message, ToolUseMessage):
-            response_parts.append(
-                {
-                    "type": "tool",
-                    "tool": message.name,
-                    "callID": message.id,
-                    "state": "running",
-                    "input": message.input if hasattr(message, "input") else {},
-                }
-            )
-
-        elif isinstance(message, ToolResultMessage):
-            for rp in response_parts:
-                if rp.get("type") == "tool" and rp.get("callID") == getattr(
-                    message, "tool_use_id", None
-                ):
-                    rp["state"] = "completed"
-                    rp["output"] = getattr(message, "content", None)
-                    break
+                elif isinstance(block, ToolUseBlock):
+                    response_parts.append(
+                        {
+                            "type": "tool",
+                            "tool": getattr(block, "name", ""),
+                            "callID": getattr(block, "id", ""),
+                            "state": "running",
+                            "input": getattr(block, "input", {}),
+                        }
+                    )
+                elif isinstance(block, ToolResultBlock):
+                    tool_use_id = getattr(block, "tool_use_id", None)
+                    for rp in response_parts:
+                        if rp.get("type") == "tool" and rp.get("callID") == tool_use_id:
+                            rp["state"] = "completed"
+                            rp["output"] = getattr(block, "content", None)
+                            break
 
         elif isinstance(message, ResultMessage):
             new_sdk_session_id = getattr(message, "session_id", None)
