@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import jobs, recipes
+from amortized.api import chat, jobs, recipes
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
@@ -135,7 +135,7 @@ _AUTH_SKIP_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"}
 async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
     if not _settings.api_key:
         return await call_next(request)
-    if request.url.path in _AUTH_SKIP_PATHS:
+    if request.url.path in _AUTH_SKIP_PATHS or request.url.path.startswith("/agent/"):
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
@@ -189,6 +189,7 @@ async def validation_exception_handler(
 app.include_router(jobs.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
+app.include_router(chat.router)
 
 create_mcp_server(app)
 
