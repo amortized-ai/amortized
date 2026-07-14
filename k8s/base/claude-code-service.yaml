@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: claude-code
+  namespace: amortized
+  labels:
+    app: amortized
+    component: claude-code
+spec:
+  selector:
+    app: amortized
+    component: claude-code
+  ports:
+    - name: http
+      port: 4096
+      targetPort: 4096
