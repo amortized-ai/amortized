@@ -1,0 +1,24 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 31080
+        hostPort: 31080
+        protocol: TCP
+      - containerPort: 31081
+        hostPort: 31081
+        protocol: TCP
+      - containerPort: 31082
+        hostPort: 31082
+        protocol: TCP
+      - containerPort: 31090
+        hostPort: 31090
+        protocol: TCP
+      - containerPort: 31091
+        hostPort: 31091
+        protocol: TCP
+  - role: worker
+    extraMounts:
+      - hostPath: /dev/null
+        containerPath: /var/run/nvidia-container-devices/all

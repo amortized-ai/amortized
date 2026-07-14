@@ -275,7 +275,17 @@ When calling submit_recipe_job, always pass the selected model ID in the `model`
   (invoices, refunds, subscriptions) and assign urgency levels
   (Low, Medium, High, Critical)"
 - Use `get_job_logs` to help debug failed jobs
+- Use `estimate_sdg_cost` during confirmation (step 6) to show the user
+  cost estimates before they submit. Always call it with num_samples and model
 - Use `get_config` to check available backends and capabilities
+
+## Cost estimation
+
+Before confirming submission (step 6), call `estimate_sdg_cost` with the
+chosen `num_samples` and `model`. Show the results naturally after the
+summary table — mention the estimated SDG cost, the manual labeling
+equivalent, and the savings percentage. The frontend renders a dedicated
+cost card from the tool result automatically.
 
 ## Formatting
 
@@ -285,6 +295,29 @@ When calling submit_recipe_job, always pass the selected model ID in the `model`
 - Use bold for key terms and options
 - Do NOT use emoji in option lists
 """
+
+# ---------------------------------------------------------------------------
+# SDG cost estimation constants
+# ---------------------------------------------------------------------------
+
+# Per-token costs in USD: (input_cost_per_1k_tokens, output_cost_per_1k_tokens)
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "anthropic/claude-haiku-4-5-20251001": (0.0008, 0.004),
+    "anthropic/claude-sonnet-4-20250514": (0.003, 0.015),
+    "openai/gpt-4o": (0.0025, 0.010),
+    "openai/gpt-4o-mini": (0.00015, 0.0006),
+}
+
+_MODEL_LABELS: dict[str, str] = {
+    "anthropic/claude-haiku-4-5-20251001": "Claude Haiku",
+    "anthropic/claude-sonnet-4-20250514": "Claude Sonnet",
+    "openai/gpt-4o": "GPT-4o",
+    "openai/gpt-4o-mini": "GPT-4o Mini",
+}
+
+DEFAULT_INPUT_TOKENS_PER_SAMPLE = 500
+DEFAULT_OUTPUT_TOKENS_PER_SAMPLE = 300
+MANUAL_LABELING_COST_PER_SAMPLE = 3.50
 
 # ---------------------------------------------------------------------------
 # Tool definitions (OpenAI function-calling format)
@@ -448,6 +481,37 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "estimate_sdg_cost",
+            "description": (
+                "Estimate the cost of an SDG job before submission. "
+                "Returns a cost breakdown and comparison to manual labeling. "
+                "Call this during the confirmation step."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "num_samples": {
+                        "type": "integer",
+                        "description": "Number of samples to generate",
+                    },
+                    "model": {
+                        "type": "string",
+                        "enum": [
+                            "anthropic/claude-haiku-4-5-20251001",
+                            "anthropic/claude-sonnet-4-20250514",
+                            "openai/gpt-4o",
+                            "openai/gpt-4o-mini",
+                        ],
+                        "description": "Teacher model to use",
+                    },
+                },
+                "required": ["num_samples", "model"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -455,12 +519,18 @@ TOOLS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
+_MAX_TOOL_RESULT_LEN = 8000
+
+
 async def _execute_tool(name: str, arguments: dict[str, Any]) -> str:
     try:
-        return await _dispatch_tool(name, arguments)
+        result = await _dispatch_tool(name, arguments)
     except Exception as exc:
         logger.warning("Tool %s failed: %s", name, exc)
         return json.dumps({"error": str(exc)})
+    if len(result) > _MAX_TOOL_RESULT_LEN:
+        result = result[:_MAX_TOOL_RESULT_LEN] + "\n... (truncated)"
+    return result
 
 
 @asynccontextmanager
@@ -522,10 +592,14 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
             return json.dumps({"error": f"Backend {handle.backend_name!r} not available"})
         tail = args.get("tail", 100)
         lines: list[str] = []
-        async for line in backend.logs(handle):
-            lines.append(line)
-            if len(lines) > tail:
-                lines = lines[-tail:]
+        try:
+            async with asyncio.timeout(15):
+                async for line in backend.logs(handle):
+                    lines.append(line)
+                    if len(lines) > tail:
+                        lines = lines[-tail:]
+        except TimeoutError:
+            pass
         return json.dumps({"job_id": args["job_id"], "logs": lines})
 
     if name == "get_job_artifacts":
@@ -592,7 +666,12 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
                         if isinstance(val, dict):
                             val.setdefault("name", val.get("id", ""))
                             val.setdefault("description", val.get("id", ""))
-        row = await core_create_job(repo, job_type=job_type, config=config, recipe=args["recipe"])
+        from amortized.api.jobs import _strip_secrets
+
+        clean_config, secrets = _strip_secrets(config)
+        row = await core_create_job(
+            repo, job_type=job_type, config=clean_config, recipe=args["recipe"], secrets=secrets,
+        )
         row["config"] = redact_config(row.get("config", {}))
         return json.dumps(row, default=str)
 
@@ -607,6 +686,46 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
                 "image_registry": settings.image_registry,
             }
         )
+
+    if name == "estimate_sdg_cost":
+        num_samples = args.get("num_samples", 100)
+        model = args.get("model", "openai/gpt-4o-mini")
+
+        input_cost_per_1k, output_cost_per_1k = MODEL_PRICING.get(
+            model, (0.001, 0.005)
+        )
+
+        total_input_tokens = num_samples * DEFAULT_INPUT_TOKENS_PER_SAMPLE
+        total_output_tokens = num_samples * DEFAULT_OUTPUT_TOKENS_PER_SAMPLE
+
+        input_cost = (total_input_tokens / 1000) * input_cost_per_1k
+        output_cost = (total_output_tokens / 1000) * output_cost_per_1k
+        sdg_total = input_cost + output_cost
+
+        manual_total = num_samples * MANUAL_LABELING_COST_PER_SAMPLE
+        savings_amount = manual_total - sdg_total
+        savings_pct = (savings_amount / manual_total * 100) if manual_total > 0 else 0
+
+        return json.dumps({
+            "model": model,
+            "model_label": _MODEL_LABELS.get(model, model),
+            "num_samples": num_samples,
+            "tokens": {
+                "input": total_input_tokens,
+                "output": total_output_tokens,
+                "total": total_input_tokens + total_output_tokens,
+            },
+            "cost": {
+                "input": round(input_cost, 4),
+                "output": round(output_cost, 4),
+                "total": round(sdg_total, 4),
+            },
+            "comparison": {
+                "manual_labeling_total": round(manual_total, 2),
+                "savings_amount": round(savings_amount, 2),
+                "savings_percent": round(savings_pct, 1),
+            },
+        })
 
     return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -635,15 +754,20 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
         *session.messages,
     ]
 
-    for _ in range(MAX_ITERATIONS):
-        response = await litellm.acompletion(
-            model=settings.chat_model,
-            messages=full_messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            max_tokens=settings.chat_max_tokens,
-            temperature=settings.chat_temperature,
-        )
+    for iteration in range(MAX_ITERATIONS):
+        try:
+            response = await litellm.acompletion(
+                model=settings.chat_model,
+                messages=full_messages,
+                tools=TOOLS,
+                tool_choice="auto",
+                max_tokens=settings.chat_max_tokens,
+                temperature=settings.chat_temperature,
+            )
+        except Exception:
+            if iteration == 0:
+                session.messages.pop()
+            raise
 
         choice = response.choices[0]
         message = choice.message
@@ -677,7 +801,20 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
 
         for tc in message.tool_calls:
             fn_name = tc.function.name
-            fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            try:
+                fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except json.JSONDecodeError as exc:
+                fn_args = {}
+                result = json.dumps({"error": f"Malformed tool arguments: {exc}"})
+                tool_msg = {"role": "tool", "tool_call_id": tc.id, "content": result}
+                session.messages.append(tool_msg)
+                full_messages.append(tool_msg)
+                parts.append(
+                    ResponsePart(
+                        type="tool", tool=fn_name, callID=tc.id, state="error", output=result,
+                    )
+                )
+                continue
 
             result = await _execute_tool(fn_name, fn_args)
 
