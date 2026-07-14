@@ -39,7 +39,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return result
 
 
-def _get_recipes_dir(recipes_dir: Path | None = None) -> Path:
+def get_recipes_dir(recipes_dir: Path | None = None) -> Path:
     if recipes_dir is not None:
         return recipes_dir
     if _config_mod.settings.recipes_dir is not None:
@@ -59,7 +59,7 @@ def load_recipe(
         raise CircularRecipeError(list(_chain), name)
     _chain.add(name)
 
-    base_dir = _get_recipes_dir(recipes_dir)
+    base_dir = get_recipes_dir(recipes_dir)
     path = base_dir / f"{name}.yaml"
     if not path.is_file():
         raise RecipeNotFoundError(name)
@@ -75,7 +75,7 @@ def load_recipe(
 
 
 def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
-    base_dir = _get_recipes_dir(recipes_dir)
+    base_dir = get_recipes_dir(recipes_dir)
     results: list[dict[str, Any]] = []
 
     scan_dirs = [base_dir / "templates", base_dir / "examples"]
@@ -115,3 +115,15 @@ def apply_overrides(recipe: dict[str, Any], overrides: dict[str, Any]) -> dict[s
             target = target[key]
         target[keys[-1]] = value
     return result
+
+
+def flatten_recipe_to_config(recipe: dict[str, Any]) -> dict[str, Any]:
+    """Merge top-level recipe overrides into the config sub-dict."""
+    config: dict[str, Any] = dict(recipe.get("config", {}))
+    _meta_keys = frozenset({"type", "description", "extends", "config", "name"})
+    for key, value in recipe.items():
+        if key not in _meta_keys and (value or value == 0 or value is False):
+            config[key] = value
+    if "teacher_model" in config and "model" not in config:
+        config["model"] = config.pop("teacher_model")
+    return config

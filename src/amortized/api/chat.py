@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -18,13 +21,19 @@ from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
-    _deserialize_handle,
+    deserialize_handle,
 )
 from amortized.core.jobs import cancel_job as core_cancel_job
 from amortized.core.jobs import create_job as core_create_job
 from amortized.core.jobs import get_job as core_get_job
 from amortized.core.jobs import list_jobs as core_list_jobs
-from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
+from amortized.core.recipes import (
+    RecipeNotFoundError,
+    apply_overrides,
+    flatten_recipe_to_config,
+    list_recipes,
+    load_recipe,
+)
 from amortized.core.redact import redact_config
 from amortized.db import get_db
 from amortized.db.repository import Repository
@@ -46,6 +55,8 @@ class Session:
     id: str
     messages: list[dict[str, Any]] = field(default_factory=list)
     created_at: float = field(default_factory=lambda: datetime.now(UTC).timestamp())
+    last_active_at: float = field(default_factory=lambda: datetime.now(UTC).timestamp())
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 _sessions: dict[str, Session] = {}
@@ -53,9 +64,7 @@ _sessions: dict[str, Session] = {}
 
 def _prune_sessions() -> None:
     now = datetime.now(UTC).timestamp()
-    expired = [
-        sid for sid, s in _sessions.items() if now - s.created_at > SESSION_TTL_SECONDS
-    ]
+    expired = [sid for sid, s in _sessions.items() if now - s.last_active_at > SESSION_TTL_SECONDS]
     for sid in expired:
         del _sessions[sid]
 
@@ -124,11 +133,18 @@ Amortized is a control plane for building task-specific AI models through three 
 
 ## How to interact with users
 
-**Ask ONE question at a time.** Never present multiple questions in a single message. Wait for the user's answer before moving to the next question.
+**Ask ONE question at a time.** Never present multiple questions in a
+single message. Wait for the user's answer before moving to the next
+question.
 
-**NEVER ask open-ended questions.** Every question you ask MUST include a numbered list of options for the user to click. The frontend renders numbered lists as clickable buttons. If you ask a question without options, the user has no buttons to click and the experience is broken.
+**NEVER ask open-ended questions.** Every question you ask MUST include
+a numbered list of options for the user to click. The frontend renders
+numbered lists as clickable buttons. If you ask a question without
+options, the user has no buttons to click and the experience is broken.
 
-**Always gather requirements before acting.** When a user describes what they want to build, walk through these steps ONE AT A TIME, each with clickable options:
+**Always gather requirements before acting.** When a user describes
+what they want to build, walk through these steps ONE AT A TIME, each
+with clickable options:
 
 1. **What domain/type?** — Present common domains
 2. **What sub-categories?** — Based on their domain, suggest specific categories to classify into
@@ -192,7 +208,8 @@ How many training samples should we generate?
 
 ## Confirmation and submission
 
-When summarizing the plan before submission, use a markdown TABLE (not bullet points or bold labels). Example:
+When summarizing the plan before submission, use a markdown TABLE
+(not bullet points or bold labels). Example:
 
 Here's the plan:
 
@@ -215,22 +232,28 @@ When a job is successfully submitted:
 
 1. Show a brief summary of what's running (type, teacher model, sample count, labels)
 2. Mention the Job ID clearly on its own line: "Job ID: <uuid>"
-3. Do NOT include numbered next-step options — the UI automatically adds navigation buttons after job submission
+3. Do NOT include numbered next-step options — the UI automatically
+   adds navigation buttons after job submission
 
 ## When the user asks for more details about a job
 
 When the user asks to "see more details" or "show details" for a job:
-- The job ID will be in the user's message or in the conversation history — NEVER ask the user for the ID
+- The job ID will be in the user's message or in the conversation
+  history — NEVER ask the user for the ID
 - Call `get_job` with the job ID to get the latest status
-- Show a detailed markdown TABLE with ALL configuration: splits, percentages, labels, model, sample count, status, duration, artifacts
-- Do NOT include numbered next-step options — the UI automatically adds navigation buttons
+- Show a detailed markdown TABLE with ALL configuration: splits,
+  percentages, labels, model, sample count, status, duration, artifacts
+- Do NOT include numbered next-step options — the UI automatically
+  adds navigation buttons
 
 ## Model options for SDG
 
 When the user needs to choose a teacher model, present these options with their exact IDs:
 
-1) Claude Haiku — Fast and cheap, good for straightforward tasks (ID: anthropic/claude-haiku-4-5-20251001)
-2) Claude Sonnet — Higher quality, better for nuanced data (ID: anthropic/claude-sonnet-4-20250514)
+1) Claude Haiku — Fast and cheap, good for straightforward tasks
+   (ID: anthropic/claude-haiku-4-5-20251001)
+2) Claude Sonnet — Higher quality, better for nuanced data
+   (ID: anthropic/claude-sonnet-4-20250514)
 3) GPT-4o — Most capable, best for complex reasoning (ID: openai/gpt-4o)
 
 When calling submit_recipe_job, always pass the selected model ID in the `model` parameter.
@@ -239,8 +262,17 @@ When calling submit_recipe_job, always pass the selected model ID in the `model`
 
 - Use `list_recipes` and `get_recipe` to find recipes that match what the user wants
 - Use `list_jobs` and `get_job` to check on running or completed work
-- Use `submit_recipe_job` only AFTER gathering requirements and confirming the plan. NEVER call it more than once per conversation. If the user asks about a submitted job, use `get_job` instead — do NOT resubmit
-- When calling submit_recipe_job, ALWAYS include a `task_description` that describes the classification task in detail. This is what drives the actual content generation. Without it, the system only generates labels with no training text. Example: "Classify billing support tickets into categories (invoices, refunds, subscriptions) and assign urgency levels (Low, Medium, High, Critical)"
+- Use `submit_recipe_job` only AFTER gathering requirements and
+  confirming the plan. NEVER call it more than once per conversation.
+  If the user asks about a submitted job, use `get_job` instead —
+  do NOT resubmit
+- When calling submit_recipe_job, ALWAYS include a
+  `task_description` that describes the classification task in
+  detail. This is what drives the actual content generation. Without
+  it, the system only generates labels with no training text.
+  Example: "Classify billing support tickets into categories
+  (invoices, refunds, subscriptions) and assign urgency levels
+  (Low, Medium, High, Critical)"
 - Use `get_job_logs` to help debug failed jobs
 - Use `get_config` to check available backends and capabilities
 
@@ -366,7 +398,9 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "submit_recipe_job",
-            "description": "Submit a job from a recipe. Optionally provide overrides for recipe config values.",
+            "description": (
+                "Submit a job from a recipe. Optionally provide overrides for recipe config values."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -386,7 +420,15 @@ TOOLS: list[dict[str, Any]] = [
                     },
                     "task_description": {
                         "type": "string",
-                        "description": "Description of the task for synthetic data generation. This drives the content of generated samples. Example: 'Classify billing support tickets by urgency level (Low, Medium, High, Critical) and category (invoices, refunds, subscriptions)'",
+                        "description": (
+                            "Description of the task for synthetic"
+                            " data generation. This drives the"
+                            " content of generated samples."
+                            " Example: 'Classify billing support"
+                            " tickets by urgency level (Low,"
+                            " Medium, High, Critical) and category"
+                            " (invoices, refunds, subscriptions)'"
+                        ),
                     },
                     "overrides": {
                         "type": "object",
@@ -420,17 +462,20 @@ async def _execute_tool(name: str, arguments: dict[str, Any]) -> str:
         return json.dumps({"error": str(exc)})
 
 
-async def _dispatch_tool(name: str, args: dict[str, Any]) -> str:
+@asynccontextmanager
+async def _get_repo():
     db_gen = get_db()
     db = await db_gen.__anext__()
     try:
-        repo = Repository(db)
-        return await _dispatch_with_repo(name, args, repo)
+        yield Repository(db)
     finally:
-        try:
+        with contextlib.suppress(StopAsyncIteration):
             await db_gen.__anext__()
-        except StopAsyncIteration:
-            pass
+
+
+async def _dispatch_tool(name: str, args: dict[str, Any]) -> str:
+    async with _get_repo() as repo:
+        return await _dispatch_with_repo(name, args, repo)
 
 
 async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository) -> str:
@@ -461,9 +506,15 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
         row = await core_get_job(repo, args["job_id"])
         if row is None:
             return json.dumps({"error": f"Job {args['job_id']} not found"})
-        handle = _deserialize_handle(row.get("backend_handle"))
+        handle = deserialize_handle(row.get("backend_handle"))
         if handle is None:
-            return json.dumps({"job_id": args["job_id"], "logs": [], "message": "Job has not started yet"})
+            return json.dumps(
+                {
+                    "job_id": args["job_id"],
+                    "logs": [],
+                    "message": "Job has not started yet",
+                }
+            )
         try:
             backend = get_backend(handle.backend_name)
         except KeyError:
@@ -482,10 +533,25 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
             return json.dumps({"error": f"Job {args['job_id']} not found"})
         mlflow_run_id = row.get("mlflow_run_id", "")
         if not mlflow_run_id:
-            return json.dumps({"job_id": args["job_id"], "artifact_uri": "", "message": "No MLflow run ID"})
+            return json.dumps(
+                {
+                    "job_id": args["job_id"],
+                    "artifact_uri": "",
+                    "message": "No MLflow run ID",
+                }
+            )
         from amortized.worker import _resolve_mlflow_artifact_uri
-        artifact_uri = await _resolve_mlflow_artifact_uri(mlflow_run_id)
-        return json.dumps({"job_id": args["job_id"], "mlflow_run_id": mlflow_run_id, "artifact_uri": artifact_uri})
+
+        artifact_uri = await _resolve_mlflow_artifact_uri(
+            mlflow_run_id,
+        )
+        return json.dumps(
+            {
+                "job_id": args["job_id"],
+                "mlflow_run_id": mlflow_run_id,
+                "artifact_uri": artifact_uri,
+            }
+        )
 
     if name == "list_recipes":
         return json.dumps(list_recipes(), default=str)
@@ -509,13 +575,7 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
             job_type = JobType(recipe_type)
         except ValueError:
             return json.dumps({"error": f"Unknown job type: {recipe_type}"})
-        config: dict[str, Any] = recipe.get("config", {})
-        _META = frozenset({"type", "description", "extends", "config", "name"})
-        for key, value in recipe.items():
-            if key not in _META and (value or value == 0 or value is False):
-                config[key] = value
-        if "teacher_model" in config and "model" not in config:
-            config["model"] = config.pop("teacher_model")
+        config = flatten_recipe_to_config(recipe)
         if args.get("model"):
             config["model"] = args["model"]
         if args.get("task_description"):
@@ -537,12 +597,15 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
 
     if name == "get_config":
         from amortized.core.compute import get_all_backends
-        return json.dumps({
-            "default_compute_backend": settings.resolved_default_backend,
-            "available_backends": list(get_all_backends().keys()),
-            "mlflow_tracking_uri": settings.mlflow_tracking_uri,
-            "image_registry": settings.image_registry,
-        })
+
+        return json.dumps(
+            {
+                "default_compute_backend": settings.resolved_default_backend,
+                "available_backends": list(get_all_backends().keys()),
+                "mlflow_tracking_uri": settings.mlflow_tracking_uri,
+                "image_registry": settings.image_registry,
+            }
+        )
 
     return json.dumps({"error": f"Unknown tool: {name}"})
 
@@ -555,6 +618,8 @@ MAX_ITERATIONS = 10
 
 
 async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
+    if len(session.messages) > 50:
+        session.messages = session.messages[-50:]
     session.messages.append({"role": "user", "content": user_text})
 
     parts: list[ResponsePart] = []
@@ -564,7 +629,10 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
     response_id = ""
     finish = "stop"
 
-    full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + session.messages
+    full_messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *session.messages,
+    ]
 
     for _ in range(MAX_ITERATIONS):
         response = await litellm.acompletion(
@@ -612,14 +680,16 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
 
             result = await _execute_tool(fn_name, fn_args)
 
-            parts.append(ResponsePart(
-                type="tool",
-                tool=fn_name,
-                callID=tc.id,
-                state="completed",
-                input=fn_args,
-                output=result,
-            ))
+            parts.append(
+                ResponsePart(
+                    type="tool",
+                    tool=fn_name,
+                    callID=tc.id,
+                    state="completed",
+                    input=fn_args,
+                    output=result,
+                )
+            )
 
             tool_msg = {"role": "tool", "tool_call_id": tc.id, "content": result}
             session.messages.append(tool_msg)
@@ -670,9 +740,12 @@ async def generate_title(request: GenerateTitleRequest) -> GenerateTitleResponse
                 {
                     "role": "system",
                     "content": (
-                        "Generate a very short title (3-6 words) for a conversation that starts with the user message below. "
-                        "The title should capture the user's intent. Do not use quotes or punctuation. "
-                        "Reply with ONLY the title, nothing else."
+                        "Generate a very short title (3-6 words) for"
+                        " a conversation that starts with the user"
+                        " message below. The title should capture"
+                        " the user's intent. Do not use quotes or"
+                        " punctuation. Reply with ONLY the title,"
+                        " nothing else."
                     ),
                 },
                 {"role": "user", "content": request.message},
@@ -680,7 +753,7 @@ async def generate_title(request: GenerateTitleRequest) -> GenerateTitleResponse
             max_tokens=30,
             temperature=0.3,
         )
-        title = resp.choices[0].message.content.strip().strip('"\'')
+        title = resp.choices[0].message.content.strip().strip("\"'")
         return GenerateTitleResponse(title=title[:60])
     except Exception as exc:
         logger.warning("Title generation failed: %s", exc)
@@ -690,6 +763,7 @@ async def generate_title(request: GenerateTitleRequest) -> GenerateTitleResponse
 
 @router.post("/session/{session_id}/message", response_model=ChatResponse)
 async def send_message(session_id: str, request: SendMessageRequest) -> ChatResponse:
+    _prune_sessions()
     session = _sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -698,8 +772,13 @@ async def send_message(session_id: str, request: SendMessageRequest) -> ChatResp
     if not user_text.strip():
         raise HTTPException(status_code=400, detail="No text content in message")
 
-    try:
-        return await _run_chat_turn(session, user_text.strip())
-    except Exception as exc:
-        logger.exception("Chat error in session %s", session_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    async with session.lock:
+        session.last_active_at = datetime.now(UTC).timestamp()
+        try:
+            return await _run_chat_turn(session, user_text.strip())
+        except Exception as exc:
+            logger.exception("Chat error in session %s", session_id)
+            raise HTTPException(
+                status_code=500,
+                detail="Internal error processing message",
+            ) from exc

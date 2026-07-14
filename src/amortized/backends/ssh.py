@@ -296,7 +296,9 @@ class SSHBackend:
             for filename in ("stdout.log", "stderr.log"):
                 output = await self._run(
                     conn,
-                    f'test -s {handle.remote_dir}/{filename} && cat {handle.remote_dir}/{filename} || true',
+                    f"test -s {handle.remote_dir}/{filename}"
+                    f" && cat {handle.remote_dir}/{filename}"
+                    f" || true",
                 )
                 if not output.strip():
                     continue

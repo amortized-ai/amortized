@@ -136,7 +136,9 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                 ]
                 strategy_params["sampled_attributes"] = sampled
             attr_ids = [a["id"] for a in sampled if isinstance(a, dict) and "id" in a]
-            context_line = ", ".join(f"The {aid} is: {{{aid}}}" for aid in attr_ids) if attr_ids else ""
+            context_line = (
+                ", ".join(f"The {aid} is: {{{aid}}}" for aid in attr_ids) if attr_ids else ""
+            )
             strategy_params["generated_attributes"] = [
                 {
                     "id": "raw_messages",
@@ -145,7 +147,7 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                             "role": "user",
                             "content": (
                                 f"Generate a realistic training example for: {task}. "
-                                f"{context_line}. "
+                                f"{(context_line + '. ') if context_line else ''}"
                                 f"Output a single JSON array of message objects, "
                                 f"each with 'role' (user/assistant) and 'content' keys."
                             ),

@@ -10,7 +10,14 @@ from pydantic import BaseModel, Field
 
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
-from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe, _get_recipes_dir
+from amortized.core.recipes import (
+    RecipeNotFoundError,
+    apply_overrides,
+    flatten_recipe_to_config,
+    get_recipes_dir,
+    list_recipes,
+    load_recipe,
+)
 from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
@@ -44,8 +51,12 @@ class SaveRecipeRequest(BaseModel):
 async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     import yaml as _yaml
 
-    base_dir = _get_recipes_dir()
+    base_dir = get_recipes_dir()
     path = base_dir / f"{name}.yaml"
+
+    resolved = path.resolve()
+    if not resolved.is_relative_to(base_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid recipe name")
 
     if not path.is_file() and not name.startswith(("templates/", "examples/")):
         name = f"templates/custom/{name}"
@@ -101,23 +112,7 @@ async def submit_recipe_job(
             status_code=422, detail=f"Unknown job type in recipe: {recipe_type}"
         )
 
-    config: dict[str, Any] = recipe.get("config", {})
-
-    # Merge top-level override keys into the config dict.
-    # The frontend sends flat keys (e.g. teacher_model, num_samples) which
-    # apply_overrides places at the recipe root, but the job only stores the
-    # "config" sub-dict.  Skip empty/falsy values so that form defaults like
-    # strategy_params={} or input_data="" don't clobber the recipe's own
-    # defaults.
-    _RECIPE_META_KEYS = frozenset({"type", "description", "extends", "config", "name"})
-    for key, value in recipe.items():
-        if key not in _RECIPE_META_KEYS and (value or value == 0 or value is False):
-            config[key] = value
-
-    # Normalize teacher_model -> model so validation and the config translator
-    # both see the canonical field name.
-    if "teacher_model" in config and "model" not in config:
-        config["model"] = config.pop("teacher_model")
+    config = flatten_recipe_to_config(recipe)
 
     if request.dry_run:
         from amortized.api.jobs import _validate_config
