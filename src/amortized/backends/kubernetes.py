@@ -25,10 +25,12 @@ class KubernetesBackend:
         name: str = "kubernetes",
         namespace: str = "amortized-jobs",
         image_registry: str = "ghcr.io/amortized-ai",
+        image_pull_policy: str = "Always",
     ) -> None:
         self.name = name
         self._namespace = namespace
         self._image_registry = image_registry
+        self._image_pull_policy = image_pull_policy
         self._client: Any | None = None
 
     def capabilities(self) -> set[Capability]:
@@ -149,7 +151,7 @@ class KubernetesBackend:
         container = V1Container(
             name="job",
             image=spec.image or f"{self._image_registry}/worker:latest",
-            image_pull_policy="Always",
+            image_pull_policy=self._image_pull_policy,
             command=spec.command or None,
             env=env_vars,
             env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],

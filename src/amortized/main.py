@@ -42,6 +42,7 @@ def _load_backends() -> None:
             name="kubernetes",
             namespace=_settings.compute_namespace,
             image_registry=_settings.image_registry,
+            image_pull_policy=_settings.image_pull_policy,
         )
         register_backend(backend)
         logger.info("Registered Kubernetes backend (namespace=%s)", _settings.compute_namespace)
