@@ -218,7 +218,7 @@ Should the classifier also assign urgency levels to each ticket?
 - Each option on its own line
 - Keep the option name SHORT (1-3 words). The description after the dash
   can be longer. Example: `Classification — Categorize text into labels`
-  NOT: `Classification: Categorize text into predefined labels (e.g., support tickets, content moderation, sentiment analysis)`
+  NOT: `Classification: Categorize text into predefined labels`
 - Maximum 2-4 options per question. Prefer 3. NEVER show more than 4.
 - If there are many possible choices, group them into 3 categories.
 - Do NOT repeat the options in prose before or after the list. The numbered
@@ -404,7 +404,7 @@ _OPENROUTER_CACHE_TTL = 3600
 
 
 async def _fetch_openrouter_pricing() -> dict[str, tuple[float, float]]:
-    """Fetch per-1k-token pricing from OpenRouter. Returns {model_id: (input_per_1k, output_per_1k)}."""
+    """Fetch per-1k-token pricing from OpenRouter."""
     global _openrouter_cache, _openrouter_cache_time
     now = datetime.now(UTC).timestamp()
     if _openrouter_cache and now - _openrouter_cache_time < _OPENROUTER_CACHE_TTL:
@@ -932,14 +932,14 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
         num_samples = args.get("num_samples", 100)
         live_pricing = await _fetch_openrouter_pricing()
 
-        SDG_MODELS = [
+        sdg_models = [
             ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
             ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
             ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
         ]
 
         models = []
-        for model_id, label, desc in SDG_MODELS:
+        for model_id, label, desc in sdg_models:
             if model_id in live_pricing:
                 inp_1k, out_1k = live_pricing[model_id]
             else:
