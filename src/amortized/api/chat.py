@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -463,7 +464,7 @@ async def _execute_tool(name: str, arguments: dict[str, Any]) -> str:
 
 
 @asynccontextmanager
-async def _get_repo():
+async def _get_repo() -> AsyncIterator[Repository]:
     db_gen = get_db()
     db = await db_gen.__anext__()
     try:
