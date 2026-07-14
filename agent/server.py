@@ -134,7 +134,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     model = MODEL
     if body.model and body.model.modelID:
-        model = body.model.modelID.replace("@default", "")
+        model = body.model.modelID.replace("@default", "") or MODEL
 
     sdk_session_id = _session_map.get(session_id)
 
