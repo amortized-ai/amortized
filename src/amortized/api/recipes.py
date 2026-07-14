@@ -51,6 +51,9 @@ class SaveRecipeRequest(BaseModel):
 async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     import yaml as _yaml
 
+    if ".." in name.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid recipe name")
+
     base_dir = get_recipes_dir()
     path = base_dir / f"{name}.yaml"
 
@@ -61,6 +64,8 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     if not path.is_file() and not name.startswith(("templates/", "examples/")):
         name = f"templates/custom/{name}"
         path = base_dir / f"{name}.yaml"
+        if not path.resolve().is_relative_to(base_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid recipe name")
 
     path.parent.mkdir(parents=True, exist_ok=True)
 

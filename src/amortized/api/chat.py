@@ -455,12 +455,18 @@ TOOLS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
+_MAX_TOOL_RESULT_LEN = 8000
+
+
 async def _execute_tool(name: str, arguments: dict[str, Any]) -> str:
     try:
-        return await _dispatch_tool(name, arguments)
+        result = await _dispatch_tool(name, arguments)
     except Exception as exc:
         logger.warning("Tool %s failed: %s", name, exc)
         return json.dumps({"error": str(exc)})
+    if len(result) > _MAX_TOOL_RESULT_LEN:
+        result = result[:_MAX_TOOL_RESULT_LEN] + "\n... (truncated)"
+    return result
 
 
 @asynccontextmanager
@@ -522,10 +528,14 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
             return json.dumps({"error": f"Backend {handle.backend_name!r} not available"})
         tail = args.get("tail", 100)
         lines: list[str] = []
-        async for line in backend.logs(handle):
-            lines.append(line)
-            if len(lines) > tail:
-                lines = lines[-tail:]
+        try:
+            async with asyncio.timeout(15):
+                async for line in backend.logs(handle):
+                    lines.append(line)
+                    if len(lines) > tail:
+                        lines = lines[-tail:]
+        except TimeoutError:
+            pass
         return json.dumps({"job_id": args["job_id"], "logs": lines})
 
     if name == "get_job_artifacts":
@@ -592,7 +602,12 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
                         if isinstance(val, dict):
                             val.setdefault("name", val.get("id", ""))
                             val.setdefault("description", val.get("id", ""))
-        row = await core_create_job(repo, job_type=job_type, config=config, recipe=args["recipe"])
+        from amortized.api.jobs import _strip_secrets
+
+        clean_config, secrets = _strip_secrets(config)
+        row = await core_create_job(
+            repo, job_type=job_type, config=clean_config, recipe=args["recipe"], secrets=secrets,
+        )
         row["config"] = redact_config(row.get("config", {}))
         return json.dumps(row, default=str)
 
@@ -635,15 +650,20 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
         *session.messages,
     ]
 
-    for _ in range(MAX_ITERATIONS):
-        response = await litellm.acompletion(
-            model=settings.chat_model,
-            messages=full_messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            max_tokens=settings.chat_max_tokens,
-            temperature=settings.chat_temperature,
-        )
+    for iteration in range(MAX_ITERATIONS):
+        try:
+            response = await litellm.acompletion(
+                model=settings.chat_model,
+                messages=full_messages,
+                tools=TOOLS,
+                tool_choice="auto",
+                max_tokens=settings.chat_max_tokens,
+                temperature=settings.chat_temperature,
+            )
+        except Exception:
+            if iteration == 0:
+                session.messages.pop()
+            raise
 
         choice = response.choices[0]
         message = choice.message
@@ -677,7 +697,20 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
 
         for tc in message.tool_calls:
             fn_name = tc.function.name
-            fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            try:
+                fn_args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except json.JSONDecodeError as exc:
+                fn_args = {}
+                result = json.dumps({"error": f"Malformed tool arguments: {exc}"})
+                tool_msg = {"role": "tool", "tool_call_id": tc.id, "content": result}
+                session.messages.append(tool_msg)
+                full_messages.append(tool_msg)
+                parts.append(
+                    ResponsePart(
+                        type="tool", tool=fn_name, callID=tc.id, state="error", output=result,
+                    )
+                )
+                continue
 
             result = await _execute_tool(fn_name, fn_args)
 

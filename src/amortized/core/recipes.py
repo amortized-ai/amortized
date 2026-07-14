@@ -104,10 +104,17 @@ def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
     return results
 
 
+_RECIPE_META_KEYS = frozenset({"type", "description", "extends", "name"})
+
+
 def apply_overrides(recipe: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(recipe)
     for dotted_key, value in overrides.items():
         keys = dotted_key.split(".")
+        if keys[0] in _RECIPE_META_KEYS:
+            continue
+        if keys[0] != "config":
+            keys = ["config", *keys]
         target = result
         for key in keys[:-1]:
             if key not in target or not isinstance(target[key], dict):
