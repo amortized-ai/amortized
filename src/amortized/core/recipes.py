@@ -114,6 +114,8 @@ def apply_overrides(recipe: dict[str, Any], overrides: dict[str, Any]) -> dict[s
         if keys[0] in _RECIPE_META_KEYS:
             continue
         if keys[0] != "config":
+            if not (value or value == 0 or value is False):
+                continue
             keys = ["config", *keys]
         target = result
         for key in keys[:-1]:
