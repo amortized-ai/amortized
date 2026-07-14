@@ -18,7 +18,7 @@ from amortized.core.config_translator import (
     _generate_container_config,
     _resolve_judge_template,
 )
-from amortized.core.jobs import _deserialize_handle
+from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
@@ -476,7 +476,7 @@ async def cleanup_orphaned_jobs() -> None:
             handle_json = job.get("backend_handle")
 
             alive = False
-            handle = _deserialize_handle(handle_json)
+            handle = deserialize_handle(handle_json)
             if handle is not None:
                 try:
                     backend = get_backend(handle.backend_name)

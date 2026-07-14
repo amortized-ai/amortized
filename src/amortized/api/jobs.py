@@ -12,7 +12,7 @@ from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
-    _deserialize_handle,
+    deserialize_handle,
 )
 from amortized.core.jobs import (
     cancel_job as core_cancel_job,
@@ -170,7 +170,7 @@ async def get_job_logs(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-    handle = _deserialize_handle(row.get("backend_handle"))
+    handle = deserialize_handle(row.get("backend_handle"))
     if handle is None:
         msg = "No backend handle — job may not have started"
         return {"job_id": job_id, "logs": [], "message": msg}
