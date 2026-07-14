@@ -362,6 +362,58 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "recipes"
+        ],
+        "summary": "Save Recipe",
+        "operationId": "save_recipe",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRecipeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Recipe"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/jobs/recipe": {
@@ -387,6 +439,121 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Create Session",
+        "operationId": "create_session_agent_session_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/title": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Generate Title",
+        "description": "Generate a short conversational title from the first user message.",
+        "operationId": "generate_title_agent_title_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateTitleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateTitleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session/{session_id}/message": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Send Message",
+        "operationId": "send_message_agent_session__session_id__message_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
               }
             }
           },
@@ -442,6 +609,26 @@
   },
   "components": {
     "schemas": {
+      "ChatResponse": {
+        "properties": {
+          "info": {
+            "$ref": "#/components/schemas/ResponseInfo"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/ResponsePart"
+            },
+            "type": "array",
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "info",
+          "parts"
+        ],
+        "title": "ChatResponse"
+      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -515,6 +702,45 @@
         },
         "type": "object",
         "title": "ConfigResponse"
+      },
+      "CreateSessionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "CreateSessionResponse"
+      },
+      "GenerateTitleRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "GenerateTitleRequest"
+      },
+      "GenerateTitleResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "GenerateTitleResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -711,6 +937,30 @@
         ],
         "title": "JobType"
       },
+      "MessagePart": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "MessagePart"
+      },
       "RecipeJobRequest": {
         "properties": {
           "recipe": {
@@ -764,6 +1014,190 @@
           "name"
         ],
         "title": "RecipeSummary"
+      },
+      "ResponseInfo": {
+        "properties": {
+          "providerID": {
+            "type": "string",
+            "title": "Providerid",
+            "default": ""
+          },
+          "modelID": {
+            "type": "string",
+            "title": "Modelid",
+            "default": ""
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost",
+            "default": 0.0
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenInfo",
+            "default": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0
+            }
+          },
+          "finish": {
+            "type": "string",
+            "title": "Finish",
+            "default": "stop"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "default": ""
+          },
+          "sessionID": {
+            "type": "string",
+            "title": "Sessionid",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ResponseInfo"
+      },
+      "ResponsePart": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          },
+          "callID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callid"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "output": {
+            "title": "Output"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ResponsePart"
+      },
+      "SaveRecipeRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Recipe type: training, sdg, eval"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Recipe description",
+            "default": ""
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "Recipe configuration"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "SaveRecipeRequest"
+      },
+      "SendMessageRequest": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "default": "morty"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/MessagePart"
+            },
+            "type": "array",
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parts"
+        ],
+        "title": "SendMessageRequest"
+      },
+      "TokenInfo": {
+        "properties": {
+          "input": {
+            "type": "integer",
+            "title": "Input",
+            "default": 0
+          },
+          "output": {
+            "type": "integer",
+            "title": "Output",
+            "default": 0
+          },
+          "reasoning": {
+            "type": "integer",
+            "title": "Reasoning",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "TokenInfo"
       },
       "ValidationError": {
         "properties": {
