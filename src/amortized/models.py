@@ -43,8 +43,7 @@ class TrainingJobConfig(BaseModel):
     )
     model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
     data_path: str | None = Field(
-        None,
-        description="Path to training data (resolved from parent if chaining)",
+        None, description="Path to training data (resolved from parent if chaining)"
     )
     output_dir: str | None = Field(None, description="Output directory")
     learning_rate: float | None = Field(None, description="Learning rate")

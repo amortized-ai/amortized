@@ -336,11 +336,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     cmd: list[str] = []
 
     if image and job["type"] == JobType.training.value:
-        algo_aliases = {
-            "lora": "lora_sft",
-            "qlora": "lora_sft",
-            "qlora_sft": "lora_sft",
-        }
+        algo_aliases = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
         algorithm = config.get("algorithm", "sft")
         algorithm = algo_aliases.get(algorithm, algorithm)
         data_path = config.get("data_path", config.get("dataset", ""))
