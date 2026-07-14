@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import litellm
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -134,6 +135,27 @@ Amortized is a control plane for building task-specific AI models through three 
 
 ## How to interact with users
 
+**Keep messages SHORT.** Your messages should be 1-3 sentences of context
+followed by the options. NEVER write more than one short paragraph before
+presenting options. Do NOT explain what Amortized is, list its capabilities,
+or describe the three-stage workflow unless specifically asked.
+
+**Be conversational, not robotic.** Use brief natural transitions:
+- "Great choice!" or "Good pick." before the next question
+- "Now let's figure out..." to introduce the next step
+- "Almost there!" before the confirmation step
+Keep it to ONE short phrase, not a paragraph.
+
+**First message:** When a user describes what they want, respond with ONE
+short sentence acknowledging their goal, then immediately ask the first
+question with options. Example:
+
+User: "Help me build a support ticket classifier"
+You: "Great, let's build that! What type of support tickets?"
+
+Then show 3-4 domain options. Do NOT write a paragraph about what
+Amortized can do.
+
 **Ask ONE question at a time.** Never present multiple questions in a
 single message. Wait for the user's answer before moving to the next
 question.
@@ -194,8 +216,17 @@ Should the classifier also assign urgency levels to each ticket?
 **Rules:**
 - Use `N)` format (e.g., `1)`, `2)`, `3)`)
 - Each option on its own line
-- Keep each option under 120 characters
-- Include ALL relevant options — never skip any
+- Keep the option name SHORT (1-3 words). The description after the dash
+  can be longer. Example: `Classification — Categorize text into labels`
+  NOT: `Classification: Categorize text into predefined labels (e.g., support tickets, content moderation, sentiment analysis)`
+- Maximum 2-4 options per question. Prefer 3. NEVER show more than 4.
+- If there are many possible choices, group them into 3 categories.
+- Do NOT repeat the options in prose before or after the list. The numbered
+  list IS the options — do not also list them as bullet points, paragraphs,
+  or examples earlier in the same message.
+- Keep messages concise. ONE short paragraph of context, then the options.
+  Do NOT write multiple paragraphs explaining what Amortized does before
+  asking a question.
 - For numeric inputs (like "how many samples"), suggest 2-3 common values
 - The user can always type a custom answer, so don't worry about covering every case
 
@@ -209,8 +240,12 @@ How many training samples should we generate?
 
 ## Confirmation and submission
 
-When summarizing the plan before submission, use a markdown TABLE
-(not bullet points or bold labels). Example:
+MANDATORY: Before showing the confirmation table, ALWAYS call
+`estimate_sdg_cost` with the chosen num_samples and model. The frontend
+renders a cost breakdown card automatically from the tool result. If you
+skip this step, the user sees no cost information.
+
+After calling estimate_sdg_cost, show the summary TABLE:
 
 Here's the plan:
 
@@ -236,6 +271,35 @@ When a job is successfully submitted:
 3. Do NOT include numbered next-step options — the UI automatically
    adds navigation buttons after job submission
 
+## After SDG job succeeds
+
+When you detect (via get_job) that an SDG job has succeeded, present these
+options to the user:
+
+1) Generate more samples — Create a larger dataset with broader coverage
+2) Continue to training — Fine-tune a student model on this data
+3) I'm done for now — That's all I needed, thanks!
+
+Also mention that they can view the full dataset on the **Datasets page**.
+
+## Training model selection
+
+When the user is ready to choose a student model for training, call
+`estimate_training_cost` with the number of training samples first. Then
+present the models WITH their cost estimates:
+
+Example:
+
+Which student model would you like to fine-tune?
+
+1) Qwen3 0.6B — ~8 min, ~$0.05 on T4 GPU
+2) Qwen 2.5 1.5B — ~15 min, ~$0.09 on T4 GPU
+3) Qwen3 4B — ~25 min, ~$0.46 on A10G GPU
+4) Llama 3.1 8B — ~35 min, ~$2.04 on A100 GPU
+
+Always call `estimate_training_cost` before presenting these options so the
+costs reflect the actual dataset size.
+
 ## When the user asks for more details about a job
 
 When the user asks to "see more details" or "show details" for a job:
@@ -249,15 +313,16 @@ When the user asks to "see more details" or "show details" for a job:
 
 ## Model options for SDG
 
-When the user needs to choose a teacher model, present these options with their exact IDs:
+When the user needs to choose a teacher model, ALWAYS call `compare_sdg_models`
+first with the chosen num_samples. The frontend renders a visual cost comparison
+card automatically. Then present the options:
 
-1) Claude Haiku — Fast and cheap, good for straightforward tasks
-   (ID: anthropic/claude-haiku-4-5-20251001)
-2) Claude Sonnet — Higher quality, better for nuanced data
-   (ID: anthropic/claude-sonnet-4-20250514)
-3) GPT-4o — Most capable, best for complex reasoning (ID: openai/gpt-4o)
+1) Claude Haiku — Fast and affordable
+2) Claude Sonnet — Higher quality output
+3) GPT-4o — Strong reasoning ability
 
 When calling submit_recipe_job, always pass the selected model ID in the `model` parameter.
+Model IDs: anthropic/claude-haiku-4-5-20251001, anthropic/claude-sonnet-4-20250514, openai/gpt-4o
 
 ## Using tools
 
@@ -281,11 +346,24 @@ When calling submit_recipe_job, always pass the selected model ID in the `model`
 
 ## Cost estimation
 
-Before confirming submission (step 6), call `estimate_sdg_cost` with the
-chosen `num_samples` and `model`. Show the results naturally after the
-summary table — mention the estimated SDG cost, the manual labeling
-equivalent, and the savings percentage. The frontend renders a dedicated
-cost card from the tool result automatically.
+Show cost breakdowns at THREE points in the workflow:
+
+1. **When presenting sample count options** — Call `estimate_sdg_cost` for each
+   option to show cost per choice. Example:
+
+   How many training samples should we generate?
+
+   1) 100 samples — ~$0.06 with Claude Haiku
+   2) 500 samples — ~$0.30 with Claude Haiku
+   3) 1000 samples — ~$0.60 with Claude Haiku
+
+2. **Before confirming submission (step 6)** — Call `estimate_sdg_cost` with the
+   chosen `num_samples` and `model`. Show the results naturally after the
+   summary table. The frontend renders a dedicated cost card from the tool
+   result automatically.
+
+3. **When presenting training model options** — Call `estimate_training_cost`
+   to show GPU cost per model. Always include time estimate and GPU type.
 
 ## Formatting
 
@@ -318,6 +396,78 @@ _MODEL_LABELS: dict[str, str] = {
 DEFAULT_INPUT_TOKENS_PER_SAMPLE = 500
 DEFAULT_OUTPUT_TOKENS_PER_SAMPLE = 300
 MANUAL_LABELING_COST_PER_SAMPLE = 3.50
+
+# OpenRouter live pricing cache
+_openrouter_cache: dict[str, tuple[float, float]] | None = None
+_openrouter_cache_time: float = 0
+_OPENROUTER_CACHE_TTL = 3600
+
+
+async def _fetch_openrouter_pricing() -> dict[str, tuple[float, float]]:
+    """Fetch per-1k-token pricing from OpenRouter. Returns {model_id: (input_per_1k, output_per_1k)}."""
+    global _openrouter_cache, _openrouter_cache_time
+    now = datetime.now(UTC).timestamp()
+    if _openrouter_cache and now - _openrouter_cache_time < _OPENROUTER_CACHE_TTL:
+        return _openrouter_cache
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://openrouter.ai/api/v1/models")
+            resp.raise_for_status()
+            data = resp.json()
+        pricing: dict[str, tuple[float, float]] = {}
+        for model in data.get("data", []):
+            mid = model.get("id", "")
+            p = model.get("pricing", {})
+            prompt_price = float(p.get("prompt", "0"))
+            completion_price = float(p.get("completion", "0"))
+            if prompt_price > 0 or completion_price > 0:
+                pricing[mid] = (prompt_price * 1000, completion_price * 1000)
+        _openrouter_cache = pricing
+        _openrouter_cache_time = now
+        return pricing
+    except Exception:
+        logger.warning("Failed to fetch OpenRouter pricing, using hardcoded fallback")
+        return {k: v for k, v in MODEL_PRICING.items()}
+
+
+# ---------------------------------------------------------------------------
+# Training cost estimation constants
+# ---------------------------------------------------------------------------
+
+TRAINING_MODELS: dict[str, dict[str, Any]] = {
+    "qwen3-0.6b": {
+        "label": "Qwen3 0.6B",
+        "description": "Ultra-lightweight, fastest inference, great for prototyping",
+        "gpu_type": "T4",
+        "cost_per_gpu_hour": 0.35,
+        "base_minutes_per_100_samples": 8,
+        "vram_gb": 4,
+    },
+    "qwen2.5-1.5b": {
+        "label": "Qwen 2.5 1.5B",
+        "description": "Small but capable, good balance of speed and quality",
+        "gpu_type": "T4",
+        "cost_per_gpu_hour": 0.35,
+        "base_minutes_per_100_samples": 15,
+        "vram_gb": 6,
+    },
+    "qwen3-4b": {
+        "label": "Qwen3 4B",
+        "description": "Larger model, better accuracy, still efficient",
+        "gpu_type": "A10G",
+        "cost_per_gpu_hour": 1.10,
+        "base_minutes_per_100_samples": 25,
+        "vram_gb": 12,
+    },
+    "llama-3.1-8b": {
+        "label": "Llama 3.1 8B",
+        "description": "Most capable, highest quality, requires more resources",
+        "gpu_type": "A100",
+        "cost_per_gpu_hour": 3.50,
+        "base_minutes_per_100_samples": 35,
+        "vram_gb": 24,
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Tool definitions (OpenAI function-calling format)
@@ -512,6 +662,52 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_sdg_models",
+            "description": (
+                "Compare all available teacher models for SDG by cost and speed. "
+                "Returns a cost breakdown per model for the given sample count. "
+                "Call this when presenting teacher model options to the user."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "num_samples": {
+                        "type": "integer",
+                        "description": "Number of samples to generate",
+                    },
+                },
+                "required": ["num_samples"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "estimate_training_cost",
+            "description": (
+                "Estimate the cost of fine-tuning a student model. "
+                "Returns cost per model with GPU type, estimated time, and cost. "
+                "Call this when presenting training model options."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "num_samples": {
+                        "type": "integer",
+                        "description": "Number of training samples in the dataset",
+                    },
+                    "num_epochs": {
+                        "type": "integer",
+                        "description": "Number of training epochs (default 3)",
+                    },
+                },
+                "required": ["num_samples"],
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -691,9 +887,14 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
         num_samples = args.get("num_samples", 100)
         model = args.get("model", "openai/gpt-4o-mini")
 
-        input_cost_per_1k, output_cost_per_1k = MODEL_PRICING.get(
-            model, (0.001, 0.005)
-        )
+        # Try live pricing from OpenRouter
+        live_pricing = await _fetch_openrouter_pricing()
+        if model in live_pricing:
+            input_cost_per_1k, output_cost_per_1k = live_pricing[model]
+        else:
+            input_cost_per_1k, output_cost_per_1k = MODEL_PRICING.get(
+                model, (0.001, 0.005)
+            )
 
         total_input_tokens = num_samples * DEFAULT_INPUT_TOKENS_PER_SAMPLE
         total_output_tokens = num_samples * DEFAULT_OUTPUT_TOKENS_PER_SAMPLE
@@ -725,6 +926,67 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
                 "savings_amount": round(savings_amount, 2),
                 "savings_percent": round(savings_pct, 1),
             },
+        })
+
+    if name == "compare_sdg_models":
+        num_samples = args.get("num_samples", 100)
+        live_pricing = await _fetch_openrouter_pricing()
+
+        SDG_MODELS = [
+            ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
+            ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
+            ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
+        ]
+
+        models = []
+        for model_id, label, desc in SDG_MODELS:
+            if model_id in live_pricing:
+                inp_1k, out_1k = live_pricing[model_id]
+            else:
+                inp_1k, out_1k = MODEL_PRICING.get(model_id, (0.001, 0.005))
+            total_input = num_samples * DEFAULT_INPUT_TOKENS_PER_SAMPLE
+            total_output = num_samples * DEFAULT_OUTPUT_TOKENS_PER_SAMPLE
+            cost = (total_input / 1000) * inp_1k + (total_output / 1000) * out_1k
+            per_sample = cost / num_samples if num_samples > 0 else 0
+            models.append({
+                "model_id": model_id,
+                "label": label,
+                "description": desc,
+                "total_cost": round(cost, 4),
+                "per_sample_cost": round(per_sample, 6),
+            })
+
+        return json.dumps({
+            "num_samples": num_samples,
+            "models": sorted(models, key=lambda m: m["total_cost"]),
+        })
+
+    if name == "estimate_training_cost":
+        num_samples = args.get("num_samples", 100)
+        num_epochs = args.get("num_epochs", 3)
+
+        models = []
+        for model_id, info in TRAINING_MODELS.items():
+            base_minutes = info["base_minutes_per_100_samples"]
+            estimated_minutes = (num_samples / 100) * base_minutes * (num_epochs / 3)
+            estimated_hours = estimated_minutes / 60
+            estimated_cost = estimated_hours * info["cost_per_gpu_hour"]
+
+            models.append({
+                "model_id": model_id,
+                "label": info["label"],
+                "description": info["description"],
+                "gpu_type": info["gpu_type"],
+                "vram_gb": info["vram_gb"],
+                "estimated_time_minutes": round(estimated_minutes, 1),
+                "estimated_cost": round(estimated_cost, 4),
+                "cost_per_gpu_hour": info["cost_per_gpu_hour"],
+            })
+
+        return json.dumps({
+            "num_samples": num_samples,
+            "num_epochs": num_epochs,
+            "models": models,
         })
 
     return json.dumps({"error": f"Unknown tool: {name}"})
