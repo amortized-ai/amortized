@@ -1,8 +1,0 @@
-type: sdg
-description: "Generate customer support ticket classification training data \u2014\
-  \ tickets with urgency and topic labels"
-config:
-  teacher_model: anthropic/claude-sonnet-4-20250514
-  num_samples: 100
-  strategy_params: {}
-  input_data: ''

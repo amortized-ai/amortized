@@ -336,9 +336,13 @@ async def _run_job(job: dict[str, Any]) -> None:
     cmd: list[str] = []
 
     if image and job["type"] == JobType.training.value:
-        _ALGO_ALIASES = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
+        algo_aliases = {
+            "lora": "lora_sft",
+            "qlora": "lora_sft",
+            "qlora_sft": "lora_sft",
+        }
         algorithm = config.get("algorithm", "sft")
-        algorithm = _ALGO_ALIASES.get(algorithm, algorithm)
+        algorithm = algo_aliases.get(algorithm, algorithm)
         data_path = config.get("data_path", config.get("dataset", ""))
         if data_path.startswith("s3://"):
             local_name = data_path.split("/")[-1]
@@ -442,11 +446,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             os.makedirs(output_dir, exist_ok=True)
             with open(stderr_path, "a") as f:
                 f.write(f"[amortized] Job failed before starting: {error_text}\n")
-            fallback_handle = _serialize_handle(BackendHandle(
-                backend_name=backend_name,
-                job_id=job_id,
-                remote_dir=output_dir,
-            ))
+            fallback_handle = _serialize_handle(
+                BackendHandle(
+                    backend_name=backend_name,
+                    job_id=job_id,
+                    remote_dir=output_dir,
+                )
+            )
         except Exception:
             fallback_handle = None
         await _update_job(
