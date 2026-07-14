@@ -519,7 +519,7 @@ TOOLS: list[dict[str, Any]] = [
 # ---------------------------------------------------------------------------
 
 
-_MAX_TOOL_RESULT_LEN = 8000
+_MAX_TOOL_RESULT_LEN = 16_000
 
 
 async def _execute_tool(name: str, arguments: dict[str, Any]) -> str:

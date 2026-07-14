@@ -98,7 +98,6 @@ def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
                     "name": name,
                     "description": raw.get("description", ""),
                     "type": raw.get("type", ""),
-                    "config": raw.get("config", {}),
                 }
             )
     return results
