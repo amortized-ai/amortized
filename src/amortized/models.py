@@ -42,7 +42,9 @@ class TrainingJobConfig(BaseModel):
         ..., description="Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd)"
     )
     model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
-    data_path: str | None = Field(None, description="Path to training data (resolved from parent if chaining)")
+    data_path: str | None = Field(
+        None, description="Path to training data (resolved from parent if chaining)"
+    )
     output_dir: str | None = Field(None, description="Output directory")
     learning_rate: float | None = Field(None, description="Learning rate")
     num_train_epochs: int | None = Field(None, ge=1, description="Number of training epochs")

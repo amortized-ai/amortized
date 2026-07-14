@@ -1,61 +1,63 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: opencode
+  name: claude-code
   namespace: amortized
   labels:
     app: amortized
-    component: opencode
+    component: claude-code
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: amortized
-      component: opencode
+      component: claude-code
   template:
     metadata:
       labels:
         app: amortized
-        component: opencode
+        component: claude-code
     spec:
       securityContext:
         runAsNonRoot: true
       containers:
-        - name: opencode
-          image: ghcr.io/anomalyco/opencode:latest
+        - name: claude-code
+          image: ghcr.io/amortized-ai/claude-code-agent:latest
           imagePullPolicy: Always
-          command: ["opencode", "serve", "--port", "4096", "--hostname", "0.0.0.0"]
-          workingDir: /app/workspace
           ports:
             - name: http
               containerPort: 4096
           env:
-            - name: HOME
-              value: /tmp
-            - name: GOOGLE_CLOUD_PROJECT
+            - name: CLAUDE_CODE_USE_VERTEX
+              value: "1"
+            - name: ANTHROPIC_VERTEX_PROJECT_ID
               valueFrom:
                 secretKeyRef:
                   name: opencode-llm
                   key: google-cloud-project
-            - name: VERTEX_LOCATION
+            - name: CLOUD_ML_REGION
               valueFrom:
                 secretKeyRef:
                   name: opencode-llm
                   key: vertex-location
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /app/gcp/credentials.json
+            - name: ANTHROPIC_MODEL
+              value: "claude-opus-4-8"
+            - name: MCP_AMORTIZED_URL
+              value: "http://amortized-server.amortized.svc.cluster.local:8000/mcp"
+            - name: MCP_MLFLOW_URL
+              value: "http://127.0.0.1:5002/sse"
           volumeMounts:
-            - name: opencode-config
-              mountPath: /app/workspace/opencode.json
-              subPath: .opencode.json
-              readOnly: true
             - name: morty-prompt
-              mountPath: /app/workspace/.opencode/agents/morty.md
+              mountPath: /app/morty.md
               subPath: morty.md
               readOnly: true
             - name: gcp-credentials
               mountPath: /app/gcp
               readOnly: true
+            - name: session-data
+              mountPath: /data
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -63,10 +65,10 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 512Mi
+              memory: 256Mi
             limits:
-              cpu: "2"
-              memory: 2Gi
+              cpu: "1"
+              memory: 512Mi
           readinessProbe:
             httpGet:
               path: /api/health
@@ -80,12 +82,11 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
       volumes:
-        - name: opencode-config
-          configMap:
-            name: opencode-config
         - name: morty-prompt
           configMap:
             name: morty-config
         - name: gcp-credentials
           secret:
             secretName: opencode-gcp
+        - name: session-data
+          emptyDir: {}

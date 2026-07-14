@@ -20,7 +20,7 @@ server {
     }
 
     location /agent/ {
-        proxy_pass http://${OPENCODE_HOST}:${OPENCODE_PORT}/;
+        proxy_pass http://${AGENT_HOST}:${AGENT_PORT}/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
