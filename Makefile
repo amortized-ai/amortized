@@ -197,7 +197,7 @@ deploy: ## Deploy prod stack (amortized namespace)
 # Deploy dev
 # ──────────────────────────────────────────────
 
-deploy-dev: ## Deploy dev stack (amortized-dev namespace, shares MinIO/MLflow)
+deploy-dev: build-server build-studio load-server load-studio ## Build + deploy dev stack from current code
 	@echo "Deploying dev stack..."
 	@for f in k8s/kind/dev/*.yaml; do \
 		sed \
