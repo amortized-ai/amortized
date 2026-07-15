@@ -88,6 +88,7 @@ class MessagePart(BaseModel):
 class SendMessageRequest(BaseModel):
     agent: str = "morty"
     parts: list[MessagePart]
+    model: str | None = None
 
 
 class TokenInfo(BaseModel):
@@ -999,7 +1000,9 @@ async def _dispatch_with_repo(name: str, args: dict[str, Any], repo: Repository)
 MAX_ITERATIONS = 10
 
 
-async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
+async def _run_chat_turn(
+    session: Session, user_text: str, model_override: str | None = None,
+) -> ChatResponse:
     if len(session.messages) > 50:
         session.messages = session.messages[-50:]
     session.messages.append({"role": "user", "content": user_text})
@@ -1007,7 +1010,7 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
     parts: list[ResponsePart] = []
     total_input = 0
     total_output = 0
-    model_id = settings.chat_model
+    model_id = model_override or settings.chat_model
     response_id = ""
     finish = "stop"
 
@@ -1019,7 +1022,7 @@ async def _run_chat_turn(session: Session, user_text: str) -> ChatResponse:
     for iteration in range(MAX_ITERATIONS):
         try:
             response = await litellm.acompletion(
-                model=settings.chat_model,
+                model=model_id,
                 messages=full_messages,
                 tools=TOOLS,
                 tool_choice="auto",
@@ -1175,7 +1178,7 @@ async def send_message(session_id: str, request: SendMessageRequest) -> ChatResp
     async with session.lock:
         session.last_active_at = datetime.now(UTC).timestamp()
         try:
-            return await _run_chat_turn(session, user_text.strip())
+            return await _run_chat_turn(session, user_text.strip(), request.model)
         except Exception as exc:
             logger.exception("Chat error in session %s", session_id)
             raise HTTPException(
