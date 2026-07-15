@@ -91,7 +91,7 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
     return updated
 
 
-def _deserialize_handle(raw: str | None) -> BackendHandle | None:
+def deserialize_handle(raw: str | None) -> BackendHandle | None:
     if not raw:
         return None
     d = json.loads(raw)
@@ -109,7 +109,7 @@ def _deserialize_handle(raw: str | None) -> BackendHandle | None:
 
 
 async def cancel_job_via_backend(job_id: str, handle_json: str | None) -> bool:
-    handle = _deserialize_handle(handle_json)
+    handle = deserialize_handle(handle_json)
     if handle is None:
         return False
     try:
