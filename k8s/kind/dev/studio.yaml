@@ -32,9 +32,9 @@ spec:
               value: "amortized-server"
             - name: BACKEND_PORT
               value: "8000"
-            - name: OPENCODE_HOST
-              value: "localhost"
-            - name: OPENCODE_PORT
+            - name: AGENT_HOST
+              value: "127.0.0.1"
+            - name: AGENT_PORT
               value: "4096"
           securityContext:
             allowPrivilegeEscalation: false
