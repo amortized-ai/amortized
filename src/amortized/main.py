@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import jobs, recipes
+from amortized.api import chat, jobs, recipes
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
@@ -189,6 +189,7 @@ async def validation_exception_handler(
 app.include_router(jobs.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
+app.include_router(chat.router)
 
 create_mcp_server(app)
 

@@ -234,6 +234,52 @@ class TestRecipeAPI:
         assert data["type"] == "training"
 
     @pytest.mark.asyncio
+    async def test_submit_sdg_flat_overrides_reach_config(self, client: httpx.AsyncClient) -> None:
+        """Flat overrides (teacher_model, num_samples) sent by the UI must land
+        in the stored job config, not silently dropped at the recipe root."""
+        resp = await client.post(
+            "/api/v1/jobs/recipe",
+            json={
+                "recipe": "templates/sdg/classification",
+                "overrides": {
+                    "teacher_model": "anthropic/claude-haiku-4-5-20251001",
+                    "num_samples": 20,
+                },
+                "dry_run": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+        assert data["type"] == "sdg"
+        # teacher_model is normalized to "model" for the config translator
+        assert data["config"]["model"] == "anthropic/claude-haiku-4-5-20251001"
+        assert data["config"]["num_samples"] == 20
+
+    @pytest.mark.asyncio
+    async def test_submit_sdg_empty_overrides_dont_clobber(self, client: httpx.AsyncClient) -> None:
+        """Empty/falsy overrides (strategy_params={}, input_data='') from the
+        form should not replace the recipe's own defaults."""
+        resp = await client.post(
+            "/api/v1/jobs/recipe",
+            json={
+                "recipe": "templates/sdg/classification",
+                "overrides": {
+                    "teacher_model": "anthropic/claude-haiku-4-5-20251001",
+                    "strategy_params": {},
+                    "input_data": "",
+                },
+                "dry_run": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # strategy_params should still have the recipe's detailed defaults
+        assert "sampled_attributes" in data["config"]["strategy_params"]
+        # input_data="" should not appear in config
+        assert data["config"].get("input_data", "") == ""
+
+    @pytest.mark.asyncio
     async def test_submit_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/jobs/recipe",

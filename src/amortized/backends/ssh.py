@@ -293,10 +293,18 @@ class SSHBackend:
 
         conn = await self._connect()
         try:
-            output = await self._run(
-                conn, f"cat {handle.remote_dir}/stdout.log 2>/dev/null || true"
-            )
-            for line in output.splitlines():
-                yield line
+            for filename in ("stdout.log", "stderr.log"):
+                output = await self._run(
+                    conn,
+                    f"test -s {handle.remote_dir}/{filename}"
+                    f" && cat {handle.remote_dir}/{filename}"
+                    f" || true",
+                )
+                if not output.strip():
+                    continue
+                if filename == "stderr.log":
+                    yield "--- stderr ---"
+                for line in output.splitlines():
+                    yield line
         finally:
             conn.close()

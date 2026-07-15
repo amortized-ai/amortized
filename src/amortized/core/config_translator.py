@@ -106,7 +106,7 @@ def _generate_container_config(
 def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> dict[str, Any]:
     """Build an asynth-compatible synthesis config dict for CLI execution."""
     inference_config: dict[str, Any] = {
-        "model": config.get("model", "openai/gpt-4o-mini"),
+        "model": config.get("model") or config.get("teacher_model") or "openai/gpt-4o-mini",
         "temperature": config.get("temperature", 0.7),
         "max_concurrency": config.get("max_concurrency", 16),
         "num_retries": config.get("num_retries", 3),
@@ -120,9 +120,9 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
         strategy_params = dict(strategy_params)
         if config.get("task_description") and "generated_attributes" not in strategy_params:
             task = config["task_description"]
-            strategy_params["sampled_attributes"] = strategy_params.get(
-                "sampled_attributes",
-                [
+            sampled = strategy_params.get("sampled_attributes", [])
+            if not sampled:
+                sampled = [
                     {
                         "id": "scenario",
                         "name": "scenario",
@@ -133,7 +133,11 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                             {"id": "c", "name": "ambiguous", "description": "An ambiguous case"},
                         ],
                     }
-                ],
+                ]
+                strategy_params["sampled_attributes"] = sampled
+            attr_ids = [a["id"] for a in sampled if isinstance(a, dict) and "id" in a]
+            context_line = (
+                ", ".join(f"The {aid} is: {{{aid}}}" for aid in attr_ids) if attr_ids else ""
             )
             strategy_params["generated_attributes"] = [
                 {
@@ -143,7 +147,7 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                             "role": "user",
                             "content": (
                                 f"Generate a realistic training example for: {task}. "
-                                f"The scenario type is: {{scenario}}. "
+                                f"{(context_line + '. ') if context_line else ''}"
                                 f"Output a single JSON array of message objects, "
                                 f"each with 'role' (user/assistant) and 'content' keys."
                             ),
@@ -151,8 +155,8 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
                     ],
                     "postprocessing_params": {
                         "id": "messages",
-                        "parse_json": True,
                         "keep_original_text_attribute": False,
+                        "regex": r"(?s)\[.*\]",
                     },
                 }
             ]

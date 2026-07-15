@@ -10,7 +10,14 @@ from pydantic import BaseModel, Field
 
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
-from amortized.core.recipes import RecipeNotFoundError, apply_overrides, list_recipes, load_recipe
+from amortized.core.recipes import (
+    RecipeNotFoundError,
+    apply_overrides,
+    flatten_recipe_to_config,
+    get_recipes_dir,
+    list_recipes,
+    load_recipe,
+)
 from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
@@ -32,6 +39,44 @@ async def get_recipe(name: str) -> dict[str, Any]:
         return load_recipe(name)
     except RecipeNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class SaveRecipeRequest(BaseModel):
+    type: str = Field(..., description="Recipe type: training, sdg, eval")
+    description: str = Field("", description="Recipe description")
+    config: dict[str, Any] = Field(default_factory=dict, description="Recipe configuration")
+
+
+@router.put("/{name:path}", operation_id="save_recipe")
+async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
+    import yaml as _yaml
+
+    if ".." in name.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid recipe name")
+
+    base_dir = get_recipes_dir()
+    path = base_dir / f"{name}.yaml"
+
+    resolved = path.resolve()
+    if not resolved.is_relative_to(base_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid recipe name")
+
+    if not path.is_file() and not name.startswith(("templates/", "examples/")):
+        name = f"templates/custom/{name}"
+        path = base_dir / f"{name}.yaml"
+        if not path.resolve().is_relative_to(base_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Invalid recipe name")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    recipe_data: dict[str, Any] = {
+        "type": body.type,
+        "description": body.description,
+        "config": body.config,
+    }
+    path.write_text(_yaml.dump(recipe_data, default_flow_style=False, sort_keys=False))
+    logger.info("Saved recipe %s to %s", name, path)
+    return {"name": name, **recipe_data}
 
 
 class RecipeJobRequest(BaseModel):
@@ -72,7 +117,7 @@ async def submit_recipe_job(
             status_code=422, detail=f"Unknown job type in recipe: {recipe_type}"
         )
 
-    config: dict[str, Any] = recipe.get("config", {})
+    config = flatten_recipe_to_config(recipe)
 
     if request.dry_run:
         from amortized.api.jobs import _validate_config

@@ -18,7 +18,7 @@ from amortized.core.config_translator import (
     _generate_container_config,
     _resolve_judge_template,
 )
-from amortized.core.jobs import _deserialize_handle
+from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
@@ -435,11 +435,28 @@ async def _run_job(job: dict[str, Any]) -> None:
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
 
     except Exception as exc:
+        error_text = str(exc)
+        # Write error to stderr.log so logs endpoint can serve it even without a backend handle
+        try:
+            stderr_path = os.path.join(output_dir, "stderr.log")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(stderr_path, "a") as f:
+                f.write(f"[amortized] Job failed before starting: {error_text}\n")
+            fallback_handle = _serialize_handle(
+                BackendHandle(
+                    backend_name=backend_name,
+                    job_id=job_id,
+                    remote_dir=output_dir,
+                )
+            )
+        except Exception:
+            fallback_handle = None
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
             completed_at=datetime.now(UTC).isoformat(),
-            error=str(exc),
+            error=error_text,
+            backend_handle=fallback_handle,
         )
         logger.exception("Job %s failed with exception", job_id)
 
@@ -455,7 +472,7 @@ async def cleanup_orphaned_jobs() -> None:
             handle_json = job.get("backend_handle")
 
             alive = False
-            handle = _deserialize_handle(handle_json)
+            handle = deserialize_handle(handle_json)
             if handle is not None:
                 try:
                     backend = get_backend(handle.backend_name)

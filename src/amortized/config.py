@@ -29,6 +29,12 @@ class Settings(BaseSettings):
 
     external_url: str = Field("", description="Externally reachable server URL")
 
+    chat_model: str = Field(
+        "anthropic/claude-haiku-4-5-20251001", description="LiteLLM model ID for the chat agent"
+    )
+    chat_max_tokens: int = Field(4096, description="Max tokens for chat completions")
+    chat_temperature: float = Field(0.3, description="Temperature for chat completions")
+
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"
     )
