@@ -204,13 +204,23 @@ deploy: ## Deploy prod stack (amortized namespace)
 
 deploy-dev: build-server build-studio load-server load-studio ## Build + deploy dev stack from current code
 	@echo "Deploying dev stack..."
+	@# Namespaces first
+	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
+	@# Then everything else
 	@for f in k8s/kind/dev/*.yaml; do \
+		case "$$(basename $$f)" in \
+			namespace.yaml) continue ;; \
+		esac; \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
 			"$$f" | $(KUBECTL) apply -f -; \
 	done
-	$(KUBECTL) apply -f k8s/kind/dev/gpu-quota.yaml
+	@# Remove runAsNonRoot for kind
+	@for dep in amortized-server amortized-studio; do \
+		$(KUBECTL) -n amortized-dev patch deployment $$dep --type json \
+			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
+	done
 	@echo "Waiting for dev deployments..."
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
