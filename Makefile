@@ -140,10 +140,10 @@ deploy: ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# Base manifests (skip routes and opencode secret — creds come from existing cluster)
+	@# Base manifests (skip kustomization, opencode secret, routes)
 	@for f in k8s/base/*.yaml; do \
 		case "$$(basename $$f)" in \
-			*route*|opencode-secret.yaml|namespace.yaml) continue ;; \
+			kustomization.yaml|opencode-secret.yaml|namespace.yaml|*route*) continue ;; \
 		esac; \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
@@ -151,18 +151,23 @@ deploy: ## Deploy prod stack (amortized namespace)
 			-e 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' \
 			"$$f" | $(KUBECTL) apply -f -; \
 	done
-	@# Copy OpenCode credentials from existing cluster
-	@echo "Copying OpenCode credentials from $(CREDS_CLUSTER)..."
+	@# Copy OpenCode credentials from source cluster (skip if already exist or source unavailable)
 	@for secret in opencode-gcp opencode-llm; do \
-		kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret -o json 2>/dev/null | \
-			jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
-			$(KUBECTL) apply -f - 2>/dev/null || \
-			echo "  Warning: could not copy $$secret from $(CREDS_CLUSTER). OpenCode may not start."; \
+		if $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
+			echo "  Secret $$secret already exists, skipping."; \
+		elif kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret >/dev/null 2>&1; then \
+			echo "  Copying $$secret from $(CREDS_CLUSTER)..."; \
+			kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret -o json | \
+				jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
+				$(KUBECTL) apply -f -; \
+		else \
+			echo "  Warning: $$secret not found. Create manually for OpenCode."; \
+		fi; \
 	done
-	@# Dev infra: MinIO + MLflow (skip routes)
-	@for f in k8s/dev/*.yaml; do \
+	@# Dev infra: MinIO + MLflow (skip routes and kustomization)
+	@for f in k8s/overlays/dev/*.yaml; do \
 		case "$$(basename $$f)" in \
-			*route*) continue ;; \
+			*route*|kustomization.yaml) continue ;; \
 		esac; \
 		$(KUBECTL) apply -f "$$f"; \
 	done
