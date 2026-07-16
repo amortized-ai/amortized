@@ -19,7 +19,7 @@ CREDS_CLUSTER ?= kind-amortized-dev
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        deploy deploy-dev \
+        deploy deploy-dev apply-dev \
         test-server test-studio \
         cluster gpu \
         down destroy status
@@ -72,6 +72,8 @@ gpu: ## Install NVIDIA runtime in worker + deploy device plugin
 	@$(KUBECTL) -n kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=120s
 	@echo "Waiting for GPU detection..."
 	@sleep 15
+	@echo "Labelling worker node for GPU scheduling..."
+	@$(KUBECTL) label node $(CLUSTER_NAME)-worker nvidia.com/gpu.present=true --overwrite
 	@echo "GPU allocatable:"
 	@$(KUBECTL) get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}'
 
@@ -159,7 +161,8 @@ deploy: ## Deploy prod stack (amortized namespace)
 			echo "  Copying $$secret from $(CREDS_CLUSTER)..."; \
 			kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret -o json | \
 				jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
-				$(KUBECTL) apply -f -; \
+				$(KUBECTL) apply -f - || \
+				echo "  Warning: could not copy $$secret from $(CREDS_CLUSTER)."; \
 		else \
 			echo "  Warning: $$secret not found. Create manually for OpenCode."; \
 		fi; \
@@ -202,7 +205,9 @@ deploy: ## Deploy prod stack (amortized namespace)
 # Deploy dev
 # ──────────────────────────────────────────────
 
-deploy-dev: build-server build-studio load-server load-studio ## Build + deploy dev stack from current code
+deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build + deploy dev stack from current code
+
+apply-dev: ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
@@ -230,12 +235,12 @@ deploy-dev: build-server build-studio load-server load-studio ## Build + deploy 
 # PR testing shortcuts
 # ──────────────────────────────────────────────
 
-test-server: build-server load-server deploy-dev ## Build server from current branch + deploy to dev
+test-server: build-server load-server apply-dev ## Build server from current branch + deploy to dev
 	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-server
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
 	@echo "Dev server updated. API at http://localhost:31091"
 
-test-studio: build-studio load-studio deploy-dev ## Build studio from current branch + deploy to dev
+test-studio: build-studio load-studio apply-dev ## Build studio from current branch + deploy to dev
 	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-studio
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
 	@echo "Dev studio updated. UI at http://localhost:31090"
