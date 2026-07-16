@@ -56,6 +56,67 @@ class KubernetesBackend:
             self._client = ApiClient()
         return self._client
 
+    async def _gcp_secret_exists(self) -> bool:
+        """Check if the gcp-credentials secret exists in the jobs namespace."""
+        api_client = await self._get_client()
+        from kubernetes_asyncio.client import CoreV1Api
+
+        core = CoreV1Api(api_client)
+        try:
+            await core.read_namespaced_secret("gcp-credentials", self._namespace)
+            return True
+        except Exception:
+            return False
+
+    async def _sync_gcp_secret(self, source_namespace: str) -> None:
+        """Copy the GCP credentials secret from the source namespace to the jobs namespace."""
+        api_client = await self._get_client()
+        from kubernetes_asyncio.client import CoreV1Api, V1ObjectMeta, V1Secret
+
+        core = CoreV1Api(api_client)
+
+        try:
+            source = await core.read_namespaced_secret("opencode-gcp", source_namespace)
+        except Exception:
+            logger.debug("No opencode-gcp secret in namespace %s", source_namespace)
+            return
+
+        # Also read the LLM secret for project/location
+        project = ""
+        location = ""
+        try:
+            llm_secret = await core.read_namespaced_secret("opencode-llm", source_namespace)
+            import base64
+            project = base64.b64decode(llm_secret.data.get("google-cloud-project", "")).decode()
+            location = base64.b64decode(llm_secret.data.get("vertex-location", "")).decode()
+        except Exception:
+            logger.debug("No opencode-llm secret in namespace %s", source_namespace)
+
+        data = dict(source.data or {})
+        if project:
+            import base64 as b64mod
+            data["google-cloud-project"] = b64mod.b64encode(project.encode()).decode()
+        if location:
+            import base64 as b64mod
+            data["vertex-location"] = b64mod.b64encode(location.encode()).decode()
+
+        target = V1Secret(
+            metadata=V1ObjectMeta(
+                name="gcp-credentials",
+                namespace=self._namespace,
+            ),
+            data=data,
+        )
+
+        try:
+            await core.create_namespaced_secret(self._namespace, target)
+            logger.info("Synced GCP credentials to namespace %s", self._namespace)
+        except Exception:
+            try:
+                await core.replace_namespaced_secret("gcp-credentials", self._namespace, target)
+            except Exception:
+                logger.warning("Failed to sync GCP credentials to %s", self._namespace)
+
     def _build_config_map(self, spec: JobSpec, resource_name: str) -> Any:
         from kubernetes_asyncio.client import V1ConfigMap, V1ObjectMeta
 
@@ -115,6 +176,46 @@ class KubernetesBackend:
             V1EnvVar(name="TORCHINDUCTOR_CACHE_DIR", value="/amortized/work/.cache/torchinductor"),
             V1EnvVar(name="USER", value="amortized"),
         ]
+
+        if await self._gcp_secret_exists():
+            from kubernetes_asyncio.client import V1SecretVolumeSource
+
+            volumes.append(
+                V1Volume(
+                    name="gcp-credentials",
+                    secret=V1SecretVolumeSource(secret_name="gcp-credentials"),
+                ),
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name="gcp-credentials",
+                    mount_path="/gcp",
+                    read_only=True,
+                ),
+            )
+            env_vars.extend([
+                V1EnvVar(name="GOOGLE_APPLICATION_CREDENTIALS", value="/gcp/credentials.json"),
+                V1EnvVar(
+                    name="GOOGLE_CLOUD_PROJECT",
+                    value_from=V1EnvVarSource(
+                        secret_key_ref=V1SecretKeySelector(
+                            name="gcp-credentials",
+                            key="google-cloud-project",
+                            optional=True,
+                        )
+                    ),
+                ),
+                V1EnvVar(
+                    name="VERTEX_LOCATION",
+                    value_from=V1EnvVarSource(
+                        secret_key_ref=V1SecretKeySelector(
+                            name="gcp-credentials",
+                            key="vertex-location",
+                            optional=True,
+                        )
+                    ),
+                ),
+            ])
 
         secret_name = f"{resource_name}-env"
         for k in spec.env:

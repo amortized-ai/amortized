@@ -220,8 +220,8 @@ card automatically. Then present the options:
 3) GPT-4o — Strong reasoning ability
 
 When calling submit_recipe_job, always pass the selected model ID in the
-`model` parameter. Model IDs: anthropic/claude-haiku-4-5-20251001,
-anthropic/claude-sonnet-4-20250514, openai/gpt-4o
+`model` parameter. Model IDs: vertex_ai/claude-haiku-4-5-20251001,
+vertex_ai/claude-sonnet-4-20250514, openai/gpt-4o
 
 ## Student Model Selection (Training)
 
@@ -298,7 +298,7 @@ When a job fails:
 
 Synthetic data generation uses a teacher model to create training data.
 
-- **model**: Teacher model in LiteLLM format (openai/gpt-4o, openrouter/openai/gpt-4o-mini)
+- **model**: Teacher model in LiteLLM format (vertex_ai/claude-haiku-4-5-20251001, openai/gpt-4o)
 - **num_samples**: How many samples to generate
 - **strategy_params**: Attribute definitions (sampled_attributes, generated_attributes,
   multiturn_attributes, transformed_attributes, passthrough_attributes)
