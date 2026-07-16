@@ -19,6 +19,8 @@ router = APIRouter(prefix="/api/v1/costs", tags=["costs"])
 # ---------------------------------------------------------------------------
 
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "vertex_ai/claude-haiku-4-5-20251001": (0.0008, 0.004),
+    "vertex_ai/claude-sonnet-4-20250514": (0.003, 0.015),
     "anthropic/claude-haiku-4-5-20251001": (0.0008, 0.004),
     "anthropic/claude-sonnet-4-20250514": (0.003, 0.015),
     "openai/gpt-4o": (0.0025, 0.010),
@@ -26,6 +28,8 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 }
 
 MODEL_LABELS: dict[str, str] = {
+    "vertex_ai/claude-haiku-4-5-20251001": "Claude Haiku",
+    "vertex_ai/claude-sonnet-4-20250514": "Claude Sonnet",
     "anthropic/claude-haiku-4-5-20251001": "Claude Haiku",
     "anthropic/claude-sonnet-4-20250514": "Claude Sonnet",
     "openai/gpt-4o": "GPT-4o",
@@ -230,8 +234,8 @@ async def compare_sdg_models(body: CompareSdgModelsRequest) -> CompareSdgModelsR
     live_pricing = await _fetch_openrouter_pricing()
 
     sdg_models = [
-        ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
-        ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
+        ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
+        ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
         ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
     ]
 
