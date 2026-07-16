@@ -129,7 +129,7 @@ class KubernetesBackend:
             data=dict(spec.config_files),
         )
 
-    def _build_pod_spec(self, spec: JobSpec, resource_name: str) -> Any:
+    def _build_pod_spec(self, spec: JobSpec, resource_name: str, *, mount_gcp: bool = False) -> Any:
         from kubernetes_asyncio.client import (
             V1Capabilities,
             V1Container,
@@ -177,7 +177,7 @@ class KubernetesBackend:
             V1EnvVar(name="USER", value="amortized"),
         ]
 
-        if await self._gcp_secret_exists():
+        if mount_gcp:
             from kubernetes_asyncio.client import V1SecretVolumeSource
 
             volumes.append(
@@ -346,7 +346,8 @@ class KubernetesBackend:
         config_map = self._build_config_map(spec, resource_name)
         await core.create_namespaced_config_map(self._namespace, config_map)
 
-        pod_spec = self._build_pod_spec(spec, resource_name)
+        mount_gcp = await self._gcp_secret_exists()
+        pod_spec = self._build_pod_spec(spec, resource_name, mount_gcp=mount_gcp)
         pod_spec.restart_policy = "Never"
 
         job = V1Job(
