@@ -240,6 +240,20 @@ apply-dev: ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
+	@# Copy OpenCode credentials from prod namespace (before deployments that reference them)
+	@for secret in opencode-gcp opencode-llm; do \
+		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
+			echo "  Secret $$secret already exists in amortized-dev, skipping."; \
+		elif $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
+			echo "  Copying $$secret from amortized to amortized-dev..."; \
+			$(KUBECTL) -n amortized get secret $$secret -o json | \
+				jq '.metadata.namespace = "amortized-dev" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
+				$(KUBECTL) apply -f - || \
+				echo "  Warning: could not copy $$secret to amortized-dev."; \
+		else \
+			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
+		fi; \
+	done
 	@# Then everything else
 	@for f in k8s/kind/dev/*.yaml; do \
 		case "$$(basename $$f)" in \
@@ -249,19 +263,6 @@ apply-dev: ## Apply dev k8s manifests (no build)
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
 			"$$f" | $(KUBECTL) apply -f -; \
-	done
-	@# Copy OpenCode credentials from prod namespace
-	@for secret in opencode-gcp opencode-llm; do \
-		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
-			echo "  Secret $$secret already exists in amortized-dev, skipping."; \
-		elif $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
-			echo "  Copying $$secret from amortized to amortized-dev..."; \
-			$(KUBECTL) -n amortized get secret $$secret -o json | \
-				jq '.metadata.namespace = "amortized-dev" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
-				$(KUBECTL) apply -f -; \
-		else \
-			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
-		fi; \
 	done
 	@# Remove runAsNonRoot for kind
 	@for dep in amortized-server amortized-studio opencode claude-code; do \

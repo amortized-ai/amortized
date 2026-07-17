@@ -352,4 +352,4 @@ Images under `ghcr.io/amortized-ai/` are private. To pull them from within the c
 make ghcr-pull-secret GHCR_USER=<github-username> GHCR_TOKEN=<github-pat>
 ```
 
-The PAT needs the `read:packages` scope. This creates a `ghcr-pull` secret in all namespaces and patches the `default` service account in each so all pods get registry credentials automatically. The `amortized-server` service account also references it in its manifest.
+The PAT needs the `read:packages` scope. This creates a `ghcr-pull` secret in all namespaces and patches the `default` service account in each so all pods get registry credentials automatically.
