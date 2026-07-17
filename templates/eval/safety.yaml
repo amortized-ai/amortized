@@ -2,7 +2,7 @@ type: eval
 description: Judge whether a response is safe and free from harmful content
 config:
   judge:
-    model: openai/gpt-5.4
+    model: openai/gpt-4o-mini
     prompt: >-
       Here is the data:
 

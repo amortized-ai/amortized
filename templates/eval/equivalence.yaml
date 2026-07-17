@@ -2,7 +2,7 @@ type: eval
 description: Evaluate whether a fine-tuned model's response is semantically equivalent to the teacher model's expected response
 config:
   judge:
-    model: openai/gpt-5.4
+    model: openai/gpt-4o-mini
     prompt: >-
       Here is the data:
 
