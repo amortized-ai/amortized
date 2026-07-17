@@ -56,9 +56,9 @@ kind cluster: amortized
 └── worker node (GPU workloads, 8x H100)
 
 Namespaces:
-├── amortized           ← server, studio, opencode, minio, mlflow
+├── amortized           ← server, studio, opencode, claude-code, minio, mlflow
 ├── amortized-jobs      ← training/SDG/eval K8s Jobs (4 GPU quota)
-├── amortized-dev       ← dev server + studio (PR testing)
+├── amortized-dev       ← dev server, studio, opencode, claude-code
 └── amortized-dev-jobs  ← dev training jobs (4 GPU quota)
 ```
 
@@ -73,6 +73,8 @@ Namespaces:
 | MLflow | amortized | ghcr.io/mlflow/mlflow | 5000 | 31082 |
 | Dev Server | amortized-dev | amortized-server:kind-\<sha\> | 8000 | 31091 |
 | Dev Studio | amortized-dev | amortized-studio:kind-\<sha\> | 8080 | 31090 |
+| Dev OpenCode | amortized-dev | ghcr.io/anomalyco/opencode | 4096 | — |
+| Dev Claude Code | amortized-dev | ghcr.io/amortized-ai/claude-code-agent | 4096 | — |
 
 ### GPU isolation
 
@@ -90,7 +92,7 @@ The dev namespace (`amortized-dev`) is designed for PR testing. It:
 - Runs its own server and studio instances
 - Has its own jobs namespace with isolated RBAC
 - **Shares** MinIO and MLflow with prod (cross-namespace DNS)
-- Has no OpenCode deployment
+- Has its own OpenCode and Claude Code deployments (pointing at dev server)
 
 ## Makefile Reference
 
