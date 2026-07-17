@@ -455,40 +455,18 @@
         }
       }
     },
-    "/agent/session": {
+    "/api/v1/costs/sdg": {
       "post": {
         "tags": [
-          "agent"
+          "costs"
         ],
-        "summary": "Create Session",
-        "operationId": "create_session_agent_session_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateSessionResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agent/title": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Generate Title",
-        "description": "Generate a short conversational title from the first user message.",
-        "operationId": "generate_title_agent_title_post",
+        "summary": "Estimate the cost of generating synthetic training data with a teacher model.",
+        "operationId": "estimate_sdg_cost",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GenerateTitleRequest"
+                "$ref": "#/components/schemas/EstimateSdgCostRequest"
               }
             }
           },
@@ -500,7 +478,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GenerateTitleResponse"
+                  "$ref": "#/components/schemas/EstimateSdgCostResponse"
                 }
               }
             }
@@ -518,33 +496,22 @@
         }
       }
     },
-    "/agent/session/{session_id}/message": {
+    "/api/v1/costs/sdg/compare": {
       "post": {
         "tags": [
-          "agent"
+          "costs"
         ],
-        "summary": "Send Message",
-        "operationId": "send_message_agent_session__session_id__message_post",
-        "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Session Id"
-            }
-          }
-        ],
+        "summary": "Compare cost estimates across teacher models for synthetic data generation.",
+        "operationId": "compare_sdg_models",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SendMessageRequest"
+                "$ref": "#/components/schemas/CompareSdgModelsRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -552,7 +519,130 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatResponse"
+                  "$ref": "#/components/schemas/CompareSdgModelsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/costs/training": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Estimate training cost and time for each student model size.",
+        "operationId": "estimate_training_cost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateTrainingCostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateTrainingCostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/costs/training/method": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Estimate cost for a specific model across training methods (LoRA, QLoRA, Full SFT).",
+        "operationId": "estimate_training_method_cost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateTrainingMethodCostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateTrainingMethodCostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/costs/eval": {
+      "post": {
+        "tags": [
+          "costs"
+        ],
+        "summary": "Estimate evaluation cost using an LLM judge model.",
+        "operationId": "estimate_eval_cost",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateEvalCostRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateEvalCostResponse"
                 }
               }
             }
@@ -609,25 +699,38 @@
   },
   "components": {
     "schemas": {
-      "ChatResponse": {
+      "CompareSdgModelsRequest": {
         "properties": {
-          "info": {
-            "$ref": "#/components/schemas/ResponseInfo"
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples",
+            "description": "Number of training samples to generate",
+            "default": 100
+          }
+        },
+        "type": "object",
+        "title": "CompareSdgModelsRequest"
+      },
+      "CompareSdgModelsResponse": {
+        "properties": {
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples"
           },
-          "parts": {
+          "models": {
             "items": {
-              "$ref": "#/components/schemas/ResponsePart"
+              "$ref": "#/components/schemas/SdgModelComparison"
             },
             "type": "array",
-            "title": "Parts"
+            "title": "Models"
           }
         },
         "type": "object",
         "required": [
-          "info",
-          "parts"
+          "num_samples",
+          "models"
         ],
-        "title": "ChatResponse"
+        "title": "CompareSdgModelsResponse"
       },
       "ComputeSpec": {
         "properties": {
@@ -703,44 +806,322 @@
         "type": "object",
         "title": "ConfigResponse"
       },
-      "CreateSessionResponse": {
+      "EstimateEvalCostRequest": {
         "properties": {
-          "id": {
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples",
+            "description": "Number of evaluation samples",
+            "default": 100
+          },
+          "judge_model": {
             "type": "string",
-            "title": "Id"
+            "title": "Judge Model",
+            "description": "Judge model ID",
+            "default": "openai/gpt-4o-mini"
           }
         },
         "type": "object",
-        "required": [
-          "id"
-        ],
-        "title": "CreateSessionResponse"
+        "title": "EstimateEvalCostRequest"
       },
-      "GenerateTitleRequest": {
+      "EstimateEvalCostResponse": {
         "properties": {
-          "message": {
+          "judge_model": {
             "type": "string",
-            "title": "Message"
+            "title": "Judge Model"
+          },
+          "judge_model_label": {
+            "type": "string",
+            "title": "Judge Model Label"
+          },
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "input_cost": {
+            "type": "number",
+            "title": "Input Cost"
+          },
+          "output_cost": {
+            "type": "number",
+            "title": "Output Cost"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "cost_per_sample": {
+            "type": "number",
+            "title": "Cost Per Sample"
+          },
+          "comparison": {
+            "items": {
+              "$ref": "#/components/schemas/EvalJudgeOption"
+            },
+            "type": "array",
+            "title": "Comparison"
+          },
+          "manual_comparison": {
+            "$ref": "#/components/schemas/EvalManualComparison"
           }
         },
         "type": "object",
         "required": [
-          "message"
+          "judge_model",
+          "judge_model_label",
+          "num_samples",
+          "input_tokens",
+          "output_tokens",
+          "input_cost",
+          "output_cost",
+          "total_cost",
+          "cost_per_sample",
+          "comparison",
+          "manual_comparison"
         ],
-        "title": "GenerateTitleRequest"
+        "title": "EstimateEvalCostResponse"
       },
-      "GenerateTitleResponse": {
+      "EstimateSdgCostRequest": {
         "properties": {
-          "title": {
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples",
+            "description": "Number of training samples to generate",
+            "default": 100
+          },
+          "model": {
             "type": "string",
-            "title": "Title"
+            "title": "Model",
+            "description": "Teacher model ID in LiteLLM format",
+            "default": "openai/gpt-4o-mini"
+          }
+        },
+        "type": "object",
+        "title": "EstimateSdgCostRequest"
+      },
+      "EstimateSdgCostResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "model_label": {
+            "type": "string",
+            "title": "Model Label"
+          },
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples"
+          },
+          "tokens": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Tokens"
+          },
+          "cost": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Cost"
+          },
+          "comparison": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Comparison"
           }
         },
         "type": "object",
         "required": [
-          "title"
+          "model",
+          "model_label",
+          "num_samples",
+          "tokens",
+          "cost",
+          "comparison"
         ],
-        "title": "GenerateTitleResponse"
+        "title": "EstimateSdgCostResponse"
+      },
+      "EstimateTrainingCostRequest": {
+        "properties": {
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples",
+            "description": "Number of training samples",
+            "default": 100
+          },
+          "num_epochs": {
+            "type": "integer",
+            "title": "Num Epochs",
+            "description": "Number of training epochs",
+            "default": 3
+          }
+        },
+        "type": "object",
+        "title": "EstimateTrainingCostRequest"
+      },
+      "EstimateTrainingCostResponse": {
+        "properties": {
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples"
+          },
+          "num_epochs": {
+            "type": "integer",
+            "title": "Num Epochs"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingModelEstimate"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "num_samples",
+          "num_epochs",
+          "models"
+        ],
+        "title": "EstimateTrainingCostResponse"
+      },
+      "EstimateTrainingMethodCostRequest": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "description": "Student model ID",
+            "default": "qwen3-0.6b"
+          },
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples",
+            "description": "Number of training samples",
+            "default": 100
+          },
+          "num_epochs": {
+            "type": "integer",
+            "title": "Num Epochs",
+            "description": "Number of training epochs",
+            "default": 3
+          }
+        },
+        "type": "object",
+        "title": "EstimateTrainingMethodCostRequest"
+      },
+      "EstimateTrainingMethodCostResponse": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "model_label": {
+            "type": "string",
+            "title": "Model Label"
+          },
+          "num_samples": {
+            "type": "integer",
+            "title": "Num Samples"
+          },
+          "num_epochs": {
+            "type": "integer",
+            "title": "Num Epochs"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/TrainingMethodEstimate"
+            },
+            "type": "array",
+            "title": "Methods"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/TrainingMethodComparison"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "model_label",
+          "num_samples",
+          "num_epochs",
+          "methods",
+          "comparison"
+        ],
+        "title": "EstimateTrainingMethodCostResponse"
+      },
+      "EvalJudgeOption": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "per_sample_cost": {
+            "type": "number",
+            "title": "Per Sample Cost"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "label",
+          "description",
+          "total_cost",
+          "per_sample_cost",
+          "recommended"
+        ],
+        "title": "EvalJudgeOption"
+      },
+      "EvalManualComparison": {
+        "properties": {
+          "manual_evaluation_total": {
+            "type": "number",
+            "title": "Manual Evaluation Total"
+          },
+          "savings_amount": {
+            "type": "number",
+            "title": "Savings Amount"
+          },
+          "savings_percent": {
+            "type": "number",
+            "title": "Savings Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "manual_evaluation_total",
+          "savings_amount",
+          "savings_percent"
+        ],
+        "title": "EvalManualComparison"
       },
       "HTTPValidationError": {
         "properties": {
@@ -937,30 +1318,6 @@
         ],
         "title": "JobType"
       },
-      "MessagePart": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type"
-          },
-          "text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "MessagePart"
-      },
       "RecipeJobRequest": {
         "properties": {
           "recipe": {
@@ -1015,122 +1372,6 @@
         ],
         "title": "RecipeSummary"
       },
-      "ResponseInfo": {
-        "properties": {
-          "providerID": {
-            "type": "string",
-            "title": "Providerid",
-            "default": ""
-          },
-          "modelID": {
-            "type": "string",
-            "title": "Modelid",
-            "default": ""
-          },
-          "cost": {
-            "type": "number",
-            "title": "Cost",
-            "default": 0.0
-          },
-          "tokens": {
-            "$ref": "#/components/schemas/TokenInfo",
-            "default": {
-              "input": 0,
-              "output": 0,
-              "reasoning": 0
-            }
-          },
-          "finish": {
-            "type": "string",
-            "title": "Finish",
-            "default": "stop"
-          },
-          "id": {
-            "type": "string",
-            "title": "Id",
-            "default": ""
-          },
-          "sessionID": {
-            "type": "string",
-            "title": "Sessionid",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "ResponseInfo"
-      },
-      "ResponsePart": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type"
-          },
-          "text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          },
-          "tool": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool"
-          },
-          "callID": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Callid"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "input": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input"
-          },
-          "output": {
-            "title": "Output"
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "ResponsePart"
-      },
       "SaveRecipeRequest": {
         "properties": {
           "type": {
@@ -1157,58 +1398,172 @@
         ],
         "title": "SaveRecipeRequest"
       },
-      "SendMessageRequest": {
+      "SdgModelComparison": {
         "properties": {
-          "agent": {
+          "model_id": {
             "type": "string",
-            "title": "Agent",
-            "default": "morty"
+            "title": "Model Id"
           },
-          "parts": {
-            "items": {
-              "$ref": "#/components/schemas/MessagePart"
-            },
-            "type": "array",
-            "title": "Parts"
+          "label": {
+            "type": "string",
+            "title": "Label"
           },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "total_cost": {
+            "type": "number",
+            "title": "Total Cost"
+          },
+          "per_sample_cost": {
+            "type": "number",
+            "title": "Per Sample Cost"
           }
         },
         "type": "object",
         "required": [
-          "parts"
+          "model_id",
+          "label",
+          "description",
+          "total_cost",
+          "per_sample_cost"
         ],
-        "title": "SendMessageRequest"
+        "title": "SdgModelComparison"
       },
-      "TokenInfo": {
+      "TrainingMethodComparison": {
         "properties": {
-          "input": {
-            "type": "integer",
-            "title": "Input",
-            "default": 0
+          "automated_label": {
+            "type": "string",
+            "title": "Automated Label"
           },
-          "output": {
-            "type": "integer",
-            "title": "Output",
-            "default": 0
+          "automated_cost": {
+            "type": "number",
+            "title": "Automated Cost"
           },
-          "reasoning": {
-            "type": "integer",
-            "title": "Reasoning",
-            "default": 0
+          "manual_training_total": {
+            "type": "number",
+            "title": "Manual Training Total"
+          },
+          "savings_amount": {
+            "type": "number",
+            "title": "Savings Amount"
+          },
+          "savings_percent": {
+            "type": "number",
+            "title": "Savings Percent"
           }
         },
         "type": "object",
-        "title": "TokenInfo"
+        "required": [
+          "automated_label",
+          "automated_cost",
+          "manual_training_total",
+          "savings_amount",
+          "savings_percent"
+        ],
+        "title": "TrainingMethodComparison"
+      },
+      "TrainingMethodEstimate": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "gpu_type": {
+            "type": "string",
+            "title": "Gpu Type"
+          },
+          "vram_gb": {
+            "type": "number",
+            "title": "Vram Gb"
+          },
+          "estimated_time_minutes": {
+            "type": "number",
+            "title": "Estimated Time Minutes"
+          },
+          "estimated_cost": {
+            "type": "number",
+            "title": "Estimated Cost"
+          },
+          "relative_time": {
+            "type": "string",
+            "title": "Relative Time"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "label",
+          "description",
+          "gpu_type",
+          "vram_gb",
+          "estimated_time_minutes",
+          "estimated_cost",
+          "relative_time",
+          "recommended"
+        ],
+        "title": "TrainingMethodEstimate"
+      },
+      "TrainingModelEstimate": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "gpu_type": {
+            "type": "string",
+            "title": "Gpu Type"
+          },
+          "vram_gb": {
+            "type": "integer",
+            "title": "Vram Gb"
+          },
+          "estimated_time_minutes": {
+            "type": "number",
+            "title": "Estimated Time Minutes"
+          },
+          "estimated_cost": {
+            "type": "number",
+            "title": "Estimated Cost"
+          },
+          "cost_per_gpu_hour": {
+            "type": "number",
+            "title": "Cost Per Gpu Hour"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "label",
+          "description",
+          "gpu_type",
+          "vram_gb",
+          "estimated_time_minutes",
+          "estimated_cost",
+          "cost_per_gpu_hour"
+        ],
+        "title": "TrainingModelEstimate"
       },
       "ValidationError": {
         "properties": {
