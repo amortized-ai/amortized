@@ -33,9 +33,13 @@ spec:
             - name: BACKEND_PORT
               value: "8000"
             - name: AGENT_HOST
-              value: "127.0.0.1"
+              value: "opencode"
             - name: AGENT_PORT
               value: "4096"
+            - name: MLFLOW_HOST
+              value: "mlflow.amortized"
+            - name: MLFLOW_PORT
+              value: "5000"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
