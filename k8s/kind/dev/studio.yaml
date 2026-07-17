@@ -40,6 +40,8 @@ spec:
               value: "mlflow.amortized"
             - name: MLFLOW_PORT
               value: "5000"
+            - name: DNS_RESOLVER
+              value: "10.96.0.10"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
