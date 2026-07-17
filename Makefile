@@ -17,9 +17,13 @@ OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 # Source cluster for OpenCode credentials (existing deployment)
 CREDS_CLUSTER ?= kind-amortized-dev
 
+# GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
+GHCR_USER  ?=
+GHCR_TOKEN ?=
+
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        deploy deploy-dev apply-dev \
+        deploy deploy-dev apply-dev ghcr-pull-secret \
         test-server test-studio \
         cluster gpu \
         down destroy status
@@ -135,10 +139,35 @@ load-deps: ## Load third-party images into kind
 	done
 
 # ──────────────────────────────────────────────
+# GHCR pull secret
+# ──────────────────────────────────────────────
+
+ghcr-pull-secret: ## Create ghcr.io pull secret in all namespaces (requires GHCR_USER and GHCR_TOKEN)
+	@if [ -z "$(GHCR_USER)" ] || [ -z "$(GHCR_TOKEN)" ]; then \
+		echo "Skipping GHCR pull secret: set GHCR_USER and GHCR_TOKEN to enable."; \
+	else \
+		for ns in amortized amortized-jobs amortized-dev amortized-dev-jobs; do \
+			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
+				echo "  ghcr-pull already exists in $$ns, skipping."; \
+			else \
+				echo "  Creating ghcr-pull in $$ns..."; \
+				$(KUBECTL) create secret docker-registry ghcr-pull \
+					--docker-server=ghcr.io \
+					--docker-username=$(GHCR_USER) \
+					--docker-password=$(GHCR_TOKEN) \
+					-n $$ns; \
+			fi; \
+			$(KUBECTL) -n $$ns patch serviceaccount default \
+				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+		done; \
+		echo "GHCR pull secret configured."; \
+	fi
+
+# ──────────────────────────────────────────────
 # Deploy prod
 # ──────────────────────────────────────────────
 
-deploy: ## Deploy prod stack (amortized namespace)
+deploy: ghcr-pull-secret ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
@@ -207,7 +236,7 @@ deploy: ## Deploy prod stack (amortized namespace)
 
 deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build + deploy dev stack from current code
 
-apply-dev: ## Apply dev k8s manifests (no build)
+apply-dev: ghcr-pull-secret ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
