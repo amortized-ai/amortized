@@ -2,7 +2,7 @@ type: eval
 description: Judge whether a response strictly follows the user's instructions
 config:
   judge:
-    model: openai/gpt-5.4
+    model: openai/gpt-4o-mini
     prompt: >-
       Here is the data:
 
