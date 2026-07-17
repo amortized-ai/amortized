@@ -2,7 +2,7 @@ type: eval
 description: Evaluate whether an answer completely covers all key points from the context
 config:
   judge:
-    model: openai/gpt-5.4
+    model: openai/gpt-4o-mini
     prompt: >-
       Here is the data:
 
