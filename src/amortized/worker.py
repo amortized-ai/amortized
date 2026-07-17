@@ -5,13 +5,14 @@ import json
 import logging
 import os
 import re
+import shlex
 from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, Capability, JobSpec, S3Download
+from amortized.backends import BackendHandle, Capability, JobSpec, Resources, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.config_translator import (
     _eval_config_yaml,
@@ -47,7 +48,75 @@ _TRAINING_HUB_SKIP_KEYS = {
     "bnb_4bit_quant_type",
     "bnb_4bit_compute_dtype",
     "lora_target_modules",
+    "model_id",
+    "model",
+    "num_samples",
+    "compute",
+    "task_description",
+    "method",
+    "dataset_job_id",
+    "model_job_id",
 }
+
+
+_EVAL_PREPROCESS_SCRIPT = '''\
+"""Preprocess eval dataset: ensure 'request' and 'response' fields exist."""
+import json, sys
+
+path = sys.argv[1]
+with open(path) as f:
+    rows = [json.loads(line) for line in f if line.strip()]
+
+if not rows:
+    sys.exit(0)
+
+if "request" in rows[0] and "response" in rows[0]:
+    sys.exit(0)
+
+out = []
+for row in rows:
+    new_row = dict(row)
+    if "request" not in new_row:
+        if "messages" in row and isinstance(row["messages"], list):
+            user_msgs = [m["content"] for m in row["messages"]
+                         if isinstance(m, dict) and m.get("role") == "user"]
+            new_row["request"] = user_msgs[-1] if user_msgs else ""
+        elif "ticket_clean" in row:
+            new_row["request"] = row["ticket_clean"]
+        elif "input" in row:
+            new_row["request"] = row["input"]
+        elif "text" in row:
+            new_row["request"] = row["text"]
+        elif "prompt" in row:
+            new_row["request"] = row["prompt"]
+        else:
+            new_row["request"] = ""
+
+    if "response" not in new_row:
+        if "messages" in row and isinstance(row["messages"], list):
+            asst_msgs = [m["content"] for m in row["messages"]
+                         if isinstance(m, dict) and m.get("role") == "assistant"]
+            new_row["response"] = asst_msgs[-1] if asst_msgs else ""
+        elif "output" in row:
+            new_row["response"] = row["output"]
+        elif "completion" in row:
+            new_row["response"] = row["completion"]
+        else:
+            skip = {"messages", "request", "ticket_clean", "input", "text", "prompt"}
+            fields = {k: v for k, v in row.items() if k not in skip and isinstance(v, str)}
+            if fields:
+                new_row["response"] = "\\n".join(f"{k}: {v}" for k, v in fields.items())
+            else:
+                new_row["response"] = ""
+    out.append(new_row)
+
+out_path = path.rsplit(".", 1)[0] + "_processed.jsonl"
+with open(out_path, "w") as f:
+    for row in out:
+        f.write(json.dumps(row) + "\\n")
+
+print(f"Preprocessed {len(out)} rows -> {out_path}")
+'''
 
 
 def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
@@ -204,9 +273,68 @@ async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
         await db.close()
 
 
+async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> bool:
+    """Register a trained model in the MLflow model registry. Returns True on success."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri or not mlflow_run_id:
+        return False
+    import httpx
+
+    model_id = job.get("config", {}).get("model_id", "unknown")
+    algorithm = job.get("config", {}).get("algorithm", "sft")
+    job_id = job["id"]
+    model_name = f"{model_id}-{algorithm}-{job_id[:8]}"
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/registered-models/create",
+                json={"name": model_name},
+            )
+            if resp.status_code == 409:
+                logger.info("Model %s already registered", model_name)
+            elif resp.is_error:
+                logger.warning("Failed to create registered model: %s", resp.text)
+                return False
+
+            source = f"runs:/{mlflow_run_id}/model"
+            await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/model-versions/create",
+                json={
+                    "name": model_name,
+                    "source": source,
+                    "run_id": mlflow_run_id,
+                    "description": f"Fine-tuned {model_id} via {algorithm} (job {job_id[:8]})",
+                },
+            )
+            logger.info("Registered model version %s from run %s", model_name, mlflow_run_id)
+        return True
+    except Exception:
+        logger.warning("Failed to register model %s", model_name, exc_info=True)
+        return False
+
+
+async def _resolve_job_artifact_uri(job_id: str) -> str | None:
+    """Look up a job's MLflow artifact URI by job ID."""
+    if not job_id:
+        return None
+    db, repo = await _get_repo()
+    try:
+        job = await repo.get_job(job_id)
+    finally:
+        await db.close()
+    if not job:
+        return None
+    run_id = job.get("mlflow_run_id", "")
+    if not run_id:
+        return None
+    uri = await _resolve_mlflow_artifact_uri(run_id)
+    return uri or None
+
+
 async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """Resolve parent job artifacts and inject into config for chaining."""
-    parent_job_id = job.get("parent_job_id", "")
+    parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
     if not parent_job_id:
         return config
 
@@ -345,6 +473,8 @@ async def _run_job(job: dict[str, Any]) -> None:
             local_path = f"/amortized/work/{local_name}"
             s3_downloads.append(S3Download(s3_uri=data_path, local_path=local_path))
             config = {**config, "data_path": local_path}
+        if config_mod.settings.mlflow_tracking_uri:
+            config.setdefault("report_to", "mlflow")
         config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
         thub_subcommand = algorithm.replace("_", "-")
         cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
@@ -355,9 +485,49 @@ async def _run_job(job: dict[str, Any]) -> None:
         config_files["synth_config.yaml"] = yaml.dump(synth_config, default_flow_style=False)
         cmd = ["asynth", "synthesize", "--config", "/amortized/synth_config.yaml", "--verbose"]
     elif image and job["type"] == JobType.eval.value:
+        data_path = config.get("dataset", "")
+        dataset_job_id = config.get("dataset_job_id", "")
+        if not data_path and dataset_job_id:
+            artifact_uri = await _resolve_job_artifact_uri(dataset_job_id)
+            if artifact_uri:
+                data_path = f"{artifact_uri}/generated_data/generated_data.jsonl"
+                config["dataset"] = data_path
+                logger.info("Resolved eval dataset from job %s: %s", dataset_job_id, data_path)
+            else:
+                raise ValueError(
+                    f"Eval dataset not found: dataset_job_id {dataset_job_id!r} "
+                    "could not be resolved (parent job may lack mlflow_run_id)"
+                )
+        eval_data_local = "/amortized/work/eval_data.jsonl"
+        if data_path.startswith("s3://"):
+            s3_downloads.append(S3Download(s3_uri=data_path, local_path=eval_data_local))
+        elif data_path:
+            eval_data_local = data_path
+        judge_prompt = config.get("judge", {}).get("prompt", "")
+        if "{request}" in judge_prompt or "{response}" in judge_prompt:
+            config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
+        config.pop("dataset", None)
         config_files["config.yaml"] = _eval_config_yaml(config)
-        cmd = ["asynth", "judge", "--config", "/amortized/config.yaml"]
+        if "preprocess_eval.py" in config_files:
+            processed_path = eval_data_local.rsplit(".", 1)[0] + "_processed.jsonl"
+            safe_input = shlex.quote(eval_data_local)
+            safe_output = shlex.quote(processed_path)
+            cmd = [
+                "sh", "-c",
+                f"python3 /amortized/preprocess_eval.py {safe_input}"
+                f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
+                f" && asynth judge --config /amortized/config.yaml"
+                f" --data {safe_output}",
+            ]
+        else:
+            cmd = [
+                "asynth", "judge",
+                "--config", "/amortized/config.yaml",
+                "--data", eval_data_local,
+            ]
 
+    job_type = job["type"]
+    needs_gpu = job_type == "training"
     spec = JobSpec(
         job_id=job_id,
         command=cmd,
@@ -366,8 +536,9 @@ async def _run_job(job: dict[str, Any]) -> None:
         image=image,
         config_files=config_files,
         s3_downloads=s3_downloads,
-        job_type=job["type"],
+        job_type=job_type,
         user_id=job.get("user_id", ""),
+        resources=Resources(gpus=1 if needs_gpu else 0),
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)
@@ -409,6 +580,12 @@ async def _run_job(job: dict[str, Any]) -> None:
             if mlflow_run_id:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_type", job["type"])
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
+
+                if job["type"] == JobType.training.value:
+                    model_registered = await _register_training_model(job, mlflow_run_id)
+                    if not model_registered:
+                        logger.warning("Job %s succeeded but model registration failed", job_id)
+
             await _update_job(
                 job_id,
                 status=JobStatus.succeeded.value,
