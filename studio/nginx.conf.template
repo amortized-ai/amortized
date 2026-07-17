@@ -1,5 +1,6 @@
 server {
     listen 8080;
+    resolver kube-dns.kube-system.svc.cluster.local valid=30s ipv6=off;
 
     location / {
         root /usr/share/nginx/html;
@@ -20,19 +21,20 @@ server {
     }
 
     location /mlflow/api/2.0/gateway/ {
-        proxy_pass http://${MLFLOW_HOST}:5001/api/2.0/gateway/;
+        set $mlflow_gw_upstream http://${MLFLOW_HOST}:5001;
+        proxy_pass $mlflow_gw_upstream/api/2.0/gateway/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_redirect ~^http://[^/]+(.*)$ https://$host/mlflow$1;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
     }
 
     location /mlflow/ {
-        proxy_pass http://${MLFLOW_HOST}:${MLFLOW_PORT}/;
+        set $mlflow_upstream http://${MLFLOW_HOST}:${MLFLOW_PORT};
+        proxy_pass $mlflow_upstream/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -57,7 +59,8 @@ server {
     }
 
     location /agent/ {
-        proxy_pass http://${AGENT_HOST}:${AGENT_PORT}/;
+        set $agent_upstream http://${AGENT_HOST}:${AGENT_PORT};
+        proxy_pass $agent_upstream/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
