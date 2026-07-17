@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -91,6 +92,7 @@ TRAINING_MODELS: dict[str, dict[str, Any]] = {
 _openrouter_cache: dict[str, tuple[float, float]] | None = None
 _openrouter_cache_time: float = 0
 _OPENROUTER_CACHE_TTL = 3600
+_openrouter_lock = asyncio.Lock()
 
 
 async def _fetch_openrouter_pricing() -> dict[str, tuple[float, float]]:
@@ -98,25 +100,29 @@ async def _fetch_openrouter_pricing() -> dict[str, tuple[float, float]]:
     now = datetime.now(UTC).timestamp()
     if _openrouter_cache and now - _openrouter_cache_time < _OPENROUTER_CACHE_TTL:
         return _openrouter_cache
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get("https://openrouter.ai/api/v1/models")
-            resp.raise_for_status()
-            data = resp.json()
-        pricing: dict[str, tuple[float, float]] = {}
-        for model in data.get("data", []):
-            mid = model.get("id", "")
-            p = model.get("pricing", {})
-            prompt_price = float(p.get("prompt", "0"))
-            completion_price = float(p.get("completion", "0"))
-            if prompt_price > 0 or completion_price > 0:
-                pricing[mid] = (prompt_price * 1000, completion_price * 1000)
-        _openrouter_cache = pricing
-        _openrouter_cache_time = now
-        return pricing
-    except Exception:
-        logger.warning("Failed to fetch OpenRouter pricing, using hardcoded fallback")
-        return dict(MODEL_PRICING)
+    async with _openrouter_lock:
+        now = datetime.now(UTC).timestamp()
+        if _openrouter_cache and now - _openrouter_cache_time < _OPENROUTER_CACHE_TTL:
+            return _openrouter_cache
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get("https://openrouter.ai/api/v1/models")
+                resp.raise_for_status()
+                data = resp.json()
+            pricing: dict[str, tuple[float, float]] = {}
+            for model in data.get("data", []):
+                mid = model.get("id", "")
+                p = model.get("pricing", {})
+                prompt_price = float(p.get("prompt", "0"))
+                completion_price = float(p.get("completion", "0"))
+                if prompt_price > 0 or completion_price > 0:
+                    pricing[mid] = (prompt_price * 1000, completion_price * 1000)
+            _openrouter_cache = pricing
+            _openrouter_cache_time = now
+            return pricing
+        except Exception:
+            logger.warning("Failed to fetch OpenRouter pricing, using hardcoded fallback")
+            return dict(MODEL_PRICING)
 
 
 def _get_pricing(model: str, live: dict[str, tuple[float, float]]) -> tuple[float, float]:
@@ -413,7 +419,11 @@ async def estimate_training_method_cost(
             gpu_type="A100" if model_info["vram_gb"] > 8 else "A10G",
             vram_gb=model_info["vram_gb"] * 4,
             estimated_time_minutes=round(base_time * 3.5, 1),
-            estimated_cost=round(base_cost * 3.5 * (3.5 / model_info["cost_per_gpu_hour"]), 2),
+            estimated_cost=round(
+                (base_time * 3.5 / 60)
+                * (3.50 if model_info["vram_gb"] > 8 else 1.10),
+                2,
+            ),
             relative_time="~3.5x",
             recommended=False,
         ),

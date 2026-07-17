@@ -5,13 +5,14 @@ import json
 import logging
 import os
 import re
+import shlex
 from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, Capability, JobSpec, S3Download
+from amortized.backends import BackendHandle, Capability, JobSpec, Resources, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.config_translator import (
     _eval_config_yaml,
@@ -272,11 +273,11 @@ async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
         await db.close()
 
 
-async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> None:
-    """Register a trained model in the MLflow model registry."""
+async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> bool:
+    """Register a trained model in the MLflow model registry. Returns True on success."""
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not mlflow_run_id:
-        return
+        return False
     import httpx
 
     model_id = job.get("config", {}).get("model_id", "unknown")
@@ -294,7 +295,7 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> N
                 logger.info("Model %s already registered", model_name)
             elif resp.is_error:
                 logger.warning("Failed to create registered model: %s", resp.text)
-                return
+                return False
 
             source = f"runs:/{mlflow_run_id}/model"
             await client.post(
@@ -307,8 +308,10 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> N
                 },
             )
             logger.info("Registered model version %s from run %s", model_name, mlflow_run_id)
+        return True
     except Exception:
         logger.warning("Failed to register model %s", model_name, exc_info=True)
+        return False
 
 
 async def _resolve_job_artifact_uri(job_id: str) -> str | None:
@@ -490,6 +493,11 @@ async def _run_job(job: dict[str, Any]) -> None:
                 data_path = f"{artifact_uri}/generated_data/generated_data.jsonl"
                 config["dataset"] = data_path
                 logger.info("Resolved eval dataset from job %s: %s", dataset_job_id, data_path)
+            else:
+                raise ValueError(
+                    f"Eval dataset not found: dataset_job_id {dataset_job_id!r} "
+                    "could not be resolved (parent job may lack mlflow_run_id)"
+                )
         eval_data_local = "/amortized/work/eval_data.jsonl"
         if data_path.startswith("s3://"):
             s3_downloads.append(S3Download(s3_uri=data_path, local_path=eval_data_local))
@@ -498,13 +506,18 @@ async def _run_job(job: dict[str, Any]) -> None:
         judge_prompt = config.get("judge", {}).get("prompt", "")
         if "{request}" in judge_prompt or "{response}" in judge_prompt:
             config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
+        config.pop("dataset", None)
         config_files["config.yaml"] = _eval_config_yaml(config)
         if "preprocess_eval.py" in config_files:
             processed_path = eval_data_local.rsplit(".", 1)[0] + "_processed.jsonl"
+            safe_input = shlex.quote(eval_data_local)
+            safe_output = shlex.quote(processed_path)
             cmd = [
                 "sh", "-c",
-                f"python3 /amortized/preprocess_eval.py {eval_data_local}"
-                f" && asynth judge --config /amortized/config.yaml --data {processed_path}",
+                f"python3 /amortized/preprocess_eval.py {safe_input}"
+                f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
+                f" && asynth judge --config /amortized/config.yaml"
+                f" --data {safe_output}",
             ]
         else:
             cmd = [
@@ -513,6 +526,8 @@ async def _run_job(job: dict[str, Any]) -> None:
                 "--data", eval_data_local,
             ]
 
+    job_type = job["type"]
+    needs_gpu = job_type == "training"
     spec = JobSpec(
         job_id=job_id,
         command=cmd,
@@ -521,8 +536,9 @@ async def _run_job(job: dict[str, Any]) -> None:
         image=image,
         config_files=config_files,
         s3_downloads=s3_downloads,
-        job_type=job["type"],
+        job_type=job_type,
         user_id=job.get("user_id", ""),
+        resources=Resources(gpus=1 if needs_gpu else 0),
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)
@@ -566,7 +582,9 @@ async def _run_job(job: dict[str, Any]) -> None:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
 
                 if job["type"] == JobType.training.value:
-                    await _register_training_model(job, mlflow_run_id)
+                    model_registered = await _register_training_model(job, mlflow_run_id)
+                    if not model_registered:
+                        logger.warning("Job %s succeeded but model registration failed", job_id)
 
             await _update_job(
                 job_id,
