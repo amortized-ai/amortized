@@ -10,7 +10,7 @@ data:
   .opencode.json: |
     {
       "$schema": "https://opencode.ai/config.json",
-      "model": "google-vertex-anthropic/claude-opus-4-6@default",
+      "model": "google-vertex-anthropic/claude-haiku-4-5-20251001@default",
       "mcp": {
         "amortized": {
           "type": "remote",
