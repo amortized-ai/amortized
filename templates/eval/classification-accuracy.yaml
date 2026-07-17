@@ -13,7 +13,7 @@ config:
   deterministic_checks: []
   temperature: 0.0
   judge:
-    model: openai/gpt-5.4
+    model: openai/gpt-4o-mini
     prompt: |
       Here is the data:
       [BEGIN DATA]
