@@ -17,9 +17,13 @@ OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 # Source cluster for OpenCode credentials (existing deployment)
 CREDS_CLUSTER ?= kind-amortized-dev
 
+# GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
+GHCR_USER  ?=
+GHCR_TOKEN ?=
+
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        deploy deploy-dev apply-dev \
+        deploy deploy-dev apply-dev ghcr-pull-secret \
         test-server test-studio \
         cluster gpu \
         down destroy status
@@ -135,6 +139,31 @@ load-deps: ## Load third-party images into kind
 	done
 
 # ──────────────────────────────────────────────
+# GHCR pull secret
+# ──────────────────────────────────────────────
+
+ghcr-pull-secret: ## Create ghcr.io pull secret in all namespaces (requires GHCR_USER and GHCR_TOKEN)
+	@if [ -z "$(GHCR_USER)" ] || [ -z "$(GHCR_TOKEN)" ]; then \
+		echo "Skipping GHCR pull secret: set GHCR_USER and GHCR_TOKEN to enable."; \
+	else \
+		for ns in amortized amortized-jobs amortized-dev amortized-dev-jobs; do \
+			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
+				echo "  ghcr-pull already exists in $$ns, skipping."; \
+			else \
+				echo "  Creating ghcr-pull in $$ns..."; \
+				$(KUBECTL) create secret docker-registry ghcr-pull \
+					--docker-server=ghcr.io \
+					--docker-username=$(GHCR_USER) \
+					--docker-password=$(GHCR_TOKEN) \
+					-n $$ns; \
+			fi; \
+			$(KUBECTL) -n $$ns patch serviceaccount default \
+				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+		done; \
+		echo "GHCR pull secret configured."; \
+	fi
+
+# ──────────────────────────────────────────────
 # Deploy prod
 # ──────────────────────────────────────────────
 
@@ -211,6 +240,20 @@ apply-dev: ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
+	@# Copy OpenCode credentials from prod namespace (before deployments that reference them)
+	@for secret in opencode-gcp opencode-llm; do \
+		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
+			echo "  Secret $$secret already exists in amortized-dev, skipping."; \
+		elif $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
+			echo "  Copying $$secret from amortized to amortized-dev..."; \
+			$(KUBECTL) -n amortized get secret $$secret -o json | \
+				jq '.metadata.namespace = "amortized-dev" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
+				$(KUBECTL) apply -f - || \
+				echo "  Warning: could not copy $$secret to amortized-dev."; \
+		else \
+			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
+		fi; \
+	done
 	@# Then everything else
 	@for f in k8s/kind/dev/*.yaml; do \
 		case "$$(basename $$f)" in \
@@ -222,13 +265,15 @@ apply-dev: ## Apply dev k8s manifests (no build)
 			"$$f" | $(KUBECTL) apply -f -; \
 	done
 	@# Remove runAsNonRoot for kind
-	@for dep in amortized-server amortized-studio; do \
+	@for dep in amortized-server amortized-studio opencode claude-code; do \
 		$(KUBECTL) -n amortized-dev patch deployment $$dep --type json \
 			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
 	done
 	@echo "Waiting for dev deployments..."
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
+	@$(KUBECTL) -n amortized-dev rollout status deployment/opencode --timeout=120s
+	@$(KUBECTL) -n amortized-dev rollout status deployment/claude-code --timeout=120s
 	@echo "Dev stack deployed."
 
 # ──────────────────────────────────────────────
