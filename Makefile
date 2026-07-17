@@ -167,7 +167,7 @@ ghcr-pull-secret: ## Create ghcr.io pull secret in all namespaces (requires GHCR
 # Deploy prod
 # ──────────────────────────────────────────────
 
-deploy: ghcr-pull-secret ## Deploy prod stack (amortized namespace)
+deploy: ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
@@ -236,7 +236,7 @@ deploy: ghcr-pull-secret ## Deploy prod stack (amortized namespace)
 
 deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build + deploy dev stack from current code
 
-apply-dev: ghcr-pull-secret ## Apply dev k8s manifests (no build)
+apply-dev: ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
