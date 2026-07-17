@@ -507,7 +507,11 @@ async def _run_job(job: dict[str, Any]) -> None:
                 f" && asynth judge --config /amortized/config.yaml --data {processed_path}",
             ]
         else:
-            cmd = ["asynth", "judge", "--config", "/amortized/config.yaml", "--data", eval_data_local]
+            cmd = [
+                "asynth", "judge",
+                "--config", "/amortized/config.yaml",
+                "--data", eval_data_local,
+            ]
 
     spec = JobSpec(
         job_id=job_id,
