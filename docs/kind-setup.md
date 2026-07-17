@@ -56,9 +56,9 @@ kind cluster: amortized
 └── worker node (GPU workloads, 8x H100)
 
 Namespaces:
-├── amortized           ← server, studio, opencode, minio, mlflow
+├── amortized           ← server, studio, opencode, claude-code, minio, mlflow
 ├── amortized-jobs      ← training/SDG/eval K8s Jobs (4 GPU quota)
-├── amortized-dev       ← dev server + studio (PR testing)
+├── amortized-dev       ← dev server, studio, opencode, claude-code
 └── amortized-dev-jobs  ← dev training jobs (4 GPU quota)
 ```
 
@@ -73,6 +73,8 @@ Namespaces:
 | MLflow | amortized | ghcr.io/mlflow/mlflow | 5000 | 31082 |
 | Dev Server | amortized-dev | amortized-server:kind-\<sha\> | 8000 | 31091 |
 | Dev Studio | amortized-dev | amortized-studio:kind-\<sha\> | 8080 | 31090 |
+| Dev OpenCode | amortized-dev | ghcr.io/anomalyco/opencode | 4096 | — |
+| Dev Claude Code | amortized-dev | ghcr.io/amortized-ai/claude-code-agent | 4096 | — |
 
 ### GPU isolation
 
@@ -90,7 +92,7 @@ The dev namespace (`amortized-dev`) is designed for PR testing. It:
 - Runs its own server and studio instances
 - Has its own jobs namespace with isolated RBAC
 - **Shares** MinIO and MLflow with prod (cross-namespace DNS)
-- Has no OpenCode deployment
+- Has its own OpenCode and Claude Code deployments (pointing at dev server)
 
 ## Makefile Reference
 
@@ -335,9 +337,19 @@ The kind setup differs from production OpenShift in several ways:
 |--------|-----------|------|
 | Ingress | Routes (`route.openshift.io`) | NodePort services |
 | Security | SCCs enforce non-root | `runAsNonRoot` patched out |
-| Image pull | Registry (GHCR) | Pre-loaded with `kind load` |
+| Image pull | Registry (GHCR) | Pull secret + `kind load` for local builds |
 | GPU access | Native device plugin | Manual nvidia-toolkit setup |
 | Storage | Dynamic provisioner | local-path (hostPath) |
 | OpenCode creds | Secrets created by admin | Copied from existing cluster |
 
 Route manifests (`*-route.yaml`) are skipped during kind deployment. The `opencode-secret.yaml` placeholder is also skipped — real credentials come from the existing cluster.
+
+### Private image pulls (GHCR)
+
+Images under `ghcr.io/amortized-ai/` are private. To pull them from within the cluster (instead of pre-loading with `kind load`), create a pull secret:
+
+```bash
+make ghcr-pull-secret GHCR_USER=<github-username> GHCR_TOKEN=<github-pat>
+```
+
+The PAT needs the `read:packages` scope. This creates a `ghcr-pull` secret in all namespaces and patches the `default` service account in each so all pods get registry credentials automatically.
