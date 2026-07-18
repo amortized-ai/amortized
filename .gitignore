@@ -25,6 +25,7 @@ runtime/
 2026-06-02-amortized-design.md
 CONTEXT.md
 
+agent/prompts/_combined/
 .playwright-mcp/
 studio-*.png
 .claude/

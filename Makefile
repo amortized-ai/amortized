@@ -23,7 +23,7 @@ GHCR_TOKEN ?=
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        deploy deploy-dev apply-dev ghcr-pull-secret \
+        prompt deploy deploy-dev apply-dev ghcr-pull-secret \
         test-server test-studio \
         cluster gpu \
         down destroy status
@@ -164,17 +164,33 @@ ghcr-pull-secret: ## Create ghcr.io pull secret in all namespaces (requires GHCR
 	fi
 
 # ──────────────────────────────────────────────
+# Prompt
+# ──────────────────────────────────────────────
+
+PROMPT_DIR   := agent/prompts
+COMBINED_DIR := $(PROMPT_DIR)/_combined
+
+prompt: ## Build combined Morty prompt from soul.md + agents.md
+	@mkdir -p $(COMBINED_DIR)
+	@cat $(PROMPT_DIR)/soul.md $(PROMPT_DIR)/agents.md > $(COMBINED_DIR)/morty.md
+	@echo "Generated $(COMBINED_DIR)/morty.md"
+
+# ──────────────────────────────────────────────
 # Deploy prod
 # ──────────────────────────────────────────────
 
-deploy: ## Deploy prod stack (amortized namespace)
+deploy: prompt ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# Base manifests (skip kustomization, opencode secret, routes)
+	@# Morty prompt ConfigMap (from combined source)
+	@$(KUBECTL) create configmap morty-config \
+		--from-file=morty.md=$(COMBINED_DIR)/morty.md \
+		-n amortized --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@# Base manifests (skip kustomization, opencode secret, morty configmap, routes)
 	@for f in k8s/base/*.yaml; do \
 		case "$$(basename $$f)" in \
-			kustomization.yaml|opencode-secret.yaml|namespace.yaml|*route*) continue ;; \
+			kustomization.yaml|opencode-secret.yaml|namespace.yaml|morty-configmap.yaml|*route*) continue ;; \
 		esac; \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
@@ -236,7 +252,7 @@ deploy: ## Deploy prod stack (amortized namespace)
 
 deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build + deploy dev stack from current code
 
-apply-dev: ## Apply dev k8s manifests (no build)
+apply-dev: prompt ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
@@ -254,6 +270,10 @@ apply-dev: ## Apply dev k8s manifests (no build)
 			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
 		fi; \
 	done
+	@# Morty prompt ConfigMap (from combined source)
+	@$(KUBECTL) create configmap morty-config \
+		--from-file=morty.md=$(COMBINED_DIR)/morty.md \
+		-n amortized-dev --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@# Then everything else
 	@for f in k8s/kind/dev/*.yaml; do \
 		case "$$(basename $$f)" in \
