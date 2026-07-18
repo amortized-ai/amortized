@@ -173,6 +173,7 @@ COMBINED_DIR := $(PROMPT_DIR)/_combined
 prompt: ## Build combined Morty prompt from soul.md + agents.md
 	@mkdir -p $(COMBINED_DIR)
 	@cat $(PROMPT_DIR)/soul.md $(PROMPT_DIR)/agents.md > $(COMBINED_DIR)/morty.md
+	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
 	@echo "Generated $(COMBINED_DIR)/morty.md"
 
 # ──────────────────────────────────────────────

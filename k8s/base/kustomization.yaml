@@ -12,8 +12,15 @@ resources:
   - studio-deployment.yaml
   - studio-service.yaml
   - opencode-configmap.yaml
-  - opencode-secret.yaml
   - opencode-deployment.yaml
   - opencode-service.yaml
   - claude-code-deployment.yaml
   - claude-code-service.yaml
+
+configMapGenerator:
+  - name: morty-config
+    namespace: amortized
+    files:
+      - morty.md=morty-prompt.md
+    options:
+      disableNameSuffixHash: true
