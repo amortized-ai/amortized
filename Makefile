@@ -173,6 +173,7 @@ COMBINED_DIR := $(PROMPT_DIR)/_combined
 prompt: ## Build combined Morty prompt from soul.md + agents.md
 	@mkdir -p $(COMBINED_DIR)
 	@cat $(PROMPT_DIR)/soul.md $(PROMPT_DIR)/agents.md > $(COMBINED_DIR)/morty.md
+	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
 	@echo "Generated $(COMBINED_DIR)/morty.md"
 
 # ──────────────────────────────────────────────
@@ -183,21 +184,12 @@ deploy: prompt ## Deploy prod stack (amortized namespace)
 	@echo "Deploying prod stack..."
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# Morty prompt ConfigMap (from combined source)
-	@$(KUBECTL) create configmap morty-config \
-		--from-file=morty.md=$(COMBINED_DIR)/morty.md \
-		-n amortized --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@# Base manifests (skip kustomization, opencode secret, morty configmap, routes)
-	@for f in k8s/base/*.yaml; do \
-		case "$$(basename $$f)" in \
-			kustomization.yaml|opencode-secret.yaml|namespace.yaml|morty-configmap.yaml|*route*) continue ;; \
-		esac; \
+	@# Build and apply via kustomize (base + dev infra + kind patches)
+	@$(KUBECTL) kustomize k8s/overlays/kind | \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
-			-e 's|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g' \
-			"$$f" | $(KUBECTL) apply -f -; \
-	done
+		| $(KUBECTL) apply -f -
 	@# Copy OpenCode credentials from source cluster (skip if already exist or source unavailable)
 	@for secret in opencode-gcp opencode-llm; do \
 		if $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
@@ -211,24 +203,6 @@ deploy: prompt ## Deploy prod stack (amortized namespace)
 		else \
 			echo "  Warning: $$secret not found. Create manually for OpenCode."; \
 		fi; \
-	done
-	@# Dev infra: MinIO + MLflow (skip routes and kustomization)
-	@for f in k8s/overlays/dev/*.yaml; do \
-		case "$$(basename $$f)" in \
-			*route*|kustomization.yaml) continue ;; \
-		esac; \
-		$(KUBECTL) apply -f "$$f"; \
-	done
-	@# Kind-specific: NodePorts + GPU quotas
-	$(KUBECTL) apply -f k8s/kind/nodeport-services.yaml
-	$(KUBECTL) apply -f k8s/kind/gpu-quota.yaml
-	@# Patch prod configmap for kind
-	$(KUBECTL) patch configmap amortized-config -n amortized --type merge \
-		-p '{"data":{"AMORTIZED_MLFLOW_TRACKING_URI":"http://mlflow.amortized.svc.cluster.local:5000","AMORTIZED_S3_BUCKET":"amortized","AMORTIZED_IMAGE_PULL_POLICY":"IfNotPresent"}}'
-	@# Kind-specific patches: remove runAsNonRoot (MinIO/MLflow run as root), fix opencode host
-	@for dep in minio mlflow amortized-server amortized-studio opencode; do \
-		$(KUBECTL) -n amortized patch deployment $$dep --type json \
-			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
 	done
 	@# Create MinIO bucket
 	@echo "Waiting for MinIO to be ready..."
@@ -255,7 +229,7 @@ deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build
 apply-dev: prompt ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
-	$(KUBECTL) apply -f k8s/kind/dev/namespace.yaml
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/namespace.yaml
 	@# Copy OpenCode credentials from prod namespace (before deployments that reference them)
 	@for secret in opencode-gcp opencode-llm; do \
 		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
@@ -270,25 +244,17 @@ apply-dev: prompt ## Apply dev k8s manifests (no build)
 			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
 		fi; \
 	done
-	@# Morty prompt ConfigMap (from combined source)
-	@$(KUBECTL) create configmap morty-config \
-		--from-file=morty.md=$(COMBINED_DIR)/morty.md \
-		-n amortized-dev --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	@# Then everything else
-	@for f in k8s/kind/dev/*.yaml; do \
-		case "$$(basename $$f)" in \
-			namespace.yaml) continue ;; \
-		esac; \
+	@# Build and apply via kustomize (base + dev namespace patches)
+	@$(KUBECTL) kustomize k8s/overlays/kind-dev | \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
-			"$$f" | $(KUBECTL) apply -f -; \
-	done
-	@# Remove runAsNonRoot for kind
-	@for dep in amortized-server amortized-studio opencode claude-code; do \
-		$(KUBECTL) -n amortized-dev patch deployment $$dep --type json \
-			-p '[{"op":"remove","path":"/spec/template/spec/securityContext/runAsNonRoot"}]' 2>/dev/null || true; \
-	done
+		| $(KUBECTL) apply -f -
+	@# Dev-only resources (pre-namespaced, applied separately)
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets.yaml
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets-jobs.yaml
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/nodeport-services.yaml
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/gpu-quota.yaml
 	@echo "Waiting for dev deployments..."
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s

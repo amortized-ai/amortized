@@ -26,6 +26,7 @@ runtime/
 CONTEXT.md
 
 agent/prompts/_combined/
+k8s/base/morty-prompt.md
 .playwright-mcp/
 studio-*.png
 .claude/
