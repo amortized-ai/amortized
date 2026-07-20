@@ -370,6 +370,30 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
             config["_parent_model_uri"] = artifact_uri
             logger.info("Injected model URI from parent: %s", artifact_uri)
 
+        # Resolve eval dataset from the training job's SDG ancestor
+        if not config.get("dataset") and not config.get("dataset_job_id"):
+            # Walk up: training job -> its parent (SDG job) for eval data
+            training_parent_id = parent.get("parent_job_id", "")
+            if training_parent_id:
+                sdg_artifact_uri = await _resolve_job_artifact_uri(training_parent_id)
+                if sdg_artifact_uri:
+                    data_file = f"{sdg_artifact_uri}/generated_data/generated_data.jsonl"
+                    config["dataset"] = data_file
+                    logger.info(
+                        "Injected eval dataset from SDG ancestor %s: %s",
+                        training_parent_id,
+                        data_file,
+                    )
+            # Fallback: use the training job's own data_path (already an S3 URI)
+            if not config.get("dataset"):
+                parent_config = parent.get("config", {})
+                parent_data = parent_config.get("data_path", "")
+                if parent_data and parent_data.startswith("s3://"):
+                    config["dataset"] = parent_data
+                    logger.info(
+                        "Injected eval dataset from training data_path: %s", parent_data
+                    )
+
     return config
 
 
