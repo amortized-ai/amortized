@@ -1,9 +1,13 @@
 CLUSTER_NAME  ?= amortized
-IMAGE_TAG     ?= kind-$(shell git rev-parse --short HEAD)
+IMAGE_TAG     ?= kind-$(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 KUBECTL       := kubectl --context kind-$(CLUSTER_NAME)
 STUDIO_DIR    ?= $(shell cd .. && pwd)/studio
 STUDIO_REPO   ?= https://github.com/amortized-ai/studio
 REPO_ROOT     := $(shell pwd)
+
+# GHCR images (prod uses these directly, dev builds locally)
+SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
+STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 
 # Third-party images to pre-load into kind
 MINIO_IMAGE   ?= quay.io/minio/minio:latest
@@ -14,12 +18,14 @@ TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
 ASYNTH_IMAGE  ?= ghcr.io/amortized-ai/asynth:latest
 OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 
-# Source cluster for OpenCode credentials (existing deployment)
-CREDS_CLUSTER ?= kind-amortized-dev
-
 # GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
 GHCR_USER  ?=
 GHCR_TOKEN ?=
+
+# OpenCode credentials
+GOOGLE_ADC_PATH ?= $(HOME)/.config/gcloud/application_default_credentials.json
+VERTEX_PROJECT  ?= redhat-ai-analysis
+VERTEX_LOCATION ?= us-central1
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
@@ -40,7 +46,7 @@ help: ## Show this help
 # Full setup
 # ──────────────────────────────────────────────
 
-up: cluster gpu build load deploy status ## Create cluster, build images, deploy prod stack
+up: cluster gpu pull-images load-deps deploy status ## Create cluster, deploy prod stack
 
 # ──────────────────────────────────────────────
 # Cluster lifecycle
@@ -180,30 +186,58 @@ prompt: ## Build combined Morty prompt from soul.md + agents.md
 # Deploy prod
 # ──────────────────────────────────────────────
 
-deploy: prompt ## Deploy prod stack (amortized namespace)
+deploy: prompt ## Deploy prod stack (GHCR images, amortized namespace)
 	@echo "Deploying prod stack..."
+	@# Pull GHCR images
+	@echo "Pulling GHCR images..."
+	@docker pull $(SERVER_IMAGE)
+	@docker pull $(STUDIO_IMAGE)
+	@# Load into kind
+	@echo "Loading images into kind..."
+	@kind load docker-image $(SERVER_IMAGE) --name $(CLUSTER_NAME)
+	@kind load docker-image $(STUDIO_IMAGE) --name $(CLUSTER_NAME)
 	@# Namespaces
 	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# Build and apply via kustomize (base + dev infra + kind patches)
-	@$(KUBECTL) kustomize k8s/overlays/kind | \
-		sed \
-			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
-			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
-		| $(KUBECTL) apply -f -
-	@# Copy OpenCode credentials from source cluster (skip if already exist or source unavailable)
-	@for secret in opencode-gcp opencode-llm; do \
-		if $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
-			echo "  Secret $$secret already exists, skipping."; \
-		elif kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret >/dev/null 2>&1; then \
-			echo "  Copying $$secret from $(CREDS_CLUSTER)..."; \
-			kubectl --context $(CREDS_CLUSTER) -n amortized get secret $$secret -o json | \
-				jq 'del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
-				$(KUBECTL) apply -f - || \
-				echo "  Warning: could not copy $$secret from $(CREDS_CLUSTER)."; \
-		else \
-			echo "  Warning: $$secret not found. Create manually for OpenCode."; \
-		fi; \
-	done
+	@# GHCR pull secret (private repos need auth even with pre-loaded images)
+	@if [ -n "$(GHCR_USER)" ] && [ -n "$(GHCR_TOKEN)" ]; then \
+		for ns in amortized amortized-jobs; do \
+			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
+				echo "  ghcr-pull already exists in $$ns, skipping."; \
+			else \
+				echo "  Creating ghcr-pull in $$ns..."; \
+				$(KUBECTL) create secret docker-registry ghcr-pull \
+					--docker-server=ghcr.io \
+					--docker-username=$(GHCR_USER) \
+					--docker-password=$(GHCR_TOKEN) \
+					-n $$ns; \
+			fi; \
+			$(KUBECTL) -n $$ns patch serviceaccount default \
+				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+		done; \
+	else \
+		echo "  Skipping GHCR pull secret: set GHCR_USER and GHCR_TOKEN to enable."; \
+	fi
+	@# OpenCode GCP credentials
+	@if $(KUBECTL) -n amortized get secret opencode-gcp >/dev/null 2>&1; then \
+		echo "  opencode-gcp already exists, skipping."; \
+	elif [ -f "$(GOOGLE_ADC_PATH)" ]; then \
+		echo "  Creating opencode-gcp from $(GOOGLE_ADC_PATH)..."; \
+		$(KUBECTL) -n amortized create secret generic opencode-gcp \
+			--from-file=credentials.json=$(GOOGLE_ADC_PATH); \
+	else \
+		echo "  Warning: opencode-gcp not found and $(GOOGLE_ADC_PATH) missing. Create manually."; \
+	fi
+	@# OpenCode LLM config (Vertex AI)
+	@if $(KUBECTL) -n amortized get secret opencode-llm >/dev/null 2>&1; then \
+		echo "  opencode-llm already exists, skipping."; \
+	else \
+		echo "  Creating opencode-llm (project=$(VERTEX_PROJECT), location=$(VERTEX_LOCATION))..."; \
+		$(KUBECTL) -n amortized create secret generic opencode-llm \
+			--from-literal=google-cloud-project=$(VERTEX_PROJECT) \
+			--from-literal=vertex-location=$(VERTEX_LOCATION); \
+	fi
+	@# Apply kustomize (GHCR image refs used as-is, no sed replacement)
+	@$(KUBECTL) kustomize k8s/overlays/kind | $(KUBECTL) apply -f -
 	@# Create MinIO bucket
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
@@ -218,6 +252,7 @@ deploy: prompt ## Deploy prod stack (amortized namespace)
 	@$(KUBECTL) -n amortized rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized rollout status deployment/amortized-studio --timeout=120s
 	@$(KUBECTL) -n amortized rollout status deployment/opencode --timeout=120s
+	@$(KUBECTL) -n amortized rollout status deployment/claude-code --timeout=120s
 	@echo "Prod stack deployed."
 
 # ──────────────────────────────────────────────
@@ -230,7 +265,24 @@ apply-dev: prompt ## Apply dev k8s manifests (no build)
 	@echo "Deploying dev stack..."
 	@# Namespaces first
 	$(KUBECTL) apply -f k8s/overlays/kind-dev/namespace.yaml
-	@# Copy OpenCode credentials from prod namespace (before deployments that reference them)
+	@# GHCR pull secret for dev namespaces
+	@if [ -n "$(GHCR_USER)" ] && [ -n "$(GHCR_TOKEN)" ]; then \
+		for ns in amortized-dev amortized-dev-jobs; do \
+			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
+				echo "  ghcr-pull already exists in $$ns, skipping."; \
+			else \
+				echo "  Creating ghcr-pull in $$ns..."; \
+				$(KUBECTL) create secret docker-registry ghcr-pull \
+					--docker-server=ghcr.io \
+					--docker-username=$(GHCR_USER) \
+					--docker-password=$(GHCR_TOKEN) \
+					-n $$ns; \
+			fi; \
+			$(KUBECTL) -n $$ns patch serviceaccount default \
+				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+		done; \
+	fi
+	@# Copy OpenCode credentials from prod namespace
 	@for secret in opencode-gcp opencode-llm; do \
 		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
 			echo "  Secret $$secret already exists in amortized-dev, skipping."; \
@@ -244,7 +296,7 @@ apply-dev: prompt ## Apply dev k8s manifests (no build)
 			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
 		fi; \
 	done
-	@# Build and apply via kustomize (base + dev namespace patches)
+	@# Build and apply via kustomize (local image tags via sed)
 	@$(KUBECTL) kustomize k8s/overlays/kind-dev | \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
