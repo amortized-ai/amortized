@@ -116,6 +116,7 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
             inference_config[optional] = config[optional]
     if "api_base" not in inference_config and config_mod.settings.gateway_url:
         inference_config["api_base"] = config_mod.settings.gateway_url
+        logger.info("Routing SDG through gateway: %s", config_mod.settings.gateway_url)
 
     strategy_params = config.get("strategy_params", {})
     if isinstance(strategy_params, dict):
@@ -217,6 +218,7 @@ def _build_judge_config(config: dict[str, Any]) -> dict[str, Any]:
         inference_config["api_base"] = judge["api_base"]
     elif config_mod.settings.gateway_url:
         inference_config["api_base"] = config_mod.settings.gateway_url
+        logger.info("Routing eval judge through gateway: %s", config_mod.settings.gateway_url)
     result: dict[str, Any] = {
         "judge_params": {
             "prompt_template": judge.get("prompt", "Evaluate this response: {response}"),

@@ -441,6 +441,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     secret_to_env = {"api_key": "OPENAI_API_KEY"}
     for secret_key, secret_val in secrets.items():
         if use_gateway and secret_key in llm_secret_keys:
+            logger.info("Job %s: skipping %s injection (gateway configured)", job_id, secret_key)
             continue
         env_name = secret_to_env.get(secret_key, secret_key.upper())
         spec_env[env_name] = secret_val
