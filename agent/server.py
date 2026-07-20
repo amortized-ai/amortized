@@ -72,9 +72,17 @@ def _strip_frontmatter(text: str) -> str:
 
 
 def _load_morty_prompt() -> str:
-    if not MORTY_PROMPT_PATH.exists():
-        raise RuntimeError(f"morty.md not found at {MORTY_PROMPT_PATH}")
-    raw = MORTY_PROMPT_PATH.read_text()
+    if MORTY_PROMPT_PATH.is_dir():
+        parts = []
+        for f in sorted(MORTY_PROMPT_PATH.glob("*.md")):
+            parts.append(f.read_text())
+        if not parts:
+            raise RuntimeError(f"No .md files found in {MORTY_PROMPT_PATH}")
+        raw = "\n".join(parts)
+    elif MORTY_PROMPT_PATH.exists():
+        raw = MORTY_PROMPT_PATH.read_text()
+    else:
+        raise RuntimeError(f"Morty prompt not found at {MORTY_PROMPT_PATH}")
     return _strip_frontmatter(raw)
 
 
