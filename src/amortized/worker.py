@@ -27,8 +27,8 @@ logger = logging.getLogger("amortized.worker")
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "ghcr.io/amortized-ai/training:latest",
-    "sdg": "ghcr.io/amortized-ai/asynth:latest",
-    "eval": "ghcr.io/amortized-ai/asynth:latest",
+    "sdg": "ghcr.io/amortized-ai/synth:latest",
+    "eval": "ghcr.io/amortized-ai/eval:latest",
 }
 
 

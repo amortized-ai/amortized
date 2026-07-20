@@ -15,7 +15,8 @@ MLFLOW_IMAGE  ?= ghcr.io/mlflow/mlflow:latest
 AWSCLI_IMAGE  ?= docker.io/amazon/aws-cli:latest
 NVIDIA_DP_IMAGE ?= nvcr.io/nvidia/k8s-device-plugin:v0.19.3
 TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
-ASYNTH_IMAGE  ?= ghcr.io/amortized-ai/asynth:latest
+SYNTH_IMAGE   ?= ghcr.io/amortized-ai/synth:latest
+EVAL_IMAGE    ?= ghcr.io/amortized-ai/eval:latest
 OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 
 # GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
@@ -97,6 +98,12 @@ build-server: ## Build amortized server image
 	@echo "Building amortized-server:$(IMAGE_TAG)..."
 	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
 
+build-synth: ## Build synth/eval container images (SDG + eval)
+	@echo "Building synth:$(IMAGE_TAG)..."
+	docker build -t synth:$(IMAGE_TAG) -f containers/synth/Dockerfile .
+	@echo "Building eval:$(IMAGE_TAG)..."
+	docker build -t eval:$(IMAGE_TAG) -f containers/eval/Dockerfile .
+
 build-studio: ## Build studio image (expects ../studio/)
 	@if [ ! -d "$(STUDIO_DIR)" ]; then \
 		echo "Cloning studio repository to $(STUDIO_DIR)..."; \
@@ -113,7 +120,7 @@ pull-images: ## Pull third-party images (MinIO, MLflow, training, etc.)
 		docker pull $$img 2>/dev/null || true; \
 	done
 	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
-	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+	@for img in $(TRAINING_IMAGE) $(SYNTH_IMAGE) $(EVAL_IMAGE); do \
 		if ! docker image inspect $$img >/dev/null 2>&1; then \
 			echo "  Pulling $$img..."; \
 			docker pull $$img; \
@@ -140,7 +147,7 @@ load-deps: ## Load third-party images into kind
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 	@echo "Loading ML images into kind (training is ~12GB, be patient)..."
-	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+	@for img in $(TRAINING_IMAGE) $(SYNTH_IMAGE) $(EVAL_IMAGE); do \
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 
@@ -305,6 +312,7 @@ apply-dev: prompt ## Apply dev k8s manifests (no build)
 	@# Dev-only resources (pre-namespaced, applied separately)
 	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets.yaml
 	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets-jobs.yaml
+	$(KUBECTL) apply -f k8s/overlays/kind-dev/rbac-jobs.yaml
 	$(KUBECTL) apply -f k8s/overlays/kind-dev/nodeport-services.yaml
 	$(KUBECTL) apply -f k8s/overlays/kind-dev/gpu-quota.yaml
 	@echo "Waiting for dev deployments..."

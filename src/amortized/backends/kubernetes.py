@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from amortized.backends import (
@@ -55,6 +56,19 @@ class KubernetesBackend:
             config.load_incluster_config()  # type: ignore[no-untyped-call]
             self._client = ApiClient()
         return self._client
+
+    def _server_namespace(self) -> str:
+        """Detect the namespace this pod is running in (the server namespace)."""
+        try:
+            return Path(
+                "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+            ).read_text().strip()
+        except Exception:
+            # Fall back: strip "-jobs" suffix from jobs namespace
+            ns = self._namespace
+            if ns.endswith("-jobs"):
+                return ns[: -len("-jobs")]
+            return ns
 
     async def _gcp_secret_exists(self) -> bool:
         """Check if the gcp-credentials secret exists in the jobs namespace."""
@@ -345,6 +359,11 @@ class KubernetesBackend:
 
         config_map = self._build_config_map(spec, resource_name)
         await core.create_namespaced_config_map(self._namespace, config_map)
+
+        # Sync GCP credentials from the server namespace if not already present
+        if not await self._gcp_secret_exists():
+            server_ns = self._server_namespace()
+            await self._sync_gcp_secret(server_ns)
 
         mount_gcp = await self._gcp_secret_exists()
         pod_spec = self._build_pod_spec(spec, resource_name, mount_gcp=mount_gcp)
