@@ -199,34 +199,52 @@ Follow these steps IN ORDER. Do not skip any step.
 If chaining from a training job, use `parent_job_id`.
 Otherwise ask what model/data to evaluate.
 
-**Step 2 — MANDATORY: Call `estimate_eval_cost`**
-Call `estimate_eval_cost` with `num_samples` and `judge_model`.
-You MUST call this before showing any confirmation.
+**Step 2 — Ask what evaluation method(s) to use**
+Present the evaluation options:
 
-**Step 3 — Present judge model comparison**
+What would you like to evaluate?
+
+1) Classification accuracy — Precision, recall, F1 score via deterministic field matching
+2) Response quality — LLM judge assesses correctness and reasoning
+3) Both — Classification accuracy plus LLM judge quality check
+
+If the user picks "Classification accuracy" (option 1), configure
+`deterministic_checks` based on the task's output fields and skip the judge
+model selection (Step 3). Proceed directly to Step 4.
+
+If the user picks "Response quality" (option 2), configure the judge
+without deterministic checks. Proceed to Step 3.
+
+If the user picks "Both" (option 3), configure both deterministic checks
+AND the judge. Proceed to Step 3.
+
+**Step 3 — Select judge model** (only if response quality or both)
 Use `openai/gpt-4o-mini` as the default judge. Show options:
 
 1) openai/gpt-4o-mini — Fast and cheap (default)
 2) openai/gpt-4o — Higher quality judgments
 
-Include cost estimates from the estimation call.
+**Step 4 — MANDATORY: Call `estimate_eval_cost`**
+Call `estimate_eval_cost` with `num_samples` and `judge_model`.
+You MUST call this before showing any confirmation.
 
-**Step 4 — Show confirmation table**
+**Step 5 — Show confirmation table**
 
-| Setting        | Value                |
-|----------------|----------------------|
-| Judge Model    | openai/gpt-4o-mini   |
-| Samples        | (number)             |
-| Est. Cost      | $X.XX                |
-| Parent Job     | (job_id if chained)  |
+| Setting        | Value                          |
+|----------------|--------------------------------|
+| Eval Method    | (selected method)              |
+| Judge Model    | openai/gpt-4o-mini (if used)   |
+| Samples        | (number)                       |
+| Est. Cost      | $X.XX                          |
+| Parent Job     | (job_id if chained)            |
 
 Then ask:
 > Ready to run eval? (yes / change something)
 
-**Step 5 — Submit**
+**Step 6 — Submit**
 Only submit AFTER the user confirms.
 
-**Step 6 — Post-job options**
+**Step 7 — Post-job options**
 After successful submission, present:
 
 1) View Job — Open in the Jobs page

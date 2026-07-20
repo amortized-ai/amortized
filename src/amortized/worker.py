@@ -370,10 +370,22 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
             config["_parent_model_uri"] = artifact_uri
             logger.info("Injected model URI from parent: %s", artifact_uri)
 
-        # Resolve eval dataset from the training job's SDG ancestor
-        if not config.get("dataset") and not config.get("dataset_job_id"):
-            # Walk up: training job -> its parent (SDG job) for eval data
-            training_parent_id = parent.get("parent_job_id", "")
+        # Resolve eval dataset from the training job's SDG ancestor.
+        # A dataset value is only "valid" if it's an S3 URI or absolute path;
+        # bare filenames like "test_data.jsonl" are placeholders that won't
+        # exist inside the container, so we override them.
+        existing_dataset = config.get("dataset", "")
+        has_valid_dataset = existing_dataset and (
+            existing_dataset.startswith("s3://") or existing_dataset.startswith("/")
+        )
+        if not has_valid_dataset and not config.get("dataset_job_id"):
+            parent_config = parent.get("config", {})
+            # Walk up: training job -> its parent (SDG job) for eval data.
+            # Check both the job record and config for parent_job_id.
+            training_parent_id = (
+                parent.get("parent_job_id", "")
+                or parent_config.get("parent_job_id", "")
+            )
             if training_parent_id:
                 sdg_artifact_uri = await _resolve_job_artifact_uri(training_parent_id)
                 if sdg_artifact_uri:
@@ -385,8 +397,7 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
                         data_file,
                     )
             # Fallback: use the training job's own data_path (already an S3 URI)
-            if not config.get("dataset"):
-                parent_config = parent.get("config", {})
+            if not config.get("dataset") or not config["dataset"].startswith("s3://"):
                 parent_data = parent_config.get("data_path", "")
                 if parent_data and parent_data.startswith("s3://"):
                     config["dataset"] = parent_data
@@ -526,7 +537,11 @@ async def _run_job(job: dict[str, Any]) -> None:
         if data_path.startswith("s3://"):
             s3_downloads.append(S3Download(s3_uri=data_path, local_path=eval_data_local))
         elif data_path:
-            eval_data_local = data_path
+            # Ensure absolute path; bare filenames are relative to the work dir
+            if not data_path.startswith("/"):
+                eval_data_local = f"/amortized/work/{data_path}"
+            else:
+                eval_data_local = data_path
         judge_prompt = config.get("judge", {}).get("prompt", "")
         if "{request}" in judge_prompt or "{response}" in judge_prompt:
             config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
