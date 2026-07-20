@@ -221,8 +221,10 @@ AND the judge. Proceed to Step 3.
 **Step 3 — Select judge model** (only if response quality or both)
 Use `openai/gpt-4o-mini` as the default judge. Show options:
 
-1) openai/gpt-4o-mini — Fast and cheap (default)
-2) openai/gpt-4o — Higher quality judgments
+1) GPT-4o Mini — Fast and cheap, recommended default
+2) Claude Haiku — Balanced cost and quality
+3) GPT-4o — Higher quality judgments
+4) Claude Sonnet — Highest quality, most expensive
 
 **Step 4 — MANDATORY: Call `estimate_eval_cost`**
 Call `estimate_eval_cost` with `num_samples` and `judge_model`.
