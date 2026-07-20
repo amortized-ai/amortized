@@ -445,6 +445,8 @@ async def _run_job(job: dict[str, Any]) -> None:
             continue
         env_name = secret_to_env.get(secret_key, secret_key.upper())
         spec_env[env_name] = secret_val
+    if use_gateway and "OPENAI_API_KEY" not in spec_env:
+        spec_env["OPENAI_API_KEY"] = "gateway-managed"
 
     if config_mod.settings.mlflow_tracking_uri:
         mlflow_experiment = f"amortized/{job['type']}/{job_id[:8]}"
@@ -521,7 +523,8 @@ async def _run_job(job: dict[str, Any]) -> None:
             safe_input = shlex.quote(eval_data_local)
             safe_output = shlex.quote(processed_path)
             cmd = [
-                "sh", "-c",
+                "sh",
+                "-c",
                 f"python3 /amortized/preprocess_eval.py {safe_input}"
                 f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
                 f" && asynth judge --config /amortized/config.yaml"
@@ -529,9 +532,12 @@ async def _run_job(job: dict[str, Any]) -> None:
             ]
         else:
             cmd = [
-                "asynth", "judge",
-                "--config", "/amortized/config.yaml",
-                "--data", eval_data_local,
+                "asynth",
+                "judge",
+                "--config",
+                "/amortized/config.yaml",
+                "--data",
+                eval_data_local,
             ]
 
     job_type = job["type"]
