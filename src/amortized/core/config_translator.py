@@ -114,6 +114,8 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
     for optional in ("max_tokens", "top_p", "seed", "api_base"):
         if config.get(optional) is not None:
             inference_config[optional] = config[optional]
+    if "api_base" not in inference_config and config_mod.settings.gateway_url:
+        inference_config["api_base"] = config_mod.settings.gateway_url
 
     strategy_params = config.get("strategy_params", {})
     if isinstance(strategy_params, dict):

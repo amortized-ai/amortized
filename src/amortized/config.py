@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     storage_bucket: str = Field("", description="S3 bucket name for artifact storage")
 
     external_url: str = Field("", description="Externally reachable server URL")
+    gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")
 
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"

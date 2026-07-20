@@ -75,6 +75,11 @@ def _load_backends() -> None:
         _settings.forward_env = forward_env
         logger.info("Forwarding %d env vars to job containers", len(forward_env))
 
+    gateway_url = config.get("gateway_url", "")
+    if gateway_url:
+        _settings.gateway_url = gateway_url
+        logger.info("AI Gateway URL: %s", gateway_url)
+
     backends = config.get("compute", {}).get("backends", {})
     for name, spec in backends.items():
         if not isinstance(spec, dict):
@@ -229,8 +234,8 @@ async def health() -> dict[str, object]:
 
 @app.get("/api/v1/config", response_model=ConfigResponse, operation_id="get_config")
 async def get_config() -> ConfigResponse:
-    mlflow_gateway_uri = ""
-    if _settings.mlflow_tracking_uri:
+    mlflow_gateway_uri = _settings.gateway_url
+    if not mlflow_gateway_uri and _settings.mlflow_tracking_uri:
         mlflow_gateway_uri = f"{_settings.mlflow_tracking_uri}/gateway/v1"
     return ConfigResponse(
         default_compute_backend=_settings.resolved_default_backend,
