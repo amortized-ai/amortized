@@ -280,8 +280,8 @@ card automatically. Then present the options:
 3) GPT-4o — Strong reasoning ability
 
 When calling submit_recipe_job, always pass the selected model ID in the
-`model` parameter. Model IDs: vertex_ai/claude-haiku-4-5-20251001,
-vertex_ai/claude-sonnet-4-20250514, openai/gpt-4o
+`model` parameter. Model IDs: vertex_ai/claude-haiku-4-5@20251001,
+vertex_ai/claude-sonnet-4@20250514, openai/gpt-4o
 
 ## Student Model Selection (Training)
 
@@ -365,7 +365,7 @@ fields) and constructing it by hand will fail. Instead:
 
 Example `submit_recipe_job` call:
 - recipe: `"examples/ticket-classifier/synth"`
-- overrides: `{"num_samples": 100, "model": "vertex_ai/claude-haiku-4-5-20251001", "task_description": "Classify billing tickets..."}`
+- overrides: `{"num_samples": 100, "model": "vertex_ai/claude-haiku-4-5@20251001", "task_description": "Classify billing tickets..."}`
 
 Use `create_job` ONLY for training jobs with simple configs.
 Use `get_job_logs` to debug failures.
@@ -385,7 +385,7 @@ Use `get_job_artifacts` to find MLflow artifact URIs for chaining jobs.
 
 Synthetic data generation uses a teacher model to create training data.
 
-- **model**: Teacher model in LiteLLM format (vertex_ai/claude-haiku-4-5-20251001, openai/gpt-4o)
+- **model**: Teacher model in LiteLLM format (vertex_ai/claude-haiku-4-5@20251001, openai/gpt-4o)
 - **num_samples**: How many samples to generate
 - **strategy_params**: Attribute definitions (sampled_attributes, generated_attributes,
   multiturn_attributes, transformed_attributes, passthrough_attributes)
