@@ -128,7 +128,7 @@ make destroy         Delete entire kind cluster
 | `SERVER_IMAGE` | `ghcr.io/amortized-ai/amortized:latest` | Server image for prod |
 | `STUDIO_IMAGE` | `ghcr.io/amortized-ai/studio:latest` | Studio image for prod |
 | `GOOGLE_ADC_PATH` | `~/.config/gcloud/application_default_credentials.json` | Path to GCP ADC credentials |
-| `VERTEX_PROJECT` | `redhat-ai-analysis` | GCP project for Vertex AI |
+| `VERTEX_PROJECT` | `REDACTED_GCP_PROJECT` | GCP project for Vertex AI |
 | `VERTEX_LOCATION` | `us-central1` | Vertex AI region |
 
 Example: `make deploy-dev STUDIO_DIR=~/my-studio-fork GHCR_USER=user GHCR_TOKEN=token`
@@ -330,7 +330,7 @@ To recreate manually:
 kubectl --context kind-amortized -n amortized create secret generic opencode-gcp \
   --from-file=credentials.json=$HOME/.config/gcloud/application_default_credentials.json
 kubectl --context kind-amortized -n amortized create secret generic opencode-llm \
-  --from-literal=google-cloud-project=redhat-ai-analysis \
+  --from-literal=google-cloud-project=REDACTED_GCP_PROJECT \
   --from-literal=vertex-location=global
 ```
 
