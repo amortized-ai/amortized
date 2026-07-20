@@ -209,6 +209,14 @@ def _resolve_judge_template(config: dict[str, Any]) -> dict[str, Any]:
 def _build_judge_config(config: dict[str, Any]) -> dict[str, Any]:
     """Build an asynth-compatible judge config dict for CLI execution."""
     judge = config.get("judge", {})
+    inference_config: dict[str, Any] = {
+        "model": judge.get("model", "openai/gpt-4o-mini"),
+        "temperature": judge.get("temperature", 0.0),
+    }
+    if judge.get("api_base"):
+        inference_config["api_base"] = judge["api_base"]
+    elif config_mod.settings.gateway_url:
+        inference_config["api_base"] = config_mod.settings.gateway_url
     result: dict[str, Any] = {
         "judge_params": {
             "prompt_template": judge.get("prompt", "Evaluate this response: {response}"),
@@ -216,10 +224,7 @@ def _build_judge_config(config: dict[str, Any]) -> dict[str, Any]:
             "judgment_type": judge.get("judgment_type", "bool"),
             "include_explanation": judge.get("include_explanation", True),
         },
-        "inference_config": {
-            "model": judge.get("model", "openai/gpt-4o-mini"),
-            "temperature": judge.get("temperature", 0.0),
-        },
+        "inference_config": inference_config,
     }
     if judge.get("system_instruction"):
         result["judge_params"]["system_instruction"] = judge["system_instruction"]
