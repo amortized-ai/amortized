@@ -147,8 +147,10 @@ Present model options as a numbered list:
 4) meta-llama/Llama-3.1-8B — Largest, needs QLoRA (~8B params)
 
 **Step 2 — Determine training data**
-If chaining from an SDG job, use `parent_job_id` to link them.
-Otherwise ask for the data source.
+If chaining from an SDG job, you MUST set `parent_job_id` to the SDG job's
+ID when submitting the training job. This is REQUIRED — without it, the
+model page won't show the data lineage. Always pass it in the
+`submit_recipe_job` or `create_job` call.
 
 **Step 3 — MANDATORY: Call `estimate_training_method_cost`**
 Call `estimate_training_method_cost` with `model_id` and `num_samples`.
@@ -196,8 +198,9 @@ After successful submission, present:
 Follow these steps IN ORDER. Do not skip any step.
 
 **Step 1 — Determine what to evaluate**
-If chaining from a training job, use `parent_job_id`.
-Otherwise ask what model/data to evaluate.
+If chaining from a training job, you MUST set `parent_job_id` to the
+training job's ID. This is REQUIRED for the eval pipeline to find the
+training data and for the UI to show job lineage.
 
 **Step 2 — Ask what evaluation method(s) to use**
 Present the evaluation options:
