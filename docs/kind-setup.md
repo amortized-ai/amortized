@@ -331,7 +331,7 @@ kubectl --context kind-amortized -n amortized create secret generic opencode-gcp
   --from-file=credentials.json=$HOME/.config/gcloud/application_default_credentials.json
 kubectl --context kind-amortized -n amortized create secret generic opencode-llm \
   --from-literal=google-cloud-project=redhat-ai-analysis \
-  --from-literal=vertex-location=us-central1
+  --from-literal=vertex-location=global
 ```
 
 ### Studio crash: "host not found in upstream"
