@@ -234,9 +234,7 @@ async def health() -> dict[str, object]:
 
 @app.get("/api/v1/config", response_model=ConfigResponse, operation_id="get_config")
 async def get_config() -> ConfigResponse:
-    mlflow_gateway_uri = _settings.gateway_url
-    if not mlflow_gateway_uri and _settings.mlflow_tracking_uri:
-        mlflow_gateway_uri = f"{_settings.mlflow_tracking_uri}/gateway/v1"
+    mlflow_gateway_uri = _settings.gateway_url or ""
     return ConfigResponse(
         default_compute_backend=_settings.resolved_default_backend,
         compute_namespace=_settings.compute_namespace,
