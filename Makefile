@@ -24,7 +24,7 @@ GHCR_TOKEN ?=
 
 # OpenCode credentials
 GOOGLE_ADC_PATH ?= $(HOME)/.config/gcloud/application_default_credentials.json
-VERTEX_PROJECT  ?= redhat-ai-analysis
+VERTEX_PROJECT  ?= itpc-gcp-ai-eng-claude
 VERTEX_LOCATION ?= global
 
 .PHONY: help up build build-server build-studio pull-images \
