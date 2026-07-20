@@ -207,28 +207,26 @@ class KubernetesBackend:
                     read_only=True,
                 ),
             )
+            gcp_project_ref = V1EnvVarSource(
+                secret_key_ref=V1SecretKeySelector(
+                    name="gcp-credentials",
+                    key="google-cloud-project",
+                    optional=True,
+                )
+            )
+            gcp_location_ref = V1EnvVarSource(
+                secret_key_ref=V1SecretKeySelector(
+                    name="gcp-credentials",
+                    key="vertex-location",
+                    optional=True,
+                )
+            )
             env_vars.extend([
                 V1EnvVar(name="GOOGLE_APPLICATION_CREDENTIALS", value="/gcp/credentials.json"),
-                V1EnvVar(
-                    name="GOOGLE_CLOUD_PROJECT",
-                    value_from=V1EnvVarSource(
-                        secret_key_ref=V1SecretKeySelector(
-                            name="gcp-credentials",
-                            key="google-cloud-project",
-                            optional=True,
-                        )
-                    ),
-                ),
-                V1EnvVar(
-                    name="VERTEX_LOCATION",
-                    value_from=V1EnvVarSource(
-                        secret_key_ref=V1SecretKeySelector(
-                            name="gcp-credentials",
-                            key="vertex-location",
-                            optional=True,
-                        )
-                    ),
-                ),
+                V1EnvVar(name="GOOGLE_CLOUD_PROJECT", value_from=gcp_project_ref),
+                V1EnvVar(name="VERTEXAI_PROJECT", value_from=gcp_project_ref),
+                V1EnvVar(name="VERTEX_LOCATION", value_from=gcp_location_ref),
+                V1EnvVar(name="VERTEXAI_LOCATION", value_from=gcp_location_ref),
             ])
 
         secret_name = f"{resource_name}-env"
