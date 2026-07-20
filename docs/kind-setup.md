@@ -41,10 +41,12 @@ echo "fs.inotify.max_user_instances=8192" | sudo tee -a /etc/sysctl.conf
 
 ```bash
 git clone https://github.com/amortized-ai/amortized && cd amortized
-make up    # ~20 min first time (pulls ~16GB training image)
+make up GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
 ```
 
-This creates a kind cluster, sets up GPU passthrough, builds all images, and deploys the full prod stack.
+This creates a kind cluster, sets up GPU passthrough, pulls GHCR images, and deploys the full prod stack. First run takes ~20 minutes (pulls ~16GB training image).
+
+The `GHCR_TOKEN` needs the `read:packages` scope. It's used to pull private images and create in-cluster pull secrets.
 
 ## Architecture
 
@@ -66,15 +68,18 @@ Namespaces:
 
 | Component | Namespace | Image | Port | NodePort |
 |-----------|-----------|-------|------|----------|
-| Server (API) | amortized | amortized-server:kind-\<sha\> | 8000 | 31081 |
-| Studio (UI) | amortized | amortized-studio:kind-\<sha\> | 8080 | 31080 |
+| Server (API) | amortized | ghcr.io/amortized-ai/amortized:latest | 8000 | 31081 |
+| Studio (UI) | amortized | ghcr.io/amortized-ai/studio:latest | 8080 | 31080 |
 | OpenCode (AI assistant) | amortized | ghcr.io/anomalyco/opencode | 4096 | — |
+| Claude Code | amortized | ghcr.io/amortized-ai/claude-code-agent | 4096 | — |
 | MinIO (S3) | amortized | quay.io/minio/minio | 9000 | — |
 | MLflow | amortized | ghcr.io/mlflow/mlflow | 5000 | 31082 |
 | Dev Server | amortized-dev | amortized-server:kind-\<sha\> | 8000 | 31091 |
 | Dev Studio | amortized-dev | amortized-studio:kind-\<sha\> | 8080 | 31090 |
 | Dev OpenCode | amortized-dev | ghcr.io/anomalyco/opencode | 4096 | — |
 | Dev Claude Code | amortized-dev | ghcr.io/amortized-ai/claude-code-agent | 4096 | — |
+
+**Prod** uses GHCR images directly (pulled from the registry). **Dev** builds from local source (for PR testing).
 
 ### GPU isolation
 
@@ -98,15 +103,14 @@ The dev namespace (`amortized-dev`) is designed for PR testing. It:
 
 ```
 make help            Show all targets
-make up              Full setup: cluster + GPU + build + deploy prod
-make deploy          (Re)deploy prod stack
-make deploy-dev      Deploy dev namespace
+make up              Full setup: cluster + GPU + deploy prod
+make deploy          Deploy prod stack (pulls GHCR images)
+make deploy-dev      Build from source + deploy dev stack
 make test-server     Build server from current branch + deploy to dev
 make test-studio     Build studio from current branch + deploy to dev
-make build           Build all images (server + studio + pull deps)
+make build           Build all images locally (server + studio + pull deps)
 make build-server    Build server image only
 make build-studio    Build studio image only
-make load            Load all images into kind
 make status          Show pods, GPUs, access URLs
 make down            Delete dev namespaces (keep prod)
 make destroy         Delete entire kind cluster
@@ -116,12 +120,18 @@ make destroy         Delete entire kind cluster
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `GHCR_USER` | *(required for prod)* | GitHub username for pulling private images |
+| `GHCR_TOKEN` | *(required for prod)* | GitHub PAT with `read:packages` scope |
 | `STUDIO_DIR` | `../studio` | Path to studio repo checkout |
 | `CLUSTER_NAME` | `amortized` | Kind cluster name |
-| `IMAGE_TAG` | `kind-<git-sha>` | Tag for locally built images |
-| `CREDS_CLUSTER` | `kind-amortized-dev` | Cluster to copy OpenCode creds from |
+| `IMAGE_TAG` | `kind-<git-sha>` | Tag for locally built images (dev only) |
+| `SERVER_IMAGE` | `ghcr.io/amortized-ai/amortized:latest` | Server image for prod |
+| `STUDIO_IMAGE` | `ghcr.io/amortized-ai/studio:latest` | Studio image for prod |
+| `GOOGLE_ADC_PATH` | `~/.config/gcloud/application_default_credentials.json` | Path to GCP ADC credentials |
+| `VERTEX_PROJECT` | `redhat-ai-analysis` | GCP project for Vertex AI |
+| `VERTEX_LOCATION` | `us-central1` | Vertex AI region |
 
-Example: `make build-studio STUDIO_DIR=~/my-studio-fork`
+Example: `make deploy-dev STUDIO_DIR=~/my-studio-fork GHCR_USER=user GHCR_TOKEN=token`
 
 ## Developer Workflows
 
@@ -130,10 +140,12 @@ Example: `make build-studio STUDIO_DIR=~/my-studio-fork`
 ```bash
 ssh user@REDACTED_IP
 git clone https://github.com/amortized-ai/amortized && cd amortized
-make up
+make up GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
 ```
 
 The first run takes ~20 minutes due to the training image pull (~16GB). Subsequent runs are faster since images are cached.
+
+`make up` handles everything: cluster creation, GPU setup, pulling third-party images, pulling GHCR images, creating secrets, and deploying.
 
 ### Test a server PR
 
@@ -156,8 +168,8 @@ make test-studio
 ### Redeploy after config changes
 
 ```bash
-make deploy       # redeploy prod
-make deploy-dev   # redeploy dev
+make deploy GHCR_USER=<user> GHCR_TOKEN=<token>       # redeploy prod (pulls latest GHCR images)
+make deploy-dev GHCR_USER=<user> GHCR_TOKEN=<token>   # redeploy dev (builds from local source)
 ```
 
 ### Check status
@@ -299,15 +311,28 @@ kubectl --context kind-amortized -n amortized patch deployment minio --type json
 
 ### OpenCode not starting
 
-**Symptom**: OpenCode pod in CrashLoopBackOff or pending.
+**Symptom**: OpenCode pod in CrashLoopBackOff or CreateContainerConfigError.
 
-The OpenCode deployment needs two secrets (`opencode-gcp` and `opencode-llm`) that contain GCP/Vertex AI credentials. These are copied from the existing `kind-amortized-dev` cluster during `make deploy`. If that cluster doesn't exist or the secrets are missing:
+The OpenCode deployment needs two secrets:
+
+- `opencode-gcp` — GCP Application Default Credentials (created automatically from `GOOGLE_ADC_PATH`)
+- `opencode-llm` — Vertex AI project/location (created automatically from `VERTEX_PROJECT`/`VERTEX_LOCATION`)
+
+These are created automatically during `make deploy`. If they're missing:
 
 ```bash
 kubectl --context kind-amortized -n amortized get secret opencode-gcp opencode-llm
 ```
 
-If missing, create them manually following `k8s/base/opencode-secret.yaml`.
+To recreate manually:
+
+```bash
+kubectl --context kind-amortized -n amortized create secret generic opencode-gcp \
+  --from-file=credentials.json=$HOME/.config/gcloud/application_default_credentials.json
+kubectl --context kind-amortized -n amortized create secret generic opencode-llm \
+  --from-literal=google-cloud-project=redhat-ai-analysis \
+  --from-literal=vertex-location=us-central1
+```
 
 ### Studio crash: "host not found in upstream"
 
@@ -337,19 +362,19 @@ The kind setup differs from production OpenShift in several ways:
 |--------|-----------|------|
 | Ingress | Routes (`route.openshift.io`) | NodePort services |
 | Security | SCCs enforce non-root | `runAsNonRoot` patched out |
-| Image pull | Registry (GHCR) | Pull secret + `kind load` for local builds |
+| Image pull | Registry (GHCR) | GHCR pull secret + `kind load` (prod pulls from GHCR, dev builds locally) |
 | GPU access | Native device plugin | Manual nvidia-toolkit setup |
 | Storage | Dynamic provisioner | local-path (hostPath) |
-| OpenCode creds | Secrets created by admin | Copied from existing cluster |
+| OpenCode creds | Secrets created by admin | Auto-created from local ADC + Vertex config |
 
-Route manifests (`*-route.yaml`) are skipped during kind deployment. The `opencode-secret.yaml` placeholder is also skipped — real credentials come from the existing cluster.
+Route manifests (`*-route.yaml`) are skipped during kind deployment.
 
 ### Private image pulls (GHCR)
 
-Images under `ghcr.io/amortized-ai/` are private. To pull them from within the cluster (instead of pre-loading with `kind load`), create a pull secret:
+Images under `ghcr.io/amortized-ai/` are private. GHCR pull secrets are created automatically during `make deploy` and `make deploy-dev` when `GHCR_USER` and `GHCR_TOKEN` are provided. To create them standalone:
 
 ```bash
 make ghcr-pull-secret GHCR_USER=<github-username> GHCR_TOKEN=<github-pat>
 ```
 
-The PAT needs the `read:packages` scope. This creates a `ghcr-pull` secret in all namespaces and patches the `default` service account in each so all pods get registry credentials automatically.
+The PAT needs the `read:packages` scope.

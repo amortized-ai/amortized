@@ -10,6 +10,38 @@ Every AI agent has tasks that don't need a frontier model. Classification, extra
 
 The name comes from finance — amortization spreads a large upfront cost across many future uses. Here, the "cost" is the frontier model's capability, and the "uses" are every future inference by the cheaper task model.
 
+## Deployment
+
+Amortized runs on a kind cluster with GPU passthrough. See [docs/kind-setup.md](docs/kind-setup.md) for full setup instructions.
+
+### Quick start
+
+```bash
+# First-time setup (creates cluster, configures GPUs, deploys everything)
+make up GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
+
+# Deploy prod (pulls images from GHCR)
+make deploy GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
+
+# Deploy dev (builds from local source)
+make deploy-dev GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
+```
+
+### Access
+
+```bash
+ssh -L 31080:localhost:31080 -L 31081:localhost:31081 -L 31082:localhost:31082 \
+    -L 31090:localhost:31090 -L 31091:localhost:31091 user@<gpu-node>
+```
+
+| Service | URL |
+|---------|-----|
+| Prod Studio | http://localhost:31080 |
+| Prod API | http://localhost:31081 |
+| MLflow | http://localhost:31082 |
+| Dev Studio | http://localhost:31090 |
+| Dev API | http://localhost:31091 |
+
 ## License
 
 [Apache 2.0](LICENSE)
