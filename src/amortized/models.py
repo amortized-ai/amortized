@@ -187,6 +187,6 @@ class ConfigResponse(BaseModel):
     compute_namespace: str = ""
     mlflow_tracking_uri: str = ""
     mlflow_gateway_uri: str = ""
-    docling_url: str = ""
+    docling_enabled: bool = False
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)

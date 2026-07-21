@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -31,18 +35,53 @@ _FORMAT_MAP = {
 
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
+_BLOCKED_HOSTNAMES = frozenset({
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.azure.com",
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0.0.0.0",
+})
+
+
+def _sanitize_filename(name: str) -> str:
+    name = os.path.basename(name)
+    name = re.sub(r"[/\\:\x00]", "_", name)
+    if len(name) > 255:
+        name = name[:255]
+    return name or f"upload-{uuid.uuid4().hex[:8]}"
+
+
+def _validate_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http:// and https:// URLs are allowed")
+    hostname = parsed.hostname or ""
+    if hostname in _BLOCKED_HOSTNAMES:
+        raise HTTPException(status_code=400, detail="Access to this host is not allowed")
+    if hostname.endswith((".svc.cluster.local", ".local", ".internal")):
+        raise HTTPException(status_code=400, detail="Access to internal services is not allowed")
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise HTTPException(
+                status_code=400, detail="Access to private addresses is not allowed"
+            )
+    except ValueError:
+        pass
+
 
 def _docling_url() -> str:
     if not settings.docling_url:
-        raise HTTPException(status_code=503, detail="Docling-serve is not configured")
+        raise HTTPException(status_code=503, detail="Document processing service is not configured")
     return settings.docling_url.rstrip("/")
 
 
 def _tracking_uri() -> str:
     if not settings.mlflow_tracking_uri:
-        raise HTTPException(
-            status_code=503, detail="MLflow tracking is not configured"
-        )
+        raise HTTPException(status_code=503, detail="MLflow tracking is not configured")
     return settings.mlflow_tracking_uri.rstrip("/")
 
 
@@ -61,9 +100,9 @@ async def _store_in_mlflow(
     content: str,
     output_format: str,
     source_bytes: bytes | None = None,
-    source_content_type: str = "application/octet-stream",
 ) -> str:
     tracking_uri = _tracking_uri()
+    run_id: str | None = None
     async with httpx.AsyncClient(timeout=30.0) as client:
         experiment_name = "amortized/documents"
         resp = await client.get(
@@ -76,7 +115,7 @@ async def _store_in_mlflow(
                 json={"name": experiment_name},
             )
             if create_resp.status_code == 409:
-                refetch = await client.post(
+                refetch = await client.get(
                     f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
                     params={"experiment_name": experiment_name},
                 )
@@ -104,37 +143,48 @@ async def _store_in_mlflow(
             },
         )
         run_resp.raise_for_status()
-        run_id: str = run_resp.json()["run"]["info"]["run_id"]
+        run_id = run_resp.json()["run"]["info"]["run_id"]
 
-        if source_bytes:
-            src_resp = await client.put(
-                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts"
-                f"/source/{filename}",
+        try:
+            if source_bytes:
+                safe_name = _sanitize_filename(filename)
+                src_resp = await client.put(
+                    f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts"
+                    f"/source/{safe_name}",
+                    params={"run_id": run_id},
+                    content=source_bytes,
+                    headers={"Content-Type": "application/octet-stream"},
+                )
+                src_resp.raise_for_status()
+
+            ext = output_format if output_format != "text" else "txt"
+            artifact_path = f"parsed_content.{ext}"
+            artifact_resp = await client.put(
+                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts/{artifact_path}",
                 params={"run_id": run_id},
-                content=source_bytes,
-                headers={"Content-Type": source_content_type},
+                content=content.encode("utf-8"),
+                headers={"Content-Type": "text/plain; charset=utf-8"},
             )
-            src_resp.raise_for_status()
+            artifact_resp.raise_for_status()
 
-        ext = output_format if output_format != "text" else "txt"
-        artifact_path = f"parsed_content.{ext}"
-        artifact_resp = await client.put(
-            f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts/{artifact_path}",
-            params={"run_id": run_id},
-            content=content.encode("utf-8"),
-            headers={"Content-Type": "text/plain; charset=utf-8"},
-        )
-        artifact_resp.raise_for_status()
-
-        update_resp = await client.post(
-            f"{tracking_uri}/api/2.0/mlflow/runs/update",
-            json={
-                "run_id": run_id,
-                "status": "FINISHED",
-                "end_time": int(datetime.now(UTC).timestamp() * 1000),
-            },
-        )
-        update_resp.raise_for_status()
+            update_resp = await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/runs/update",
+                json={
+                    "run_id": run_id,
+                    "status": "FINISHED",
+                    "end_time": int(datetime.now(UTC).timestamp() * 1000),
+                },
+            )
+            update_resp.raise_for_status()
+        except Exception:
+            try:
+                await client.post(
+                    f"{tracking_uri}/api/2.0/mlflow/runs/update",
+                    json={"run_id": run_id, "status": "FAILED"},
+                )
+            except Exception:
+                logger.debug("Could not mark MLflow run %s as FAILED", run_id)
+            raise
 
         return run_id
 
@@ -147,25 +197,29 @@ async def _call_docling(
     except httpx.ConnectError:
         raise HTTPException(
             status_code=502,
-            detail=f"Cannot connect to docling-serve at {settings.docling_url}",
+            detail="Document processing service is temporarily unavailable",
         ) from None
     except httpx.TimeoutException:
         raise HTTPException(
-            status_code=504, detail="Docling-serve request timed out"
+            status_code=504, detail="Document processing request timed out"
+        ) from None
+    except httpx.TransportError:
+        raise HTTPException(
+            status_code=502, detail="Document processing service communication error"
         ) from None
     if resp.is_error:
         logger.error(
             "Docling-serve returned %d: %s", resp.status_code, resp.text[:500]
         )
         raise HTTPException(
-            status_code=502, detail=f"Docling-serve error: {resp.status_code}"
+            status_code=502, detail=f"Document processing error: {resp.status_code}"
         )
     try:
         return resp.json()  # type: ignore[no-any-return]
     except ValueError:
         raise HTTPException(
             status_code=502,
-            detail="Docling-serve returned non-JSON response",
+            detail="Document processing service returned non-JSON response",
         ) from None
 
 
@@ -183,7 +237,7 @@ async def convert_document(
     table_mode: str = "fast",
 ) -> DocumentResult:
     base_url = _docling_url()
-    filename = file.filename or f"upload-{uuid.uuid4().hex[:8]}"
+    filename = _sanitize_filename(file.filename or f"upload-{uuid.uuid4().hex[:8]}")
     file_bytes = await file.read()
 
     if len(file_bytes) == 0:
@@ -202,7 +256,7 @@ async def convert_document(
                 "files": (
                     filename,
                     file_bytes,
-                    file.content_type or "application/octet-stream",
+                    "application/octet-stream",
                 ),
             },
             data={
@@ -219,6 +273,9 @@ async def convert_document(
     status = data.get("status", "success")
 
     warnings: list[str] = []
+    if not content.strip():
+        warnings.append("Document parsed but no content was extracted")
+
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
@@ -227,9 +284,10 @@ async def convert_document(
                 content,
                 output_format.value,
                 source_bytes=file_bytes,
-                source_content_type=file.content_type or "application/octet-stream",
             )
-        except Exception:
+        except HTTPException:
+            raise
+        except (httpx.HTTPError, httpx.TimeoutException):
             logger.warning("Failed to store document in MLflow", exc_info=True)
             warnings.append("Document converted but not stored in MLflow")
 
@@ -253,6 +311,7 @@ async def convert_document(
     summary="Convert a document from URL via docling-serve.",
 )
 async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
+    _validate_url(request.url)
     base_url = _docling_url()
     opts = request.options
     output_format = opts.output_format
@@ -277,18 +336,24 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     processing_time = data.get("processing_time", 0.0)
     status = data.get("status", "success")
 
-    filename = request.url.rsplit("/", 1)[-1] or "document"
+    filename = _sanitize_filename(request.url.rsplit("/", 1)[-1] or "document")
+
+    warnings: list[str] = []
+    if not content.strip():
+        warnings.append("Document parsed but no content was extracted")
 
     source_bytes: bytes | None = None
     try:
-        async with httpx.AsyncClient(timeout=30.0) as dl_client:
+        async with httpx.AsyncClient(
+            timeout=30.0, follow_redirects=True, max_redirects=5
+        ) as dl_client:
             dl_resp = await dl_client.get(request.url)
             if dl_resp.is_success and len(dl_resp.content) <= _MAX_UPLOAD_BYTES:
                 source_bytes = dl_resp.content
-    except Exception:
-        logger.debug("Could not download source for archival: %s", request.url)
+    except (httpx.HTTPError, httpx.TimeoutException):
+        logger.warning("Could not download source for archival: %s", request.url)
+        warnings.append("Source document could not be archived")
 
-    warnings: list[str] = []
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
@@ -298,7 +363,9 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
                 output_format.value,
                 source_bytes=source_bytes,
             )
-        except Exception:
+        except HTTPException:
+            raise
+        except (httpx.HTTPError, httpx.TimeoutException):
             logger.warning("Failed to store document in MLflow", exc_info=True)
             warnings.append("Document converted but not stored in MLflow")
 
@@ -341,7 +408,7 @@ async def list_documents() -> list[DocumentSummary]:
                 f"{tracking_uri}/api/2.0/mlflow/runs/search",
                 json={
                     "experiment_ids": [experiment_id],
-                    "filter": "tags.job_type = 'document'",
+                    "filter": "tags.job_type = 'document' AND attributes.status = 'FINISHED'",
                     "order_by": ["start_time DESC"],
                     "max_results": 100,
                 },
@@ -350,6 +417,10 @@ async def list_documents() -> list[DocumentSummary]:
     except httpx.ConnectError:
         raise HTTPException(
             status_code=502, detail="Cannot connect to MLflow"
+        ) from None
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="MLflow request timed out"
         ) from None
 
     results: list[DocumentSummary] = []
@@ -415,6 +486,10 @@ async def get_document_content(document_id: str) -> DocumentResult:
     except httpx.ConnectError:
         raise HTTPException(
             status_code=502, detail="Cannot connect to MLflow"
+        ) from None
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="MLflow request timed out"
         ) from None
     except HTTPException:
         raise
