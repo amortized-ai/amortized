@@ -39,11 +39,11 @@ spec:
             - name: AGENT_PORT
               value: "4096"
             - name: MLFLOW_HOST
-              value: "mlflow"
+              value: "mlflow.amortized.svc.cluster.local"
             - name: MLFLOW_PORT
               value: "5000"
             - name: DNS_RESOLVER
-              value: "kube-dns.kube-system.svc.cluster.local"
+              value: "10.96.0.10"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
