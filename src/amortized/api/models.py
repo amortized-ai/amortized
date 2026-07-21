@@ -47,7 +47,7 @@ async def _fetch_gateway_models() -> list[GatewayModel]:
                 resp.raise_for_status()
                 data = resp.json()
         except Exception:
-            logger.warning("Failed to fetch gateway endpoints from %s", url)
+            logger.warning("Failed to fetch gateway endpoints from MLflow", exc_info=True)
             _models_cache = []
             _models_cache_time = now
             return _models_cache
