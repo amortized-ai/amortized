@@ -57,7 +57,11 @@ def _extract_content(document: dict[str, Any], output_format: str) -> str:
 
 
 async def _store_in_mlflow(
-    filename: str, content: str, output_format: str
+    filename: str,
+    content: str,
+    output_format: str,
+    source_bytes: bytes | None = None,
+    source_content_type: str = "application/octet-stream",
 ) -> str:
     tracking_uri = _tracking_uri()
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -85,11 +89,13 @@ async def _store_in_mlflow(
             resp.raise_for_status()
             experiment_id = resp.json()["experiment"]["experiment_id"]
 
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
         run_resp = await client.post(
             f"{tracking_uri}/api/2.0/mlflow/runs/create",
             json={
                 "experiment_id": experiment_id,
                 "run_name": filename,
+                "start_time": now_ms,
                 "tags": [
                     {"key": "job_type", "value": "document"},
                     {"key": "filename", "value": filename},
@@ -99,6 +105,16 @@ async def _store_in_mlflow(
         )
         run_resp.raise_for_status()
         run_id: str = run_resp.json()["run"]["info"]["run_id"]
+
+        if source_bytes:
+            src_resp = await client.put(
+                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts"
+                f"/source/{filename}",
+                params={"run_id": run_id},
+                content=source_bytes,
+                headers={"Content-Type": source_content_type},
+            )
+            src_resp.raise_for_status()
 
         ext = output_format if output_format != "text" else "txt"
         artifact_path = f"parsed_content.{ext}"
@@ -207,7 +223,11 @@ async def convert_document(
     if settings.mlflow_tracking_uri:
         try:
             mlflow_run_id = await _store_in_mlflow(
-                filename, content, output_format.value
+                filename,
+                content,
+                output_format.value,
+                source_bytes=file_bytes,
+                source_content_type=file.content_type or "application/octet-stream",
             )
         except Exception:
             logger.warning("Failed to store document in MLflow", exc_info=True)
@@ -259,12 +279,24 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
 
     filename = request.url.rsplit("/", 1)[-1] or "document"
 
+    source_bytes: bytes | None = None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as dl_client:
+            dl_resp = await dl_client.get(request.url)
+            if dl_resp.is_success and len(dl_resp.content) <= _MAX_UPLOAD_BYTES:
+                source_bytes = dl_resp.content
+    except Exception:
+        logger.debug("Could not download source for archival: %s", request.url)
+
     warnings: list[str] = []
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
             mlflow_run_id = await _store_in_mlflow(
-                filename, content, output_format.value
+                filename,
+                content,
+                output_format.value,
+                source_bytes=source_bytes,
             )
         except Exception:
             logger.warning("Failed to store document in MLflow", exc_info=True)
