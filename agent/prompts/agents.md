@@ -103,17 +103,17 @@ Show the recipe name and a one-line description. Let the user pick.
 **Step 3 — Collect parameters**
 Ask how many samples to generate. Default to 50 for prototyping.
 
-**Step 3b — Select teacher model**
+**Step 3b — MANDATORY: Select teacher model**
 Call `list_models` to discover available teacher models from the AI Gateway.
-Present each returned model as a numbered option for the user to choose from.
+You MUST present the models as a numbered list and ask the user to pick one.
+Do NOT auto-select a model, even if there is only one available.
 Format each option as: `N) endpoint-name — provider / model_name`
 
-Example (if list_models returns two endpoints):
+Example:
 
 Which teacher model should generate the training data?
 
 1) test-endpoint — openai / gpt-4.1-mini
-2) claude-haiku — anthropic / claude-haiku-4-5
 
 If the list is empty, tell the user no models are configured and direct them
 to set up an AI Gateway endpoint in the MLflow settings page.
