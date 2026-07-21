@@ -25,22 +25,32 @@ Amortized runs on a kind cluster with GPU passthrough. Each developer gets an is
 | esivaram  | amortized-esivaram | 31140 | 31141 | 1 |
 | *(shared)* | amortized         | —     | MLflow: 31082 | — |
 
+### Directory layout on the cluster
+
+Each developer works from their own directory to avoid stepping on each other:
+
+```
+~/<username>/
+├── amortized/    # your clone of amortized-ai/amortized
+└── studio/       # your clone of amortized-ai/studio
+```
+
+The Makefile's `STUDIO_DIR` defaults to `../studio`, so it automatically picks up your sibling studio directory.
+
 ### Quick start
 
 ```bash
-# First-time setup (creates cluster, configures GPUs, deploys everything)
-make up GHCR_USER=<github-user> GHCR_TOKEN=<github-pat>
+# One-time setup: clone both repos into your directory
+mkdir -p ~/<username> && cd ~/<username>
+git clone git@github.com:amortized-ai/amortized.git
+git clone git@github.com:amortized-ai/studio.git
 
-# Deploy shared services only (MLflow, MinIO)
-make deploy-shared
-
-# Deploy your environment
+# Build images and deploy your environment
+cd ~/<username>/amortized
+make build-server build-studio load-server load-studio
 make deploy-<username>
 
-# Deploy all environments
-make deploy-all
-
-# Rebuild images and redeploy
+# Rebuild images from your current branch and redeploy
 make refresh-<username>
 
 # Tear down your environment
@@ -66,15 +76,24 @@ Then open your studio at `http://localhost:<your-studio-port>` (see table above 
 
 ### Testing a PR branch
 
-To deploy a custom studio image for PR testing:
+To test a PR, check out the branch in your studio or amortized clone, rebuild, and redeploy:
 
 ```bash
-# Build from a different studio directory
-docker build -t amortized-studio:my-pr -f ../<username>/studio/Dockerfile.kind ../<username>/studio/
-kind load docker-image amortized-studio:my-pr --name amortized
+# Example: testing a studio PR
+cd ~/<username>/studio
+git checkout feat/my-branch
 
-# Switch your deployment to the custom image
-kubectl -n amortized-<username> set image deployment/amortized-studio studio=amortized-studio:my-pr
+# Rebuild and redeploy from your working directory
+cd ~/<username>/amortized
+make refresh-<username>
+```
+
+To swap just the studio image without a full refresh:
+
+```bash
+cd ~/<username>/amortized
+make build-studio load-studio
+kubectl -n amortized-<username> rollout restart deployment/amortized-studio
 ```
 
 ### Adding a new developer
