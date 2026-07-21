@@ -42,6 +42,8 @@ spec:
               value: "mlflow"
             - name: MLFLOW_PORT
               value: "5000"
+            - name: DNS_RESOLVER
+              value: "kube-dns.kube-system.svc.cluster.local"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
