@@ -60,17 +60,40 @@ _TRAINING_HUB_SKIP_KEYS = {
 
 
 _EVAL_PREPROCESS_SCRIPT = '''\
-"""Preprocess eval dataset: ensure 'request' and 'response' fields exist."""
-import json, sys
+"""Preprocess eval dataset: ensure 'request' and 'response' fields exist.
+
+Also applies common field aliases (e.g. 'topic' -> 'category') so that
+deterministic_checks find the expected field names.
+"""
+import json, sys, shutil
 
 path = sys.argv[1]
+out_path = path.rsplit(".", 1)[0] + "_processed.jsonl"
+
 with open(path) as f:
     rows = [json.loads(line) for line in f if line.strip()]
 
 if not rows:
+    shutil.copy2(path, out_path)
+    print(f"Empty dataset, copied as-is -> {out_path}")
     sys.exit(0)
 
-if "request" in rows[0] and "response" in rows[0]:
+# Common field aliases: source -> target (only applied if target is absent)
+_FIELD_ALIASES = {
+    "topic": "category",
+}
+
+needs_processing = False
+sample = rows[0]
+if "request" not in sample or "response" not in sample:
+    needs_processing = True
+for src, dst in _FIELD_ALIASES.items():
+    if src in sample and dst not in sample:
+        needs_processing = True
+
+if not needs_processing:
+    shutil.copy2(path, out_path)
+    print(f"Data already has required fields, copied as-is -> {out_path}")
     sys.exit(0)
 
 out = []
@@ -108,9 +131,14 @@ for row in rows:
                 new_row["response"] = "\\n".join(f"{k}: {v}" for k, v in fields.items())
             else:
                 new_row["response"] = ""
+
+    # Apply field aliases
+    for src, dst in _FIELD_ALIASES.items():
+        if src in new_row and dst not in new_row:
+            new_row[dst] = new_row[src]
+
     out.append(new_row)
 
-out_path = path.rsplit(".", 1)[0] + "_processed.jsonl"
 with open(out_path, "w") as f:
     for row in out:
         f.write(json.dumps(row) + "\\n")
@@ -542,28 +570,22 @@ async def _run_job(job: dict[str, Any]) -> None:
                 eval_data_local = f"/amortized/work/{data_path}"
             else:
                 eval_data_local = data_path
-        judge_prompt = config.get("judge", {}).get("prompt", "")
-        if "{request}" in judge_prompt or "{response}" in judge_prompt:
-            config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
+        # Always preprocess eval data to ensure 'request' and 'response'
+        # fields exist — asynth judge requires them regardless of whether
+        # the judge prompt references {request}/{response}.
+        config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
         config.pop("dataset", None)
         config_files["config.yaml"] = _eval_config_yaml(config)
-        if "preprocess_eval.py" in config_files:
-            processed_path = eval_data_local.rsplit(".", 1)[0] + "_processed.jsonl"
-            safe_input = shlex.quote(eval_data_local)
-            safe_output = shlex.quote(processed_path)
-            cmd = [
-                "sh", "-c",
-                f"python3 /amortized/preprocess_eval.py {safe_input}"
-                f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
-                f" && asynth judge --config /amortized/config.yaml"
-                f" --data {safe_output}",
-            ]
-        else:
-            cmd = [
-                "asynth", "judge",
-                "--config", "/amortized/config.yaml",
-                "--data", eval_data_local,
-            ]
+        processed_path = eval_data_local.rsplit(".", 1)[0] + "_processed.jsonl"
+        safe_input = shlex.quote(eval_data_local)
+        safe_output = shlex.quote(processed_path)
+        cmd = [
+            "sh", "-c",
+            f"python3 /amortized/preprocess_eval.py {safe_input}"
+            f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
+            f" && asynth judge --config /amortized/config.yaml"
+            f" --data {safe_output}",
+        ]
 
     job_type = job["type"]
     needs_gpu = job_type == "training"
