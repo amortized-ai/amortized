@@ -136,7 +136,7 @@ class DryRunResponse(BaseModel):
 class GatewayModel(BaseModel):
     name: str = Field(..., description="Endpoint name (use as 'model' in job config)")
     provider: str = Field("", description="Model provider (e.g. openai, anthropic)")
-    endpoint_type: str = Field("", description="Endpoint type (e.g. llm/v1/chat)")
+    model_name: str = Field("", description="Underlying model (e.g. gpt-4.1-mini)")
 
 
 class ModelsResponse(BaseModel):
