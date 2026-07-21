@@ -447,6 +447,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_env[env_name] = secret_val
     if use_gateway and "OPENAI_API_KEY" not in spec_env:
         spec_env["OPENAI_API_KEY"] = "gateway-managed"
+    if job["type"] in (JobType.sdg.value, JobType.eval.value):
+        spec_env["LITELLM_DROP_PARAMS"] = "true"
 
     if config_mod.settings.mlflow_tracking_uri:
         mlflow_experiment = f"amortized/{job['type']}/{job_id[:8]}"
