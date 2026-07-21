@@ -25,6 +25,9 @@ patches:
         path: /data/AMORTIZED_MLFLOW_TRACKING_URI
         value: "http://mlflow.amortized.svc.cluster.local:5000"
       - op: replace
+        path: /data/AMORTIZED_GATEWAY_URL
+        value: "http://mlflow.amortized.svc.cluster.local:5000/gateway/mlflow/v1"
+      - op: replace
         path: /data/AMORTIZED_S3_BUCKET
         value: "amortized"
 
