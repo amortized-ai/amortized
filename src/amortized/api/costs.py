@@ -135,6 +135,7 @@ def _get_pricing(model: str, live: dict[str, tuple[float, float]]) -> tuple[floa
 # Request / response models
 # ---------------------------------------------------------------------------
 
+
 class EstimateSdgCostRequest(BaseModel):
     num_samples: int = Field(100, description="Number of training samples to generate")
     model: str = Field("openai/gpt-4o-mini", description="Teacher model ID in LiteLLM format")
@@ -261,6 +262,7 @@ class EstimateEvalCostResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post(
     "/sdg",
     response_model=EstimateSdgCostResponse,
@@ -326,13 +328,15 @@ async def compare_sdg_models(body: CompareSdgModelsRequest) -> CompareSdgModelsR
         total_output = body.num_samples * OUTPUT_TOKENS_PER_SAMPLE
         cost = (total_input / 1000) * inp_1k + (total_output / 1000) * out_1k
         per_sample = cost / body.num_samples if body.num_samples > 0 else 0
-        models.append(SdgModelComparison(
-            model_id=model_id,
-            label=label,
-            description=desc,
-            total_cost=round(cost, 4),
-            per_sample_cost=round(per_sample, 6),
-        ))
+        models.append(
+            SdgModelComparison(
+                model_id=model_id,
+                label=label,
+                description=desc,
+                total_cost=round(cost, 4),
+                per_sample_cost=round(per_sample, 6),
+            )
+        )
 
     return CompareSdgModelsResponse(
         num_samples=body.num_samples,
@@ -356,16 +360,18 @@ async def estimate_training_cost(
         estimated_hours = estimated_minutes / 60
         estimated_cost = estimated_hours * info["cost_per_gpu_hour"]
 
-        models.append(TrainingModelEstimate(
-            model_id=model_id,
-            label=info["label"],
-            description=info["description"],
-            gpu_type=info["gpu_type"],
-            vram_gb=info["vram_gb"],
-            estimated_time_minutes=round(estimated_minutes, 1),
-            estimated_cost=round(estimated_cost, 4),
-            cost_per_gpu_hour=info["cost_per_gpu_hour"],
-        ))
+        models.append(
+            TrainingModelEstimate(
+                model_id=model_id,
+                label=info["label"],
+                description=info["description"],
+                gpu_type=info["gpu_type"],
+                vram_gb=info["vram_gb"],
+                estimated_time_minutes=round(estimated_minutes, 1),
+                estimated_cost=round(estimated_cost, 4),
+                cost_per_gpu_hour=info["cost_per_gpu_hour"],
+            )
+        )
 
     return EstimateTrainingCostResponse(
         num_samples=body.num_samples,
@@ -420,8 +426,7 @@ async def estimate_training_method_cost(
             vram_gb=model_info["vram_gb"] * 4,
             estimated_time_minutes=round(base_time * 3.5, 1),
             estimated_cost=round(
-                (base_time * 3.5 / 60)
-                * (3.50 if model_info["vram_gb"] > 8 else 1.10),
+                (base_time * 3.5 / 60) * (3.50 if model_info["vram_gb"] > 8 else 1.10),
                 2,
             ),
             relative_time="~3.5x",
@@ -482,14 +487,16 @@ async def estimate_eval_cost(
         t_inp = body.num_samples * EVAL_INPUT_TOKENS_PER_SAMPLE
         t_out = body.num_samples * EVAL_OUTPUT_TOKENS_PER_SAMPLE
         total = (t_inp / 1000) * inp_1k + (t_out / 1000) * out_1k
-        comparison.append(EvalJudgeOption(
-            model_id=mid,
-            label=label,
-            description=desc,
-            total_cost=round(total, 2),
-            per_sample_cost=round(total / body.num_samples if body.num_samples > 0 else 0, 2),
-            recommended=False,
-        ))
+        comparison.append(
+            EvalJudgeOption(
+                model_id=mid,
+                label=label,
+                description=desc,
+                total_cost=round(total, 2),
+                per_sample_cost=round(total / body.num_samples if body.num_samples > 0 else 0, 2),
+                recommended=False,
+            )
+        )
 
     sorted_comparison = sorted(comparison, key=lambda m: m.total_cost)
     if sorted_comparison:

@@ -348,6 +348,24 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
             config["_parent_model_uri"] = artifact_uri
             logger.info("Injected model URI from parent: %s", artifact_uri)
 
+        existing_dataset = config.get("dataset", "")
+        if existing_dataset and not existing_dataset.startswith("s3://"):
+            grandparent_job_id = parent.get("parent_job_id", "")
+            if grandparent_job_id:
+                grandparent = await repo.get_job(grandparent_job_id)
+                if grandparent and grandparent["type"] == "sdg":
+                    grandparent_run_id = grandparent.get("mlflow_run_id", "")
+                    if grandparent_run_id:
+                        grandparent_artifact_uri = await _resolve_mlflow_artifact_uri(
+                            grandparent_run_id
+                        )
+                        if grandparent_artifact_uri:
+                            data_file = (
+                                f"{grandparent_artifact_uri}/generated_data/generated_data.jsonl"
+                            )
+                            config["dataset"] = data_file
+                            logger.info("Injected SDG test data from grandparent: %s", data_file)
+
     return config
 
 
