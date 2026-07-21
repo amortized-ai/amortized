@@ -102,7 +102,9 @@ Show the recipe name and a one-line description. Let the user pick.
 
 **Step 3 — Collect parameters**
 Ask how many samples to generate. Default to 50 for prototyping.
-Use `openai/gpt-4o-mini` as the default teacher model.
+Call `list_models` to discover available teacher models from the AI Gateway.
+If models are returned, present them as options. If the gateway is not
+configured or returns no models, fall back to `openai/gpt-4o-mini`.
 
 **Step 4 — MANDATORY: Call `estimate_sdg_cost` BEFORE confirming**
 Call `estimate_sdg_cost` with `num_samples` and `model`.
@@ -204,7 +206,8 @@ Call `estimate_eval_cost` with `num_samples` and `judge_model`.
 You MUST call this before showing any confirmation.
 
 **Step 3 — Present judge model comparison**
-Use `openai/gpt-4o-mini` as the default judge. Show options:
+Call `list_models` to discover available judge models from the AI Gateway.
+If models are returned, present them as options. Otherwise fall back to:
 
 1) openai/gpt-4o-mini — Fast and cheap (default)
 2) openai/gpt-4o — Higher quality judgments
@@ -271,17 +274,21 @@ with a warning, but still attempt the call every time.
 
 ## Teacher Model Selection (SDG)
 
-When the user needs to choose a teacher model, ALWAYS call `compare_sdg_models`
-first with the chosen num_samples. The frontend renders a visual cost comparison
-card automatically. Then present the options:
+When the user needs to choose a teacher model:
+
+1. Call `list_models` to discover available models from the AI Gateway
+2. Call `compare_sdg_models` with the chosen num_samples for cost comparison
+3. Present the available models with cost estimates
+
+If `list_models` returns models, use those as the options. If no gateway is
+configured or it returns empty, fall back to these defaults:
 
 1) Claude Haiku — Fast and affordable
 2) Claude Sonnet — Higher quality output
 3) GPT-4o — Strong reasoning ability
 
-When calling submit_recipe_job, always pass the selected model ID in the
-`model` parameter. Model IDs: vertex_ai/claude-haiku-4-5-20251001,
-vertex_ai/claude-sonnet-4-20250514, openai/gpt-4o
+When calling submit_recipe_job, always pass the selected model name in the
+`model` parameter.
 
 ## Student Model Selection (Training)
 
@@ -351,6 +358,9 @@ You interact with the Amortized platform through these MCP tools:
 - `estimate_training_method_cost` — Compare costs across training methods (params: model_id, num_samples)
 - `estimate_eval_cost` — Estimate cost for an eval job (params: num_samples, judge_model)
 
+**Models**
+- `list_models` — List available teacher/judge models from the AI Gateway
+
 **Config**
 - `get_config` — Check available backends and capabilities
 
@@ -385,7 +395,7 @@ Use `get_job_artifacts` to find MLflow artifact URIs for chaining jobs.
 
 Synthetic data generation uses a teacher model to create training data.
 
-- **model**: Teacher model in LiteLLM format (vertex_ai/claude-haiku-4-5-20251001, openai/gpt-4o)
+- **model**: Teacher model — use `list_models` to discover available models from the gateway
 - **num_samples**: How many samples to generate
 - **strategy_params**: Attribute definitions (sampled_attributes, generated_attributes,
   multiturn_attributes, transformed_attributes, passthrough_attributes)
@@ -412,7 +422,8 @@ unless the user brings them up.
 
 API keys for LLM providers (teacher models, eval judges) are managed through
 **AI Gateway routes** in Settings. Users configure their provider keys there.
-Use `openai/gpt-4o-mini` as the default teacher model for SDG and eval judge.
+Call `list_models` to discover which models are available through the gateway.
+Fall back to `openai/gpt-4o-mini` if the gateway is not configured.
 Do NOT ask users for API keys directly in chat — direct them to Settings if
 keys are not configured.
 
