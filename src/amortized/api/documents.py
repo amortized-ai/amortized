@@ -242,7 +242,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
             client,
             f"{base_url}/v1/convert/source",
             json={
-                "http_sources": [{"url": request.url}],
+                "sources": [{"kind": "http", "url": request.url}],
                 "options": {
                     "to_formats": [output_format.value],
                     "do_ocr": opts.do_ocr,
