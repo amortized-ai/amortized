@@ -350,7 +350,9 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
 
         existing_dataset = config.get("dataset", "")
         if existing_dataset and not existing_dataset.startswith("s3://"):
-            grandparent_job_id = parent.get("parent_job_id", "")
+            grandparent_job_id = parent.get("parent_job_id", "") or parent.get(
+                "config", {}
+            ).get("parent_job_id", "")
             if grandparent_job_id:
                 grandparent = await repo.get_job(grandparent_job_id)
                 if grandparent and grandparent["type"] == "sdg":
