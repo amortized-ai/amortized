@@ -9,8 +9,6 @@ import shlex
 from datetime import UTC, datetime
 from typing import Any
 
-import aiosqlite
-
 import amortized.config as config_mod
 from amortized.backends import BackendHandle, Capability, JobSpec, Resources, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
@@ -155,16 +153,11 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     return result
 
 
-async def _get_db() -> aiosqlite.Connection:
-    config_mod.settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-    db = await aiosqlite.connect(str(config_mod.settings.db_path))
-    db.row_factory = aiosqlite.Row
-    return db
+async def _get_repo() -> Repository:
+    from amortized.db.connection import _get_shared_db
 
-
-async def _get_repo() -> tuple[aiosqlite.Connection, Repository]:
-    db = await _get_db()
-    return db, Repository(db)
+    db = await _get_shared_db()
+    return Repository(db)
 
 
 def _serialize_handle(handle: BackendHandle) -> str:
@@ -182,19 +175,13 @@ def _serialize_handle(handle: BackendHandle) -> str:
 
 
 async def _update_job(job_id: str, **kwargs: Any) -> None:
-    db, repo = await _get_repo()
-    try:
-        await repo.update_job(job_id, **kwargs)
-    finally:
-        await db.close()
+    repo = await _get_repo()
+    await repo.update_job(job_id, **kwargs)
 
 
 async def _pick_pending_job() -> dict[str, Any] | None:
-    db, repo = await _get_repo()
-    try:
-        return await repo.pick_pending_job()
-    finally:
-        await db.close()
+    repo = await _get_repo()
+    return await repo.pick_pending_job()
 
 
 async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
@@ -261,16 +248,13 @@ async def _set_mlflow_run_tag(mlflow_run_id: str, key: str, value: str) -> None:
 
 
 async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
-    db, repo = await _get_repo()
-    try:
-        job = await repo.get_job(training_job_id)
-        if not job:
-            raise ValueError(f"Training job not found: {training_job_id}")
-        if job["status"] != "succeeded":
-            raise ValueError(f"Training job has not succeeded (status: {job['status']})")
-        return job
-    finally:
-        await db.close()
+    repo = await _get_repo()
+    job = await repo.get_job(training_job_id)
+    if not job:
+        raise ValueError(f"Training job not found: {training_job_id}")
+    if job["status"] != "succeeded":
+        raise ValueError(f"Training job has not succeeded (status: {job['status']})")
+    return job
 
 
 async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> bool:
@@ -318,11 +302,8 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     """Look up a job's MLflow artifact URI by job ID."""
     if not job_id:
         return None
-    db, repo = await _get_repo()
-    try:
-        job = await repo.get_job(job_id)
-    finally:
-        await db.close()
+    repo = await _get_repo()
+    job = await repo.get_job(job_id)
     if not job:
         return None
     run_id = job.get("mlflow_run_id", "")
@@ -338,11 +319,8 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
     if not parent_job_id:
         return config
 
-    db, repo = await _get_repo()
-    try:
-        parent = await repo.get_job(parent_job_id)
-    finally:
-        await db.close()
+    repo = await _get_repo()
+    parent = await repo.get_job(parent_job_id)
 
     if not parent:
         logger.warning("Parent job %s not found", parent_job_id)
@@ -655,37 +633,34 @@ async def _run_job(job: dict[str, Any]) -> None:
 
 
 async def cleanup_orphaned_jobs() -> None:
-    db, repo = await _get_repo()
-    try:
-        running_jobs = await repo.list_jobs(status=JobStatus.running)
-        now = datetime.now(UTC).isoformat()
+    repo = await _get_repo()
+    running_jobs = await repo.list_jobs(status=JobStatus.running)
+    now = datetime.now(UTC).isoformat()
 
-        for job in running_jobs:
-            job_id = job["id"]
-            handle_json = job.get("backend_handle")
+    for job in running_jobs:
+        job_id = job["id"]
+        handle_json = job.get("backend_handle")
 
-            alive = False
-            handle = deserialize_handle(handle_json)
-            if handle is not None:
-                try:
-                    backend = get_backend(handle.backend_name)
-                    bs = await backend.status(handle)
-                    alive = bs.running
-                except KeyError:
-                    pass
+        alive = False
+        handle = deserialize_handle(handle_json)
+        if handle is not None:
+            try:
+                backend = get_backend(handle.backend_name)
+                bs = await backend.status(handle)
+                alive = bs.running
+            except KeyError:
+                pass
 
-            if alive:
-                logger.info("Re-adopted running job %s", job_id)
-            else:
-                await repo.update_job(
-                    job_id,
-                    status=JobStatus.failed.value,
-                    completed_at=now,
-                    error="Orphaned job — process no longer running",
-                )
-                logger.warning("Marked orphaned job %s as failed", job_id)
-    finally:
-        await db.close()
+        if alive:
+            logger.info("Re-adopted running job %s", job_id)
+        else:
+            await repo.update_job(
+                job_id,
+                status=JobStatus.failed.value,
+                completed_at=now,
+                error="Orphaned job — process no longer running",
+            )
+            logger.warning("Marked orphaned job %s as failed", job_id)
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
