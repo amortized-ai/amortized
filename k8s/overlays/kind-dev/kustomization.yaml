@@ -92,7 +92,8 @@ patches:
                   - name: MCP_AMORTIZED_URL
                     value: "http://amortized-server.amortized-dev.svc.cluster.local:8000/mcp"
 
-  # Studio MLFLOW_HOST uses cross-namespace DNS (MLflow runs in amortized)
+  # Studio env overrides: dev services use amortized-dev namespace FQDNs,
+  # except MLflow which runs in the amortized namespace
   - target:
       kind: Deployment
       name: amortized-studio
@@ -107,5 +108,9 @@ patches:
             containers:
               - name: studio
                 env:
+                  - name: BACKEND_HOST
+                    value: "amortized-server.amortized-dev.svc.cluster.local"
+                  - name: AGENT_HOST
+                    value: "opencode.amortized-dev.svc.cluster.local"
                   - name: MLFLOW_HOST
                     value: "mlflow.amortized.svc.cluster.local"
