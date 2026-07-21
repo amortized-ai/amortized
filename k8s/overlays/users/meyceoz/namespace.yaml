@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-meyceoz
+  labels:
+    app: amortized
+    environment: dev
+    owner: meyceoz
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-meyceoz-jobs
+  labels:
+    app: amortized
+    environment: dev
+    owner: meyceoz

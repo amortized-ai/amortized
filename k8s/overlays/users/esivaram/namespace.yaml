@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-esivaram
+  labels:
+    app: amortized
+    environment: dev
+    owner: esivaram
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-esivaram-jobs
+  labels:
+    app: amortized
+    environment: dev
+    owner: esivaram

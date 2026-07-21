@@ -46,14 +46,18 @@ Serve → training_job_id → resolve MLflow run → init container downloads ad
 
 Amortized stores `mlflow_run_id` per job. Everything else — storage, versioning, lineage — is MLflow's responsibility.
 
-### OpenShift Deployment
+### Kind Cluster Deployment
 
 ```
-k8s/base/    ← amortized only (server, studio, RBAC, configmap)
-k8s/dev/     ← MinIO + MLflow for development/testing
+k8s/base/              ← kustomize base (server, studio, opencode, claude-code, RBAC, configmap)
+k8s/overlays/shared/   ← MLflow + MinIO (shared across all developers)
+k8s/overlays/users/    ← per-developer kustomize overlays (one directory per developer)
+k8s/overlays/rosa/     ← OpenShift/ROSA production overlay
+k8s/overlays/dev/      ← MLflow/MinIO resource definitions (referenced by shared/)
+k8s/kind/              ← kind cluster config + NVIDIA device plugin
 ```
 
-Amortized plugs into existing S3 and MLflow (AD-1). Platform engineer provides endpoints.
+5 per-developer namespaces (`amortized-{username}`), each with own server, studio, opencode, claude-code. Shared MLflow/MinIO in `amortized` namespace. 1 GPU quota per developer. Managed via `make deploy-<username>`, `make refresh-<username>`, `make down-<username>`.
 
 ## Key Patterns
 

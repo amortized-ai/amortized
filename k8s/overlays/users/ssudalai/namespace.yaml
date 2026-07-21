@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-ssudalai
+  labels:
+    app: amortized
+    environment: dev
+    owner: ssudalai
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-ssudalai-jobs
+  labels:
+    app: amortized
+    environment: dev
+    owner: ssudalai
