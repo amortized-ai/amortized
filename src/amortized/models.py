@@ -133,6 +133,17 @@ class DryRunResponse(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class GatewayModel(BaseModel):
+    name: str = Field(..., description="Endpoint name (use as 'model' in job config)")
+    provider: str = Field("", description="Model provider (e.g. openai, anthropic)")
+    endpoint_type: str = Field("", description="Endpoint type (e.g. llm/v1/chat)")
+
+
+class ModelsResponse(BaseModel):
+    models: list[GatewayModel] = Field(default_factory=list)
+    gateway_url: str = Field("", description="Gateway URL these models are served from")
+
+
 class ConfigResponse(BaseModel):
     version: str = "1.0.0"
     default_compute_backend: str = ""

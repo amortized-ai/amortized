@@ -196,6 +196,10 @@ app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
 app.include_router(costs.router)
 
+from amortized.api.models import router as models_router  # noqa: E402
+
+app.include_router(models_router)
+
 create_mcp_server(app)
 
 
