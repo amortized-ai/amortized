@@ -62,7 +62,7 @@ async def _store_in_mlflow(
     tracking_uri = _tracking_uri()
     async with httpx.AsyncClient(timeout=30.0) as client:
         experiment_name = "amortized/documents"
-        resp = await client.post(
+        resp = await client.get(
             f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
             params={"experiment_name": experiment_name},
         )
@@ -293,7 +293,7 @@ async def list_documents() -> list[DocumentSummary]:
     tracking_uri = _tracking_uri()
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            exp_resp = await client.post(
+            exp_resp = await client.get(
                 f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
                 params={"experiment_name": "amortized/documents"},
             )
