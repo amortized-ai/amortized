@@ -103,8 +103,9 @@ Show the recipe name and a one-line description. Let the user pick.
 **Step 3 — Collect parameters**
 Ask how many samples to generate. Default to 50 for prototyping.
 Call `list_models` to discover available teacher models from the AI Gateway.
-If models are returned, present them as options. If the gateway is not
-configured or returns no models, fall back to `openai/gpt-4o-mini`.
+Present the returned models as the options for the user to choose from.
+If the list is empty, tell the user no models are configured and ask them
+to set up an AI Gateway endpoint in MLflow settings.
 
 **Step 4 — MANDATORY: Call `estimate_sdg_cost` BEFORE confirming**
 Call `estimate_sdg_cost` with `num_samples` and `model`.
@@ -116,7 +117,7 @@ Present a confirmation table with the cost estimate included:
 | Setting        | Value                |
 |----------------|----------------------|
 | Recipe         | (selected recipe)    |
-| Teacher Model  | openai/gpt-4o-mini   |
+| Teacher Model  | (selected endpoint)  |
 | Samples        | 50                   |
 | Est. Cost      | $X.XX                |
 
@@ -277,17 +278,14 @@ with a warning, but still attempt the call every time.
 When the user needs to choose a teacher model:
 
 1. Call `list_models` to discover available models from the AI Gateway
-2. Call `compare_sdg_models` with the chosen num_samples for cost comparison
-3. Present the available models with cost estimates
+2. Present the returned models as options (show endpoint name, provider, and
+   underlying model)
 
-If `list_models` returns models, use those as the options. If no gateway is
-configured or it returns empty, fall back to these defaults:
+If `list_models` returns an empty list (no gateway configured), tell the user
+no models are available and ask them to configure an AI Gateway endpoint in
+the MLflow settings.
 
-1) Claude Haiku — Fast and affordable
-2) Claude Sonnet — Higher quality output
-3) GPT-4o — Strong reasoning ability
-
-When calling submit_recipe_job, always pass the selected model name in the
+When calling submit_recipe_job, pass the selected endpoint name in the
 `model` parameter.
 
 ## Student Model Selection (Training)
