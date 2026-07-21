@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import costs, jobs, recipes
+from amortized.api import costs, documents, jobs, recipes
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
@@ -79,6 +79,11 @@ def _load_backends() -> None:
     if gateway_url:
         _settings.gateway_url = gateway_url
         logger.info("AI Gateway URL: %s", gateway_url)
+
+    docling_url = config.get("docling_url", "")
+    if docling_url:
+        _settings.docling_url = docling_url
+        logger.info("Docling-serve URL: %s", docling_url)
 
     backends = config.get("compute", {}).get("backends", {})
     for name, spec in backends.items():
@@ -195,6 +200,7 @@ app.include_router(jobs.router)
 app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
 app.include_router(costs.router)
+app.include_router(documents.router)
 
 from amortized.api.models import router as models_router  # noqa: E402
 
@@ -244,6 +250,7 @@ async def get_config() -> ConfigResponse:
         compute_namespace=_settings.compute_namespace,
         mlflow_tracking_uri=_settings.mlflow_tracking_uri,
         mlflow_gateway_uri=mlflow_gateway_uri,
+        docling_url=_settings.docling_url,
         image_registry=_settings.image_registry,
         available_backends=list(get_all_backends().keys()),
     )

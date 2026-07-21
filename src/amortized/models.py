@@ -144,11 +144,49 @@ class ModelsResponse(BaseModel):
     gateway_url: str = Field("", description="Gateway URL these models are served from")
 
 
+class OutputFormat(StrEnum):
+    md = "md"
+    text = "text"
+    json = "json"
+    html = "html"
+
+
+class ConvertOptions(BaseModel):
+    output_format: OutputFormat = Field(OutputFormat.md, description="Output format")
+    do_ocr: bool = Field(True, description="Enable OCR for scanned documents")
+    ocr_engine: str = Field("easyocr", description="OCR engine: easyocr, tesseract")
+    table_mode: str = Field("fast", description="Table detection mode: fast, accurate")
+
+
+class ConvertUrlRequest(BaseModel):
+    url: str = Field(..., description="URL of document to convert")
+    options: ConvertOptions = Field(default_factory=ConvertOptions)
+
+
+class _DocumentBase(BaseModel):
+    document_id: str = Field(..., description="Unique document identifier")
+    mlflow_run_id: str | None = Field(None, description="MLflow run ID for artifact tracking")
+    filename: str = Field("", description="Original filename")
+    format: OutputFormat = Field(OutputFormat.md, description="Output format used")
+
+
+class DocumentResult(_DocumentBase):
+    content: str = Field("", description="Parsed document content")
+    processing_time: float = Field(0.0, ge=0, description="Processing time in seconds")
+    status: str = Field("success", description="Conversion status")
+    warnings: list[str] = Field(default_factory=list, description="Non-fatal issues")
+
+
+class DocumentSummary(_DocumentBase):
+    created_at: str | None = Field(None, description="When the document was processed")
+
+
 class ConfigResponse(BaseModel):
     version: str = "1.0.0"
     default_compute_backend: str = ""
     compute_namespace: str = ""
     mlflow_tracking_uri: str = ""
     mlflow_gateway_uri: str = ""
+    docling_url: str = ""
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
