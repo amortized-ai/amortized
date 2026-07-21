@@ -108,4 +108,4 @@ patches:
               - name: studio
                 env:
                   - name: MLFLOW_HOST
-                    value: "mlflow.amortized"
+                    value: "mlflow.amortized.svc.cluster.local"
