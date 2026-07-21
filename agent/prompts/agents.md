@@ -102,10 +102,21 @@ Show the recipe name and a one-line description. Let the user pick.
 
 **Step 3 — Collect parameters**
 Ask how many samples to generate. Default to 50 for prototyping.
+
+**Step 3b — Select teacher model**
 Call `list_models` to discover available teacher models from the AI Gateway.
-Present the returned models as the options for the user to choose from.
-If the list is empty, tell the user no models are configured and ask them
-to set up an AI Gateway endpoint in MLflow settings.
+Present each returned model as a numbered option for the user to choose from.
+Format each option as: `N) endpoint-name — provider / model_name`
+
+Example (if list_models returns two endpoints):
+
+Which teacher model should generate the training data?
+
+1) test-endpoint — openai / gpt-4.1-mini
+2) claude-haiku — anthropic / claude-haiku-4-5
+
+If the list is empty, tell the user no models are configured and direct them
+to set up an AI Gateway endpoint in the MLflow settings page.
 
 **Step 4 — MANDATORY: Call `estimate_sdg_cost` BEFORE confirming**
 Call `estimate_sdg_cost` with `num_samples` and `model`.
@@ -278,15 +289,19 @@ with a warning, but still attempt the call every time.
 When the user needs to choose a teacher model:
 
 1. Call `list_models` to discover available models from the AI Gateway
-2. Present the returned models as options (show endpoint name, provider, and
-   underlying model)
+2. Present each model as a numbered option showing the endpoint name,
+   provider, and underlying model name
+3. Wait for the user to select one before proceeding
 
-If `list_models` returns an empty list (no gateway configured), tell the user
-no models are available and ask them to configure an AI Gateway endpoint in
-the MLflow settings.
+Example:
 
-When calling submit_recipe_job, pass the selected endpoint name in the
-`model` parameter.
+Which teacher model should generate the training data?
+
+1) test-endpoint — openai / gpt-4.1-mini
+2) claude-haiku — anthropic / claude-haiku-4-5
+
+When calling submit_recipe_job, pass the `name` field from the selected model
+(e.g. `openai/test-endpoint`) as the `model` parameter.
 
 ## Student Model Selection (Training)
 
