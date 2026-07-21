@@ -38,8 +38,10 @@ async def test_list_models_no_gateway() -> None:
 @pytest.mark.asyncio
 async def test_list_models_with_gateway() -> None:
     fake_models = [
-        GatewayModel(name="chat", provider="openai", model_name="gpt-4.1-mini"),
-        GatewayModel(name="claude-haiku", provider="anthropic", model_name="claude-haiku-4-5"),
+        GatewayModel(name="openai/chat", provider="openai", model_name="gpt-4.1-mini"),
+        GatewayModel(
+            name="openai/claude-haiku", provider="anthropic", model_name="claude-haiku-4-5"
+        ),
     ]
 
     async def mock_fetch() -> list[GatewayModel]:
@@ -57,10 +59,10 @@ async def test_list_models_with_gateway() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["models"]) == 2
-    assert data["models"][0]["name"] == "chat"
+    assert data["models"][0]["name"] == "openai/chat"
     assert data["models"][0]["provider"] == "openai"
     assert data["models"][0]["model_name"] == "gpt-4.1-mini"
-    assert data["models"][1]["name"] == "claude-haiku"
+    assert data["models"][1]["name"] == "openai/claude-haiku"
     assert data["models"][1]["provider"] == "anthropic"
     assert data["gateway_url"] == "http://mlflow:5000/gateway/mlflow/v1"
 
@@ -85,7 +87,7 @@ async def test_list_models_caches_result() -> None:
     async def mock_fetch() -> list[GatewayModel]:
         nonlocal call_count
         call_count += 1
-        return [GatewayModel(name="chat", provider="openai", model_name="gpt-4.1-mini")]
+        return [GatewayModel(name="openai/chat", provider="openai", model_name="gpt-4.1-mini")]
 
     with patch.object(models_mod, "_fetch_gateway_models", mock_fetch):
         async with httpx.AsyncClient(
