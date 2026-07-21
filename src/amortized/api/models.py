@@ -40,7 +40,7 @@ async def _fetch_gateway_models() -> list[GatewayModel]:
             _models_cache_time = now
             return _models_cache
 
-        url = f"{tracking_uri.rstrip('/')}/api/2.0/endpoints"
+        url = f"{tracking_uri.rstrip('/')}/api/3.0/mlflow/gateway/endpoints/list"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(url)
@@ -54,14 +54,19 @@ async def _fetch_gateway_models() -> list[GatewayModel]:
 
         models: list[GatewayModel] = []
         for endpoint in data.get("endpoints", []):
-            model_info = endpoint.get("model", {})
-            if isinstance(model_info, str):
-                model_info = {"name": model_info}
+            provider = ""
+            model_name = ""
+            for mapping in endpoint.get("model_mappings", []):
+                model_def = mapping.get("model_definition", {})
+                if model_def:
+                    provider = model_def.get("provider", "")
+                    model_name = model_def.get("model_name", "")
+                    break
             models.append(
                 GatewayModel(
                     name=endpoint.get("name", ""),
-                    provider=model_info.get("provider", ""),
-                    endpoint_type=endpoint.get("endpoint_type", ""),
+                    provider=provider,
+                    model_name=model_name,
                 )
             )
 
