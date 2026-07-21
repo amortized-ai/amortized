@@ -108,8 +108,8 @@ def _load_backends() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
-    await cleanup_orphaned_jobs()
     _load_backends()
+    await cleanup_orphaned_jobs()
     logger.info("Amortized runtime started")
 
     worker_task = asyncio.create_task(worker_loop())
