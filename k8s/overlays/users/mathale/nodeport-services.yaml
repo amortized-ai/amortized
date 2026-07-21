@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: amortized-studio-nodeport
-  namespace: amortized-dev
+  namespace: amortized-mathale
   labels:
     app: amortized
     component: studio
@@ -14,13 +14,13 @@ spec:
   ports:
     - port: 8080
       targetPort: http
-      nodePort: 31090
+      nodePort: 31120
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: amortized-server-nodeport
-  namespace: amortized-dev
+  namespace: amortized-mathale
   labels:
     app: amortized
     component: server
@@ -32,4 +32,4 @@ spec:
   ports:
     - port: 8000
       targetPort: http
-      nodePort: 31091
+      nodePort: 31121

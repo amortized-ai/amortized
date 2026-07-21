@@ -5,7 +5,10 @@ STUDIO_DIR    ?= $(shell cd .. && pwd)/studio
 STUDIO_REPO   ?= https://github.com/amortized-ai/studio
 REPO_ROOT     := $(shell pwd)
 
-# GHCR images (prod uses these directly, dev builds locally)
+# Developer environments
+USERS := meyceoz ssudalai mathale nmalepat esivaram
+
+# GHCR images (used as base refs in kustomize, overridden via sed for local builds)
 SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
 STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 
@@ -29,10 +32,10 @@ VERTEX_LOCATION ?= global
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        prompt deploy deploy-dev apply-dev ghcr-pull-secret \
-        test-server test-studio \
-        cluster gpu \
-        down destroy status
+        prompt deploy-shared deploy-all deploy-user \
+        down-all down-user \
+        cluster gpu ghcr-pull-secret \
+        socat-setup destroy status
 
 # ──────────────────────────────────────────────
 # Help
@@ -40,13 +43,13 @@ VERTEX_LOCATION ?= global
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 # ──────────────────────────────────────────────
 # Full setup
 # ──────────────────────────────────────────────
 
-up: cluster gpu pull-images load-deps deploy status ## Create cluster, deploy prod stack
+up: cluster gpu pull-images load-deps build load deploy-all status ## Full setup: cluster + GPU + images + deploy all
 
 # ──────────────────────────────────────────────
 # Cluster lifecycle
@@ -148,23 +151,25 @@ load-deps: ## Load third-party images into kind
 # GHCR pull secret
 # ──────────────────────────────────────────────
 
-ghcr-pull-secret: ## Create ghcr.io pull secret in all namespaces (requires GHCR_USER and GHCR_TOKEN)
+ghcr-pull-secret: ## Create ghcr.io pull secret in all user namespaces (requires GHCR_USER and GHCR_TOKEN)
 	@if [ -z "$(GHCR_USER)" ] || [ -z "$(GHCR_TOKEN)" ]; then \
 		echo "Skipping GHCR pull secret: set GHCR_USER and GHCR_TOKEN to enable."; \
 	else \
-		for ns in amortized amortized-jobs amortized-dev amortized-dev-jobs; do \
-			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
-				echo "  ghcr-pull already exists in $$ns, skipping."; \
-			else \
-				echo "  Creating ghcr-pull in $$ns..."; \
-				$(KUBECTL) create secret docker-registry ghcr-pull \
-					--docker-server=ghcr.io \
-					--docker-username=$(GHCR_USER) \
-					--docker-password=$(GHCR_TOKEN) \
-					-n $$ns; \
-			fi; \
-			$(KUBECTL) -n $$ns patch serviceaccount default \
-				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+		for user in $(USERS); do \
+			for ns in amortized-$$user amortized-$$user-jobs; do \
+				if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
+					echo "  ghcr-pull already exists in $$ns, skipping."; \
+				else \
+					echo "  Creating ghcr-pull in $$ns..."; \
+					$(KUBECTL) create secret docker-registry ghcr-pull \
+						--docker-server=ghcr.io \
+						--docker-username=$(GHCR_USER) \
+						--docker-password=$(GHCR_TOKEN) \
+						-n $$ns; \
+				fi; \
+				$(KUBECTL) -n $$ns patch serviceaccount default \
+					-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
+			done; \
 		done; \
 		echo "GHCR pull secret configured."; \
 	fi
@@ -183,91 +188,35 @@ prompt: ## Build combined Morty prompt from soul.md + agents.md
 	@echo "Generated $(COMBINED_DIR)/morty.md"
 
 # ──────────────────────────────────────────────
-# Deploy prod
+# Deploy shared services (MLflow, MinIO)
 # ──────────────────────────────────────────────
 
-deploy: prompt ## Deploy prod stack (GHCR images, amortized namespace)
-	@echo "Deploying prod stack..."
-	@# Pull GHCR images
-	@echo "Pulling GHCR images..."
-	@docker pull $(SERVER_IMAGE)
-	@docker pull $(STUDIO_IMAGE)
-	@# Load into kind
-	@echo "Loading images into kind..."
-	@kind load docker-image $(SERVER_IMAGE) --name $(CLUSTER_NAME)
-	@kind load docker-image $(STUDIO_IMAGE) --name $(CLUSTER_NAME)
-	@# Namespaces
-	$(KUBECTL) apply -f k8s/base/namespace.yaml
-	@# GHCR pull secret (private repos need auth even with pre-loaded images)
-	@if [ -n "$(GHCR_USER)" ] && [ -n "$(GHCR_TOKEN)" ]; then \
-		for ns in amortized amortized-jobs; do \
-			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
-				echo "  ghcr-pull already exists in $$ns, skipping."; \
-			else \
-				echo "  Creating ghcr-pull in $$ns..."; \
-				$(KUBECTL) create secret docker-registry ghcr-pull \
-					--docker-server=ghcr.io \
-					--docker-username=$(GHCR_USER) \
-					--docker-password=$(GHCR_TOKEN) \
-					-n $$ns; \
-			fi; \
-			$(KUBECTL) -n $$ns patch serviceaccount default \
-				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
-		done; \
-	else \
-		echo "  Skipping GHCR pull secret: set GHCR_USER and GHCR_TOKEN to enable."; \
-	fi
-	@# OpenCode GCP credentials
-	@if $(KUBECTL) -n amortized get secret opencode-gcp >/dev/null 2>&1; then \
-		echo "  opencode-gcp already exists, skipping."; \
-	elif [ -f "$(GOOGLE_ADC_PATH)" ]; then \
-		echo "  Creating opencode-gcp from $(GOOGLE_ADC_PATH)..."; \
-		$(KUBECTL) -n amortized create secret generic opencode-gcp \
-			--from-file=credentials.json=$(GOOGLE_ADC_PATH); \
-	else \
-		echo "  Warning: opencode-gcp not found and $(GOOGLE_ADC_PATH) missing. Create manually."; \
-	fi
-	@# OpenCode LLM config (Vertex AI)
-	@if $(KUBECTL) -n amortized get secret opencode-llm >/dev/null 2>&1; then \
-		echo "  opencode-llm already exists, skipping."; \
-	else \
-		echo "  Creating opencode-llm (project=$(VERTEX_PROJECT), location=$(VERTEX_LOCATION))..."; \
-		$(KUBECTL) -n amortized create secret generic opencode-llm \
-			--from-literal=google-cloud-project=$(VERTEX_PROJECT) \
-			--from-literal=vertex-location=$(VERTEX_LOCATION); \
-	fi
-	@# Apply kustomize (GHCR image refs used as-is, no sed replacement)
-	@$(KUBECTL) kustomize k8s/overlays/kind | $(KUBECTL) apply -f -
-	@# Create MinIO bucket
+deploy-shared: ## Deploy shared services (MLflow, MinIO) into amortized namespace
+	@echo "Deploying shared services..."
+	$(KUBECTL) apply -k k8s/overlays/shared
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s
 	@$(KUBECTL) run minio-init --rm -i --restart=Never \
 		--image=$(AWSCLI_IMAGE) \
 		--namespace=amortized \
 		--overrides='{"spec":{"containers":[{"name":"minio-init","image":"$(AWSCLI_IMAGE)","command":["sh","-c","aws --endpoint-url http://minio.amortized.svc.cluster.local:9000 s3 mb s3://amortized 2>/dev/null || true"],"env":[{"name":"AWS_ACCESS_KEY_ID","value":"minioadmin"},{"name":"AWS_SECRET_ACCESS_KEY","value":"minioadmin"}]}]}}' \
-		|| echo "  Warning: could not create MinIO bucket. Create manually."
-	@# Wait for rollouts
-	@echo "Waiting for deployments..."
+		|| echo "  Warning: could not create MinIO bucket (may already exist)."
+	@echo "Waiting for MLflow..."
 	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
-	@$(KUBECTL) -n amortized rollout status deployment/amortized-server --timeout=120s
-	@$(KUBECTL) -n amortized rollout status deployment/amortized-studio --timeout=120s
-	@$(KUBECTL) -n amortized rollout status deployment/opencode --timeout=120s
-	@$(KUBECTL) -n amortized rollout status deployment/claude-code --timeout=120s
-	@echo "Prod stack deployed."
+	@echo "Shared services deployed."
 
 # ──────────────────────────────────────────────
-# Deploy dev
+# Deploy per-user environment
 # ──────────────────────────────────────────────
 
-deploy-dev: build-server build-studio load-server load-studio apply-dev ## Build + deploy dev stack from current code
-
-apply-dev: prompt ## Apply dev k8s manifests (no build)
-	@echo "Deploying dev stack..."
-	@# Namespaces first
-	$(KUBECTL) apply -f k8s/overlays/kind-dev/namespace.yaml
-	@# GHCR pull secret for dev namespaces
+deploy-user: prompt ## Deploy a user's environment (USER=<name>)
+	@if [ -z "$(USER)" ]; then echo "Usage: make deploy-user USER=<username>"; exit 1; fi
+	@echo "Deploying environment for $(USER)..."
+	@# Create namespaces
+	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/namespace.yaml
+	@# GHCR pull secret
 	@if [ -n "$(GHCR_USER)" ] && [ -n "$(GHCR_TOKEN)" ]; then \
-		for ns in amortized-dev amortized-dev-jobs; do \
+		for ns in amortized-$(USER) amortized-$(USER)-jobs; do \
 			if $(KUBECTL) -n $$ns get secret ghcr-pull >/dev/null 2>&1; then \
 				echo "  ghcr-pull already exists in $$ns, skipping."; \
 			else \
@@ -282,60 +231,115 @@ apply-dev: prompt ## Apply dev k8s manifests (no build)
 				-p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}' 2>/dev/null || true; \
 		done; \
 	fi
-	@# Copy OpenCode credentials from prod namespace
+	@# Copy OpenCode credentials from shared namespace
 	@for secret in opencode-gcp opencode-llm; do \
-		if $(KUBECTL) -n amortized-dev get secret $$secret >/dev/null 2>&1; then \
-			echo "  Secret $$secret already exists in amortized-dev, skipping."; \
+		if $(KUBECTL) -n amortized-$(USER) get secret $$secret >/dev/null 2>&1; then \
+			echo "  Secret $$secret already exists in amortized-$(USER), skipping."; \
 		elif $(KUBECTL) -n amortized get secret $$secret >/dev/null 2>&1; then \
-			echo "  Copying $$secret from amortized to amortized-dev..."; \
+			echo "  Copying $$secret from amortized to amortized-$(USER)..."; \
 			$(KUBECTL) -n amortized get secret $$secret -o json | \
-				jq '.metadata.namespace = "amortized-dev" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
+				jq '.metadata.namespace = "amortized-$(USER)" | del(.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.annotations)' | \
 				$(KUBECTL) apply -f - || \
-				echo "  Warning: could not copy $$secret to amortized-dev."; \
+				echo "  Warning: could not copy $$secret to amortized-$(USER)."; \
 		else \
-			echo "  Warning: $$secret not found. Deploy prod first or create manually."; \
+			echo "  Warning: $$secret not found in amortized namespace."; \
 		fi; \
 	done
-	@# Build and apply via kustomize (local image tags via sed)
-	@$(KUBECTL) kustomize k8s/overlays/kind-dev | \
+	@# Apply kustomize overlay (sed replaces GHCR refs with local image tags)
+	@$(KUBECTL) kustomize k8s/overlays/users/$(USER) | \
 		sed \
 			-e 's|image: ghcr.io/amortized-ai/amortized:latest|image: amortized-server:$(IMAGE_TAG)|g' \
 			-e 's|image: ghcr.io/amortized-ai/studio:latest|image: amortized-studio:$(IMAGE_TAG)|g' \
 		| $(KUBECTL) apply -f -
-	@# Dev-only resources (pre-namespaced, applied separately)
-	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets.yaml
-	$(KUBECTL) apply -f k8s/overlays/kind-dev/s3-secrets-jobs.yaml
-	$(KUBECTL) apply -f k8s/overlays/kind-dev/nodeport-services.yaml
-	$(KUBECTL) apply -f k8s/overlays/kind-dev/gpu-quota.yaml
-	@echo "Waiting for dev deployments..."
-	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
-	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
-	@$(KUBECTL) -n amortized-dev rollout status deployment/opencode --timeout=120s
-	@$(KUBECTL) -n amortized-dev rollout status deployment/claude-code --timeout=120s
-	@echo "Dev stack deployed."
+	@# Apply resources that live outside kustomize (pre-namespaced)
+	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/s3-secrets.yaml
+	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/nodeport-services.yaml
+	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/gpu-quota.yaml
+	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/rbac-jobs.yaml
+	@# Wait for rollouts
+	@echo "Waiting for $(USER) deployments..."
+	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/amortized-server --timeout=120s
+	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/amortized-studio --timeout=120s
+	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/opencode --timeout=120s
+	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/claude-code --timeout=120s
+	@echo "$(USER) environment deployed."
 
 # ──────────────────────────────────────────────
-# PR testing shortcuts
+# Deploy all / tear down
 # ──────────────────────────────────────────────
 
-test-server: build-server load-server apply-dev ## Build server from current branch + deploy to dev
-	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-server
-	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-server --timeout=120s
-	@echo "Dev server updated. API at http://localhost:31091"
+deploy-all: deploy-shared ## Deploy shared services + all user environments
+	@for user in $(USERS); do \
+		echo ""; \
+		echo ">>> Deploying $$user"; \
+		$(MAKE) deploy-user USER=$$user; \
+	done
+	@echo ""
+	@echo "All environments deployed."
 
-test-studio: build-studio load-studio apply-dev ## Build studio from current branch + deploy to dev
-	@$(KUBECTL) -n amortized-dev rollout restart deployment/amortized-studio
-	@$(KUBECTL) -n amortized-dev rollout status deployment/amortized-studio --timeout=120s
-	@echo "Dev studio updated. UI at http://localhost:31090"
+down-user: ## Tear down a user's environment (USER=<name>)
+	@if [ -z "$(USER)" ]; then echo "Usage: make down-user USER=<username>"; exit 1; fi
+	@echo "Tearing down $(USER) environment..."
+	$(KUBECTL) delete namespace amortized-$(USER) amortized-$(USER)-jobs --ignore-not-found
+	@echo "$(USER) environment removed."
+
+down-all: ## Tear down all user environments (keeps shared services)
+	@for user in $(USERS); do \
+		$(MAKE) down-user USER=$$user; \
+	done
+	@echo "All user environments removed. Shared services untouched."
+
+# ──────────────────────────────────────────────
+# Refresh (rebuild + redeploy)
+# ──────────────────────────────────────────────
+
+refresh-user: build-server build-studio load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
+	@if [ -z "$(USER)" ]; then echo "Usage: make refresh-user USER=<username>"; exit 1; fi
+	$(MAKE) deploy-user USER=$(USER)
+	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio
+	@echo "$(USER) refreshed."
+
+# ──────────────────────────────────────────────
+# Per-user convenience aliases
+# ──────────────────────────────────────────────
+
+define user_targets
+.PHONY: deploy-$(1) down-$(1) refresh-$(1)
+deploy-$(1): ## Deploy $(1)'s environment
+	$$(MAKE) deploy-user USER=$(1)
+down-$(1): ## Tear down $(1)'s environment
+	$$(MAKE) down-user USER=$(1)
+refresh-$(1): ## Rebuild + redeploy $(1)
+	$$(MAKE) refresh-user USER=$(1)
+endef
+
+$(foreach u,$(USERS),$(eval $(call user_targets,$(u))))
+
+# ──────────────────────────────────────────────
+# Socat port bridging
+# ──────────────────────────────────────────────
+
+socat-setup: ## Set up socat bridges for ports not in kind config (run on the kind host)
+	@CONTROL_PLANE_IP=$$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $(CLUSTER_NAME)-control-plane 2>/dev/null); \
+	if [ -z "$$CONTROL_PLANE_IP" ]; then \
+		echo "Could not find control-plane container. Is kind running?"; \
+		exit 1; \
+	fi; \
+	echo "Control plane IP: $$CONTROL_PLANE_IP"; \
+	echo "Starting socat bridges..."; \
+	for PORT in 31100 31101 31110 31111 31120 31121 31130 31131 31140 31141; do \
+		if ss -tlnp | grep -q ":$$PORT "; then \
+			echo "  Port $$PORT already listening, skipping."; \
+		else \
+			echo "  Bridging host:$$PORT -> $$CONTROL_PLANE_IP:$$PORT"; \
+			nohup socat TCP-LISTEN:$$PORT,fork,reuseaddr TCP:$$CONTROL_PLANE_IP:$$PORT > /dev/null 2>&1 & \
+		fi; \
+	done; \
+	echo "Done. Verify with: ss -tlnp | grep 311"
 
 # ──────────────────────────────────────────────
 # Teardown
 # ──────────────────────────────────────────────
-
-down: ## Delete dev namespaces (keep prod and cluster)
-	@echo "Tearing down dev namespace..."
-	$(KUBECTL) delete namespace amortized-dev amortized-dev-jobs --ignore-not-found
-	@echo "Dev namespace removed. Prod untouched."
 
 destroy: ## Delete the entire kind cluster
 	@echo "Destroying kind cluster '$(CLUSTER_NAME)'..."
@@ -353,25 +357,35 @@ status: ## Show cluster status, pods, and access URLs
 	@echo "=== GPU Nodes ==="
 	@$(KUBECTL) get nodes -o custom-columns="NAME:.metadata.name,GPUs:.status.allocatable.nvidia\.com/gpu" 2>/dev/null || true
 	@echo ""
-	@echo "=== Pods (amortized) ==="
+	@echo "=== Shared Services (amortized) ==="
 	@$(KUBECTL) get pods -n amortized 2>/dev/null || true
-	@echo ""
-	@echo "=== Pods (amortized-jobs) ==="
-	@$(KUBECTL) get pods -n amortized-jobs 2>/dev/null || true
-	@echo ""
-	@echo "=== Pods (amortized-dev) ==="
-	@$(KUBECTL) get pods -n amortized-dev 2>/dev/null || true
-	@echo ""
-	@echo "=== Pods (amortized-dev-jobs) ==="
-	@$(KUBECTL) get pods -n amortized-dev-jobs 2>/dev/null || true
+	@for user in $(USERS); do \
+		echo ""; \
+		echo "=== $$user (amortized-$$user) ==="; \
+		$(KUBECTL) get pods -n amortized-$$user 2>/dev/null || echo "  Namespace not found"; \
+		echo "  Jobs:"; \
+		$(KUBECTL) get pods -n amortized-$$user-jobs 2>/dev/null || echo "  (none)"; \
+	done
 	@echo ""
 	@echo "=== Access ==="
-	@echo "  Prod Studio:  http://localhost:31080"
-	@echo "  Prod API:     http://localhost:31081"
-	@echo "  MLflow:       http://localhost:31082"
-	@echo "  Dev Studio:   http://localhost:31090"
-	@echo "  Dev API:      http://localhost:31091"
+	@echo "  MLflow:           http://localhost:31082"
+	@echo ""
+	@echo "  meyceoz Studio:   http://localhost:31100"
+	@echo "  meyceoz API:      http://localhost:31101"
+	@echo "  ssudalai Studio:  http://localhost:31110"
+	@echo "  ssudalai API:     http://localhost:31111"
+	@echo "  mathale Studio:   http://localhost:31120"
+	@echo "  mathale API:      http://localhost:31121"
+	@echo "  nmalepat Studio:  http://localhost:31130"
+	@echo "  nmalepat API:     http://localhost:31131"
+	@echo "  esivaram Studio:  http://localhost:31140"
+	@echo "  esivaram API:     http://localhost:31141"
 	@echo ""
 	@echo "  SSH tunnel:"
-	@echo "    ssh -L 31080:localhost:31080 -L 31081:localhost:31081 -L 31082:localhost:31082 \\"
-	@echo "        -L 31090:localhost:31090 -L 31091:localhost:31091 user@REDACTED_IP"
+	@echo "    ssh -L 31082:localhost:31082 \\"
+	@echo "        -L 31100:localhost:31100 -L 31101:localhost:31101 \\"
+	@echo "        -L 31110:localhost:31110 -L 31111:localhost:31111 \\"
+	@echo "        -L 31120:localhost:31120 -L 31121:localhost:31121 \\"
+	@echo "        -L 31130:localhost:31130 -L 31131:localhost:31131 \\"
+	@echo "        -L 31140:localhost:31140 -L 31141:localhost:31141 \\"
+	@echo "        user@<gpu-host>"

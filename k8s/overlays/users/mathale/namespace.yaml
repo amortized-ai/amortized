@@ -1,15 +1,17 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: amortized-dev
+  name: amortized-mathale
   labels:
     app: amortized
     environment: dev
+    owner: mathale
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: amortized-dev-jobs
+  name: amortized-mathale-jobs
   labels:
     app: amortized
     environment: dev
+    owner: mathale
