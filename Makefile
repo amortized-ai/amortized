@@ -20,6 +20,7 @@ NVIDIA_DP_IMAGE ?= nvcr.io/nvidia/k8s-device-plugin:v0.19.3
 TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
 ASYNTH_IMAGE  ?= ghcr.io/amortized-ai/asynth:latest
 OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
+DOCLING_IMAGE  ?= ghcr.io/docling-project/docling-serve:latest
 
 # GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
 GHCR_USER  ?=
@@ -110,9 +111,9 @@ build-studio: ## Build studio image (expects ../studio/)
 	@echo "Building amortized-studio:$(IMAGE_TAG)..."
 	docker build -t amortized-studio:$(IMAGE_TAG) -f $(STUDIO_DIR)/Dockerfile.kind $(STUDIO_DIR)
 
-pull-images: ## Pull third-party images (MinIO, MLflow, training, etc.)
+pull-images: ## Pull third-party images (MinIO, MLflow, docling-serve, training, etc.)
 	@echo "Pulling third-party images..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
 		docker pull $$img 2>/dev/null || true; \
 	done
 	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
@@ -139,7 +140,7 @@ load-studio: ## Load studio image into kind
 
 load-deps: ## Load third-party images into kind
 	@echo "Loading third-party images into kind..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 	@echo "Loading ML images into kind (training is ~12GB, be patient)..."

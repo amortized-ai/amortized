@@ -29,6 +29,9 @@ patches:
       - op: replace
         path: /data/AMORTIZED_S3_BUCKET
         value: "amortized"
+      - op: add
+        path: /data/AMORTIZED_DOCLING_URL
+        value: "http://docling-serve.amortized.svc.cluster.local:5001"
 
   - target:
       kind: Deployment
