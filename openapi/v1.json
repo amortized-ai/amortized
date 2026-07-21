@@ -1157,10 +1157,10 @@
             "description": "Model provider (e.g. openai, anthropic)",
             "default": ""
           },
-          "endpoint_type": {
+          "model_name": {
             "type": "string",
-            "title": "Endpoint Type",
-            "description": "Endpoint type (e.g. llm/v1/chat)",
+            "title": "Model Name",
+            "description": "Underlying model (e.g. gpt-4.1-mini)",
             "default": ""
           }
         },
