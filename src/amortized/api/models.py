@@ -62,9 +62,10 @@ async def _fetch_gateway_models() -> list[GatewayModel]:
                     provider = model_def.get("provider", "")
                     model_name = model_def.get("model_name", "")
                     break
+            endpoint_name = endpoint.get("name", "")
             models.append(
                 GatewayModel(
-                    name=endpoint.get("name", ""),
+                    name=f"openai/{endpoint_name}" if endpoint_name else "",
                     provider=provider,
                     model_name=model_name,
                 )
