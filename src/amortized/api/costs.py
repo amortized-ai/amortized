@@ -39,9 +39,9 @@ MODEL_LABELS: dict[str, str] = {
 
 INPUT_TOKENS_PER_SAMPLE = 500
 OUTPUT_TOKENS_PER_SAMPLE = 300
-MANUAL_LABELING_COST_PER_SAMPLE = 3.50
-MANUAL_TRAINING_COST_PER_SAMPLE = 6.00
-MANUAL_EVAL_COST_PER_SAMPLE = 5.00
+FRONTIER_API_COST_PER_SAMPLE = 0.012
+FRONTIER_TRAINING_COST_PER_SAMPLE = 0.025
+MANUAL_EVAL_COST_PER_SAMPLE = 2.00
 
 EVAL_INPUT_TOKENS_PER_SAMPLE = 800
 EVAL_OUTPUT_TOKENS_PER_SAMPLE = 200
@@ -50,40 +50,124 @@ EVAL_OUTPUT_TOKENS_PER_SAMPLE = 200
 # Training cost constants
 # ---------------------------------------------------------------------------
 
+# GPU pricing (EC2 capacity blocks / on-demand)
+GPU_PRICING: dict[str, float] = {
+    "T4": 0.35,
+    "A10G": 1.10,
+    "L4": 0.81,
+    "A100": 3.50,
+    "H100": 4.72,
+}
+
+# Model metadata for memory estimation (from training_hub profiling)
 TRAINING_MODELS: dict[str, dict[str, Any]] = {
     "qwen3-0.6b": {
         "label": "Qwen3 0.6B",
         "description": "Ultra-lightweight, fastest inference, great for prototyping",
-        "gpu_type": "T4",
-        "cost_per_gpu_hour": 0.35,
-        "base_minutes_per_100_samples": 8,
-        "vram_gb": 4,
+        "num_params": 600_000_000,
+        "hidden_size": 1024,
+        "num_layers": 28,
+        "vocab_size": 151936,
+        "lora_target_dims": 57344,
+        "tokens_per_second": 8500,
     },
     "qwen2.5-1.5b": {
         "label": "Qwen 2.5 1.5B",
         "description": "Small but capable, good balance of speed and quality",
-        "gpu_type": "T4",
-        "cost_per_gpu_hour": 0.35,
-        "base_minutes_per_100_samples": 15,
-        "vram_gb": 6,
+        "num_params": 1_500_000_000,
+        "hidden_size": 1536,
+        "num_layers": 28,
+        "vocab_size": 151936,
+        "lora_target_dims": 86016,
+        "tokens_per_second": 5000,
     },
     "qwen3-4b": {
         "label": "Qwen3 4B",
         "description": "Larger model, better accuracy, still efficient",
-        "gpu_type": "A10G",
-        "cost_per_gpu_hour": 1.10,
-        "base_minutes_per_100_samples": 25,
-        "vram_gb": 12,
+        "num_params": 4_000_000_000,
+        "hidden_size": 2560,
+        "num_layers": 36,
+        "vocab_size": 151936,
+        "lora_target_dims": 184320,
+        "tokens_per_second": 3000,
     },
     "llama-3.1-8b": {
         "label": "Llama 3.1 8B",
         "description": "Most capable, highest quality, requires more resources",
-        "gpu_type": "A100",
-        "cost_per_gpu_hour": 3.50,
-        "base_minutes_per_100_samples": 35,
-        "vram_gb": 24,
+        "num_params": 8_000_000_000,
+        "hidden_size": 4096,
+        "num_layers": 32,
+        "vocab_size": 128256,
+        "lora_target_dims": 262144,
+        "tokens_per_second": 1800,
     },
 }
+
+
+def _estimate_memory_gb(
+    model_id: str, method: str, batch_size: int = 8, max_seq_len: int = 2048, lora_r: int = 16
+) -> float:
+    """Estimate peak GPU VRAM in GB using training_hub profiling formulas."""
+    info = TRAINING_MODELS.get(model_id, TRAINING_MODELS["qwen3-0.6b"])
+    num_params: int = info["num_params"]
+    hidden_size: int = info["hidden_size"]
+    num_layers: int = info["num_layers"]
+    vocab_size: int = info["vocab_size"]
+    lora_dims: int = info["lora_target_dims"]
+    tokens = batch_size * max_seq_len
+
+    if method == "full_sft":
+        model_mem = num_params * 4
+        grad_mem = num_params * 4
+        opt_mem = num_params * 4 * 2
+        act_mem = tokens * 4 * num_layers * hidden_size
+        out_mem = tokens * 4 * vocab_size * (8 / 3)
+        subtotal = model_mem + grad_mem + opt_mem + act_mem + out_mem
+        return (subtotal * 1.1) / (1024**3)
+
+    if method in ("lora_sft", "lora"):
+        ab_params = lora_dims * lora_r
+        model_mem = num_params * 2 + ab_params * 4
+        grad_mem = ab_params * 2
+        opt_mem = ab_params * 2 * 2
+        act_mem = tokens * 2 * num_layers * hidden_size
+        out_mem = tokens * 2 * vocab_size * 2
+        peak = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
+        return (peak * 1.1) / (1024**3)
+
+    if method in ("qlora_sft", "qlora"):
+        ab_params = lora_dims * lora_r
+        model_mem = num_params * 0.5 + ab_params * 4
+        grad_mem = ab_params * 2
+        opt_mem = ab_params * 2 * 2
+        act_mem = tokens * 2 * num_layers * hidden_size
+        out_mem = tokens * 2 * vocab_size * 2
+        peak = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
+        offload = num_params * 1
+        subtotal = max(peak, offload)
+        return (subtotal * 1.1) / (1024**3)
+
+    return _estimate_memory_gb(model_id, "lora_sft", batch_size, max_seq_len, lora_r)
+
+
+def _pick_gpu(vram_gb: float) -> str:
+    if vram_gb <= 16:
+        return "T4"
+    if vram_gb <= 24:
+        return "A10G"
+    if vram_gb <= 40:
+        return "A100"
+    return "H100"
+
+
+def _estimate_training_minutes(
+    model_id: str, num_samples: int, num_epochs: int, max_seq_len: int = 2048
+) -> float:
+    info = TRAINING_MODELS.get(model_id, TRAINING_MODELS["qwen3-0.6b"])
+    tokens_per_sec: int = info["tokens_per_second"]
+    total_tokens = num_samples * max_seq_len * num_epochs
+    seconds = total_tokens / tokens_per_sec
+    return seconds / 60
 
 # ---------------------------------------------------------------------------
 # OpenRouter live pricing (cached)
@@ -280,7 +364,7 @@ async def estimate_sdg_cost(body: EstimateSdgCostRequest) -> EstimateSdgCostResp
     output_cost = (total_output_tokens / 1000) * output_cost_per_1k
     sdg_total = input_cost + output_cost
 
-    manual_total = body.num_samples * MANUAL_LABELING_COST_PER_SAMPLE
+    manual_total = body.num_samples * FRONTIER_API_COST_PER_SAMPLE
     savings_amount = manual_total - sdg_total
     savings_pct = (savings_amount / manual_total * 100) if manual_total > 0 else 0
 
@@ -355,21 +439,22 @@ async def estimate_training_cost(
 ) -> EstimateTrainingCostResponse:
     models = []
     for model_id, info in TRAINING_MODELS.items():
-        base_minutes: float = info["base_minutes_per_100_samples"]
-        estimated_minutes = (body.num_samples / 100) * base_minutes * (body.num_epochs / 3)
-        estimated_hours = estimated_minutes / 60
-        estimated_cost = estimated_hours * info["cost_per_gpu_hour"]
+        vram_gb = _estimate_memory_gb(model_id, "lora_sft")
+        gpu_type = _pick_gpu(vram_gb)
+        cost_per_hour = GPU_PRICING.get(gpu_type, 1.10)
+        est_minutes = _estimate_training_minutes(model_id, body.num_samples, body.num_epochs)
+        est_cost = (est_minutes / 60) * cost_per_hour
 
         models.append(
             TrainingModelEstimate(
                 model_id=model_id,
                 label=info["label"],
                 description=info["description"],
-                gpu_type=info["gpu_type"],
-                vram_gb=info["vram_gb"],
-                estimated_time_minutes=round(estimated_minutes, 1),
-                estimated_cost=round(estimated_cost, 4),
-                cost_per_gpu_hour=info["cost_per_gpu_hour"],
+                gpu_type=gpu_type,
+                vram_gb=round(vram_gb),
+                estimated_time_minutes=round(est_minutes, 1),
+                estimated_cost=round(est_cost, 4),
+                cost_per_gpu_hour=cost_per_hour,
             )
         )
 
@@ -390,54 +475,40 @@ async def estimate_training_method_cost(
     body: EstimateTrainingMethodCostRequest,
 ) -> EstimateTrainingMethodCostResponse:
     model_info = TRAINING_MODELS.get(body.model_id, TRAINING_MODELS["qwen3-0.6b"])
-    base_minutes: float = model_info["base_minutes_per_100_samples"]
-    base_time = (body.num_samples / 100) * base_minutes * (body.num_epochs / 3)
-    base_hours = base_time / 60
-    base_cost = base_hours * model_info["cost_per_gpu_hour"]
+    base_minutes = _estimate_training_minutes(body.model_id, body.num_samples, body.num_epochs)
 
-    methods = [
-        TrainingMethodEstimate(
-            method="lora_sft",
-            label="LoRA SFT",
-            description="Trains adapter weights only — fastest and cheapest",
-            gpu_type=model_info["gpu_type"],
-            vram_gb=model_info["vram_gb"],
-            estimated_time_minutes=round(base_time, 1),
-            estimated_cost=round(base_cost, 2),
-            relative_time="1x",
-            recommended=True,
-        ),
-        TrainingMethodEstimate(
-            method="qlora_sft",
-            label="QLoRA SFT",
-            description="4-bit quantized base + LoRA — lower VRAM, slightly slower",
-            gpu_type=model_info["gpu_type"],
-            vram_gb=round(model_info["vram_gb"] * 0.5, 1),
-            estimated_time_minutes=round(base_time * 1.2, 1),
-            estimated_cost=round(base_cost * 1.2, 2),
-            relative_time="~1.2x",
-            recommended=False,
-        ),
-        TrainingMethodEstimate(
-            method="full_sft",
-            label="Full SFT",
-            description="Updates all model weights — highest quality, most expensive",
-            gpu_type="A100" if model_info["vram_gb"] > 8 else "A10G",
-            vram_gb=model_info["vram_gb"] * 4,
-            estimated_time_minutes=round(base_time * 3.5, 1),
-            estimated_cost=round(
-                (base_time * 3.5 / 60) * (3.50 if model_info["vram_gb"] > 8 else 1.10),
-                2,
-            ),
-            relative_time="~3.5x",
-            recommended=False,
-        ),
+    method_configs = [
+        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest", 1.0, True),
+        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM, slightly slower", 1.2, False),
+        ("full_sft", "Full SFT", "Updates all model weights — highest quality, most expensive", 3.5, False),
     ]
 
-    recommended = next((m for m in methods if m.recommended), methods[0])
-    manual_total = body.num_samples * MANUAL_TRAINING_COST_PER_SAMPLE
-    savings_amount = manual_total - recommended.estimated_cost
-    savings_pct = (savings_amount / manual_total * 100) if manual_total > 0 else 0
+    methods = []
+    for method, label, desc, time_mult, recommended in method_configs:
+        vram_gb = _estimate_memory_gb(body.model_id, method)
+        gpu_type = _pick_gpu(vram_gb)
+        cost_per_hour = GPU_PRICING.get(gpu_type, 1.10)
+        est_minutes = base_minutes * time_mult
+        est_cost = (est_minutes / 60) * cost_per_hour
+
+        methods.append(
+            TrainingMethodEstimate(
+                method=method,
+                label=label,
+                description=desc,
+                gpu_type=gpu_type,
+                vram_gb=round(vram_gb, 1),
+                estimated_time_minutes=round(est_minutes, 1),
+                estimated_cost=round(est_cost, 2),
+                relative_time="1x" if time_mult == 1.0 else f"~{time_mult}x",
+                recommended=recommended,
+            )
+        )
+
+    recommended_method = next((m for m in methods if m.recommended), methods[0])
+    frontier_total = body.num_samples * FRONTIER_TRAINING_COST_PER_SAMPLE
+    savings_amount = frontier_total - recommended_method.estimated_cost
+    savings_pct = (savings_amount / frontier_total * 100) if frontier_total > 0 else 0
 
     return EstimateTrainingMethodCostResponse(
         model_id=body.model_id,
@@ -446,9 +517,9 @@ async def estimate_training_method_cost(
         num_epochs=body.num_epochs,
         methods=methods,
         comparison=TrainingMethodComparison(
-            automated_label=f"{recommended.label} Training",
-            automated_cost=recommended.estimated_cost,
-            manual_training_total=round(manual_total, 2),
+            automated_label=f"{recommended_method.label} Training",
+            automated_cost=recommended_method.estimated_cost,
+            manual_training_total=round(frontier_total, 2),
             savings_amount=round(savings_amount, 2),
             savings_percent=round(savings_pct, 1),
         ),
@@ -502,9 +573,9 @@ async def estimate_eval_cost(
     if sorted_comparison:
         sorted_comparison[0].recommended = True
 
-    manual_eval_total = body.num_samples * MANUAL_EVAL_COST_PER_SAMPLE
-    eval_savings = manual_eval_total - eval_total
-    eval_savings_pct = (eval_savings / manual_eval_total * 100) if manual_eval_total > 0 else 0
+    review_total = body.num_samples * MANUAL_EVAL_COST_PER_SAMPLE
+    eval_savings = review_total - eval_total
+    eval_savings_pct = (eval_savings / review_total * 100) if review_total > 0 else 0
 
     return EstimateEvalCostResponse(
         judge_model=body.judge_model,
@@ -518,7 +589,7 @@ async def estimate_eval_cost(
         cost_per_sample=round(cost_per_sample, 2),
         comparison=sorted_comparison,
         manual_comparison=EvalManualComparison(
-            manual_evaluation_total=round(manual_eval_total, 2),
+            manual_evaluation_total=round(review_total, 2),
             savings_amount=round(eval_savings, 2),
             savings_percent=round(eval_savings_pct, 1),
         ),
