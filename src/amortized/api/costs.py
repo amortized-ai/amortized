@@ -246,8 +246,17 @@ class EstimateSdgCostResponse(BaseModel):
     comparison: dict[str, float]
 
 
+class SdgModelSpec(BaseModel):
+    model_id: str
+    label: str = ""
+    description: str = ""
+
+
 class CompareSdgModelsRequest(BaseModel):
     num_samples: int = Field(100, description="Number of training samples to generate")
+    models: list[SdgModelSpec] | None = Field(
+        None, description="Available models to compare (from AI Gateway). Uses defaults if omitted."
+    )
 
 
 class SdgModelComparison(BaseModel):
@@ -411,11 +420,17 @@ async def estimate_sdg_cost(body: EstimateSdgCostRequest) -> EstimateSdgCostResp
 async def compare_sdg_models(body: CompareSdgModelsRequest) -> CompareSdgModelsResponse:
     live_pricing = await _fetch_openrouter_pricing()
 
-    sdg_models = [
-        ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
-        ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
-        ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
-    ]
+    if body.models:
+        sdg_models = [
+            (m.model_id, m.label or _resolve_model_label(m.model_id), m.description)
+            for m in body.models
+        ]
+    else:
+        sdg_models = [
+            ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
+            ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
+            ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
+        ]
 
     models = []
     for model_id, label, desc in sdg_models:
