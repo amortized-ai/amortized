@@ -106,8 +106,6 @@ build-studio: ## Build studio image (expects ../studio/)
 		echo "Cloning studio repository to $(STUDIO_DIR)..."; \
 		git clone $(STUDIO_REPO) $(STUDIO_DIR); \
 	fi
-	@cp studio/Dockerfile $(STUDIO_DIR)/Dockerfile.kind
-	@cp studio/nginx.conf.template $(STUDIO_DIR)/nginx.conf.template
 	@echo "Building amortized-studio:$(IMAGE_TAG)..."
 	docker build -t amortized-studio:$(IMAGE_TAG) -f $(STUDIO_DIR)/Dockerfile.kind $(STUDIO_DIR)
 
