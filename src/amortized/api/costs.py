@@ -30,12 +30,24 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
 
 MODEL_LABELS: dict[str, str] = {
     "vertex_ai/claude-haiku-4-5-20251001": "Claude Haiku",
+    "vertex_ai/claude-haiku-4-5@20251001": "Claude Haiku",
     "vertex_ai/claude-sonnet-4-20250514": "Claude Sonnet",
+    "vertex_ai/claude-sonnet-4@20250514": "Claude Sonnet",
     "anthropic/claude-haiku-4-5-20251001": "Claude Haiku",
     "anthropic/claude-sonnet-4-20250514": "Claude Sonnet",
     "openai/gpt-4o": "GPT-4o",
     "openai/gpt-4o-mini": "GPT-4o Mini",
 }
+
+
+def _resolve_model_label(model: str) -> str:
+    if model in MODEL_LABELS:
+        return MODEL_LABELS[model]
+    parts = model.rsplit("/", 1)
+    if len(parts) == 2:
+        name = parts[1].replace("-", " ").replace("@", " ").title()
+        return name
+    return model
 
 INPUT_TOKENS_PER_SAMPLE = 500
 OUTPUT_TOKENS_PER_SAMPLE = 300
@@ -370,7 +382,7 @@ async def estimate_sdg_cost(body: EstimateSdgCostRequest) -> EstimateSdgCostResp
 
     return EstimateSdgCostResponse(
         model=body.model,
-        model_label=MODEL_LABELS.get(body.model, body.model),
+        model_label=_resolve_model_label(body.model),
         num_samples=body.num_samples,
         tokens={
             "input": total_input_tokens,
@@ -579,7 +591,7 @@ async def estimate_eval_cost(
 
     return EstimateEvalCostResponse(
         judge_model=body.judge_model,
-        judge_model_label=MODEL_LABELS.get(body.judge_model, body.judge_model),
+        judge_model_label=_resolve_model_label(body.judge_model),
         num_samples=body.num_samples,
         input_tokens=total_input_tokens,
         output_tokens=total_output_tokens,
