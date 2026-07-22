@@ -185,6 +185,41 @@ def _estimate_training_minutes(
 # OpenRouter live pricing (cached)
 # ---------------------------------------------------------------------------
 
+async def _fetch_gateway_models() -> list[tuple[str, str, str]]:
+    """Fetch available models from MLflow AI Gateway, returns [(model_id, label, desc)]."""
+    import amortized.config as config_mod
+
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{tracking_uri}/api/3.0/mlflow/gateway/endpoints/list"
+            )
+            resp.raise_for_status()
+            endpoints = resp.json().get("endpoints", [])
+            result = []
+            for ep in endpoints:
+                primary = next(
+                    (m for m in ep.get("model_mappings", []) if m.get("linkage_type") == "PRIMARY"),
+                    None,
+                )
+                if not primary:
+                    continue
+                model_def = primary.get("model_definition", {})
+                provider = model_def.get("provider", "")
+                model_name = model_def.get("model_name", "")
+                if provider and model_name:
+                    model_id = f"{provider}/{model_name}"
+                    label = _resolve_model_label(model_id)
+                    result.append((model_id, label, f"{provider} · {model_name}"))
+            return result
+    except Exception:
+        logger.debug("Could not fetch gateway models, using defaults")
+        return []
+
+
 _openrouter_cache: dict[str, tuple[float, float]] | None = None
 _openrouter_cache_time: float = 0
 _OPENROUTER_CACHE_TTL = 3600
@@ -426,11 +461,13 @@ async def compare_sdg_models(body: CompareSdgModelsRequest) -> CompareSdgModelsR
             for m in body.models
         ]
     else:
-        sdg_models = [
-            ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
-            ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
-            ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
-        ]
+        sdg_models = await _fetch_gateway_models()
+        if not sdg_models:
+            sdg_models = [
+                ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
+                ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
+                ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
+            ]
 
     models = []
     for model_id, label, desc in sdg_models:
@@ -573,12 +610,14 @@ async def estimate_eval_cost(
     eval_total = input_cost + output_cost
     cost_per_sample = eval_total / body.num_samples if body.num_samples > 0 else 0
 
-    judge_options = [
-        ("openai/gpt-4o-mini", "GPT-4o Mini", "Cheapest, good for simple tasks"),
-        ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Balanced cost and quality"),
-        ("openai/gpt-4o", "GPT-4o", "Higher quality judging"),
-        ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Highest quality, most expensive"),
-    ]
+    judge_options = await _fetch_gateway_models()
+    if not judge_options:
+        judge_options = [
+            ("openai/gpt-4o-mini", "GPT-4o Mini", "Cheapest, good for simple tasks"),
+            ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Balanced cost and quality"),
+            ("openai/gpt-4o", "GPT-4o", "Higher quality judging"),
+            ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Highest quality, most expensive"),
+        ]
     comparison = []
     for mid, label, desc in judge_options:
         inp_1k, out_1k = _get_pricing(mid, live_pricing)
