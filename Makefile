@@ -180,9 +180,9 @@ ghcr-pull-secret: ## Create ghcr.io pull secret in all user namespaces (requires
 PROMPT_DIR   := agent/prompts
 COMBINED_DIR := $(PROMPT_DIR)/_combined
 
-prompt: ## Build combined Morty prompt from soul.md + agents.md
+prompt: ## Build combined Morty prompt from identity + capabilities + workflow
 	@mkdir -p $(COMBINED_DIR)
-	@cat $(PROMPT_DIR)/soul.md $(PROMPT_DIR)/agents.md > $(COMBINED_DIR)/morty.md
+	@cat $(PROMPT_DIR)/identity.md $(PROMPT_DIR)/capabilities.md $(PROMPT_DIR)/workflow.md > $(COMBINED_DIR)/morty.md
 	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
 	@echo "Generated $(COMBINED_DIR)/morty.md"
 
