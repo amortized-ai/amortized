@@ -180,11 +180,16 @@ ghcr-pull-secret: ## Create ghcr.io pull secret in all user namespaces (requires
 PROMPT_DIR   := agent/prompts
 COMBINED_DIR := $(PROMPT_DIR)/_combined
 
-prompt: ## Build combined Morty prompt from identity + capabilities + workflow
+SKILLS_DIR   := agent/skills
+K8S_SKILLS   := k8s/base/morty-skills
+
+prompt: ## Build combined Morty prompt and sync skills to k8s
 	@mkdir -p $(COMBINED_DIR)
 	@cat $(PROMPT_DIR)/identity.md $(PROMPT_DIR)/capabilities.md $(PROMPT_DIR)/workflow.md > $(COMBINED_DIR)/morty.md
 	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
-	@echo "Generated $(COMBINED_DIR)/morty.md"
+	@rm -rf $(K8S_SKILLS)
+	@cp -r $(SKILLS_DIR) $(K8S_SKILLS)
+	@echo "Generated $(COMBINED_DIR)/morty.md and synced skills to $(K8S_SKILLS)"
 
 # ──────────────────────────────────────────────
 # Deploy shared services (MLflow, MinIO)

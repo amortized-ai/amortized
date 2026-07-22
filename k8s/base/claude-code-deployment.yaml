@@ -20,6 +20,25 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+      initContainers:
+        - name: build-skills-tree
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              cd /flat
+              for f in *; do
+                dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
+                name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
+                mkdir -p "$dir"
+                cp "$f" "$dir/$name"
+              done
+          volumeMounts:
+            - name: morty-skills
+              mountPath: /flat
+              readOnly: true
+            - name: skills-tree
+              mountPath: /skills
       containers:
         - name: claude-code
           image: ghcr.io/amortized-ai/claude-code-agent:latest
@@ -53,6 +72,9 @@ spec:
               mountPath: /app/morty.md
               subPath: morty.md
               readOnly: true
+            - name: skills-tree
+              mountPath: /app/workspace/skills
+              readOnly: true
             - name: gcp-credentials
               mountPath: /app/gcp
               readOnly: true
@@ -85,6 +107,11 @@ spec:
         - name: morty-prompt
           configMap:
             name: morty-config
+        - name: morty-skills
+          configMap:
+            name: morty-skills
+        - name: skills-tree
+          emptyDir: {}
         - name: gcp-credentials
           secret:
             secretName: opencode-gcp

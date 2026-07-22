@@ -27,6 +27,7 @@ CONTEXT.md
 
 agent/prompts/_combined/
 k8s/base/morty-prompt.md
+k8s/base/morty-skills/
 .playwright-mcp/
 studio-*.png
 .claude/
