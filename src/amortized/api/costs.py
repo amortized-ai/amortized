@@ -461,13 +461,9 @@ async def compare_sdg_models(body: CompareSdgModelsRequest) -> CompareSdgModelsR
             for m in body.models
         ]
     else:
-        sdg_models = await _fetch_gateway_models()
-        if not sdg_models:
-            sdg_models = [
-                ("vertex_ai/claude-haiku-4-5-20251001", "Claude Haiku", "Fast and affordable"),
-                ("vertex_ai/claude-sonnet-4-20250514", "Claude Sonnet", "Higher quality output"),
-                ("openai/gpt-4o", "GPT-4o", "Strong reasoning ability"),
-            ]
+        sdg_models = [
+            ("openai/gpt-4o-mini", "GPT-4o Mini", "Fast and affordable"),
+        ]
 
     models = []
     for model_id, label, desc in sdg_models:
@@ -610,14 +606,9 @@ async def estimate_eval_cost(
     eval_total = input_cost + output_cost
     cost_per_sample = eval_total / body.num_samples if body.num_samples > 0 else 0
 
-    judge_options = await _fetch_gateway_models()
-    if not judge_options:
-        judge_options = [
-            ("openai/gpt-4o-mini", "GPT-4o Mini", "Cheapest, good for simple tasks"),
-            ("anthropic/claude-haiku-4-5-20251001", "Claude Haiku", "Balanced cost and quality"),
-            ("openai/gpt-4o", "GPT-4o", "Higher quality judging"),
-            ("anthropic/claude-sonnet-4-20250514", "Claude Sonnet", "Highest quality, most expensive"),
-        ]
+    judge_options: list[tuple[str, str, str]] = [
+        ("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model"),
+    ]
     comparison = []
     for mid, label, desc in judge_options:
         inp_1k, out_1k = _get_pricing(mid, live_pricing)
