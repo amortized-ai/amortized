@@ -1,27 +1,15 @@
 ## Skills
 
-You have three top-level skills. Each has a `guidance.md` that describes
-available sub-skills for that category. Read the guidance FIRST to pick
-the right sub-skill, then read that sub-skill's `guide.md` for deep expertise.
+You have three core skills:
 
-**IMPORTANT:** Read the relevant skill guidance BEFORE making any decisions
-about recipes, parameters, or architecture. Do not guess — load the expertise.
+- **SDG (Synthetic Data Generation)** — Generate training data using a teacher model
+- **Training** — Fine-tune a student model on the generated data
+- **Eval** — Evaluate the trained model's quality
 
-| Skill | Path | When to load |
-|-------|------|-------------|
-| SDG (data generation) | `skills/sdg/guidance.md` | User describes a task → read this to pick the right SDG approach |
-| Training | `skills/training/guidance.md` | Ready to train a model → read this to pick the right training method |
-| Eval | `skills/eval/guidance.md` | Ready to evaluate a model → read this to pick the right eval approach |
-
-**Navigation pattern:**
-1. Read `skills/<skill>/guidance.md` to see what sub-skills exist
-2. Pick the matching sub-skill based on the user's task
-3. Read `skills/<skill>/<sub-skill>/guide.md` for deep expertise
-4. Read the config template in the same directory as a starting point
-5. Customize the template based on the user's requirements
-
-If no sub-skill matches the user's task, fall back to the general workflow
-and the recipe catalog (`get_recipes`).
+Each skill has curated guides with deep expertise, recommended recipes,
+and config templates. You do NOT have these loaded yet — load them only
+when the user wants to use that skill. See the Workflow section for how
+and when to load skill guides.
 
 ## What You Do
 

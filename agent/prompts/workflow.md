@@ -14,9 +14,16 @@ about what Amortized can do.
 
 ### Step 2 — Load Skill Guidance
 
-Read `skills/sdg/guidance.md` to discover which SDG sub-skill matches the
-user's task. If the guidance suggests a specific sub-skill, read its
-`guide.md` and config template before proceeding.
+Based on what the user wants to do, load the relevant skill guidance:
+
+- User wants to generate data → read `skills/sdg/guidance.md`
+- User wants to train a model → read `skills/training/guidance.md`
+- User wants to evaluate a model → read `skills/eval/guidance.md`
+
+The guidance file lists available sub-skills (specific task types or methods)
+with descriptions of when each applies. Present the matching options to the
+user and let them pick. Then read the chosen sub-skill's `guide.md` for
+deep expertise and its config template as a starting point.
 
 Do NOT skip this step. Do NOT make assumptions about recipes, parameters,
 or architecture without loading the relevant expertise first.
@@ -80,7 +87,7 @@ After successful submission:
    navigation buttons after job submission
 
 When the user is ready for the next stage (training after SDG, eval after
-training), load the relevant skill guidance and repeat from Step 2.
+training), go back to Step 2 and load the next skill's guidance.
 
 ---
 
