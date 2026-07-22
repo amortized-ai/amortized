@@ -660,6 +660,196 @@
         }
       }
     },
+    "/api/v1/documents/convert": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Upload and convert a document via docling-serve.",
+        "operationId": "convert_document",
+        "parameters": [
+          {
+            "name": "output_format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/OutputFormat",
+              "default": "md"
+            }
+          },
+          {
+            "name": "do_ocr",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Do Ocr"
+            }
+          },
+          {
+            "name": "ocr_engine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "easyocr",
+              "title": "Ocr Engine"
+            }
+          },
+          {
+            "name": "table_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "fast",
+              "title": "Table Mode"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_convert_document"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/convert/url": {
+      "post": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Convert a document from URL via docling-serve.",
+        "operationId": "convert_document_url",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConvertUrlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "List processed documents from MLflow.",
+        "operationId": "list_documents",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Documents"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/content": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get parsed content of a document.",
+        "operationId": "get_document_content",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models": {
       "get": {
         "tags": [
@@ -720,6 +910,20 @@
   },
   "components": {
     "schemas": {
+      "Body_convert_document": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_convert_document"
+      },
       "CompareSdgModelsRequest": {
         "properties": {
           "num_samples": {
@@ -811,6 +1015,11 @@
             "title": "Mlflow Gateway Uri",
             "default": ""
           },
+          "docling_enabled": {
+            "type": "boolean",
+            "title": "Docling Enabled",
+            "default": false
+          },
           "image_registry": {
             "type": "string",
             "title": "Image Registry",
@@ -826,6 +1035,165 @@
         },
         "type": "object",
         "title": "ConfigResponse"
+      },
+      "ConvertOptions": {
+        "properties": {
+          "output_format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "description": "Output format",
+            "default": "md"
+          },
+          "do_ocr": {
+            "type": "boolean",
+            "title": "Do Ocr",
+            "description": "Enable OCR for scanned documents",
+            "default": true
+          },
+          "ocr_engine": {
+            "type": "string",
+            "title": "Ocr Engine",
+            "description": "OCR engine: easyocr, tesseract",
+            "default": "easyocr"
+          },
+          "table_mode": {
+            "type": "string",
+            "title": "Table Mode",
+            "description": "Table detection mode: fast, accurate",
+            "default": "fast"
+          }
+        },
+        "type": "object",
+        "title": "ConvertOptions"
+      },
+      "ConvertUrlRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "URL of document to convert"
+          },
+          "options": {
+            "$ref": "#/components/schemas/ConvertOptions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ConvertUrlRequest"
+      },
+      "DocumentResult": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "Unique document identifier"
+          },
+          "mlflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlflow Run Id",
+            "description": "MLflow run ID for artifact tracking"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "description": "Output format used",
+            "default": "md"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Parsed document content",
+            "default": ""
+          },
+          "processing_time": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Processing Time",
+            "description": "Processing time in seconds",
+            "default": 0.0
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Conversion status",
+            "default": "success"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "Non-fatal issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id"
+        ],
+        "title": "DocumentResult"
+      },
+      "DocumentSummary": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "Unique document identifier"
+          },
+          "mlflow_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mlflow Run Id",
+            "description": "MLflow run ID for artifact tracking"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "format": {
+            "$ref": "#/components/schemas/OutputFormat",
+            "description": "Output format used",
+            "default": "md"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "When the document was processed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id"
+        ],
+        "title": "DocumentSummary"
       },
       "EstimateEvalCostRequest": {
         "properties": {
@@ -1383,6 +1751,16 @@
         },
         "type": "object",
         "title": "ModelsResponse"
+      },
+      "OutputFormat": {
+        "type": "string",
+        "enum": [
+          "md",
+          "text",
+          "json",
+          "html"
+        ],
+        "title": "OutputFormat"
       },
       "RecipeJobRequest": {
         "properties": {
