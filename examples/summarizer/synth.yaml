@@ -92,4 +92,3 @@ config:
       - length
       - conversation
       - summary
-      - messages
