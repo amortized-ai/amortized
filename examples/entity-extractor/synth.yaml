@@ -96,7 +96,3 @@ config:
                 content: "Extract all {entity_type} entities from:\n\n{source_text}"
               - role: assistant
                 content: "{extraction}"
-    passthrough_attributes:
-      - entity_type
-      - text_type
-      - source_text

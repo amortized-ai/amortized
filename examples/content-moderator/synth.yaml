@@ -91,7 +91,3 @@ config:
                 content: "{content}"
               - role: assistant
                 content: "{safety_label}"
-    passthrough_attributes:
-      - safety_label
-      - content_type
-      - content
