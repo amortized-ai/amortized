@@ -175,10 +175,3 @@ config:
               - role: assistant
                 content: "{cleaned_response}"
 
-    passthrough_attributes:
-      - conversation
-      - cleaned_instruction
-      - cleaned_response
-      - domain
-      - complexity
-      - task_format

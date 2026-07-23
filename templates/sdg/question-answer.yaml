@@ -135,9 +135,3 @@ config:
               - role: assistant
                 content: "{cleaned_answer}"
 
-    passthrough_attributes:
-      - messages
-      - cleaned_question
-      - cleaned_answer
-      - difficulty
-      - topic
