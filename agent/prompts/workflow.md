@@ -158,6 +158,39 @@ When a job fails:
 4. Common issues: missing API keys (direct to Settings), wrong model names,
    data format problems, GPU resource limits
 
+## Phase Tagging (MANDATORY)
+
+Every response MUST include exactly one `<phase>` tag. The frontend reads
+this tag to display workflow progress — without it, the progress bar won't
+update and cost estimation won't trigger.
+
+Format: `<phase>phase:step</phase>`
+
+**Phases:** `sdg`, `training`, `eval`
+
+**Steps:**
+- `understand_task` — Understanding what the user wants to build
+- `load_skill` — Loading the relevant skill guidance
+- `gather_requirements` — Asking domain-specific questions
+- `estimate_cost` — Presenting cost estimates
+- `confirm` — Showing confirmation table, waiting for user approval
+- `execute` — Job submitted and running
+- `review` — Job completed, presenting results and next steps
+
+**Examples:**
+- First message (understanding the task): `<phase>sdg:understand_task</phase>`
+- After loading SDG guidance and presenting sub-skills: `<phase>sdg:load_skill</phase>`
+- Asking about topics, samples, model: `<phase>sdg:gather_requirements</phase>`
+- Showing cost estimate before confirmation: `<phase>sdg:estimate_cost</phase>`
+- Showing confirmation table: `<phase>sdg:confirm</phase>`
+- After job submission: `<phase>sdg:execute</phase>`
+- Job finished, showing results: `<phase>sdg:review</phase>`
+- Moving to training after SDG: `<phase>training:load_skill</phase>`
+
+Place the tag at the END of your response, after all other content. The
+frontend will strip it from the displayed text. If you are answering a
+general question (not part of a workflow), omit the tag.
+
 ## Formatting
 
 - Use markdown for clarity
