@@ -61,9 +61,14 @@
 │  ┌──────────────────────────────────────────────────────────┐    │
 │  │  Claude Agent SDK (Opus 4)                                │    │
 │  │                                                           │    │
-│  │  Prompts:                                                 │    │
-│  │    soul.md    - identity, guardrails, no code/shell       │    │
-│  │    agents.md  - step-by-step SDG/Train/Eval workflows     │    │
+│  │  Prompts (system prompt):                                  │    │
+│  │    identity.md     - identity, guardrails, no code/shell  │    │
+│  │    capabilities.md - skill manifest, MCP tool catalog     │    │
+│  │    workflow.md     - generic workflow, cost rules          │    │
+│  │  Skills (loaded on demand from skills/ directory):        │    │
+│  │    sdg/guidance.md      -> sub-skill guides               │    │
+│  │    training/guidance.md -> sub-skill guides               │    │
+│  │    eval/guidance.md     -> sub-skill guides               │    │
 │  │                                                           │    │
 │  │  MCP Connections:                                         │    │
 │  │    amortized  (HTTP)  --> /mcp on Amortized Server        │    │
@@ -76,7 +81,8 @@
 
 Flow:
   Chat UI --> POST /session/:id/message
-           --> Claude SDK processes with soul + workflow prompts
+           --> Claude SDK processes with identity + capabilities + workflow prompts
+           --> skill guides loaded on demand from skills/ directory
            --> Calls MCP tools (list_jobs, submit_recipe_job, etc.)
            --> Returns response parts (text + tool results)
 ```
