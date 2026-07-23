@@ -364,9 +364,16 @@ class EstimateTrainingMethodCostResponse(BaseModel):
     comparison: TrainingMethodComparison
 
 
+class EvalModelInput(BaseModel):
+    model_id: str
+    label: str = ""
+    description: str = ""
+
+
 class EstimateEvalCostRequest(BaseModel):
     num_samples: int = Field(100, description="Number of evaluation samples")
     judge_model: str = Field("openai/gpt-4o-mini", description="Judge model ID")
+    models: list[EvalModelInput] | None = Field(None, description="Available judge models from gateway")
 
 
 class EvalJudgeOption(BaseModel):
@@ -606,9 +613,12 @@ async def estimate_eval_cost(
     eval_total = input_cost + output_cost
     cost_per_sample = eval_total / body.num_samples if body.num_samples > 0 else 0
 
-    judge_options: list[tuple[str, str, str]] = [
-        ("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model"),
-    ]
+    judge_options: list[tuple[str, str, str]] = []
+    if body.models:
+        for m in body.models:
+            judge_options.append((m.model_id, m.label or _resolve_model_label(m.model_id), m.description or ""))
+    if not judge_options:
+        judge_options = [("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model")]
     comparison = []
     for mid, label, desc in judge_options:
         inp_1k, out_1k = _get_pricing(mid, live_pricing)
