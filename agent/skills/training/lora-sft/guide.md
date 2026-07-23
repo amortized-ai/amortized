@@ -5,7 +5,12 @@ for classification, extraction, and summarization tasks.
 
 ## Requirement Gathering
 
-Ask the user these questions (one at a time, with numbered options):
+Ask the user these questions **one at a time, in separate messages**.
+Do NOT skip ahead or combine questions. Wait for the user's answer to
+each question before asking the next one.
+
+Do NOT show the confirmation table until the user has answered BOTH
+questions below. Ask each in its own message.
 
 1. **Which student model?** — Call `estimate_training_cost` with the
    sample count to get cost estimates for all models. Then present:
@@ -14,11 +19,15 @@ Ask the user these questions (one at a time, with numbered options):
    3) Qwen3 4B — Higher accuracy, needs more VRAM
    4) Llama 3.1 8B — Largest, best accuracy, needs QLoRA for memory
 
+   Wait for the user's response before continuing.
+
 2. **Which training method?** — Call `estimate_training_method_cost`
    with the chosen model and sample count. Then present:
    1) LoRA SFT — Recommended, fastest and cheapest
    2) QLoRA SFT — Lower memory, slightly slower
    3) Full SFT — Best quality, most expensive
+
+   Wait for the user's response before showing the confirmation table.
 
 ## Config Defaults
 

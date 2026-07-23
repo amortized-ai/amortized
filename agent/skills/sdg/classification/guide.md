@@ -5,9 +5,12 @@ and content moderation tasks.
 
 ## Requirement Gathering
 
-Ask the user these questions (one at a time, with numbered options):
+Ask the user these questions **one at a time, in separate messages**.
+Do NOT skip ahead or combine questions. Wait for the user's answer to
+each question before asking the next one.
 
 1. **What domain?** — What kind of content will this classifier handle?
+   Ask this FIRST, before anything else.
    1) Customer support tickets — Route tickets by topic and urgency
    2) User messages/intents — Classify user intents for chatbots or routing
    3) Content moderation — Flag content by category (spam, toxic, etc.)
