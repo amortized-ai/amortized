@@ -7,6 +7,8 @@ metadata:
     app: amortized
     component: server
 data:
+  AMORTIZED_DB_PATH: "/data/amortized.db"
+  AMORTIZED_DATA_DIR: "/data"
   AMORTIZED_COMPUTE_BACKEND: "kubernetes"
   AMORTIZED_COMPUTE_NAMESPACE: "amortized-jobs"
   AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"

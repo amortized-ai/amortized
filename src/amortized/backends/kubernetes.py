@@ -87,6 +87,7 @@ class KubernetesBackend:
         try:
             llm_secret = await core.read_namespaced_secret("opencode-llm", source_namespace)
             import base64
+
             project = base64.b64decode(llm_secret.data.get("google-cloud-project", "")).decode()
             location = base64.b64decode(llm_secret.data.get("vertex-location", "")).decode()
         except Exception:
@@ -95,9 +96,11 @@ class KubernetesBackend:
         data = dict(source.data or {})
         if project:
             import base64 as b64mod
+
             data["google-cloud-project"] = b64mod.b64encode(project.encode()).decode()
         if location:
             import base64 as b64mod
+
             data["vertex-location"] = b64mod.b64encode(location.encode()).decode()
 
         target = V1Secret(
@@ -193,29 +196,31 @@ class KubernetesBackend:
                     read_only=True,
                 ),
             )
-            env_vars.extend([
-                V1EnvVar(name="GOOGLE_APPLICATION_CREDENTIALS", value="/gcp/credentials.json"),
-                V1EnvVar(
-                    name="GOOGLE_CLOUD_PROJECT",
-                    value_from=V1EnvVarSource(
-                        secret_key_ref=V1SecretKeySelector(
-                            name="gcp-credentials",
-                            key="google-cloud-project",
-                            optional=True,
-                        )
+            env_vars.extend(
+                [
+                    V1EnvVar(name="GOOGLE_APPLICATION_CREDENTIALS", value="/gcp/credentials.json"),
+                    V1EnvVar(
+                        name="GOOGLE_CLOUD_PROJECT",
+                        value_from=V1EnvVarSource(
+                            secret_key_ref=V1SecretKeySelector(
+                                name="gcp-credentials",
+                                key="google-cloud-project",
+                                optional=True,
+                            )
+                        ),
                     ),
-                ),
-                V1EnvVar(
-                    name="VERTEX_LOCATION",
-                    value_from=V1EnvVarSource(
-                        secret_key_ref=V1SecretKeySelector(
-                            name="gcp-credentials",
-                            key="vertex-location",
-                            optional=True,
-                        )
+                    V1EnvVar(
+                        name="VERTEX_LOCATION",
+                        value_from=V1EnvVarSource(
+                            secret_key_ref=V1SecretKeySelector(
+                                name="gcp-credentials",
+                                key="vertex-location",
+                                optional=True,
+                            )
+                        ),
                     ),
-                ),
-            ])
+                ]
+            )
 
         secret_name = f"{resource_name}-env"
         for k in spec.env:

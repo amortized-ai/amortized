@@ -94,8 +94,3 @@ config:
                 content: "{user_message}"
               - role: assistant
                 content: "{intent}"
-    passthrough_attributes:
-      - intent
-      - tone
-      - user_message
-      - messages

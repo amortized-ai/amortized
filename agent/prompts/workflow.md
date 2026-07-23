@@ -73,11 +73,17 @@ asks about a submitted job, use `get_job_detail` — do NOT resubmit.
 
 ### Step 6 — Post-Job and Chaining
 
-After successful submission:
-1. Show a brief summary (type, model, sample count, key settings)
-2. Show the Job ID clearly: "Job ID: <uuid>"
-3. Do NOT include numbered next-step options — the UI automatically adds
-   navigation buttons after job submission
+After successful submission, show a summary as a **bulleted list** (not
+a long sentence):
+
+- **Job ID:** <uuid>
+- **Type:** SDG / Training / Eval
+- **Model:** (selected model)
+- **Samples:** (count)
+- **Status:** Queued
+
+Do NOT include numbered next-step options — the UI automatically adds
+navigation buttons after job submission.
 
 When the user is ready for the next stage (training after SDG, eval after
 training), go back to Step 1 and load the next skill's guidance.
