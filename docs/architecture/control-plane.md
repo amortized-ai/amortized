@@ -1031,7 +1031,7 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
 | Decision | Choice | Reason |
 |---|---|---|
 | **Runtime** | OpenCode (`opencode serve`) | Already working. Built-in MCP support, session management, HTTP API for Studio integration. |
-| **Identity** | Custom agent definition (`morty.md`) | `.opencode/agents/morty.md` with full system prompt. Built-in agents (build, plan) disabled. |
+| **Identity** | Custom agent definition (`morty.md`) | `.opencode/agents/morty.md` with system prompt (identity + capabilities + workflow). Skill guides loaded on demand from `skills/` directory. Built-in agents (build, plan) disabled. |
 | **LLM Backend** | Configurable at deploy time | Platform engineer sets the provider and model in `.opencode.json`. No code changes to switch between Vertex AI (Claude), OpenAI, Anthropic direct, or on-cluster vLLM. |
 | **MCP Servers** | Two: amortized (jobs/recipes) + MLflow (experiments/models/datasets/gateway) | See API component for details. |
 | **Permission scoping** | Deny all filesystem tools, allow only MCP | Morty can't edit files, run bash, or access the filesystem. Only MCP tools. |
@@ -1189,11 +1189,10 @@ The exact rendering format (markdown conventions vs structured JSON in tool resu
 
 #### What Amortized Builds (Agent)
 
-- **morty.md** — Custom agent definition with identity, personality, domain knowledge, tool guidance
-- **Skills** (to be defined) — Workflow steps, confirmation gates, specialized guidance for SDG/training/eval
+- **morty.md** — Custom agent definition (identity + capabilities + workflow), built from `agent/prompts/`
+- **Skills** — On-demand expertise in `agent/skills/` (sdg, training, eval skill trees with guidance routers, sub-skill guides, and config templates). Delivered via ConfigMap + initContainer
 - **Studio components** — Plan checklist, confirmation cards, job cards, approval buttons
-- **OpenCode deployment** — K8s Deployment + ConfigMap + Secret for LLM credentials
-- **AGENTS.md / instructions** — Domain knowledge about asynth, Training Hub, thub CLI field names, recommended models
+- **OpenCode deployment** — K8s Deployment + ConfigMaps (morty-config, morty-skills) + Secret for LLM credentials
 
 ---
 

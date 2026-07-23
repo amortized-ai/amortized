@@ -1,0 +1,271 @@
+{
+  "type": "sdg",
+  "config": {
+    "model": "openai/gpt-oss-120b",
+    "api_base": "http://127.0.0.1:8000/v1",
+    "num_samples": 3330,
+    "max_concurrency": 8,
+    "temperature": 0.7,
+    "max_tokens": 2048,
+    "input_documents": [
+      {
+        "path": "/workspace/home/lab/amortized-jobs/maas-guide.txt",
+        "id": "maas_doc",
+        "segmentation_params": {
+          "id": "context_segment",
+          "segment_length": 2048,
+          "segment_overlap": 256,
+          "tokenizer": "cl100k_base"
+        }
+      }
+    ],
+    "strategy_params": {
+      "input_examples": [
+        {
+          "examples": [
+            {
+              "example_topic": "API Access",
+              "example_topic_desc": "Generating tokens, MaaS route URL, chat completions, Bearer auth",
+              "example_difficulty": "Intermediate",
+              "example_difficulty_desc": "Requires connecting multiple concepts or steps",
+              "example_question_type": "Procedural",
+              "example_question_type_desc": "Step-by-step procedural question about accomplishing a task",
+              "example_question": "How do I generate an authentication token and use it to list available models through the MaaS API?",
+              "example_answer": "To generate an authentication token and list models:\n\n1. Open the OpenShift AI dashboard and navigate to Gen AI Studio\n2. Click your user icon and select Generate API Key\n3. Copy the generated Bearer token\n4. Get the MaaS route URL:\n   ```bash\n   oc get route maas -n redhat-ods-applications -o jsonpath='{.spec.host}'\n   ```\n5. List available models:\n   ```bash\n   curl -s https://<maas-route>/v1/models \\\n     -H \"Authorization: Bearer <your-token>\"\n   ```\n\nThe response returns all models your tier has access to in OpenAI-compatible format."
+            },
+            {
+              "example_topic": "Service Tiers",
+              "example_topic_desc": "Default tiers, tier-to-group-mapping ConfigMap, tier properties",
+              "example_difficulty": "Advanced",
+              "example_difficulty_desc": "Multi-step reasoning, edge cases, comparing approaches",
+              "example_question_type": "Factual",
+              "example_question_type_desc": "Understanding what something is, why it works, or how components relate",
+              "example_question": "What happens when a user belongs to multiple OpenShift groups that are mapped to different MaaS service tiers?",
+              "example_answer": "When a user belongs to multiple groups mapped to different tiers, MaaS resolves to the highest tier. The tier-to-group-mapping ConfigMap in the redhat-ods-applications namespace defines the mapping. Each tier has a numeric level (e.g., free=0, premium=1, enterprise=2). The MaaS API evaluates all of the user's group memberships and selects the tier with the highest level value. This means a user in both a free-tier group and a premium-tier group will receive premium-tier rate limits and model access."
+            },
+            {
+              "example_topic": "Troubleshooting",
+              "example_topic_desc": "401/403/404 errors, component enablement, dashboard visibility issues",
+              "example_difficulty": "Basic",
+              "example_difficulty_desc": "Simple factual question, single concept",
+              "example_question_type": "Troubleshooting",
+              "example_question_type_desc": "Diagnosing and resolving a specific error or unexpected behavior",
+              "example_question": "Why am I getting a 403 Forbidden error when calling the MaaS API?",
+              "example_answer": "A 403 Forbidden error means your authentication token is valid but you lack access to the requested model. Common causes:\n\n1. The model is restricted to specific service tiers and your tier does not include access\n2. Your OpenShift group is not mapped to a tier that has permission for this model\n\nTo diagnose:\n- Check which tiers the model is published to in the dashboard under Deployments\n- Verify your tier assignment by checking your OpenShift group memberships against the tier-to-group-mapping ConfigMap:\n  ```bash\n  oc get configmap tier-to-group-mapping -n redhat-ods-applications -o yaml\n  ```\n- Check which groups you belong to:\n  ```bash\n  oc get groups -o json | jq '.items[] | select(.users[] == \"<your-username>\") | .metadata.name'\n  ```"
+            }
+          ]
+        }
+      ],
+      "sampled_attributes": [
+        {
+          "id": "question_type",
+          "name": "Question Type",
+          "description": "The type of question being asked",
+          "possible_values": [
+            {
+              "id": "factual",
+              "name": "Factual",
+              "description": "Understanding what something is, why it works that way, or how components relate",
+              "sample_rate": 0.25
+            },
+            {
+              "id": "procedural",
+              "name": "Procedural",
+              "description": "Step-by-step procedural question about accomplishing a specific task",
+              "sample_rate": 0.35
+            },
+            {
+              "id": "troubleshooting",
+              "name": "Troubleshooting",
+              "description": "Diagnosing and resolving a specific error or unexpected behavior",
+              "sample_rate": 0.25
+            },
+            {
+              "id": "comparison",
+              "name": "Comparison",
+              "description": "Choosing between options, understanding trade-offs, or comparing configurations",
+              "sample_rate": 0.15
+            }
+          ]
+        },
+        {
+          "id": "topic",
+          "name": "Documentation Topic",
+          "description": "The documentation topic for this question",
+          "possible_values": [
+            {
+              "id": "maas_overview",
+              "name": "MaaS Overview",
+              "description": "What MaaS is, its capabilities, comparison with standard model serving, administrator responsibilities",
+              "sample_rate": 0.08
+            },
+            {
+              "id": "prerequisites",
+              "name": "Prerequisites",
+              "description": "Required operators (KServe, Kuadrant, Gateway API, cert-manager, LeaderWorkerSet), OpenShift version requirements",
+              "sample_rate": 0.08
+            },
+            {
+              "id": "enable_maas",
+              "name": "Enabling MaaS",
+              "description": "Enabling modelsAsService in DataScienceCluster CR, verifying maas-api pod, tier-to-group-mapping ConfigMap",
+              "sample_rate": 0.08
+            },
+            {
+              "id": "dashboard",
+              "name": "Dashboard Setup",
+              "description": "Enabling Gen AI Studio and MaaS dashboard via OdhDashboardConfig",
+              "sample_rate": 0.07
+            },
+            {
+              "id": "tier_config",
+              "name": "Service Tiers",
+              "description": "Default tiers (free/premium/enterprise), tier-to-group-mapping ConfigMap, tier properties, access control rules",
+              "sample_rate": 0.15
+            },
+            {
+              "id": "tier_management",
+              "name": "Tier Management",
+              "description": "Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits",
+              "sample_rate": 0.12
+            },
+            {
+              "id": "publish_models",
+              "name": "Publishing Models",
+              "description": "Deploying models through Projects > Deployments, selecting llm-d runtime, configuring MaaS endpoint and tier access",
+              "sample_rate": 0.12
+            },
+            {
+              "id": "api_access",
+              "name": "API Access",
+              "description": "Generating authentication tokens, MaaS route URL, listing models via /v1/models, chat completions via /v1/chat/completions, Bearer auth",
+              "sample_rate": 0.18
+            },
+            {
+              "id": "rate_limits",
+              "name": "Rate Limiting",
+              "description": "HTTP 429 errors, request rate limit vs token quota, X-RateLimit headers, Retry-After header, mitigation strategies",
+              "sample_rate": 0.12
+            }
+          ]
+        },
+        {
+          "id": "difficulty",
+          "name": "Difficulty Level",
+          "description": "The complexity of the question",
+          "possible_values": [
+            {
+              "id": "basic",
+              "name": "Basic",
+              "description": "Simple factual question, single concept",
+              "sample_rate": 0.35
+            },
+            {
+              "id": "intermediate",
+              "name": "Intermediate",
+              "description": "Requires connecting multiple concepts or steps",
+              "sample_rate": 0.45
+            },
+            {
+              "id": "advanced",
+              "name": "Advanced",
+              "description": "Multi-step reasoning, edge cases, comparing approaches",
+              "sample_rate": 0.2
+            }
+          ]
+        }
+      ],
+      "generated_attributes": [
+        {
+          "id": "question",
+          "instruction_messages": [
+            {
+              "role": "system",
+              "content": "You generate specific, realistic questions about Red Hat OpenShift AI Models-as-a-Service (MaaS) documentation.\nThe question MUST be fully answerable using ONLY the provided documentation context. Do not ask about concepts that are merely mentioned but not explained in the context.\nOutput exactly one question in this format:\nQuestion:\n<your question>\nEnd Question"
+            },
+            {
+              "role": "user",
+              "content": "Topic: {example_topic} - {example_topic_desc}\nDifficulty: {example_difficulty} - {example_difficulty_desc}\nQuestion type: {example_question_type} - {example_question_type_desc}"
+            },
+            {
+              "role": "assistant",
+              "content": "Question:\n{example_question}\nEnd Question"
+            },
+            {
+              "role": "user",
+              "content": "Documentation context:\n{context_segment}\n\nTopic: {topic.name} - {topic.description}\nDifficulty: {difficulty.name} - {difficulty.description}\nQuestion type: {question_type.name} - {question_type.description}"
+            }
+          ],
+          "postprocessing_params": {
+            "id": "cleaned_question",
+            "cut_prefix": "Question:",
+            "cut_suffix": "End Question",
+            "strip_whitespace": true
+          }
+        },
+        {
+          "id": "answer",
+          "instruction_messages": [
+            {
+              "role": "system",
+              "content": "You are a knowledgeable documentation assistant for Red Hat OpenShift AI Models-as-a-Service (MaaS).\nAnswer accurately based on the documentation context provided.\nInclude specific commands, YAML snippets, and step-by-step instructions when relevant.\nBe concise but thorough. The question is answerable from the provided context, so read it carefully and answer from it."
+            },
+            {
+              "role": "user",
+              "content": "Documentation context:\n{context_segment}\n\nTopic: {example_topic}\nQuestion: {example_question}"
+            },
+            {
+              "role": "assistant",
+              "content": "{example_answer}"
+            },
+            {
+              "role": "user",
+              "content": "Documentation context:\n{context_segment}\n\nQuestion: {cleaned_question}"
+            }
+          ],
+          "postprocessing_params": {
+            "id": "cleaned_answer",
+            "strip_whitespace": true
+          }
+        }
+      ],
+      "transformed_attributes": [
+        {
+          "id": "messages",
+          "transformation_strategy": {
+            "type": "chat",
+            "chat_transform": {
+              "messages": [
+                {
+                  "role": "system",
+                  "content": "You are a knowledgeable documentation assistant for Red Hat OpenShift AI Models-as-a-Service (MaaS). Answer accurately based on the provided context. Be concise and provide step-by-step instructions when appropriate."
+                },
+                {
+                  "role": "user",
+                  "content": "{context_segment}\n\n{cleaned_question}"
+                },
+                {
+                  "role": "assistant",
+                  "content": "{cleaned_answer}"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "passthrough_attributes": [
+        "messages",
+        "cleaned_question",
+        "cleaned_answer",
+        "context_segment",
+        "question_type",
+        "topic",
+        "difficulty"
+      ]
+    }
+  },
+  "metadata": {
+    "backend": "rh-h100-12"
+  },
+  "dry_run": false
+}
