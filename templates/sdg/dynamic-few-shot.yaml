@@ -66,11 +66,3 @@ config:
               - role: assistant
                 content: "{response}"
 
-    passthrough_attributes:
-      - conversation
-      - few_shot_examples[0].task_type
-      - few_shot_examples[0].example_input
-      - few_shot_examples[1].task_type
-      - few_shot_examples[1].example_input
-      - few_shot_examples[2].task_type
-      - few_shot_examples[2].example_input
