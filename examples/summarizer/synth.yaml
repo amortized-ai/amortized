@@ -87,8 +87,3 @@ config:
                 content: "{conversation}"
               - role: assistant
                 content: "{summary}"
-    passthrough_attributes:
-      - domain
-      - length
-      - conversation
-      - summary
