@@ -1,12 +1,27 @@
-# LLM Judge — Eval Guide
+# LLM Judge Evaluation Guide
 
-*This guide is a placeholder. It will be populated with expert knowledge
-for LLM-as-judge evaluation.*
+Use an LLM as a judge to evaluate model outputs against ground truth.
 
-In the meantime, use the recipe template at `templates/eval/llm-judge`
-and call `list_models` to select a judge model.
+## Requirement Gathering
 
-Key considerations:
-- Use a stronger model than the student as the judge
-- Include specific evaluation criteria in the judge prompt
-- Common criteria: accuracy, completeness, groundedness, format compliance
+Ask the user these questions **one at a time, in separate messages**.
+Do NOT skip ahead or combine questions. Wait for the user's answer to
+each question before asking the next one.
+
+1. **Which evaluation method?** — What should the judge evaluate?
+   1) Classification accuracy — Compare predicted labels against ground truth
+   2) Response quality — Rate generated text for relevance, coherence, completeness
+   3) Both — Run accuracy and quality evaluations
+
+2. **Which judge model?** — Call `list_models` to discover available
+   models from the AI Gateway. Present each as a numbered option.
+   ALWAYS add as the last option:
+   N) Configure a model — Set up an AI Gateway endpoint in Settings
+
+By default, evaluate **all samples** in the test set. Do not ask the
+user how many samples to evaluate — just use the full dataset.
+
+## Job Submission
+
+Use the eval recipe matching the task type. Always set `parent_job_id`
+to the training job ID.
