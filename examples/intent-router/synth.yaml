@@ -98,4 +98,3 @@ config:
       - intent
       - tone
       - user_message
-      - messages

@@ -100,4 +100,3 @@ config:
       - entity_type
       - text_type
       - source_text
-      - messages

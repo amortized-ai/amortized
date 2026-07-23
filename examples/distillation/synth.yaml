@@ -103,4 +103,3 @@ config:
       - urgency
       - topic
       - ticket_clean
-      - messages

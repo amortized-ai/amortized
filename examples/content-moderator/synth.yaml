@@ -95,4 +95,3 @@ config:
       - safety_label
       - content_type
       - content
-      - messages
