@@ -164,10 +164,3 @@ config:
               - role: assistant
                 content: "{cleaned_answer}"
 
-    passthrough_attributes:
-      - conversation
-      - cleaned_question
-      - cleaned_answer
-      - specialty
-      - context_type
-      - complexity_level

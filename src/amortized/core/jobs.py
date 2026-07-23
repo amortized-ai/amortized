@@ -28,10 +28,15 @@ async def create_job(
     user_id: str = "",
     secrets: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if not parent_job_id:
+        parent_job_id = config.get("parent_job_id", "")
+
     job_id = str(uuid.uuid4())
     now = datetime.now(UTC).isoformat()
 
     stored_config = dict(config)
+    if "parent_job_id" in stored_config:
+        stored_config.pop("parent_job_id")
     if secrets:
         stored_config["_secrets"] = secrets
 

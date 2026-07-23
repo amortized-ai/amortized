@@ -121,8 +121,9 @@ def _build_synth_config(config: dict[str, Any], *, s3_output_path: str = "") -> 
     strategy_params = config.get("strategy_params", {})
     if isinstance(strategy_params, dict):
         strategy_params = dict(strategy_params)
-        if config.get("task_description") and "generated_attributes" not in strategy_params:
-            task = config["task_description"]
+        task_desc = strategy_params.pop("task_description", None) or config.get("task_description")
+        if task_desc and "generated_attributes" not in strategy_params:
+            task = task_desc
             sampled = strategy_params.get("sampled_attributes", [])
             if not sampled:
                 sampled = [

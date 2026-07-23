@@ -127,6 +127,31 @@ class Repository:
         return _row_to_job(row)
 
 
+    async def list_documents(self) -> list[dict[str, Any]]:
+        cursor = await self.conn.execute(
+            "SELECT document_id, mlflow_run_id, filename, format, created_at FROM documents ORDER BY created_at DESC"
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def get_document(self, document_id: str) -> dict[str, Any] | None:
+        cursor = await self.conn.execute(
+            "SELECT * FROM documents WHERE document_id = ?", (document_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_document(
+        self, *, document_id: str, filename: str, fmt: str, content: str, created_at: str,
+        mlflow_run_id: str = "",
+    ) -> dict[str, Any]:
+        await self.conn.execute(
+            "INSERT INTO documents (document_id, mlflow_run_id, filename, format, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (document_id, mlflow_run_id, filename, fmt, content, created_at),
+        )
+        await self.conn.commit()
+        return {"document_id": document_id, "mlflow_run_id": mlflow_run_id, "filename": filename, "format": fmt, "content": content, "created_at": created_at}
+
+
 def _row_to_job(row: Any) -> dict[str, Any]:
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]

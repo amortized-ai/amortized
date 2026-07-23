@@ -165,13 +165,3 @@ config:
               - role: assistant
                 content: "{cleaned_response}"
 
-    passthrough_attributes:
-      - conversation
-      - cleaned_instruction
-      - cleaned_response
-      - augmentation_type
-      - phrasing_style
-      - specificity_level
-      - original_instruction
-      - original_input
-      - original_response

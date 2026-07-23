@@ -16,11 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import costs, documents, jobs, recipes
+from amortized.api import artifacts, costs, documents, jobs, recipes
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
-from amortized.db import init_db
+from amortized.db import close_db, init_db
 from amortized.mcp.server import create_mcp_server
 from amortized.models import ConfigResponse, HealthResponse
 from amortized.worker import cleanup_orphaned_jobs, worker_loop
@@ -108,8 +108,8 @@ def _load_backends() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
-    await cleanup_orphaned_jobs()
     _load_backends()
+    await cleanup_orphaned_jobs()
     logger.info("Amortized runtime started")
 
     worker_task = asyncio.create_task(worker_loop())
@@ -119,6 +119,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
+    await close_db()
     logger.info("Amortized runtime shutting down")
 
 
@@ -201,6 +202,7 @@ app.include_router(recipes.router)
 app.include_router(recipes.recipe_jobs_router)
 app.include_router(costs.router)
 app.include_router(documents.router)
+app.include_router(artifacts.router)
 
 from amortized.api.models import router as models_router  # noqa: E402
 

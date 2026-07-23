@@ -98,8 +98,3 @@ config:
                 content: "{ticket_clean}"
               - role: assistant
                 content: "Urgency: {urgency}\nTopic: {topic}"
-    passthrough_attributes:
-      - urgency
-      - topic
-      - ticket_clean
-      - messages
