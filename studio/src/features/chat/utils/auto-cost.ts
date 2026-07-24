@@ -49,13 +49,6 @@ function isEvalJudgeStep(content: string): boolean {
 }
 
 const COMPARE_SDG_TOOLS = new Set(["compare sdg models", "compare_sdg_models"])
-const SDG_COST_TOOLS = new Set(["estimate sdg cost", "estimate_sdg_cost"])
-const TRAINING_COST_TOOLS = new Set([
-  "estimate training method cost",
-  "estimate_training_method_cost",
-  "estimate training cost",
-  "estimate_training_cost",
-])
 const EVAL_COST_TOOLS = new Set(["estimate eval cost", "estimate_eval_cost"])
 
 type Phase = "sdg" | "training" | "eval"
