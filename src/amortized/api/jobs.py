@@ -55,6 +55,8 @@ def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
     try:
         if job_type == JobType.training:
             TrainingJobConfig(**config)
+        elif job_type == JobType.sdg and "columns" not in config:
+            return ["columns: Data Designer config requires a 'columns' field"]
     except ValidationError as exc:
         return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
     return []
