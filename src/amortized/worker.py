@@ -426,15 +426,13 @@ async def _run_job(job: dict[str, Any]) -> None:
                     config_files[f"docs/{doc_id}.md"] = content
                     doc_count += 1
             if doc_count:
-                config.setdefault("seed_config", {
-                    "source": {
-                        "seed_type": "document-chunker",
-                        "path": "/amortized/docs",
-                        "file_extensions": [".md"],
-                        "sentences_per_chunk": 5,
-                        "min_text_length": 50,
-                    },
-                })
+                seed_config = config.get("seed_config", {})
+                source = seed_config.get("source", {})
+                source.setdefault("seed_type", "document-chunker")
+                source.setdefault("path", "/amortized/docs")
+                source.setdefault("file_extensions", [".md"])
+                seed_config["source"] = source
+                config["seed_config"] = seed_config
                 logger.info(
                     "Job %s: loaded %d documents as seed data", job_id, doc_count
                 )
