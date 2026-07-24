@@ -82,6 +82,7 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
 class RecipeJobRequest(BaseModel):
     recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
+    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training→Eval)")
     dry_run: bool = Field(False, description="Validate without creating the job")
 
 
@@ -144,6 +145,7 @@ async def submit_recipe_job(
             job_type=job_type,
             config=clean_config,
             recipe=request.recipe,
+            parent_job_id=request.parent_job_id,
             user_id=user_id,
             secrets=secrets,
         )

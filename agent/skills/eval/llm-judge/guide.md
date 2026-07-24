@@ -23,5 +23,9 @@ user how many samples to evaluate — just use the full dataset.
 
 ## Job Submission
 
-Use the eval recipe matching the task type. Always set `parent_job_id`
-to the training job ID.
+Use the eval recipe matching the task type.
+
+**CRITICAL:** You MUST pass `parent_job_id` set to the training job ID
+from this conversation. Without it, the eval job has no model or dataset
+to evaluate and will fail. The training job ID is in the conversation
+history from when you submitted the training job.
