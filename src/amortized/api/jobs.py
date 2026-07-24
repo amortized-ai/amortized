@@ -31,12 +31,10 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
     DryRunResponse,
-    EvalJobConfig,
     Job,
     JobRequest,
     JobStatus,
     JobType,
-    SynthJobConfig,
     TrainingJobConfig,
 )
 from amortized.worker import _resolve_mlflow_artifact_uri
@@ -57,10 +55,6 @@ def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
     try:
         if job_type == JobType.training:
             TrainingJobConfig(**config)
-        elif job_type == JobType.sdg:
-            SynthJobConfig(**config)
-        elif job_type == JobType.eval:
-            EvalJobConfig(**config)
     except ValidationError as exc:
         return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
     return []

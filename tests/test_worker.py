@@ -1,13 +1,11 @@
 """Tests for the background worker job execution lifecycle."""
 
 import os
-from typing import Any
 
 import httpx
 import pytest
 import yaml
 
-from amortized.core.config_translator import _build_synth_config, _generate_container_config
 from amortized.main import app
 
 
@@ -145,65 +143,6 @@ class TestCancelRunningJob:
 
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 400
-
-
-class TestBuildSynthConfig:
-    def test_basic_config(self) -> None:
-        config: dict[str, Any] = {"model": "openai/gpt-4o", "num_samples": 50}
-        result = _build_synth_config(config)
-
-        assert result["inference_config"]["model"] == "openai/gpt-4o"
-        assert result["inference_config"]["temperature"] == 0.7
-        assert result["inference_config"]["max_concurrency"] == 16
-        assert result["num_samples"] == 50
-        assert result["output_path"] == "output/generated_data.jsonl"
-
-    def test_optional_inference_fields(self) -> None:
-        config: dict[str, Any] = {
-            "model": "openai/gpt-4o",
-            "api_base": "http://localhost:8000/v1",
-            "max_tokens": 1024,
-            "top_p": 0.9,
-            "seed": 42,
-        }
-        result = _build_synth_config(config)
-        ic = result["inference_config"]
-
-        assert ic["api_base"] == "http://localhost:8000/v1"
-        assert "api_key" not in ic
-        assert ic["max_tokens"] == 1024
-        assert ic["top_p"] == 0.9
-        assert ic["seed"] == 42
-
-    def test_none_optionals_excluded(self) -> None:
-        config: dict[str, Any] = {"model": "openai/gpt-4o", "max_tokens": None}
-        result = _build_synth_config(config)
-        assert "max_tokens" not in result["inference_config"]
-
-    def test_strategy_params_passthrough(self) -> None:
-        strategy = {"sampled_attributes": [{"name": "domain", "values": ["science"]}]}
-        config: dict[str, Any] = {"model": "openai/gpt-4o", "strategy_params": strategy}
-        result = _build_synth_config(config)
-        assert result["strategy_params"]["sampled_attributes"] == strategy["sampled_attributes"]
-
-    def test_input_data_merged_into_strategy(self) -> None:
-        config: dict[str, Any] = {
-            "model": "openai/gpt-4o",
-            "strategy_params": {"sampled_attributes": []},
-            "input_data": [{"text": "hello"}],
-        }
-        result = _build_synth_config(config)
-        assert result["strategy_params"]["input_data"] == [{"text": "hello"}]
-
-    def test_generate_container_config_sdg(self) -> None:
-        config: dict[str, Any] = {"model": "openai/gpt-4o"}
-        result = _generate_container_config("sdg", config)
-        assert "inference_config" in result
-        assert "num_samples" in result
-
-    def test_generate_container_config_unknown_type(self) -> None:
-        with pytest.raises(ValueError, match="No container config"):
-            _generate_container_config("unknown", {})
 
 
 class TestTrainingHubConfig:

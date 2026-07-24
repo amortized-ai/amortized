@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from amortized.models import (
     JobStatus,
     JobType,
-    SynthJobConfig,
     TrainingJobConfig,
 )
 
@@ -72,32 +71,6 @@ class TestTrainingJobConfig:
         assert "algorithm" in dumped
 
 
-class TestSynthJobConfig:
-    def test_minimal_config(self) -> None:
-        config = SynthJobConfig(model="openai/gpt-4o")
-        assert config.model == "openai/gpt-4o"
-        assert config.api_base is None
-        assert config.num_samples == 100
-        assert config.strategy_params is None
-
-    def test_full_config(self) -> None:
-        config = SynthJobConfig(
-            model="hosted_vllm/meta-llama/Llama-3.3-70B-Instruct",
-            api_base="http://localhost:8000/v1",
-            api_key="sk-test",
-            num_samples=200,
-            max_concurrency=8,
-            temperature=0.5,
-            strategy_params={"sampled_attributes": [{"name": "domain", "values": ["science"]}]},
-        )
-        assert config.strategy_params is not None
-        assert config.max_concurrency == 8
-
-    def test_missing_model(self) -> None:
-        with pytest.raises(ValidationError):
-            SynthJobConfig()  # type: ignore[call-arg]
-
-
 class TestEnums:
     def test_job_status_values(self) -> None:
         assert JobStatus.queued.value == "queued"
@@ -110,4 +83,3 @@ class TestEnums:
     def test_job_type_values(self) -> None:
         assert JobType.training.value == "training"
         assert JobType.sdg.value == "sdg"
-        assert JobType.eval.value == "eval"

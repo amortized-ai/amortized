@@ -5,18 +5,12 @@ import json
 import logging
 import os
 import re
-import shlex
 from datetime import UTC, datetime
 from typing import Any
 
 import amortized.config as config_mod
 from amortized.backends import BackendHandle, Capability, JobSpec, Resources, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
-from amortized.core.config_translator import (
-    _eval_config_yaml,
-    _generate_container_config,
-    _resolve_judge_template,
-)
 from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
@@ -25,8 +19,7 @@ logger = logging.getLogger("amortized.worker")
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "ghcr.io/amortized-ai/training:latest",
-    "sdg": "ghcr.io/amortized-ai/asynth:latest",
-    "eval": "ghcr.io/amortized-ai/asynth:latest",
+    "sdg": "ghcr.io/amortized-ai/data-designer:latest",
 }
 
 
@@ -55,66 +48,6 @@ _TRAINING_HUB_SKIP_KEYS = {
     "dataset_job_id",
     "model_job_id",
 }
-
-
-_EVAL_PREPROCESS_SCRIPT = '''\
-"""Preprocess eval dataset: ensure 'request' and 'response' fields exist."""
-import json, sys
-
-path = sys.argv[1]
-with open(path) as f:
-    rows = [json.loads(line) for line in f if line.strip()]
-
-if not rows:
-    sys.exit(0)
-
-if "request" in rows[0] and "response" in rows[0]:
-    sys.exit(0)
-
-out = []
-for row in rows:
-    new_row = dict(row)
-    if "request" not in new_row:
-        if "messages" in row and isinstance(row["messages"], list):
-            user_msgs = [m["content"] for m in row["messages"]
-                         if isinstance(m, dict) and m.get("role") == "user"]
-            new_row["request"] = user_msgs[-1] if user_msgs else ""
-        elif "ticket_clean" in row:
-            new_row["request"] = row["ticket_clean"]
-        elif "input" in row:
-            new_row["request"] = row["input"]
-        elif "text" in row:
-            new_row["request"] = row["text"]
-        elif "prompt" in row:
-            new_row["request"] = row["prompt"]
-        else:
-            new_row["request"] = ""
-
-    if "response" not in new_row:
-        if "messages" in row and isinstance(row["messages"], list):
-            asst_msgs = [m["content"] for m in row["messages"]
-                         if isinstance(m, dict) and m.get("role") == "assistant"]
-            new_row["response"] = asst_msgs[-1] if asst_msgs else ""
-        elif "output" in row:
-            new_row["response"] = row["output"]
-        elif "completion" in row:
-            new_row["response"] = row["completion"]
-        else:
-            skip = {"messages", "request", "ticket_clean", "input", "text", "prompt"}
-            fields = {k: v for k, v in row.items() if k not in skip and isinstance(v, str)}
-            if fields:
-                new_row["response"] = "\\n".join(f"{k}: {v}" for k, v in fields.items())
-            else:
-                new_row["response"] = ""
-    out.append(new_row)
-
-out_path = path.rsplit(".", 1)[0] + "_processed.jsonl"
-with open(out_path, "w") as f:
-    for row in out:
-        f.write(json.dumps(row) + "\\n")
-
-print(f"Preprocessed {len(out)} rows -> {out_path}")
-'''
 
 
 def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
@@ -343,30 +276,6 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
         if not existing or not existing.startswith("s3://"):
             config["data_path"] = data_file
             logger.info("Injected SDG data path from parent: %s", data_file)
-    elif job["type"] == JobType.eval.value and parent["type"] == "training":
-        if not config.get("model_endpoint"):
-            config["_parent_model_uri"] = artifact_uri
-            logger.info("Injected model URI from parent: %s", artifact_uri)
-
-        existing_dataset = config.get("dataset", "")
-        if existing_dataset and not existing_dataset.startswith("s3://"):
-            grandparent_job_id = parent.get("parent_job_id", "") or parent.get(
-                "config", {}
-            ).get("parent_job_id", "")
-            if grandparent_job_id:
-                grandparent = await repo.get_job(grandparent_job_id)
-                if grandparent and grandparent["type"] == "sdg":
-                    grandparent_run_id = grandparent.get("mlflow_run_id", "")
-                    if grandparent_run_id:
-                        grandparent_artifact_uri = await _resolve_mlflow_artifact_uri(
-                            grandparent_run_id
-                        )
-                        if grandparent_artifact_uri:
-                            data_file = (
-                                f"{grandparent_artifact_uri}/generated_data/generated_data.jsonl"
-                            )
-                            config["dataset"] = data_file
-                            logger.info("Injected SDG test data from grandparent: %s", data_file)
 
     return config
 
@@ -385,7 +294,6 @@ async def _run_job(job: dict[str, Any]) -> None:
     output_dir_names = {
         JobType.training.value: "training_output",
         JobType.sdg.value: "sdg_output",
-        JobType.eval.value: "eval_output",
     }
     dir_name = output_dir_names.get(job["type"], f"{job['type']}_output")
     base_dir = str(config_mod.settings.data_dir / dir_name)
@@ -432,10 +340,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             spec_env[env_name] = value
 
     llm_secret_keys = {"api_key", "api_secret", "token"}
-    use_gateway = bool(config_mod.settings.gateway_url) and job["type"] in (
-        JobType.sdg.value,
-        JobType.eval.value,
-    )
+    use_gateway = bool(config_mod.settings.gateway_url) and job["type"] == JobType.sdg.value
     secret_to_env = {"api_key": "OPENAI_API_KEY"}
     for secret_key, secret_val in secrets.items():
         if use_gateway and secret_key in llm_secret_keys:
@@ -445,8 +350,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_env[env_name] = secret_val
     if use_gateway and "OPENAI_API_KEY" not in spec_env:
         spec_env["OPENAI_API_KEY"] = "gateway-managed"
-    if job["type"] in (JobType.sdg.value, JobType.eval.value):
-        spec_env["LITELLM_DROP_PARAMS"] = "true"
 
     if config_mod.settings.mlflow_tracking_uri:
         mlflow_experiment = f"amortized/{job['type']}/{job_id[:8]}"
@@ -465,9 +368,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         await _update_job(job_id, mlflow_experiment=mlflow_experiment)
 
     image = _JOB_TYPE_IMAGES.get(job["type"])
-
-    if job["type"] == JobType.eval.value:
-        config = _resolve_judge_template(config)
 
     config_files: dict[str, str] = {}
     s3_downloads: list[S3Download] = []
@@ -491,54 +391,23 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
-        synth_config = _generate_container_config(job["type"], config)
-        config_files["synth_config.yaml"] = yaml.dump(synth_config, default_flow_style=False)
-        cmd = ["asynth", "synthesize", "--config", "/amortized/synth_config.yaml", "--verbose"]
-    elif image and job["type"] == JobType.eval.value:
-        data_path = config.get("dataset", "")
-        dataset_job_id = config.get("dataset_job_id", "")
-        if not data_path and dataset_job_id:
-            artifact_uri = await _resolve_job_artifact_uri(dataset_job_id)
-            if artifact_uri:
-                data_path = f"{artifact_uri}/generated_data/generated_data.jsonl"
-                config["dataset"] = data_path
-                logger.info("Resolved eval dataset from job %s: %s", dataset_job_id, data_path)
-            else:
-                raise ValueError(
-                    f"Eval dataset not found: dataset_job_id {dataset_job_id!r} "
-                    "could not be resolved (parent job may lack mlflow_run_id)"
-                )
-        eval_data_local = "/amortized/work/eval_data.jsonl"
-        if data_path.startswith("s3://"):
-            s3_downloads.append(S3Download(s3_uri=data_path, local_path=eval_data_local))
-        elif data_path:
-            eval_data_local = data_path
-        judge_prompt = config.get("judge", {}).get("prompt", "")
-        if "{request}" in judge_prompt or "{response}" in judge_prompt:
-            config_files["preprocess_eval.py"] = _EVAL_PREPROCESS_SCRIPT
-        config.pop("dataset", None)
-        config_files["config.yaml"] = _eval_config_yaml(config)
-        if "preprocess_eval.py" in config_files:
-            processed_path = eval_data_local.rsplit(".", 1)[0] + "_processed.jsonl"
-            safe_input = shlex.quote(eval_data_local)
-            safe_output = shlex.quote(processed_path)
-            cmd = [
-                "sh",
-                "-c",
-                f"python3 /amortized/preprocess_eval.py {safe_input}"
-                f" || {{ echo 'PREPROCESSING FAILED' >&2; exit 1; }}"
-                f" && asynth judge --config /amortized/config.yaml"
-                f" --data {safe_output}",
-            ]
-        else:
-            cmd = [
-                "asynth",
-                "judge",
-                "--config",
-                "/amortized/config.yaml",
-                "--data",
-                eval_data_local,
-            ]
+        num_records = config.pop("num_records", 100)
+        dd_config = {"data_designer": config}
+        config_files["config.yaml"] = yaml.dump(
+            dd_config, default_flow_style=False, sort_keys=False
+        )
+        cmd = [
+            "data-designer",
+            "create",
+            "/amortized/config.yaml",
+            "--num-records",
+            str(num_records),
+            "--artifact-path",
+            "/amortized/work",
+            "--no-tui",
+            "--output-format",
+            "jsonl",
+        ]
 
     job_type = job["type"]
     needs_gpu = job_type == "training"

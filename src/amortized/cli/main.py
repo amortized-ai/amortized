@@ -524,7 +524,7 @@ def submit(
             model_key = "model_name_or_path" if job_type in ("training", "serve") else "model"
             if model:
                 overrides.setdefault(f"config.{model_key}", model)
-            data_key = "dataset" if job_type == "eval" else "data_path"
+            data_key = "data_path"
             if data:
                 overrides.setdefault(f"config.{data_key}", _resolve_data(client, data))
             if adapter:
@@ -555,7 +555,7 @@ def submit(
             model_key = "model_name_or_path" if job_type in ("training", "serve") else "model"
             if model:
                 cfg.setdefault(model_key, model)
-            data_key = "dataset" if job_type == "eval" else "data_path"
+            data_key = "data_path"
             if data:
                 cfg.setdefault(data_key, _resolve_data(client, data))
             if adapter:
