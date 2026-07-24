@@ -53,4 +53,12 @@ Use the model-specific recipe from `templates/training/models/`:
 - Qwen3 4B → `templates/training/models/qwen3-4b-lora`
 - Llama 3.1 8B → `templates/training/models/llama-3.1-8b-qlora`
 
-Always set `parent_job_id` to the SDG job ID to chain the jobs.
+## Job Chaining (CRITICAL)
+
+When submitting the training job, you MUST pass `parent_job_id` set to
+the SDG job ID from this conversation. Without it, the training job has
+no data and will fail with "the following arguments are required: --data-path".
+
+The SDG job ID is in the conversation history from when you submitted the
+SDG job. Find it and pass it as the `parent_job_id` parameter to
+`submit_recipe_job`.
