@@ -1,8 +1,7 @@
 CLUSTER_NAME  ?= amortized
 IMAGE_TAG     ?= kind-$(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 KUBECTL       := kubectl --context kind-$(CLUSTER_NAME)
-STUDIO_DIR    ?= $(shell cd .. && pwd)/studio
-STUDIO_REPO   ?= https://github.com/amortized-ai/studio
+STUDIO_DIR    ?= $(REPO_ROOT)/studio
 REPO_ROOT     := $(shell pwd)
 
 # Developer environments
@@ -101,11 +100,7 @@ build-server: ## Build amortized server image
 	@echo "Building amortized-server:$(IMAGE_TAG)..."
 	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
 
-build-studio: ## Build studio image (expects ../studio/)
-	@if [ ! -d "$(STUDIO_DIR)" ]; then \
-		echo "Cloning studio repository to $(STUDIO_DIR)..."; \
-		git clone $(STUDIO_REPO) $(STUDIO_DIR); \
-	fi
+build-studio: ## Build studio image
 	@echo "Building amortized-studio:$(IMAGE_TAG)..."
 	docker build -t amortized-studio:$(IMAGE_TAG) -f $(STUDIO_DIR)/Dockerfile.kind $(STUDIO_DIR)
 
