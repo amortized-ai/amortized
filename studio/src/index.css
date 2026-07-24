@@ -1,0 +1,383 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.375rem;
+
+  /* PatternFly / Red Hat Design System — Light theme */
+  --background: #ffffff;
+  --foreground: #151515;
+  --card: #ffffff;
+  --card-foreground: #151515;
+  --popover: #ffffff;
+  --popover-foreground: #151515;
+  --primary: #0066cc;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f2f2;
+  --secondary-foreground: #151515;
+  --muted: #f2f2f2;
+  --muted-foreground: #4d4d4d;
+  --accent: #e0e0e0;
+  --accent-foreground: #151515;
+  --destructive: #b1380b;
+  --destructive-foreground: #ffffff;
+  --border: #c7c7c7;
+  --input: #c7c7c7;
+  --ring: #0066cc;
+  --chart-1: #ee0000;
+  --chart-2: #0066cc;
+  --chart-3: #147878;
+  --chart-4: #5e40be;
+  --chart-5: #f5921b;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #151515;
+  --sidebar-primary: #0066cc;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f2f2f2;
+  --sidebar-accent-foreground: #151515;
+  --sidebar-border: #e0e0e0;
+  --sidebar-ring: #0066cc;
+}
+
+.dark {
+  --background: #151515;
+  --foreground: #e0e0e0;
+  --card: #1f1f1f;
+  --card-foreground: #e0e0e0;
+  --popover: #1f1f1f;
+  --popover-foreground: #e0e0e0;
+  --primary: #4394e5;
+  --primary-foreground: #151515;
+  --secondary: #292929;
+  --secondary-foreground: #e0e0e0;
+  --muted: #292929;
+  --muted-foreground: #a3a3a3;
+  --accent: #383838;
+  --accent-foreground: #e0e0e0;
+  --destructive: #f4784a;
+  --destructive-foreground: #151515;
+  --border: #383838;
+  --input: #383838;
+  --ring: #4394e5;
+  --chart-1: #4394e5;
+  --chart-2: #37a3a3;
+  --chart-3: #876fd4;
+  --chart-4: #f8ae54;
+  --chart-5: #f56e6e;
+  --sidebar: #1f1f1f;
+  --sidebar-foreground: #e0e0e0;
+  --sidebar-primary: #4394e5;
+  --sidebar-primary-foreground: #e0e0e0;
+  --sidebar-accent: #292929;
+  --sidebar-accent-foreground: #e0e0e0;
+  --sidebar-border: #383838;
+  --sidebar-ring: #4394e5;
+}
+
+@theme inline {
+  --font-sans: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Red Hat Display", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Red Hat Mono", ui-monospace, monospace;
+
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.75rem;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Red Hat palette — numbered scale from @rhds/tokens */
+  --color-rh-red: #ee0000;
+  --color-rh-red-light: #f56e6e;
+  --color-rh-red-lightest: #fce3e3;
+  --color-rh-red-dark: #a60000;
+
+  --color-rh-blue-10: #e0f0ff;
+  --color-rh-blue-20: #b9dafc;
+  --color-rh-blue-30: #92c5f9;
+  --color-rh-blue-40: #4394e5;
+  --color-rh-blue-50: #0066cc;
+  --color-rh-blue-60: #004d99;
+  --color-rh-blue-70: #003366;
+  --color-rh-blue: #0066cc;
+  --color-rh-blue-light: #e0f0ff;
+  --color-rh-blue-dark: #004d99;
+
+  --color-rh-teal-10: #daf2f2;
+  --color-rh-teal-20: #b9e5e5;
+  --color-rh-teal-30: #9ad8d8;
+  --color-rh-teal-40: #63bdbd;
+  --color-rh-teal-50: #37a3a3;
+  --color-rh-teal-60: #147878;
+  --color-rh-teal-70: #004d4d;
+  --color-rh-teal-80: #003333;
+  --color-rh-teal: #147878;
+  --color-rh-teal-light: #daf2f2;
+  --color-rh-teal-dark: #004d4d;
+
+  --color-rh-purple-10: #ece6ff;
+  --color-rh-purple-20: #d0c5f4;
+  --color-rh-purple-30: #b6a6e9;
+  --color-rh-purple-40: #876fd4;
+  --color-rh-purple-50: #5e40be;
+  --color-rh-purple-60: #3d2785;
+  --color-rh-purple-70: #21134d;
+  --color-rh-purple-80: #1b0d33;
+  --color-rh-purple: #5e40be;
+  --color-rh-purple-light: #ece6ff;
+  --color-rh-purple-dark: #3d2785;
+
+  --color-rh-green-10: #e9f7df;
+  --color-rh-green-20: #d1f1bb;
+  --color-rh-green-30: #afdc8f;
+  --color-rh-green-40: #87bb62;
+  --color-rh-green-50: #63993d;
+  --color-rh-green-60: #3d7317;
+  --color-rh-green-70: #204d00;
+  --color-rh-green: #3d7317;
+  --color-rh-green-light: #e9f7df;
+  --color-rh-green-dark: #204d00;
+
+  --color-rh-orange-10: #ffe8cc;
+  --color-rh-orange-30: #f8ae54;
+  --color-rh-orange-40: #f5921b;
+  --color-rh-orange-60: #9e4a06;
+  --color-rh-orange-70: #732e00;
+  --color-rh-orange: #f5921b;
+  --color-rh-orange-light: #ffe8cc;
+  --color-rh-orange-dark: #9e4a06;
+
+  --color-rh-yellow-10: #fff4cc;
+  --color-rh-yellow-20: #ffe072;
+  --color-rh-yellow-30: #ffcc17;
+  --color-rh-yellow-40: #dca614;
+  --color-rh-yellow-50: #b98412;
+  --color-rh-yellow-60: #96640f;
+  --color-rh-yellow-70: #73480b;
+  --color-rh-yellow-80: #54330b;
+  --color-rh-yellow: #dca614;
+  --color-rh-yellow-light: #fff4cc;
+  --color-rh-yellow-dark: #96640f;
+
+  --color-rh-red-orange-10: #ffe3d9;
+  --color-rh-red-orange-30: #f89b78;
+  --color-rh-red-orange-40: #f4784a;
+  --color-rh-red-orange-50: #f0561d;
+  --color-rh-red-orange-60: #b1380b;
+  --color-rh-red-orange-70: #731f00;
+  --color-rh-danger: #b1380b;
+  --color-rh-danger-light: #ffe3d9;
+  --color-rh-danger-dark: #731f00;
+
+  --color-rh-gray-10: #f2f2f2;
+  --color-rh-gray-20: #e0e0e0;
+  --color-rh-gray-30: #c7c7c7;
+  --color-rh-gray-40: #a3a3a3;
+  --color-rh-gray-50: #707070;
+  --color-rh-gray-60: #4d4d4d;
+  --color-rh-gray-70: #383838;
+  --color-rh-gray-80: #292929;
+  --color-rh-gray-90: #1f1f1f;
+  --color-rh-gray-95: #151515;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    font-family: "Red Hat Text", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Red Hat Display", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  code, kbd, samp, pre {
+    font-family: "Red Hat Mono", ui-monospace, monospace;
+  }
+}
+
+/* Chat animations */
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcome-settle {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-message-in {
+  animation: message-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-welcome {
+  animation: welcome-settle 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes thinking-dot {
+  0%, 70%, 100% {
+    opacity: 0.25;
+    transform: scale(0.85);
+  }
+  35% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+
+.thinking-dot {
+  animation: thinking-dot 1.8s ease-in-out infinite;
+}
+
+/*
+ * Panel dialog motion
+ *
+ * Two-layer choreography: the overlay leads, the panel follows.
+ * Entrance is slower and cushioned (content feels like it's settling
+ * into place). Exit is quick and decisive (no lingering).
+ *
+ * The panel rises 20px — enough to read as directional movement
+ * without feeling like a slide-in from off-screen.
+ */
+@keyframes panel-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 20px)) scale(0.97);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes panel-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.98);
+  }
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.dialog-panel-content[data-state="open"] {
+  animation: panel-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dialog-panel-content[data-state="closed"] {
+  animation: panel-out 0.18s cubic-bezier(0.4, 0, 0.7, 0.2) both;
+}
+
+.dialog-panel-overlay[data-state="open"] {
+  animation: overlay-in 0.28s ease-out both;
+}
+
+.dialog-panel-overlay[data-state="closed"] {
+  animation: overlay-out 0.16s ease-in both;
+}
+
+/* Tutorial walkthrough */
+
+@keyframes tutorial-ring-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.tutorial-ring {
+  animation: tutorial-ring-breathe 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-message-in,
+  .animate-welcome {
+    animation: none;
+  }
+  .thinking-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+  .dialog-panel-content[data-state="open"],
+  .dialog-panel-content[data-state="closed"],
+  .dialog-panel-overlay[data-state="open"],
+  .dialog-panel-overlay[data-state="closed"] {
+    animation: none;
+  }
+  .tutorial-ring {
+    animation: none;
+  }
+}
