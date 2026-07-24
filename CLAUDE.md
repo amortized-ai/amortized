@@ -9,6 +9,7 @@ Amortized is a **thin orchestration layer**. It translates user intent into tool
 ## Dev Commands
 
 ```bash
+# Backend
 uv pip install -e '.[dev]'    # install
 amortized up                   # start server on :8000
 amortized config               # configure compute backend
@@ -16,6 +17,14 @@ ruff check src/ tests/         # lint
 ruff format src/ tests/        # format
 mypy src/                      # type check
 pytest tests/ -x -q            # test
+
+# Studio (frontend)
+cd studio && npm install       # install
+cd studio && npm run dev       # dev server on :5173
+cd studio && npm run lint      # lint
+cd studio && npm run typecheck # type check
+cd studio && npm test          # test
+cd studio && npm run build     # production build
 ```
 
 ## Architecture
@@ -49,6 +58,7 @@ Amortized stores `mlflow_run_id` per job. Everything else — storage, versionin
 ### Kind Cluster Deployment
 
 ```
+studio/                ← React/Vite frontend (Amortized Studio)
 k8s/base/              ← kustomize base (server, studio, opencode, claude-code, RBAC, configmap)
 k8s/overlays/shared/   ← MLflow + MinIO (shared across all developers)
 k8s/overlays/users/    ← per-developer kustomize overlays (one directory per developer)

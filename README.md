@@ -10,6 +10,39 @@ Every AI agent has tasks that don't need a frontier model. Classification, extra
 
 The name comes from finance — amortization spreads a large upfront cost across many future uses. Here, the "cost" is the frontier model's capability, and the "uses" are every future inference by the cheaper task model.
 
+## Repository layout
+
+```
+amortized/
+├── src/amortized/       # Python backend (FastAPI)
+├── studio/              # React frontend (Vite)
+├── agent/               # Morty chat agent
+├── containers/          # Training container Dockerfiles
+├── k8s/                 # Kubernetes manifests (kustomize)
+├── templates/           # YAML templates for SDG/training/eval
+├── examples/            # Example pipelines
+└── Makefile             # Build, deploy, cluster management
+```
+
+## Development
+
+```bash
+# Backend
+uv pip install -e '.[dev]'
+amortized up              # start server on :8000
+
+# Studio (frontend)
+cd studio
+npm install
+npm run dev               # start dev server on :5173
+
+# Lint / test
+ruff check src/ tests/    # backend lint
+mypy src/                 # backend type check
+pytest tests/ -x -q       # backend tests
+cd studio && npm test     # frontend tests
+```
+
 ## Deployment
 
 Amortized runs on a kind cluster with GPU passthrough. Each developer gets an isolated namespace with their own server, studio, OpenCode, and Claude Code deployments. Shared services (MLflow, MinIO) run in the `amortized` namespace.
@@ -25,28 +58,14 @@ Amortized runs on a kind cluster with GPU passthrough. Each developer gets an is
 | esivaram  | amortized-esivaram | 31140 | 31141 | 1 |
 | *(shared)* | amortized         | —     | MLflow: 31082 | — |
 
-### Directory layout on the cluster
-
-Each developer works from their own directory to avoid stepping on each other:
-
-```
-~/<username>/
-├── amortized/    # your clone of amortized-ai/amortized
-└── studio/       # your clone of amortized-ai/studio
-```
-
-The Makefile's `STUDIO_DIR` defaults to `../studio`, so it automatically picks up your sibling studio directory.
-
 ### Quick start
 
 ```bash
-# One-time setup: clone both repos into your directory
-mkdir -p ~/<username> && cd ~/<username>
+# Clone the repo
 git clone git@github.com:amortized-ai/amortized.git
-git clone git@github.com:amortized-ai/studio.git
+cd amortized
 
 # Build images and deploy your environment
-cd ~/<username>/amortized
 make build-server build-studio load-server load-studio
 make deploy-<username>
 
@@ -76,24 +95,10 @@ Then open your studio at `http://localhost:<your-studio-port>` (see table above 
 
 ### Testing a PR branch
 
-To test a PR, check out the branch in your studio or amortized clone, rebuild, and redeploy:
-
 ```bash
-# Example: testing a studio PR
-cd ~/<username>/studio
+# Check out the branch and redeploy
 git checkout feat/my-branch
-
-# Rebuild and redeploy from your working directory
-cd ~/<username>/amortized
 make refresh-<username>
-```
-
-To swap just the studio image without a full refresh:
-
-```bash
-cd ~/<username>/amortized
-make build-studio load-studio
-kubectl -n amortized-<username> rollout restart deployment/amortized-studio
 ```
 
 ### Adding a new developer
