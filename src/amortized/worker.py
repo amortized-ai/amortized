@@ -231,6 +231,30 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
         return False
 
 
+async def _fetch_document_content(document_id: str) -> str:
+    """Fetch parsed document content from MLflow artifact store."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri or not document_id:
+        return ""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts"
+                "/parsed_content.md",
+                params={"run_id": document_id},
+            )
+            if resp.is_success:
+                return resp.text
+            logger.warning(
+                "Failed to fetch document %s: %d", document_id, resp.status_code
+            )
+    except Exception:
+        logger.warning("Failed to fetch document %s", document_id, exc_info=True)
+    return ""
+
+
 async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     """Look up a job's MLflow artifact URI by job ID."""
     if not job_id:
@@ -390,6 +414,22 @@ async def _run_job(job: dict[str, Any]) -> None:
         cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.sdg.value:
         import yaml
+
+        document_id = config.pop("document_id", "")
+        if document_id and config_mod.settings.mlflow_tracking_uri:
+            content = await _fetch_document_content(document_id)
+            if content:
+                config_files["docs/content.md"] = content
+                config.setdefault("seed_config", {
+                    "source": {
+                        "seed_type": "document-chunker",
+                        "path": "/amortized/docs",
+                        "file_extensions": [".md"],
+                        "sentences_per_chunk": 5,
+                        "min_text_length": 50,
+                    },
+                })
+                logger.info("Job %s: injected document %s as seed data", job_id, document_id)
 
         num_records = config.pop("num_records", 100)
         dd_config = {"data_designer": config}
