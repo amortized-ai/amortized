@@ -415,11 +415,17 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
-        document_id = config.pop("document_id", "")
-        if document_id and config_mod.settings.mlflow_tracking_uri:
-            content = await _fetch_document_content(document_id)
-            if content:
-                config_files["docs/content.md"] = content
+        document_ids = config.pop("document_ids", [])
+        if isinstance(document_ids, str):
+            document_ids = [document_ids]
+        if document_ids and config_mod.settings.mlflow_tracking_uri:
+            doc_count = 0
+            for doc_id in document_ids:
+                content = await _fetch_document_content(doc_id)
+                if content:
+                    config_files[f"docs/{doc_id}.md"] = content
+                    doc_count += 1
+            if doc_count:
                 config.setdefault("seed_config", {
                     "source": {
                         "seed_type": "document-chunker",
@@ -429,7 +435,9 @@ async def _run_job(job: dict[str, Any]) -> None:
                         "min_text_length": 50,
                     },
                 })
-                logger.info("Job %s: injected document %s as seed data", job_id, document_id)
+                logger.info(
+                    "Job %s: loaded %d documents as seed data", job_id, doc_count
+                )
 
         num_records = config.pop("num_records", 100)
         dd_config = {"data_designer": config}
