@@ -302,61 +302,6 @@ function SdgSection({
   )
 }
 
-function EvalSection({
-  form,
-  onFieldChange,
-  datasets,
-}: Pick<RecipeBuilderFormProps, "form" | "onFieldChange" | "datasets">) {
-  return (
-    <Accordion type="multiple" defaultValue={["dataset", "judge"]}>
-      <AccordionItem value="dataset">
-        <AccordionTrigger>Dataset</AccordionTrigger>
-        <AccordionContent>
-          {datasets.length > 0 ? (
-            <Select
-              value={form.eval_dataset}
-              onValueChange={(v) => onFieldChange("eval_dataset", v)}
-            >
-              <SelectTrigger data-testid="eval-dataset-select">
-                <SelectValue placeholder="Select evaluation dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                {datasets.map((d) => (
-                  <SelectItem key={d.run_id} value={d.run_id}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No datasets available.
-            </p>
-          )}
-        </AccordionContent>
-      </AccordionItem>
-
-      <AccordionItem value="judge">
-        <AccordionTrigger>Judge Model</AccordionTrigger>
-        <AccordionContent>
-          <div className="space-y-2">
-            <Input
-              value={form.judge_model}
-              onChange={(e) => onFieldChange("judge_model", e.target.value)}
-              placeholder="e.g. granite-3.1-8b or openai/gpt-4o"
-              data-testid="judge-model-input"
-            />
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium">Local model:</span> use the model name and set <span className="font-mono text-[11px]">api_base</span> in the JSON editor.
-              <span className="font-medium ml-2">API provider:</span> use <span className="font-mono text-[11px]">provider/model</span> format.
-            </p>
-          </div>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
-  )
-}
-
 export function RecipeBuilderForm(props: RecipeBuilderFormProps) {
   const { form, onFieldChange } = props
 
@@ -384,7 +329,6 @@ export function RecipeBuilderForm(props: RecipeBuilderFormProps) {
             <SelectContent>
               <SelectItem value="training">Training</SelectItem>
               <SelectItem value="sdg">SDG</SelectItem>
-              <SelectItem value="eval">Eval</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -410,13 +354,6 @@ export function RecipeBuilderForm(props: RecipeBuilderFormProps) {
       )}
       {form.type === "sdg" && (
         <SdgSection
-          form={form}
-          onFieldChange={onFieldChange}
-          datasets={props.datasets}
-        />
-      )}
-      {form.type === "eval" && (
-        <EvalSection
           form={form}
           onFieldChange={onFieldChange}
           datasets={props.datasets}

@@ -1,5 +1,11 @@
 import { render, screen, fireEvent } from "@testing-library/react"
 import { describe, it, expect, vi } from "vitest"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+}
 import { OptionCards } from "./option-cards"
 import { ToolBadge } from "./tool-badge"
 import { ActionCard } from "./action-card"
@@ -193,7 +199,7 @@ describe("ChatInput", () => {
 
 describe("MessageList", () => {
   it("shows welcome screen when no messages", () => {
-    render(<MessageList messages={[]} />)
+    render(<MessageList messages={[]} />, { wrapper: Wrapper })
     expect(
       screen.getByText("Welcome to Amortized Studio"),
     ).toBeInTheDocument()
@@ -221,7 +227,7 @@ describe("MessageList", () => {
       },
     ]
 
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} />, { wrapper: Wrapper })
     expect(screen.getByText("Hello")).toBeInTheDocument()
     expect(screen.getByText("Hi there!")).toBeInTheDocument()
   })
@@ -243,7 +249,7 @@ describe("MessageList", () => {
       },
     ]
 
-    render(<MessageList messages={messages} />)
+    render(<MessageList messages={messages} />, { wrapper: Wrapper })
     vi.advanceTimersByTime(300)
     expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "end" })
     vi.useRealTimers()
@@ -270,6 +276,7 @@ describe("MessageBubble — parsed option cards", () => {
         message={makeMsg("Pick one:\n1) 80/20 split\n2) 70/30 split\n3) 90/10 split")}
         onOptionSelect={onSelect}
       />,
+      { wrapper: Wrapper },
     )
     const cards = screen.getAllByRole("button")
     expect(cards).toHaveLength(4) // 3 options + "Other"
@@ -288,6 +295,7 @@ describe("MessageBubble — parsed option cards", () => {
         message={makeMsg("Choose:\n- Option A\n- Option B")}
         onOptionSelect={onSelect}
       />,
+      { wrapper: Wrapper },
     )
     const cards = screen.getAllByRole("button")
     expect(cards).toHaveLength(3) // 2 options + "Other"
@@ -300,7 +308,7 @@ describe("MessageBubble — parsed option cards", () => {
       ...makeMsg("1) First\n2) Second"),
       role: "user",
     }
-    render(<MessageBubble message={userMsg} onOptionSelect={vi.fn()} />)
+    render(<MessageBubble message={userMsg} onOptionSelect={vi.fn()} />, { wrapper: Wrapper })
     expect(screen.queryAllByRole("button")).toHaveLength(0)
   })
 
@@ -310,6 +318,7 @@ describe("MessageBubble — parsed option cards", () => {
         message={makeMsg("Just one:\n1) Only option — the sole choice")}
         onOptionSelect={vi.fn()}
       />,
+      { wrapper: Wrapper },
     )
     expect(screen.queryAllByRole("button").length).toBeGreaterThanOrEqual(1)
   })

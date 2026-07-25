@@ -14,7 +14,6 @@ import { TrainingCostCard } from "./training-cost-card"
 import { ModelComparisonCard } from "./model-comparison-card"
 import { TrainingMethodCostCard } from "./training-method-cost-card"
 import { JobMonitorCard } from "./job-monitor-card"
-import { EvalCostCard } from "./eval-cost-card"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
@@ -155,11 +154,6 @@ export function MessageBubble({
     if (type === "SDG") {
       const lower = displayContent.toLowerCase()
       if (
-        /your eval(uation)? job/i.test(lower) ||
-        /eval(uation)? job (is |submitted|queued|running)/i.test(lower)
-      ) {
-        type = "EVAL"
-      } else if (
         /your training job/i.test(lower) ||
         /training job (is |submitted|queued|running)/i.test(lower)
       ) {
@@ -191,16 +185,7 @@ export function MessageBubble({
         const modelNav = mlflowRunId ? `__nav:/models?run=${encodeURIComponent(mlflowRunId)}` : "__nav:/models"
         return [
           { title: "View Model", description: "Browse trained model artifacts", value: modelNav },
-          { title: "Continue to Evaluation", description: "Evaluate the fine-tuned model", value: "Let's continue to the evaluation step" },
           { title: "Train with different settings", description: "Adjust model, method, or hyperparameters", value: "I'd like to train again with different settings" },
-          { title: "I'm done", description: "That's all I needed", value: "I'm done for now, thanks!" },
-        ] as OptionCard[]
-      }
-      if (jobType === "EVAL") {
-        return [
-          { title: "View Results", description: "See evaluation metrics and judge scores", value: `__nav:/jobs?job=${encodeURIComponent(jobId)}` },
-          { title: "Run another eval", description: "Try a different judge or metric", value: "I'd like to run another evaluation with different settings" },
-          { title: "Start a new workflow", description: "Build another task model from scratch", value: "Let's start a new workflow" },
           { title: "I'm done", description: "That's all I needed", value: "I'm done for now, thanks!" },
         ] as OptionCard[]
       }
@@ -274,21 +259,6 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const evalCostEstimate = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(
-      (t) => t.name === "estimate_eval_cost" || t.name === "estimate eval cost"
-    )
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string"
-        ? JSON.parse(tool.result)
-        : tool.result
-      if (parsed?.total_cost !== undefined && parsed?.comparison) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
   const trainingCostSummary = useMemo(() => {
     if (isUser) return null
     const tool = message.toolResults.find((t) => t.name === "training cost summary")
@@ -300,21 +270,9 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const evalCostSummary = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find((t) => t.name === "eval cost summary")
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-      if (parsed?.total_cost !== undefined) return parsed
-    } catch { /* ignore */ }
-    return null
-  }, [isUser, message.toolResults])
-
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>()
     if (trainingCostSummary) hidden.add("training cost summary")
-    if (evalCostSummary) hidden.add("eval cost summary")
     if (costEstimate) {
       hidden.add("estimate_sdg_cost")
       hidden.add("estimate sdg cost")
@@ -331,13 +289,9 @@ export function MessageBubble({
       hidden.add("compare_sdg_models")
       hidden.add("compare sdg models")
     }
-    if (evalCostEstimate) {
-      hidden.add("estimate_eval_cost")
-      hidden.add("estimate eval cost")
-    }
     if (hidden.size === 0) return message.toolResults
     return message.toolResults.filter((t) => !hidden.has(t.name))
-  }, [message.toolResults, costEstimate, trainingCostEstimate, trainingMethodCost, modelComparison, evalCostEstimate])
+  }, [message.toolResults, costEstimate, trainingCostEstimate, trainingMethodCost, modelComparison])
 
 
   return (
@@ -403,12 +357,6 @@ export function MessageBubble({
             <ModelComparisonCard estimate={modelComparison} />
           </div>
         )}
-
-        {evalCostEstimate && (
-          <div className="mt-3">
-            <EvalCostCard estimate={evalCostEstimate} />
-          </div>
-        )}
         {trainingCostSummary?.comparison && (
           <div className="mt-3">
             <CostAnalysisCard
@@ -421,23 +369,6 @@ export function MessageBubble({
                   manual_labeling_total: trainingCostSummary.comparison.manual_training_total,
                   savings_amount: trainingCostSummary.comparison.savings_amount,
                   savings_percent: trainingCostSummary.comparison.savings_percent,
-                },
-              }}
-            />
-          </div>
-        )}
-        {evalCostSummary && !evalCostEstimate && (
-          <div className="mt-3">
-            <CostAnalysisCard
-              phase="eval"
-              estimate={{
-                model_label: evalCostSummary.judge_model_label || "GPT-4o Mini",
-                num_samples: evalCostSummary.num_samples || 100,
-                cost: { input: evalCostSummary.input_cost ?? 0, output: evalCostSummary.output_cost ?? 0, total: evalCostSummary.total_cost ?? 0 },
-                comparison: {
-                  manual_labeling_total: evalCostSummary.manual_comparison?.manual_evaluation_total ?? 0,
-                  savings_amount: evalCostSummary.manual_comparison?.savings_amount ?? 0,
-                  savings_percent: evalCostSummary.manual_comparison?.savings_percent ?? 0,
                 },
               }}
             />

@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router"
 import { Card, CardContent } from "@/components/ui/card"
-import { Database, GraduationCap, FlaskConical, Rocket } from "lucide-react"
+import { Database, GraduationCap, Rocket } from "lucide-react"
 
 const ACTIONS = [
   {
@@ -14,11 +14,6 @@ const ACTIONS = [
     prompt: "Help me train a model",
   },
   {
-    label: "Evaluate a Model",
-    icon: FlaskConical,
-    prompt: "Help me evaluate a model",
-  },
-  {
     label: "Deploy a Model",
     icon: Rocket,
     prompt: "Help me deploy a model",
@@ -29,7 +24,7 @@ export function QuickActions() {
   const navigate = useNavigate()
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {ACTIONS.map((action) => (
         <Card
           key={action.label}

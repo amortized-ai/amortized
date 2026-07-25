@@ -85,7 +85,7 @@ export function SectionCards() {
         title="Active Jobs"
         count={activeJobs?.length}
         isLoading={jobsLoading}
-        description="Training and evaluation runs"
+        description="Training and SDG runs"
         icon={Activity}
         path="/jobs"
       />

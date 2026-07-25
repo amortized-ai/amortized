@@ -61,7 +61,6 @@ describe("JobTypeBadge", () => {
   const types: { type: JobType; label: string }[] = [
     { type: "training", label: "Training" },
     { type: "sdg", label: "SDG" },
-    { type: "eval", label: "Eval" },
   ]
 
   types.forEach(({ type, label }) => {
@@ -75,7 +74,7 @@ describe("JobTypeBadge", () => {
 describe("FilterChips", () => {
   const options = [
     { value: "training" as const, label: "Training" },
-    { value: "eval" as const, label: "Eval" },
+    { value: "sdg" as const, label: "SDG" },
   ]
 
   it("renders all options", () => {
@@ -83,7 +82,7 @@ describe("FilterChips", () => {
       <FilterChips label="Type" options={options} selected={[]} onChange={vi.fn()} />,
     )
     expect(screen.getByText("Training")).toBeInTheDocument()
-    expect(screen.getByText("Eval")).toBeInTheDocument()
+    expect(screen.getByText("SDG")).toBeInTheDocument()
   })
 
   it("toggles selection on click", () => {
@@ -122,7 +121,7 @@ describe("JobTable", () => {
   it("renders job rows with correct data", () => {
     const jobs = [
       makeJob({ id: "j1", type: "training", status: "running" }),
-      makeJob({ id: "j2", type: "eval", status: "succeeded" }),
+      makeJob({ id: "j2", type: "sdg", status: "succeeded" }),
     ]
 
     renderJobTable(
@@ -130,7 +129,7 @@ describe("JobTable", () => {
     )
 
     expect(screen.getByText("Training")).toBeInTheDocument()
-    expect(screen.getByText("Eval")).toBeInTheDocument()
+    expect(screen.getByText("SDG")).toBeInTheDocument()
     expect(screen.getByText("Running")).toBeInTheDocument()
     expect(screen.getByText("Succeeded")).toBeInTheDocument()
   })

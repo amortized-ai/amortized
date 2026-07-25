@@ -8,7 +8,7 @@ import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { SearchInput } from "@/components/search-input"
-import { ArrowLeft, Play, Save, Copy, GraduationCap, Sparkles, ClipboardCheck, ArrowRight, Lightbulb } from "lucide-react"
+import { ArrowLeft, Play, Save, Copy, GraduationCap, Sparkles, ArrowRight, Lightbulb } from "lucide-react"
 import { useRecipes, useExecuteRecipe, useSaveRecipe } from "./api/use-recipes"
 import { useRecipeState } from "./hooks/use-recipe-state"
 import { RecipeTable } from "./components/recipe-table"
@@ -42,15 +42,6 @@ const RECIPE_GUIDES: Record<string, { color: string; iconBg: string; steps: stri
       "Adjust hyperparameters or keep defaults, then click Execute",
     ],
   },
-  eval: {
-    color: "text-[#147878] dark:text-[#37a3a3]",
-    iconBg: "bg-[#daf2f2] dark:bg-[#003333]/40",
-    steps: [
-      "Select the dataset you want to evaluate against",
-      "Set the judge model — use a local model or cloud provider to score your model's outputs",
-      "Click Execute to run the evaluation, results appear in the job logs",
-    ],
-  },
 }
 
 function RecipeBuilderGuide({ type, hasDatasets, hasModels }: { type: string; hasDatasets: boolean; hasModels: boolean }) {
@@ -60,8 +51,6 @@ function RecipeBuilderGuide({ type, hasDatasets, hasModels }: { type: string; ha
   const warnings: string[] = []
   if (type === "training" && !hasDatasets) warnings.push("No datasets available yet — run an SDG recipe first to generate training data.")
   if (type === "training" && !hasModels) warnings.push("No base models found — register a model in MLflow (e.g. a Granite or Qwen model from HuggingFace).")
-  if (type === "eval" && !hasDatasets) warnings.push("No datasets available — you need a dataset to evaluate against.")
-
   return (
     <div className="mx-auto max-w-2xl animate-message-in rounded-xl border bg-card p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -124,7 +113,7 @@ export default function RecipesPage() {
   }, [visibleRecipes, typeFilter, search])
 
   const recipeCountByType = useMemo(() => {
-    const counts = { training: 0, sdg: 0, eval: 0 }
+    const counts = { training: 0, sdg: 0 }
     for (const r of visibleRecipes) {
       const t = getEffectiveType(r).toLowerCase() as keyof typeof counts
       if (t in counts) counts[t]++
@@ -417,7 +406,7 @@ export default function RecipesPage() {
       </div>
 
       {/* Category cards */}
-      <div className="animate-welcome grid gap-4 md:grid-cols-3">
+      <div className="animate-welcome grid gap-4 md:grid-cols-2">
         <button
           onClick={() => { setTypeFilter("sdg"); setPage(0) }}
           className={`group rounded-xl border bg-card p-5 text-left transition-all duration-300 hover:border-[#b6a6e9] hover:shadow-md hover:-translate-y-0.5 dark:hover:border-[#21134d] ${typeFilter === "sdg" ? "border-[#b6a6e9] shadow-sm" : ""}`}
@@ -450,21 +439,6 @@ export default function RecipesPage() {
           </div>
         </button>
 
-        <button
-          onClick={() => { setTypeFilter("eval"); setPage(0) }}
-          className={`group rounded-xl border bg-card p-5 text-left transition-all duration-300 hover:border-[#63bdbd] hover:shadow-md hover:-translate-y-0.5 dark:hover:border-[#004d4d] ${typeFilter === "eval" ? "border-[#63bdbd] shadow-sm" : ""}`}
-        >
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#daf2f2] text-[#147878] transition-colors group-hover:bg-[#b9e5e5] dark:bg-[#003333]/40 dark:text-[#37a3a3]">
-              <ClipboardCheck className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm">Evaluation</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Test accuracy against baselines with LLM judges</p>
-              <p className="text-xs text-muted-foreground mt-1.5">{recipeCountByType.eval} recipes</p>
-            </div>
-          </div>
-        </button>
       </div>
 
       {/* Filter tabs + search */}
@@ -474,7 +448,6 @@ export default function RecipesPage() {
             <TabsTrigger value="all">All ({visibleRecipes.length})</TabsTrigger>
             <TabsTrigger value="sdg">SDG ({recipeCountByType.sdg})</TabsTrigger>
             <TabsTrigger value="training">Training ({recipeCountByType.training})</TabsTrigger>
-            <TabsTrigger value="eval">Eval ({recipeCountByType.eval})</TabsTrigger>
           </TabsList>
         </Tabs>
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search recipes..." />

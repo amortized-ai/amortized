@@ -11,9 +11,6 @@ export type WorkflowStep =
   | "training-student-model"
   | "training-method"
   | "training-confirm"
-  | "eval-method"
-  | "eval-judge-model"
-  | "eval-confirm"
   | null
 
 function card(title: string, description: string, value?: string): OptionCard {
@@ -103,11 +100,6 @@ function getTeacherModelCards(routes?: MlflowGatewayRoute[]): OptionCard[] {
   return FALLBACK_TEACHER_MODEL_CARDS
 }
 
-function getJudgeModelCards(routes?: MlflowGatewayRoute[]): OptionCard[] {
-  if (routes && routes.length > 0) return routesToModelCards(routes)
-  return FALLBACK_JUDGE_MODEL_CARDS
-}
-
 const CONFIRM_CARDS: OptionCard[] = [
   card("Yes, submit the job", "Start generating with the settings above", "Yes, submit the job"),
   card("Change something", "Adjust the settings before submitting", "Change something"),
@@ -124,19 +116,6 @@ const TRAINING_METHOD_CARDS: OptionCard[] = [
   card("LoRA SFT", "Recommended — fastest and cheapest"),
   card("QLoRA SFT", "Lower memory footprint"),
   card("Full SFT", "Best quality, updates all weights"),
-]
-
-const EVAL_METHOD_CARDS: OptionCard[] = [
-  card("Classification accuracy", "Precision, recall, F1 via deterministic field matching"),
-  card("Response quality", "LLM judge assesses correctness and reasoning"),
-  card("Both", "Classification accuracy plus LLM judge quality check"),
-]
-
-const FALLBACK_JUDGE_MODEL_CARDS: OptionCard[] = [
-  card("GPT-4o Mini", "Fast and cheap, recommended default"),
-  card("Claude Haiku", "Balanced cost and quality"),
-  card("GPT-4o", "Higher quality judgments"),
-  card("Claude Sonnet", "Highest quality, most expensive"),
 ]
 
 function detectDomain(messages: ChatMessage[]): string | null {
@@ -181,19 +160,9 @@ export function detectWorkflowStep(
   if (/training method option|which training method|breakdown for|LoRA SFT.*QLoRA|QLoRA.*Full SFT|LoRA SFT.*Full SFT/i.test(content))
     return { step: "training-method", cards: TRAINING_METHOD_CARDS }
 
-  // Eval flow
-  if (/what.*(?:would you like to )?evaluat|how.*evaluat|which.*evaluation method|evaluation method/i.test(content))
-    return { step: "eval-method", cards: EVAL_METHOD_CARDS }
-
-  if (/which judge model|which model.*judge|judge.*should.*evaluat/i.test(content))
-    return { step: "eval-judge-model", cards: getJudgeModelCards(gatewayRoutes) }
-
   // Confirmation steps (must be checked AFTER specific steps)
   if (/ready to start training|ready to train/i.test(content))
     return { step: "training-confirm", cards: CONFIRM_CARDS }
-
-  if (/ready to run eval|ready to evaluate/i.test(content))
-    return { step: "eval-confirm", cards: CONFIRM_CARDS }
 
   if (/ready to (?:generate|go|run|start)|here'?s (?:the|your) plan/i.test(content))
     return { step: "sdg-confirm", cards: CONFIRM_CARDS }
@@ -207,8 +176,6 @@ export type CostStep =
   | "training-student-model"
   | "training-method"
   | "training-confirm"
-  | "eval-judge-model"
-  | "eval-confirm"
   | null
 
 export function workflowStepToCostStep(step: WorkflowStep): CostStep {
@@ -218,8 +185,6 @@ export function workflowStepToCostStep(step: WorkflowStep): CostStep {
     case "training-student-model":
     case "training-method":
     case "training-confirm":
-    case "eval-judge-model":
-    case "eval-confirm":
       return step
     default:
       return null
@@ -232,19 +197,15 @@ const FULL_FLOW: WorkflowStep[] = [
   "sdg-domain", "sdg-categories", "sdg-urgency", "sdg-samples",
   "sdg-teacher-model", "sdg-confirm",
   "training-student-model", "training-method", "training-confirm",
-  "eval-method", "eval-judge-model", "eval-confirm",
 ]
 
-const PHASE_BOUNDARIES = new Set<WorkflowStep>(["sdg-confirm", "training-confirm", "eval-confirm"])
+const PHASE_BOUNDARIES = new Set<WorkflowStep>(["sdg-confirm", "training-confirm"])
 
 function buildStepMatchers(routes?: MlflowGatewayRoute[]): Record<string, (msg: string) => boolean> {
   const routeNames = (routes ?? []).map(r => r.name.toLowerCase())
   const modelMatcher = routeNames.length > 0
     ? (m: string) => routeNames.some(n => m.includes(n))
     : (m: string) => /claude haiku|gpt-4o|claude sonnet/i.test(m)
-  const judgeMatcher = routeNames.length > 0
-    ? (m: string) => routeNames.some(n => m.includes(n))
-    : (m: string) => /gpt-4o mini|claude haiku|gpt-4o|claude sonnet/i.test(m)
   return {
     "sdg-domain": (m) => DOMAIN_CARDS.some((c) => m.includes(c.title.toLowerCase())),
     "sdg-categories": (m) => /invoice|refund|subscription|bug report|feature request|setup|order|return|product|account|onboarding|all of the above/i.test(m),
@@ -255,9 +216,6 @@ function buildStepMatchers(routes?: MlflowGatewayRoute[]): Record<string, (msg: 
     "training-student-model": (m) => /qwen|llama/i.test(m),
     "training-method": (m) => /lora sft|qlora|full sft/i.test(m),
     "training-confirm": (m) => /yes.*submit|change something/i.test(m),
-    "eval-method": (m) => /classification accuracy|response quality|both/i.test(m),
-    "eval-judge-model": judgeMatcher,
-    "eval-confirm": (m) => /yes.*submit|change something/i.test(m),
   }
 }
 
@@ -339,29 +297,6 @@ Show a confirmation table with training settings (student model, method, trainin
 Do NOT include an "Est. Cost" row — cost is shown separately by the system.
 End with: Ready to start training? (yes / change something)
 After job submission, show ONLY a brief summary (model, method, epochs, job ID). Do NOT add "What would you like to do next?" or any numbered options — the system shows clickable action cards automatically.`,
-
-  "eval-method": `[SYSTEM INSTRUCTION — follow exactly]
-Ask what evaluation method(s) to use.
-Present EXACTLY these 3 options as a numbered list:
-1) Classification accuracy — Precision, recall, F1 via deterministic field matching
-2) Response quality — LLM judge assesses correctness and reasoning
-3) Both — Classification accuracy plus LLM judge quality check
-Ask ONLY this question.`,
-
-  "eval-judge-model": `[SYSTEM INSTRUCTION — follow exactly]
-Ask which judge model to use for evaluation.
-Present EXACTLY these 4 options as a numbered list:
-1) GPT-4o Mini — Fast and cheap, recommended default
-2) Claude Haiku — Balanced cost and quality
-3) GPT-4o — Higher quality judgments
-4) Claude Sonnet — Highest quality, most expensive
-Ask ONLY this question.`,
-
-  "eval-confirm": `[SYSTEM INSTRUCTION — follow exactly]
-Show a confirmation table with eval settings (eval method, judge model, samples, parent job).
-Do NOT include an "Est. Cost" row — cost is shown separately by the system.
-End with: Ready to run eval? (yes / change something)
-After job submission, show ONLY a brief summary (eval method, judge model, samples, job ID). Do NOT add "What would you like to do next?" or any numbered options — the system shows clickable action cards automatically.`,
 }
 
 function isWorkflowTrigger(content: string): boolean {
@@ -379,21 +314,6 @@ function detectTransitionReady(messages: ChatMessage[], fromStep: WorkflowStep):
     const userReady = lastUser && /continue.*training|training step|train/i.test(lastUser.content)
     return !!(assistantReady || userReady)
   }
-  if (fromStep === "training-confirm") {
-    const assistantReady = lastAssistant && /evaluat|eval|judge|assess|how.*(?:well|good)|measure.*performance|test.*model/i.test(lastAssistant.content)
-    const userReady = lastUser && /continue.*eval|evaluation step|evaluat/i.test(lastUser.content)
-    return !!(assistantReady || userReady)
-  }
-  return false
-}
-
-function shouldSkipJudgeModel(messages: ChatMessage[]): boolean {
-  const userMsgs = messages.filter(m => m.role === "user")
-  for (let i = userMsgs.length - 1; i >= 0; i--) {
-    const text = userMsgs[i]!.content.toLowerCase()
-    if (/classification accuracy/i.test(text) && !/both/i.test(text)) return true
-    if (/response quality|both/i.test(text)) return false
-  }
   return false
 }
 
@@ -402,14 +322,6 @@ function buildDynamicInstruction(step: NonNullable<WorkflowStep>, routes?: Mlflo
     const list = routes.map((r, i) => `${i + 1}) ${r.name} — ${r.model.provider} / ${r.model.name}`).join("\n")
     return `[SYSTEM INSTRUCTION — follow exactly]
 Ask which teacher model should generate the training data.
-Present EXACTLY these options as a numbered list:
-${list}
-Say ONE short sentence before the options. Ask ONLY this question.`
-  }
-  if (step === "eval-judge-model" && routes && routes.length > 0) {
-    const list = routes.map((r, i) => `${i + 1}) ${r.name} — ${r.model.provider} / ${r.model.name}`).join("\n")
-    return `[SYSTEM INSTRUCTION — follow exactly]
-Ask which judge model to use for evaluation.
 Present EXACTLY these options as a numbered list:
 ${list}
 Say ONE short sentence before the options. Ask ONLY this question.`
@@ -457,13 +369,7 @@ export function getNextStepInstruction(
       return null
     }
 
-    let nextStep = FULL_FLOW[nextIdx]!
-    // Skip judge model if user chose classification-only
-    if (nextStep === "eval-judge-model" && shouldSkipJudgeModel(messages)) {
-      const skipIdx = nextIdx + 1
-      if (skipIdx >= FULL_FLOW.length) return null
-      nextStep = FULL_FLOW[skipIdx]!
-    }
+    const nextStep = FULL_FLOW[nextIdx]!
     const inst = buildDynamicInstruction(nextStep, gatewayRoutes)
     return inst ? { instruction: inst, nextStep } : null
   }
@@ -472,13 +378,7 @@ export function getNextStepInstruction(
   const nextIdx = currentIdx + 1
   if (nextIdx >= FULL_FLOW.length) return null
 
-  let nextStep = FULL_FLOW[nextIdx]!
-  // Skip judge model if user chose classification-only
-  if (nextStep === "eval-judge-model" && shouldSkipJudgeModel(messages)) {
-    const skipIdx = nextIdx + 1
-    if (skipIdx >= FULL_FLOW.length) return null
-    nextStep = FULL_FLOW[skipIdx]!
-  }
+  const nextStep = FULL_FLOW[nextIdx]!
   const inst = buildDynamicInstruction(nextStep, gatewayRoutes)
   return inst ? { instruction: inst, nextStep } : null
 }
@@ -498,7 +398,7 @@ export function parsePhaseTag(phase: string): { phase: WorkflowPhase; step: stri
   const parts = phase.split(":")
   if (parts.length !== 2) return null
   const [p, step] = parts as [string, string]
-  if (p !== "sdg" && p !== "training" && p !== "eval") return null
+  if (p !== "sdg" && p !== "training") return null
   return { phase: p, step }
 }
 
@@ -522,7 +422,7 @@ export function friendlyModelName(nameOrId: string): string {
     .replace(/\b\w/g, c => c.toUpperCase())
 }
 
-export type WorkflowPhase = "sdg" | "training" | "eval"
+export type WorkflowPhase = "sdg" | "training"
 
 export function getCurrentWorkflowPhase(messages: ChatMessage[]): { phase: WorkflowPhase; stepIndex: number } | null {
   const userMessages = messages.filter(m => m.role === "user")
@@ -540,7 +440,6 @@ export function getCurrentWorkflowPhase(messages: ChatMessage[]): { phase: Workf
   if (currentIdx < 0) return null
 
   const step = FULL_FLOW[currentIdx]!
-  if (step.startsWith("eval-")) return { phase: "eval", stepIndex: currentIdx - 9 }
   if (step.startsWith("training-")) return { phase: "training", stepIndex: currentIdx - 6 }
   return { phase: "sdg", stepIndex: currentIdx }
 }

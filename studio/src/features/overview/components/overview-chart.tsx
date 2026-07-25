@@ -27,8 +27,8 @@ const chartConfig = {
     label: "Training",
     color: "var(--chart-1)",
   },
-  evaluation: {
-    label: "Evaluation",
+  sdg: {
+    label: "SDG",
     color: "var(--chart-2)",
   },
 } satisfies ChartConfig
@@ -64,13 +64,13 @@ export function OverviewChart() {
       const dayJobs = jobs.filter((j) => j.created_at.slice(0, 10) === date)
       return {
         date,
-        training: dayJobs.filter((j) => j.type === "training" || j.type === "sdg").length,
-        evaluation: dayJobs.filter((j) => j.type === "eval").length,
+        training: dayJobs.filter((j) => j.type === "training").length,
+        sdg: dayJobs.filter((j) => j.type === "sdg").length,
       }
     })
   }, [jobs, timeRange])
 
-  const hasData = chartData.some((d) => d.training + d.evaluation > 0)
+  const hasData = chartData.some((d) => d.training + d.sdg > 0)
 
   // When there is no real job data, show sample data so the chart is not empty
   const displayData = useMemo(() => {
@@ -81,7 +81,7 @@ export function OverviewChart() {
     return dates.map((date, i) => ({
       date,
       training: Math.max(0, Math.round(Math.sin(i * 0.4) * 2 + 2 + ((i * 7 + 3) % 5) * 0.3)),
-      evaluation: Math.max(0, Math.round(Math.cos(i * 0.3) * 1.5 + 1.5 + ((i * 11 + 7) % 4) * 0.25)),
+      sdg: Math.max(0, Math.round(Math.cos(i * 0.3) * 1.5 + 1.5 + ((i * 11 + 7) % 4) * 0.25)),
     }))
   }, [hasData, chartData, timeRange])
 
@@ -91,7 +91,7 @@ export function OverviewChart() {
         <CardTitle>Job Activity</CardTitle>
         <CardDescription>
           {hasData
-            ? `Training and evaluation jobs over the last ${RANGE_DAYS[timeRange]} days`
+            ? `Training and SDG jobs over the last ${RANGE_DAYS[timeRange]} days`
             : "Sample data — run some jobs to see real activity"}
         </CardDescription>
         <CardAction>
@@ -115,9 +115,9 @@ export function OverviewChart() {
                 <stop offset="5%" stopColor="var(--color-training)" stopOpacity={0.8} />
                 <stop offset="95%" stopColor="var(--color-training)" stopOpacity={0.1} />
               </linearGradient>
-              <linearGradient id="fillEvaluation" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--color-evaluation)" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="var(--color-evaluation)" stopOpacity={0.1} />
+              <linearGradient id="fillSdg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--color-sdg)" stopOpacity={0.8} />
+                <stop offset="95%" stopColor="var(--color-sdg)" stopOpacity={0.1} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} />
@@ -147,10 +147,10 @@ export function OverviewChart() {
               }
             />
             <Area
-              dataKey="evaluation"
+              dataKey="sdg"
               type="natural"
-              fill="url(#fillEvaluation)"
-              stroke="var(--color-evaluation)"
+              fill="url(#fillSdg)"
+              stroke="var(--color-sdg)"
               stackId="a"
             />
             <Area
