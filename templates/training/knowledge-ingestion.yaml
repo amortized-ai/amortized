@@ -1,5 +1,5 @@
 type: training
-description: "OSFT — online supervised fine-tuning for knowledge ingestion"
+description: "Knowledge ingestion training — OSFT with Qwen3 8B"
 config:
   algorithm: osft
   model_name_or_path: "Qwen/Qwen3-8B"
