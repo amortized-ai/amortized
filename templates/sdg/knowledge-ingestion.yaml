@@ -1,5 +1,5 @@
 type: sdg
-description: Generate QA training data from document knowledge base
+description: Knowledge ingestion — generate QA training data from documents
 config:
   num_records: 100
   model_configs:
