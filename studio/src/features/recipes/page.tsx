@@ -366,23 +366,6 @@ export default function RecipesPage() {
             <div className="flex items-start gap-3">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background text-xs font-semibold">4</div>
               <div>
-                <h4 className="text-sm font-medium">Evaluate against a baseline</h4>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Pick an <span className="font-medium text-[#147878] dark:text-[#37a3a3]">Eval</span> recipe (e.g. <em>classification-accuracy</em> or <em>equivalence</em>).
-                  Point it at your trained model and a test dataset. The evaluator compares your model against a frontier baseline using an LLM judge.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="animate-message-in rounded-lg border border-transparent p-4 transition-all duration-300 hover:bg-muted/40 hover:border-border/60 hover:shadow-sm"
-            style={{ animationDelay: "320ms" }}
-            data-tutorial="recipe-step-5"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-background text-xs font-semibold">5</div>
-              <div>
                 <h4 className="text-sm font-medium">Monitor and iterate</h4>
                 <p className="text-xs text-muted-foreground mt-1">
                   Track all jobs on the <Link to="/jobs" className="underline underline-offset-2 hover:text-foreground transition-colors">Jobs</Link> page.

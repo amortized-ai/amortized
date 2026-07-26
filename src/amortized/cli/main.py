@@ -497,7 +497,7 @@ def submit(
         str | None, typer.Option("--adapter", help="LoRA adapter artifact ID or path")
     ] = None,
     serve: Annotated[
-        str | None, typer.Option("--serve", help="Serve job ID to eval against")
+        str | None, typer.Option("--serve", help="Serve job ID for inference")
     ] = None,
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
