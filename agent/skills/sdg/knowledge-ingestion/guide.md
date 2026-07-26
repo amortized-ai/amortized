@@ -34,10 +34,13 @@ Ask the user these questions (one at a time, with numbered options):
    factual ones.
 4. **Difficulty levels** — Default: basic (35%), intermediate (45%),
    advanced (20%).
-5. **How many samples?** — Suggest based on document size.
+5. **Which teacher model?** — Call `list_models` to discover available
+   models from the AI Gateway. Present each as a numbered option.
+   If no models are returned, direct the user to Settings → AI Gateway.
+6. **How many samples?** — Suggest based on document size.
    ~50 for prototyping, ~500 for a small production model, ~3000+ for
    comprehensive coverage.
-6. **Chunking granularity** — How many sentences per chunk?
+7. **Chunking granularity** — How many sentences per chunk?
    Default: 15 sentences. More = broader context, fewer = more focused.
 
 ## Building the Config
