@@ -100,6 +100,7 @@ async def _store_in_mlflow(
     content: str,
     output_format: str,
     source_bytes: bytes | None = None,
+    processing_time: float = 0.0,
 ) -> str:
     tracking_uri = _tracking_uri()
     run_id: str | None = None
@@ -146,6 +147,8 @@ async def _store_in_mlflow(
                     {"key": "job_type", "value": "document"},
                     {"key": "filename", "value": filename},
                     {"key": "format", "value": output_format},
+                    {"key": "processing_time", "value": str(processing_time)},
+                    {"key": "content_length", "value": str(len(content))},
                 ],
             },
         )
@@ -291,6 +294,7 @@ async def convert_document(
                 content,
                 output_format.value,
                 source_bytes=file_bytes,
+                processing_time=processing_time,
             )
         except HTTPException:
             raise
@@ -369,6 +373,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
                 content,
                 output_format.value,
                 source_bytes=source_bytes,
+                processing_time=processing_time,
             )
         except HTTPException:
             raise
@@ -514,7 +519,7 @@ async def get_document_content(document_id: str) -> DocumentResult:
         filename=tags.get("filename", info.get("run_name", "")),
         content=content,
         format=OutputFormat(fmt),
-        processing_time=0.0,
+        processing_time=float(tags.get("processing_time", "0")),
         status="success",
     )
 
