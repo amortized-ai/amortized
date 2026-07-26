@@ -415,7 +415,17 @@ async def _run_job(job: dict[str, Any]) -> None:
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
-        document_ids = config.pop("document_ids", [])
+        spec_env["DD_API_KEY"] = "not-needed"
+
+        for stale_key in (
+            "model", "api_base", "api_key", "num_samples", "max_concurrency",
+            "temperature", "max_tokens", "top_p", "seed", "num_retries",
+            "input_data", "input_documents", "strategy_params",
+            "task_description", "document_id", "output_dir",
+        ):
+            config.pop(stale_key, None)
+
+        document_ids = config.pop("document_ids", []) or config.pop("document_id", [])
         if isinstance(document_ids, str):
             document_ids = [document_ids]
         if document_ids and config_mod.settings.mlflow_tracking_uri:
