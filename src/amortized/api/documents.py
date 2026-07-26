@@ -126,7 +126,14 @@ async def _store_in_mlflow(
                 experiment_id = create_resp.json()["experiment_id"]
         else:
             resp.raise_for_status()
-            experiment_id = resp.json()["experiment"]["experiment_id"]
+            exp = resp.json()["experiment"]
+            experiment_id = exp["experiment_id"]
+            if exp.get("lifecycle_stage") == "deleted":
+                await client.post(
+                    f"{tracking_uri}/api/2.0/mlflow/experiments/restore",
+                    json={"experiment_id": experiment_id},
+                )
+                logger.info("Restored deleted experiment %s", experiment_name)
 
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         run_resp = await client.post(
