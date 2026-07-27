@@ -335,14 +335,26 @@ async def _upload_sdg_results_to_mlflow(
             resp.raise_for_status()
             run_id = resp.json()["run"]["info"]["run_id"]
 
-            resp = await client.put(
-                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts"
-                "/generated_data/generated_data.jsonl",
-                params={"run_id": run_id},
-                content=jsonl_content.encode(),
-                headers={"Content-Type": "application/octet-stream"},
+            run_info = resp.json()["run"]["info"]
+            artifact_uri = run_info["artifact_uri"]
+            s3_key = artifact_uri.split("/", 3)[3] if "://" in artifact_uri else artifact_uri
+            s3_key = f"{s3_key}/generated_data/generated_data.jsonl"
+            s3_endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "")
+            s3_bucket = artifact_uri.split("/")[2] if "://" in artifact_uri else "amortized"
+
+            import boto3
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=s3_endpoint or None,
+                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
             )
-            resp.raise_for_status()
+            s3.put_object(
+                Bucket=s3_bucket,
+                Key=s3_key,
+                Body=jsonl_content.encode(),
+                ContentType="application/jsonl",
+            )
 
             await client.post(
                 f"{tracking_uri}/api/2.0/mlflow/runs/update",
