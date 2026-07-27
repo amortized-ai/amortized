@@ -528,6 +528,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         ):
             config.pop(stale_key, None)
 
+
         document_ids = config.pop("document_ids", []) or config.pop("document_id", [])
         if isinstance(document_ids, str):
             document_ids = [document_ids]
