@@ -254,7 +254,7 @@ function LoadingSkeleton() {
 }
 
 export function GpuUtilizationSection() {
-  const { data, isLoading, isError, isMockData } = useGpuUtilization()
+  const { data, isLoading, isError } = useGpuUtilization()
 
   const nodes = data?.nodes ?? []
 
@@ -265,11 +265,6 @@ export function GpuUtilizationSection() {
         <h2 id="gpu-utilization-heading" className="text-sm font-semibold text-muted-foreground/70 uppercase tracking-wider shrink-0">
           GPU Utilization
         </h2>
-        {isMockData && (
-          <span className="text-xs text-muted-foreground/50 font-normal normal-case tracking-normal">
-            Demo data
-          </span>
-        )}
         <div className="h-px flex-1 bg-border/50" />
       </div>
 

@@ -181,6 +181,19 @@ class DocumentSummary(_DocumentBase):
     created_at: str | None = Field(None, description="When the document was processed")
 
 
+class GpuNodeMetrics(BaseModel):
+    index: int = Field(..., description="GPU device index")
+    name: str = Field(..., description="GPU device name")
+    utilization_pct: float = Field(..., description="GPU utilization percentage")
+    memory_used_mb: float = Field(..., description="GPU memory used in MB")
+    memory_total_mb: float = Field(..., description="GPU total memory in MB")
+    temperature_c: float = Field(..., description="GPU temperature in Celsius")
+
+
+class GpuUtilizationResponse(BaseModel):
+    nodes: list[GpuNodeMetrics] = Field(default_factory=list)
+
+
 class ConfigResponse(BaseModel):
     version: str = "1.0.0"
     default_compute_backend: str = ""
