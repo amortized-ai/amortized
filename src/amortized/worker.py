@@ -145,9 +145,12 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
         log_lines: list[str] = []
         async for line in backend.logs(handle):
             log_lines.append(line)
-            if len(log_lines) > 200:
-                log_lines = log_lines[-200:]
+            if len(log_lines) > 500:
+                log_lines = log_lines[-500:]
         log_text = "\n".join(log_lines)
+        explicit = re.search(r"AMORTIZED_MLFLOW_RUN_ID=([a-f0-9]{32})", log_text)
+        if explicit:
+            return explicit.group(1)
         match = re.search(r"/runs/([a-f0-9]{32})", log_text)
         return match.group(1) if match else ""
     except Exception:
@@ -255,123 +258,6 @@ async def _fetch_document_content(document_id: str) -> str:
     return ""
 
 
-async def _upload_sdg_results_to_mlflow(
-    backend: Any, handle: BackendHandle, job: dict[str, Any]
-) -> str:
-    """Read DD output from container logs and upload to MLflow as an artifact."""
-    tracking_uri = config_mod.settings.mlflow_tracking_uri
-    if not tracking_uri:
-        return ""
-    import httpx
-
-    job_id = job["id"]
-    experiment_name = (
-        job.get("mlflow_experiment") or f"amortized/sdg/{job_id[:8]}"
-    )
-
-    try:
-        log_lines: list[str] = []
-        async for line in backend.logs(handle):
-            log_lines.append(line)
-
-        jsonl_lines: list[str] = []
-        in_jsonl = False
-        for line in log_lines:
-            if "=== AMORTIZED_JSONL_START ===" in line:
-                in_jsonl = True
-                continue
-            if "=== AMORTIZED_JSONL_END ===" in line:
-                in_jsonl = False
-                continue
-            if in_jsonl:
-                stripped = line.strip()
-                if stripped:
-                    jsonl_lines.append(stripped)
-
-        if not jsonl_lines:
-            for line in log_lines:
-                stripped = line.strip()
-                if stripped.startswith("{") and stripped.endswith("}"):
-                    try:
-                        json.loads(stripped)
-                        jsonl_lines.append(stripped)
-                    except json.JSONDecodeError:
-                        pass
-
-        if not jsonl_lines:
-            logger.warning("Job %s: no JSONL data found in container logs", job_id)
-            return ""
-
-        jsonl_content = "\n".join(jsonl_lines) + "\n"
-        logger.info("Job %s: captured %d JSONL records from container", job_id, len(jsonl_lines))
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-                params={"experiment_name": experiment_name},
-            )
-            if resp.is_success:
-                experiment_id = resp.json()["experiment"]["experiment_id"]
-            else:
-                resp = await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/experiments/create",
-                    json={"name": experiment_name},
-                )
-                resp.raise_for_status()
-                experiment_id = resp.json()["experiment_id"]
-
-            resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/create",
-                json={
-                    "experiment_id": experiment_id,
-                    "run_name": f"sdg-{job_id[:8]}",
-                    "tags": [
-                        {"key": "job_type", "value": "sdg"},
-                        {"key": "job_id", "value": job_id},
-                        {"key": "record_count", "value": str(len(jsonl_lines))},
-                    ],
-                },
-            )
-            resp.raise_for_status()
-            run_id = resp.json()["run"]["info"]["run_id"]
-
-            run_info = resp.json()["run"]["info"]
-            artifact_uri = run_info["artifact_uri"]
-            s3_key = artifact_uri.split("/", 3)[3] if "://" in artifact_uri else artifact_uri
-            s3_key = f"{s3_key}/generated_data/generated_data.jsonl"
-            s3_endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "")
-            s3_bucket = artifact_uri.split("/")[2] if "://" in artifact_uri else "amortized"
-
-            import boto3
-            s3 = boto3.client(
-                "s3",
-                endpoint_url=s3_endpoint or None,
-                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-            )
-            s3.put_object(
-                Bucket=s3_bucket,
-                Key=s3_key,
-                Body=jsonl_content.encode(),
-                ContentType="application/jsonl",
-            )
-
-            await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/update",
-                json={"run_id": run_id, "status": "FINISHED"},
-            )
-
-            logger.info(
-                "Job %s: uploaded %d records to MLflow run %s",
-                job_id, len(jsonl_lines), run_id,
-            )
-            return run_id
-
-    except Exception:
-        logger.exception("Job %s: failed to upload SDG results to MLflow", job_id)
-        return ""
-
-
 async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     """Look up a job's MLflow artifact URI by job ID."""
     if not job_id:
@@ -385,6 +271,32 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
         return None
     uri = await _resolve_mlflow_artifact_uri(run_id)
     return uri or None
+
+
+async def _find_sdg_data_file(artifact_uri: str) -> str:
+    """Find the dataset file (parquet or jsonl) in an SDG run's artifacts."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return ""
+    import httpx
+
+    run_id = artifact_uri.rstrip("/").split("/")[-2]
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts",
+                params={"run_id": run_id, "path": "generated_data"},
+            )
+            if resp.is_success:
+                files = resp.json().get("files", [])
+                for f in files:
+                    if not f.get("is_dir") and f["path"].endswith(
+                        (".parquet", ".jsonl")
+                    ):
+                        return f"{artifact_uri}/generated_data/{f['path']}"
+    except Exception:
+        logger.warning("Failed to list SDG artifacts", exc_info=True)
+    return f"{artifact_uri}/generated_data/generated_data.jsonl"
 
 
 async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -412,11 +324,12 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
 
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
-        data_file = f"{artifact_uri}/generated_data/generated_data.jsonl"
-        existing = config.get("data_path", "")
-        if not existing or not existing.startswith("s3://"):
-            config["data_path"] = data_file
-            logger.info("Injected SDG data path from parent: %s", data_file)
+        data_file = await _find_sdg_data_file(artifact_uri)
+        if data_file:
+            existing = config.get("data_path", "")
+            if not existing or not existing.startswith("s3://"):
+                config["data_path"] = data_file
+                logger.info("Injected SDG data path from parent: %s", data_file)
 
     return config
 
@@ -588,30 +501,16 @@ async def _run_job(job: dict[str, Any]) -> None:
         processor_names = [
             p.get("name", "") for p in config.get("processors", [])
         ]
-        if processor_names:
-            proc_dir = (
-                "/amortized/work/dataset/processors-outputs"
-                f"/{processor_names[-1]}"
-            )
-            dump_cmd = (
-                'echo "=== AMORTIZED_JSONL_START ===" && '
-                f"python3 -c \""
-                f"import pandas as pd, glob, json; "
-                f"files = glob.glob('{proc_dir}/*.parquet'); "
-                f"df = pd.concat([pd.read_parquet(f) for f in files]) "
-                f"if files else pd.read_json("
-                f"'/amortized/work/dataset/dataset.jsonl', lines=True); "
-                f"[print(json.dumps(r, default=str)) "
-                f"for r in df.to_dict(orient='records')]"
-                f'" && echo "=== AMORTIZED_JSONL_END ==="'
-            )
-        else:
-            dump_cmd = (
-                'echo "=== AMORTIZED_JSONL_START ==="'
-                " && cat /amortized/work/dataset/dataset.jsonl"
-                ' && echo "=== AMORTIZED_JSONL_END ==="'
-            )
-        all_cmds = [*doc_setup_cmds, dd_cmd, dump_cmd]
+        proc_dir = (
+            f"processors-outputs/{processor_names[-1]}"
+            if processor_names
+            else ""
+        )
+        upload_cmd = (
+            "python3 /usr/local/bin/upload_to_mlflow.py"
+            f" /amortized/work/dataset {proc_dir}"
+        )
+        all_cmds = [*doc_setup_cmds, dd_cmd, upload_cmd]
         cmd = ["sh", "-c", " && ".join(all_cmds)]
 
     job_type = job["type"]
@@ -664,10 +563,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
 
         if status.exit_code == 0:
-            if job["type"] == JobType.sdg.value:
-                mlflow_run_id = await _upload_sdg_results_to_mlflow(backend, handle, job)
-            else:
-                mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
+            mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             if mlflow_run_id:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_type", job["type"])
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
