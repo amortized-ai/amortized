@@ -5,38 +5,64 @@ and content moderation tasks.
 
 ## Requirement Gathering
 
-Ask the user these questions **one at a time, in separate messages**.
-Do NOT skip ahead or combine questions. Wait for the user's answer to
-each question before asking the next one.
+CRITICAL: Ask these questions **one at a time, in separate messages**.
+Each question MUST be its own message. Do NOT combine two questions into
+one message. Do NOT ask about categories in the same message as domain.
+Wait for the user to respond before asking the next question.
 
-1. **What domain?** — What kind of content will this classifier handle?
-   Ask this FIRST, before anything else.
-   1) Customer support tickets — Route tickets by topic and urgency
-   2) User messages/intents — Classify user intents for chatbots or routing
-   3) Content moderation — Flag content by category (spam, toxic, etc.)
-   4) Something else — Describe your classification task
+### Step 1 — Domain (ALWAYS ask this first, even if obvious)
 
-2. **What categories?** — Based on the domain, suggest specific labels.
-   For customer support, suggest:
-   1) Standard categories — Billing, Technical, Account, General Inquiry
-   2) Detailed categories — Billing, Technical, Account, Shipping, Returns, Product Questions
-   3) Custom categories — I'll define my own labels
-   For other domains, suggest 3-4 relevant groupings.
+Your first response after the user describes their task must ONLY ask
+what domain/industry their classifier is for. Do NOT mention categories,
+urgency, or samples yet.
 
-3. **Urgency levels?** — Should the classifier also assign urgency?
-   1) Yes, 3 levels — Low, Medium, High
-   2) Yes, 4 levels — Low, Medium, High, Critical
-   3) No urgency — Just classify by category
+Say ONE short sentence acknowledging their goal, then ask:
 
-4. **How many samples?** — How many training examples to generate?
-   1) 100 samples — Quick prototype
-   2) 500 samples — Good coverage across categories
-   3) 1000 samples — Best model quality, more diverse examples
+"What type of support tickets will this handle?"
 
-5. **Which teacher model?** — Call `list_models` to discover available
-   models from the AI Gateway. Present each as a numbered option.
-   ALWAYS add as the last option:
-   N) Configure a model — Set up an AI Gateway endpoint in Settings
+1) Software/technical support — Bug reports, feature requests, troubleshooting
+2) Billing & payments — Invoices, refunds, subscription issues
+3) Customer service — Account access, onboarding, general inquiries
+4) E-commerce — Orders, shipping, returns, product questions
+
+STOP here. Do NOT continue to step 2 in this message.
+
+### Step 2 — Categories (ask AFTER user picks domain)
+
+Based on the domain they chose, suggest specific category labels:
+
+"What categories should it classify into?"
+
+For customer support, suggest:
+1) Standard categories — Billing, Technical, Account, General Inquiry
+2) Detailed categories — Billing, Technical, Account, Shipping, Returns, Product Questions
+3) Custom categories — I'll define my own labels
+
+For other domains, suggest 3-4 relevant groupings.
+
+STOP here. Do NOT continue to step 3 in this message.
+
+### Step 3 — Urgency levels
+
+"Should the classifier also assign an urgency level?"
+
+1) Yes, 3 levels — Low, Medium, High
+2) Yes, 4 levels — Low, Medium, High, Critical
+3) No urgency — Just classify by category
+
+### Step 4 — Sample count
+
+"How many training examples should we generate?"
+
+1) 100 samples — Quick prototype
+2) 500 samples — Good coverage across categories
+3) 1000 samples — Best model quality, more diverse examples
+
+### Step 5 — Teacher model
+
+Call `list_models` to discover available models from the AI Gateway.
+Present each as a numbered option. ALWAYS add as the last option:
+N) Configure a model — Set up an AI Gateway endpoint in Settings
 
 ## Recipe Selection
 
