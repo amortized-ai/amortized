@@ -273,32 +273,6 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     return uri or None
 
 
-async def _find_sdg_data_file(artifact_uri: str) -> str:
-    """Find the dataset file (parquet or jsonl) in an SDG run's artifacts."""
-    tracking_uri = config_mod.settings.mlflow_tracking_uri
-    if not tracking_uri:
-        return ""
-    import httpx
-
-    run_id = artifact_uri.rstrip("/").split("/")[-2]
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts",
-                params={"run_id": run_id, "path": "generated_data"},
-            )
-            if resp.is_success:
-                files = resp.json().get("files", [])
-                for f in files:
-                    if not f.get("is_dir") and f["path"].endswith(
-                        (".parquet", ".jsonl")
-                    ):
-                        return f"{artifact_uri}/generated_data/{f['path']}"
-    except Exception:
-        logger.warning("Failed to list SDG artifacts", exc_info=True)
-    return f"{artifact_uri}/generated_data/generated_data.jsonl"
-
-
 async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     """Resolve parent job artifacts and inject into config for chaining."""
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
@@ -324,12 +298,11 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
 
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
-        data_file = await _find_sdg_data_file(artifact_uri)
-        if data_file:
-            existing = config.get("data_path", "")
-            if not existing or not existing.startswith("s3://"):
-                config["data_path"] = data_file
-                logger.info("Injected SDG data path from parent: %s", data_file)
+        data_dir = f"{artifact_uri}/generated_data/"
+        existing = config.get("data_path", "")
+        if not existing or not existing.startswith("s3://"):
+            config["data_path"] = data_dir
+            logger.info("Injected SDG data path from parent: %s", data_dir)
 
     return config
 
@@ -433,9 +406,17 @@ async def _run_job(job: dict[str, Any]) -> None:
         algorithm = algo_aliases.get(algorithm, algorithm)
         data_path = config.get("data_path", config.get("dataset", ""))
         if data_path.startswith("s3://"):
-            local_name = data_path.split("/")[-1]
-            local_path = f"/amortized/work/{local_name}"
-            s3_downloads.append(S3Download(s3_uri=data_path, local_path=local_path))
+            is_dir = data_path.endswith("/")
+            if is_dir:
+                local_path = "/amortized/work/data"
+            else:
+                local_name = data_path.split("/")[-1]
+                local_path = f"/amortized/work/{local_name}"
+            s3_downloads.append(S3Download(
+                s3_uri=data_path,
+                local_path=local_path,
+                is_directory=is_dir,
+            ))
             config = {**config, "data_path": local_path}
         if config_mod.settings.mlflow_tracking_uri:
             config.setdefault("report_to", "mlflow")
