@@ -148,6 +148,10 @@ export function cancelJob(id: string): Promise<Job> {
   return del<Job>(`/api/v1/jobs/${id}`)
 }
 
+export function deleteJob(id: string): Promise<void> {
+  return post<void>(`/api/v1/jobs/${id}/delete`)
+}
+
 export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
   logger.debug("getJobLogs", { id, tail })
   const resp = await get<JobLogsResponse>(`/api/v1/jobs/${id}/logs?tail=${tail}`)
@@ -169,6 +173,10 @@ export function getRecipe(name: string): Promise<Recipe> {
 export function saveRecipe(name: string, data: { type: string; description: string; config: Record<string, unknown> }): Promise<Recipe> {
   logger.info("saveRecipe", { name })
   return put<Recipe>(`/api/v1/recipes/${name}`, data)
+}
+
+export function deleteRecipe(name: string): Promise<void> {
+  return del<void>(`/api/v1/recipes/${encodeURIComponent(name)}`)
 }
 
 export function submitRecipe(data: { recipe: string; overrides?: Record<string, unknown> }): Promise<Job> {
@@ -350,6 +358,10 @@ export function searchMlflowRuns(body: {
   return post<MlflowRunsSearchResponse>("/mlflow/api/2.0/mlflow/runs/search", body)
 }
 
+export function deleteDataset(runId: string): Promise<void> {
+  return post<void>("/mlflow/api/2.0/mlflow/runs/delete", { run_id: runId })
+}
+
 export function getMlflowRun(runId: string): Promise<{ run: MlflowRun }> {
   return get<{ run: MlflowRun }>(`/mlflow/api/2.0/mlflow/runs/get${buildQuery({ run_id: runId })}`)
 }
@@ -376,6 +388,10 @@ export function searchMlflowRegisteredModels(
 export function searchMlflowModelVersions(filter: string): Promise<MlflowModelVersionsResponse> {
   const query = buildQuery({ filter })
   return get<MlflowModelVersionsResponse>(`/mlflow/api/2.0/mlflow/model-versions/search${query}`)
+}
+
+export function deleteMlflowRegisteredModel(name: string): Promise<void> {
+  return del<void>("/mlflow/api/2.0/mlflow/registered-models/delete", { name })
 }
 
 export function setMlflowRunTag(runId: string, key: string, value: string): Promise<void> {
@@ -482,6 +498,10 @@ export function getDocuments(): Promise<DocumentRecord[]> {
 
 export function getDocumentContent(id: string): Promise<DocumentUploadResponse> {
   return get<DocumentUploadResponse>(`/api/v1/documents/${id}/content`)
+}
+
+export function deleteDocument(id: string): Promise<void> {
+  return del<void>(`/api/v1/documents/${id}`)
 }
 
 export async function uploadDocument(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import logging
 import os
@@ -11,10 +12,13 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+import aiosqlite
 import httpx
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from amortized.config import settings
+from amortized.db import get_db as _get_db
+from amortized.db.repository import Repository
 from amortized.models import (
     ConvertUrlRequest,
     DocumentResult,
@@ -516,3 +520,33 @@ def _format_timestamp(ts: int | None) -> str:
     if ts is None:
         return ""
     return datetime.fromtimestamp(ts / 1000, tz=UTC).isoformat()
+
+
+
+@router.delete(
+    "/{document_id}",
+    status_code=204,
+    operation_id="delete_document",
+)
+async def delete_document(
+    document_id: str,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> None:
+    tracking_uri: str | None = None
+    with contextlib.suppress(HTTPException):
+        tracking_uri = _tracking_uri()
+
+    if tracking_uri:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{tracking_uri}/api/2.0/mlflow/runs/delete",
+                    json={"run_id": document_id},
+                )
+                if resp.status_code != 404:
+                    resp.raise_for_status()
+        except httpx.HTTPError:
+            logger.warning("Failed to delete MLflow run %s", document_id, exc_info=True)
+
+    repo = Repository(db)
+    await repo.delete_document(document_id)

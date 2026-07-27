@@ -32,8 +32,10 @@ import {
   Bot,
   Calendar,
   Hash,
+  Trash2,
 } from "lucide-react"
-import { useDatasetSamples } from "../api/use-datasets"
+import { useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { DatasetRecord, DatasetSample } from "@/types/api"
 
 interface DatasetDetailPanelProps {
@@ -48,6 +50,8 @@ export function DatasetDetailPanel({
   onOpenChange,
 }: DatasetDetailPanelProps) {
   const queryClient = useQueryClient()
+  const deleteMutation = useDeleteDataset()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   if (!dataset) return null
 
   return (
@@ -88,6 +92,13 @@ export function DatasetDetailPanel({
                 <ExternalLink className="mr-1 h-3.5 w-3.5" />
                 MLflow
               </a>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
@@ -147,6 +158,22 @@ export function DatasetDetailPanel({
             <ConfigTab dataset={dataset} />
           </TabsContent>
         </Tabs>
+
+        <DeleteEntityDialog
+          open={deleteDialogOpen}
+          entityType="dataset"
+          entityName={dataset.name}
+          onConfirm={() => {
+            deleteMutation.mutate(dataset.run_id, {
+              onSuccess: () => {
+                setDeleteDialogOpen(false)
+                onOpenChange(false)
+              },
+            })
+          }}
+          onCancel={() => setDeleteDialogOpen(false)}
+          isPending={deleteMutation.isPending}
+        />
       </DialogContent>
     </Dialog>
   )

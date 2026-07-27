@@ -1,9 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   getDocuments,
   getDocumentContent,
   uploadDocument,
   convertDocumentUrl,
+  deleteDocument,
 } from "@/lib/api-client"
 import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
@@ -50,6 +52,24 @@ export function useConvertDocumentUrl() {
     }) => convertDocumentUrl(url, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })
+    },
+  })
+}
+
+
+export function useDeleteDocument() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (id: string) => deleteDocument(id),
+    onSuccess: () => {
+      toast.success("Document deleted successfully")
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete document: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents"] })
     },
   })
 }

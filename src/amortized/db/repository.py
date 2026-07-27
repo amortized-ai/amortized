@@ -140,6 +140,18 @@ class Repository:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def delete_job(self, job_id: str) -> bool:
+        cursor = await self.conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
+    async def delete_document(self, document_id: str) -> bool:
+        cursor = await self.conn.execute(
+            "DELETE FROM documents WHERE document_id = ?", (document_id,)
+        )
+        await self.conn.commit()
+        return cursor.rowcount > 0
+
     async def create_document(
         self, *, document_id: str, filename: str, fmt: str, content: str, created_at: str,
         mlflow_run_id: str = "",

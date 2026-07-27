@@ -8,11 +8,13 @@ import {
   getJobs,
   getJob,
   cancelJob,
+  deleteJob,
   getJobLogs,
   getMlflowRun,
   getMlflowMetricHistory,
 } from "@/lib/api-client"
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
+import { useEntityNamesStore } from "@/stores/entity-names-store"
 
 const ACTIVE_STATUSES = new Set(["queued", "provisioning", "running"])
 
@@ -70,6 +72,25 @@ export function useCancelJob() {
       if (context?.previousJobs) {
         queryClient.setQueryData<Job[]>(["jobs"], context.previousJobs)
       }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    },
+  })
+}
+
+export function useDeleteJob() {
+  const queryClient = useQueryClient()
+  const removeName = useEntityNamesStore((s) => s.removeName)
+
+  return useMutation({
+    mutationFn: (jobId: string) => deleteJob(jobId),
+    onSuccess: (_data, jobId) => {
+      removeName(jobId)
+      toast.success(`Job ${jobId.slice(0, 8)} deleted successfully`)
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete job: ${err instanceof Error ? err.message : "Unknown error"}`)
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })

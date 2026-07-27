@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { getRecipes, getRecipe, submitRecipe, saveRecipe } from "@/lib/api-client"
+import { toast } from "sonner"
+import { getRecipes, getRecipe, submitRecipe, saveRecipe, deleteRecipe } from "@/lib/api-client"
 import type { Recipe, Job } from "@/types/api"
 
 export function useRecipes() {
@@ -35,6 +36,24 @@ export function useExecuteRecipe() {
     mutationFn: (data) => submitRecipe(data),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    },
+  })
+}
+
+
+export function useDeleteRecipe() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (name: string) => deleteRecipe(name),
+    onSuccess: () => {
+      toast.success("Recipe deleted successfully")
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete recipe: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["recipes"] })
     },
   })
 }

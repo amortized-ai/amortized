@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { SearchInput } from "@/components/search-input"
 import { ArrowLeft, Play, Save, Copy, GraduationCap, Sparkles, ClipboardCheck, ArrowRight, Lightbulb } from "lucide-react"
-import { useRecipes, useExecuteRecipe, useSaveRecipe } from "./api/use-recipes"
+import { useRecipes, useExecuteRecipe, useSaveRecipe, useDeleteRecipe } from "./api/use-recipes"
 import { useRecipeState } from "./hooks/use-recipe-state"
 import { RecipeTable } from "./components/recipe-table"
 import { RecipeBuilderForm } from "./components/recipe-builder-form"
@@ -19,6 +19,7 @@ import { SaveDialog } from "./components/save-dialog"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import type { Recipe } from "@/types/api"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import { isUsefulRecipe, getEffectiveType } from "./lib/format"
 
 const RECIPE_GUIDES: Record<string, { color: string; iconBg: string; steps: string[] }> = {
@@ -93,6 +94,7 @@ export default function RecipesPage() {
   const { data: models = [] } = useModels()
   const executeMutation = useExecuteRecipe()
   const saveMutation = useSaveRecipe()
+  const deleteMutation = useDeleteRecipe()
 
   const [page, setPage] = useState(0)
   const [typeFilter, setTypeFilter] = useState<string>("all")
@@ -103,6 +105,7 @@ export default function RecipesPage() {
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [saveDialogOpen, setSaveDialogOpen] = useState(false)
+  const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null)
 
   const { state, setField, setJson, loadRecipe, reset, getConfig } =
     useRecipeState()
@@ -483,13 +486,31 @@ export default function RecipesPage() {
       {isLoading ? (
         <TableSkeleton columns={4} />
       ) : (
+        <>
         <RecipeTable
           recipes={filteredRecipes}
           page={page}
           onPageChange={setPage}
           onSelectRecipe={handleSelectRecipe}
           onCreateNew={handleNewRecipe}
+          onDeleteRecipe={setRecipeToDelete}
         />
+
+        <DeleteEntityDialog
+          open={!!recipeToDelete}
+          entityType="recipe"
+          entityName={recipeToDelete?.name ?? ""}
+          onConfirm={() => {
+            if (recipeToDelete) {
+              deleteMutation.mutate(recipeToDelete.name, {
+                onSuccess: () => setRecipeToDelete(null),
+              })
+            }
+          }}
+          onCancel={() => setRecipeToDelete(null)}
+          isPending={deleteMutation.isPending}
+        />
+        </>
       )}
     </div>
   )
