@@ -21,6 +21,23 @@ each question before asking the next one.
 By default, evaluate **all samples** in the test set. Do not ask the
 user how many samples to evaluate — just use the full dataset.
 
+3. **Confirm plan** — After the user picks a judge model, show a
+   confirmation table and call `estimate_eval_cost` to get a cost
+   estimate. Show:
+
+   | Setting        | Value                |
+   |----------------|----------------------|
+   | Method         | (selected method)    |
+   | Judge Model    | (selected model)     |
+   | Samples        | All                  |
+   | Est. Cost      | $X.XX                |
+   | Savings        | XX% vs manual review |
+
+   Then ask:
+   > Ready to run the evaluation? (yes / change something)
+
+   Do NOT submit the job until the user confirms. This step is MANDATORY.
+
 ## Job Submission
 
 Use the eval recipe matching the task type.

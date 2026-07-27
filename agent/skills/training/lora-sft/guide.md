@@ -29,6 +29,23 @@ questions below. Ask each in its own message.
 
    Wait for the user's response before showing the confirmation table.
 
+3. **Confirm plan** — After the user picks a training method, show a
+   confirmation table with all settings and call `estimate_training_method_cost`
+   to get a cost estimate. Show the table like this:
+
+   | Setting        | Value                |
+   |----------------|----------------------|
+   | Student Model  | (selected model)     |
+   | Method         | (selected method)    |
+   | Samples        | (from SDG)           |
+   | Est. Cost      | $X.XX                |
+   | Savings        | XX% vs frontier API  |
+
+   Then ask:
+   > Ready to start training? (yes / change something)
+
+   Do NOT submit the job until the user confirms. This step is MANDATORY.
+
 ## Config Defaults
 
 Use these defaults (do NOT ask the user about these unless they bring
