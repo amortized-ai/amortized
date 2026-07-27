@@ -198,7 +198,7 @@ export function LogViewer({ lines, isStreaming, className }: LogViewerProps) {
   }, [])
 
   return (
-    <div className={`relative flex flex-col rounded-lg overflow-hidden border border-zinc-800/80 ${className ?? "h-[calc(80vh-220px)] min-h-[300px]"}`}>
+    <div className={`dark relative flex flex-col rounded-lg overflow-hidden border border-zinc-800/80 ${className ?? "h-[calc(80vh-220px)] min-h-[300px]"}`}>
       {/* Toolbar */}
       <div className="flex items-center gap-1.5 bg-[#111116] px-2 py-1 border-b border-zinc-800/80 shrink-0">
         <div className="flex items-center gap-0.5">

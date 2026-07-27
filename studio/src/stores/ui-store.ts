@@ -24,7 +24,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
-      theme: "light",
+      theme: (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches) ? "dark" : "light",
       tutorialCompleted: false,
       tutorialActive: false,
       tutorialStep: 0,

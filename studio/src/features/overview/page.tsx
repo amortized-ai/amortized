@@ -45,9 +45,9 @@ export default function OverviewPage() {
               </p>
             </div>
             <div className="flex items-center justify-center gap-6 pt-1 text-xs text-muted-foreground/70">
-              <span className="inline-flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-[#5e40be]" /> Synthetic data</span>
-              <span className="inline-flex items-center gap-1.5"><BookOpen className="h-3 w-3 text-[#0066cc]" /> Fine-tuning</span>
-              <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878]" /> Evaluation</span>
+              <span className="inline-flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Synthetic data</span>
+              <span className="inline-flex items-center gap-1.5"><BookOpen className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Fine-tuning</span>
+              <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> Evaluation</span>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-4">
               <button
@@ -167,10 +167,10 @@ export default function OverviewPage() {
                 <div className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-4 ring-background z-10 transition-all duration-300",
                   activeStep === 1
-                    ? "bg-[#0066cc] text-white scale-110 shadow-md shadow-[#0066cc]/30"
+                    ? "bg-[#0066cc] dark:bg-[#4394e5] text-white scale-110 shadow-md shadow-[#0066cc]/30 dark:shadow-[#4394e5]/30"
                     : activeStep !== null
                       ? "bg-foreground/60 text-background group-hover/step:bg-foreground/80 group-hover/step:scale-105"
-                      : "bg-[#0066cc] text-white group-hover/step:scale-105 group-hover/step:shadow-md group-hover/step:shadow-[#0066cc]/20",
+                      : "bg-[#0066cc] dark:bg-[#4394e5] text-white group-hover/step:scale-105 group-hover/step:shadow-md group-hover/step:shadow-[#0066cc]/20 dark:group-hover/step:shadow-[#4394e5]/20",
                 )}>
                   1
                 </div>
@@ -258,7 +258,7 @@ export default function OverviewPage() {
                 <div className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-4 ring-background z-10 transition-all duration-300",
                   activeStep === 2
-                    ? "bg-[#0066cc] text-white scale-110 shadow-md shadow-[#0066cc]/30"
+                    ? "bg-[#0066cc] dark:bg-[#4394e5] text-white scale-110 shadow-md shadow-[#0066cc]/30 dark:shadow-[#4394e5]/30"
                     : activeStep !== null
                       ? "bg-foreground/60 text-background group-hover/step:bg-foreground/80 group-hover/step:scale-105"
                       : "bg-foreground text-background group-hover/step:scale-105 group-hover/step:shadow-md",
@@ -326,7 +326,7 @@ export default function OverviewPage() {
                 <div className={cn(
                   "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-4 ring-background z-10 transition-all duration-300",
                   activeStep === 3
-                    ? "bg-[#0066cc] text-white scale-110 shadow-md shadow-[#0066cc]/30"
+                    ? "bg-[#0066cc] dark:bg-[#4394e5] text-white scale-110 shadow-md shadow-[#0066cc]/30 dark:shadow-[#4394e5]/30"
                     : activeStep !== null
                       ? "bg-foreground/60 text-background group-hover/step:bg-foreground/80 group-hover/step:scale-105"
                       : "bg-foreground text-background group-hover/step:scale-105 group-hover/step:shadow-md",

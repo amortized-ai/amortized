@@ -304,7 +304,7 @@ export function TutorialOverlay() {
 
           {isComplete && (
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3d7317]">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3d7317] dark:bg-[#4a8c1f]">
                 <Check className="h-7 w-7 text-white" />
               </div>
               <h2 className="text-xl font-display font-semibold">
@@ -465,7 +465,7 @@ export function TutorialOverlay() {
                 }}
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
-                <Server className="h-3 w-3 text-[#0066cc]" /> Set up Backend &
+                <Server className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Set up Backend &
                 MLflow
               </a>
               <a
@@ -478,7 +478,7 @@ export function TutorialOverlay() {
                 }}
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
-                <Zap className="h-3 w-3 text-[#5e40be]" /> Configure AI Gateway
+                <Zap className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Configure AI Gateway
               </a>
             </div>
           )}
