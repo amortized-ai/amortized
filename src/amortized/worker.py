@@ -428,18 +428,26 @@ async def _run_job(job: dict[str, Any]) -> None:
         document_ids = config.pop("document_ids", []) or config.pop("document_id", [])
         if isinstance(document_ids, str):
             document_ids = [document_ids]
+        doc_setup_cmds: list[str] = []
         if document_ids and config_mod.settings.mlflow_tracking_uri:
             doc_count = 0
             for doc_id in document_ids:
                 content = await _fetch_document_content(doc_id)
                 if content:
-                    config_files[f"docs/{doc_id}.md"] = content
+                    config_files[f"doc_{doc_count}.md"] = content
                     doc_count += 1
             if doc_count:
+                doc_setup_cmds = [
+                    "mkdir -p /tmp/docs",
+                    *(
+                        f"cp /amortized/doc_{i}.md /tmp/docs/"
+                        for i in range(doc_count)
+                    ),
+                ]
                 seed_config = config.get("seed_config", {})
                 source = seed_config.get("source", {})
                 source.setdefault("seed_type", "document-chunker")
-                source.setdefault("path", "/amortized/docs")
+                source.setdefault("path", "/tmp/docs")
                 source.setdefault("file_extensions", [".md"])
                 seed_config["source"] = source
                 config["seed_config"] = seed_config
@@ -452,18 +460,29 @@ async def _run_job(job: dict[str, Any]) -> None:
         config_files["config.yaml"] = yaml.dump(
             dd_config, default_flow_style=False, sort_keys=False
         )
-        cmd = [
-            "data-designer",
-            "create",
-            "/amortized/config.yaml",
-            "--num-records",
-            str(num_records),
-            "--artifact-path",
-            "/amortized/work",
-            "--no-tui",
-            "--output-format",
-            "jsonl",
-        ]
+        dd_cmd = (
+            "data-designer create /amortized/config.yaml"
+            f" --num-records {num_records}"
+            " --artifact-path /amortized/work"
+            " --no-tui"
+            " --output-format jsonl"
+        )
+        if doc_setup_cmds:
+            shell_script = " && ".join([*doc_setup_cmds, dd_cmd])
+            cmd = ["sh", "-c", shell_script]
+        else:
+            cmd = [
+                "data-designer",
+                "create",
+                "/amortized/config.yaml",
+                "--num-records",
+                str(num_records),
+                "--artifact-path",
+                "/amortized/work",
+                "--no-tui",
+                "--output-format",
+                "jsonl",
+            ]
 
     job_type = job["type"]
     needs_gpu = job_type == "training"
