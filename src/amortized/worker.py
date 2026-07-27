@@ -273,6 +273,7 @@ async def _upload_sdg_results_to_mlflow(
 ) -> str:
     """Read DD output from container logs and upload to MLflow as an artifact."""
     tracking_uri = config_mod.settings.mlflow_tracking_uri
+    logger.info("_upload_sdg_results_to_mlflow called, tracking_uri=%s", tracking_uri)
     if not tracking_uri:
         return ""
     import httpx
@@ -398,7 +399,7 @@ async def _upload_sdg_results_to_mlflow(
             return run_id
 
     except Exception:
-        logger.warning("Job %s: failed to upload SDG results to MLflow", job_id, exc_info=True)
+        logger.exception("Job %s: failed to upload SDG results to MLflow", job_id)
         return ""
 
 
