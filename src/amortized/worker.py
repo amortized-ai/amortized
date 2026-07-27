@@ -255,6 +255,109 @@ async def _fetch_document_content(document_id: str) -> str:
     return ""
 
 
+async def _upload_sdg_results_to_mlflow(
+    backend: Any, handle: BackendHandle, job: dict[str, Any]
+) -> str:
+    """Read DD output from container logs and upload to MLflow as an artifact."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return ""
+    import httpx
+
+    job_id = job["id"]
+    experiment_name = job.get("mlflow_experiment", f"amortized/sdg/{job_id[:8]}")
+
+    try:
+        log_lines: list[str] = []
+        async for line in backend.logs(handle):
+            log_lines.append(line)
+
+        jsonl_lines: list[str] = []
+        in_jsonl = False
+        for line in log_lines:
+            if "=== AMORTIZED_JSONL_START ===" in line:
+                in_jsonl = True
+                continue
+            if "=== AMORTIZED_JSONL_END ===" in line:
+                in_jsonl = False
+                continue
+            if in_jsonl:
+                stripped = line.strip()
+                if stripped:
+                    jsonl_lines.append(stripped)
+
+        if not jsonl_lines:
+            for line in log_lines:
+                stripped = line.strip()
+                if stripped.startswith("{") and stripped.endswith("}"):
+                    try:
+                        json.loads(stripped)
+                        jsonl_lines.append(stripped)
+                    except json.JSONDecodeError:
+                        pass
+
+        if not jsonl_lines:
+            logger.warning("Job %s: no JSONL data found in container logs", job_id)
+            return ""
+
+        jsonl_content = "\n".join(jsonl_lines) + "\n"
+        logger.info("Job %s: captured %d JSONL records from container", job_id, len(jsonl_lines))
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
+                params={"experiment_name": experiment_name},
+            )
+            if resp.is_success:
+                experiment_id = resp.json()["experiment"]["experiment_id"]
+            else:
+                resp = await client.post(
+                    f"{tracking_uri}/api/2.0/mlflow/experiments/create",
+                    json={"name": experiment_name},
+                )
+                resp.raise_for_status()
+                experiment_id = resp.json()["experiment_id"]
+
+            resp = await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/runs/create",
+                json={
+                    "experiment_id": experiment_id,
+                    "run_name": f"sdg-{job_id[:8]}",
+                    "tags": [
+                        {"key": "job_type", "value": "sdg"},
+                        {"key": "job_id", "value": job_id},
+                        {"key": "record_count", "value": str(len(jsonl_lines))},
+                    ],
+                },
+            )
+            resp.raise_for_status()
+            run_id = resp.json()["run"]["info"]["run_id"]
+
+            resp = await client.put(
+                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts"
+                "/generated_data/generated_data.jsonl",
+                params={"run_id": run_id},
+                content=jsonl_content.encode(),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            resp.raise_for_status()
+
+            await client.post(
+                f"{tracking_uri}/api/2.0/mlflow/runs/update",
+                json={"run_id": run_id, "status": "FINISHED"},
+            )
+
+            logger.info(
+                "Job %s: uploaded %d records to MLflow run %s",
+                job_id, len(jsonl_lines), run_id,
+            )
+            return run_id
+
+    except Exception:
+        logger.warning("Job %s: failed to upload SDG results to MLflow", job_id, exc_info=True)
+        return ""
+
+
 async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     """Look up a job's MLflow artifact URI by job ID."""
     if not job_id:
@@ -467,22 +570,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             " --no-tui"
             " --output-format jsonl"
         )
-        if doc_setup_cmds:
-            shell_script = " && ".join([*doc_setup_cmds, dd_cmd])
-            cmd = ["sh", "-c", shell_script]
-        else:
-            cmd = [
-                "data-designer",
-                "create",
-                "/amortized/config.yaml",
-                "--num-records",
-                str(num_records),
-                "--artifact-path",
-                "/amortized/work",
-                "--no-tui",
-                "--output-format",
-                "jsonl",
-            ]
+        dump_cmd = (
+            'echo "=== AMORTIZED_JSONL_START ==="'
+            " && cat /amortized/work/dataset/dataset.jsonl"
+            ' && echo "=== AMORTIZED_JSONL_END ==="'
+        )
+        all_cmds = [*doc_setup_cmds, dd_cmd, dump_cmd]
+        cmd = ["sh", "-c", " && ".join(all_cmds)]
 
     job_type = job["type"]
     needs_gpu = job_type == "training"
@@ -534,7 +628,10 @@ async def _run_job(job: dict[str, Any]) -> None:
                 logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
 
         if status.exit_code == 0:
-            mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
+            if job["type"] == JobType.sdg.value:
+                mlflow_run_id = await _upload_sdg_results_to_mlflow(backend, handle, job)
+            else:
+                mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             if mlflow_run_id:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_type", job["type"])
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
