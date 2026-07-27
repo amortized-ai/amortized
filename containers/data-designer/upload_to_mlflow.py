@@ -1,6 +1,5 @@
 """Upload Data Designer output to MLflow artifact store."""
 
-import glob
 import os
 import sys
 
@@ -12,28 +11,18 @@ def main() -> None:
     proc_subdir = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else ""
 
     if proc_subdir:
-        proc_path = os.path.join(dataset_dir, proc_subdir)
-        files = glob.glob(os.path.join(proc_path, "**", "*.parquet"), recursive=True)
-        if files:
-            print(f"Found {len(files)} processor output(s) in {proc_subdir}")
+        upload_dir = os.path.join(dataset_dir, proc_subdir)
     else:
-        files = []
+        upload_dir = os.path.join(dataset_dir, "parquet-files")
 
-    if not files:
-        raw = os.path.join(dataset_dir, "parquet-files")
-        files = glob.glob(os.path.join(raw, "*.parquet"))
-    if not files:
-        files = glob.glob(os.path.join(dataset_dir, "*.jsonl"))
-
-    if not files:
-        print("ERROR: no dataset files found")
+    if not os.path.isdir(upload_dir):
+        print(f"ERROR: {upload_dir} not found")
         sys.exit(1)
 
     with mlflow.start_run() as run:
-        for f in files:
-            mlflow.log_artifact(f, "generated_data")
+        mlflow.log_artifacts(upload_dir, "generated_data")
         print(f"AMORTIZED_MLFLOW_RUN_ID={run.info.run_id}")
-        print(f"Uploaded {len(files)} file(s) to MLflow run {run.info.run_id}")
+        print(f"Uploaded {upload_dir} to MLflow run {run.info.run_id}")
 
 
 if __name__ == "__main__":
