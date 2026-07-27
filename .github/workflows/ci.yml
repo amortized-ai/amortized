@@ -7,8 +7,8 @@ on:
     branches: [main, dev]
 
 jobs:
-  runtime:
-    name: Runtime — lint, type-check, test
+  backend:
+    name: Backend — lint, type-check, test
     runs-on: ubuntu-latest
 
     steps:
@@ -35,3 +35,35 @@ jobs:
 
       - name: Verify OpenAPI spec is up to date
         run: git diff --exit-code openapi/v1.json
+
+  studio:
+    name: Studio — lint, typecheck, test, build
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: studio
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: studio/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npm run test:e2e
