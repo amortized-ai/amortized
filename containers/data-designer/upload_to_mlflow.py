@@ -14,13 +14,16 @@ def main() -> None:
     if proc_subdir:
         proc_path = os.path.join(dataset_dir, proc_subdir)
         files = glob.glob(os.path.join(proc_path, "**", "*.parquet"), recursive=True)
+        if files:
+            print(f"Found {len(files)} processor output(s) in {proc_subdir}")
     else:
         files = []
 
     if not files:
-        files = glob.glob(os.path.join(dataset_dir, "**", "*.parquet"), recursive=True)
+        raw = os.path.join(dataset_dir, "parquet-files")
+        files = glob.glob(os.path.join(raw, "*.parquet"))
     if not files:
-        files = glob.glob(os.path.join(dataset_dir, "**", "*.jsonl"), recursive=True)
+        files = glob.glob(os.path.join(dataset_dir, "*.jsonl"))
 
     if not files:
         print("ERROR: no dataset files found")
