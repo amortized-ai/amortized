@@ -276,7 +276,7 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
 async def _resolve_parent_artifacts(
     job: dict[str, Any],
     config: dict[str, Any],
-    spec_env: dict[str, str],
+    s3_downloads: list[S3Download],
 ) -> dict[str, Any]:
     """Resolve parent job artifacts and inject into config for chaining."""
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
@@ -295,15 +295,26 @@ async def _resolve_parent_artifacts(
         logger.warning("Parent job %s has no mlflow_run_id", parent_job_id)
         return config
 
+    artifact_uri = await _resolve_mlflow_artifact_uri(parent_run_id)
+    if not artifact_uri:
+        logger.warning("Could not resolve artifact URI for run %s", parent_run_id)
+        return config
+
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
-            spec_env["AMORTIZED_PARENT_RUN_ID"] = parent_run_id
-            config["data_path"] = "/amortized/work/data"
+            s3_dir = f"{artifact_uri}/generated_data/"
+            local_dir = "/amortized/work/data"
+            s3_downloads.append(S3Download(
+                s3_uri=s3_dir,
+                local_path=local_dir,
+                is_directory=True,
+            ))
+            config["data_path"] = local_dir
             logger.info(
-                "Will download SDG data from MLflow run %s",
-                parent_run_id,
+                "Injected SDG data from MLflow run %s: %s",
+                parent_run_id, s3_dir,
             )
 
     return config
@@ -394,13 +405,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             spec_env["HF_MLFLOW_LOG_ARTIFACTS"] = "true"
         await _update_job(job_id, mlflow_experiment=mlflow_experiment)
 
-    config = await _resolve_parent_artifacts(job, config, spec_env)
-
     image = _JOB_TYPE_IMAGES.get(job["type"])
 
     config_files: dict[str, str] = {}
     s3_downloads: list[S3Download] = []
     cmd: list[str] = []
+
+    config = await _resolve_parent_artifacts(job, config, s3_downloads)
 
     if image and job["type"] == JobType.training.value:
         algo_aliases = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
@@ -424,20 +435,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             config.setdefault("report_to", "mlflow")
         config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
         thub_subcommand = algorithm.replace("_", "-")
-        thub_cmd = f"thub {thub_subcommand} --config /amortized/config.yaml"
-        if "AMORTIZED_PARENT_RUN_ID" in spec_env:
-            dl_cmd = (
-                "python3 -c \""
-                "import os, mlflow.artifacts; "
-                "mlflow.artifacts.download_artifacts("
-                "run_id=os.environ['AMORTIZED_PARENT_RUN_ID'], "
-                "artifact_path='generated_data', "
-                "dst_path='/amortized/work/data')"
-                "\""
-            )
-            cmd = ["sh", "-c", f"{dl_cmd} && {thub_cmd}"]
-        else:
-            cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
+        cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
