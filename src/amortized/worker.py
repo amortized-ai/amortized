@@ -273,7 +273,11 @@ async def _upload_sdg_results_to_mlflow(
 ) -> str:
     """Read DD output from container logs and upload to MLflow as an artifact."""
     tracking_uri = config_mod.settings.mlflow_tracking_uri
-    logger.info("_upload_sdg_results_to_mlflow called, tracking_uri=%s", tracking_uri)
+    processors = job.get("config", {}).get("processors", [])
+    logger.info(
+        "_upload_sdg_results_to_mlflow called, tracking_uri=%s, processors=%d",
+        tracking_uri, len(processors),
+    )
     if not tracking_uri:
         return ""
     import httpx
@@ -324,6 +328,10 @@ async def _upload_sdg_results_to_mlflow(
                 break
 
         if schema_tpl:
+            logger.info(
+                "Job %s: applying schema_transform, keys=%s",
+                job_id, list(schema_tpl.keys()),
+            )
             transformed: list[str] = []
             for line in jsonl_lines:
                 record = json.loads(line)
