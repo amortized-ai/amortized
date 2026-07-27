@@ -97,6 +97,21 @@ export interface JobLogsResponse {
   message: string
 }
 
+// --- GPU ---
+
+export interface GpuNodeMetrics {
+  index: number
+  name: string
+  utilization_pct: number
+  memory_used_mb: number
+  memory_total_mb: number
+  temperature_c: number
+}
+
+export interface GpuUtilizationResponse {
+  nodes: GpuNodeMetrics[]
+}
+
 // --- System ---
 
 export interface HealthResponse {

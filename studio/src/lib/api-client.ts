@@ -315,6 +315,14 @@ export async function generateChatTitle(message: string): Promise<string> {
   return data.title || message.slice(0, 40)
 }
 
+// --- GPU ---
+
+import type { GpuUtilizationResponse } from "@/types/api"
+
+export function getGpuUtilization(): Promise<GpuUtilizationResponse> {
+  return get<GpuUtilizationResponse>("/api/v1/gpu/utilization")
+}
+
 // --- System ---
 
 export function getHealth(): Promise<HealthResponse> {

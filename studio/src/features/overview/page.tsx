@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { GpuUtilizationSection } from "./components/gpu-utilization-section"
 import { SectionCards } from "./components/section-cards"
 import { RecentJobs } from "./components/recent-jobs"
 import { Button } from "@/components/ui/button"
@@ -148,6 +149,9 @@ export default function OverviewPage() {
             </div>
           </div>
         </div>
+
+        {/* GPU Utilization section */}
+        <GpuUtilizationSection />
 
         {/* Pipeline section */}
         <div className="px-4 lg:px-6 space-y-6">
