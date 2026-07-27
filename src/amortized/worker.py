@@ -255,6 +255,19 @@ async def _fetch_document_content(document_id: str) -> str:
     return ""
 
 
+def _render_template_value(val: Any, context: dict[str, Any]) -> Any:
+    """Recursively render Jinja2 templates in a schema_transform template."""
+    from jinja2 import Template
+
+    if isinstance(val, str):
+        return Template(val).render(context)
+    if isinstance(val, list):
+        return [_render_template_value(item, context) for item in val]
+    if isinstance(val, dict):
+        return {k: _render_template_value(v, context) for k, v in val.items()}
+    return val
+
+
 async def _upload_sdg_results_to_mlflow(
     backend: Any, handle: BackendHandle, job: dict[str, Any]
 ) -> str:
@@ -301,6 +314,23 @@ async def _upload_sdg_results_to_mlflow(
         if not jsonl_lines:
             logger.warning("Job %s: no JSONL data found in container logs", job_id)
             return ""
+
+        processors = job.get("config", {}).get("processors", [])
+        schema_tpl = None
+        for p in processors:
+            if p.get("processor_type") == "schema_transform":
+                schema_tpl = p.get("template")
+                break
+
+        if schema_tpl:
+            transformed: list[str] = []
+            for line in jsonl_lines:
+                record = json.loads(line)
+                out: dict[str, Any] = {}
+                for key, val in schema_tpl.items():
+                    out[key] = _render_template_value(val, record)
+                transformed.append(json.dumps(out))
+            jsonl_lines = transformed
 
         jsonl_content = "\n".join(jsonl_lines) + "\n"
         logger.info("Job %s: captured %d JSONL records from container", job_id, len(jsonl_lines))
@@ -585,19 +615,9 @@ async def _run_job(job: dict[str, Any]) -> None:
             " --no-tui"
             " --output-format jsonl"
         )
-        processor_names = [
-            p.get("name", "") for p in config.get("processors", [])
-        ]
-        if processor_names:
-            output_jsonl = (
-                f"/amortized/work/dataset/processors-outputs"
-                f"/{processor_names[-1]}/dataset.jsonl"
-            )
-        else:
-            output_jsonl = "/amortized/work/dataset/dataset.jsonl"
         dump_cmd = (
             'echo "=== AMORTIZED_JSONL_START ==="'
-            f" && cat {output_jsonl}"
+            " && cat /amortized/work/dataset/dataset.jsonl"
             ' && echo "=== AMORTIZED_JSONL_END ==="'
         )
         all_cmds = [*doc_setup_cmds, dd_cmd, dump_cmd]
