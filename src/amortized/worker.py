@@ -273,6 +273,28 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     return uri or None
 
 
+async def _find_artifact_file(run_id: str, path: str) -> str:
+    """Find a data file in an MLflow run's artifacts."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return "batch_00000.parquet"
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts",
+                params={"run_id": run_id, "path": path},
+            )
+            if resp.is_success:
+                for f in resp.json().get("files", []):
+                    if not f.get("is_dir"):
+                        return f["path"]
+    except Exception:
+        logger.warning("Failed to list artifacts for run %s", run_id)
+    return "batch_00000.parquet"
+
+
 async def _resolve_parent_artifacts(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -304,17 +326,19 @@ async def _resolve_parent_artifacts(
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
-            s3_dir = f"{artifact_uri}/generated_data/"
-            local_dir = "/amortized/work/data"
+            data_filename = await _find_artifact_file(
+                parent_run_id, "generated_data",
+            )
+            s3_file = f"{artifact_uri}/generated_data/{data_filename}"
+            local_path = f"/amortized/work/{data_filename}"
             s3_downloads.append(S3Download(
-                s3_uri=s3_dir,
-                local_path=local_dir,
-                is_directory=True,
+                s3_uri=s3_file,
+                local_path=local_path,
             ))
-            config["data_path"] = local_dir
+            config["data_path"] = local_path
             logger.info(
                 "Injected SDG data from MLflow run %s: %s",
-                parent_run_id, s3_dir,
+                parent_run_id, s3_file,
             )
 
     return config
