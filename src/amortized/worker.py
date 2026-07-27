@@ -585,9 +585,19 @@ async def _run_job(job: dict[str, Any]) -> None:
             " --no-tui"
             " --output-format jsonl"
         )
+        processor_names = [
+            p.get("name", "") for p in config.get("processors", [])
+        ]
+        if processor_names:
+            output_jsonl = (
+                f"/amortized/work/dataset/processors-outputs"
+                f"/{processor_names[-1]}/dataset.jsonl"
+            )
+        else:
+            output_jsonl = "/amortized/work/dataset/dataset.jsonl"
         dump_cmd = (
             'echo "=== AMORTIZED_JSONL_START ==="'
-            " && cat /amortized/work/dataset/dataset.jsonl"
+            f" && cat {output_jsonl}"
             ' && echo "=== AMORTIZED_JSONL_END ==="'
         )
         all_cmds = [*doc_setup_cmds, dd_cmd, dump_cmd]
