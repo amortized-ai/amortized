@@ -340,6 +340,12 @@ async def _upload_sdg_results_to_mlflow(
                     out[key] = _render_template_value(val, record)
                 transformed.append(json.dumps(out))
             jsonl_lines = transformed
+            if transformed:
+                sample = json.loads(transformed[0])
+                logger.info(
+                    "Job %s: transformed keys=%s",
+                    job_id, list(sample.keys()),
+                )
 
         jsonl_content = "\n".join(jsonl_lines) + "\n"
         logger.info("Job %s: captured %d JSONL records from container", job_id, len(jsonl_lines))
