@@ -304,17 +304,16 @@ async def _resolve_parent_artifacts(
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
-            s3_dir = f"{artifact_uri}/generated_data/"
-            local_path = "/amortized/work/data"
+            s3_file = f"{artifact_uri}/generated_data/generated_data.jsonl"
+            local_path = "/amortized/work/generated_data.jsonl"
             s3_downloads.append(S3Download(
-                s3_uri=s3_dir,
+                s3_uri=s3_file,
                 local_path=local_path,
-                is_directory=True,
             ))
             config["data_path"] = local_path
             logger.info(
                 "Injected SDG data from MLflow run %s: %s",
-                parent_run_id, s3_dir,
+                parent_run_id, s3_file,
             )
 
     return config
