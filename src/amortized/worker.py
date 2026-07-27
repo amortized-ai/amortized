@@ -265,7 +265,9 @@ async def _upload_sdg_results_to_mlflow(
     import httpx
 
     job_id = job["id"]
-    experiment_name = job.get("mlflow_experiment", f"amortized/sdg/{job_id[:8]}")
+    experiment_name = (
+        job.get("mlflow_experiment") or f"amortized/sdg/{job_id[:8]}"
+    )
 
     try:
         log_lines: list[str] = []
@@ -304,7 +306,7 @@ async def _upload_sdg_results_to_mlflow(
         logger.info("Job %s: captured %d JSONL records from container", job_id, len(jsonl_lines))
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
+            resp = await client.get(
                 f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
                 params={"experiment_name": experiment_name},
             )
