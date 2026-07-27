@@ -236,7 +236,7 @@ export default function ChatPage() {
             New
           </Button>
         </div>
-        <ChatContent />
+        <ChatContent key={currentConversationId} />
       </div>
 
       <DeleteConversationDialog
