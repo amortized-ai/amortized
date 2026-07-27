@@ -273,7 +273,11 @@ async def _resolve_job_artifact_uri(job_id: str) -> str | None:
     return uri or None
 
 
-async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+async def _resolve_parent_artifacts(
+    job: dict[str, Any],
+    config: dict[str, Any],
+    spec_env: dict[str, str],
+) -> dict[str, Any]:
     """Resolve parent job artifacts and inject into config for chaining."""
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
     if not parent_job_id:
@@ -291,18 +295,16 @@ async def _resolve_parent_artifacts(job: dict[str, Any], config: dict[str, Any])
         logger.warning("Parent job %s has no mlflow_run_id", parent_job_id)
         return config
 
-    artifact_uri = await _resolve_mlflow_artifact_uri(parent_run_id)
-    if not artifact_uri:
-        logger.warning("Could not resolve artifacts for parent %s", parent_job_id)
-        return config
-
     config = dict(config)
     if job["type"] == JobType.training.value and parent["type"] == "sdg":
-        data_dir = f"{artifact_uri}/generated_data/"
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
-            config["data_path"] = data_dir
-            logger.info("Injected SDG data path from parent: %s", data_dir)
+            spec_env["AMORTIZED_PARENT_RUN_ID"] = parent_run_id
+            config["data_path"] = "/amortized/work/data"
+            logger.info(
+                "Will download SDG data from MLflow run %s",
+                parent_run_id,
+            )
 
     return config
 
@@ -315,8 +317,6 @@ async def _run_job(job: dict[str, Any]) -> None:
     secrets = config.pop("_secrets", {})
 
     backend_name = config_mod.settings.resolved_default_backend
-
-    config = await _resolve_parent_artifacts(job, config)
 
     output_dir_names = {
         JobType.training.value: "training_output",
@@ -394,6 +394,8 @@ async def _run_job(job: dict[str, Any]) -> None:
             spec_env["HF_MLFLOW_LOG_ARTIFACTS"] = "true"
         await _update_job(job_id, mlflow_experiment=mlflow_experiment)
 
+    config = await _resolve_parent_artifacts(job, config, spec_env)
+
     image = _JOB_TYPE_IMAGES.get(job["type"])
 
     config_files: dict[str, str] = {}
@@ -422,7 +424,20 @@ async def _run_job(job: dict[str, Any]) -> None:
             config.setdefault("report_to", "mlflow")
         config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
         thub_subcommand = algorithm.replace("_", "-")
-        cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
+        thub_cmd = f"thub {thub_subcommand} --config /amortized/config.yaml"
+        if "AMORTIZED_PARENT_RUN_ID" in spec_env:
+            dl_cmd = (
+                "python3 -c \""
+                "import os, mlflow.artifacts; "
+                "mlflow.artifacts.download_artifacts("
+                "run_id=os.environ['AMORTIZED_PARENT_RUN_ID'], "
+                "artifact_path='generated_data', "
+                "dst_path='/amortized/work/data')"
+                "\""
+            )
+            cmd = ["sh", "-c", f"{dl_cmd} && {thub_cmd}"]
+        else:
+            cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
     elif image and job["type"] == JobType.sdg.value:
         import yaml
 
@@ -477,7 +492,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             f" --num-records {num_records}"
             " --artifact-path /amortized/work"
             " --no-tui"
-            " --output-format jsonl"
         )
         processor_names = [
             p.get("name", "") for p in config.get("processors", [])
