@@ -29,6 +29,12 @@ class CircularRecipeError(Exception):
         super().__init__(f"Circular recipe extends: {' -> '.join(chain)} -> {name}")
 
 
+class ProtectedRecipeError(Exception):
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"Cannot delete built-in recipe: {name}")
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = dict(base)
     for key, value in override.items():
@@ -135,3 +141,24 @@ def flatten_recipe_to_config(recipe: dict[str, Any]) -> dict[str, Any]:
     if "teacher_model" in config and "model" not in config:
         config["model"] = config.pop("teacher_model")
     return config
+
+
+def delete_recipe(name: str, *, recipes_dir: Path | None = None) -> None:
+    base_dir = get_recipes_dir(recipes_dir)
+
+    if ".." in name.split("/"):
+        raise ValueError("Invalid recipe name")
+
+    path = base_dir / f"{name}.yaml"
+    resolved = path.resolve()
+    if not resolved.is_relative_to(base_dir.resolve()):
+        raise ValueError("Invalid recipe name")
+
+    if not name.startswith("templates/custom/"):
+        raise ProtectedRecipeError(name)
+
+    if not path.is_file():
+        raise RecipeNotFoundError(name)
+
+    path.unlink()
+    logger.info("Deleted recipe %s", name)

@@ -1,9 +1,11 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   searchMlflowExperiments,
   searchMlflowRuns,
   getMlflowRun,
   getMlflowArtifactContent,
+  deleteDataset,
 } from "@/lib/api-client"
 import type { DatasetRecord, DatasetSample, MlflowRun } from "@/types/api"
 
@@ -56,6 +58,23 @@ export function useDataset(runId: string | null) {
       return runToDataset(resp.run)
     },
     enabled: !!runId,
+  })
+}
+
+export function useDeleteDataset() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (runId: string) => deleteDataset(runId),
+    onSuccess: () => {
+      toast.success("Dataset deleted successfully")
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete dataset: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
+    },
   })
 }
 
