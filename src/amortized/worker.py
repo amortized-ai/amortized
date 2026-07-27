@@ -501,11 +501,12 @@ async def _run_job(job: dict[str, Any]) -> None:
             if processor_names
             else ""
         )
+        ls_cmd = "find /amortized/work/dataset -type f | head -20"
         upload_cmd = (
             "python3 /usr/local/bin/upload_to_mlflow.py"
             f" /amortized/work/dataset {proc_dir}"
         )
-        all_cmds = [*doc_setup_cmds, dd_cmd, upload_cmd]
+        all_cmds = [*doc_setup_cmds, dd_cmd, ls_cmd, upload_cmd]
         cmd = ["sh", "-c", " && ".join(all_cmds)]
 
     job_type = job["type"]
