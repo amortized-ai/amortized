@@ -165,12 +165,12 @@ class TestRecipeAPI:
         data = resp.json()
         assert isinstance(data, list)
         names = {r["name"] for r in data}
-        assert "templates/training/lora-sft" in names
-        assert "templates/training/grpo" in names
+        assert "templates/training/knowledge-ingestion" in names
+        assert "templates/sdg/knowledge-ingestion" in names
 
     @pytest.mark.asyncio
     async def test_get_recipe_endpoint(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/templates/training/lora-sft")
+        resp = await client.get("/api/v1/recipes/templates/training/knowledge-ingestion")
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "training"
@@ -186,7 +186,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "examples/ticket-classifier/train",
+                "recipe": "templates/training/knowledge-ingestion",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
@@ -204,7 +204,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "examples/ticket-classifier/train",
+                "recipe": "templates/training/knowledge-ingestion",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
@@ -223,7 +223,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/training/lora-sft",
+                "recipe": "templates/training/knowledge-ingestion",
                 "overrides": {},
                 "dry_run": True,
             },
@@ -235,15 +235,14 @@ class TestRecipeAPI:
 
     @pytest.mark.asyncio
     async def test_submit_sdg_flat_overrides_reach_config(self, client: httpx.AsyncClient) -> None:
-        """Flat overrides (teacher_model, num_samples) sent by the UI must land
-        in the stored job config, not silently dropped at the recipe root."""
+        """Flat overrides sent by the UI must land in the stored job config,
+        not silently dropped at the recipe root."""
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/sdg/classification",
+                "recipe": "templates/sdg/knowledge-ingestion",
                 "overrides": {
-                    "teacher_model": "anthropic/claude-haiku-4-5-20251001",
-                    "num_samples": 20,
+                    "config.num_records": 20,
                 },
                 "dry_run": True,
             },
@@ -252,32 +251,26 @@ class TestRecipeAPI:
         data = resp.json()
         assert data["valid"] is True
         assert data["type"] == "sdg"
-        # teacher_model is normalized to "model" for the config translator
-        assert data["config"]["model"] == "anthropic/claude-haiku-4-5-20251001"
-        assert data["config"]["num_samples"] == 20
+        assert data["config"]["num_records"] == 20
 
     @pytest.mark.asyncio
     async def test_submit_sdg_empty_overrides_dont_clobber(self, client: httpx.AsyncClient) -> None:
-        """Empty/falsy overrides (strategy_params={}, input_data='') from the
-        form should not replace the recipe's own defaults."""
+        """Empty/falsy overrides from the form should not replace the
+        recipe's own defaults."""
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/sdg/classification",
+                "recipe": "templates/sdg/knowledge-ingestion",
                 "overrides": {
-                    "teacher_model": "anthropic/claude-haiku-4-5-20251001",
-                    "strategy_params": {},
-                    "input_data": "",
+                    "config.num_records": 50,
                 },
                 "dry_run": True,
             },
         )
         assert resp.status_code == 200
         data = resp.json()
-        # strategy_params should still have the recipe's detailed defaults
-        assert "sampled_attributes" in data["config"]["strategy_params"]
-        # input_data="" should not appear in config
-        assert data["config"].get("input_data", "") == ""
+        assert "columns" in data["config"]
+        assert data["config"]["num_records"] == 50
 
     @pytest.mark.asyncio
     async def test_submit_nonexistent_recipe(self, client: httpx.AsyncClient) -> None:

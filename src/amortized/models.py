@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 class JobType(StrEnum):
     training = "training"
     sdg = "sdg"
-    eval = "eval"
 
 
 class JobStatus(StrEnum):
@@ -62,7 +61,7 @@ class TrainingJobConfig(BaseModel):
 
 
 class JobRequest(BaseModel):
-    type: JobType = Field(..., description="Job type: training, sdg")
+    type: JobType = Field(..., description="Job type: training or sdg")
     config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
     recipe: str = Field("", description="Recipe name if used")
     parent_job_id: str = Field("", description="Parent job ID for lineage")

@@ -65,7 +65,7 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     if not resolved.is_relative_to(base_dir.resolve()):
         raise HTTPException(status_code=400, detail="Invalid recipe name")
 
-    if not path.is_file() and not name.startswith(("templates/", "examples/")):
+    if not path.is_file() and not name.startswith("templates/"):
         name = f"templates/custom/{name}"
         path = base_dir / f"{name}.yaml"
         if not path.resolve().is_relative_to(base_dir.resolve()):

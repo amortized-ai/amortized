@@ -19,8 +19,7 @@ amortized/
 ├── agent/               # Morty chat agent
 ├── containers/          # Training container Dockerfiles
 ├── k8s/                 # Kubernetes manifests (kustomize)
-├── templates/           # YAML templates for SDG/training/eval
-├── examples/            # Example pipelines
+├── templates/           # YAML templates for SDG/training
 └── Makefile             # Build, deploy, cluster management
 ```
 
