@@ -1,15 +1,19 @@
+import { useState } from "react"
 import { useParams, useNavigate } from "react-router"
-import { useModel } from "../api/use-models"
+import { useModel, useDeleteModel } from "../api/use-models"
 import { ModelDetail } from "./model-detail"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 
 export function ModelDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const name = id ? decodeURIComponent(id) : null
   const { data: versions, isLoading } = useModel(name)
+  const deleteMutation = useDeleteModel()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -31,5 +35,29 @@ export function ModelDetailPage() {
     )
   }
 
-  return <ModelDetail name={name!} versions={versions} onBack={() => void navigate("/models")} />
+  return (
+    <>
+      <ModelDetail
+        name={name!}
+        versions={versions}
+        onBack={() => void navigate("/models")}
+        onDelete={() => setDeleteDialogOpen(true)}
+      />
+      <DeleteEntityDialog
+        open={deleteDialogOpen}
+        entityType="model"
+        entityName={name!}
+        onConfirm={() => {
+          deleteMutation.mutate(name!, {
+            onSuccess: () => {
+              setDeleteDialogOpen(false)
+              void navigate("/models")
+            },
+          })
+        }}
+        onCancel={() => setDeleteDialogOpen(false)}
+        isPending={deleteMutation.isPending}
+      />
+    </>
+  )
 }

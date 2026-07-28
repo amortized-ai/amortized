@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink } from "lucide-react"
+import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2 } from "lucide-react"
 import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
@@ -27,7 +27,8 @@ import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
-import { useCancelJob, useJobLogs, useJobMlflowMetrics } from "../api/use-jobs"
+import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics } from "../api/use-jobs"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
 function formatJobError(raw: string): { summary: string; isTruncated: boolean } {
@@ -59,16 +60,28 @@ interface JobDetailPanelProps {
 
 export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps) {
   const cancelMutation = useCancelJob()
+  const deleteMutation = useDeleteJob()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const { getName, setName } = useEntityNamesStore()
 
   if (!open) return null
 
   const canCancel = job ? ["queued", "provisioning", "running"].includes(job.status) : false
+  const canDelete = job ? ["succeeded", "failed", "cancelled"].includes(job.status) : false
 
   function handleCancel() {
     cancelMutation.mutate(job!.id)
     setCancelDialogOpen(false)
+  }
+
+  function handleDelete() {
+    deleteMutation.mutate(job!.id, {
+      onSuccess: () => {
+        setDeleteDialogOpen(false)
+        onOpenChange(false)
+      },
+    })
   }
 
   return (
@@ -135,6 +148,25 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+            )}
+            {canDelete && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <DeleteEntityDialog
+                  open={deleteDialogOpen}
+                  entityType="job"
+                  entityName={getName(job!.id) || (job!.metadata?.name as string) || job!.id.slice(0, 8)}
+                  onConfirm={handleDelete}
+                  onCancel={() => setDeleteDialogOpen(false)}
+                  isPending={deleteMutation.isPending}
+                />
+              </>
             )}
             <Button
               variant="ghost"

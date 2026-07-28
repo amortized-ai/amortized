@@ -1,12 +1,15 @@
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   searchMlflowRegisteredModels,
   searchMlflowModelVersions,
   getMlflowRun,
   getMlflowMetricHistory,
   getJobs,
+  deleteMlflowRegisteredModel,
 } from "@/lib/api-client"
 import type { ModelRecord, MlflowRegisteredModel, MlflowRun, Job } from "@/types/api"
+import { useEntityNamesStore } from "@/stores/entity-names-store"
 
 function registeredModelToRecord(m: MlflowRegisteredModel): ModelRecord {
   const latest = m.latest_versions?.[0]
@@ -152,5 +155,25 @@ export function useModelJobs(runId: string | null) {
       return result
     },
     enabled: !!runId,
+  })
+}
+
+
+export function useDeleteModel() {
+  const queryClient = useQueryClient()
+  const removeName = useEntityNamesStore((s) => s.removeName)
+
+  return useMutation({
+    mutationFn: (name: string) => deleteMlflowRegisteredModel(name),
+    onSuccess: (_data, name) => {
+      removeName(name)
+      toast.success("Model deleted successfully")
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete model: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mlflow", "models"] })
+    },
   })
 }

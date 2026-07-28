@@ -133,3 +133,22 @@ class JobNotFoundError(Exception):
 
 class InvalidJobStateError(Exception):
     pass
+
+
+_TERMINAL_STATUSES = frozenset({
+    JobStatus.succeeded.value,
+    JobStatus.failed.value,
+    JobStatus.cancelled.value,
+})
+
+
+async def delete_job(repo: Repository, job_id: str) -> None:
+    row = await repo.get_job(job_id)
+    if row is None:
+        raise JobNotFoundError(job_id)
+    if row["status"] not in _TERMINAL_STATUSES:
+        raise InvalidJobStateError(
+            f"Cannot delete job in state '{row['status']}' — cancel it first"
+        )
+    await repo.delete_job(job_id)
+    logger.info("Deleted job %s", job_id)

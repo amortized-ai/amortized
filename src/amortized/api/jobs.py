@@ -21,6 +21,9 @@ from amortized.core.jobs import (
     create_job as core_create_job,
 )
 from amortized.core.jobs import (
+    delete_job as core_delete_job,
+)
+from amortized.core.jobs import (
     get_job as core_get_job,
 )
 from amortized.core.jobs import (
@@ -215,3 +218,17 @@ async def get_job_artifacts(
         "mlflow_run_id": mlflow_run_id,
         "artifact_uri": artifact_uri,
     }
+
+
+@router.post("/{job_id}/delete", status_code=204, operation_id="delete_job")
+async def delete_job(
+    job_id: str,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> None:
+    repo = Repository(db)
+    try:
+        await core_delete_job(repo, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found") from exc
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

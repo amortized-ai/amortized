@@ -7,7 +7,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen } from "lucide-react"
+import { BookOpen, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import {
   Pagination,
@@ -27,6 +28,7 @@ interface RecipeTableProps {
   onPageChange: (page: number) => void
   onSelectRecipe: (recipe: Recipe) => void
   onCreateNew?: () => void
+  onDeleteRecipe?: (recipe: Recipe) => void
 }
 
 export function RecipeTable({
@@ -35,6 +37,7 @@ export function RecipeTable({
   onPageChange,
   onSelectRecipe,
   onCreateNew,
+  onDeleteRecipe,
 }: RecipeTableProps) {
   const totalPages = Math.max(1, Math.ceil(recipes.length / PAGE_SIZE))
   const start = page * PAGE_SIZE
@@ -49,12 +52,13 @@ export function RecipeTable({
             <TableHead className="w-[10%]">Type</TableHead>
             <TableHead className="w-[50%]">Description</TableHead>
             <TableHead className="w-[10%]">Version</TableHead>
+            {onDeleteRecipe && <TableHead className="w-[5%]" />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {pageItems.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="p-0">
+              <TableCell colSpan={onDeleteRecipe ? 5 : 4} className="p-0">
                 <EmptyState
                   icon={BookOpen}
                   title="No recipes yet"
@@ -99,6 +103,23 @@ export function RecipeTable({
                 <TableCell className="text-sm text-muted-foreground">
                   {recipe.version}
                 </TableCell>
+                {onDeleteRecipe && (
+                  <TableCell>
+                    {recipe.name.startsWith("templates/custom/") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 opacity-50 hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteRecipe(recipe)
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             ))
           )}

@@ -6,9 +6,13 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { X, FileText, Copy, Hash, Calendar, Loader2 } from "lucide-react"
+import { X, FileText, Copy, Hash, Calendar, Loader2, Trash2 } from "lucide-react"
 import { useState } from "react"
-import { useDocumentContent } from "../api/use-documents"
+import { useQueryClient } from "@tanstack/react-query"
+import { useDocumentContent, useDeleteDocument } from "../api/use-documents"
+import { EditableTitle } from "@/components/editable-title"
+import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
+import { setMlflowRunTag } from "@/lib/api-client"
 import type { DocumentRecord } from "@/types/api"
 
 interface DocumentDetailPanelProps {
@@ -22,6 +26,9 @@ export function DocumentDetailPanel({
   open,
   onOpenChange,
 }: DocumentDetailPanelProps) {
+  const queryClient = useQueryClient()
+  const deleteMutation = useDeleteDocument()
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   if (!document) return null
 
   return (
@@ -31,8 +38,33 @@ export function DocumentDetailPanel({
         showCloseButton={false}
         className="!max-w-[900px] !w-[900px] !h-[80vh] flex flex-col !gap-0 p-0 overflow-hidden rounded-xl"
       >
-        <PanelHeader document={document} onClose={() => onOpenChange(false)} />
+        <PanelHeader
+          document={document}
+          onClose={() => onOpenChange(false)}
+          onDelete={() => setDeleteDialogOpen(true)}
+          onRename={async (newName) => {
+            const runId = document.mlflow_run_id || document.document_id
+            await setMlflowRunTag(runId, "filename", newName)
+            queryClient.invalidateQueries({ queryKey: ["documents"] })
+          }}
+        />
         <PanelBody document={document} />
+
+        <DeleteEntityDialog
+          open={deleteDialogOpen}
+          entityType="document"
+          entityName={document.filename}
+          onConfirm={() => {
+            deleteMutation.mutate(document.document_id, {
+              onSuccess: () => {
+                setDeleteDialogOpen(false)
+                onOpenChange(false)
+              },
+            })
+          }}
+          onCancel={() => setDeleteDialogOpen(false)}
+          isPending={deleteMutation.isPending}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -41,15 +73,23 @@ export function DocumentDetailPanel({
 function PanelHeader({
   document,
   onClose,
+  onDelete,
+  onRename,
 }: {
   document: DocumentRecord
   onClose: () => void
+  onDelete: () => void
+  onRename: (newName: string) => Promise<void>
 }) {
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <DialogTitle className="text-base font-semibold truncate">
-          {document.filename}
+    <div className="flex items-center justify-between gap-4 px-6 py-4 border-b shrink-0">
+      <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
+        <DialogTitle asChild>
+          <EditableTitle
+            value={document.filename}
+            className="text-base font-semibold truncate"
+            onSave={onRename}
+          />
         </DialogTitle>
         <Badge
           variant="secondary"
@@ -59,15 +99,26 @@ function PanelHeader({
           {document.format.toUpperCase()}
         </Badge>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 w-8 p-0 opacity-70 hover:opacity-100"
-        onClick={onClose}
-      >
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </Button>
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 opacity-70 hover:opacity-100 hover:text-destructive"
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+          <span className="sr-only">Delete</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 opacity-70 hover:opacity-100"
+          onClick={onClose}
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </Button>
+      </div>
     </div>
   )
 }

@@ -11,12 +11,16 @@ from pydantic import BaseModel, Field
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
 from amortized.core.recipes import (
+    ProtectedRecipeError,
     RecipeNotFoundError,
     apply_overrides,
     flatten_recipe_to_config,
     get_recipes_dir,
     list_recipes,
     load_recipe,
+)
+from amortized.core.recipes import (
+    delete_recipe as core_delete_recipe,
 )
 from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
@@ -77,6 +81,19 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     path.write_text(_yaml.dump(recipe_data, default_flow_style=False, sort_keys=False))
     logger.info("Saved recipe %s to %s", name, path)
     return {"name": name, **recipe_data}
+
+
+
+@router.delete("/{name:path}", status_code=204, operation_id="delete_recipe")
+async def delete_recipe(name: str) -> None:
+    try:
+        core_delete_recipe(name)
+    except RecipeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProtectedRecipeError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 class RecipeJobRequest(BaseModel):

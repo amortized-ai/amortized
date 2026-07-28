@@ -206,7 +206,7 @@ export default function ChatPage() {
       <div className="flex flex-1 flex-col min-h-0 bg-accent/20">
         <div className="flex items-center justify-between border-b bg-background/80 backdrop-blur-sm px-4 h-12">
           <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ee0000]">
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-rh-red">
               <Bot className="h-3 w-3 text-white" />
             </div>
             <span className="text-sm font-semibold">Morty</span>
@@ -236,7 +236,7 @@ export default function ChatPage() {
             New
           </Button>
         </div>
-        <ChatContent key={currentConversationId} />
+        <ChatContent key={currentConversationId ?? "empty"} />
       </div>
 
       <DeleteConversationDialog
