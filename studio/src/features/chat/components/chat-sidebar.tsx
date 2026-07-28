@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router"
-import { Bot, X, Plus, ChevronDown, Trash2 } from "lucide-react"
+import { Bot, X, Plus, ChevronDown, Trash2, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
 import { useChat } from "../hooks/use-chat"
@@ -12,7 +12,46 @@ import { DeleteConversationDialog } from "./delete-conversation-dialog"
 import { derivePhasePlan } from "../utils/derive-plan-steps"
 import { clearConversationSession } from "@/lib/api-client"
 
+const MIN_WIDTH = 320
+const MAX_WIDTH = 700
+const DEFAULT_WIDTH = 400
+
+function useResizable() {
+  const [width, setWidth] = useState(DEFAULT_WIDTH)
+  const isDragging = useRef(false)
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDragging.current = true
+    const startX = e.clientX
+    const startWidth = width
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return
+      const delta = startX - e.clientX
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta))
+      setWidth(newWidth)
+    }
+
+    const onMouseUp = () => {
+      isDragging.current = false
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", onMouseUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mouseup", onMouseUp)
+  }, [width])
+
+  return { width, onMouseDown }
+}
+
 export function ChatSidebar() {
+  const { width, onMouseDown } = useResizable()
   const navigate = useNavigate()
   const {
     currentConversationId,
@@ -156,7 +195,16 @@ export function ChatSidebar() {
   ])
 
   return (
-    <div className="flex h-full flex-col border-l bg-background">
+    <div className="flex h-full" style={{ width }}>
+      {/* Resize handle */}
+      <div
+        onMouseDown={onMouseDown}
+        className="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-l hover:bg-primary/10 active:bg-primary/20 transition-colors"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+      </div>
+      {/* Chat content */}
+      <div className="flex flex-1 min-w-0 flex-col bg-background">
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -260,6 +308,7 @@ export function ChatSidebar() {
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       />
+      </div>
     </div>
   )
 }

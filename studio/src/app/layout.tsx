@@ -232,7 +232,7 @@ export function AppLayout() {
             <Outlet />
           </div>
           {showChatSidebar && (
-            <div className="w-[400px] shrink-0 h-full">
+            <div className="shrink-0 h-full">
               <ChatSidebar />
             </div>
           )}
