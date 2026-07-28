@@ -1,5 +1,10 @@
 # Ticket Classifier
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively — tell Morty "build a support ticket
+> classifier" and it will guide you through SDG and training.
+
 Fine-tune a small model to classify customer support tickets by urgency and topic,
 replacing expensive frontier model calls.
 

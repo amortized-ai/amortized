@@ -1,5 +1,10 @@
 # Intent Router
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively — tell Morty "build an intent router"
+> and it will guide you through SDG and training.
+
 Fine-tune the smallest possible model to classify customer messages by intent,
 replacing a frontier model on the hot path of every API request.
 

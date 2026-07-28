@@ -1,5 +1,10 @@
 # Content Moderator
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively — tell Morty "build a content moderator"
+> and it will guide you through SDG and training.
+
 Fine-tune a tiny model for binary content moderation (safe vs unsafe),
 replacing expensive frontier model calls on the moderation hot path.
 
