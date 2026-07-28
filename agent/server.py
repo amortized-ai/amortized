@@ -28,7 +28,7 @@ from claude_agent_sdk import (
     query,
 )
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 MORTY_PROMPT_PATH = Path(os.environ.get("MORTY_PROMPT_PATH", "/app/morty.md"))
 CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", "/data"))
@@ -108,8 +108,10 @@ class MessagePart(BaseModel):
 
 
 class MessageModel(BaseModel):
-    providerID: str | None = None
-    modelID: str | None = None
+    model_config = {"populate_by_name": True}
+
+    provider_id: str | None = Field(default=None, alias="providerID")
+    model_id: str | None = Field(default=None, alias="modelID")
 
 
 class MessageRequest(BaseModel):
@@ -141,8 +143,8 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="no text part in message")
 
     model = MODEL
-    if body.model and body.model.modelID:
-        model = body.model.modelID.replace("@default", "") or MODEL
+    if body.model and body.model.model_id:
+        model = body.model.model_id.replace("@default", "") or MODEL
 
     sdk_session_id = _session_map.get(session_id)
 
