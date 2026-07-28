@@ -229,8 +229,10 @@ export function AppLayout() {
           </div>
         </header>
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          <div className="flex-1 min-w-0 overflow-auto p-4">
-            <Outlet />
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="h-full overflow-auto p-4">
+              <Outlet />
+            </div>
           </div>
           {showChatSidebar && (
             <div className="shrink-0 h-full" style={{ width: panelWidth }}>
