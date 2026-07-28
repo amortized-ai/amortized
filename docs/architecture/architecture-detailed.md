@@ -363,11 +363,6 @@ Flow:
 │    regex-no-error-keywords, relevance, safety, topic-adherence,              │
 │    truthfulness                                                              │
 │                                                                              │
-│  examples/                 6 end-to-end examples                             │
-│    content-moderator, distillation, entity-extractor,                        │
-│    intent-router, summarizer, ticket-classifier                              │
-│    (each: synth.yaml + train.yaml + eval.yaml)                               │
-│                                                                              │
 │  Recipe composition: extends: base-template, dot-notation overrides          │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -384,7 +379,7 @@ PHASE 1: SDG (Synthetic Data Generation)
   User (Studio/CLI/API)
     │
     │  POST /api/v1/jobs/recipe
-    │  {recipe: "examples/ticket-classifier/synth", overrides: {num_samples: 100}}
+    │  {recipe: "templates/sdg/knowledge-ingestion", overrides: {num_samples: 100}}
     v
   Amortized Server
     │  load_recipe() --> apply_overrides() --> flatten_to_config()

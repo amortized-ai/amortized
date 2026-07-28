@@ -59,14 +59,23 @@ class TestCreateJob:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"model": "openai/gpt-4o"},
+                "config": {
+                    "num_records": 10,
+                    "columns": [
+                        {
+                            "column_type": "llm-text",
+                            "name": "question",
+                            "model_alias": "text",
+                        }
+                    ],
+                },
             },
         )
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "sdg"
         assert data["status"] == "queued"
-        assert data["config"]["model"] == "openai/gpt-4o"
+        assert data["config"]["num_records"] == 10
 
     @pytest.mark.asyncio
     async def test_create_with_recipe(self, client: httpx.AsyncClient) -> None:
@@ -157,7 +166,7 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"model": "test"},
+                "config": {"num_records": 10, "columns": [{"column_type": "llm-text", "name": "q"}]},
             },
         )
         response = await client.get("/api/v1/jobs")
@@ -182,7 +191,7 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"model": "test"},
+                "config": {"num_records": 10, "columns": [{"column_type": "llm-text", "name": "q"}]},
             },
         )
         response = await client.get("/api/v1/jobs?type=training")
@@ -249,7 +258,7 @@ class TestConfigRedaction:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+                "config": {"columns": [{"column_type": "llm-text", "name": "q"}], "api_key": "sk-secret-123"},
             },
         )
         assert response.status_code == 201
@@ -261,7 +270,7 @@ class TestConfigRedaction:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"model": "openai/gpt-4o", "api_key": "sk-secret-123"},
+                "config": {"columns": [{"column_type": "llm-text", "name": "q"}], "api_key": "sk-secret-123"},
             },
         )
         job_id = create_resp.json()["id"]
