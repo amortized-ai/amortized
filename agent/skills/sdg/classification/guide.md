@@ -22,13 +22,18 @@ Ask the user these questions (one at a time, with numbered options):
    1) Yes, 3 levels — Low, Medium, High
    2) Yes, 4 levels — Low, Medium, High, Critical
    3) No urgency — Just classify by category
-4. **Which teacher model?** — Call `list_models` to discover available
-   models from the AI Gateway. Present each as a numbered option.
-   If no models are returned, direct the user to Settings → AI Gateway.
-5. **How many samples?** — How many training examples to generate?
-   1) 100 samples — Quick prototype
-   2) 500 samples — Good coverage across categories
-   3) 1000 samples — Best model quality, more diverse examples
+4. **Which teacher model?** — Call `list_models` to get the models
+   configured on the AI Gateway. Present ONLY those models as options.
+   Do NOT suggest models that aren't returned by `list_models` — they
+   won't work. If no models are returned, stop and direct the user to
+   Settings → AI Gateway.
+5. **How many samples?** — Scale based on category count and desired
+   coverage. Recommend at least 50 samples per category for basic
+   coverage and 150+ per category for production quality.
+   1) N×50 samples — Basic coverage across all categories
+   2) N×100 samples — Good diversity, recommended
+   3) N×150 samples — Best quality, most diverse examples
+   (where N = number of categories × urgency levels)
 6. **Distribution** — Should categories be balanced or weighted?
    Default: roughly balanced unless the real-world distribution is known.
 
