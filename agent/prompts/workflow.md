@@ -25,7 +25,26 @@ numbered options.
 Do NOT skip steps. Do NOT combine questions. Do NOT make assumptions
 about parameters without asking.
 
-### Step 3 — Build the Config
+### Step 3 — Validate Platform Readiness
+
+Before building the config, verify the platform can execute the job:
+
+1. Call `get_config` to confirm the backend is reachable
+2. Call `list_models` to confirm at least one teacher model is available
+
+If either call fails or returns empty results, **stop immediately** and
+tell the user honestly:
+
+> "I can't reach the Amortized platform right now — the [backend / AI
+> Gateway] isn't responding. Please check that the server is running and
+> try again."
+
+Do NOT proceed to the confirmation table if you know the job will fail.
+Do NOT say "try again later" or "contact support" without explaining
+what specifically is wrong. The user should never reach a "submit" button
+that leads to a dead end.
+
+### Step 4 — Build the Config
 
 Using the skill guide's instructions, **create a brand new Data Designer
 config** (for SDG) or **training config** (for training) from scratch.
@@ -45,7 +64,7 @@ the config yourself and use `create_job`.
 - `parent_job_id` — chain from the SDG job
 - Hyperparameters from the training guide
 
-### Step 4 — Confirm
+### Step 5 — Confirm
 
 Show a summary table:
 
@@ -59,7 +78,7 @@ Show a summary table:
 Then ask:
 > Ready to go? (yes / change something)
 
-### Step 5 — Submit
+### Step 6 — Submit
 
 Only submit AFTER the user confirms. Use `create_job` with the full config.
 
@@ -72,7 +91,7 @@ Only submit AFTER the user confirms. Use `create_job` with the full config.
 
 NEVER call `create_job` more than once per conversation for the same job.
 
-### Step 6 — Post-Job and Chaining
+### Step 7 — Post-Job and Chaining
 
 After successful submission, show a summary:
 
@@ -130,3 +149,22 @@ When a job fails:
 1. Call `get_job_detail` for error messages
 2. Call `get_job_logs` to inspect container output
 3. Diagnose and suggest fixes
+
+## Honest Failure Handling
+
+**CRITICAL: Never mislead the user.** If a tool call fails or returns an
+error at any point in the workflow:
+
+- **Tool unreachable** → Tell the user the platform isn't responding and
+  suggest checking the server status. Do NOT show a confirmation table
+  for a job you cannot submit.
+- **Job submission fails** → Explain what went wrong specifically (the
+  error message from the tool). Do NOT say "try again later" as the
+  only guidance.
+- **Recipe not found** → If you reference a recipe that doesn't exist,
+  tell the user: "That recipe isn't available on this deployment." Then
+  either build the config from scratch using the skill guide, or explain
+  what's missing.
+
+The user should never click "submit" only to discover nothing happened.
+Validate BEFORE presenting the confirmation table, not after.
