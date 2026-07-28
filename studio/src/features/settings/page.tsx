@@ -14,6 +14,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip"
+import { CardSkeleton } from "@/components/card-skeleton"
 import {
   Plus,
   Trash2,
@@ -25,6 +33,8 @@ import {
   ArrowRight,
   Bot,
   KeyRound,
+  Monitor,
+  Settings,
 } from "lucide-react"
 import { Link } from "react-router"
 import { PageHeader } from "@/components/page-header"
@@ -392,7 +402,7 @@ function AgentProviderSection() {
 
 export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
-  const { data: healthData } = useHealth({ refetchInterval: 30000 })
+  const { data: healthData, isLoading: healthLoading, isError: healthError } = useHealth({ refetchInterval: 30000 })
   const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
   const { data: connections = [], isLoading: connectionsLoading } = useGatewayConnections()
   const deleteRoute = useDeleteGatewayRoute()
@@ -489,43 +499,140 @@ export default function SettingsPage() {
         <PrerequisitesCard />
       </div>
 
-      {/* GPU Status */}
-      {gpu && (
-        <Card>
+      {/* Compute Resources */}
+      {healthLoading ? (
+        <CardSkeleton />
+      ) : healthError || !healthData ? (
+        <Card className="animate-message-in" style={{ animationDelay: "300ms" }}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e0f0ff] text-[#0066cc] dark:bg-[#003366]/40 dark:text-[#4394e5]">
-                <Cpu className="h-3.5 w-3.5" />
+                <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
               </div>
-              <CardTitle className="text-sm">GPU</CardTitle>
+              <CardTitle className="text-sm">Compute Resources</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            {gpu.available && gpu.count && gpu.count > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-[#e9f7df] text-[#204d00] border-[#afdc8f] dark:bg-[#204d00]/40 dark:text-[#63993d] dark:border-[#204d00]">
-                    {gpu.count} GPU{gpu.count > 1 ? "s" : ""} available
-                  </Badge>
-                </div>
-                {gpu.devices && gpu.devices.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {gpu.devices.map((device, i) => (
-                      <Badge key={i} variant="outline" className="font-mono text-xs">
-                        {device}
-                      </Badge>
-                    ))}
+            <p className="text-sm text-muted-foreground">
+              Compute information will appear here once the backend is connected.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => document.getElementById("section-system")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              <Settings className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+              Configure Backend
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !gpu || !gpu.available || !gpu.count || gpu.count === 0 ? (
+        <Card className="animate-message-in" style={{ animationDelay: "300ms" }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e0f0ff] text-[#0066cc] dark:bg-[#003366]/40 dark:text-[#4394e5]">
+                <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+              </div>
+              <CardTitle className="text-sm">Compute Resources</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-medium">No GPU detected</p>
+            <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+              {gpu?.note || "Training jobs require a GPU. Configure an SSH backend with GPU access, or run on a GPU-enabled machine."}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => document.getElementById("section-system")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              <Settings className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+              Check Settings
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="animate-message-in" style={{ animationDelay: "300ms" }}>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e0f0ff] text-[#0066cc] dark:bg-[#003366]/40 dark:text-[#4394e5]">
+                <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+              </div>
+              <CardTitle className="text-sm">Compute Resources</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Status row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Zap className="h-3.5 w-3.5 text-[#63993d] dark:text-[#87bb62]" aria-hidden="true" />
+              <span className="text-sm font-medium">Ready for training</span>
+              <Badge
+                variant="outline"
+                className="bg-[#e9f7df] text-[#204d00] border-[#afdc8f] dark:bg-[#204d00]/40 dark:text-[#63993d] dark:border-[#204d00]"
+              >
+                {gpu.count} GPU{gpu.count > 1 ? "s" : ""} available
+              </Badge>
+            </div>
+
+            {/* Progress meter */}
+            {gpu.devices && gpu.devices.length > 0 ? (
+              <>
+                <div>
+                  <div className="flex items-center justify-between text-sm font-medium">
+                    <span>{gpu.count} of {gpu.count} ready</span>
                   </div>
-                )}
-              </div>
+                  <Progress
+                    value={100}
+                    className="mt-2"
+                    aria-label={`GPU availability: ${gpu.count} of ${gpu.count} detected`}
+                  />
+                </div>
+
+                {/* Device list */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                    Devices
+                  </p>
+                  <TooltipProvider>
+                    <ul className="flex flex-col gap-1.5">
+                      {gpu.devices.map((device, i) => (
+                        <li
+                          key={i}
+                          className="animate-message-in flex items-center gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 transition-all duration-300 hover:border-[#b9dafc] hover:shadow-sm hover:-translate-y-px dark:hover:border-[#003366]"
+                          style={{ animationDelay: `${400 + i * 100}ms` }}
+                        >
+                          <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-sm font-medium cursor-default">
+                                GPU {i + 1}
+                                <span className="text-xs font-mono text-muted-foreground ml-2">
+                                  {device}
+                                </span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Device {i}: {device}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </li>
+                      ))}
+                    </ul>
+                  </TooltipProvider>
+                </div>
+              </>
             ) : (
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">No GPU detected</p>
-                <p className="text-xs text-muted-foreground">
-                  {gpu.note || "Training jobs require a GPU. Configure an SSH backend with GPU access or run on a GPU-enabled machine."}
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {gpu.note || `GPU detected via nvidia-smi. Install PyTorch for detailed device information.`}
+              </p>
             )}
+
+            {/* Help text */}
+            <p className="text-xs text-muted-foreground">
+              Training and data generation jobs will use {gpu.count === 1 ? "this GPU" : "these GPUs"} automatically.
+            </p>
           </CardContent>
         </Card>
       )}
