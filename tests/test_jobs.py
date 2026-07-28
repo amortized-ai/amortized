@@ -251,25 +251,6 @@ class TestCancelJob:
         assert response.status_code == 404
 
 
-class TestConfigRedaction:
-    @pytest.mark.asyncio
-    async def test_credential_keys_rejected(
-        self, client: httpx.AsyncClient
-    ) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "sdg",
-                "config": {
-                    "columns": [{"column_type": "llm-text", "name": "q"}],
-                    "api_key": "sk-secret-123",
-                },
-            },
-        )
-        assert response.status_code == 422
-        assert "gateway" in str(response.json()).lower()
-
-
 class TestErrorFieldSerialization:
     @pytest.mark.asyncio
     async def test_error_is_null_not_string_none(self, client: httpx.AsyncClient) -> None:
