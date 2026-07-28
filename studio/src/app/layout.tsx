@@ -28,11 +28,6 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Breadcrumbs } from "@/components/breadcrumbs"
@@ -232,26 +227,16 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-          <ResizablePanel defaultSize={100} minSize={40}>
-            <main className="h-full min-w-0 overflow-auto p-4">
-              <Outlet />
-            </main>
-          </ResizablePanel>
+        <div className="flex flex-1 min-h-0">
+          <main className="flex-1 min-w-0 overflow-auto p-4">
+            <Outlet />
+          </main>
           {showChatSidebar && (
-            <>
-              <ResizableHandle withHandle />
-              <ResizablePanel
-                defaultSize={30}
-                minSize={20}
-                maxSize={50}
-                id="chat-sidebar"
-              >
-                <ChatSidebar />
-              </ResizablePanel>
-            </>
+            <div className="w-[400px] shrink-0">
+              <ChatSidebar />
+            </div>
           )}
-        </ResizablePanelGroup>
+        </div>
       </SidebarInset>
       <CommandPalette />
       <TutorialOverlay />
