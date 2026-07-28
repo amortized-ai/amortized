@@ -48,9 +48,9 @@ export function RecipeTable({
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[30%]">Name</TableHead>
-            <TableHead className="w-[10%]">Type</TableHead>
-            <TableHead className="w-[50%]">Description</TableHead>
+            <TableHead className="w-[25%]">Name</TableHead>
+            <TableHead className="w-[15%]">Type</TableHead>
+            <TableHead className="w-[45%]">Description</TableHead>
             <TableHead className="w-[10%]">Version</TableHead>
             {onDeleteRecipe && <TableHead className="w-[5%]" />}
           </TableRow>
@@ -85,7 +85,7 @@ export function RecipeTable({
                 data-testid={`recipe-row-${recipe.name}`}
               >
                 <TableCell className="font-medium">{formatRecipeName(recipe.name)}</TableCell>
-                <TableCell>
+                <TableCell className="overflow-hidden">
                   {(() => {
                     const effectiveType = getEffectiveType(recipe)
                     return effectiveType ? (
@@ -97,7 +97,7 @@ export function RecipeTable({
                     )
                   })()}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground max-w-[300px] truncate">
+                <TableCell className="text-sm text-muted-foreground truncate">
                   {recipe.description || "—"}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
