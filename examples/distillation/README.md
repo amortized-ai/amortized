@@ -1,5 +1,9 @@
 # Distillation
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively.
+
 Compress a larger teacher model into a tiny student model using Generalized
 Knowledge Distillation (GKD) — no synthetic data generation step needed.
 

@@ -1,5 +1,10 @@
 # Summarizer
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively — tell Morty "build a summarizer"
+> and it will guide you through SDG and training.
+
 Fine-tune a model to condense customer conversations into structured summaries,
 replacing verbose frontier model outputs with consistent, formatted summaries.
 
