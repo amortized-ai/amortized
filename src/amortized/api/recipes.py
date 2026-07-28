@@ -65,7 +65,7 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     if not resolved.is_relative_to(base_dir.resolve()):
         raise HTTPException(status_code=400, detail="Invalid recipe name")
 
-    if not path.is_file() and not name.startswith(("templates/", "examples/")):
+    if not path.is_file() and not name.startswith("templates/"):
         name = f"templates/custom/{name}"
         path = base_dir / f"{name}.yaml"
         if not path.resolve().is_relative_to(base_dir.resolve()):
@@ -99,7 +99,7 @@ async def delete_recipe(name: str) -> None:
 class RecipeJobRequest(BaseModel):
     recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
-    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training→Eval)")
+    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training)")
     dry_run: bool = Field(False, description="Validate without creating the job")
 
 

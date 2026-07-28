@@ -281,10 +281,10 @@ The table is a thin bridge between K8s (runtime) and MLflow (science). Stores on
 ```sql
 CREATE TABLE jobs (
     id              TEXT PRIMARY KEY,    -- UUID, amortized job ID
-    type            TEXT NOT NULL,       -- 'sdg', 'training', 'eval'
+    type            TEXT NOT NULL,       -- 'sdg', 'training'
     status          TEXT NOT NULL,       -- 'queued', 'provisioning', 'running', 'succeeded', 'failed', 'cancelled'
     config          TEXT NOT NULL,       -- JSON snapshot of submitted config
-    recipe          TEXT DEFAULT '',     -- recipe name if used (e.g. 'examples/ticket-classifier/synth')
+    recipe          TEXT DEFAULT '',     -- recipe name if used (e.g. 'templates/sdg/knowledge-ingestion')
     user_id         TEXT DEFAULT '',     -- OpenShift user who submitted
     k8s_job_name    TEXT DEFAULT '',     -- K8s Job resource name (for lifecycle ops)
     k8s_namespace   TEXT DEFAULT '',     -- namespace where the Job runs

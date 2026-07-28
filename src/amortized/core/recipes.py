@@ -84,7 +84,7 @@ def list_recipes(*, recipes_dir: Path | None = None) -> list[dict[str, Any]]:
     base_dir = get_recipes_dir(recipes_dir)
     results: list[dict[str, Any]] = []
 
-    scan_dirs = [base_dir / "templates", base_dir / "examples"]
+    scan_dirs = [base_dir / "templates"]
     if recipes_dir is not None:
         scan_dirs = [base_dir]
 

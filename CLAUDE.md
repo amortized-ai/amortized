@@ -29,17 +29,16 @@ cd studio && npm run build     # production build
 
 ## Architecture
 
-3 job types (v1), each dispatched as a K8s Job, configured via YAML:
+2 job types (v1), each dispatched as a K8s Job, configured via YAML:
 
 - Training: `ghcr.io/amortized-ai/training:latest` — `thub <algo> --config config.yaml` (training-hub) or `trl <algo> --config config.yaml` (TRL)
-- SDG: `ghcr.io/amortized-ai/asynth:latest` — `asynth synthesize --config config.yaml`
-- Eval: `ghcr.io/amortized-ai/asynth:latest` — `asynth judge --config config.yaml`
+- SDG: `ghcr.io/amortized-ai/data-designer:latest` — Data Designer microservice for synthetic data generation
 
 Config-only, no generated Python scripts. Single code path for all backends (K8s, SSH, local).
 
 ### Compute Backends
 
-- **Kubernetes** (`backends/kubernetes.py`) — K8s Jobs for training/SDG/eval, Deployments for serve. ConfigMaps for config delivery, init containers for S3 data download.
+- **Kubernetes** (`backends/kubernetes.py`) — K8s Jobs for training/SDG. ConfigMaps for config delivery, init containers for S3 data download.
 - **SSH** (`backends/ssh.py`) — podman/docker on remote GPU nodes. Same YAML configs, different delivery mechanism.
 - **Local** (`backends/local.py`) — subprocess on the local machine. For development.
 
@@ -71,12 +70,11 @@ k8s/kind/              ← kind cluster config + NVIDIA device plugin
 
 ## Key Patterns
 
-- **Config translation**: `_training_hub_config_yaml()` and `_build_synth_config()`, `_eval_config_yaml()` in `worker.py`
+- **Config translation**: `_training_hub_config_yaml()` and `_build_synth_config()` in `worker.py`
 - **MLflow run tracking**: `mlflow_run_id` stored on job record, resolved via `_resolve_mlflow_artifact_uri()`
-- **Parent job chaining**: `parent_job_id` links SDG→Training→Eval; worker resolves upstream MLflow artifacts
+- **Parent job chaining**: `parent_job_id` links SDG→Training; worker resolves upstream MLflow artifacts
 - **Init containers**: S3 data download via `aws s3 cp/sync` for training data from MLflow artifact store
-- **Judge templates**: loaded from `templates/eval/` by `core/judge_templates.py`
-- **Recipes**: loaded from `templates/` and `examples/` via `core/recipes.py`, support `extends:` for inheritance
+- **Recipes**: loaded from `templates/` via `core/recipes.py`, support `extends:` for inheritance
 - **Credentials**: API keys stripped from config before DB storage, injected as per-job K8s Secrets
 
 ## Architecture Decisions
