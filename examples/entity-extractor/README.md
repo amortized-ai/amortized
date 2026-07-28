@@ -1,5 +1,10 @@
 # Entity Extractor
 
+> **Note:** The CLI recipe files (`synth.yaml`, `train.yaml`, `eval.yaml`)
+> were removed in the Data Designer migration. Use **Amortized Studio → Chat**
+> to build this pipeline interactively — tell Morty "build an entity extractor"
+> and it will guide you through SDG and training.
+
 Fine-tune a model to extract structured entities (people, organizations,
 dates, products) from unstructured text, replacing expensive frontier model calls.
 
