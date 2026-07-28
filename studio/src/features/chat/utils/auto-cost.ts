@@ -24,11 +24,11 @@ const TRAINING_SIGNALS = [
 ]
 
 const TEACHER_MODEL_SIGNALS = [
-  /which (?:teacher )?model.*(?:generate|use|select).*\?/i,
-  /pick (?:a|your) (?:teacher )?model/i,
-  /choose (?:a|your) (?:teacher )?model/i,
-  /(?:one|only) (?:teacher )?model.*available/i,
-  /which model would you like to use\?/i,
+  /which teacher model/i,
+  /pick (?:a|your) teacher model/i,
+  /choose (?:a|your) teacher model/i,
+  /(?:one|only) teacher model.*available/i,
+  /which model.*(?:generate|create).*(?:data|samples)\?/i,
 ]
 
 const COMPARE_SDG_TOOLS = new Set(["compare sdg models", "compare_sdg_models"])
@@ -194,17 +194,22 @@ export async function autoCostEstimate(
   const numSamples = extractSampleCount(messages, latestContent)
 
   // Check confirmation FIRST — "Teacher Model" in the table was falsely
-  // triggering the teacher model comparison instead of the cost summary
+  // triggering the teacher model comparison instead of the cost summary.
+  // Skip if the agent already shows a cost inline (avoids conflicting values).
   if (isConfirmationStep(latestContent)) {
+    if (/\$\d+(?:\.\d+)?/.test(latestContent)) return null
+
     const confirmPhase = phaseTag ? phaseTagToPhase(phaseTag)
       : /\btraining\s+plan\b|\bstudent model\b|\bfine-?tun.*plan\b/i.test(latestContent) ? "training"
       : phase
 
     if (confirmPhase === "sdg") {
+      if (hasCostToolBeenCalled(messages, new Set(["estimate sdg cost", "estimate_sdg_cost"]))) return null
       const model = extractModel(messages)
       return callCostApi("/api/v1/costs/sdg", { num_samples: numSamples, model }, "estimate sdg cost")
     }
     if (confirmPhase === "training") {
+      if (hasCostToolBeenCalled(messages, new Set(["training cost summary"]))) return null
       const modelId = extractStudentModelId(messages)
       return callCostApi("/api/v1/costs/training/method", { model_id: modelId, num_samples: numSamples }, "training cost summary")
     }

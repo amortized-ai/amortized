@@ -16,6 +16,7 @@ export type {
   PlanStep,
   PlanPhase,
   PhasePlan,
+  ProgressStep,
 } from "./types"
 export { ActionCard } from "./components/action-card"
 export { ChatInput } from "./components/chat-input"

@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { Cpu } from "lucide-react"
+import { Cpu, HardDrive, Clock } from "lucide-react"
 
 interface TrainingModel {
   model_id: string
@@ -16,12 +16,6 @@ interface TrainingCostEstimate {
   num_samples: number
   num_epochs: number
   models: TrainingModel[]
-}
-
-function formatUSD(value: number): string {
-  const n = Number(value)
-  if (n < 0.01 && n > 0) return "< $0.01"
-  return `$${n.toFixed(2)}`
 }
 
 function formatTime(minutes: number): string {
@@ -42,9 +36,9 @@ export function TrainingCostCard({ estimate }: TrainingCostCardProps) {
       <CardContent className="p-4">
         <div className="flex items-center gap-2 mb-3">
           <Cpu className="h-4 w-4 text-rh-blue dark:text-rh-blue" />
-          <span className="text-sm font-semibold text-foreground">Training Cost Estimate</span>
+          <span className="text-sm font-semibold text-foreground">Student Model Comparison</span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {estimate.num_samples.toLocaleString()} samples &middot; {estimate.num_epochs} epochs
+            {estimate.num_samples.toLocaleString()} samples
           </span>
         </div>
 
@@ -52,17 +46,25 @@ export function TrainingCostCard({ estimate }: TrainingCostCardProps) {
           {estimate.models.map((model) => (
             <div
               key={model.model_id}
-              className="flex items-center justify-between rounded-lg border border-rh-blue-light dark:border-rh-blue-dark/50 bg-background/60 dark:bg-rh-gray-90/30 px-3 py-2"
+              className="flex items-center justify-between rounded-lg border border-rh-blue-light dark:border-rh-blue-dark/50 bg-background/60 dark:bg-rh-gray-90/30 px-3 py-2.5"
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">{model.label}</p>
-                <p className="text-xs text-muted-foreground">
-                  {model.gpu_type} &middot; {model.vram_gb}GB VRAM &middot; {formatTime(model.estimated_time_minutes)}
-                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">{model.description}</p>
               </div>
-              <div className="text-right ml-3">
-                <p className="text-sm font-bold text-foreground">{formatUSD(model.estimated_cost)}</p>
-                <p className="text-[10px] text-muted-foreground">{formatUSD(model.cost_per_gpu_hour)}/hr</p>
+              <div className="flex items-center gap-4 ml-3 shrink-0">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <HardDrive className="h-3 w-3" />
+                  <span>{model.vram_gb}GB</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Cpu className="h-3 w-3" />
+                  <span>{model.gpu_type}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs font-medium text-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span>{formatTime(model.estimated_time_minutes)}</span>
+                </div>
               </div>
             </div>
           ))}

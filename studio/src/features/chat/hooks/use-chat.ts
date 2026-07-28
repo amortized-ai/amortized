@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { sendOpenCodeMessage, generateChatTitle } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
-import { useGatewayRoutes } from "@/features/settings"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-chat")
@@ -12,7 +11,6 @@ import type {
   ToolResult,
   OpenCodeResponse,
 } from "../types"
-import { autoCostEstimate } from "../utils/auto-cost"
 import { extractPhase } from "../utils/workflow-options"
 
 function generateId(): string {
@@ -121,10 +119,6 @@ export function useChat() {
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
 
-  const { data: gatewayRoutes } = useGatewayRoutes()
-  const gatewayRoutesRef = useRef(gatewayRoutes)
-  useEffect(() => { gatewayRoutesRef.current = gatewayRoutes }, [gatewayRoutes])
-
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
   const sendMessage = useCallback(
@@ -199,18 +193,34 @@ export function useChat() {
         })
 
         const parsed = parseOpenCodeResponse(response)
-        const { cleanText: responseContent, phase } = extractPhase(parsed.content)
+        const { cleanText: responseContent, phase: extractedPhase } = extractPhase(parsed.content)
         const toolResults = parsed.toolResults
 
-        try {
-          const allMessages = [...messagesRef.current, userMessage]
-          const autoCost = await autoCostEstimate(allMessages, responseContent, phase, gatewayRoutesRef.current)
-          if (autoCost) {
-            toolResults.push(autoCost)
-          }
-        } catch {
-          /* auto-cost is best-effort */
+        let phase: string | null = extractedPhase
+        const phaseTool = toolResults.find((t) => t.name === "signal phase" || t.name === "signal_phase")
+        if (phaseTool?.result) {
+          try {
+            const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+            if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+          } catch { /* ignore */ }
         }
+
+        let optionCards: import("../types").OptionCard[] = []
+        const optionsTool = toolResults.find((t) => t.name === "present options" || t.name === "present_options")
+        if (optionsTool?.result) {
+          try {
+            const p = typeof optionsTool.result === "string" ? JSON.parse(optionsTool.result) : optionsTool.result
+            if (Array.isArray(p?.options)) {
+              optionCards = p.options.map((o: Record<string, string>) => ({
+                title: o.title ?? "",
+                description: o.description ?? "",
+                value: o.value ?? o.title ?? "",
+              }))
+            }
+          } catch { /* ignore */ }
+        }
+
+
 
         if (toolResults.length > 0) {
           setCurrentToolCall(toolResults[toolResults.length - 1]!)
@@ -224,6 +234,7 @@ export function useChat() {
             ...prev[idx]!,
             content: responseContent,
             toolResults,
+            optionCards,
             phase: phase ?? undefined,
           }
           return updated
@@ -235,6 +246,7 @@ export function useChat() {
           content: responseContent,
           timestamp: new Date().toISOString(),
           toolResults,
+          optionCards,
           phase: phase ?? undefined,
         })
 

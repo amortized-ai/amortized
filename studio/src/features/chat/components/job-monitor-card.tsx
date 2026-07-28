@@ -60,6 +60,20 @@ function statusToStageLabel(status: JobStatus, jobType: string): string {
   }
 }
 
+function friendlyError(raw: string): string {
+  try {
+    const bodyMatch = /HTTP response body:\s*(\{[\s\S]*\})/.exec(raw)
+    if (bodyMatch) {
+      const body = JSON.parse(bodyMatch[1]!)
+      if (body?.message) return body.message
+    }
+  } catch { /* fall through */ }
+  const reasonMatch = /\((\d+)\)\s*Reason:\s*([^\n]+)/.exec(raw)
+  if (reasonMatch) return `${reasonMatch[2]} (${reasonMatch[1]})`
+  if (raw.length > 200) return raw.slice(0, 200) + "…"
+  return raw
+}
+
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000)
   if (totalSeconds < 60) return `${totalSeconds}s`
@@ -208,7 +222,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       {/* Error message */}
       {error && (status === "failed" || status === "cancelled") && (
         <p className="mt-2 text-xs text-rh-danger dark:text-rh-danger">
-          {error}
+          {friendlyError(error)}
         </p>
       )}
 

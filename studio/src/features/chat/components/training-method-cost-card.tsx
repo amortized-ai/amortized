@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { Layers, CircleCheck } from "lucide-react"
+import { Layers, CircleCheck, HardDrive, Clock, Cpu } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface TrainingMethod {
@@ -20,12 +20,6 @@ interface TrainingMethodCostEstimate {
   num_samples: number
   num_epochs: number
   methods: TrainingMethod[]
-}
-
-function formatUSD(value: number): string {
-  const n = Number(value)
-  if (n < 0.01 && n > 0) return "< $0.01"
-  return `$${n.toFixed(2)}`
 }
 
 function formatTime(minutes: number): string {
@@ -57,36 +51,46 @@ export function TrainingMethodCostCard({ estimate }: TrainingMethodCostCardProps
             <div
               key={method.method}
               className={cn(
-                "flex items-center justify-between rounded-lg border px-3 py-2.5",
+                "rounded-lg border px-3 py-2.5",
                 method.recommended
                   ? "border-rh-green/30 dark:border-rh-green-dark/50 bg-rh-green-light/50 dark:bg-rh-green-dark/20"
                   : "border-rh-blue-light dark:border-rh-blue-dark/30 bg-background/60 dark:bg-rh-gray-90/30",
               )}
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-foreground">{method.label}</p>
-                  {method.recommended && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-rh-green-light dark:bg-rh-green-dark/40 px-1.5 py-0.5 text-[10px] font-semibold text-rh-green-dark dark:text-rh-green">
-                      <CircleCheck className="h-2.5 w-2.5" />
-                      Recommended
-                    </span>
-                  )}
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{method.label}</p>
+                    {method.recommended && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rh-green-light dark:bg-rh-green-dark/40 px-1.5 py-0.5 text-[10px] font-semibold text-rh-green-dark dark:text-rh-green">
+                        <CircleCheck className="h-2.5 w-2.5" />
+                        Recommended
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{method.description}</p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{method.description}</p>
-                <p className="text-xs text-muted-foreground/70 mt-0.5">
-                  {method.gpu_type} &middot; {method.vram_gb}GB VRAM &middot; {formatTime(method.estimated_time_minutes)} &middot; {method.relative_time}
-                </p>
-              </div>
-              <div className="text-right ml-3 shrink-0">
-                <p className="text-sm font-bold tabular-nums text-foreground">{formatUSD(method.estimated_cost)}</p>
+                <div className="flex items-center gap-4 ml-3 shrink-0">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <HardDrive className="h-3 w-3" />
+                    <span>{method.vram_gb}GB</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Cpu className="h-3 w-3" />
+                    <span>{method.gpu_type}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs font-medium text-foreground">
+                    <Clock className="h-3 w-3" />
+                    <span>{formatTime(method.estimated_time_minutes)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
         <p className="mt-3 text-[10px] text-muted-foreground/50">
-          Estimates based on {estimate.num_epochs} epochs &middot; costs vary by provider
+          Estimates based on {estimate.num_epochs} epoch{estimate.num_epochs > 1 ? "s" : ""} &middot; runtime varies by GPU
         </p>
       </CardContent>
     </Card>

@@ -7,11 +7,8 @@ import type { ChatMessage, OptionCard } from "../types"
 import { ToolActivity } from "./tool-badge"
 import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
-import { detectWorkflowStep } from "../utils/workflow-options"
-import { useGatewayRoutes } from "@/features/settings"
-import { CostAnalysisCard } from "./cost-analysis-card"
-import { TrainingCostCard } from "./training-cost-card"
 import { ModelComparisonCard } from "./model-comparison-card"
+import { TrainingCostCard } from "./training-cost-card"
 import { TrainingMethodCostCard } from "./training-method-cost-card"
 import { JobMonitorCard } from "./job-monitor-card"
 
@@ -22,9 +19,9 @@ function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
 }
 
-const NUMBERED_OPTION_RE = /^\d+\)\s+(.+)/
+const NUMBERED_OPTION_RE = /^\d+[.)]\s+(.+)/
 const BULLET_OPTION_RE = /^[-•]\s+(.+)/
-const DASH_OPTION_RE = /^(?:\*\*)?(.+?)(?:\*\*)?\s*—\s+(.+)/
+const BARE_OPTION_RE = /^(?:\*\*)?([^—]{2,40})(?:\*\*)?\s*—\s+(.{2,80})$/
 
 /**
  * Strip markdown inline formatting so length checks reflect visible text.
@@ -34,6 +31,21 @@ function stripMarkdown(text: string): string {
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/\*(.+?)\*/g, "$1")
     .replace(/`(.+?)`/g, "$1")
+}
+
+function stripInlineOptions(content: string): string {
+  return content
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim()
+      if (NUMBERED_OPTION_RE.test(t)) return false
+      if (BULLET_OPTION_RE.test(t)) return false
+      if (BARE_OPTION_RE.test(t)) return false
+      return true
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
 }
 
 function isActionSuggestion(text: string): boolean {
@@ -59,24 +71,31 @@ function parseOptionsFromText(content: string): OptionCard[] {
       const description = dashParts.length > 1 ? dashParts.slice(1).join(" — ").trim() : ""
       if (title.length > 120) continue
       currentGroup.push({ title, description, value: text })
-    } else {
-      const dashMatch = DASH_OPTION_RE.exec(line)
-      if (dashMatch?.[1] && dashMatch[2]) {
-        const title = stripMarkdown(dashMatch[1].trim())
-        const description = dashMatch[2].trim()
-        if (title.length > 60) continue
-        if (description.length > 80) continue
-        if (/^(perfect|great|awesome|excellent|sure|ok|got it|nice|wonderful)/i.test(title)) continue
-        currentGroup.push({ title, description, value: `${title} — ${description}` })
-      } else if (currentGroup.length > 0) {
-        if (currentGroup.length >= 2) lastGroup = currentGroup
-        currentGroup = []
-      }
+    } else if (currentGroup.length > 0) {
+      if (currentGroup.length >= 2) lastGroup = currentGroup
+      currentGroup = []
     }
   }
   if (currentGroup.length >= 2) lastGroup = currentGroup
+  if (lastGroup.length > 0) return lastGroup
 
-  return lastGroup
+  let bareGroup: OptionCard[] = []
+  let lastBareGroup: OptionCard[] = []
+  for (const line of lines) {
+    const bare = BARE_OPTION_RE.exec(line)
+    if (bare?.[1] && bare[2]) {
+      const title = stripMarkdown(bare[1].trim())
+      const description = bare[2].trim()
+      if (/[.!?]$/.test(title) || /[.!?]$/.test(description)) { bareGroup = []; continue }
+      bareGroup.push({ title, description, value: `${title} — ${description}` })
+    } else if (bareGroup.length > 0) {
+      lastBareGroup = bareGroup
+      bareGroup = []
+    }
+  }
+  if (bareGroup.length > 0) lastBareGroup = bareGroup
+
+  return lastBareGroup
 }
 
 interface MessageBubbleProps {
@@ -91,26 +110,23 @@ interface MessageBubbleProps {
 export function MessageBubble({
   message,
   isLatest,
-  allMessages,
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
 }: MessageBubbleProps) {
   const isUser = message.role === "user"
 
-  const displayContent = useMemo(
-    () => (isUser ? message.content : stripToolXml(message.content)),
-    [isUser, message.content],
-  )
-
-  const { data: gatewayRoutes } = useGatewayRoutes()
+  const displayContent = useMemo(() => {
+    if (isUser) return message.content
+    let text = stripToolXml(message.content)
+    if (message.optionCards.length > 0) text = stripInlineOptions(text)
+    return text
+  }, [isUser, message.content, message.optionCards.length])
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
-    const workflow = detectWorkflowStep(displayContent, allMessages, gatewayRoutes)
-    if (workflow) return workflow.cards
     return parseOptionsFromText(displayContent)
-  }, [isUser, displayContent, message.optionCards.length, allMessages, gatewayRoutes])
+  }, [isUser, displayContent, message.optionCards.length])
 
   // Filter explicit optionCards: only action-oriented items become cards;
   // the rest are rendered as plain text lines below the message.
@@ -199,51 +215,6 @@ export function MessageBubble({
     return [viewJobCard]
   }, [jobId, jobType, completedStatus, mlflowRunId])
 
-  const costEstimate = useMemo(() => {
-    if (isUser) return null
-    const costTool = message.toolResults.find(
-      (t) => t.name === "estimate_sdg_cost" || t.name === "estimate sdg cost"
-    )
-    if (!costTool?.result) return null
-    try {
-      const parsed = typeof costTool.result === "string"
-        ? JSON.parse(costTool.result)
-        : costTool.result
-      if (parsed?.cost && parsed?.comparison) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
-  const trainingCostEstimate = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(
-      (t) => t.name === "estimate_training_cost" || t.name === "estimate training cost"
-    )
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string"
-        ? JSON.parse(tool.result)
-        : tool.result
-      if (parsed?.models && Array.isArray(parsed.models)) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
-  const trainingMethodCost = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(
-      (t) => t.name === "estimate_training_method_cost" || t.name === "estimate training method cost"
-    )
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string"
-        ? JSON.parse(tool.result)
-        : tool.result
-      if (parsed?.methods && Array.isArray(parsed.methods)) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
   const modelComparison = useMemo(() => {
     if (isUser) return null
     const tool = message.toolResults.find(
@@ -259,39 +230,55 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const trainingCostSummary = useMemo(() => {
+  const trainingEstimate = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find((t) => t.name === "training cost summary")
+    const tool = message.toolResults.find(
+      (t) => t.name === "estimate_training_cost" || t.name === "estimate training cost"
+    )
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-      if (parsed?.comparison) return parsed
+      if (parsed?.models && Array.isArray(parsed.models)) return parsed
+    } catch { /* ignore */ }
+    return null
+  }, [isUser, message.toolResults])
+
+  const trainingMethodEstimate = useMemo(() => {
+    if (isUser) return null
+    const tool = message.toolResults.find(
+      (t) => t.name === "estimate_training_method_cost" || t.name === "estimate training method cost"
+    )
+    if (!tool?.result) return null
+    try {
+      const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+      if (parsed?.methods && Array.isArray(parsed.methods)) return parsed
     } catch { /* ignore */ }
     return null
   }, [isUser, message.toolResults])
 
   const visibleToolResults = useMemo(() => {
-    const hidden = new Set<string>()
-    if (trainingCostSummary) hidden.add("training cost summary")
-    if (costEstimate) {
-      hidden.add("estimate_sdg_cost")
-      hidden.add("estimate sdg cost")
-    }
-    if (trainingCostEstimate) {
-      hidden.add("estimate_training_cost")
-      hidden.add("estimate training cost")
-    }
-    if (trainingMethodCost) {
-      hidden.add("estimate_training_method_cost")
-      hidden.add("estimate training method cost")
-    }
+    const hidden = new Set<string>([
+      "signal_progress",
+      "signal progress",
+      "signal_phase",
+      "signal phase",
+      "present_options",
+      "present options",
+    ])
     if (modelComparison) {
       hidden.add("compare_sdg_models")
       hidden.add("compare sdg models")
     }
-    if (hidden.size === 0) return message.toolResults
+    if (trainingEstimate) {
+      hidden.add("estimate_training_cost")
+      hidden.add("estimate training cost")
+    }
+    if (trainingMethodEstimate) {
+      hidden.add("estimate_training_method_cost")
+      hidden.add("estimate training method cost")
+    }
     return message.toolResults.filter((t) => !hidden.has(t.name))
-  }, [message.toolResults, costEstimate, trainingCostEstimate, trainingMethodCost, modelComparison])
+  }, [message.toolResults, modelComparison, trainingEstimate, trainingMethodEstimate])
 
 
   return (
@@ -334,44 +321,21 @@ export function MessageBubble({
           )
         )}
 
-        {costEstimate && (
-          <div className="mt-3">
-            <CostAnalysisCard estimate={costEstimate} />
-          </div>
-        )}
-
-        {trainingCostEstimate && (
-          <div className="mt-3">
-            <TrainingCostCard estimate={trainingCostEstimate} />
-          </div>
-        )}
-
-        {trainingMethodCost && (
-          <div className="mt-3">
-            <TrainingMethodCostCard estimate={trainingMethodCost} />
-          </div>
-        )}
-
         {modelComparison && (
           <div className="mt-3">
             <ModelComparisonCard estimate={modelComparison} />
           </div>
         )}
-        {trainingCostSummary?.comparison && (
+
+        {trainingEstimate && (
           <div className="mt-3">
-            <CostAnalysisCard
-              phase="training"
-              estimate={{
-                model_label: trainingCostSummary.model_label || "LoRA SFT",
-                num_samples: trainingCostSummary.num_samples || 100,
-                cost: { input: 0, output: 0, total: trainingCostSummary.methods?.[0]?.estimated_cost ?? 0 },
-                comparison: {
-                  manual_labeling_total: trainingCostSummary.comparison.manual_training_total,
-                  savings_amount: trainingCostSummary.comparison.savings_amount,
-                  savings_percent: trainingCostSummary.comparison.savings_percent,
-                },
-              }}
-            />
+            <TrainingCostCard estimate={trainingEstimate} />
+          </div>
+        )}
+
+        {trainingMethodEstimate && (
+          <div className="mt-3">
+            <TrainingMethodCostCard estimate={trainingMethodEstimate} />
           </div>
         )}
 

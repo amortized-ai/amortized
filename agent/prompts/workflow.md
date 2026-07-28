@@ -173,3 +173,45 @@ error at any point in the workflow:
 
 The user should never click "submit" only to discover nothing happened.
 Validate BEFORE presenting the confirmation table, not after.
+
+## Progress Signaling (MANDATORY)
+
+On EVERY response during a workflow, call `signal_progress` to tell the UI
+what you are doing. The frontend displays these as dynamic progress steps
+that grow as you work — users see exactly what you decided to do.
+
+**Call `signal_progress` with:**
+- `phase` — Current workflow phase: `sdg`, `training`, or `eval`
+- `step_id` — A short stable identifier (snake_case), e.g. `check_models`
+- `label` — Human-readable description, e.g. "Checking available models"
+- `status` — `active` for the current step, `completed` for a finished step
+
+**Rules:**
+1. Signal your CURRENT step as `active` at the start of each response
+2. Signal the PREVIOUS step as `completed` when moving to a new step
+3. Use descriptive labels that reflect what you are actually doing
+4. Do NOT pre-announce future steps — only signal what is happening NOW
+5. If continuing work on the same step, re-signal with the same `step_id`
+6. Call `signal_progress` BEFORE your main response text
+
+**Example flow:**
+```
+User: "build a classifier"
+→ signal_progress(phase="sdg", step_id="understand_task", label="Understanding your task", status="active")
+
+User picks a domain
+→ signal_progress(phase="sdg", step_id="understand_task", label="Understanding your task", status="completed")
+→ signal_progress(phase="sdg", step_id="gather_domain", label="Selecting domain categories", status="active")
+
+Agent checks available models
+→ signal_progress(phase="sdg", step_id="gather_domain", label="Selecting domain categories", status="completed")
+→ signal_progress(phase="sdg", step_id="check_models", label="Checking available models", status="active")
+
+Agent shows confirmation table
+→ signal_progress(phase="sdg", step_id="check_models", label="Checking available models", status="completed")
+→ signal_progress(phase="sdg", step_id="confirm", label="Reviewing configuration", status="active")
+```
+
+You may use ANY `step_id` and `label` that accurately describes your activity.
+There is no fixed list of steps — reflect what you are actually doing.
+If answering a general question (not part of a workflow), omit the call.
