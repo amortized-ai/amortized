@@ -14,23 +14,34 @@ import { clearConversationSession } from "@/lib/api-client"
 
 const MIN_WIDTH = 320
 const MAX_WIDTH = 700
-const DEFAULT_WIDTH = 400
 
-function useResizable() {
-  const [width, setWidth] = useState(DEFAULT_WIDTH)
+export function ChatSidebar() {
+  const navigate = useNavigate()
+  const {
+    currentConversationId,
+    setCurrentConversationId,
+    conversations,
+    addConversation,
+    deleteConversation,
+    replaceAllConversations,
+    setPanelOpen,
+    setPanelWidth,
+    _hasHydrated,
+  } = useChatStore()
+
   const isDragging = useRef(false)
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
+  const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     isDragging.current = true
     const startX = e.clientX
-    const startWidth = width
+    const startWidth = useChatStore.getState().panelWidth
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onMouseMove = (ev: MouseEvent) => {
       if (!isDragging.current) return
-      const delta = startX - e.clientX
+      const delta = startX - ev.clientX
       const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta))
-      setWidth(newWidth)
+      setPanelWidth(newWidth)
     }
 
     const onMouseUp = () => {
@@ -45,24 +56,7 @@ function useResizable() {
     document.body.style.userSelect = "none"
     document.addEventListener("mousemove", onMouseMove)
     document.addEventListener("mouseup", onMouseUp)
-  }, [width])
-
-  return { width, onMouseDown }
-}
-
-export function ChatSidebar() {
-  const { width, onMouseDown } = useResizable()
-  const navigate = useNavigate()
-  const {
-    currentConversationId,
-    setCurrentConversationId,
-    conversations,
-    addConversation,
-    deleteConversation,
-    replaceAllConversations,
-    setPanelOpen,
-    _hasHydrated,
-  } = useChatStore()
+  }, [setPanelWidth])
 
   const {
     messages,
@@ -195,10 +189,10 @@ export function ChatSidebar() {
   ])
 
   return (
-    <div className="flex h-full" style={{ width }}>
+    <div className="flex h-full">
       {/* Resize handle */}
       <div
-        onMouseDown={onMouseDown}
+        onMouseDown={onResizeMouseDown}
         className="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-l hover:bg-primary/10 active:bg-primary/20 transition-colors"
       >
         <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />

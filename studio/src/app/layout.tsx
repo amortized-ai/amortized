@@ -162,6 +162,7 @@ export function AppLayout() {
   const location = useLocation()
   const theme = useUIStore((s) => s.theme)
   const panelOpen = useChatStore((s) => s.panelOpen)
+  const panelWidth = useChatStore((s) => s.panelWidth)
   const isChatPage = location.pathname.startsWith("/chat")
   const showChatSidebar = panelOpen && !isChatPage
 
@@ -232,7 +233,7 @@ export function AppLayout() {
             <Outlet />
           </div>
           {showChatSidebar && (
-            <div className="shrink-0 h-full">
+            <div className="shrink-0 h-full" style={{ width: panelWidth }}>
               <ChatSidebar />
             </div>
           )}

@@ -26,12 +26,14 @@ export type SessionStatus = "unknown" | "connected" | "reconnecting" | "rebuilt"
 interface ChatStoreState {
   currentConversationId: string | null
   panelOpen: boolean
+  panelWidth: number
   conversations: PersistedConversation[]
   sessionMap: Record<string, string>
   sessionStatus: Record<string, SessionStatus>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
   setPanelOpen: (open: boolean) => void
+  setPanelWidth: (width: number) => void
   togglePanel: () => void
   addConversation: (conv: PersistedConversation) => void
   deleteConversation: (id: string) => void
@@ -53,12 +55,14 @@ export const useChatStore = create<ChatStoreState>()(
     (set, get) => ({
       currentConversationId: null,
       panelOpen: false,
+      panelWidth: 400,
       conversations: [],
       sessionMap: {},
       sessionStatus: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
       setPanelOpen: (open) => set({ panelOpen: open }),
+      setPanelWidth: (width) => set({ panelWidth: width }),
       togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
       addConversation: (conv) =>
         set((s) => ({ conversations: [conv, ...s.conversations] })),
@@ -145,6 +149,7 @@ export const useChatStore = create<ChatStoreState>()(
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
         panelOpen: state.panelOpen,
+        panelWidth: state.panelWidth,
         conversations: state.conversations,
         sessionMap: state.sessionMap,
       }),
