@@ -6,6 +6,7 @@ import {
 import {
   getHealth,
   getConfig,
+  getGpuUtilization,
   getMlflowGatewayRoutes,
   createMlflowGatewayRoute,
   deleteMlflowGatewayRoute,
@@ -16,6 +17,7 @@ import {
 import type {
   HealthResponse,
   ConfigResponse,
+  GpuUtilizationResponse,
   MlflowGatewayRoute,
   MlflowGatewayRouteCreate,
   MlflowGatewayConnection,
@@ -28,6 +30,16 @@ export function useHealth(options?: { refetchInterval?: number }) {
     queryFn: getHealth,
     refetchInterval: options?.refetchInterval,
     refetchOnWindowFocus: true,
+  })
+}
+
+export function useGpuUtilization(enabled: boolean) {
+  return useQuery<GpuUtilizationResponse>({
+    queryKey: ["gpu", "utilization"],
+    queryFn: getGpuUtilization,
+    enabled,
+    refetchInterval: enabled ? 5_000 : false,
+    retry: false,
   })
 }
 

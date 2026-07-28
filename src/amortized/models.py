@@ -100,6 +100,23 @@ class HealthResponse(BaseModel):
     gpu: dict[str, Any] = Field(default_factory=dict)
 
 
+class GpuDeviceUtilization(BaseModel):
+    index: int
+    name: str
+    gpu_utilization_pct: float
+    memory_utilization_pct: float
+    memory_total_mb: int
+    memory_used_mb: int
+    memory_free_mb: int
+    temperature_celsius: int | None
+
+
+class GpuUtilizationResponse(BaseModel):
+    available: bool
+    devices: list[GpuDeviceUtilization] = Field(default_factory=list)
+    timestamp: str
+
+
 class DryRunResponse(BaseModel):
     dry_run: bool = True
     valid: bool

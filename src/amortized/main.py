@@ -22,7 +22,12 @@ from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
 from amortized.db import close_db, init_db
 from amortized.mcp.server import create_mcp_server
-from amortized.models import ConfigResponse, HealthResponse
+from amortized.models import (
+    ConfigResponse,
+    GpuDeviceUtilization,
+    GpuUtilizationResponse,
+    HealthResponse,
+)
 from amortized.worker import cleanup_orphaned_jobs, worker_loop
 
 logging.basicConfig(
@@ -242,6 +247,69 @@ async def health() -> dict[str, object]:
         "timestamp": datetime.now(UTC).isoformat(),
         "gpu": _detect_gpu(),
     }
+
+
+def _detect_gpu_utilization() -> list[GpuDeviceUtilization]:
+    nvidia_smi = shutil.which("nvidia-smi")
+    if nvidia_smi is None:
+        return []
+
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                nvidia_smi,
+                "--query-gpu=index,name,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free,temperature.gpu",
+                "--format=csv,nounits,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+    except Exception:
+        return []
+
+    devices: list[GpuDeviceUtilization] = []
+    for line in result.stdout.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 8:
+            continue
+        try:
+            temp_raw = parts[7]
+            temp = int(temp_raw) if temp_raw not in ("[N/A]", "N/A", "") else None
+            devices.append(
+                GpuDeviceUtilization(
+                    index=int(parts[0]),
+                    name=parts[1],
+                    gpu_utilization_pct=float(parts[2]),
+                    memory_utilization_pct=float(parts[3]),
+                    memory_total_mb=int(parts[4]),
+                    memory_used_mb=int(parts[5]),
+                    memory_free_mb=int(parts[6]),
+                    temperature_celsius=temp,
+                )
+            )
+        except (ValueError, IndexError):
+            continue
+
+    return devices
+
+
+@app.get(
+    "/api/v1/gpu/utilization",
+    response_model=GpuUtilizationResponse,
+    operation_id="gpu_utilization",
+)
+async def gpu_utilization() -> GpuUtilizationResponse:
+    devices = _detect_gpu_utilization()
+    return GpuUtilizationResponse(
+        available=len(devices) > 0,
+        devices=devices,
+        timestamp=datetime.now(UTC).isoformat(),
+    )
 
 
 @app.get("/api/v1/config", response_model=ConfigResponse, operation_id="get_config")

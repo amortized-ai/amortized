@@ -19,7 +19,6 @@ import {
   Trash2,
   Server,
   Zap,
-  Cpu,
   Eye,
   EyeOff,
   ArrowRight,
@@ -31,8 +30,8 @@ import { PageHeader } from "@/components/page-header"
 import { SearchInput } from "@/components/search-input"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { PrerequisitesCard } from "./components/prerequisites-card"
+import { GpuUtilizationCard } from "./components/gpu-utilization-card"
 import {
-  useHealth,
   useConfig,
   useGatewayRoutes,
   useCreateGatewayRoute,
@@ -392,7 +391,6 @@ function AgentProviderSection() {
 
 export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
-  const { data: healthData } = useHealth({ refetchInterval: 30000 })
   const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
   const { data: connections = [], isLoading: connectionsLoading } = useGatewayConnections()
   const deleteRoute = useDeleteGatewayRoute()
@@ -408,8 +406,6 @@ export default function SettingsPage() {
       r.model.name.toLowerCase().includes(q)
     )
   }, [routes, routeSearch])
-
-  const gpu = healthData?.gpu
 
   return (
     <div className="space-y-6 overflow-x-hidden max-w-full">
@@ -489,46 +485,8 @@ export default function SettingsPage() {
         <PrerequisitesCard />
       </div>
 
-      {/* GPU Status */}
-      {gpu && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e0f0ff] text-[#0066cc] dark:bg-[#003366]/40 dark:text-[#4394e5]">
-                <Cpu className="h-3.5 w-3.5" />
-              </div>
-              <CardTitle className="text-sm">GPU</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {gpu.available && gpu.count && gpu.count > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-[#e9f7df] text-[#204d00] border-[#afdc8f] dark:bg-[#204d00]/40 dark:text-[#63993d] dark:border-[#204d00]">
-                    {gpu.count} GPU{gpu.count > 1 ? "s" : ""} available
-                  </Badge>
-                </div>
-                {gpu.devices && gpu.devices.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {gpu.devices.map((device, i) => (
-                      <Badge key={i} variant="outline" className="font-mono text-xs">
-                        {device}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">No GPU detected</p>
-                <p className="text-xs text-muted-foreground">
-                  {gpu.note || "Training jobs require a GPU. Configure an SSH backend with GPU access or run on a GPU-enabled machine."}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* GPU Utilization */}
+      <GpuUtilizationCard />
 
       {/* Platform Configuration */}
       {configLoading ? (

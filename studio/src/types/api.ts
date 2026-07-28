@@ -111,6 +111,23 @@ export interface HealthResponse {
   }
 }
 
+export interface GpuDeviceUtilization {
+  index: number
+  name: string
+  gpu_utilization_pct: number
+  memory_utilization_pct: number
+  memory_total_mb: number
+  memory_used_mb: number
+  memory_free_mb: number
+  temperature_celsius: number | null
+}
+
+export interface GpuUtilizationResponse {
+  available: boolean
+  devices: GpuDeviceUtilization[]
+  timestamp: string
+}
+
 export interface ConfigResponse {
   mlflow_tracking_uri: string
   mlflow_gateway_uri: string | null

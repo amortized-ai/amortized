@@ -4,6 +4,7 @@ import { getLogger } from "@/lib/logger"
 const logger = getLogger("api-client")
 import type {
   ConfigResponse,
+  GpuUtilizationResponse,
   HealthResponse,
   Job,
   JobFilters,
@@ -328,6 +329,10 @@ export async function generateChatTitle(message: string): Promise<string> {
 export function getHealth(): Promise<HealthResponse> {
   logger.debug("getHealth")
   return get<HealthResponse>("/api/v1/health")
+}
+
+export function getGpuUtilization(): Promise<GpuUtilizationResponse> {
+  return get<GpuUtilizationResponse>("/api/v1/gpu/utilization")
 }
 
 export function getConfig(): Promise<ConfigResponse> {

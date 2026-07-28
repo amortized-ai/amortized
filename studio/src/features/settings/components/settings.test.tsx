@@ -11,9 +11,12 @@ const mockGetGatewayRoutes = vi.fn()
 const mockGetGatewayConnections = vi.fn()
 const mockSearchMlflowRuns = vi.fn()
 
+const mockGetGpuUtilization = vi.fn()
+
 vi.mock("@/lib/api-client", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
+  getGpuUtilization: (...args: unknown[]) => mockGetGpuUtilization(...args),
   getMlflowGatewayRoutes: (...args: unknown[]) => mockGetGatewayRoutes(...args),
   getMlflowGatewayConnections: (...args: unknown[]) => mockGetGatewayConnections(...args),
   createMlflowGatewayRoute: vi.fn(),
@@ -65,6 +68,7 @@ const routes: MlflowGatewayRoute[] = [
 describe("SettingsPage", () => {
   it("renders the settings page with config", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, devices: [], timestamp: "" })
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
@@ -85,6 +89,7 @@ describe("SettingsPage", () => {
 
   it("renders prerequisites card", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, devices: [], timestamp: "" })
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
@@ -97,6 +102,7 @@ describe("SettingsPage", () => {
 
   it("shows gateway routes when available", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, devices: [], timestamp: "" })
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes })
     mockGetGatewayConnections.mockResolvedValue([])
@@ -112,6 +118,7 @@ describe("SettingsPage", () => {
 
   it("shows empty gateway message when no routes", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, devices: [], timestamp: "" })
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
