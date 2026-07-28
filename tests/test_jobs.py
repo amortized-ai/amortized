@@ -253,30 +253,21 @@ class TestCancelJob:
 
 class TestConfigRedaction:
     @pytest.mark.asyncio
-    async def test_api_key_stripped_from_stored_config(self, client: httpx.AsyncClient) -> None:
+    async def test_credential_keys_rejected(
+        self, client: httpx.AsyncClient
+    ) -> None:
         response = await client.post(
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"columns": [{"column_type": "llm-text", "name": "q"}], "api_key": "sk-secret-123"},
+                "config": {
+                    "columns": [{"column_type": "llm-text", "name": "q"}],
+                    "api_key": "sk-secret-123",
+                },
             },
         )
-        assert response.status_code == 201
-        assert "api_key" not in response.json()["config"]
-
-    @pytest.mark.asyncio
-    async def test_api_key_not_in_get(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "sdg",
-                "config": {"columns": [{"column_type": "llm-text", "name": "q"}], "api_key": "sk-secret-123"},
-            },
-        )
-        job_id = create_resp.json()["id"]
-        response = await client.get(f"/api/v1/jobs/{job_id}")
-        assert response.status_code == 200
-        assert "api_key" not in response.json()["config"]
+        assert response.status_code == 422
+        assert "gateway" in str(response.json()).lower()
 
 
 class TestErrorFieldSerialization:
