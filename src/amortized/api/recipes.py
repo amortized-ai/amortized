@@ -22,7 +22,6 @@ from amortized.core.recipes import (
 from amortized.core.recipes import (
     delete_recipe as core_delete_recipe,
 )
-from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import DryRunResponse, Job, JobType, RecipeSummary
@@ -137,22 +136,23 @@ async def submit_recipe_job(
 
     config = flatten_recipe_to_config(recipe)
 
-    if request.dry_run:
-        from amortized.api.jobs import _validate_config
+    from amortized.api.jobs import _validate_config
 
-        errors = _validate_config(job_type, config)
+    errors = _validate_config(job_type, config)
+
+    if request.dry_run:
         dry_resp = DryRunResponse(
             valid=not errors,
             errors=errors,
             warnings=[],
             type=recipe_type,
-            config=redact_config(config),
+            config=config,
         )
         return JSONResponse(content=dry_resp.model_dump(), status_code=200)
 
-    from amortized.api.jobs import _strip_secrets
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
 
-    clean_config, secrets = _strip_secrets(config)
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
@@ -160,13 +160,11 @@ async def submit_recipe_job(
         row = await core_create_job(
             repo,
             job_type=job_type,
-            config=clean_config,
+            config=config,
             recipe=request.recipe,
             parent_job_id=request.parent_job_id,
             user_id=user_id,
-            secrets=secrets,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    row["config"] = redact_config(row["config"])
     return Job(**row)

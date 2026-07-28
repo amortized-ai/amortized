@@ -26,7 +26,6 @@ async def create_job(
     recipe: str = "",
     parent_job_id: str = "",
     user_id: str = "",
-    secrets: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
@@ -37,8 +36,6 @@ async def create_job(
     stored_config = dict(config)
     if "parent_job_id" in stored_config:
         stored_config.pop("parent_job_id")
-    if secrets:
-        stored_config["_secrets"] = secrets
 
     row = await repo.create_job(
         job_id=job_id,

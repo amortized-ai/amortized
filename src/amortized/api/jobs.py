@@ -29,7 +29,6 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
-from amortized.core.redact import redact_config
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
@@ -46,11 +45,7 @@ logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
-_SENSITIVE_CONFIG_KEYS = frozenset({"api_key", "api_secret", "token", "password"})
-
-
 def _job_response(row: dict[str, Any]) -> Job:
-    row["config"] = redact_config(row["config"])
     return Job(**row)
 
 
@@ -63,18 +58,6 @@ def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
     except ValidationError as exc:
         return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
     return []
-
-
-def _strip_secrets(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Remove sensitive keys from config, return (clean_config, secrets)."""
-    clean = {}
-    secrets: dict[str, str] = {}
-    for k, v in config.items():
-        if k in _SENSITIVE_CONFIG_KEYS and isinstance(v, str) and v:
-            secrets[k] = v
-        else:
-            clean[k] = v
-    return clean, secrets
 
 
 @router.post("", status_code=201, response_model=Job, operation_id="create_job")
@@ -93,14 +76,12 @@ async def create_job(
             errors=errors,
             warnings=[],
             type=job_type.value,
-            config=redact_config(request.config),
+            config=request.config,
         )
         return JSONResponse(content=dry_resp.model_dump(), status_code=200)
 
     if errors:
         raise HTTPException(status_code=422, detail=errors)
-
-    clean_config, secrets = _strip_secrets(request.config)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
@@ -109,11 +90,10 @@ async def create_job(
         row = await core_create_job(
             repo,
             job_type=job_type,
-            config=clean_config,
+            config=request.config,
             recipe=request.recipe,
             parent_job_id=request.parent_job_id,
             user_id=user_id,
-            secrets=secrets,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

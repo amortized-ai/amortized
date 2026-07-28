@@ -300,8 +300,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     job_id = job["id"]
     now = datetime.now(UTC).isoformat()
     config = dict(job["config"])
-
-    secrets = config.pop("_secrets", {})
+    config.pop("_secrets", None)
 
     backend_name = config_mod.settings.resolved_default_backend
 
@@ -352,18 +351,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         value = os.environ.get(env_name)
         if value:
             spec_env[env_name] = value
-
-    llm_secret_keys = {"api_key", "api_secret", "token"}
-    use_gateway = bool(config_mod.settings.gateway_url) and job["type"] == JobType.sdg.value
-    secret_to_env = {"api_key": "OPENAI_API_KEY"}
-    for secret_key, secret_val in secrets.items():
-        if use_gateway and secret_key in llm_secret_keys:
-            logger.info("Job %s: skipping %s injection (gateway configured)", job_id, secret_key)
-            continue
-        env_name = secret_to_env.get(secret_key, secret_key.upper())
-        spec_env[env_name] = secret_val
-    if use_gateway and "OPENAI_API_KEY" not in spec_env:
-        spec_env["OPENAI_API_KEY"] = "gateway-managed"
 
     if config_mod.settings.mlflow_tracking_uri:
         mlflow_experiment = f"amortized/{job['type']}/{job_id[:8]}"
