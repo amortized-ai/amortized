@@ -1,66 +1,34 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
+type AlertVariant = "default" | "destructive"
+type RhAlertState = "info" | "danger"
 
-import { cn } from "@/lib/utils"
-
-const alertVariants = cva(
-  "relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
-  {
-    variants: {
-      variant: {
-        default: "bg-card text-card-foreground",
-        destructive:
-          "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
+const variantToState: Record<AlertVariant, RhAlertState> = {
+  default: "info",
+  destructive: "danger",
+}
 
 function Alert({
+  variant = "default",
+  children,
   className,
-  variant,
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
+}: {
+  variant?: AlertVariant
+  children?: React.ReactNode
+  className?: string
+} & React.HTMLAttributes<HTMLElement>) {
   return (
-    <div
-      data-slot="alert"
-      role="alert"
-      className={cn(alertVariants({ variant }), className)}
-      {...props}
-    />
+    <rh-alert state={variantToState[variant]} className={className} {...props}>
+      {children}
+    </rh-alert>
   )
 }
 
-function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-title"
-      className={cn(
-        "col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight",
-        className
-      )}
-      {...props}
-    />
-  )
+function AlertTitle({ children }: { children?: React.ReactNode }) {
+  return <h4 slot="header">{children}</h4>
 }
 
-function AlertDescription({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-description"
-      className={cn(
-        "col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed",
-        className
-      )}
-      {...props}
-    />
-  )
+function AlertDescription({ children }: { children?: React.ReactNode }) {
+  return <>{children}</>
 }
 
 export { Alert, AlertTitle, AlertDescription }

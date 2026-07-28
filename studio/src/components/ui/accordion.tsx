@@ -1,57 +1,158 @@
-import * as React from "react"
-import * as AccordionPrimitive from "@radix-ui/react-accordion"
+import { createContext, useContext, useState, useCallback } from "react"
 import { ChevronDown } from "lucide-react"
-
 import { cn } from "@/lib/utils"
 
-const Accordion = AccordionPrimitive.Root
+interface AccordionContextValue {
+  expandedValues: Set<string>
+  toggle: (value: string) => void
+  type: "single" | "multiple"
+}
+
+const AccordionContext = createContext<AccordionContextValue>({
+  expandedValues: new Set(),
+  toggle: () => {},
+  type: "single",
+})
+
+function Accordion({
+  type = "single",
+  defaultValue,
+  children,
+  className,
+}: {
+  type?: "single" | "multiple"
+  defaultValue?: string | string[]
+  children: React.ReactNode
+  className?: string
+}) {
+  const [expandedValues, setExpandedValues] = useState<Set<string>>(() => {
+    if (!defaultValue) return new Set()
+    return new Set(Array.isArray(defaultValue) ? defaultValue : [defaultValue])
+  })
+
+  const toggle = useCallback(
+    (value: string) => {
+      setExpandedValues((prev) => {
+        const next = new Set(prev)
+        if (next.has(value)) {
+          next.delete(value)
+        } else {
+          if (type === "single") next.clear()
+          next.add(value)
+        }
+        return next
+      })
+    },
+    [type],
+  )
+
+  return (
+    <AccordionContext.Provider value={{ expandedValues, toggle, type }}>
+      <div className={className}>{children}</div>
+    </AccordionContext.Provider>
+  )
+}
 
 function AccordionItem({
+  value,
+  children,
   className,
-  ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Item>) {
+}: {
+  value: string
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <AccordionPrimitive.Item
-      className={cn("border-b", className)}
-      {...props}
-    />
+    <div
+      data-slot="accordion-item"
+      data-value={value}
+      className={cn(
+        "border-b border-[var(--rh-border-width-sm,1px)] border-border",
+        className,
+      )}
+    >
+      {children}
+    </div>
   )
 }
 
 function AccordionTrigger({
-  className,
   children,
-  ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Trigger>) {
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  const { expandedValues, toggle } = useContext(AccordionContext)
+  const item = useContext(AccordionItemContext)
+  const isOpen = expandedValues.has(item)
+
   return (
-    <AccordionPrimitive.Header className="flex">
-      <AccordionPrimitive.Trigger
+    <h3>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        data-state={isOpen ? "open" : "closed"}
         className={cn(
-          "flex flex-1 items-center justify-between py-4 text-sm font-medium transition-all hover:underline text-left [&[data-state=open]>svg]:rotate-180",
-          className
+          "flex w-full flex-1 items-center justify-between py-4 text-sm font-medium transition-all hover:underline text-left [&[data-state=open]>svg]:rotate-180",
+          className,
         )}
-        {...props}
+        onClick={() => toggle(item)}
       >
         {children}
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
-      </AccordionPrimitive.Trigger>
-    </AccordionPrimitive.Header>
+      </button>
+    </h3>
+  )
+}
+
+const AccordionItemContext = createContext<string>("")
+
+function AccordionItemWrapper({
+  value,
+  children,
+  className,
+}: {
+  value: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <AccordionItemContext.Provider value={value}>
+      <AccordionItem value={value} className={className}>
+        {children}
+      </AccordionItem>
+    </AccordionItemContext.Provider>
   )
 }
 
 function AccordionContent({
-  className,
   children,
-  ...props
-}: React.ComponentProps<typeof AccordionPrimitive.Content>) {
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  const { expandedValues } = useContext(AccordionContext)
+  const item = useContext(AccordionItemContext)
+  const isOpen = expandedValues.has(item)
+
+  if (!isOpen) return null
+
   return (
-    <AccordionPrimitive.Content
-      className="overflow-hidden text-sm data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down"
-      {...props}
+    <div
+      role="region"
+      data-state={isOpen ? "open" : "closed"}
+      className="overflow-hidden text-sm"
     >
       <div className={cn("pb-4 pt-0", className)}>{children}</div>
-    </AccordionPrimitive.Content>
+    </div>
   )
 }
 
-export { Accordion, AccordionItem, AccordionTrigger, AccordionContent }
+export {
+  Accordion,
+  AccordionItemWrapper as AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+}

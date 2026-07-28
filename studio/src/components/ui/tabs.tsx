@@ -1,52 +1,116 @@
-import * as React from "react"
-import * as TabsPrimitive from "@radix-ui/react-tabs"
-
+import { createContext, useContext, useState, useCallback } from "react"
 import { cn } from "@/lib/utils"
 
-const Tabs = TabsPrimitive.Root
+interface TabsContextValue {
+  activeValue: string
+  setActiveValue: (v: string) => void
+}
+
+const TabsContext = createContext<TabsContextValue>({
+  activeValue: "",
+  setActiveValue: () => {},
+})
+
+function Tabs({
+  value,
+  defaultValue,
+  onValueChange,
+  children,
+  className,
+}: {
+  value?: string
+  defaultValue?: string
+  onValueChange?: (value: string) => void
+  children: React.ReactNode
+  className?: string
+}) {
+  const [internalValue, setInternalValue] = useState(defaultValue ?? "")
+  const activeValue = value ?? internalValue
+
+  const setActiveValue = useCallback(
+    (v: string) => {
+      if (value === undefined) setInternalValue(v)
+      onValueChange?.(v)
+    },
+    [value, onValueChange],
+  )
+
+  return (
+    <TabsContext.Provider value={{ activeValue, setActiveValue }}>
+      <div className={cn("flex flex-col", className)}>{children}</div>
+    </TabsContext.Provider>
+  )
+}
 
 function TabsList({
+  children,
   className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.List>) {
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
   return (
-    <TabsPrimitive.List
+    <div
       className={cn(
-        "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
-        className
+        "inline-flex h-9 items-center gap-1 border-b border-border",
+        className,
       )}
-      {...props}
-    />
+    >
+      {children}
+    </div>
   )
 }
 
 function TabsTrigger({
+  value,
+  children,
   className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}: {
+  value: string
+  children: React.ReactNode
+  className?: string
+  disabled?: boolean
+}) {
+  const { activeValue, setActiveValue } = useContext(TabsContext)
+  const isActive = activeValue === value
+
   return (
-    <TabsPrimitive.Trigger
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      data-state={isActive ? "active" : "inactive"}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
-        className
+        "inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-colors",
+        "border-b-[3px] -mb-px",
+        isActive
+          ? "border-[var(--rh-color-accent-base-on-light,#0066cc)] text-foreground dark:border-[var(--rh-color-accent-base-on-dark,#92c5f9)]"
+          : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
+        className,
       )}
-      {...props}
-    />
+      onClick={() => setActiveValue(value)}
+    >
+      {children}
+    </button>
   )
 }
 
 function TabsContent({
+  value,
+  children,
   className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
+}: {
+  value: string
+  children: React.ReactNode
+  className?: string
+}) {
+  const { activeValue } = useContext(TabsContext)
+  if (activeValue !== value) return null
+
   return (
-    <TabsPrimitive.Content
-      className={cn(
-        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        className
-      )}
-      {...props}
-    />
+    <div role="tabpanel" className={cn("mt-2", className)}>
+      {children}
+    </div>
   )
 }
 

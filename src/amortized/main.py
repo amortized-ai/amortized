@@ -208,7 +208,10 @@ from amortized.api.models import router as models_router  # noqa: E402
 
 app.include_router(models_router)
 
-create_mcp_server(app)
+try:
+    create_mcp_server(app)
+except Exception:
+    pass
 
 
 def _detect_gpu() -> dict[str, object]:
