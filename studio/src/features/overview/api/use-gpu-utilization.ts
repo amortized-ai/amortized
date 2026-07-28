@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { getGpuUtilization, ApiError } from "@/lib/api-client"
+import { getGpuUtilization } from "@/lib/api-client"
 import type { GpuUtilizationResponse } from "@/types/api"
 
 const EMPTY_RESPONSE: GpuUtilizationResponse = { nodes: [] }
@@ -10,18 +10,12 @@ export function useGpuUtilization() {
     queryFn: async () => {
       try {
         return await getGpuUtilization()
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) {
-          return EMPTY_RESPONSE
-        }
-        if (err instanceof TypeError) {
-          return EMPTY_RESPONSE
-        }
-        throw err
+      } catch {
+        return EMPTY_RESPONSE
       }
     },
     refetchInterval: 10_000,
-    retry: 1,
+    retry: 0,
     staleTime: 5_000,
   })
 }
