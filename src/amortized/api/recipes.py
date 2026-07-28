@@ -99,7 +99,7 @@ async def delete_recipe(name: str) -> None:
 class RecipeJobRequest(BaseModel):
     recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
-    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training→Eval)")
+    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training)")
     dry_run: bool = Field(False, description="Validate without creating the job")
 
 
