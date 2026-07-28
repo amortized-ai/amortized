@@ -227,12 +227,12 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <div className="flex flex-1 min-h-0">
-          <main className="flex-1 min-w-0 overflow-auto p-4">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-w-0 overflow-auto p-4">
             <Outlet />
-          </main>
+          </div>
           {showChatSidebar && (
-            <div className="w-[400px] shrink-0">
+            <div className="w-[400px] shrink-0 h-full">
               <ChatSidebar />
             </div>
           )}

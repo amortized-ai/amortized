@@ -155,8 +155,6 @@ export function ChatSidebar() {
     setCurrentConversationId,
   ])
 
-  if (!_hasHydrated) return null
-
   return (
     <div className="flex h-full flex-col border-l bg-background">
       {/* Header */}
