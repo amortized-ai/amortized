@@ -295,7 +295,7 @@ down-all: ## Tear down all user environments (keeps shared services)
 refresh-user: build-server build-studio load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
 	@if [ -z "$(USER)" ]; then echo "Usage: make refresh-user USER=<username>"; exit 1; fi
 	$(MAKE) deploy-user USER=$(USER)
-	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio
+	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio deployment/opencode deployment/claude-code
 	@echo "$(USER) refreshed."
 
 # ──────────────────────────────────────────────
