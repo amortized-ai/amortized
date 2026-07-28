@@ -34,14 +34,32 @@ Ask the user these questions (one at a time, with numbered options):
    factual ones.
 4. **Difficulty levels** — Default: basic (35%), intermediate (45%),
    advanced (20%).
-5. **Which teacher model?** — Call `list_models` to discover available
-   models from the AI Gateway. Present each as a numbered option.
-   If no models are returned, direct the user to Settings → AI Gateway.
-6. **How many samples?** — Suggest based on document size.
-   ~50 for prototyping, ~500 for a small production model, ~3000+ for
-   comprehensive coverage.
-7. **Chunking granularity** — How many sentences per chunk?
+5. **Which teacher model?** — Call `list_models` to get the models
+   configured on the AI Gateway. Present ONLY those models as options.
+   Do NOT suggest models that aren't returned by `list_models` — they
+   won't work. If no models are returned, stop and direct the user to
+   Settings → AI Gateway.
+6. **Chunking granularity** — How many sentences per chunk?
    Default: 15 sentences. More = broader context, fewer = more focused.
+   Explain that this controls how documents are split for QA generation.
+7. **How many samples?** — Calculate based on document coverage.
+
+   **CRITICAL: The minimum sample count = number of document chunks.**
+   Each chunk generates one QA pair. If a document produces 100 chunks,
+   the minimum is 100 samples — anything less means parts of the
+   document won't be covered at all.
+
+   Estimate chunk count: document_char_count / (sentences_per_chunk × ~100 chars/sentence).
+   If documents are already uploaded, use `list_documents` to check sizes.
+
+   Present options relative to the chunk count:
+   1) N samples — Full coverage (1 QA per chunk, minimum recommended)
+   2) N×2 samples — Double coverage (2 QAs per chunk, better diversity)
+   3) N×3 samples — Triple coverage (3 QAs per chunk, best quality)
+
+   NEVER suggest a sample count below the estimated chunk count.
+   Explain to the user WHY: "With ~N chunks from your document, we need
+   at least N samples to cover every section."
 
 ## Building the Config
 

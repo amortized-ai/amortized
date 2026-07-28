@@ -114,14 +114,19 @@ Chain jobs together using `parent_job_id`:
 
 ## Teacher Model Selection
 
-When the user needs to choose a model:
+**CRITICAL: ONLY show models returned by `list_models`.** The user can
+only use models that have configured endpoints on the AI Gateway.
 
-1. Call `list_models` to discover available models from the AI Gateway
-2. Present each model as a numbered option
+1. Call `list_models` to get the configured endpoints
+2. Present ONLY those models as numbered options — do NOT suggest or
+   hardcode model names like "gpt-4o" or "claude" that aren't in the
+   response
 3. Wait for the user to select one
 4. Use the model's `name` field in the config's `model_configs`
 
-If no models are returned, direct the user to Settings → AI Gateway.
+If no models are returned, **stop the workflow** and tell the user:
+"No models are configured on the AI Gateway. Go to Settings → AI Gateway
+to add an endpoint before starting SDG."
 
 ## SDG Job Config Format
 
