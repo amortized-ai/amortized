@@ -183,16 +183,6 @@ async def _set_mlflow_run_tag(mlflow_run_id: str, key: str, value: str) -> None:
         )
 
 
-async def _get_training_job_for_serve(training_job_id: str) -> dict[str, Any]:
-    repo = await _get_repo()
-    job = await repo.get_job(training_job_id)
-    if not job:
-        raise ValueError(f"Training job not found: {training_job_id}")
-    if job["status"] != "succeeded":
-        raise ValueError(f"Training job has not succeeded (status: {job['status']})")
-    return job
-
-
 async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> bool:
     """Register a trained model in the MLflow model registry. Returns True on success."""
     tracking_uri = config_mod.settings.mlflow_tracking_uri
@@ -257,20 +247,6 @@ async def _fetch_document_content(document_id: str) -> str:
         logger.warning("Failed to fetch document %s", document_id, exc_info=True)
     return ""
 
-
-async def _resolve_job_artifact_uri(job_id: str) -> str | None:
-    """Look up a job's MLflow artifact URI by job ID."""
-    if not job_id:
-        return None
-    repo = await _get_repo()
-    job = await repo.get_job(job_id)
-    if not job:
-        return None
-    run_id = job.get("mlflow_run_id", "")
-    if not run_id:
-        return None
-    uri = await _resolve_mlflow_artifact_uri(run_id)
-    return uri or None
 
 
 async def _resolve_parent_artifacts(

@@ -176,6 +176,6 @@ bot needs different prompt engineering than a DevOps troubleshooting assistant.
 
 ## After SDG — Training
 
-Recommend OSFT training. Read `skills/training/osft/guide.md` for the
+Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md` for the
 training config. The SDG job's output (stored in MLflow) becomes the
 training job's `data_path` via parent job chaining.

@@ -8,7 +8,7 @@ points in open-book settings.
 
 You will **create a brand new training config** based on the user's
 requirements. The reference template at
-`skills/training/osft/training-config-template.json` shows the config
+`skills/training/knowledge-ingestion/osft/training-config-template.json` shows the config
 structure — study it to understand the format, but create a fresh config
 tailored to the user's compute setup, model choice, and data.
 
