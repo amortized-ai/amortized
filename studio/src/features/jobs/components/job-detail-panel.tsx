@@ -272,8 +272,7 @@ function ErrorSection({ job }: { job: Job }) {
   return (
     <div className="space-y-3 pt-3">
       <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription className="font-medium">
+        <AlertDescription>
           {showFull ? job.error : summary}
           {isTruncated && (
             <button

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class JobType(StrEnum):
     training = "training"
     sdg = "sdg"
+    eval = "eval"
 
 
 class JobStatus(StrEnum):

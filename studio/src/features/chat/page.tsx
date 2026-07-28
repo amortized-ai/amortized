@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Plus, Bot } from "lucide-react"
+import { Plus, Bot } from "lucide-react"
 import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
 import { clearConversationSession } from "@/lib/api-client"
 
@@ -73,8 +73,7 @@ function ChatContent() {
         disabled={isStreaming}
       />
       {chatState === "error" && (
-        <Alert variant="destructive" className="rounded-none border-x-0 border-b-0">
-          <AlertCircle className="h-4 w-4" />
+        <Alert variant="destructive">
           <AlertDescription>
             <strong>Chat error.</strong> Make sure the agent service is running and reachable.
           </AlertDescription>
