@@ -12,7 +12,7 @@ import {
   Sun,
   Moon,
   Bot,
-
+  PanelRightClose,
 } from "lucide-react"
 import {
   Sidebar,
@@ -28,6 +28,11 @@ import {
   SidebarInset,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Breadcrumbs } from "@/components/breadcrumbs"
@@ -35,9 +40,11 @@ import { CreateMenu } from "@/components/create-menu"
 import { ActiveJobsBadge } from "@/components/active-jobs-badge"
 import { useHealth } from "@/features/settings/api/use-settings"
 import { useUIStore } from "@/stores/ui-store"
+import { useChatStore } from "@/stores/chat-store"
 import { Button } from "@/components/ui/button"
 import { CommandPalette } from "@/components/command-palette"
 import { TutorialOverlay } from "@/components/tutorial"
+import { ChatSidebar } from "@/features/chat/components/chat-sidebar"
 
 import type { LucideIcon } from "lucide-react"
 
@@ -126,9 +133,42 @@ function TourButton() {
   )
 }
 
+function ChatToggle() {
+  const panelOpen = useChatStore((s) => s.panelOpen)
+  const togglePanel = useChatStore((s) => s.togglePanel)
+  const location = useLocation()
+
+  if (location.pathname.startsWith("/chat")) return null
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={panelOpen ? "secondary" : "ghost"}
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={togglePanel}
+          data-testid="chat-sidebar-toggle"
+          aria-label={panelOpen ? "Close chat" : "Open chat"}
+        >
+          {panelOpen ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <MessageSquare className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{panelOpen ? "Close chat" : "Chat with Morty"}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function AppLayout() {
   const location = useLocation()
   const theme = useUIStore((s) => s.theme)
+  const panelOpen = useChatStore((s) => s.panelOpen)
+  const isChatPage = location.pathname.startsWith("/chat")
+  const showChatSidebar = panelOpen && !isChatPage
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark")
@@ -180,6 +220,7 @@ export function AppLayout() {
             <TourButton />
             <ActiveJobsBadge />
             <CreateMenu />
+            <ChatToggle />
             <ConnectionDot />
             <ThemeToggle />
             <Link
@@ -191,9 +232,26 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <main className="flex-1 min-w-0 overflow-auto p-4">
-          <Outlet />
-        </main>
+        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
+          <ResizablePanel defaultSize={100} minSize={40}>
+            <main className="h-full min-w-0 overflow-auto p-4">
+              <Outlet />
+            </main>
+          </ResizablePanel>
+          {showChatSidebar && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel
+                defaultSize={30}
+                minSize={20}
+                maxSize={50}
+                id="chat-sidebar"
+              >
+                <ChatSidebar />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
       </SidebarInset>
       <CommandPalette />
       <TutorialOverlay />
