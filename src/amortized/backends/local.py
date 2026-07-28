@@ -44,11 +44,8 @@ class LocalBackend:
         # Transform container paths to local paths in the command
         command = [
             part.replace("/amortized/config.yaml", os.path.join(work_dir, "config.yaml"))
-            .replace("/amortized/synth_config.yaml", os.path.join(work_dir, "synth_config.yaml"))
             .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
-            .replace(
-                "/amortized/work/synth_config.yaml", os.path.join(work_dir, "synth_config.yaml")
-            )
+            .replace("/amortized/work", work_dir)
             .replace("python3.11", sys.executable)
             for part in spec.command
         ]

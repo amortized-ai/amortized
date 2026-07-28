@@ -62,7 +62,7 @@ export function RecipeTable({
                 <EmptyState
                   icon={BookOpen}
                   title="No recipes yet"
-                  description="Create a recipe to configure training, SDG, or evaluation jobs."
+                  description="Create a recipe to configure training or SDG jobs."
                   actionLabel="Create Recipe"
                   onAction={onCreateNew}
                 />

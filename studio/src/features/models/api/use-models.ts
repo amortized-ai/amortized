@@ -147,12 +147,7 @@ export function useModelJobs(runId: string | null) {
               result.sdgJob = parent
             }
           }
-          result.evalJobs = allJobs.filter(
-            (j) =>
-              j.type === "eval" &&
-              (j.parent_job_id === training.id ||
-                j.config?.dataset_job_id === training.parent_job_id),
-          )
+          result.evalJobs = []
         }
       } catch {
         // Jobs API may not be available

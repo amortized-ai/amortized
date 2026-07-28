@@ -129,7 +129,8 @@ class Repository:
 
     async def list_documents(self) -> list[dict[str, Any]]:
         cursor = await self.conn.execute(
-            "SELECT document_id, mlflow_run_id, filename, format, created_at FROM documents ORDER BY created_at DESC"
+            "SELECT document_id, mlflow_run_id, filename, format, created_at"
+            " FROM documents ORDER BY created_at DESC"
         )
         return [dict(r) for r in await cursor.fetchall()]
 
@@ -157,11 +158,20 @@ class Repository:
         mlflow_run_id: str = "",
     ) -> dict[str, Any]:
         await self.conn.execute(
-            "INSERT INTO documents (document_id, mlflow_run_id, filename, format, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO documents"
+            " (document_id, mlflow_run_id, filename, format, content, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (document_id, mlflow_run_id, filename, fmt, content, created_at),
         )
         await self.conn.commit()
-        return {"document_id": document_id, "mlflow_run_id": mlflow_run_id, "filename": filename, "format": fmt, "content": content, "created_at": created_at}
+        return {
+            "document_id": document_id,
+            "mlflow_run_id": mlflow_run_id,
+            "filename": filename,
+            "format": fmt,
+            "content": content,
+            "created_at": created_at,
+        }
 
 
 def _row_to_job(row: Any) -> dict[str, Any]:

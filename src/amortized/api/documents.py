@@ -104,6 +104,7 @@ async def _store_in_mlflow(
     content: str,
     output_format: str,
     source_bytes: bytes | None = None,
+    processing_time: float = 0.0,
 ) -> str:
     tracking_uri = _tracking_uri()
     run_id: str | None = None
@@ -130,7 +131,14 @@ async def _store_in_mlflow(
                 experiment_id = create_resp.json()["experiment_id"]
         else:
             resp.raise_for_status()
-            experiment_id = resp.json()["experiment"]["experiment_id"]
+            exp = resp.json()["experiment"]
+            experiment_id = exp["experiment_id"]
+            if exp.get("lifecycle_stage") == "deleted":
+                await client.post(
+                    f"{tracking_uri}/api/2.0/mlflow/experiments/restore",
+                    json={"experiment_id": experiment_id},
+                )
+                logger.info("Restored deleted experiment %s", experiment_name)
 
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         run_resp = await client.post(
@@ -143,6 +151,8 @@ async def _store_in_mlflow(
                     {"key": "job_type", "value": "document"},
                     {"key": "filename", "value": filename},
                     {"key": "format", "value": output_format},
+                    {"key": "processing_time", "value": str(processing_time)},
+                    {"key": "content_length", "value": str(len(content))},
                 ],
             },
         )
@@ -288,6 +298,7 @@ async def convert_document(
                 content,
                 output_format.value,
                 source_bytes=file_bytes,
+                processing_time=processing_time,
             )
         except HTTPException:
             raise
@@ -366,6 +377,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
                 content,
                 output_format.value,
                 source_bytes=source_bytes,
+                processing_time=processing_time,
             )
         except HTTPException:
             raise
@@ -511,7 +523,7 @@ async def get_document_content(document_id: str) -> DocumentResult:
         filename=tags.get("filename", info.get("run_name", "")),
         content=content,
         format=OutputFormat(fmt),
-        processing_time=0.0,
+        processing_time=float(tags.get("processing_time", "0")),
         status="success",
     )
 

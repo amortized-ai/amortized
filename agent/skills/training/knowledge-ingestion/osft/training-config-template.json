@@ -3,7 +3,7 @@
   "config": {
     "algorithm": "osft",
     "model_name_or_path": "Qwen/Qwen3-8B",
-    "data_path": "/workspace/home/lab/esivaram/training-data/v1rag-v2-asynth-sdg-1-rag-train.jsonl",
+    "data_path": "",
     "num_train_epochs": 5,
     "learning_rate": 2e-05,
     "effective_batch_size": 256,
@@ -17,10 +17,10 @@
     "data_output_dir": "data-output",
     "bf16": true,
     "max_tokens_per_gpu": 15000,
-    "output_dir": "/mnt/nvme3n1/esivaram/amortized-training/osft-v1rag-v2-asynth-sdg-1-rag"
+    "output_dir": ""
   },
   "metadata": {
-    "backend": "rh-h100-12",
+    "backend": "",
     "gpus": 8
   },
   "dry_run": false

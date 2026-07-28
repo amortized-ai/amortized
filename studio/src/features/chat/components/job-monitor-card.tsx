@@ -36,8 +36,6 @@ function runningStageLabel(jobType: string): string {
   switch (jobType) {
     case "TRAINING":
       return "Training model (Stage 3/4)"
-    case "EVAL":
-      return "Evaluating model (Stage 3/4)"
     default:
       return "Generating data (Stage 3/4)"
   }
@@ -230,13 +228,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
               className="text-primary dark:text-primary hover:underline font-medium"
             >
               View Model →
-            </a>
-          ) : jobType === "EVAL" ? (
-            <a
-              href={`/jobs?job=${encodeURIComponent(jobId)}`}
-              className="text-primary dark:text-primary hover:underline font-medium"
-            >
-              View Results →
             </a>
           ) : (
             <a

@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 class JobType(StrEnum):
     training = "training"
     sdg = "sdg"
-    eval = "eval"
 
 
 class JobStatus(StrEnum):
@@ -61,31 +60,8 @@ class TrainingJobConfig(BaseModel):
     report_to: str | None = Field(None, description="Logging backend (none, mlflow)")
 
 
-class SynthJobConfig(BaseModel):
-    model: str = Field(..., description="Teacher model (LiteLLM format)")
-    api_base: str | None = Field(None, description="Model API base URL")
-    api_key: str | None = Field(None, description="Model API key")
-    num_samples: int = Field(100, ge=1, description="Number of samples to generate")
-    max_concurrency: int = Field(16, ge=1, description="Max concurrent LLM requests")
-    temperature: float = Field(0.7, ge=0, le=2)
-    max_tokens: int | None = Field(None, ge=1)
-    top_p: float | None = Field(None, ge=0, le=1)
-    seed: int | None = Field(None, description="Random seed")
-    num_retries: int | None = Field(None, ge=0)
-    input_data: list[dict[str, Any]] | None = Field(None, description="Input dataset sources")
-    input_documents: list[dict[str, Any]] | None = Field(None, description="Input document sources")
-    strategy_params: dict[str, Any] | None = Field(None, description="Raw asynth params")
-
-
-class EvalJobConfig(BaseModel):
-    model_config = {"extra": "allow"}
-
-    dataset: str = Field(..., description="Dataset path or artifact URI to evaluate")
-    judge: dict[str, Any] = Field(default_factory=dict, description="Judge configuration")
-
-
 class JobRequest(BaseModel):
-    type: JobType = Field(..., description="Job type: training, sdg, eval")
+    type: JobType = Field(..., description="Job type: training, sdg")
     config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
     recipe: str = Field("", description="Recipe name if used")
     parent_job_id: str = Field("", description="Parent job ID for lineage")

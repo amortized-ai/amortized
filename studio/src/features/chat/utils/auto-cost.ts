@@ -3,7 +3,6 @@ import type { MlflowGatewayRoute } from "@/types/api"
 import { friendlyModelLabel } from "./workflow-options"
 
 const SAMPLE_COUNT_RE = /\b(\d+)\s*samples?\b/i
-const RECIPE_RE = /\b(examples\/[\w-]+\/\w+|templates\/\w+\/[\w-]+)\b/
 const MODEL_ID_RE = /\b(openai\/gpt-[\w-]+|anthropic\/claude-[\w-]+|vertex_ai\/claude-[\w-]+)\b/i
 
 const CONFIRMATION_SIGNALS = [
@@ -24,12 +23,6 @@ const TRAINING_SIGNALS = [
   /student model/i,
 ]
 
-const EVAL_SIGNALS = [
-  /\bjudge model/i,
-  /\bevaluat/i,
-  /\beval\b/i,
-]
-
 const TEACHER_MODEL_SIGNALS = [
   /which (?:teacher )?model.*(?:generate|use|select).*\?/i,
   /pick (?:a|your) (?:teacher )?model/i,
@@ -38,34 +31,18 @@ const TEACHER_MODEL_SIGNALS = [
   /which model would you like to use\?/i,
 ]
 
-const EVAL_JUDGE_SIGNALS = [
-  /which.*(?:judge|evaluation)\s*(?:model)?\?/i,
-  /model.*(?:act as|be) the judge/i,
-  /judge.*model.*\?/i,
-]
-
-function isEvalJudgeStep(content: string): boolean {
-  return EVAL_JUDGE_SIGNALS.some((re) => re.test(content))
-}
-
 const COMPARE_SDG_TOOLS = new Set(["compare sdg models", "compare_sdg_models"])
-const EVAL_COST_TOOLS = new Set(["estimate eval cost", "estimate_eval_cost"])
 
-type Phase = "sdg" | "training" | "eval"
+type Phase = "sdg" | "training"
 
 function phaseTagToPhase(tag: string): Phase | null {
   const part = tag.split(":")[0]
-  if (part === "sdg" || part === "training" || part === "eval") return part
+  if (part === "sdg" || part === "training") return part
   return null
 }
 
 function detectPhase(messages: ChatMessage[]): Phase {
   const allText = messages.map((m) => m.content).join("\n")
-  if (EVAL_SIGNALS.some((re) => re.test(allText))) {
-    const hasTraining = TRAINING_SIGNALS.some((re) => re.test(allText))
-    const hasSDG = RECIPE_RE.test(allText)
-    if (hasTraining || hasSDG) return "eval"
-  }
   if (TRAINING_SIGNALS.some((re) => re.test(allText))) return "training"
   return "sdg"
 }
@@ -221,7 +198,6 @@ export async function autoCostEstimate(
   if (isConfirmationStep(latestContent)) {
     const confirmPhase = phaseTag ? phaseTagToPhase(phaseTag)
       : /\btraining\s+plan\b|\bstudent model\b|\bfine-?tun.*plan\b/i.test(latestContent) ? "training"
-      : /\beval.*plan\b|\bjudge\b/i.test(latestContent) ? "eval"
       : phase
 
     if (confirmPhase === "sdg") {
@@ -231,10 +207,6 @@ export async function autoCostEstimate(
     if (confirmPhase === "training") {
       const modelId = extractStudentModelId(messages)
       return callCostApi("/api/v1/costs/training/method", { model_id: modelId, num_samples: numSamples }, "training cost summary")
-    }
-    if (confirmPhase === "eval") {
-      const judgeModel = extractModel(messages)
-      return callCostApi("/api/v1/costs/eval", { num_samples: numSamples, judge_model: judgeModel }, "eval cost summary")
     }
     return null
   }
@@ -251,19 +223,6 @@ export async function autoCostEstimate(
       }))
     }
     return callCostApi("/api/v1/costs/sdg/compare", body, "compare sdg models")
-  }
-
-  if (isEvalJudgeStep(latestContent)) {
-    if (hasCostToolBeenCalled(messages, EVAL_COST_TOOLS)) return null
-    const evalBody: Record<string, unknown> = { num_samples: numSamples, judge_model: "openai/gpt-4o-mini" }
-    if (routes && routes.length > 0) {
-      evalBody.models = routes.map((r) => ({
-        model_id: `${r.model.provider}/${r.model.name}`,
-        label: friendlyModelLabel(r),
-        description: "",
-      }))
-    }
-    return callCostApi("/api/v1/costs/eval", evalBody, "estimate eval cost")
   }
 
   if (phase === "training" && isStudentModelStep(latestContent)) {

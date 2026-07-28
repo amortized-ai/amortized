@@ -1,0 +1,57 @@
+type: sdg
+description: Knowledge ingestion — generate QA training data from documents
+config:
+  num_records: 100
+  model_configs:
+    - alias: text
+      model: gpt-4o-mini
+      provider: openai
+      inference_parameters:
+        temperature: 0.7
+  columns:
+    - column_type: sampler
+      name: difficulty
+      sampler_type: category
+      params:
+        values: [Basic, Intermediate, Advanced]
+        weights: [0.35, 0.45, 0.20]
+    - column_type: sampler
+      name: question_type
+      sampler_type: category
+      params:
+        values: [Factual, Procedural, Troubleshooting, Comparison]
+        weights: [0.25, 0.35, 0.25, 0.15]
+    - column_type: llm-text
+      name: question
+      model_alias: text
+      system_prompt: >
+        You generate specific, realistic questions from documentation.
+        The question MUST be answerable from the provided context.
+        Output ONLY the question.
+      prompt: >
+        Documentation context:
+        {{ content }}
+
+        Difficulty: {{ difficulty }}
+        Question type: {{ question_type }}
+    - column_type: llm-text
+      name: answer
+      model_alias: text
+      system_prompt: >
+        Answer accurately based on the documentation context.
+        Include specific details when relevant.
+        Output ONLY the answer.
+      prompt: >
+        Documentation context:
+        {{ content }}
+
+        Question: {{ question }}
+  processors:
+    - processor_type: schema_transform
+      name: sft_format
+      template:
+        messages:
+          - role: user
+            content: "{{ question }}"
+          - role: assistant
+            content: "{{ answer }}"

@@ -161,7 +161,7 @@ function CreateRouteDialog() {
         <DialogHeader>
           <DialogTitle>Add AI Gateway Endpoint</DialogTitle>
           <DialogDescription>
-            Configure an LLM provider endpoint for SDG and evaluation jobs.
+            Configure an LLM provider endpoint for SDG jobs.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -458,7 +458,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">AI Gateway</p>
-            <p className="text-xs text-muted-foreground">LLM routes for SDG & eval</p>
+            <p className="text-xs text-muted-foreground">LLM routes for SDG</p>
           </div>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
@@ -587,7 +587,7 @@ export default function SettingsPage() {
           {config?.mlflow_gateway_uri && (
             <div className="rounded-lg border border-[#95d58e] bg-[#e9f5e8] px-4 py-3 dark:border-[#163b11] dark:bg-[#0d2009]/40">
               <p className="text-xs text-[#1e4f18] dark:text-[#5ba352]">
-                SDG and evaluation jobs auto-route through the gateway. Manage LLM connections below to configure provider credentials.
+                SDG jobs auto-route through the gateway. Manage LLM connections below to configure provider credentials.
               </p>
             </div>
           )}
@@ -648,7 +648,7 @@ export default function SettingsPage() {
               <div>
                 <h4 className="text-sm font-medium">Endpoints</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  LLM endpoints for SDG and evaluation jobs.
+                  LLM endpoints for SDG jobs.
                 </p>
               </div>
               <CreateRouteDialog />
@@ -701,7 +701,7 @@ export default function SettingsPage() {
                   <div className="text-center py-4 space-y-1">
                     <p className="text-sm text-muted-foreground">No endpoints configured.</p>
                     <p className="text-xs text-muted-foreground">
-                      Add an endpoint to connect an LLM for SDG and evaluation jobs.
+                      Add an endpoint to connect an LLM for SDG jobs.
                     </p>
                   </div>
                 )}

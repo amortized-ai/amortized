@@ -373,7 +373,9 @@ class EvalModelInput(BaseModel):
 class EstimateEvalCostRequest(BaseModel):
     num_samples: int = Field(100, description="Number of evaluation samples")
     judge_model: str = Field("openai/gpt-4o-mini", description="Judge model ID")
-    models: list[EvalModelInput] | None = Field(None, description="Available judge models from gateway")
+    models: list[EvalModelInput] | None = Field(
+        None, description="Available judge models from gateway"
+    )
 
 
 class EvalJudgeOption(BaseModel):
@@ -545,9 +547,12 @@ async def estimate_training_method_cost(
     base_minutes = _estimate_training_minutes(body.model_id, body.num_samples, body.num_epochs)
 
     method_configs = [
-        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest", 1.0, True),
-        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM, slightly slower", 1.2, False),
-        ("full_sft", "Full SFT", "Updates all model weights — highest quality, most expensive", 3.5, False),
+        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest",
+         1.0, True),
+        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM",
+         1.2, False),
+        ("full_sft", "Full SFT", "Updates all model weights — highest quality",
+         3.5, False),
     ]
 
     methods = []
@@ -616,7 +621,11 @@ async def estimate_eval_cost(
     judge_options: list[tuple[str, str, str]] = []
     if body.models:
         for m in body.models:
-            judge_options.append((m.model_id, m.label or _resolve_model_label(m.model_id), m.description or ""))
+            judge_options.append((
+                m.model_id,
+                m.label or _resolve_model_label(m.model_id),
+                m.description or "",
+            ))
     if not judge_options:
         judge_options = [("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model")]
     comparison = []

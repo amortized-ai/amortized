@@ -7,7 +7,6 @@ import {
   Loader2,
   Database,
   Cpu,
-  Scale,
 } from "lucide-react"
 import type { PhasePlan } from "../types"
 
@@ -29,15 +28,6 @@ const PHASE_STYLES = {
     badge: "bg-rh-blue-light text-rh-blue-dark dark:bg-rh-blue-dark/40 dark:text-rh-blue",
     iconColor: "text-rh-blue",
     check: "text-rh-blue",
-  },
-  eval: {
-    icon: Scale,
-    gradient: "from-rh-teal-light/50 to-rh-teal-light/20 dark:from-rh-teal-dark/20 dark:to-rh-teal-dark/5",
-    dot: "bg-rh-teal dark:bg-rh-teal",
-    connector: "bg-rh-teal/60",
-    badge: "bg-rh-teal-light text-rh-teal-dark dark:bg-rh-teal-dark/40 dark:text-rh-teal",
-    iconColor: "text-rh-teal",
-    check: "text-rh-teal",
   },
 }
 
