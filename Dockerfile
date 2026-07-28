@@ -4,7 +4,6 @@ WORKDIR /app
 
 COPY pyproject.toml .
 COPY src/ src/
-COPY examples/ examples/
 COPY templates/ templates/
 
 RUN uv pip install --system --no-cache .
