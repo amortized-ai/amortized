@@ -1,4 +1,4 @@
-export type JobType = "training" | "sdg" | "eval"
+export type JobType = "training" | "sdg"
 
 export type JobStatus =
   | "queued"

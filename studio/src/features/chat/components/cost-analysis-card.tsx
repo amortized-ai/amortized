@@ -24,7 +24,7 @@ function formatUSD(value: number): string {
 
 interface CostAnalysisCardProps {
   estimate: CostEstimate
-  phase?: "sdg" | "training" | "eval"
+  phase?: "sdg" | "training"
 }
 
 export function CostAnalysisCard({ estimate, phase = "sdg" }: CostAnalysisCardProps) {
@@ -34,22 +34,13 @@ export function CostAnalysisCard({ estimate, phase = "sdg" }: CostAnalysisCardPr
     switch (phase) {
       case "training":
         return `Training with ${estimate.model_label}`
-      case "eval":
-        return `Eval with ${estimate.model_label}`
       default:
         return `SDG with ${estimate.model_label}`
     }
   }
 
   const getComparisonLabel = () => {
-    switch (phase) {
-      case "training":
-        return "Frontier model API"
-      case "eval":
-        return "Manual review"
-      default:
-        return "Frontier model API"
-    }
+    return "Frontier model API"
   }
 
   return (

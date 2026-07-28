@@ -1,4 +1,4 @@
-import { Bot, Cpu, Database, Rocket, BarChart3 } from "lucide-react"
+import { Bot, Cpu, Database, Rocket } from "lucide-react"
 
 interface ChatWelcomeProps {
   onPromptClick: (prompt: string) => void
@@ -31,15 +31,6 @@ const CAPABILITIES = [
     iconBg: "bg-[#e0f0ff] dark:bg-[#003366]/50",
     iconColor: "text-[#0066cc] dark:text-[#4394e5]",
     hoverBorder: "hover:border-[#0066cc]/30 dark:hover:border-[#4394e5]/30",
-  },
-  {
-    icon: BarChart3,
-    label: "Evaluate performance",
-    detail: "Compare against frontier baselines",
-    prompt: "Help me evaluate a model's performance",
-    iconBg: "bg-[#daf2f2] dark:bg-[#003333]/50",
-    iconColor: "text-[#147878] dark:text-[#37a3a3]",
-    hoverBorder: "hover:border-[#147878]/30 dark:hover:border-[#37a3a3]/30",
   },
 ]
 

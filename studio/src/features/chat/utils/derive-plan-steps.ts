@@ -20,17 +20,9 @@ const TRAINING_STEPS: StepDef[] = [
   { label: "Train model", matchSteps: ["execute", "review"] },
 ]
 
-const EVAL_STEPS: StepDef[] = [
-  { label: "Choose method", matchSteps: ["understand_task", "load_skill"] },
-  { label: "Configure", matchSteps: ["gather_requirements"] },
-  { label: "Estimate cost", matchSteps: ["estimate_cost", "confirm"] },
-  { label: "Evaluate model", matchSteps: ["execute", "review"] },
-]
-
 const PHASE_CONFIG: Record<PlanPhase, { label: string; steps: StepDef[] }> = {
   sdg: { label: "Data Generation", steps: SDG_STEPS },
   training: { label: "Model Training", steps: TRAINING_STEPS },
-  eval: { label: "Evaluation", steps: EVAL_STEPS },
 }
 
 function resolveStepIndex(steps: StepDef[], currentStep: string): number {

@@ -16,7 +16,6 @@ const TOOL_LABELS: Record<string, string> = {
   "compare sdg models": "Comparing teacher models",
   "estimate training cost": "Estimating training cost",
   "estimate training method cost": "Estimating training methods",
-  "estimate eval cost": "Estimating evaluation cost",
   "get job detail": "Checked job details",
   "get jobs": "Listed jobs",
 }

@@ -37,11 +37,6 @@ export const TYPE_COLORS: Record<string, ChipColor> = {
     hover: "hover:border-[#d0c5f4] hover:bg-[#ece6ff]/60 hover:text-[#3d2785] dark:hover:border-[#21134d] dark:hover:bg-[#1b0d33]/30 dark:hover:text-[#876fd4]",
     active: "border-[#b6a6e9] bg-[#ece6ff] text-[#3d2785] shadow-sm shadow-[#d0c5f4]/50 dark:border-[#21134d] dark:bg-[#1b0d33]/40 dark:text-[#876fd4] dark:shadow-none",
   },
-  eval: {
-    idle: "border-border/60 text-muted-foreground",
-    hover: "hover:border-[#9ad8d8] hover:bg-[#daf2f2]/60 hover:text-[#147878] dark:hover:border-[#004d4d] dark:hover:bg-[#003333]/30 dark:hover:text-[#37a3a3]",
-    active: "border-[#63bdbd] bg-[#daf2f2] text-[#147878] shadow-sm shadow-[#b9e5e5]/50 dark:border-[#004d4d] dark:bg-[#003333]/40 dark:text-[#37a3a3] dark:shadow-none",
-  },
 }
 
 export const STATUS_COLORS: Record<string, ChipColor> = {

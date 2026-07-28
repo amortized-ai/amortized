@@ -1,7 +1,7 @@
 import { useReducer, useCallback } from "react"
 import type { Recipe } from "@/types/api"
 
-export type RecipeType = "training" | "sdg" | "eval"
+export type RecipeType = "training" | "sdg"
 export type TrainingMethod = "lora_sft" | "sft" | "osft" | "dpo" | "grpo" | "lora_grpo" | "kto" | "gepa" | "gkd"
 
 export interface RecipeFormState {
@@ -26,10 +26,6 @@ export interface RecipeFormState {
   strategy_params: string
   input_data: string
 
-  // Eval
-  eval_dataset: string
-  evaluator_id: string
-  judge_model: string
 }
 
 export interface RecipeState {
@@ -64,9 +60,6 @@ const DEFAULT_FORM: RecipeFormState = {
   num_samples: "100",
   strategy_params: "{}",
   input_data: "",
-  eval_dataset: "",
-  evaluator_id: "",
-  judge_model: "",
 }
 
 function formToJson(form: RecipeFormState): Record<string, unknown> {
@@ -97,13 +90,6 @@ function formToJson(form: RecipeFormState): Record<string, unknown> {
         num_samples: parseInt(form.num_samples, 10) || 100,
         strategy_params: safeParseJson(form.strategy_params, {}),
         input_data: form.input_data,
-      }
-    case "eval":
-      return {
-        ...base,
-        eval_dataset: form.eval_dataset,
-        evaluator_id: form.evaluator_id,
-        judge_model: form.judge_model,
       }
   }
 }
@@ -156,9 +142,6 @@ function jsonToForm(
         ? JSON.stringify(obj.strategy_params, null, 2)
         : currentForm.strategy_params,
     input_data: (obj.input_data as string) ?? currentForm.input_data,
-    eval_dataset: (obj.eval_dataset as string) ?? currentForm.eval_dataset,
-    evaluator_id: (obj.evaluator_id as string) ?? currentForm.evaluator_id,
-    judge_model: (obj.judge_model as string) ?? currentForm.judge_model,
   }
 }
 

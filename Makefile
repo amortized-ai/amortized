@@ -17,7 +17,7 @@ MLFLOW_IMAGE  ?= ghcr.io/mlflow/mlflow:latest
 AWSCLI_IMAGE  ?= docker.io/amazon/aws-cli:latest
 NVIDIA_DP_IMAGE ?= nvcr.io/nvidia/k8s-device-plugin:v0.19.3
 TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
-ASYNTH_IMAGE  ?= ghcr.io/amortized-ai/asynth:latest
+DATA_DESIGNER_IMAGE ?= ghcr.io/amortized-ai/data-designer:latest
 OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 DOCLING_IMAGE  ?= ghcr.io/docling-project/docling-serve:latest
 
@@ -110,7 +110,7 @@ pull-images: ## Pull third-party images (MinIO, MLflow, docling-serve, training,
 		docker pull $$img 2>/dev/null || true; \
 	done
 	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
-	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+	@for img in $(TRAINING_IMAGE) $(DATA_DESIGNER_IMAGE); do \
 		if ! docker image inspect $$img >/dev/null 2>&1; then \
 			echo "  Pulling $$img..."; \
 			docker pull $$img; \
@@ -137,7 +137,7 @@ load-deps: ## Load third-party images into kind
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 	@echo "Loading ML images into kind (training is ~12GB, be patient)..."
-	@for img in $(TRAINING_IMAGE) $(ASYNTH_IMAGE); do \
+	@for img in $(TRAINING_IMAGE) $(DATA_DESIGNER_IMAGE); do \
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 

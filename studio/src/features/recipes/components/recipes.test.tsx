@@ -179,23 +179,6 @@ describe("RecipeBuilderForm", () => {
     expect(screen.getByText("Input Data")).toBeInTheDocument()
   })
 
-  it("renders Eval sections when type is eval", () => {
-    const form = { ...defaultForm(), type: "eval" as const }
-    render(
-      <MemoryRouter>
-        <RecipeBuilderForm
-          form={form}
-          onFieldChange={vi.fn()}
-          datasets={datasets}
-          models={models}
-        />
-      </MemoryRouter>,
-    )
-
-    expect(screen.getByText("Dataset")).toBeInTheDocument()
-    expect(screen.getByText("Judge Model")).toBeInTheDocument()
-  })
-
   it("calls onFieldChange when training method is selected", () => {
     const onChange = vi.fn()
     render(
@@ -275,21 +258,6 @@ describe("Form <-> JSON sync (reducer logic)", () => {
     expect(json.teacher_model).toBe("m1")
     expect(json.num_samples).toBe(50)
     expect(json.strategy_params).toEqual({ key: "val" })
-  })
-
-  it("formToJson produces correct eval config", () => {
-    const form: RecipeFormState = {
-      ...defaultForm(),
-      type: "eval",
-      eval_dataset: "d1",
-      evaluator_id: "e1",
-      judge_model: "m1",
-    }
-
-    const json = formToJson(form)
-    expect(json.type).toBe("eval")
-    expect(json.evaluator_id).toBe("e1")
-    expect(json.judge_model).toBe("m1")
   })
 
   it("jsonToForm round-trips training config", () => {

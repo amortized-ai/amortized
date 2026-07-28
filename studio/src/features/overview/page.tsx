@@ -41,13 +41,13 @@ export default function OverviewPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Amortized Studio</h1>
               <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-md mx-auto">
-                Build task-specific AI models that outperform frontier APIs — at a fraction of the cost. Describe what you need, and Morty walks you through data generation, training, and evaluation.
+                Build task-specific AI models that outperform frontier APIs — at a fraction of the cost. Describe what you need, and Morty walks you through data generation and training.
               </p>
             </div>
             <div className="flex items-center justify-center gap-6 pt-1 text-xs text-muted-foreground/70">
               <span className="inline-flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Synthetic data</span>
               <span className="inline-flex items-center gap-1.5"><BookOpen className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Fine-tuning</span>
-              <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> Evaluation</span>
+              <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> On-prem deployment</span>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-4">
               <button
@@ -126,7 +126,7 @@ export default function OverviewPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">AI Gateway</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Routes to local models or cloud LLMs for data generation and eval</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Routes to local models or cloud LLMs for data generation</p>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-300 mt-1" />
               </Link>
@@ -203,7 +203,7 @@ export default function OverviewPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-sm">Chat with Morty</h3>
                         <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                          Describe your task in plain language — Morty handles data generation, training, and evaluation.
+                          Describe your task in plain language — Morty handles data generation and training.
                         </p>
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-[#0066cc] dark:text-[#4394e5] mt-2 transition-all duration-300 group-hover:gap-1.5">
                           Open Chat <ArrowRight className="h-3 w-3" />
@@ -223,7 +223,7 @@ export default function OverviewPage() {
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-sm">Use a Recipe</h3>
                         <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                          Configure training, SDG, or eval jobs directly with full control over parameters.
+                          Configure training or SDG jobs directly with full control over parameters.
                         </p>
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-[#0066cc] dark:text-[#4394e5] mt-2 transition-all duration-300 group-hover:gap-1.5">
                           Browse Recipes <ArrowRight className="h-3 w-3" />
@@ -292,7 +292,7 @@ export default function OverviewPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Track SDG, training, and evaluation jobs in real-time. View logs, metrics, and status updates as they run.
+                        Track SDG and training jobs in real-time. View logs, metrics, and status updates as they run.
                       </p>
                       <span className="inline-flex items-center gap-1 text-xs font-medium mt-2 transition-all duration-300 group-hover:gap-1.5">
                         View Jobs <ArrowRight className="h-3 w-3" />

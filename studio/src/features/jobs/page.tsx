@@ -18,14 +18,13 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty"
-import { Briefcase, ArrowRight, GraduationCap, Sparkles, ClipboardCheck } from "lucide-react"
+import { Briefcase, ArrowRight, GraduationCap, Sparkles } from "lucide-react"
 import { SearchInput } from "@/components/search-input"
 import type { Job, JobType, JobStatus } from "@/types/api"
 
 const TYPE_OPTIONS = [
   { value: "sdg" as JobType, label: "SDG", color: TYPE_COLORS.sdg },
   { value: "training" as JobType, label: "Training", color: TYPE_COLORS.training },
-  { value: "eval" as JobType, label: "Eval", color: TYPE_COLORS.eval },
 ]
 
 const STATUS_OPTIONS = [
@@ -95,7 +94,7 @@ export default function JobsPage() {
   return (
     <div className="space-y-6">
       <div data-tutorial="job-header" className="space-y-6">
-        <PageHeader title="Jobs" description="Track your training, data generation, and evaluation runs" />
+        <PageHeader title="Jobs" description="Track your training and data generation runs" />
 
         <div className="animate-message-in rounded-xl border bg-card p-4">
           <div className="grid gap-3 md:grid-cols-3 mb-3">
@@ -115,15 +114,6 @@ export default function JobsPage() {
               <div>
                 <p className="text-sm font-medium">Training</p>
                 <p className="text-xs text-muted-foreground">Fine-tune a base model on your data</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2.5">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#daf2f2] text-[#147878] dark:bg-[#003333]/40 dark:text-[#37a3a3]">
-                <ClipboardCheck className="h-3.5 w-3.5" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">Eval</p>
-                <p className="text-xs text-muted-foreground">Test accuracy against baselines</p>
               </div>
             </div>
           </div>
@@ -174,7 +164,7 @@ export default function JobsPage() {
           <EmptyHeader>
             <EmptyMedia variant="icon"><Briefcase /></EmptyMedia>
             <EmptyTitle>No jobs yet</EmptyTitle>
-            <EmptyDescription>Jobs appear here when you run training, SDG, or eval tasks.</EmptyDescription>
+            <EmptyDescription>Jobs appear here when you run training or SDG tasks.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button asChild><Link to="/chat">Go to Chat</Link></Button>

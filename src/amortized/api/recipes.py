@@ -46,7 +46,7 @@ async def get_recipe(name: str) -> dict[str, Any]:
 
 
 class SaveRecipeRequest(BaseModel):
-    type: str = Field(..., description="Recipe type: training, sdg, eval")
+    type: str = Field(..., description="Recipe type: training, sdg")
     description: str = Field("", description="Recipe description")
     config: dict[str, Any] = Field(default_factory=dict, description="Recipe configuration")
 

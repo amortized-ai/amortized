@@ -1,87 +1,92 @@
 # Classification — SDG Guide
 
-Use this guide for ticket classifiers, intent routers, sentiment analysis,
-and content moderation tasks.
+Use this guide when building ticket classifiers, intent routers, sentiment
+analyzers, or content moderators.
+
+## How This Works
+
+You will **create a brand new Data Designer config** from scratch. The
+classification pipeline generates labeled examples where each sample has
+input text and a classification label.
 
 ## Requirement Gathering
 
-CRITICAL: Ask these questions **one at a time, in separate messages**.
-Each question MUST be its own message. Do NOT combine two questions into
-one message. Do NOT ask about categories in the same message as domain.
-Wait for the user to respond before asking the next question.
+Ask the user these questions (one at a time, with numbered options):
 
-### Step 1 — Domain (ALWAYS ask this first, even if obvious)
+1. **What domain?** — What kind of content will this classifier handle?
+   e.g., customer support tickets, user messages, content moderation.
+2. **What categories?** — What labels should the classifier predict?
+   Suggest 3-6 relevant labels based on the domain. Let the user
+   customize or define their own.
+3. **Urgency levels?** — Should the classifier also assign urgency?
+   1) Yes, 3 levels — Low, Medium, High
+   2) Yes, 4 levels — Low, Medium, High, Critical
+   3) No urgency — Just classify by category
+4. **Which teacher model?** — Call `list_models` to discover available
+   models from the AI Gateway. Present each as a numbered option.
+   If no models are returned, direct the user to Settings → AI Gateway.
+5. **How many samples?** — How many training examples to generate?
+   1) 100 samples — Quick prototype
+   2) 500 samples — Good coverage across categories
+   3) 1000 samples — Best model quality, more diverse examples
+6. **Distribution** — Should categories be balanced or weighted?
+   Default: roughly balanced unless the real-world distribution is known.
 
-Your first response after the user describes their task must ONLY ask
-what domain/industry their classifier is for. Do NOT mention categories,
-urgency, or samples yet.
+## Building the Config
 
-Say ONE short sentence acknowledging their goal, then ask:
+```json
+{
+  "type": "sdg",
+  "config": {
+    "num_records": 500,
+    "model_configs": [{"alias": "text", "model": "<selected_model>", "provider": "gateway", "skip_health_check": true}],
+    "columns": [
+      {
+        "column_type": "sampler",
+        "name": "category",
+        "sampler_type": "category",
+        "params": {
+          "values": ["<CATEGORY_1>", "<CATEGORY_2>", "<CATEGORY_3>"],
+          "weights": [0.4, 0.35, 0.25]
+        }
+      },
+      {
+        "column_type": "llm-text",
+        "name": "text",
+        "model_alias": "text",
+        "system_prompt": "<domain-specific prompt for generating realistic input text>",
+        "prompt": "Generate a realistic {{ category }} example..."
+      },
+      {
+        "column_type": "llm-text",
+        "name": "label",
+        "model_alias": "text",
+        "system_prompt": "Classify the text. Output ONLY the label.",
+        "prompt": "Text: {{ text }}\n\nClassify as one of: <categories>. Output ONLY the label."
+      }
+    ],
+    "processors": [
+      {
+        "processor_type": "schema_transform",
+        "name": "sft_format",
+        "template": {
+          "messages": [
+            {"role": "system", "content": "<classification system prompt>"},
+            {"role": "user", "content": "{{ text }}"},
+            {"role": "assistant", "content": "{{ label }}"}
+          ]
+        }
+      }
+    ]
+  }
+}
+```
 
-"What type of support tickets will this handle?"
+Create columns, prompts, and categories based on the user's specific task.
+Use the model name from `list_models` in the `model_configs`.
+Submit via `create_job`.
 
-1) Software/technical support — Bug reports, feature requests, troubleshooting
-2) Billing & payments — Invoices, refunds, subscription issues
-3) Customer service — Account access, onboarding, general inquiries
-4) E-commerce — Orders, shipping, returns, product questions
+## After SDG — Training
 
-STOP here. Do NOT continue to step 2 in this message.
-
-### Step 2 — Categories (ask AFTER user picks domain)
-
-Based on the domain they chose, suggest specific category labels:
-
-"What categories should it classify into?"
-
-For customer support, suggest:
-1) Standard categories — Billing, Technical, Account, General Inquiry
-2) Detailed categories — Billing, Technical, Account, Shipping, Returns, Product Questions
-3) Custom categories — I'll define my own labels
-
-For other domains, suggest 3-4 relevant groupings.
-
-STOP here. Do NOT continue to step 3 in this message.
-
-### Step 3 — Urgency levels
-
-"Should the classifier also assign an urgency level?"
-
-1) Yes, 3 levels — Low, Medium, High
-2) Yes, 4 levels — Low, Medium, High, Critical
-3) No urgency — Just classify by category
-
-### Step 4 — Sample count
-
-"How many training examples should we generate?"
-
-1) 100 samples — Quick prototype
-2) 500 samples — Good coverage across categories
-3) 1000 samples — Best model quality, more diverse examples
-
-### Step 5 — Teacher model
-
-Call `list_models` to discover available models from the AI Gateway.
-Present each as a numbered option. ALWAYS add as the last option:
-N) Configure a model — Set up an AI Gateway endpoint in Settings
-
-## Recipe Selection
-
-- Customer support tickets → `examples/ticket-classifier/synth`
-- Intent routing → `examples/intent-router/synth`
-- Content moderation → `examples/content-moderator/synth`
-- Other → use `get_recipes` to find a match, or fall back to
-  `templates/sdg/classification.yaml`
-
-## Job Submission
-
-Use `submit_recipe_job` with these overrides:
-- `num_samples`: user's chosen count
-- `model`: the `name` field from the selected gateway endpoint
-  (e.g. `openai/gpt-4o-mini`)
-- `task_description`: a detailed description including ALL categories
-  and urgency levels the user selected
-
-## Recommended Training Method
-
-After SDG completes, recommend **LoRA SFT** for classification tasks.
-It's fast, memory-efficient, and well-suited for label prediction.
+Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md`
+for the training config. Chain via `parent_job_id`.

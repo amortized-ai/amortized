@@ -2,7 +2,6 @@ export function formatRecipeType(type: string): string {
   const map: Record<string, string> = {
     training: "Training",
     sdg: "SDG",
-    eval: "Eval",
   }
   return map[type.toLowerCase()] ?? type
 }
@@ -16,7 +15,6 @@ export function formatRecipeName(name: string): string {
 }
 
 export function inferRecipeType(name: string): string | null {
-  if (name.includes("/eval/")) return "eval"
   if (name.includes("/sdg/")) return "sdg"
   if (name.includes("/training/") || name.includes("/train/")) return "training"
   return null
@@ -53,8 +51,6 @@ export function recipeTypeClassName(type: string): string {
       return "border-transparent bg-[#ece6ff] text-[#5e40be] dark:bg-[#1b0d33]/40 dark:text-[#876fd4]"
     case "training":
       return "border-transparent bg-[#e0f0ff] text-[#0066cc] dark:bg-[#003366]/40 dark:text-[#4394e5]"
-    case "eval":
-      return "border-transparent bg-[#daf2f2] text-[#147878] dark:bg-[#003333]/40 dark:text-[#37a3a3]"
     default:
       return ""
   }

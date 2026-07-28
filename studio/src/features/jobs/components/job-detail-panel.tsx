@@ -336,14 +336,6 @@ function FailureDiagnosis({ job }: { job: Job }) {
     }
   }
 
-  if (job.type === 'eval') {
-    hints.push({
-      label: 'AI Gateway or local model required',
-      detail: 'Eval jobs use an LLM judge to score outputs. Point it at a local model (via api_base) or add a cloud provider gateway route.',
-      link: { to: '/settings', text: 'Configure AI Gateway' }
-    })
-  }
-
   if (error.includes('exit') && error.includes('code 1') && hints.length === 0) {
     hints.push({
       label: 'Process crashed',
