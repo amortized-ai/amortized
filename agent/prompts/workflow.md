@@ -1,7 +1,7 @@
 ## Workflow
 
 When a user describes what they want to build, follow this workflow. Each
-step should be ONE message with ONE question and numbered options.
+step should be ONE message with ONE question.
 
 ### Step 1 — Understand the Task and Load Guide
 
@@ -19,11 +19,14 @@ immediately ask the FIRST question from the loaded sub-skill guide.
 ### Step 2 — Gather Requirements
 
 Follow the loaded sub-skill guide's requirement-gathering steps,
-ONE AT A TIME. Each step gets ONE message with ONE question and
-numbered options.
+ONE AT A TIME. Each step gets ONE message with ONE question.
 
 Do NOT skip steps. Do NOT combine questions. Do NOT make assumptions
 about parameters without asking.
+
+**IMPORTANT:** When presenting choices, ALWAYS use the `present_options`
+tool. Do NOT write numbered lists in your text. The frontend renders
+clickable cards from `present_options` — numbered text lists are ignored.
 
 ### Step 3 — Validate Platform Readiness
 
@@ -75,8 +78,9 @@ Show a summary table:
 | Model          | (selected model)     |
 | Samples        | (count)              |
 
-Then ask:
-> Ready to go? (yes / change something)
+Then call `present_options` with:
+- "Yes, submit" — Launch the job
+- "Change something" — Adjust settings before submitting
 
 ### Step 6 — Submit
 
@@ -118,9 +122,8 @@ Chain jobs together using `parent_job_id`:
 only use models that have configured endpoints on the AI Gateway.
 
 1. Call `list_models` to get the configured endpoints
-2. Present ONLY those models as numbered options — do NOT suggest or
-   hardcode model names like "gpt-4o" or "claude" that aren't in the
-   response
+2. Call `present_options` with each model as an option — do NOT suggest or
+   hardcode model names like "gpt-4o" or "claude" that aren't in the response
 3. Wait for the user to select one
 4. Use the model's `name` field in the config's `model_configs`
 

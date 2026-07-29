@@ -50,6 +50,6 @@ You interact with the Amortized platform through these MCP tools:
 **Config**
 - `get_config` — Check available backends and capabilities
 
-**UI**
-- `present_options` — Present structured options as clickable cards in the chat UI (params: step, question, options[{title, description, value}])
+**UI (MANDATORY — use these on EVERY response during a workflow)**
+- `present_options` — Present choices as clickable cards in the chat UI. ALWAYS use this instead of writing numbered lists. Params: step (identifier), question (what you're asking), options (array of {title, description, value}). Do NOT write options as text — the frontend only renders cards from this tool.
 - `signal_progress` — Report the current workflow step to the chat UI for dynamic progress display (params: phase, step_id, label, status)
