@@ -66,7 +66,12 @@ class TestCreateJob:
                             "column_type": "llm-text",
                             "name": "question",
                             "model_alias": "text",
+                            "system_prompt": "Generate a question.",
+                            "prompt": "Context: {{ content }}",
                         }
+                    ],
+                    "model_configs": [
+                        {"alias": "text", "model": "gpt-4o"}
                     ],
                 },
             },
@@ -142,6 +147,174 @@ class TestCreateJob:
         assert data["valid"] is True
 
 
+    @pytest.mark.asyncio
+    async def test_sdg_missing_columns(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={"type": "sdg", "config": {}},
+        )
+        assert response.status_code == 422
+        assert "columns" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_empty_columns(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={"type": "sdg", "config": {"columns": []}},
+        )
+        assert response.status_code == 422
+        assert "non-empty" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_column_missing_fields(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={"type": "sdg", "config": {"columns": [{"name": "q"}]}},
+        )
+        assert response.status_code == 422
+        assert "column_type" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_llm_text_missing_model_configs(
+        self, client: httpx.AsyncClient,
+    ) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{
+                        "column_type": "llm-text",
+                        "name": "question",
+                        "model_alias": "text",
+                        "system_prompt": "Generate a question.",
+                        "prompt": "{{ content }}",
+                    }],
+                },
+            },
+        )
+        assert response.status_code == 422
+        assert "model_configs" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_model_alias_mismatch(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{
+                        "column_type": "llm-text",
+                        "name": "question",
+                        "model_alias": "nonexistent",
+                        "system_prompt": "Generate.",
+                        "prompt": "{{ content }}",
+                    }],
+                    "model_configs": [
+                        {"alias": "text", "model": "gpt-4o"},
+                    ],
+                },
+            },
+        )
+        assert response.status_code == 422
+        assert "nonexistent" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_unknown_column_type(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{"column_type": "llm_text", "name": "q"}],
+                },
+            },
+        )
+        assert response.status_code == 422
+        assert "llm_text" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_uuid_sampler_valid(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{
+                        "column_type": "sampler",
+                        "name": "id",
+                        "sampler_type": "uuid",
+                        "params": {},
+                    }],
+                },
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["valid"] is True
+
+    @pytest.mark.asyncio
+    async def test_sdg_valid_config(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [
+                        {
+                            "column_type": "sampler",
+                            "name": "difficulty",
+                            "sampler_type": "category",
+                            "params": {"values": ["Easy", "Hard"]},
+                        },
+                        {
+                            "column_type": "llm-text",
+                            "name": "question",
+                            "model_alias": "text",
+                            "system_prompt": "Generate a question.",
+                            "prompt": "Difficulty: {{ difficulty }}",
+                        },
+                    ],
+                    "model_configs": [{"alias": "text", "model": "gpt-4o"}],
+                },
+            },
+        )
+        assert response.status_code == 201
+
+    @pytest.mark.asyncio
+    async def test_sdg_dry_run_invalid(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={"type": "sdg", "config": {"columns": []}, "dry_run": True},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is False
+        assert len(data["errors"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_sdg_dry_run_valid(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{
+                        "column_type": "sampler",
+                        "name": "topic",
+                        "sampler_type": "category",
+                        "params": {"values": ["A", "B"]},
+                    }],
+                },
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is True
+        assert data["errors"] == []
+
+
 class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_empty(self, client: httpx.AsyncClient) -> None:
@@ -166,7 +339,7 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"num_records": 10, "columns": [{"column_type": "llm-text", "name": "q"}]},
+                "config": {"num_records": 10, "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}]},
             },
         )
         response = await client.get("/api/v1/jobs")
@@ -191,7 +364,7 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"num_records": 10, "columns": [{"column_type": "llm-text", "name": "q"}]},
+                "config": {"num_records": 10, "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}]},
             },
         )
         response = await client.get("/api/v1/jobs?type=training")
