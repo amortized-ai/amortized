@@ -1,44 +1,57 @@
 import type { PersistedMessage } from "@/stores/chat-store"
 
-const MAX_CHARS = 6000
+const SOFT_CAP = 100_000
+const MAX_TOOL_RESULT_CHARS = 2000
 
 export function summarizeConversation(messages: PersistedMessage[]): string {
   if (messages.length === 0) return ""
 
   const lines: string[] = []
-  lines.push("[Context from previous conversation — the session was lost. Here is a summary of what was discussed:]")
-  lines.push("")
 
-  let charCount = 0
-  const pairs: string[] = []
-
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]!
-    let line: string
-
+  for (const msg of messages) {
     if (msg.role === "user") {
-      line = `User: ${msg.content.slice(0, 200)}`
+      lines.push(`[User] ${msg.content}`)
     } else {
-      let content = msg.content.slice(0, 300)
-      if (msg.content.length > 300) content += "..."
-      line = `Assistant: ${content}`
-
+      lines.push(`[Assistant] ${msg.content}`)
       if (msg.toolResults?.length) {
-        const toolSummary = msg.toolResults
-          .map(t => `[Tool: ${t.name}]`)
-          .join(", ")
-        line += `\n  ${toolSummary}`
+        for (const t of msg.toolResults) {
+          const result = t.result
+            ? t.result.length > MAX_TOOL_RESULT_CHARS
+              ? t.result.slice(0, MAX_TOOL_RESULT_CHARS) + "..."
+              : t.result
+            : ""
+          lines.push(`  [Tool: ${t.name} → ${result}]`)
+        }
       }
     }
-
-    if (charCount + line.length > MAX_CHARS) break
-    charCount += line.length
-    pairs.unshift(line)
+    lines.push("")
   }
 
-  lines.push(...pairs)
-  lines.push("")
-  lines.push("[End of context. Continue the conversation naturally from where it left off.]")
+  let body = lines.join("\n")
 
-  return lines.join("\n")
+  if (body.length > SOFT_CAP) {
+    const trimmed: string[] = []
+    let charCount = 0
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!
+      if (charCount + line.length > SOFT_CAP) break
+      charCount += line.length
+      trimmed.unshift(line)
+    }
+    body = trimmed.join("\n")
+  }
+
+  return [
+    "[System: This is a restored conversation session. Below is the complete",
+    "message history from before the session was lost. Continue naturally as",
+    "if this is your ongoing conversation — maintain all context about the",
+    "user's task, jobs submitted, choices made, and workflow progress.]",
+    "",
+    "--- Message History ---",
+    "",
+    body,
+    "--- End of History ---",
+    "",
+    "Continue the conversation from here.",
+  ].join("\n")
 }

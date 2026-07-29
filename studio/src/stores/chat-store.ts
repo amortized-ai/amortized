@@ -21,7 +21,7 @@ export interface PersistedConversation {
   messages: PersistedMessage[]
 }
 
-export type SessionStatus = "unknown" | "connected" | "reconnecting" | "rebuilt"
+export type SessionStatus = "unknown" | "connected" | "reconnecting" | "rebuilt" | "restored"
 
 interface ChatStoreState {
   currentConversationId: string | null

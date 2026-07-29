@@ -284,7 +284,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
             logger.warn("failed to replay context", { conversationId })
           }
         }
-        useChatStore.getState().setSessionStatus(conversationId, "rebuilt")
+        useChatStore.getState().setSessionStatus(conversationId, "restored")
       }
       continue
     }
