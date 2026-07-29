@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { sendOpenCodeMessage, generateChatTitle } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, generateChatTitle } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
-import { useGatewayRoutes } from "@/features/settings"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-chat")
@@ -12,8 +11,6 @@ import type {
   ToolResult,
   OpenCodeResponse,
 } from "../types"
-import { autoCostEstimate } from "../utils/auto-cost"
-import { extractPhase } from "../utils/workflow-options"
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -49,7 +46,7 @@ function extractToolCalls(text: string): {
 } {
   const seen = new Set<string>()
   for (const m of text.matchAll(INVOKE_NAME_RE)) {
-    seen.add(m[1]!.replace(/^mcp_amortized__/, "").replaceAll("_", " "))
+    seen.add(normalizeToolName(m[1]!))
   }
   const tools: ToolResult[] = [...seen].map((name) => ({
     name,
@@ -59,6 +56,7 @@ function extractToolCalls(text: string): {
   const cleaned = text
     .replace(TOOL_BLOCK_RE, "")
     .replace(STRAY_TAG_RE, "")
+    .replace(/<phase>[\w:_-]+<\/phase>/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
   return { cleanText: cleaned, tools }
@@ -76,17 +74,17 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
       rawText += part.text ?? ""
     } else if (part.type === "tool") {
       toolResults.push({
-        name: part.tool.replace(/^mcp_amortized__/, "").replaceAll("_", " "),
-        result: String(part.output ?? part.state ?? ""),
+        name: normalizeToolName(part.tool),
+        result: serializeToolOutput(part.output ?? part.state ?? ""),
         collapsed: true,
       })
     }
   }
 
   const { cleanText, tools } = extractToolCalls(rawText)
-  const seen = new Set(toolResults.map((t) => t.name.replace(/_/g, " ").toLowerCase()))
+  const seen = new Set(toolResults.map((t) => t.name.toLowerCase()))
   for (const t of tools) {
-    const key = t.name.replace(/_/g, " ").toLowerCase()
+    const key = t.name.toLowerCase()
     if (!seen.has(key)) {
       seen.add(key)
       toolResults.push(t)
@@ -94,6 +92,68 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
   }
 
   return { content: cleanText, toolResults }
+}
+
+const UI_TOOLS = new Set([
+  "present_options",
+  "signal_phase",
+  "estimate_sdg_cost",
+  "compare_sdg_models",
+  "estimate_training_cost",
+  "estimate_training_method_cost",
+  "estimate_eval_cost",
+  "submit_recipe_job",
+  "create_job",
+])
+
+function normalizeToolName(raw: string): string {
+  return raw.replace(/^(?:mcp_amortized__|amortized_)/, "")
+}
+
+function serializeToolOutput(value: unknown): string {
+  if (typeof value === "string") return value
+  return JSON.stringify(value)
+}
+
+function extractSessionData(
+  sessionMessages: OpenCodeResponse[],
+  existingTools: ToolResult[],
+): { tools: ToolResult[]; text: string } {
+  const seen = new Set(existingTools.map((t) => t.name.toLowerCase()))
+  const tools = [...existingTools]
+  const textParts: string[] = []
+
+  let lastUserIdx = -1
+  for (let i = sessionMessages.length - 1; i >= 0; i--) {
+    const info = (sessionMessages[i] as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
+    if (info?.role === "user") { lastUserIdx = i; break }
+  }
+  const currentTurnMessages = lastUserIdx >= 0
+    ? sessionMessages.slice(lastUserIdx + 1)
+    : sessionMessages
+
+  for (const msg of currentTurnMessages) {
+    const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
+    if (info?.role !== "assistant") continue
+
+    for (const part of msg.parts) {
+      if (part.type === "text" && part.text) {
+        textParts.push(part.text)
+      } else if (part.type === "tool") {
+        const name = normalizeToolName(part.tool ?? "")
+        if (UI_TOOLS.has(name) && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase())
+          const stateObj = part.state as Record<string, unknown> | undefined
+          const rawOutput = part.output ?? stateObj?.output ?? ""
+          const output = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput)
+          tools.push({ name, result: output, collapsed: true })
+        }
+      }
+    }
+  }
+
+  const { cleanText } = extractToolCalls(textParts.join("\n"))
+  return { tools, text: cleanText }
 }
 
 /**
@@ -120,10 +180,6 @@ export function useChat() {
 
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
-
-  const { data: gatewayRoutes } = useGatewayRoutes()
-  const gatewayRoutesRef = useRef(gatewayRoutes)
-  useEffect(() => { gatewayRoutesRef.current = gatewayRoutes }, [gatewayRoutes])
 
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
@@ -199,18 +255,20 @@ export function useChat() {
         })
 
         const parsed = parseOpenCodeResponse(response)
-        const { cleanText: responseContent, phase } = extractPhase(parsed.content)
-        const toolResults = parsed.toolResults
 
-        try {
-          const allMessages = [...messagesRef.current, userMessage]
-          const autoCost = await autoCostEstimate(allMessages, responseContent, phase, gatewayRoutesRef.current)
-          if (autoCost) {
-            toolResults.push(autoCost)
-          }
-        } catch {
-          /* auto-cost is best-effort */
+        const sessionMessages = await fetchSessionMessages(convId)
+        const session = extractSessionData(sessionMessages, parsed.toolResults)
+        const toolResults = session.tools
+
+        const phaseTool = toolResults.find((t) => t.name === "signal_phase")
+        let phase: string | null = null
+        if (phaseTool?.result) {
+          try {
+            const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+            if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+          } catch { /* ignore */ }
         }
+        const responseContent = session.text || parsed.content
 
         if (toolResults.length > 0) {
           setCurrentToolCall(toolResults[toolResults.length - 1]!)

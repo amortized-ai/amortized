@@ -38,7 +38,7 @@ export function MessageList({
               key={message.id}
               message={message}
               isLatest={i === messages.length - 1}
-              allMessages={messages}
+
               onOptionSelect={onOptionSelect}
               onConfirmAction={onConfirmAction}
               onRejectAction={onRejectAction}

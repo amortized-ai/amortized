@@ -17,6 +17,7 @@ let mockResponse: OpenCodeResponse = {
 
 vi.mock("@/lib/api-client", () => ({
   sendOpenCodeMessage: vi.fn(async () => mockResponse),
+  fetchSessionMessages: vi.fn(async () => []),
   generateChatTitle: vi.fn(async (msg: string) => msg.slice(0, 40)),
 }))
 
@@ -42,10 +43,6 @@ const mockStoreValue = {
 }
 
 const mockSetSessionStatus = vi.fn()
-
-vi.mock("@/features/settings", () => ({
-  useGatewayRoutes: () => ({ data: [], isLoading: false }),
-}))
 
 vi.mock("@/stores/chat-store", () => ({
   useChatStore: Object.assign(
@@ -127,7 +124,7 @@ describe("useChat", () => {
     const assistantMsg = result.current.messages[1]!
     expect(assistantMsg.content).toBe("Let me check.\n\nFound 1 running job.")
     expect(assistantMsg.toolResults).toHaveLength(1)
-    expect(assistantMsg.toolResults[0]!.name).toBe("get jobs")
+    expect(assistantMsg.toolResults[0]!.name).toBe("get_jobs")
   })
 
   it("handles API errors", async () => {

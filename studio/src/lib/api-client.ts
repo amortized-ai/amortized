@@ -312,6 +312,24 @@ export async function sendOpenCodeMessageWithContext(
   return sendOpenCodeMessage(conversationId, userMessage, modelSelection)
 }
 
+export async function fetchSessionMessages(
+  conversationId: string,
+): Promise<OpenCodeResponse[]> {
+  const sessionId = useChatStore.getState().getSessionId(conversationId)
+  if (!sessionId) return []
+  try {
+    const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`)
+    if (!resp.ok) {
+      logger.warn("fetchSessionMessages failed", { sessionId, status: resp.status })
+      return []
+    }
+    return await resp.json()
+  } catch (err) {
+    logger.warn("fetchSessionMessages error", { sessionId, error: err instanceof Error ? err.message : String(err) })
+    return []
+  }
+}
+
 export async function generateChatTitle(message: string): Promise<string> {
   const resp = await fetch(`${getBaseUrl()}/agent/title`, {
     method: "POST",

@@ -89,7 +89,7 @@ export interface OpenCodePartTool {
   type: "tool"
   tool: string
   callID: string
-  state: string
+  state: string | Record<string, unknown>
   input?: Record<string, unknown>
   output?: unknown
 }
