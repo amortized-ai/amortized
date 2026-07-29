@@ -4,7 +4,6 @@ import { Bot, X, Plus, ChevronDown, Trash2, GripVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useChatStore } from "@/stores/chat-store"
 import { useChat } from "../hooks/use-chat"
-import { SessionStatusBanner } from "./session-status-banner"
 import { MessageList } from "./message-list"
 import { ChatInput } from "./chat-input"
 import { PlanProgress } from "./plan-progress"
@@ -25,10 +24,6 @@ function SidebarChatContent() {
     confirmAction,
     rejectAction,
   } = useChat()
-
-  const sessionStatus = useChatStore(
-    (s) => s.sessionStatus[s.currentConversationId ?? ""] ?? "unknown",
-  )
 
   const phasePlan = useMemo(() => derivePhasePlan(messages), [messages])
 
@@ -52,13 +47,6 @@ function SidebarChatContent() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <PlanProgress plan={phasePlan} />
-      <SessionStatusBanner
-        status={sessionStatus}
-        onDismiss={() => {
-          const id = useChatStore.getState().currentConversationId
-          if (id) useChatStore.getState().setSessionStatus(id, "connected")
-        }}
-      />
       <MessageList
         messages={messages}
         onOptionSelect={handleSend}
