@@ -73,9 +73,10 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
     if (part.type === "text") {
       rawText += part.text ?? ""
     } else if (part.type === "tool") {
+      const raw = part.output ?? part.state ?? ""
       toolResults.push({
         name: part.tool.replace(/^mcp_amortized__/, "").replaceAll("_", " "),
-        result: String(part.output ?? part.state ?? ""),
+        result: typeof raw === "string" ? raw : JSON.stringify(raw),
         collapsed: true,
       })
     }
