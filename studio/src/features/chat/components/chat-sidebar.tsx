@@ -51,21 +51,27 @@ function SidebarChatContent() {
 
   return (
     <>
-      <PlanProgress plan={phasePlan} />
-      <SessionStatusBanner
-        status={sessionStatus}
-        onDismiss={() => {
-          const id = useChatStore.getState().currentConversationId
-          if (id) useChatStore.getState().setSessionStatus(id, "connected")
-        }}
-      />
+      <div className="shrink-0">
+        <PlanProgress plan={phasePlan} />
+      </div>
+      <div className="shrink-0">
+        <SessionStatusBanner
+          status={sessionStatus}
+          onDismiss={() => {
+            const id = useChatStore.getState().currentConversationId
+            if (id) useChatStore.getState().setSessionStatus(id, "connected")
+          }}
+        />
+      </div>
       <MessageList
         messages={messages}
         onOptionSelect={handleSend}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
       />
-      <ChatInput onSend={handleSend} disabled={isStreaming} />
+      <div className="shrink-0">
+        <ChatInput onSend={handleSend} disabled={isStreaming} />
+      </div>
     </>
   )
 }
@@ -84,6 +90,13 @@ export function ChatSidebar() {
   } = useChatStore()
 
   const isDragging = useRef(false)
+  const cleanupDrag = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    return () => {
+      cleanupDrag.current?.()
+    }
+  }, [])
 
   const onResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -104,15 +117,30 @@ export function ChatSidebar() {
       document.removeEventListener("mouseup", onMouseUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+      cleanupDrag.current = null
     }
 
     document.body.style.cursor = "col-resize"
     document.body.style.userSelect = "none"
     document.addEventListener("mousemove", onMouseMove)
     document.addEventListener("mouseup", onMouseUp)
+    cleanupDrag.current = onMouseUp
   }, [setPanelWidth])
 
   const [convListOpen, setConvListOpen] = useState(false)
+  const convDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!convListOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (convDropdownRef.current && !convDropdownRef.current.contains(e.target as Node)) {
+        setConvListOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [convListOpen])
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{
     id: string
@@ -221,79 +249,81 @@ export function ChatSidebar() {
       </div>
       {/* Chat content */}
       <div className="flex flex-1 min-w-0 flex-col bg-background">
-        {/* Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#ee0000]">
-              <Bot className="h-3 w-3 text-white" />
-            </div>
-            <button
-              onClick={() => setConvListOpen(!convListOpen)}
-              className="flex items-center gap-1 min-w-0 text-sm font-medium hover:text-foreground/80 transition-colors"
-            >
-              <span className="truncate max-w-[140px]">
-                {currentConversation?.title ?? "Chat"}
-              </span>
-              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={handleNewConversation}
-              aria-label="New conversation"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setPanelOpen(false)}
-              aria-label="Close chat"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Conversation dropdown */}
-        {convListOpen && (
-          <div className="border-b bg-muted/30 max-h-48 overflow-y-auto">
-            {conversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`group flex items-center justify-between px-3 py-2 text-xs cursor-pointer hover:bg-accent transition-colors ${
-                  conv.id === currentConversationId
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                <button
-                  className="truncate text-left flex-1 min-w-0"
-                  onClick={() => {
-                    setCurrentConversationId(conv.id)
-                    setConvListOpen(false)
-                  }}
-                >
-                  {conv.title}
-                </button>
-                <button
-                  className="shrink-0 ml-2 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDeleteConversation(conv.id)
-                  }}
-                  aria-label={`Delete ${conv.title}`}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
+        {/* Header + conversation dropdown */}
+        <div ref={convDropdownRef} className="shrink-0">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#ee0000]">
+                <Bot className="h-3 w-3 text-white" />
               </div>
-            ))}
+              <button
+                onClick={() => setConvListOpen(!convListOpen)}
+                className="flex items-center gap-1 min-w-0 text-sm font-medium hover:text-foreground/80 transition-colors"
+              >
+                <span className="truncate max-w-[140px]">
+                  {currentConversation?.title ?? "Chat"}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleNewConversation}
+                aria-label="New conversation"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setPanelOpen(false)}
+                aria-label="Close chat"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
-        )}
+
+          {/* Conversation dropdown */}
+          {convListOpen && (
+            <div className="border-b bg-muted/30 max-h-48 overflow-y-auto">
+              {conversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={`group flex items-center justify-between px-3 py-2 text-xs cursor-pointer hover:bg-accent transition-colors ${
+                    conv.id === currentConversationId
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  <button
+                    className="truncate text-left flex-1 min-w-0"
+                    onClick={() => {
+                      setCurrentConversationId(conv.id)
+                      setConvListOpen(false)
+                    }}
+                  >
+                    {conv.title}
+                  </button>
+                  <button
+                    className="shrink-0 ml-2 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteConversation(conv.id)
+                    }}
+                    aria-label={`Delete ${conv.title}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Keyed on conversationId so useChat remounts and loads correct messages */}
         <SidebarChatContent key={currentConversationId ?? "none"} />
