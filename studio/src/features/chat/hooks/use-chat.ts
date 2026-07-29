@@ -141,11 +141,7 @@ export function useChat() {
 
     async function warmup() {
       try {
-        const resp = await fetch(`/agent/session/${sessionId}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: "ping" }] }),
-        })
+        const resp = await fetch(`/agent/session/${sessionId}/message`)
         if (resp.ok) {
           if (!cancelled) useChatStore.getState().setSessionStatus(convId, "connected")
           return
