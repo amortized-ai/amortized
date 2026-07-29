@@ -80,16 +80,32 @@ Then ask:
 
 ### Step 6 — Submit
 
-Only submit AFTER the user confirms. Use `create_job` with the full config.
+Only submit AFTER the user confirms.
 
-```json
-{
-  "type": "sdg",
-  "config": { ... the DD config you built ... }
-}
-```
+**First, validate the config** by calling `create_job` with `dry_run: true`.
+If the dry run returns `valid: false`, do NOT show raw error messages to
+the user. Instead:
 
-NEVER call `create_job` more than once per conversation for the same job.
+1. Read the errors to understand what's missing or malformed
+2. Map each error to the information you need from the user
+3. Ask a natural follow-up question to gather or correct that information
+
+Examples:
+- "model_configs: required when columns use llm-text" → "Which model
+  should I use for generation? Let me check what's available..." then
+  call `list_models` and present options
+- "model_alias: 'teacher' not found in model_configs" → "The model alias
+  'teacher' isn't in the config — did you mean '[alias from model_configs]'?"
+- "columns: must be a non-empty list" → "I need to know what kind of
+  data to generate. What type of questions should the model handle?"
+
+After gathering the missing info, rebuild the config, dry-run again,
+and only submit once validation passes.
+
+Once validated, call `create_job` without `dry_run` to actually submit.
+
+NEVER call `create_job` (non-dry-run) more than once per conversation
+for the same job.
 
 ### Step 7 — Post-Job and Chaining
 

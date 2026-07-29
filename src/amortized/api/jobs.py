@@ -49,12 +49,87 @@ def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
+_KNOWN_COLUMN_TYPES = frozenset({
+    "sampler", "llm-text", "llm-code", "llm-structured", "llm-judge",
+    "validation", "expression", "custom", "seed-dataset", "embedding", "image",
+})
+
+_LLM_COLUMN_TYPES = frozenset({"llm-text", "llm-code", "llm-structured", "llm-judge"})
+
+
+def _validate_sdg_config(config: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+
+    columns = config.get("columns")
+    if columns is None:
+        return ["columns: Data Designer config requires a 'columns' field"]
+    if not isinstance(columns, list) or len(columns) == 0:
+        return ["columns: must be a non-empty list"]
+
+    model_aliases_needed: list[str] = []
+
+    for i, col in enumerate(columns):
+        prefix = f"columns[{i}]"
+        col_type = col.get("column_type")
+        if not col_type:
+            errors.append(f"{prefix}.column_type: required")
+            continue
+        if col_type not in _KNOWN_COLUMN_TYPES:
+            errors.append(
+                f"{prefix}.column_type: unknown type '{col_type}'"
+                f" (valid: {', '.join(sorted(_KNOWN_COLUMN_TYPES))})"
+            )
+            continue
+        if not col.get("name"):
+            errors.append(f"{prefix}.name: required")
+
+        if col_type == "sampler":
+            if not col.get("sampler_type"):
+                errors.append(f"{prefix}.sampler_type: required for sampler columns")
+            sampler_type = col.get("sampler_type", "")
+            if sampler_type in ("category", "subcategory"):
+                params = col.get("params", {})
+                values = params.get("values") if isinstance(params, dict) else None
+                if not values or not isinstance(values, list) or len(values) == 0:
+                    errors.append(f"{prefix}.params.values: required for {sampler_type} samplers")
+        elif col_type in _LLM_COLUMN_TYPES:
+            alias = col.get("model_alias")
+            if not alias:
+                errors.append(f"{prefix}.model_alias: required for {col_type} columns")
+            else:
+                model_aliases_needed.append(alias)
+            if not col.get("system_prompt"):
+                errors.append(f"{prefix}.system_prompt: required for {col_type} columns")
+            if not col.get("prompt"):
+                errors.append(f"{prefix}.prompt: required for {col_type} columns")
+
+    if model_aliases_needed:
+        model_configs = config.get("model_configs")
+        if not model_configs or not isinstance(model_configs, list):
+            errors.append("model_configs: required when columns use llm-text")
+        else:
+            for j, mc in enumerate(model_configs):
+                if not mc.get("alias"):
+                    errors.append(f"model_configs[{j}].alias: required")
+                if not mc.get("model"):
+                    errors.append(f"model_configs[{j}].model: required")
+            defined_aliases = {mc.get("alias") for mc in model_configs if mc.get("alias")}
+            for alias in model_aliases_needed:
+                if alias not in defined_aliases:
+                    errors.append(
+                        f"model_alias: '{alias}' not found in model_configs "
+                        f"(available: {', '.join(sorted(defined_aliases)) or 'none'})"
+                    )
+
+    return errors
+
+
 def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
     try:
         if job_type == JobType.training:
             TrainingJobConfig(**config)
-        elif job_type == JobType.sdg and "columns" not in config:
-            return ["columns: Data Designer config requires a 'columns' field"]
+        elif job_type == JobType.sdg:
+            return _validate_sdg_config(config)
     except ValidationError as exc:
         return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
     return []
