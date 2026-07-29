@@ -32,23 +32,9 @@ import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
 function formatJobError(raw: string): { summary: string; isTruncated: boolean } {
-  const lower = raw.toLowerCase()
-  if (/\(404\)|http error 404|not found/i.test(raw) && /kubernetes|k8s|jobs\.batch/i.test(raw))
-    return { summary: "The job's Kubernetes resource was not found. It may have been cleaned up or the namespace was reset.", isTruncated: false }
-  if (/\(403\)|http error 403|permission denied|forbidden/i.test(raw))
-    return { summary: "Permission denied. Check that the service account has the required RBAC permissions.", isTruncated: false }
-  if (/\(500\)|http error 500|internal server error/i.test(raw))
-    return { summary: "Internal server error on the compute backend. Check the backend logs for details.", isTruncated: false }
-  if (/runtimeclass.*not found|nvidia.*not found/i.test(raw))
-    return { summary: "GPU runtime not available. Install the NVIDIA runtime with `make gpu`, or remove the GPU requirement from the job config.", isTruncated: false }
-  if (/imagepullbackoff|errimagepull|failed to pull/i.test(raw))
-    return { summary: "Container image could not be pulled. Check that the image exists and registry credentials are configured.", isTruncated: false }
-  if (lower.includes("out of memory") || lower.includes("oom"))
-    return { summary: "Job ran out of memory. Try reducing batch size, sequence length, or use a smaller model.", isTruncated: false }
-  if (lower.includes("cuda") && lower.includes("error"))
-    return { summary: "CUDA error during training. The GPU may not have enough VRAM for this configuration.", isTruncated: false }
-  if (raw.length > 200)
+  if (raw.length > 200) {
     return { summary: raw.slice(0, 200) + "…", isTruncated: true }
+  }
   return { summary: raw, isTruncated: false }
 }
 

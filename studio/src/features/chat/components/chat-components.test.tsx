@@ -256,70 +256,70 @@ describe("MessageList", () => {
   })
 })
 
-describe("MessageBubble — parsed option cards", () => {
-  function makeMsg(content: string): ChatMessage {
+describe("MessageBubble — structured option cards", () => {
+  function makeMsg(content: string, toolResults: ChatMessage["toolResults"] = []): ChatMessage {
     return {
       id: "1",
       role: "assistant",
       content,
       timestamp: new Date().toISOString(),
-      toolResults: [],
+      toolResults,
       proposedAction: null,
       optionCards: [],
     }
   }
 
-  it("renders clickable option cards from numbered options", () => {
+  it("renders option cards from present_options tool result", () => {
     const onSelect = vi.fn()
+    const toolResults = [{
+      name: "present_options",
+      result: JSON.stringify({
+        options: [
+          { title: "80/20 split", description: "Standard split", value: "80/20 split" },
+          { title: "70/30 split", description: "More validation data", value: "70/30 split" },
+        ],
+      }),
+      collapsed: true,
+    }]
     render(
       <MessageBubble
-        message={makeMsg("Pick one:\n1) 80/20 split\n2) 70/30 split\n3) 90/10 split")}
-        onOptionSelect={onSelect}
-      />,
-      { wrapper: Wrapper },
-    )
-    const cards = screen.getAllByRole("button")
-    expect(cards).toHaveLength(4) // 3 options + "Other"
-    expect(cards[0]).toHaveTextContent("80/20 split")
-    expect(cards[1]).toHaveTextContent("70/30 split")
-    expect(cards[2]).toHaveTextContent("90/10 split")
-
-    fireEvent.click(cards[0]!)
-    expect(onSelect).toHaveBeenCalledWith("80/20 split")
-  })
-
-  it("renders clickable option cards from bullet options", () => {
-    const onSelect = vi.fn()
-    render(
-      <MessageBubble
-        message={makeMsg("Choose:\n- Option A\n- Option B")}
+        message={makeMsg("Pick one:", toolResults)}
         onOptionSelect={onSelect}
       />,
       { wrapper: Wrapper },
     )
     const cards = screen.getAllByRole("button")
     expect(cards).toHaveLength(3) // 2 options + "Other"
-    expect(cards[0]).toHaveTextContent("Option A")
-    expect(cards[1]).toHaveTextContent("Option B")
+    expect(cards[0]).toHaveTextContent("80/20 split")
+    expect(cards[1]).toHaveTextContent("70/30 split")
+
+    fireEvent.click(cards[0]!)
+    expect(onSelect).toHaveBeenCalledWith("80/20 split")
   })
 
-  it("does not parse options from user messages", () => {
+  it("does not render option cards for user messages", () => {
     const userMsg: ChatMessage = {
-      ...makeMsg("1) First\n2) Second"),
+      ...makeMsg("Some text"),
       role: "user",
     }
     render(<MessageBubble message={userMsg} onOptionSelect={vi.fn()} />, { wrapper: Wrapper })
     expect(screen.queryAllByRole("button")).toHaveLength(0)
   })
 
-  it("renders a single option as a clickable card", () => {
-    render(
-      <MessageBubble
-        message={makeMsg("Just one:\n1) Only option — the sole choice")}
-        onOptionSelect={vi.fn()}
-      />,
-      { wrapper: Wrapper },
-    )
-    expect(screen.queryAllByRole("button").length).toBeGreaterThanOrEqual(1)
+  it("does not render options when message has explicit optionCards", () => {
+    const msg: ChatMessage = {
+      ...makeMsg("Pick one:", [{
+        name: "present_options",
+        result: JSON.stringify({
+          options: [
+            { title: "A", description: "First", value: "a" },
+          ],
+        }),
+        collapsed: true,
+      }]),
+      optionCards: [{ title: "Explicit", description: "Card", value: "explicit" }],
+    }
+    render(<MessageBubble message={msg} onOptionSelect={vi.fn()} />)
+    expect(screen.getByText("Explicit")).toBeInTheDocument()
   })
 })

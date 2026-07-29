@@ -49,3 +49,7 @@ You interact with the Amortized platform through these MCP tools:
 
 **Config**
 - `get_config` — Check available backends and capabilities
+
+**UI**
+- `present_options` — Present structured options as clickable cards in the chat UI (params: step, question, options[{title, description, value}])
+- `signal_phase` — Signal the current workflow phase and step to the UI (params: phase, step). Call this on EVERY response.

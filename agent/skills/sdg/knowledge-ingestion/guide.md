@@ -20,7 +20,7 @@ Every part of the config is dynamic:
 
 ## Requirement Gathering
 
-Ask the user these questions (one at a time, with numbered options):
+Ask the user these questions (one at a time, using `present_options`):
 
 1. **What documents?** — Check if they've already uploaded documents via the
    Documents page. Use `list_documents` to show available documents with

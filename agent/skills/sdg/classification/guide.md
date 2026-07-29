@@ -91,6 +91,54 @@ Create columns, prompts, and categories based on the user's specific task.
 Use the model name from `list_models` in the `model_configs`.
 Submit via `create_job`.
 
+Call `present_options` with step="sdg-domain" and these options:
+- title: "Software/technical support", description: "Bug reports, feature requests, troubleshooting", value: "Software/technical support — Bug reports, feature requests, troubleshooting"
+- title: "Billing & payments", description: "Invoices, refunds, subscription issues", value: "Billing & payments — Invoices, refunds, subscription issues"
+- title: "Customer service", description: "Account access, onboarding, general inquiries", value: "Customer service — Account access, onboarding, general inquiries"
+- title: "E-commerce", description: "Orders, shipping, returns, product questions", value: "E-commerce — Orders, shipping, returns, product questions"
+
+STOP here. Do NOT continue to step 2 in this message.
+
+### Step 2 — Categories (ask AFTER user picks domain)
+
+Based on the domain they chose, suggest specific category labels:
+
+"What categories should it classify into?"
+
+For customer support, call `present_options` with step="sdg-categories" and these options:
+- title: "Standard categories", description: "Billing, Technical, Account, General Inquiry", value: "Standard categories — Billing, Technical, Account, General Inquiry"
+- title: "Detailed categories", description: "Billing, Technical, Account, Shipping, Returns, Product Questions", value: "Detailed categories — Billing, Technical, Account, Shipping, Returns, Product Questions"
+- title: "Custom categories", description: "I'll define my own labels", value: "Custom categories — I'll define my own labels"
+
+For other domains, suggest 3-4 relevant groupings.
+
+STOP here. Do NOT continue to step 3 in this message.
+
+### Step 3 — Urgency levels
+
+"Should the classifier also assign an urgency level?"
+
+Call `present_options` with step="sdg-urgency" and these options:
+- title: "Yes, 3 levels", description: "Low, Medium, High", value: "Yes, 3 levels — Low, Medium, High"
+- title: "Yes, 4 levels", description: "Low, Medium, High, Critical", value: "Yes, 4 levels — Low, Medium, High, Critical"
+- title: "No urgency", description: "Just classify by category", value: "No urgency — Just classify by category"
+
+### Step 4 — Sample count
+
+"How many training examples should we generate?"
+
+Call `present_options` with step="sdg-samples" and these options:
+- title: "100 samples", description: "Quick prototype", value: "100 samples — Quick prototype"
+- title: "500 samples", description: "Good coverage across categories", value: "500 samples — Good coverage across categories"
+- title: "1000 samples", description: "Best model quality, more diverse examples", value: "1000 samples — Best model quality, more diverse examples"
+
+### Step 5 — Teacher model
+
+Call `list_models` to discover available models from the AI Gateway.
+Call `present_options` with step="sdg-teacher-model" and each model as an option.
+ALWAYS add as the last option:
+- title: "Configure a model", description: "Set up an AI Gateway endpoint in Settings", value: "Configure a model — Set up an AI Gateway endpoint in Settings"
+
 ## After SDG — Training
 
 Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md`

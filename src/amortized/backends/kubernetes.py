@@ -427,7 +427,10 @@ class KubernetesBackend:
     async def status(self, handle: BackendHandle) -> BackendStatus:
         resource_name = handle.scheduler_id
         if not resource_name:
-            return BackendStatus(running=False, error="No scheduler_id")
+            return BackendStatus(
+                running=False,
+                error="Cannot check job status — no Kubernetes resource name was recorded.",
+            )
 
         api_client = await self._get_client()
         from kubernetes_asyncio.client import BatchV1Api
@@ -436,13 +439,26 @@ class KubernetesBackend:
         try:
             job = await batch.read_namespaced_job(resource_name, self._namespace)
         except Exception as e:
-            return BackendStatus(running=False, error=str(e))
+            return BackendStatus(
+                running=False,
+                error=(
+                    f"K8s API error checking job '{resource_name}'"
+                    f" in namespace '{self._namespace}': {e}"
+                ),
+            )
 
         status = job.status
         if status.succeeded and status.succeeded > 0:
             return BackendStatus(running=False, exit_code=0)
         if status.failed and status.failed > 0:
-            return BackendStatus(running=False, exit_code=1, error="Job failed")
+            return BackendStatus(
+                running=False,
+                exit_code=1,
+                error=(
+                    f"Job '{resource_name}' failed in namespace"
+                    f" '{self._namespace}'. Check logs for details."
+                ),
+            )
         return BackendStatus(running=True)
 
     async def cancel(self, handle: BackendHandle) -> None:

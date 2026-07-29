@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import artifacts, costs, documents, jobs, recipes
+from amortized.api import artifacts, costs, documents, jobs, recipes, ui
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
@@ -203,6 +203,7 @@ app.include_router(recipes.recipe_jobs_router)
 app.include_router(costs.router)
 app.include_router(documents.router)
 app.include_router(artifacts.router)
+app.include_router(ui.router)
 
 from amortized.api.models import router as models_router  # noqa: E402
 
@@ -211,7 +212,9 @@ app.include_router(models_router)
 try:
     create_mcp_server(app)
 except Exception:
-    pass
+    import traceback
+
+    traceback.print_exc()
 
 
 def _detect_gpu() -> dict[str, object]:

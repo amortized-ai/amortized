@@ -104,7 +104,13 @@ class LocalBackend:
             except OSError:
                 return BackendStatus(running=False)
 
-        return BackendStatus(running=False, error="Process not found")
+        return BackendStatus(
+            running=False,
+            error=(
+                f"Local process for job '{handle.job_id}' not found"
+                " — it may have exited before status was checked."
+            ),
+        )
 
     async def cancel(self, handle: BackendHandle) -> None:
         proc = self._processes.get(handle.job_id)
