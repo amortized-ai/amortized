@@ -242,7 +242,7 @@ export function ChatSidebar() {
         <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
       </div>
       {/* Chat content */}
-      <div className="flex flex-1 min-w-0 flex-col bg-background">
+      <div className="flex flex-1 min-w-0 min-h-0 flex-col bg-background">
         {/* Header + conversation dropdown */}
         <div ref={convDropdownRef} className="shrink-0">
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">

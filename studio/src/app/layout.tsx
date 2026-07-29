@@ -207,7 +207,7 @@ export function AppLayout() {
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className="max-h-svh">
         <header className="relative z-20 flex h-12 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger data-testid="sidebar-trigger" />
           <Separator orientation="vertical" className="mx-2 h-4" />
