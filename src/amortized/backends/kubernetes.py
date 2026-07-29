@@ -502,18 +502,14 @@ class KubernetesBackend:
 
         pod_name = pods.items[0].metadata.name
 
-        from kubernetes_asyncio import watch
-
-        w = watch.Watch()
         try:
-            async for line in w.stream(
-                core.read_namespaced_pod_log,
+            log_text = await core.read_namespaced_pod_log(
                 name=pod_name,
                 namespace=self._namespace,
-                follow=True,
-            ):
-                yield line
+                tail_lines=2000,
+            )
+            if log_text:
+                for line in log_text.split("\n"):
+                    yield line
         except Exception:
             pass
-        finally:
-            w.stop()

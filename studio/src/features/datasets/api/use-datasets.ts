@@ -5,6 +5,8 @@ import {
   searchMlflowRuns,
   getMlflowRun,
   getMlflowArtifactContent,
+  listArtifacts,
+  getArtifactJson,
   deleteDataset,
 } from "@/lib/api-client"
 import type { DatasetRecord, DatasetSample, MlflowRun } from "@/types/api"
@@ -78,9 +80,59 @@ export function useDeleteDataset() {
   })
 }
 
+function parseRecord(
+  parsed: Record<string, unknown>,
+  index: number,
+): DatasetSample {
+  let messages: DatasetSample["messages"] = []
+  const metadata: Record<string, unknown> = {}
+
+  if (Array.isArray(parsed.messages)) {
+    messages = parsed.messages as DatasetSample["messages"]
+  } else if (typeof parsed.messages === "string") {
+    const str = parsed.messages as string
+    const jsonMatch = str.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      try {
+        const arr = JSON.parse(jsonMatch[0])
+        if (Array.isArray(arr)) messages = arr as DatasetSample["messages"]
+      } catch { /* unparseable */ }
+    }
+  } else {
+    for (const [, value] of Object.entries(parsed)) {
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Array.isArray((value as Record<string, unknown>).messages)
+      ) {
+        messages = (value as Record<string, unknown>)
+          .messages as DatasetSample["messages"]
+        break
+      }
+    }
+  }
+
+  messages = messages.map((m) => ({
+    ...m,
+    content:
+      typeof m.content === "string"
+        ? m.content
+        : m.content != null
+          ? JSON.stringify(m.content, null, 2)
+          : "",
+  }))
+
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key !== "messages") metadata[key] = value
+  }
+
+  return { index, messages, metadata }
+}
+
 /**
- * Fetch actual data samples from a dataset's JSONL artifact.
- * Each line is parsed as a DatasetSample.
+ * Fetch data samples from a dataset's artifacts.
+ * Supports both parquet (Data Designer) and JSONL (legacy) formats.
  */
 export function useDatasetSamples(
   experimentId: string | null,
@@ -89,58 +141,37 @@ export function useDatasetSamples(
   return useQuery<DatasetSample[]>({
     queryKey: ["mlflow", "datasets", runId, "samples"],
     queryFn: async () => {
-      const raw = await getMlflowArtifactContent(
+      const { files } = await listArtifacts(
         experimentId!,
         runId!,
-        "generated_data/generated_data.jsonl",
+        "generated_data",
       )
-      const lines = raw.trim().split("\n").filter(Boolean)
-      return lines.map((line, index) => {
-        const parsed = JSON.parse(line) as Record<string, unknown>
-        let messages: DatasetSample["messages"] = []
-        const metadata: Record<string, unknown> = {}
-        if (Array.isArray(parsed.messages)) {
-          messages = parsed.messages as DatasetSample["messages"]
-        } else if (typeof parsed.messages === "string") {
-          const str = parsed.messages as string
-          const jsonMatch = str.match(/\[[\s\S]*\]/)
-          if (jsonMatch) {
-            const arrayStr = jsonMatch[0]
-            try {
-              const arr = JSON.parse(arrayStr)
-              if (Array.isArray(arr)) messages = arr as DatasetSample["messages"]
-            } catch {
-              try {
-                const repaired = arrayStr.replace(/([[,])\s*"role"\s*:/g, '$1 {"role":')
-                const arr = JSON.parse(repaired)
-                if (Array.isArray(arr)) messages = arr as DatasetSample["messages"]
-              } catch { /* truly unparseable */ }
-            }
-          }
-        } else {
-          for (const [, value] of Object.entries(parsed)) {
-            if (
-              value &&
-              typeof value === "object" &&
-              !Array.isArray(value) &&
-              Array.isArray((value as Record<string, unknown>).messages)
-            ) {
-              messages = (value as Record<string, unknown>).messages as DatasetSample["messages"]
-              break
-            }
-          }
-        }
-        messages = messages.map(m => ({
-          ...m,
-          content: typeof m.content === "string"
-            ? m.content
-            : m.content != null ? JSON.stringify(m.content, null, 2) : "",
-        }))
-        for (const [key, value] of Object.entries(parsed)) {
-          if (key !== "messages") metadata[key] = value
-        }
-        return { index, messages, metadata }
-      })
+
+      const parquet = files.find((f) => f.path.endsWith(".parquet"))
+      if (parquet) {
+        const records = await getArtifactJson(
+          experimentId!,
+          runId!,
+          parquet.path,
+        )
+        return records.map((r, i) => parseRecord(r, i))
+      }
+
+      const jsonl = files.find((f) => f.path.endsWith(".jsonl"))
+      if (jsonl) {
+        const raw = await getMlflowArtifactContent(
+          experimentId!,
+          runId!,
+          jsonl.path,
+        )
+        const lines = raw.trim().split("\n").filter(Boolean)
+        return lines.map((line, i) => {
+          const parsed = JSON.parse(line) as Record<string, unknown>
+          return parseRecord(parsed, i)
+        })
+      }
+
+      return []
     },
     enabled: !!experimentId && !!runId,
   })
