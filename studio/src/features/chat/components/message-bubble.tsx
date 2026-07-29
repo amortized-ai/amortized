@@ -272,6 +272,12 @@ export function MessageBubble({
 
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>()
+    hidden.add("signal_progress")
+    hidden.add("signal progress")
+    hidden.add("signal_phase")
+    hidden.add("signal phase")
+    hidden.add("present_options")
+    hidden.add("present options")
     if (trainingCostSummary) hidden.add("training cost summary")
     if (costEstimate) {
       hidden.add("estimate_sdg_cost")

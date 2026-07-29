@@ -49,3 +49,8 @@ You interact with the Amortized platform through these MCP tools:
 
 **Config**
 - `get_config` — Check available backends and capabilities
+
+**UI**
+- `present_options` — Present structured options as clickable cards (params: step, question, options[{title, description, value}])
+- `signal_phase` — Signal the current workflow phase (params: phase, step)
+- `signal_progress` — Report a progress step to the UI progress bar (params: phase, step_id, label, status)

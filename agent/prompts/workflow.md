@@ -1,3 +1,43 @@
+## Progress Signaling (MANDATORY)
+
+On EVERY response during a workflow, call `signal_progress` to report
+what you are currently doing. The frontend accumulates these to build
+a dynamic progress bar.
+
+**Parameters:**
+- `phase` — "sdg", "training", or "eval"
+- `step_id` — Stable key for dedup (snake_case, e.g. "check_models")
+- `label` — Human-readable description (e.g. "Checking available models")
+- `status` — "active" (in progress) or "completed" (done)
+
+**Rules:**
+- Call once per response with the current step as "active"
+- When moving to a new step, the previous active step auto-completes
+- To explicitly complete a step, call with status="completed"
+- Do NOT pre-announce future steps — only report what you are doing NOW
+- Use descriptive labels that reflect actual activity
+
+**Example flow:**
+```
+User: "build a classifier"
+→ signal_progress(phase="sdg", step_id="understand_task", label="Understanding your task", status="active")
+
+User picks domain
+→ signal_progress(phase="sdg", step_id="gather_domain", label="Selecting domain categories", status="active")
+
+Agent checks models
+→ signal_progress(phase="sdg", step_id="check_models", label="Checking available models", status="active")
+
+Agent builds config
+→ signal_progress(phase="sdg", step_id="build_config", label="Building data generation config", status="active")
+
+User confirms, agent submits
+→ signal_progress(phase="sdg", step_id="submit_job", label="Submitting SDG job", status="active")
+```
+
+Also call `signal_phase` for coarse phase tracking (used by the static
+fallback for older conversations).
+
 ## Workflow
 
 When a user describes what they want to build, follow this workflow. Each

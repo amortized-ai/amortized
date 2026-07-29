@@ -7,6 +7,7 @@ import {
   Loader2,
   Database,
   Cpu,
+  FlaskConical,
 } from "lucide-react"
 import type { PhasePlan } from "../types"
 
@@ -28,6 +29,15 @@ const PHASE_STYLES = {
     badge: "bg-rh-blue-light text-rh-blue-dark dark:bg-rh-blue-dark/40 dark:text-rh-blue",
     iconColor: "text-rh-blue",
     check: "text-rh-blue",
+  },
+  eval: {
+    icon: FlaskConical,
+    gradient: "from-emerald-100/50 to-emerald-100/20 dark:from-emerald-900/20 dark:to-emerald-900/5",
+    dot: "bg-emerald-600 dark:bg-emerald-400",
+    connector: "bg-emerald-600/60",
+    badge: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-400",
+    iconColor: "text-emerald-600",
+    check: "text-emerald-600",
   },
 }
 
