@@ -210,7 +210,10 @@ class SSHBackend:
             return await self._docker_status(handle)
 
         if handle.remote_pid is None:
-            return BackendStatus(running=False, error="No PID recorded")
+            return BackendStatus(
+                running=False,
+                error=f"Cannot check job status on '{self._host}' — no PID was recorded.",
+            )
 
         conn = await self._connect()
         try:

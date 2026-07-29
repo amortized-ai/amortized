@@ -234,19 +234,15 @@ async def _fetch_document_content(document_id: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
-                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts"
-                "/parsed_content.md",
+                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts/parsed_content.md",
                 params={"run_id": document_id},
             )
             if resp.is_success:
                 return resp.text
-            logger.warning(
-                "Failed to fetch document %s: %d", document_id, resp.status_code
-            )
+            logger.warning("Failed to fetch document %s: %d", document_id, resp.status_code)
     except Exception:
         logger.warning("Failed to fetch document %s", document_id, exc_info=True)
     return ""
-
 
 
 async def _resolve_parent_artifacts(
@@ -282,15 +278,18 @@ async def _resolve_parent_artifacts(
         if not existing or not existing.startswith("s3://"):
             s3_dir = f"{artifact_uri}/generated_data/"
             local_dir = "/amortized/work/data"
-            s3_downloads.append(S3Download(
-                s3_uri=s3_dir,
-                local_path=local_dir,
-                is_directory=True,
-            ))
+            s3_downloads.append(
+                S3Download(
+                    s3_uri=s3_dir,
+                    local_path=local_dir,
+                    is_directory=True,
+                )
+            )
             config["data_path"] = local_dir
             logger.info(
                 "Injected SDG data from MLflow run %s: %s",
-                parent_run_id, s3_dir,
+                parent_run_id,
+                s3_dir,
             )
 
     return config
@@ -342,7 +341,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 job_id,
                 status=JobStatus.failed.value,
                 completed_at=datetime.now(UTC).isoformat(),
-                error=str(exc),
+                error=f"Job '{job_id}' cannot run on backend '{backend_name}': {exc}",
             )
             return
 
@@ -388,11 +387,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             else:
                 local_name = data_path.split("/")[-1]
                 local_path = f"/amortized/work/{local_name}"
-            s3_downloads.append(S3Download(
-                s3_uri=data_path,
-                local_path=local_path,
-                is_directory=is_dir,
-            ))
+            s3_downloads.append(
+                S3Download(
+                    s3_uri=data_path,
+                    local_path=local_path,
+                    is_directory=is_dir,
+                )
+            )
             config = {**config, "data_path": local_path}
         if config_mod.settings.mlflow_tracking_uri:
             config.setdefault("report_to", "mlflow")
@@ -405,13 +406,24 @@ async def _run_job(job: dict[str, Any]) -> None:
         spec_env["DD_API_KEY"] = "not-needed"
 
         for stale_key in (
-            "model", "api_base", "api_key", "num_samples", "max_concurrency",
-            "temperature", "max_tokens", "top_p", "seed", "num_retries",
-            "input_data", "input_documents", "strategy_params",
-            "task_description", "document_id", "output_dir",
+            "model",
+            "api_base",
+            "api_key",
+            "num_samples",
+            "max_concurrency",
+            "temperature",
+            "max_tokens",
+            "top_p",
+            "seed",
+            "num_retries",
+            "input_data",
+            "input_documents",
+            "strategy_params",
+            "task_description",
+            "document_id",
+            "output_dir",
         ):
             config.pop(stale_key, None)
-
 
         document_ids = config.pop("document_ids", []) or config.pop("document_id", [])
         if isinstance(document_ids, str):
@@ -427,10 +439,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             if doc_count:
                 doc_setup_cmds = [
                     "mkdir -p /tmp/docs",
-                    *(
-                        f"cp /amortized/doc_{i}.md /tmp/docs/"
-                        for i in range(doc_count)
-                    ),
+                    *(f"cp /amortized/doc_{i}.md /tmp/docs/" for i in range(doc_count)),
                 ]
                 seed_config = config.get("seed_config", {})
                 source = seed_config.get("source", {})
@@ -439,9 +448,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 source.setdefault("file_extensions", [".md"])
                 seed_config["source"] = source
                 config["seed_config"] = seed_config
-                logger.info(
-                    "Job %s: loaded %d documents as seed data", job_id, doc_count
-                )
+                logger.info("Job %s: loaded %d documents as seed data", job_id, doc_count)
 
         num_records = config.pop("num_records", 100)
         dd_config = {"data_designer": config}
@@ -454,17 +461,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             " --artifact-path /amortized/work"
             " --no-tui"
         )
-        processor_names = [
-            p.get("name", "") for p in config.get("processors", [])
-        ]
-        proc_dir = (
-            f"processors-files/{processor_names[-1]}"
-            if processor_names
-            else ""
-        )
+        processor_names = [p.get("name", "") for p in config.get("processors", [])]
+        proc_dir = f"processors-files/{processor_names[-1]}" if processor_names else ""
         upload_cmd = (
-            "python3 /usr/local/bin/upload_to_mlflow.py"
-            f" /amortized/work/dataset {proc_dir}"
+            f"python3 /usr/local/bin/upload_to_mlflow.py /amortized/work/dataset {proc_dir}"
         )
         all_cmds = [*doc_setup_cmds, dd_cmd, upload_cmd]
         cmd = ["sh", "-c", " && ".join(all_cmds)]
@@ -545,7 +545,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             )
             logger.info("Job %s was cancelled", job_id)
         else:
-            error_msg = status.error or f"Process exited with code {status.exit_code}"
+            error_msg = status.error or (
+                f"Job '{job_id}' failed on backend '{backend_name}'"
+                f" with exit code {status.exit_code}. Check logs for details."
+            )
             await _update_job(
                 job_id,
                 status=JobStatus.failed.value,
@@ -555,7 +558,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
 
     except Exception as exc:
-        error_text = str(exc)
+        error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
         # Write error to stderr.log so logs endpoint can serve it even without a backend handle
         try:
             stderr_path = os.path.join(output_dir, "stderr.log")
