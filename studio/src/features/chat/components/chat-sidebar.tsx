@@ -50,29 +50,23 @@ function SidebarChatContent() {
   )
 
   return (
-    <>
-      <div className="shrink-0">
-        <PlanProgress plan={phasePlan} />
-      </div>
-      <div className="shrink-0">
-        <SessionStatusBanner
-          status={sessionStatus}
-          onDismiss={() => {
-            const id = useChatStore.getState().currentConversationId
-            if (id) useChatStore.getState().setSessionStatus(id, "connected")
-          }}
-        />
-      </div>
+    <div className="flex flex-1 min-h-0 flex-col">
+      <PlanProgress plan={phasePlan} />
+      <SessionStatusBanner
+        status={sessionStatus}
+        onDismiss={() => {
+          const id = useChatStore.getState().currentConversationId
+          if (id) useChatStore.getState().setSessionStatus(id, "connected")
+        }}
+      />
       <MessageList
         messages={messages}
         onOptionSelect={handleSend}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
       />
-      <div className="shrink-0">
-        <ChatInput onSend={handleSend} disabled={isStreaming} />
-      </div>
-    </>
+      <ChatInput onSend={handleSend} disabled={isStreaming} />
+    </div>
   )
 }
 
