@@ -220,6 +220,40 @@ class TestCreateJob:
         assert "nonexistent" in str(response.json())
 
     @pytest.mark.asyncio
+    async def test_sdg_unknown_column_type(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{"column_type": "llm_text", "name": "q"}],
+                },
+            },
+        )
+        assert response.status_code == 422
+        assert "llm_text" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_uuid_sampler_valid(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs",
+            json={
+                "type": "sdg",
+                "config": {
+                    "columns": [{
+                        "column_type": "sampler",
+                        "name": "id",
+                        "sampler_type": "uuid",
+                        "params": {},
+                    }],
+                },
+                "dry_run": True,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["valid"] is True
+
+    @pytest.mark.asyncio
     async def test_sdg_valid_config(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs",
