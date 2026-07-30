@@ -5,6 +5,7 @@ namespace: amortized-mathale
 
 resources:
   - ../../../base
+  - mlflow-mcp.yaml
 
 patches:
   - target:
@@ -61,6 +62,11 @@ patches:
               "amortized": {
                 "type": "remote",
                 "url": "http://amortized-server.amortized-mathale.svc.cluster.local:8000/mcp",
+                "enabled": true
+              },
+              "mlflow": {
+                "type": "remote",
+                "url": "http://mlflow-mcp.amortized-mathale.svc.cluster.local:3000/mcp",
                 "enabled": true
               }
             },
