@@ -12,7 +12,7 @@ import {
   Sun,
   Moon,
   Bot,
-
+  PanelRightClose,
 } from "lucide-react"
 import {
   Sidebar,
@@ -35,9 +35,11 @@ import { CreateMenu } from "@/components/create-menu"
 import { ActiveJobsBadge } from "@/components/active-jobs-badge"
 import { useHealth } from "@/features/settings/api/use-settings"
 import { useUIStore } from "@/stores/ui-store"
+import { useChatStore } from "@/stores/chat-store"
 import { Button } from "@/components/ui/button"
 import { CommandPalette } from "@/components/command-palette"
 import { TutorialOverlay } from "@/components/tutorial"
+import { ChatSidebar } from "@/features/chat/components/chat-sidebar"
 
 import type { LucideIcon } from "lucide-react"
 
@@ -126,9 +128,43 @@ function TourButton() {
   )
 }
 
+function ChatToggle() {
+  const panelOpen = useChatStore((s) => s.panelOpen)
+  const togglePanel = useChatStore((s) => s.togglePanel)
+  const location = useLocation()
+
+  if (location.pathname.startsWith("/chat")) return null
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={panelOpen ? "secondary" : "ghost"}
+          size="icon"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={togglePanel}
+          data-testid="chat-sidebar-toggle"
+          aria-label={panelOpen ? "Close chat" : "Open chat"}
+        >
+          {panelOpen ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <MessageSquare className="h-4 w-4" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{panelOpen ? "Close chat" : "Chat with Morty"}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function AppLayout() {
   const location = useLocation()
   const theme = useUIStore((s) => s.theme)
+  const panelOpen = useChatStore((s) => s.panelOpen)
+  const panelWidth = useChatStore((s) => s.panelWidth)
+  const isChatPage = location.pathname.startsWith("/chat")
+  const showChatSidebar = panelOpen && !isChatPage
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark")
@@ -171,7 +207,7 @@ export function AppLayout() {
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className="max-h-svh">
         <header className="relative z-20 flex h-12 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger data-testid="sidebar-trigger" />
           <Separator orientation="vertical" className="mx-2 h-4" />
@@ -180,6 +216,7 @@ export function AppLayout() {
             <TourButton />
             <ActiveJobsBadge />
             <CreateMenu />
+            <ChatToggle />
             <ConnectionDot />
             <ThemeToggle />
             <Link
@@ -191,9 +228,18 @@ export function AppLayout() {
             </Link>
           </div>
         </header>
-        <main className="flex-1 min-w-0 overflow-auto p-4">
-          <Outlet />
-        </main>
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="h-full overflow-auto p-4">
+              <Outlet />
+            </div>
+          </div>
+          {showChatSidebar && (
+            <div className="shrink-0 h-full" style={{ width: panelWidth }}>
+              <ChatSidebar />
+            </div>
+          )}
+        </div>
       </SidebarInset>
       <CommandPalette />
       <TutorialOverlay />
