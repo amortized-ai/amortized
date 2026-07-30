@@ -90,14 +90,16 @@ Estimate chunk count: total_chars / (chunk_size x 4 chars/token).
 Use `total_chars` from `get_document_sections` to estimate.
 For example, a 144K-char document with 2048-token chunks: 144000 / (2048 * 4) ~ 18 chunks.
 
-Present options relative to the chunk count:
-1) N samples — Full coverage (1 QA per chunk, minimum recommended)
-2) Nx2 samples — Double coverage (2 QAs per chunk, better diversity)
-3) Nx3 samples — Triple coverage (3 QAs per chunk, best quality)
+Present options in the hundreds-to-thousands range. More samples =
+better model quality. The chunk count is the floor, not the target.
 
-NEVER suggest a sample count below the estimated chunk count.
-Explain to the user WHY: "With ~N chunks from your document, we need
-at least N samples to cover every section."
+1) 500 samples — Good starting point for most documents
+2) 1000 samples — Recommended for production-quality models
+3) 3000 samples — Best quality, thorough coverage of every chunk
+
+NEVER suggest fewer than 100 samples. Typical production runs use
+1000-3000 samples. Each chunk gets sampled multiple times with
+different topic/difficulty/question_type combinations.
 
 ### Step 8 — System prompt for the trained model
 
