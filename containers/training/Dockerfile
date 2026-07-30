@@ -28,7 +28,8 @@ RUN echo 'transformers<5.0' > /tmp/constraints.txt \
     && echo 'huggingface-hub<1.0' >> /tmp/constraints.txt \
     && echo 'openpipe-art==0.5.17' >> /tmp/constraints.txt \
     && echo 'apache-tvm-ffi<=0.1.9' >> /tmp/constraints.txt \
-    && echo 'nvidia-cutlass-dsl<=4.5.2' >> /tmp/constraints.txt
+    && echo 'nvidia-cutlass-dsl<=4.5.2' >> /tmp/constraints.txt \
+    && echo 'torch>=2.10.0,<2.11' >> /tmp/constraints.txt
 ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
