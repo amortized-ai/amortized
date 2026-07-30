@@ -51,6 +51,9 @@ Using the skill guide's instructions, **create a brand new Data Designer
 config** (for SDG) or **training config** (for training) from scratch.
 
 **For SDG jobs:** Build a complete config with:
+- `topic` — a 1-5 word summary of what this dataset is for (e.g.
+  "OpenShift AI troubleshooting", "billing FAQ", "product docs QA").
+  Derive from the documents used or the task the user described.
 - `document_ids` — from uploaded documents
 - `columns` — samplers and LLM prompts tailored to the user's domain
 - `model_configs` — which model to use (from `list_models`)

@@ -530,6 +530,21 @@ async def _run_job(job: dict[str, Any]) -> None:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_type", job["type"])
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
 
+                if job["type"] == JobType.sdg.value:
+                    job_config = job.get("config", {})
+                    if isinstance(job_config, str):
+                        job_config = json.loads(job_config)
+                    nr = job_config.get("num_records", "")
+                    if nr:
+                        await _set_mlflow_run_tag(mlflow_run_id, "num_samples", str(nr))
+                    mc = job_config.get("model_configs", [])
+                    if mc and isinstance(mc, list):
+                        model_name = mc[0].get("model", "")
+                        await _set_mlflow_run_tag(mlflow_run_id, "teacher_model", model_name)
+                    topic = job_config.get("topic", "")
+                    if topic:
+                        await _set_mlflow_run_tag(mlflow_run_id, "dataset_topic", topic)
+
                 if job["type"] == JobType.training.value:
                     model_registered = await _register_training_model(job, mlflow_run_id)
                     if not model_registered:

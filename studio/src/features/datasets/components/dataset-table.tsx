@@ -1,9 +1,12 @@
 import { type ColumnDef } from "@tanstack/react-table"
 import { Database, Sparkles, Upload } from "lucide-react"
 import { useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
+import { EditableTitle } from "@/components/editable-title"
 import { DataTable } from "@/components/data-table"
+import { setMlflowRunTag } from "@/lib/api-client"
 import type { DatasetRecord } from "@/types/api"
 
 interface DatasetTableProps {
@@ -19,6 +22,7 @@ export function DatasetTable({
   onPageChange,
   onSelectDataset,
 }: DatasetTableProps) {
+  const queryClient = useQueryClient()
   const sorted = useMemo(
     () => [...datasets].sort((a, b) => b.created_at - a.created_at),
     [datasets],
@@ -56,20 +60,41 @@ export function DatasetTable({
         },
       },
       {
-        accessorFn: (row) => row.metrics["num_samples_generated"] ?? null,
+        accessorFn: (row) => row.tags["dataset_topic"] ?? "",
+        id: "topic",
+        header: "Topic",
+        cell: ({ row }) => {
+          const topic = row.original.tags["dataset_topic"] ?? ""
+          const runId = row.original.run_id
+          return (
+            <div className="max-w-[180px]" onClick={(e) => e.stopPropagation()}>
+              <EditableTitle
+                value={topic || "Add topic..."}
+                className={`text-sm ${topic ? "" : "text-muted-foreground/50 italic"}`}
+                onSave={async (newValue) => {
+                  await setMlflowRunTag(runId, "dataset_topic", newValue)
+                  void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
+                }}
+              />
+            </div>
+          )
+        },
+      },
+      {
+        accessorFn: (row) => row.tags["num_samples"] ?? null,
         id: "samples",
         header: "Samples",
         cell: ({ getValue }) => {
-          const v = getValue() as number | null
+          const v = getValue() as string | null
           return (
             <span className="text-sm font-medium tabular-nums">
-              {v != null ? v.toLocaleString() : "--"}
+              {v ?? "--"}
             </span>
           )
         },
       },
       {
-        accessorFn: (row) => row.params["model"] ?? "--",
+        accessorFn: (row) => row.tags["teacher_model"] ?? "--",
         id: "model",
         header: "Teacher Model",
         cell: ({ getValue }) => (
@@ -96,7 +121,7 @@ export function DatasetTable({
         ),
       },
     ],
-    [],
+    [queryClient],
   )
 
   const paginationState = useMemo(

@@ -197,8 +197,8 @@ export function DatasetDetailPanel({
 function OverviewTab({ dataset, onClose }: { dataset: DatasetRecord; onClose: () => void }) {
   const navigate = useNavigate()
   const [copied, setCopied] = useState(false)
-  const sampleCount = dataset.metrics["num_samples_generated"] ?? null
-  const model = dataset.params["model"] ?? null
+  const sampleCount = dataset.tags["num_samples"] ?? null
+  const model = dataset.tags["teacher_model"] ?? dataset.params["model"] ?? null
   const temperature = dataset.params["temperature"] ?? null
   const jobId = dataset.tags["job_id"] ?? null
 
