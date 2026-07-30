@@ -18,6 +18,11 @@ The example shows what production-quality values look like. Read its
 specificity, prompt structure, and weight distribution. Apply the same
 reasoning to the user's domain.
 
+**Keep it brief.** Do your analysis silently. Do NOT explain your
+internal reasoning, how you read the document, or why you made each
+choice. Present results and ask for confirmation. The user sees your
+actions — they don't need narration.
+
 ## Requirement Gathering
 
 Ask the user these questions (one at a time, using `present_options`):
@@ -31,27 +36,24 @@ uploaded yet, guide them to upload first.
 ### Step 2 — Read the document and derive topics
 
 After the user selects a document, call `get_document_content` with the
-document ID to read its full parsed content. Then:
+document ID. Analyze the content silently — do NOT narrate your reading
+process or explain how you're extracting sections. Just do the work and
+present the result.
 
-1. Scan the markdown for headings (##, ###) and major sections
-2. Derive 5-9 topic values as **section-level descriptions**, not
-   abstract categories
+Derive 5-9 topic values by scanning headings and major sections. Then
+present them briefly: "Here are the topics I suggest based on your
+document — proceed or adjust?" followed by `present_options`.
 
 **CRITICAL: Topics must be section-level descriptions.**
 - GOOD: "Tier Management - Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits"
 - BAD: "access control"
 
 Each topic value should name the section AND summarize its key content
-in one line. This forces the LLM to ask specific questions about the
-details in that section rather than repeating generic questions.
+in one line. Weight proportionally to section length — do NOT use equal
+weights.
 
-3. Weight topics proportionally to section length — longer/denser
-   sections get higher weights. Do NOT use equal weights.
-4. Present the derived topics to the user for confirmation. Let them
-   adjust, add, or remove topics.
-
-See the `_annotations.topics` and `_annotations.topic_weights` in the
-example recipe for the reasoning behind this.
+See `_annotations.topics` and `_annotations.topic_weights` in the
+example recipe.
 
 ### Step 3 — Question types
 
