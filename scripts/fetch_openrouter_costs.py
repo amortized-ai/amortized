@@ -77,7 +77,7 @@ def main() -> None:
     rows = extract_pricing(models)
 
     if args.output:
-        dest = open(args.output, "w")
+        dest = open(args.output, "w", encoding="utf-8")
     else:
         dest = sys.stdout
 
