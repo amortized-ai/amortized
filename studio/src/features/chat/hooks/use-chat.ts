@@ -119,7 +119,6 @@ function extractSessionData(
   sessionMessages: OpenCodeResponse[],
   existingTools: ToolResult[],
 ): { tools: ToolResult[]; text: string } {
-  const seen = new Set(existingTools.map((t) => t.name.toLowerCase()))
   const tools = [...existingTools]
   const textParts: string[] = []
 
