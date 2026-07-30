@@ -8,7 +8,7 @@ import { MessageList } from "./message-list"
 import { ChatInput } from "./chat-input"
 import { PlanProgress } from "./plan-progress"
 import { DeleteConversationDialog } from "./delete-conversation-dialog"
-import { derivePhasePlan } from "../utils/derive-plan-steps"
+import { derivePlan } from "../utils/derive-plan-steps"
 import { clearConversationSession } from "@/lib/api-client"
 
 const MIN_WIDTH = 320
@@ -25,7 +25,7 @@ function SidebarChatContent() {
     rejectAction,
   } = useChat()
 
-  const phasePlan = useMemo(() => derivePhasePlan(messages), [messages])
+  const phasePlan = useMemo(() => derivePlan(messages), [messages])
 
   const handleSend = useCallback(
     (value: string) => {

@@ -115,7 +115,6 @@ After successful submission, show a summary:
 
 - **Job ID:** <uuid>
 - **Type:** SDG / Training
-- **Status:** Queued
 
 After the user returns or asks about the job, call `get_job_detail` to
 check status. Based on the result, call `present_options` with appropriate

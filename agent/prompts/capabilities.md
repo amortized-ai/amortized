@@ -53,3 +53,4 @@ You interact with the Amortized platform through these MCP tools:
 **UI**
 - `present_options` — Present structured options as clickable cards in the chat UI (params: step, question, options[{title, description, value}])
 - `signal_phase` — Signal the current workflow phase and step to the UI (params: phase, step). Call this on EVERY response.
+- `signal_progress` — Signal the current workflow step for dynamic progress display (params: phase, step_id, label, status). Use this for fine-grained step tracking.

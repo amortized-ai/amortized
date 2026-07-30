@@ -7,7 +7,6 @@ import type { ChatMessage, OptionCard } from "../types"
 import { ToolActivity } from "./tool-badge"
 import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
-import { CostAnalysisCard } from "./cost-analysis-card"
 import { TrainingCostCard } from "./training-cost-card"
 import { ModelComparisonCard } from "./model-comparison-card"
 import { TrainingMethodCostCard } from "./training-method-cost-card"
@@ -44,11 +43,16 @@ export function MessageBubble({
 
   const structuredOptions = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "present_options")
+    const tool = message.toolResults.find(t => t.name === "present_options" || t.name === "present options")
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-      if (parsed?.options && Array.isArray(parsed.options)) return parsed.options as OptionCard[]
+      if (parsed?.options && Array.isArray(parsed.options)) {
+        return (parsed.options as OptionCard[]).map((opt) => ({
+          ...opt,
+          value: opt.description ? `${opt.title} — ${opt.description}` : opt.title,
+        }))
+      }
     } catch { /* ignore parse errors */ }
     return null
   }, [isUser, message.toolResults])
@@ -61,7 +65,7 @@ export function MessageBubble({
   // Extract job ID and type from job submission tool result
   const { jobId, jobType } = useMemo(() => {
     if (isUser) return { jobId: null, jobType: "SDG" }
-    const submitTool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
+    const submitTool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "submit recipe job" || t.name === "create_job" || t.name === "create job")
     if (!submitTool?.result) return { jobId: null, jobType: "SDG" }
     try {
       const parsed = typeof submitTool.result === "string"
@@ -76,19 +80,6 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
-
-  const costEstimate = useMemo(() => {
-    if (isUser) return null
-    const costTool = message.toolResults.find(t => t.name === "estimate_sdg_cost")
-    if (!costTool?.result) return null
-    try {
-      const parsed = typeof costTool.result === "string"
-        ? JSON.parse(costTool.result)
-        : costTool.result
-      if (parsed?.cost && parsed?.comparison) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
 
   const trainingCostEstimate = useMemo(() => {
     if (isUser) return null
@@ -130,14 +121,22 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const visibleToolResults = useMemo(() => {
-    const hidden = new Set<string>(["signal_phase"])
-    if (costEstimate) hidden.add("estimate_sdg_cost")
+    const hidden = new Set<string>([
+      "signal_phase",
+      "signal_progress",
+      "signal progress",
+      "create_job",
+      "create job",
+      "submit_recipe_job",
+      "submit recipe job",
+    ])
     if (trainingCostEstimate) hidden.add("estimate_training_cost")
     if (trainingMethodCost) hidden.add("estimate_training_method_cost")
     if (modelComparison) hidden.add("compare_sdg_models")
     if (structuredOptions) hidden.add("present_options")
+    if (structuredOptions) hidden.add("present options")
     return message.toolResults.filter((t) => !hidden.has(t.name))
-  }, [message.toolResults, costEstimate, trainingCostEstimate, trainingMethodCost, modelComparison, structuredOptions])
+  }, [message.toolResults, trainingCostEstimate, trainingMethodCost, modelComparison, structuredOptions])
 
 
   return (
@@ -178,12 +177,6 @@ export function MessageBubble({
               </ReactMarkdown>
             </div>
           )
-        )}
-
-        {costEstimate && (
-          <div className="mt-3">
-            <CostAnalysisCard estimate={costEstimate} />
-          </div>
         )}
 
         {trainingCostEstimate && (
