@@ -1,5 +1,29 @@
 import { create } from "zustand"
-import { persist } from "zustand/middleware"
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware"
+
+const safeBrowserStorage: StateStorage = {
+  getItem: (name) => {
+    try {
+      return window.localStorage.getItem(name)
+    } catch {
+      return null
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      window.localStorage.setItem(name, value)
+    } catch {
+      console.warn("Chat state could not be saved — localStorage may be full.")
+    }
+  },
+  removeItem: (name) => {
+    try {
+      window.localStorage.removeItem(name)
+    } catch {
+      // best-effort
+    }
+  },
+}
 
 export interface PersistedMessage {
   id: string
@@ -142,9 +166,17 @@ export const useChatStore = create<ChatStoreState>()(
     }),
     {
       name: "amortized-chat",
+      storage: createJSONStorage(() => safeBrowserStorage),
+      version: 1,
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as Record<string, unknown>
+        if (version < 1) {
+          delete state.panelOpen
+        }
+        return state as unknown as ChatStoreState
+      },
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
-        panelOpen: state.panelOpen,
         conversations: state.conversations,
         sessionMap: state.sessionMap,
       }),
