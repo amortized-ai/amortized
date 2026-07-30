@@ -7,9 +7,19 @@ or RAG-deployed knowledge models.
 
 You will create a Data Designer config for the user's specific domain
 and documents. Before starting, read the template at
-`skills/sdg/knowledge-ingestion/sdg-recipe-template.json` — it shows
-the config structure. The YAML comments in the template explain why each
-design choice was made.
+`skills/sdg/knowledge-ingestion/sdg-recipe-template.json` for the
+config structure.
+
+**Document analysis workflow:** Never load the full document upfront.
+Use the structured tools in this order:
+
+1. `get_document_sections(doc_id)` — get headings, char counts, previews (~2KB)
+2. Derive topics and weights from the sections response
+3. `get_section_content(doc_id, heading)` — read specific sections only if
+   you need detail for prompt writing or to clarify a topic description
+
+This keeps your context small and focused. Only fall back to
+`get_document_content` if the other tools are unavailable.
 
 **Keep it brief.** Do your analysis silently. Present results and ask
 for confirmation — do not narrate your reasoning.
@@ -39,11 +49,8 @@ by `present_options`.
 - BAD: "access control"
 
 Each topic value should name the section AND summarize its key content
-in one line. Weight proportionally to section length — do NOT use equal
-weights.
-
-See `_annotations.topics` and `_annotations.topic_weights` in the
-example recipe.
+in one line. Use `char_count` from `get_document_sections` to set
+weights — longer sections get higher weights.
 
 ### Step 3 — Question types
 
@@ -246,7 +253,7 @@ specific product/technology name in the system prompts, not generic
 
 Before submitting the job, verify:
 
-- [ ] Topics are section-level descriptions derived from `get_document_content`, not abstract categories
+- [ ] Topics are section-level descriptions derived from `get_document_sections`, not abstract categories
 - [ ] Topic weights are proportional to section content density, not equal
 - [ ] Prompt variables (`topic`, `difficulty`, `question_type`) are on separate lines with labels
 - [ ] Question system prompt includes the answerability constraint
