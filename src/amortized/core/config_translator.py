@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import yaml
 
 import amortized.config as config_mod
+
+logger = logging.getLogger("amortized.core.config_translator")
 
 _TRL_ALGO_MAP: dict[str, str] = {
     "sft": "sft",
@@ -36,6 +39,9 @@ _TRL_FIELD_MAP: dict[str, str] = {
 
 def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     """Translate amortized training config -> TRL CLI YAML config."""
+    model = config.get("model_name_or_path", config.get("model_path", ""))
+    trl_algo = _TRL_ALGO_MAP.get(algorithm, algorithm)
+    logger.info("Translating config algorithm=%s trl_algo=%s model=%s", algorithm, trl_algo, model)
     trl_config: dict[str, Any] = {
         "model_name_or_path": config.get("model_name_or_path", config.get("model_path", "")),
         "output_dir": config.get("output_dir", "/amortized/work/output"),
@@ -88,4 +94,5 @@ def _trl_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         trl_config["load_in_4bit"] = True
 
     result: str = yaml.dump(trl_config, default_flow_style=False, sort_keys=False)
+    logger.debug("Generated TRL config keys=%s", ",".join(trl_config))
     return result

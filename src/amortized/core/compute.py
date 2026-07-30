@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from amortized.backends import Capability, ComputeBackend
+
+logger = logging.getLogger("amortized.core.compute")
 
 _backends: dict[str, ComputeBackend] = {}
 
@@ -16,6 +20,8 @@ class MissingCapabilityError(Exception):
 
 
 def register_backend(backend: ComputeBackend) -> None:
+    caps = sorted(c.value for c in backend.capabilities())
+    logger.info("Registered backend %r capabilities=%s", backend.name, ",".join(caps))
     _backends[backend.name] = backend
 
 
@@ -23,6 +29,7 @@ def get_backend(name: str) -> ComputeBackend:
     try:
         return _backends[name]
     except KeyError:
+        logger.error("Backend %r not found, registered=%s", name, ",".join(_backends))
         raise KeyError(f"Unknown compute backend: {name!r}") from None
 
 
@@ -30,6 +37,8 @@ def check_capabilities(backend: ComputeBackend, required: set[Capability]) -> No
     available = backend.capabilities()
     missing = required - available
     if missing:
+        names = ",".join(c.value for c in missing)
+        logger.warning("Backend %r missing capabilities: %s", backend.name, names)
         raise MissingCapabilityError(backend.name, missing)
 
 
@@ -48,7 +57,10 @@ def list_backends() -> list[dict[str, object]]:
 
 
 def unregister_backend(name: str) -> bool:
-    return _backends.pop(name, None) is not None
+    removed = _backends.pop(name, None) is not None
+    if removed:
+        logger.info("Unregistered backend %r", name)
+    return removed
 
 
 def reset() -> None:

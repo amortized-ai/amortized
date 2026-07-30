@@ -1,11 +1,14 @@
 """Repository wrapping all CRUD operations on the jobs table."""
 
 import json
+import logging
 from typing import Any, ClassVar
 
 import aiosqlite
 
 from amortized.models import JobStatus, JobType
+
+logger = logging.getLogger("amortized.db.repository")
 
 
 class Repository:
@@ -39,6 +42,7 @@ class Repository:
             ),
         )
         await self.conn.commit()
+        logger.info("Created job %s type=%s user=%s", job_id, job_type.value, user_id or "-")
         result = await self.get_job(job_id)
         assert result is not None
         return result
@@ -73,7 +77,9 @@ class Repository:
 
         cursor = await self.conn.execute(query, params)
         rows = await cursor.fetchall()
-        return [_row_to_job(row) for row in rows]
+        results = [_row_to_job(row) for row in rows]
+        logger.debug("Listed jobs count=%d status=%s type=%s", len(results), status, job_type)
+        return results
 
     _UPDATABLE_COLUMNS: ClassVar[set[str]] = {
         "status",
@@ -114,6 +120,7 @@ class Repository:
             params,
         )
         await self.conn.commit()
+        logger.info("Updated job %s fields=%s", job_id, ",".join(kwargs))
         return await self.get_job(job_id)
 
     async def pick_pending_job(self) -> dict[str, Any] | None:
@@ -124,7 +131,9 @@ class Repository:
         row = await cursor.fetchone()
         if row is None:
             return None
-        return _row_to_job(row)
+        job = _row_to_job(row)
+        logger.debug("Picked pending job %s type=%s", job["id"], job["type"])
+        return job
 
 
     async def list_documents(self) -> list[dict[str, Any]]:
@@ -144,14 +153,18 @@ class Repository:
     async def delete_job(self, job_id: str) -> bool:
         cursor = await self.conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
         await self.conn.commit()
-        return cursor.rowcount > 0
+        deleted = cursor.rowcount > 0
+        logger.info("Delete job %s deleted=%s", job_id, deleted)
+        return deleted
 
     async def delete_document(self, document_id: str) -> bool:
         cursor = await self.conn.execute(
             "DELETE FROM documents WHERE document_id = ?", (document_id,)
         )
         await self.conn.commit()
-        return cursor.rowcount > 0
+        deleted = cursor.rowcount > 0
+        logger.info("Delete document %s deleted=%s", document_id, deleted)
+        return deleted
 
     async def create_document(
         self, *, document_id: str, filename: str, fmt: str, content: str, created_at: str,
@@ -164,6 +177,7 @@ class Repository:
             (document_id, mlflow_run_id, filename, fmt, content, created_at),
         )
         await self.conn.commit()
+        logger.info("Created document %s filename=%s format=%s", document_id, filename, fmt)
         return {
             "document_id": document_id,
             "mlflow_run_id": mlflow_run_id,
