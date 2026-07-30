@@ -62,18 +62,48 @@ export function MessageBubble({
     return structuredOptions ?? []
   }, [isUser, message.optionCards.length, structuredOptions])
 
-  const { jobId, jobType } = useMemo(() => {
-    if (isUser) return { jobId: null, jobType: "SDG" }
-    const submitTools = message.toolResults.filter(t => t.name === "submit_recipe_job" || t.name === "create_job")
-    for (const tool of submitTools) {
-      if (!tool.result) continue
-      const info = extractJobInfo(tool.result)
-      if (info.jobId) return info
-    }
-    return { jobId: null, jobType: "SDG" }
+  const jobSubmissions = useMemo(() => {
+    if (isUser) return []
+    const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "submit recipe job", "create_job", "create job"])
+    return message.toolResults
+      .filter((t) => JOB_TOOL_NAMES.has(t.name))
+      .map((t) => {
+        const info = extractJobInfo(t.result)
+        return info.jobId ? { id: info.jobId, type: info.jobType } : null
+      })
+      .filter((j): j is { id: string; type: string } => !!j)
   }, [isUser, message.toolResults])
 
-  const [monitorDismissed, setMonitorDismissed] = useState(false)
+  const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
+  const [completedStatuses, setCompletedStatuses] = useState<Record<string, string>>({})
+
+  const jobOptionCards = useMemo(() => {
+    if (jobSubmissions.length === 0) return [] as OptionCard[]
+    const lastJob = jobSubmissions[jobSubmissions.length - 1]!
+    const status = completedStatuses[lastJob.id]
+    if (!status) return [] as OptionCard[]
+    const viewJobCard: OptionCard = { title: "View Job", description: "Open the job in the Jobs page", value: `__nav:/jobs?job=${encodeURIComponent(lastJob.id)}` }
+    if (status === "failed" || status === "cancelled") {
+      return [
+        viewJobCard,
+        { title: "View Logs", description: "Check what went wrong", value: `__nav:/jobs?job=${encodeURIComponent(lastJob.id)}&tab=logs` },
+        { title: "Try again", description: "Resubmit with the same settings", value: "Let's try running that job again with the same settings" },
+      ] as OptionCard[]
+    }
+    if (status === "succeeded") {
+      if (lastJob.type === "TRAINING") {
+        return [
+          { title: "View Model", description: "Browse trained model artifacts", value: "__nav:/models" },
+          { title: "Train with different settings", description: "Adjust model, method, or hyperparameters", value: "I'd like to train again with different settings" },
+        ] as OptionCard[]
+      }
+      return [
+        { title: "Continue to training", description: "Fine-tune a student model on this data", value: "Let's continue to the training step" },
+        { title: "Generate more samples", description: "Create a larger dataset", value: "Generate more samples with broader coverage" },
+      ] as OptionCard[]
+    }
+    return [] as OptionCard[]
+  }, [jobSubmissions, completedStatuses])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
@@ -201,22 +231,28 @@ export function MessageBubble({
           </div>
         )}
 
-        {/* Job monitoring card - only for latest message with submit_recipe_job */}
-        {!monitorDismissed && jobId && (
-          <div className="mt-3">
-            <JobMonitorCard
-              jobId={jobId}
-              jobType={jobType}
-              onDismiss={() => setMonitorDismissed(true)}
-            />
-          </div>
+        {jobSubmissions.map((job) =>
+          !dismissedJobs.has(job.id) ? (
+            <div key={job.id} className="mt-3">
+              <JobMonitorCard
+                jobId={job.id}
+                jobType={job.type}
+                onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
+                onComplete={(status) => setCompletedStatuses((s) => ({ ...s, [job.id]: status }))}
+              />
+            </div>
+          ) : null,
         )}
 
-        {parsedOptions.length > 0 && onOptionSelect && (
+        {jobOptionCards.length > 0 && onOptionSelect ? (
+          <div className="mt-3">
+            <OptionCards cards={jobOptionCards} onSelect={onOptionSelect} selectedValue={message.selectedOptionValue} />
+          </div>
+        ) : parsedOptions.length > 0 && onOptionSelect ? (
           <div className="mt-3">
             <OptionCards cards={parsedOptions} onSelect={onOptionSelect} selectedValue={message.selectedOptionValue} />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )
