@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - serviceaccount.yaml
   - rbac.yaml
+  - rbac-gpu.yaml
   - configmap.yaml
   - server-pvc.yaml
   - server-deployment.yaml

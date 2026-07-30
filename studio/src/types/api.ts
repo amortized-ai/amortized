@@ -238,6 +238,25 @@ export interface MlflowGatewayConnectionCreate {
   apiKey: string
 }
 
+// --- GPU Utilization ---
+
+export interface GpuDevice {
+  index: number
+  name: string
+  utilization_percent: number
+  memory_used_mib: number
+  memory_total_mib: number
+  temperature_celsius: number | null
+}
+
+export interface GpuUtilizationResponse {
+  available: boolean
+  device_count: number
+  devices: GpuDevice[]
+  node_name: string | null
+  error: string | null
+}
+
 // --- Derived view types ---
 
 export interface DatasetRecord {

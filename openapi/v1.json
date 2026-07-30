@@ -295,6 +295,41 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/delete": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete Job",
+        "operationId": "delete_job",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/recipes": {
       "get": {
         "tags": [
@@ -402,6 +437,39 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "recipes"
+        ],
+        "summary": "Delete Recipe",
+        "operationId": "delete_recipe",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -850,6 +918,202 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}": {
+      "delete": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Delete Document",
+        "operationId": "delete_document",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/artifacts/{experiment_id}/{run_id}/{path}": {
+      "get": {
+        "tags": [
+          "artifacts"
+        ],
+        "summary": "Fetch an artifact file directly from S3.",
+        "operationId": "get_artifact_content",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/present_options": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Present structured options to the user as clickable cards in the chat UI",
+        "operationId": "present_options",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresentOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/signal_phase": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Signal the current workflow phase and step to the chat UI",
+        "operationId": "signal_phase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalPhaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalPhaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gpu/utilization": {
+      "get": {
+        "tags": [
+          "gpu"
+        ],
+        "summary": "Get Gpu Utilization",
+        "operationId": "get_gpu_utilization",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuUtilizationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models": {
       "get": {
         "tags": [
@@ -931,6 +1195,21 @@
             "title": "Num Samples",
             "description": "Number of training samples to generate",
             "default": 100
+          },
+          "models": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SdgModelSpec"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models",
+            "description": "Available models to compare (from AI Gateway). Uses defaults if omitted."
           }
         },
         "type": "object",
@@ -1208,6 +1487,21 @@
             "title": "Judge Model",
             "description": "Judge model ID",
             "default": "openai/gpt-4o-mini"
+          },
+          "models": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EvalModelInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models",
+            "description": "Available judge models from gateway"
           }
         },
         "type": "object",
@@ -1512,6 +1806,29 @@
         ],
         "title": "EvalManualComparison"
       },
+      "EvalModelInput": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id"
+        ],
+        "title": "EvalModelInput"
+      },
       "GatewayModel": {
         "properties": {
           "name": {
@@ -1537,6 +1854,99 @@
           "name"
         ],
         "title": "GatewayModel"
+      },
+      "GpuDevice": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "utilization_percent": {
+            "type": "number",
+            "title": "Utilization Percent"
+          },
+          "memory_used_mib": {
+            "type": "number",
+            "title": "Memory Used Mib"
+          },
+          "memory_total_mib": {
+            "type": "number",
+            "title": "Memory Total Mib"
+          },
+          "temperature_celsius": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature Celsius"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "utilization_percent",
+          "memory_used_mib",
+          "memory_total_mib",
+          "temperature_celsius"
+        ],
+        "title": "GpuDevice"
+      },
+      "GpuUtilizationResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "device_count": {
+            "type": "integer",
+            "title": "Device Count"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/GpuDevice"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "node_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Name"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "device_count",
+          "devices"
+        ],
+        "title": "GpuUtilizationResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1675,7 +2085,7 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/JobType",
-            "description": "Job type: training, sdg, eval"
+            "description": "Job type: training or sdg"
           },
           "config": {
             "additionalProperties": true,
@@ -1728,8 +2138,7 @@
         "type": "string",
         "enum": [
           "training",
-          "sdg",
-          "eval"
+          "sdg"
         ],
         "title": "JobType"
       },
@@ -1752,6 +2161,32 @@
         "type": "object",
         "title": "ModelsResponse"
       },
+      "OptionItem": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short option label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Brief explanation of this option",
+            "default": ""
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "Value sent back when user selects this option"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "value"
+        ],
+        "title": "OptionItem"
+      },
       "OutputFormat": {
         "type": "string",
         "enum": [
@@ -1761,6 +2196,68 @@
           "html"
         ],
         "title": "OutputFormat"
+      },
+      "PresentOptionsRequest": {
+        "properties": {
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "description": "Workflow step identifier (e.g. 'sdg-domain', 'training-method')"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question",
+            "description": "The question being asked",
+            "default": ""
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/OptionItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Options",
+            "description": "Options to present to the user"
+          }
+        },
+        "type": "object",
+        "required": [
+          "step",
+          "options"
+        ],
+        "title": "PresentOptionsRequest"
+      },
+      "PresentOptionsResponse": {
+        "properties": {
+          "step": {
+            "type": "string",
+            "title": "Step"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/OptionItem"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "rendered": {
+            "type": "boolean",
+            "title": "Rendered",
+            "description": "Indicates the frontend rendered these as cards",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "step",
+          "question",
+          "options"
+        ],
+        "title": "PresentOptionsResponse"
       },
       "RecipeJobRequest": {
         "properties": {
@@ -1774,6 +2271,12 @@
             "type": "object",
             "title": "Overrides",
             "description": "Dot-notation overrides"
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "description": "Parent job ID for chaining (SDG\u2192Training)",
+            "default": ""
           },
           "dry_run": {
             "type": "boolean",
@@ -1821,7 +2324,7 @@
           "type": {
             "type": "string",
             "title": "Type",
-            "description": "Recipe type: training, sdg, eval"
+            "description": "Recipe type: training, sdg"
           },
           "description": {
             "type": "string",
@@ -1874,6 +2377,67 @@
           "per_sample_cost"
         ],
         "title": "SdgModelComparison"
+      },
+      "SdgModelSpec": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id"
+        ],
+        "title": "SdgModelSpec"
+      },
+      "SignalPhaseRequest": {
+        "properties": {
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "description": "Current workflow phase: 'sdg', 'training', or 'eval'"
+          },
+          "step": {
+            "type": "string",
+            "title": "Step",
+            "description": "Current step within the phase (e.g. 'gather_requirements', 'confirm')",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "phase"
+        ],
+        "title": "SignalPhaseRequest"
+      },
+      "SignalPhaseResponse": {
+        "properties": {
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "step": {
+            "type": "string",
+            "title": "Step"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phase",
+          "step"
+        ],
+        "title": "SignalPhaseResponse"
       },
       "TrainingMethodComparison": {
         "properties": {

@@ -6,6 +6,7 @@ import {
 import {
   getHealth,
   getConfig,
+  getGpuUtilization,
   getMlflowGatewayRoutes,
   createMlflowGatewayRoute,
   deleteMlflowGatewayRoute,
@@ -16,6 +17,7 @@ import {
 import type {
   HealthResponse,
   ConfigResponse,
+  GpuUtilizationResponse,
   MlflowGatewayRoute,
   MlflowGatewayRouteCreate,
   MlflowGatewayConnection,
@@ -35,6 +37,20 @@ export function useConfig() {
   return useQuery<ConfigResponse>({
     queryKey: ["config"],
     queryFn: getConfig,
+  })
+}
+
+export function useGpuUtilization() {
+  return useQuery<GpuUtilizationResponse>({
+    queryKey: ["gpu", "utilization"],
+    queryFn: getGpuUtilization,
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data?.available && data.devices.length > 0) return 5000
+      return false
+    },
+    retry: 1,
+    refetchOnWindowFocus: true,
   })
 }
 

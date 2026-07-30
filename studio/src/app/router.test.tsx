@@ -16,6 +16,7 @@ import SettingsPage from "@/features/settings/page"
 vi.mock("@/features/settings/api/use-settings", () => ({
   useHealth: () => ({ data: { status: "ok" }, isError: false, isLoading: false }),
   useConfig: () => ({ data: undefined, isLoading: false }),
+  useGpuUtilization: () => ({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() }),
   useGatewayRoutes: () => ({ data: [], isLoading: false }),
   useCreateGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),

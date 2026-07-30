@@ -11,9 +11,12 @@ const mockGetGatewayRoutes = vi.fn()
 const mockGetGatewayConnections = vi.fn()
 const mockSearchMlflowRuns = vi.fn()
 
+const mockGetGpuUtilization = vi.fn()
+
 vi.mock("@/lib/api-client", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
+  getGpuUtilization: (...args: unknown[]) => mockGetGpuUtilization(...args),
   getMlflowGatewayRoutes: (...args: unknown[]) => mockGetGatewayRoutes(...args),
   getMlflowGatewayConnections: (...args: unknown[]) => mockGetGatewayConnections(...args),
   createMlflowGatewayRoute: vi.fn(),
@@ -66,6 +69,7 @@ describe("SettingsPage", () => {
   it("renders the settings page with config", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, device_count: 0, devices: [], node_name: null, error: null })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
@@ -86,6 +90,7 @@ describe("SettingsPage", () => {
   it("renders prerequisites card", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, device_count: 0, devices: [], node_name: null, error: null })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
@@ -113,6 +118,7 @@ describe("SettingsPage", () => {
   it("shows empty gateway message when no routes", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, device_count: 0, devices: [], node_name: null, error: null })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
