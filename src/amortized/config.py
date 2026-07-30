@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"
     )
+    available_gpu_types: list[str] = Field(
+        default_factory=list,
+        description="GPU types available on the cluster (e.g. ['T4']). Empty = no filtering.",
+    )
 
     @property
     def resolved_default_backend(self) -> str:

@@ -261,4 +261,5 @@ async def get_config() -> ConfigResponse:
         docling_enabled=bool(_settings.docling_url),
         image_registry=_settings.image_registry,
         available_backends=list(get_all_backends().keys()),
+        available_gpu_types=_settings.available_gpu_types,
     )

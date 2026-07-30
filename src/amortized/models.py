@@ -166,3 +166,4 @@ class ConfigResponse(BaseModel):
     docling_enabled: bool = False
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
+    available_gpu_types: list[str] = Field(default_factory=list)

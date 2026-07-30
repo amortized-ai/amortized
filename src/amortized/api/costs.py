@@ -527,6 +527,12 @@ async def estimate_training_cost(
             )
         )
 
+    from amortized.config import settings as _settings
+
+    if _settings.available_gpu_types:
+        allowed = {g.upper() for g in _settings.available_gpu_types}
+        models = [m for m in models if m.gpu_type.upper() in allowed]
+
     return EstimateTrainingCostResponse(
         num_samples=body.num_samples,
         num_epochs=body.num_epochs,
@@ -577,9 +583,18 @@ async def estimate_training_method_cost(
             )
         )
 
-    recommended_method = next((m for m in methods if m.recommended), methods[0])
+    from amortized.config import settings as _settings
+
+    if _settings.available_gpu_types:
+        allowed = {g.upper() for g in _settings.available_gpu_types}
+        methods = [m for m in methods if m.gpu_type.upper() in allowed]
+
+    fallback = methods[0] if methods else None
+    recommended_method = next((m for m in methods if m.recommended), fallback)
     frontier_total = body.num_samples * FRONTIER_TRAINING_COST_PER_SAMPLE
-    savings_amount = frontier_total - recommended_method.estimated_cost
+    rec_cost = recommended_method.estimated_cost if recommended_method else 0
+    rec_label = recommended_method.label if recommended_method else "Training"
+    savings_amount = frontier_total - rec_cost
     savings_pct = (savings_amount / frontier_total * 100) if frontier_total > 0 else 0
 
     return EstimateTrainingMethodCostResponse(
@@ -589,8 +604,8 @@ async def estimate_training_method_cost(
         num_epochs=body.num_epochs,
         methods=methods,
         comparison=TrainingMethodComparison(
-            automated_label=f"{recommended_method.label} Training",
-            automated_cost=recommended_method.estimated_cost,
+            automated_label=f"{rec_label} Training",
+            automated_cost=rec_cost,
             manual_training_total=round(frontier_total, 2),
             savings_amount=round(savings_amount, 2),
             savings_percent=round(savings_pct, 1),
