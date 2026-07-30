@@ -1,5 +1,5 @@
 import { type ColumnDef } from "@tanstack/react-table"
-import { Database, Sparkles } from "lucide-react"
+import { Database, Sparkles, Upload } from "lucide-react"
 import { useMemo } from "react"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
@@ -29,18 +29,31 @@ export function DatasetTable({
       {
         accessorKey: "name",
         header: "Name",
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{row.original.name}</span>
-            <Badge
-              variant="secondary"
-              className="gap-0.5 py-0 text-[10px] bg-[#ece6ff] text-[#5e40be] border-0 dark:bg-[#1b0d33]/40 dark:text-[#876fd4]"
-            >
-              <Sparkles className="h-2.5 w-2.5" />
-              SDG
-            </Badge>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const isUpload = row.original.tags?.source === "upload"
+          return (
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{row.original.name}</span>
+              {isUpload ? (
+                <Badge
+                  variant="secondary"
+                  className="gap-0.5 py-0 text-[10px] bg-[#e0f0e8] text-[#1a7a42] border-0 dark:bg-[#0d331a]/40 dark:text-[#4aba78]"
+                >
+                  <Upload className="h-2.5 w-2.5" />
+                  Upload
+                </Badge>
+              ) : (
+                <Badge
+                  variant="secondary"
+                  className="gap-0.5 py-0 text-[10px] bg-[#ece6ff] text-[#5e40be] border-0 dark:bg-[#1b0d33]/40 dark:text-[#876fd4]"
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  SDG
+                </Badge>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorFn: (row) => row.metrics["num_samples_generated"] ?? null,

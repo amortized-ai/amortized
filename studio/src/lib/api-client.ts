@@ -506,6 +506,17 @@ export async function deleteMlflowGatewayConnection(secretId: string): Promise<v
   await del<void>("/mlflow/api/3.0/mlflow/gateway/secrets/delete", { secret_id: secretId })
 }
 
+// --- Datasets ---
+
+export function uploadDataset(file: File): Promise<Job> {
+  const formData = new FormData()
+  formData.append("file", file)
+  return request<Job>("/api/v1/datasets/upload", {
+    method: "POST",
+    body: formData,
+  })
+}
+
 // --- Documents ---
 
 import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
