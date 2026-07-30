@@ -578,4 +578,33 @@ export async function getMlflowArtifactContent(
   return response.text()
 }
 
+export async function listArtifacts(
+  experimentId: string,
+  runId: string,
+  path = "",
+): Promise<{ files: { path: string; file_size: number }[] }> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : ""
+  return get<{ files: { path: string; file_size: number }[] }>(
+    `/api/v1/artifacts/${encodeURIComponent(experimentId)}/${encodeURIComponent(runId)}${query}`,
+  )
+}
+
+export async function getArtifactJson(
+  experimentId: string,
+  runId: string,
+  artifactPath: string,
+): Promise<Record<string, unknown>[]> {
+  const url = `/api/v1/artifacts/${encodeURIComponent(experimentId)}/${encodeURIComponent(runId)}/${artifactPath}`
+  const response = await fetch(`${getBaseUrl()}${url}`, {
+    headers: {
+      "X-Request-ID": crypto.randomUUID(),
+      ...getAuthHeaders(),
+    },
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText, null)
+  }
+  return response.json()
+}
+
 export { ApiError }
