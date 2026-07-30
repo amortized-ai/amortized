@@ -5,7 +5,7 @@ or RAG-deployed knowledge models.
 
 ## How This Works
 
-You will create a Data Designer config for the user's specific domain
+You will create an SDG config for the user's specific domain
 and documents. Before starting, read the template at
 `skills/sdg/knowledge-ingestion/sdg-recipe-template.json` for the
 config structure.
@@ -116,7 +116,7 @@ topic values, prompts, and system prompt for the user's domain.
 
 ### Structure
 
-The SDG job config is a Data Designer config submitted as:
+The SDG job config is submitted as:
 
 ```json
 {
@@ -135,7 +135,7 @@ The SDG job config is a Data Designer config submitted as:
 ### document_ids
 
 List of document IDs from the Documents page. The worker fetches parsed
-markdown from MLflow and feeds it to DD's DocumentChunkerSeedSource.
+markdown from MLflow for processing.
 
 ```json
 "document_ids": ["59d4ba25a8864e7fbbbb35cfc09603a1"]
@@ -144,7 +144,7 @@ markdown from MLflow and feeds it to DD's DocumentChunkerSeedSource.
 ### seed_config
 
 Controls how documents are chunked. The worker splits documents into
-token-based chunks before DD sees them. Each chunk becomes `{{ content }}`
+token-based chunks before generation. Each chunk becomes `{{ content }}`
 in column prompts.
 
 ```json
@@ -179,8 +179,7 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 }]
 ```
 
-Always include `max_parallel_requests: 32` for fast generation. Reduce
-to 8-16 only if the user reports rate-limit errors.
+Always include `max_parallel_requests: 32` for fast generation.
 
 ### columns
 
