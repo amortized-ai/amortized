@@ -531,8 +531,16 @@ async def get_document_content(document_id: str) -> DocumentResult:
 
 
 def _extract_sections(content: str) -> list[DocumentSection]:
-    """Parse markdown headings and return structured sections."""
+    """Parse headings from markdown and return structured sections.
+
+    Detects both standard markdown headings (## Heading) and docling-style
+    ALL-CAPS numbered headings (CHAPTER 1. TITLE, 3.5. MONITORING).
+    """
     import re
+
+    _MD_HEADING = re.compile(r"^(#{1,6})\s+(.+)$")
+    _CHAPTER_HEADING = re.compile(r"^(CHAPTER\s+\d+)\.\s+(.+)$")
+    _NUMBERED_HEADING = re.compile(r"^(\d+(?:\.\d+)*)\.\s+([A-Z][A-Z\s\-:,/&()]+)$")
 
     lines = content.split("\n")
     sections: list[DocumentSection] = []
@@ -540,27 +548,9 @@ def _extract_sections(content: str) -> list[DocumentSection]:
     current_level = 0
     current_lines: list[str] = []
 
-    for line in lines:
-        match = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if match:
-            if current_heading:
-                body = "\n".join(current_lines).strip()
-                preview = body[:200].strip()
-                if len(body) > 200:
-                    preview += "..."
-                sections.append(DocumentSection(
-                    heading=current_heading,
-                    level=current_level,
-                    char_count=len(body),
-                    preview=preview,
-                ))
-            current_level = len(match.group(1))
-            current_heading = match.group(2).strip()
-            current_lines = []
-        else:
-            current_lines.append(line)
-
-    if current_heading:
+    def _flush() -> None:
+        if not current_heading:
+            return
         body = "\n".join(current_lines).strip()
         preview = body[:200].strip()
         if len(body) > 200:
@@ -572,6 +562,31 @@ def _extract_sections(content: str) -> list[DocumentSection]:
             preview=preview,
         ))
 
+    for line in lines:
+        stripped = line.strip()
+        md_match = _MD_HEADING.match(stripped)
+        chapter_match = _CHAPTER_HEADING.match(stripped)
+        numbered_match = _NUMBERED_HEADING.match(stripped)
+
+        if md_match:
+            _flush()
+            current_level = len(md_match.group(1))
+            current_heading = md_match.group(2).strip()
+            current_lines = []
+        elif chapter_match:
+            _flush()
+            current_level = 1
+            current_heading = f"{chapter_match.group(1)}. {chapter_match.group(2).strip()}"
+            current_lines = []
+        elif numbered_match:
+            _flush()
+            current_level = numbered_match.group(1).count(".") + 1
+            current_heading = f"{numbered_match.group(1)}. {numbered_match.group(2).strip()}"
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    _flush()
     return sections
 
 
