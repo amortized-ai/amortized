@@ -46,3 +46,5 @@ nodes:
     extraMounts:
       - hostPath: /dev/null
         containerPath: /var/run/nvidia-container-devices/all
+      - hostPath: /mnt/nvme7n1/k8s-storage
+        containerPath: /var/local-path-provisioner
