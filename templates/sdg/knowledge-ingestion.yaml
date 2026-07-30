@@ -1,20 +1,22 @@
 type: sdg
-description: >
-  Knowledge ingestion — generate QA training data from documents.
-  Fill in [DOMAIN] placeholders in prompts, populate topic values from the
-  source document's major content sections weighted by content density.
+description: Knowledge ingestion — generate QA training data from documents.
+
 config:
+  # Set num_records >= estimated chunk count. Each chunk needs at least one QA pair.
   num_records: 100
+
   seed_config:
     source:
       sentences_per_chunk: 15
       min_text_length: 100
+
   model_configs:
     - alias: text
       model: gpt-4o-mini
       provider: openai
       inference_parameters:
         temperature: 0.7
+
   columns:
     - column_type: sampler
       name: difficulty
@@ -22,21 +24,33 @@ config:
       params:
         values: [Basic, Intermediate, Advanced]
         weights: [0.35, 0.45, 0.20]
+
     - column_type: sampler
       name: question_type
       sampler_type: category
       params:
         values: [Factual, Procedural, Troubleshooting, Comparison]
         weights: [0.25, 0.35, 0.25, 0.15]
+
+    # Topics must be section-level descriptions from the document, not abstract
+    # categories. Use get_document_sections to derive them. Weight by content
+    # density — longer sections get higher weights.
+    # Example (MaaS doc): "Tier Management - Creating, editing, deleting tiers
+    #   via dashboard, configuring token rate limits and request rate limits"
+    # Bad: "access control"
     - column_type: sampler
       name: topic
       sampler_type: category
       params:
         values:
-          - "[Topic 1 - description of the first major content area in the source document]"
-          - "[Topic 2 - description of the second major content area in the source document]"
-          - "[Topic 3 - description of the third major content area in the source document]"
+          - "[Section heading - key concepts covered in this section]"
+          - "[Section heading - key concepts covered in this section]"
+          - "[Section heading - key concepts covered in this section]"
         weights: [0.34, 0.33, 0.33]
+
+    # The answerability constraint ("MUST be fully answerable using ONLY the
+    # provided context") reduced unanswerable questions from 21% to 0%.
+    # Place each variable on its own line — inline embedding reduces salience.
     - column_type: llm-text
       name: question
       model_alias: text
@@ -53,6 +67,9 @@ config:
         Topic: {{ topic }}
         Difficulty: {{ difficulty }}
         Question type: {{ question_type }}
+
+    # "answerable from the provided context" prevents disclaimer answers.
+    # Do NOT include "If the documentation does not cover the topic, say so."
     - column_type: llm-text
       name: answer
       model_alias: text
@@ -68,7 +85,10 @@ config:
         {{ text }}
 
         Question: {{ question }}
+
   processors:
+    # This system prompt defines the trained model's behavior at inference.
+    # It must match what the deployment will use. Ask the user.
     - processor_type: schema_transform
       name: sft_format
       template:

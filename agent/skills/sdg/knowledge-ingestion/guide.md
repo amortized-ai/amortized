@@ -5,23 +5,14 @@ or RAG-deployed knowledge models.
 
 ## How This Works
 
-You will create a Data Designer config for the user's specific domain and
-documents. Before starting, read BOTH of these files from your skills directory:
+You will create a Data Designer config for the user's specific domain
+and documents. Before starting, read the template at
+`skills/sdg/knowledge-ingestion/sdg-recipe-template.json` — it shows
+the config structure. The YAML comments in the template explain why each
+design choice was made.
 
-1. `skills/sdg/knowledge-ingestion/sdg-recipe-template.json` — the config
-   structure and field reference
-2. `skills/sdg/knowledge-ingestion/sdg-recipe-example.json` — a worked
-   example with `_annotations` explaining WHY each value was chosen
-
-The example shows what production-quality values look like. Read its
-`_annotations` carefully — they explain the reasoning behind topic
-specificity, prompt structure, and weight distribution. Apply the same
-reasoning to the user's domain.
-
-**Keep it brief.** Do your analysis silently. Do NOT explain your
-internal reasoning, how you read the document, or why you made each
-choice. Present results and ask for confirmation. The user sees your
-actions — they don't need narration.
+**Keep it brief.** Do your analysis silently. Present results and ask
+for confirmation — do not narrate your reasoning.
 
 ## Requirement Gathering
 
@@ -88,8 +79,8 @@ Each chunk gets at least one QA pair. If a document produces 100 chunks,
 the minimum is 100 samples — anything less means parts of the document
 won't be covered at all.
 
-Estimate chunk count: document_char_count / (sentences_per_chunk x ~100 chars/sentence).
-Use the document content length from `get_document_content` to estimate.
+Estimate chunk count: total_chars / (sentences_per_chunk x ~100 chars/sentence).
+Use `total_chars` from `get_document_sections` to estimate.
 
 Present options relative to the chunk count:
 1) N samples — Full coverage (1 QA per chunk, minimum recommended)
@@ -109,9 +100,8 @@ the document content.
 
 ## Building the Config
 
-Follow the template structure. Customize topic values, prompts, and
-system prompt for the user's domain. Read the example recipe to see
-what production-quality values look like.
+Follow the template structure (`sdg-recipe-template.json`). Customize
+topic values, prompts, and system prompt for the user's domain.
 
 ### Structure
 
