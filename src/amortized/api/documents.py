@@ -590,6 +590,39 @@ def _extract_sections(content: str) -> list[DocumentSection]:
     return sections
 
 
+def _is_heading(line: str) -> bool:
+    import re
+
+    if re.match(r"^#{1,6}\s+.+$", line):
+        return True
+    if re.match(r"^CHAPTER\s+\d+\.\s+.+$", line):
+        return True
+    if re.match(r"^\d+(?:\.\d+)*\.\s+[A-Z][A-Z\s\-:,/&()]+$", line):
+        return True
+    return False
+
+
+def _deduplicate_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
+    """Merge duplicate headings (from repeated page headers in docling output)
+    and drop empty sections."""
+    merged: dict[str, DocumentSection] = {}
+    for s in sections:
+        key = s.heading
+        if key in merged:
+            existing = merged[key]
+            total_chars = existing.char_count + s.char_count
+            preview = existing.preview if existing.char_count >= s.char_count else s.preview
+            merged[key] = DocumentSection(
+                heading=key,
+                level=existing.level,
+                char_count=total_chars,
+                preview=preview,
+            )
+        else:
+            merged[key] = s
+    return [s for s in merged.values() if s.char_count > 0]
+
+
 @router.get(
     "/{document_id}/sections",
     response_model=DocumentSections,
@@ -598,13 +631,45 @@ def _extract_sections(content: str) -> list[DocumentSection]:
 )
 async def get_document_sections(document_id: str) -> DocumentSections:
     result = await get_document_content(document_id)
-    sections = _extract_sections(result.content)
+    raw_sections = _extract_sections(result.content)
+    sections = _deduplicate_sections(raw_sections)
     return DocumentSections(
         document_id=document_id,
         filename=result.filename,
         total_chars=len(result.content),
         sections=sections,
     )
+
+
+@router.get(
+    "/{document_id}/sections/{section_heading}",
+    operation_id="get_section_content",
+    summary="Get the full content of a specific document section by heading. Use after get_document_sections to read a section in detail.",
+)
+async def get_section_content(document_id: str, section_heading: str) -> dict[str, Any]:
+    result = await get_document_content(document_id)
+    raw_sections = _extract_sections(result.content)
+    deduped = _deduplicate_sections(raw_sections)
+    for section in deduped:
+        if section.heading.lower() == section_heading.lower():
+            idx = next(
+                i for i, s in enumerate(raw_sections)
+                if s.heading == section.heading and s.char_count == section.char_count
+            )
+            lines = result.content.split("\n")
+            start = 0
+            count = 0
+            for i, line in enumerate(lines):
+                if _is_heading(line.strip()) and count <= idx:
+                    if count == idx:
+                        start = i + 1
+                    count += 1
+                elif count > idx and _is_heading(line.strip()):
+                    body = "\n".join(lines[start:i]).strip()
+                    return {"heading": section.heading, "content": body}
+            body = "\n".join(lines[start:]).strip()
+            return {"heading": section.heading, "content": body}
+    raise HTTPException(status_code=404, detail=f"Section not found: {section_heading}")
 
 
 def _format_timestamp(ts: int | None) -> str:
