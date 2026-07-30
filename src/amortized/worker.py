@@ -470,6 +470,11 @@ async def _run_job(job: dict[str, Any]) -> None:
         cmd = ["sh", "-c", " && ".join(all_cmds)]
 
     job_type = job["type"]
+    resolved_config = dict(config)
+    if job_type == JobType.sdg.value:
+        resolved_config["num_records"] = num_records
+    await _update_job(job_id, config=json.dumps(resolved_config))
+
     needs_gpu = job_type == "training"
     spec = JobSpec(
         job_id=job_id,
