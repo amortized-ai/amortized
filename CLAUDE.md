@@ -76,6 +76,7 @@ k8s/kind/              ← kind cluster config + NVIDIA device plugin
 - **Init containers**: S3 data download via `aws s3 cp/sync` for training data from MLflow artifact store
 - **Recipes**: loaded from `templates/` via `core/recipes.py`, support `extends:` for inheritance
 - **Credentials**: API keys stripped from config before DB storage, injected as per-job K8s Secrets
+- **MLflow MCP**: Morty accesses MLflow via a standalone MCP server (`ghcr.io/us-all/mlflow-mcp-server`) using Streamable HTTP. Backend and frontend use direct MLflow REST API calls — the MCP server is agent-only. For local dev, add `@us-all/mlflow-mcp` to `~/.claude/settings.json` under `mcpServers`.
 
 ## Architecture Decisions
 
