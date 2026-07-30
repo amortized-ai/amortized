@@ -20,6 +20,7 @@ config:
       provider: openai
       inference_parameters:
         temperature: 0.7
+        max_parallel_requests: 32
 
   columns:
     - column_type: sampler
@@ -38,7 +39,8 @@ config:
 
     # Topics must be section-level descriptions from the document, not abstract
     # categories. Use get_document_sections to derive them. Weight by content
-    # density — longer sections get higher weights.
+    # density — longer sections get higher weights. Weights must sum to 1.0.
+    # Minimum weight per topic: 0.05 (even small sections need coverage).
     # Example (MaaS doc): "Tier Management - Creating, editing, deleting tiers
     #   via dashboard, configuring token rate limits and request rate limits"
     # Bad: "access control"
