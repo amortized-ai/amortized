@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +24,15 @@ logger = logging.getLogger("amortized.api.datasets")
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
+_MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+
+
+def _sanitize_filename(name: str) -> str:
+    name = os.path.basename(name)
+    name = re.sub(r"[/\\:\x00]", "_", name)
+    if len(name) > 255:
+        name = name[:255]
+    return name or f"upload-{uuid.uuid4().hex[:8]}"
 
 
 def _tracking_uri() -> str:
@@ -62,10 +74,11 @@ async def _store_dataset_in_mlflow(
             exp = resp.json()["experiment"]
             experiment_id = exp["experiment_id"]
             if exp.get("lifecycle_stage") == "deleted":
-                await client.post(
+                restore_resp = await client.post(
                     f"{tracking_uri}/api/2.0/mlflow/experiments/restore",
                     json={"experiment_id": experiment_id},
                 )
+                restore_resp.raise_for_status()
 
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         run_resp = await client.post(
@@ -108,7 +121,7 @@ async def _store_dataset_in_mlflow(
                     json={"run_id": run_id, "status": "FAILED"},
                 )
             except Exception:
-                logger.debug("Could not mark MLflow run %s as FAILED", run_id)
+                logger.warning("Could not mark MLflow run %s as FAILED", run_id)
             raise
 
         return run_id, experiment_id
@@ -120,7 +133,7 @@ async def upload_dataset(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Any:
     """Upload a JSONL or Parquet file as a training dataset."""
-    name = file.filename or "dataset"
+    name = _sanitize_filename(file.filename or "dataset")
     suffix = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
 
     if suffix not in _ALLOWED_EXTENSIONS:
@@ -132,8 +145,20 @@ async def upload_dataset(
     file_bytes = await file.read()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="File is empty")
+    if len(file_bytes) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
+        )
 
-    run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
+    try:
+        run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="Cannot connect to MLflow") from None
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="MLflow request timed out") from None
+    except httpx.TransportError:
+        raise HTTPException(status_code=502, detail="MLflow communication error") from None
 
     repo = Repository(db)
     row = await create_job(
@@ -149,6 +174,7 @@ async def upload_dataset(
         mlflow_experiment=experiment_id,
         completed_at=datetime.now(UTC).isoformat(),
     )
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Failed to update job record")
 
     return updated
