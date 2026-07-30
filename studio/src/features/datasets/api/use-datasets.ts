@@ -6,6 +6,7 @@ import {
   getMlflowRun,
   getMlflowArtifactContent,
   deleteDataset,
+  uploadDataset,
 } from "@/lib/api-client"
 import type { DatasetRecord, DatasetSample, MlflowRun } from "@/types/api"
 
@@ -41,7 +42,7 @@ export function useDatasets() {
       if (ids.length === 0) return []
       const resp = await searchMlflowRuns({
         experiment_ids: ids,
-        filter_string: "tags.job_type = 'sdg'",
+        filter_string: "tags.job_type IN ('sdg', 'upload')",
         order_by: ["start_time DESC"],
         max_results: 100,
       })
@@ -58,6 +59,23 @@ export function useDataset(runId: string | null) {
       return runToDataset(resp.run)
     },
     enabled: !!runId,
+  })
+}
+
+export function useUploadDataset() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (file: File) => uploadDataset(file),
+    onSuccess: () => {
+      toast.success("Dataset uploaded successfully")
+    },
+    onError: (err) => {
+      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
+    },
   })
 }
 
