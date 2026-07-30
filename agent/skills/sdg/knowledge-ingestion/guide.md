@@ -179,8 +179,8 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 }]
 ```
 
-Always include `max_parallel_requests: 32` — DD defaults to 4 which is
-very slow. Reduce to 8-16 only if the user reports rate-limit errors.
+Always include `max_parallel_requests: 32` for fast generation. Reduce
+to 8-16 only if the user reports rate-limit errors.
 
 ### columns
 
