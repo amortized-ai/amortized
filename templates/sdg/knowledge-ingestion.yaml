@@ -5,10 +5,14 @@ config:
   # Set num_records >= estimated chunk count. Each chunk needs at least one QA pair.
   num_records: 100
 
+  # Token-based chunking using cl100k_base (GPT tokenizer).
+  # 2048 tokens per chunk with 256-token overlap prevents boundary issues.
+  # The worker splits documents into chunk files before DD sees them.
   seed_config:
     source:
-      sentences_per_chunk: 15
-      min_text_length: 100
+      chunk_size: 2048
+      chunk_overlap: 256
+      tokenizer: cl100k_base
 
   model_configs:
     - alias: text
@@ -51,6 +55,7 @@ config:
     # The answerability constraint ("MUST be fully answerable using ONLY the
     # provided context") reduced unanswerable questions from 21% to 0%.
     # Place each variable on its own line — inline embedding reduces salience.
+    # {{ content }} is one chunk (~2048 tokens), not the full document.
     - column_type: llm-text
       name: question
       model_alias: text
@@ -62,7 +67,7 @@ config:
         Output ONLY the question text, nothing else.
       prompt: >
         Documentation context:
-        {{ text }}
+        {{ content }}
 
         Topic: {{ topic }}
         Difficulty: {{ difficulty }}
@@ -82,13 +87,13 @@ config:
         carefully and answer from it.
       prompt: >
         Documentation context:
-        {{ text }}
+        {{ content }}
 
         Question: {{ question }}
 
   processors:
     # This system prompt defines the trained model's behavior at inference.
-    # It must match what the deployment will use. Ask the user.
+    # It must match what the deployment will use.
     - processor_type: schema_transform
       name: sft_format
       template:

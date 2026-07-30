@@ -5,8 +5,9 @@
     "num_records": 100,
     "seed_config": {
       "source": {
-        "sentences_per_chunk": 15,
-        "min_text_length": 100
+        "chunk_size": 2048,
+        "chunk_overlap": 256,
+        "tokenizer": "cl100k_base"
       }
     },
     "model_configs": [
@@ -53,14 +54,14 @@
         "name": "question",
         "model_alias": "text",
         "system_prompt": "You generate specific, realistic questions about the documentation. The question MUST be fully answerable using ONLY the provided context. Output ONLY the question.",
-        "prompt": "Documentation context:\n{{ text }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
+        "prompt": "Documentation context:\n{{ content }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
       },
       {
         "column_type": "llm-text",
         "name": "answer",
         "model_alias": "text",
         "system_prompt": "Answer accurately based on the documentation context. Include specific commands, YAML snippets, and step-by-step instructions when relevant. The question is answerable from the provided context. Output ONLY the answer.",
-        "prompt": "Documentation context:\n{{ text }}\n\nQuestion: {{ question }}"
+        "prompt": "Documentation context:\n{{ content }}\n\nQuestion: {{ question }}"
       }
     ],
     "processors": [

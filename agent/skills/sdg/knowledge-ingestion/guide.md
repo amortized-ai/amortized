@@ -73,9 +73,9 @@ stop and direct the user to Settings -> AI Gateway.
 
 ### Step 6 — Chunking granularity
 
-How many sentences per chunk?
-Default: 15 sentences. More = broader context, fewer = more focused.
-Explain that this controls how documents are split for QA generation.
+How many tokens per chunk?
+Default: 2048 tokens with 256-token overlap (cl100k_base tokenizer).
+Larger chunks = broader context, smaller = more focused QA pairs.
 
 ### Step 7 — How many samples?
 
@@ -86,8 +86,9 @@ Each chunk gets at least one QA pair. If a document produces 100 chunks,
 the minimum is 100 samples — anything less means parts of the document
 won't be covered at all.
 
-Estimate chunk count: total_chars / (sentences_per_chunk x ~100 chars/sentence).
+Estimate chunk count: total_chars / (chunk_size x 4 chars/token).
 Use `total_chars` from `get_document_sections` to estimate.
+For example, a 144K-char document with 2048-token chunks: 144000 / (2048 * 4) ~ 18 chunks.
 
 Present options relative to the chunk count:
 1) N samples — Full coverage (1 QA per chunk, minimum recommended)
@@ -139,17 +140,23 @@ markdown from MLflow and feeds it to DD's DocumentChunkerSeedSource.
 
 ### seed_config
 
-Controls how documents are chunked. Each chunk becomes `{{ text }}` in
-column prompts.
+Controls how documents are chunked. The worker splits documents into
+token-based chunks before DD sees them. Each chunk becomes `{{ content }}`
+in column prompts.
 
 ```json
 "seed_config": {
   "source": {
-    "sentences_per_chunk": 15,
-    "min_text_length": 100
+    "chunk_size": 2048,
+    "chunk_overlap": 256,
+    "tokenizer": "cl100k_base"
   }
 }
 ```
+
+- `chunk_size`: tokens per chunk (default 2048, using cl100k_base / GPT tokenizer)
+- `chunk_overlap`: overlap between chunks to prevent boundary issues (default 256)
+- `tokenizer`: tiktoken encoding name (default cl100k_base)
 
 ### model_configs
 
@@ -193,7 +200,7 @@ columns and seed data via `{{ variable_name }}`.
   "name": "question",
   "model_alias": "text",
   "system_prompt": "<domain-specific system prompt with answerability constraint>",
-  "prompt": "Documentation context:\n{{ text }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
+  "prompt": "Documentation context:\n{{ content }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
 }
 ```
 
