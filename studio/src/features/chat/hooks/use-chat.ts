@@ -161,8 +161,9 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && !seen.has(name.toLowerCase())) {
-          seen.add(name.toLowerCase())
+        const allowDuplicates = name === "create_job" || name === "create job" || name === "submit_recipe_job" || name === "submit recipe job"
+        if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
+          if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
           const rawOutput = part.output ?? stateObj?.output ?? ""
           const output = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput)
