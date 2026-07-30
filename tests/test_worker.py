@@ -1,6 +1,7 @@
 """Tests for the background worker job execution lifecycle."""
 
 import os
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -209,3 +210,44 @@ class TestTrainingHubConfig:
             parsed = yaml.safe_load(result)
             assert parsed["model_path"] == "test"
             assert "algorithm" not in parsed
+
+
+class TestResolveParentArtifacts:
+    @pytest.mark.asyncio
+    async def test_upload_parent_chains_data_path(self) -> None:
+        from amortized.backends import S3Download
+        from amortized.worker import _resolve_parent_artifacts
+
+        parent_job = {
+            "id": "parent-upload-1",
+            "type": "upload",
+            "status": "succeeded",
+            "mlflow_run_id": "mlflow-run-abc",
+        }
+        training_job = {
+            "id": "training-1",
+            "type": "training",
+            "parent_job_id": "parent-upload-1",
+        }
+        config: dict[str, object] = {
+            "algorithm": "sft",
+            "model_name_or_path": "test/model",
+        }
+        s3_downloads: list[S3Download] = []
+
+        mock_repo = AsyncMock()
+        mock_repo.get_job = AsyncMock(return_value=parent_job)
+
+        with (
+            patch("amortized.worker._get_repo", return_value=mock_repo),
+            patch(
+                "amortized.worker._resolve_mlflow_artifact_uri",
+                return_value="s3://bucket/mlflow/abc",
+            ),
+        ):
+            result = await _resolve_parent_artifacts(training_job, config, s3_downloads)
+
+        assert result["data_path"] == "/amortized/work/data"
+        assert len(s3_downloads) == 1
+        assert s3_downloads[0].s3_uri == "s3://bucket/mlflow/abc/generated_data/"
+        assert s3_downloads[0].local_path == "/amortized/work/data"

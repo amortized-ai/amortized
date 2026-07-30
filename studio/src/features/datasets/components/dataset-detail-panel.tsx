@@ -21,6 +21,7 @@ import {
   Copy,
   X,
   Sparkles,
+  Upload,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -74,13 +75,23 @@ export function DatasetDetailPanel({
                 }}
               />
             </DialogTitle>
-            <Badge
-              variant="secondary"
-              className="shrink-0 gap-1 bg-[#ece6ff] text-[#5e40be] border-0 dark:bg-[#1b0d33]/40 dark:text-[#876fd4]"
-            >
-              <Sparkles className="h-3 w-3" />
-              SDG
-            </Badge>
+            {dataset.tags?.source === "upload" ? (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-[#e0f0e8] text-[#1a7a42] border-0 dark:bg-[#0d331a]/40 dark:text-[#4aba78]"
+              >
+                <Upload className="h-3 w-3" />
+                Upload
+              </Badge>
+            ) : (
+              <Badge
+                variant="secondary"
+                className="shrink-0 gap-1 bg-[#ece6ff] text-[#5e40be] border-0 dark:bg-[#1b0d33]/40 dark:text-[#876fd4]"
+              >
+                <Sparkles className="h-3 w-3" />
+                SDG
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" asChild>

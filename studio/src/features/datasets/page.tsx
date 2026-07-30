@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Link, useSearchParams } from "react-router"
 import { SearchInput } from "@/components/search-input"
-import { useDatasets } from "./api/use-datasets"
+import { useDatasets, useUploadDataset } from "./api/use-datasets"
 import { DatasetTable } from "./components/dataset-table"
 import { DatasetDetailPanel } from "./components/dataset-detail-panel"
 import { ErrorState } from "@/components/error-state"
@@ -16,13 +16,15 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty"
-import { Database, ArrowRight, Sparkles, GraduationCap, Search } from "lucide-react"
+import { Database, ArrowRight, Sparkles, GraduationCap, Search, Upload } from "lucide-react"
 import type { DatasetRecord } from "@/types/api"
 
 export default function DatasetsPage() {
   const { data: datasets = [], isLoading, isError, error, refetch } = useDatasets()
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadMutation = useUploadDataset()
   const [selectedDataset, setSelectedDataset] = useState<DatasetRecord | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -48,6 +50,18 @@ export default function DatasetsPage() {
     const q = search.toLowerCase()
     return datasets.filter((d) => d.name.toLowerCase().includes(q))
   }, [datasets, search])
+
+  function handleUploadClick() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      uploadMutation.mutate(file)
+    }
+    e.target.value = ""
+  }
 
   function handleSelectDataset(ds: DatasetRecord) {
     setSelectedDataset(ds)
@@ -106,7 +120,26 @@ export default function DatasetsPage() {
       </div>
       </div>
 
-      <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search datasets..." />
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search datasets..." />
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jsonl,.parquet"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <Button
+          onClick={handleUploadClick}
+          disabled={uploadMutation.isPending}
+          className="gap-2"
+        >
+          <Upload className="h-4 w-4" />
+          {uploadMutation.isPending ? "Uploading..." : "Upload"}
+        </Button>
+      </div>
 
       {isLoading ? (
         <TableSkeleton columns={4} />
