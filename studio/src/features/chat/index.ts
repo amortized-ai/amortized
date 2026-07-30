@@ -20,6 +20,7 @@ export type {
 export { ActionCard } from "./components/action-card"
 export { ChatInput } from "./components/chat-input"
 export { ChatPanel } from "./components/chat-panel"
+export { ChatSidebar } from "./components/chat-sidebar"
 export { ChatToggleButton } from "./components/chat-toggle-button"
 export { ConversationList } from "./components/conversation-list"
 export { MessageBubble } from "./components/message-bubble"
