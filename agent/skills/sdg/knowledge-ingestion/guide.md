@@ -5,63 +5,112 @@ or RAG-deployed knowledge models.
 
 ## How This Works
 
-You will **create a brand new Data Designer config** from scratch based on
-the user's requirements. The reference template at
-`skills/sdg/knowledge-ingestion/sdg-recipe-template.json` shows the config
-structure — study it to understand the format, but do NOT just fill in
-placeholders. Build a fresh config tailored to the user's domain, documents,
-and needs.
+You will create a Data Designer config for the user's specific domain and
+documents. Before starting, read BOTH of these files from your skills directory:
 
-Every part of the config is dynamic:
-- The columns (samplers, LLM prompts) are created based on the user's task
-- The prompts are written for the user's specific domain
-- The sampler values and weights reflect the user's content distribution
-- The system prompt in the processor reflects how the trained model should behave
+1. `skills/sdg/knowledge-ingestion/sdg-recipe-template.json` — the config
+   structure and field reference
+2. `skills/sdg/knowledge-ingestion/sdg-recipe-example.json` — a worked
+   example with `_annotations` explaining WHY each value was chosen
+
+The example shows what production-quality values look like. Read its
+`_annotations` carefully — they explain the reasoning behind topic
+specificity, prompt structure, and weight distribution. Apply the same
+reasoning to the user's domain.
 
 ## Requirement Gathering
 
 Ask the user these questions (one at a time, using `present_options`):
 
-1. **What documents?** — Check if they've already uploaded documents via the
-   Documents page. Use `list_documents` to show available documents with
-   their IDs. If not uploaded yet, guide them to upload first.
-2. **What topics?** — What are the main topic areas in the documentation?
-   Suggest 5-9 topics weighted by documentation depth per section.
-3. **Question types** — What kinds of questions should it handle?
-   Default: factual (25%), procedural (35%), troubleshooting (25%),
-   comparison (15%). But adapt to the domain — a troubleshooting guide
-   needs more troubleshooting questions, a reference manual needs more
-   factual ones.
-4. **Difficulty levels** — Default: basic (35%), intermediate (45%),
-   advanced (20%).
-5. **Which teacher model?** — Call `list_models` to get the models
-   configured on the AI Gateway. Present ONLY those models as options.
-   Do NOT suggest models that aren't returned by `list_models` — they
-   won't work. If no models are returned, stop and direct the user to
-   Settings → AI Gateway.
-6. **Chunking granularity** — How many sentences per chunk?
-   Default: 15 sentences. More = broader context, fewer = more focused.
-   Explain that this controls how documents are split for QA generation.
-7. **How many samples?** — Calculate based on document coverage.
+### Step 1 — What documents?
 
-   **CRITICAL: The minimum sample count = number of document chunks.**
-   Each chunk generates one QA pair. If a document produces 100 chunks,
-   the minimum is 100 samples — anything less means parts of the
-   document won't be covered at all.
+Check if they've already uploaded documents via the Documents page. Use
+`list_documents` to show available documents with their IDs. If not
+uploaded yet, guide them to upload first.
 
-   Estimate chunk count: document_char_count / (sentences_per_chunk × ~100 chars/sentence).
-   If documents are already uploaded, use `list_documents` to check sizes.
+### Step 2 — Read the document and derive topics
 
-   Present options relative to the chunk count:
-   1) N samples — Full coverage (1 QA per chunk, minimum recommended)
-   2) N×2 samples — Double coverage (2 QAs per chunk, better diversity)
-   3) N×3 samples — Triple coverage (3 QAs per chunk, best quality)
+After the user selects a document, call `get_document_content` with the
+document ID to read its full parsed content. Then:
 
-   NEVER suggest a sample count below the estimated chunk count.
-   Explain to the user WHY: "With ~N chunks from your document, we need
-   at least N samples to cover every section."
+1. Scan the markdown for headings (##, ###) and major sections
+2. Derive 5-9 topic values as **section-level descriptions**, not
+   abstract categories
+
+**CRITICAL: Topics must be section-level descriptions.**
+- GOOD: "Tier Management - Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits"
+- BAD: "access control"
+
+Each topic value should name the section AND summarize its key content
+in one line. This forces the LLM to ask specific questions about the
+details in that section rather than repeating generic questions.
+
+3. Weight topics proportionally to section length — longer/denser
+   sections get higher weights. Do NOT use equal weights.
+4. Present the derived topics to the user for confirmation. Let them
+   adjust, add, or remove topics.
+
+See the `_annotations.topics` and `_annotations.topic_weights` in the
+example recipe for the reasoning behind this.
+
+### Step 3 — Question types
+
+What kinds of questions should it handle?
+Default: factual (25%), procedural (35%), troubleshooting (25%),
+comparison (15%). Adapt to the domain — a troubleshooting guide
+needs more troubleshooting questions, a reference manual needs more
+factual ones.
+
+### Step 4 — Difficulty levels
+
+Default: basic (35%), intermediate (45%), advanced (20%).
+
+### Step 5 — Which teacher model?
+
+Call `list_models` to get the models configured on the AI Gateway.
+Present ONLY those models as options. Do NOT suggest models that aren't
+returned by `list_models` — they won't work. If no models are returned,
+stop and direct the user to Settings -> AI Gateway.
+
+### Step 6 — Chunking granularity
+
+How many sentences per chunk?
+Default: 15 sentences. More = broader context, fewer = more focused.
+Explain that this controls how documents are split for QA generation.
+
+### Step 7 — How many samples?
+
+Calculate based on document coverage.
+
+**CRITICAL: The minimum sample count = number of document chunks.**
+Each chunk gets at least one QA pair. If a document produces 100 chunks,
+the minimum is 100 samples — anything less means parts of the document
+won't be covered at all.
+
+Estimate chunk count: document_char_count / (sentences_per_chunk x ~100 chars/sentence).
+Use the document content length from `get_document_content` to estimate.
+
+Present options relative to the chunk count:
+1) N samples — Full coverage (1 QA per chunk, minimum recommended)
+2) Nx2 samples — Double coverage (2 QAs per chunk, better diversity)
+3) Nx3 samples — Triple coverage (3 QAs per chunk, best quality)
+
+NEVER suggest a sample count below the estimated chunk count.
+Explain to the user WHY: "With ~N chunks from your document, we need
+at least N samples to cover every section."
+
+### Step 8 — System prompt for the trained model
+
+Ask the user what system prompt their deployed model should use.
+This goes in the processor's SFT output and defines the trained model's
+behavior at inference time. Suggest a domain-specific default based on
+the document content.
 
 ## Building the Config
+
+Follow the template structure. Customize topic values, prompts, and
+system prompt for the user's domain. Read the example recipe to see
+what production-quality values look like.
 
 ### Structure
 
@@ -119,44 +168,49 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 }]
 ```
 
-### columns — CREATE THESE FROM SCRATCH
+### columns
 
 Columns define the generation pipeline. Each column can reference prior
-columns and seed data via `{{ variable_name }}`. Build columns that match
-the user's requirements — don't copy the template verbatim.
+columns and seed data via `{{ variable_name }}`.
 
-**Sampler columns** — weighted random selection for variation axes:
+**Sampler columns** — always include difficulty, question_type, and topic:
 
 ```json
 {
   "column_type": "sampler",
-  "name": "<your_name>",
+  "name": "topic",
   "sampler_type": "category",
   "params": {
-    "values": ["value1", "value2", "value3"],
-    "weights": [0.4, 0.35, 0.25]
+    "values": ["Section-level description 1", "Section-level description 2"],
+    "weights": [0.6, 0.4]
   }
 }
 ```
 
-Create samplers for the dimensions that matter for this user's task.
-Common dimensions: difficulty, question_type, topic, user_role, scenario.
-Use `subcategory` sampler type when you need value-dependent descriptions.
-
-**LLM text columns** — LLM generates text from a prompt:
+**LLM text columns** — question and answer generators:
 
 ```json
 {
   "column_type": "llm-text",
-  "name": "<your_name>",
+  "name": "question",
   "model_alias": "text",
-  "system_prompt": "<domain-specific system prompt>",
-  "prompt": "<prompt using {{ variables }} from prior columns and {{ text }} from seed>"
+  "system_prompt": "<domain-specific system prompt with answerability constraint>",
+  "prompt": "Documentation context:\n{{ text }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
 }
 ```
 
-Write system prompts and prompts specifically for the user's domain.
-Always include `{{ text }}` to reference the document chunk.
+**Prompt variable format — ALWAYS place each variable on its own line
+with a label:**
+
+```
+Topic: {{ topic }}
+Difficulty: {{ difficulty }}
+Question type: {{ question_type }}
+```
+
+Do NOT embed variables inline in a sentence like
+"Generate a {{ difficulty }} {{ question_type }} question about {{ topic }}".
+Separate lines make each attribute more salient to the LLM.
 
 ### processors — OUTPUT FORMAT
 
@@ -168,7 +222,7 @@ Use `schema_transform` to convert columns into SFT training format:
   "name": "sft_format",
   "template": {
     "messages": [
-      {"role": "system", "content": "<training system prompt>"},
+      {"role": "system", "content": "<domain-specific system prompt for the trained model>"},
       {"role": "user", "content": "{{ question }}"},
       {"role": "assistant", "content": "{{ answer }}"}
     ]
@@ -176,21 +230,38 @@ Use `schema_transform` to convert columns into SFT training format:
 }]
 ```
 
-The system prompt here defines how the TRAINED MODEL should behave —
-write it for the user's specific use case.
+The system prompt here defines how the TRAINED MODEL should behave at
+inference time. It must be domain-specific and match what the user's
+deployment will use.
 
-## Prompt Engineering Tips
+## Prompt Engineering Rules
 
-**Question generation — enforce answerability:**
+**Question system prompt — MUST include answerability constraint:**
 "The question MUST be fully answerable using ONLY the provided documentation
-context."
+context. Do not ask about concepts that are merely mentioned but not explained
+in the context."
 
-**Answer generation — trust the context:**
-"The question is answerable from the provided context, so read it carefully
-and answer from it."
+**Answer system prompt — trust the context:**
+Include: "The question is answerable from the provided context, so read it
+carefully and answer from it."
+Do NOT include: "If the documentation does not cover the topic, say so." —
+this teaches the model to refuse, which is undesirable for FAQ assistants.
 
-**Domain-specific:** Adapt both prompts to the user's domain. A medical QA
-bot needs different prompt engineering than a DevOps troubleshooting assistant.
+**Domain-specific:** Adapt both prompts to the user's domain. Reference the
+specific product/technology name in the system prompts, not generic
+"documentation" references.
+
+## Quality Checklist
+
+Before submitting the job, verify:
+
+- [ ] Topics are section-level descriptions derived from `get_document_content`, not abstract categories
+- [ ] Topic weights are proportional to section content density, not equal
+- [ ] Prompt variables (`topic`, `difficulty`, `question_type`) are on separate lines with labels
+- [ ] Question system prompt includes the answerability constraint
+- [ ] Answer system prompt includes "answerable from the provided context"
+- [ ] System prompt in the SFT processor is domain-specific
+- [ ] `num_records` >= estimated chunk count
 
 ## After SDG — Training
 
