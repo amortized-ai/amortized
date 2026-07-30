@@ -50,7 +50,8 @@ by `present_options`.
 
 Each topic value should name the section AND summarize its key content
 in one line. Use `char_count` from `get_document_sections` to set
-weights — longer sections get higher weights.
+weights — longer sections get higher weights. Weights must sum to 1.0
+and no topic should be below 0.05.
 
 ### Step 3 — Question types
 
@@ -171,9 +172,15 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
   "model": "gpt-oss",
   "provider": "gateway",
   "skip_health_check": true,
-  "inference_parameters": { "temperature": 0.7 }
+  "inference_parameters": {
+    "temperature": 0.7,
+    "max_parallel_requests": 32
+  }
 }]
 ```
+
+Always include `max_parallel_requests: 32` — DD defaults to 4 which is
+very slow. Reduce to 8-16 only if the user reports rate-limit errors.
 
 ### columns
 
