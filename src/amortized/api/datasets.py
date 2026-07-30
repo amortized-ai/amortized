@@ -24,7 +24,7 @@ logger = logging.getLogger("amortized.api.datasets")
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
-_MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+_MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
 
 
 def _sanitize_filename(name: str) -> str:
