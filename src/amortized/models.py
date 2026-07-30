@@ -154,6 +154,20 @@ class DocumentResult(_DocumentBase):
     warnings: list[str] = Field(default_factory=list, description="Non-fatal issues")
 
 
+class DocumentSection(BaseModel):
+    heading: str = Field(..., description="Section heading text")
+    level: int = Field(..., description="Heading depth (1 = #, 2 = ##, etc.)")
+    char_count: int = Field(..., description="Character count of section content")
+    preview: str = Field("", description="First ~200 chars of the section content")
+
+
+class DocumentSections(BaseModel):
+    document_id: str = Field(..., description="Document identifier")
+    filename: str = Field("", description="Original filename")
+    total_chars: int = Field(0, description="Total document character count")
+    sections: list[DocumentSection] = Field(default_factory=list)
+
+
 class DocumentSummary(_DocumentBase):
     created_at: str | None = Field(None, description="When the document was processed")
 

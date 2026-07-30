@@ -22,6 +22,8 @@ from amortized.db.repository import Repository
 from amortized.models import (
     ConvertUrlRequest,
     DocumentResult,
+    DocumentSection,
+    DocumentSections,
     DocumentSummary,
     OutputFormat,
 )
@@ -525,6 +527,68 @@ async def get_document_content(document_id: str) -> DocumentResult:
         format=OutputFormat(fmt),
         processing_time=float(tags.get("processing_time", "0")),
         status="success",
+    )
+
+
+def _extract_sections(content: str) -> list[DocumentSection]:
+    """Parse markdown headings and return structured sections."""
+    import re
+
+    lines = content.split("\n")
+    sections: list[DocumentSection] = []
+    current_heading = ""
+    current_level = 0
+    current_lines: list[str] = []
+
+    for line in lines:
+        match = re.match(r"^(#{1,6})\s+(.+)$", line)
+        if match:
+            if current_heading:
+                body = "\n".join(current_lines).strip()
+                preview = body[:200].strip()
+                if len(body) > 200:
+                    preview += "..."
+                sections.append(DocumentSection(
+                    heading=current_heading,
+                    level=current_level,
+                    char_count=len(body),
+                    preview=preview,
+                ))
+            current_level = len(match.group(1))
+            current_heading = match.group(2).strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    if current_heading:
+        body = "\n".join(current_lines).strip()
+        preview = body[:200].strip()
+        if len(body) > 200:
+            preview += "..."
+        sections.append(DocumentSection(
+            heading=current_heading,
+            level=current_level,
+            char_count=len(body),
+            preview=preview,
+        ))
+
+    return sections
+
+
+@router.get(
+    "/{document_id}/sections",
+    response_model=DocumentSections,
+    operation_id="get_document_sections",
+    summary="Get section headings and structure of a document. Use this to understand document layout before building SDG configs.",
+)
+async def get_document_sections(document_id: str) -> DocumentSections:
+    result = await get_document_content(document_id)
+    sections = _extract_sections(result.content)
+    return DocumentSections(
+        document_id=document_id,
+        filename=result.filename,
+        total_chars=len(result.content),
+        sections=sections,
     )
 
 

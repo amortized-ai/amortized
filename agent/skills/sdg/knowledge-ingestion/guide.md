@@ -35,14 +35,13 @@ uploaded yet, guide them to upload first.
 
 ### Step 2 — Read the document and derive topics
 
-After the user selects a document, call `get_document_content` with the
-document ID. Analyze the content silently — do NOT narrate your reading
-process or explain how you're extracting sections. Just do the work and
-present the result.
+After the user selects a document, call `get_document_sections` with the
+document ID. This returns section headings, character counts, and previews
+— everything you need to derive topics without loading the full document.
 
-Derive 5-9 topic values by scanning headings and major sections. Then
-present them briefly: "Here are the topics I suggest based on your
-document — proceed or adjust?" followed by `present_options`.
+Derive 5-9 topic values from the returned sections. Then present them
+briefly: "Here are the topics I suggest — proceed or adjust?" followed
+by `present_options`.
 
 **CRITICAL: Topics must be section-level descriptions.**
 - GOOD: "Tier Management - Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits"
