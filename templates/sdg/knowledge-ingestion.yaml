@@ -1,7 +1,14 @@
 type: sdg
-description: Knowledge ingestion — generate QA training data from documents
+description: >
+  Knowledge ingestion — generate QA training data from documents.
+  Fill in [DOMAIN] placeholders in prompts, populate topic values from the
+  source document's major content sections weighted by content density.
 config:
   num_records: 100
+  seed_config:
+    source:
+      sentences_per_chunk: 15
+      min_text_length: 100
   model_configs:
     - alias: text
       model: gpt-4o-mini
@@ -21,29 +28,44 @@ config:
       params:
         values: [Factual, Procedural, Troubleshooting, Comparison]
         weights: [0.25, 0.35, 0.25, 0.15]
+    - column_type: sampler
+      name: topic
+      sampler_type: category
+      params:
+        values:
+          - "[Topic 1 - description of the first major content area in the source document]"
+          - "[Topic 2 - description of the second major content area in the source document]"
+          - "[Topic 3 - description of the third major content area in the source document]"
+        weights: [0.34, 0.33, 0.33]
     - column_type: llm-text
       name: question
       model_alias: text
       system_prompt: >
-        You generate specific, realistic questions from documentation.
-        The question MUST be answerable from the provided context.
-        Output ONLY the question.
+        You generate specific, realistic questions about [DOMAIN] documentation.
+        The question MUST be fully answerable using ONLY the provided
+        documentation context. Do not ask about concepts that are merely
+        mentioned but not explained in the context.
+        Output ONLY the question text, nothing else.
       prompt: >
         Documentation context:
-        {{ content }}
+        {{ text }}
 
+        Topic: {{ topic }}
         Difficulty: {{ difficulty }}
         Question type: {{ question_type }}
     - column_type: llm-text
       name: answer
       model_alias: text
       system_prompt: >
-        Answer accurately based on the documentation context.
-        Include specific details when relevant.
-        Output ONLY the answer.
+        You are a knowledgeable documentation assistant for [DOMAIN].
+        Answer accurately based on the documentation context provided.
+        Include specific commands, YAML snippets, and step-by-step
+        instructions when relevant. Be concise but thorough.
+        The question is answerable from the provided context, so read it
+        carefully and answer from it.
       prompt: >
         Documentation context:
-        {{ content }}
+        {{ text }}
 
         Question: {{ question }}
   processors:
@@ -51,6 +73,11 @@ config:
       name: sft_format
       template:
         messages:
+          - role: system
+            content: >
+              You are a knowledgeable documentation assistant for [DOMAIN].
+              Answer accurately based on the official documentation. Be concise
+              and provide step-by-step instructions when appropriate.
           - role: user
             content: "{{ question }}"
           - role: assistant
