@@ -141,8 +141,7 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        if (UI_TOOLS.has(name) && !seen.has(name.toLowerCase())) {
-          seen.add(name.toLowerCase())
+        if (UI_TOOLS.has(name)) {
           const stateObj = part.state as Record<string, unknown> | undefined
           const rawOutput = part.output ?? stateObj?.output ?? ""
           const output = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput)
