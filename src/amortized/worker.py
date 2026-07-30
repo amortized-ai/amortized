@@ -273,7 +273,7 @@ async def _resolve_parent_artifacts(
         return config
 
     config = dict(config)
-    if job["type"] == JobType.training.value and parent["type"] == "sdg":
+    if job["type"] == JobType.training.value and parent["type"] in ("sdg", "upload"):
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
             s3_dir = f"{artifact_uri}/generated_data/"
