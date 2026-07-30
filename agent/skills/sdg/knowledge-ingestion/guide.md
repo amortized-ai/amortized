@@ -100,10 +100,10 @@ at least N samples to cover every section."
 
 ### Step 8 — System prompt for the trained model
 
-Ask the user what system prompt their deployed model should use.
-This goes in the processor's SFT output and defines the trained model's
-behavior at inference time. Suggest a domain-specific default based on
-the document content.
+Do NOT ask the user to write a system prompt. Generate a domain-specific
+default based on the document content and include it in the config.
+Only mention it in the confirmation table so the user can adjust if
+they want to.
 
 ## Building the Config
 
