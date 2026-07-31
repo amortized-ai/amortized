@@ -72,15 +72,26 @@ export function MessageBubble({
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "get_model_pricing")
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string"
-        ? JSON.parse(tool.result)
-        : tool.result
-      if (parsed?.models && Array.isArray(parsed.models)) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
+    const tools = message.toolResults.filter(t => t.name === "get_model_pricing")
+    if (tools.length === 0) return null
+    const allModels: Record<string, unknown>[] = []
+    const seen = new Set<string>()
+    for (const tool of tools) {
+      if (!tool.result) continue
+      try {
+        const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+        if (parsed?.models && Array.isArray(parsed.models)) {
+          for (const m of parsed.models) {
+            if (!seen.has(m.model_id)) {
+              seen.add(m.model_id)
+              allModels.push(m)
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    if (allModels.length === 0) return null
+    return { query: "all models", models: allModels }
   }, [isUser, message.toolResults])
 
   const vramEstimate = useMemo(() => {
