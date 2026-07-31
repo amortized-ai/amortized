@@ -1,7 +1,7 @@
 # SDG Skill Guidance
 
 Pick the sub-skill that best matches the user's task. Read its `guide.md`
-for deep expertise before building the Data Designer config.
+for deep expertise before building the SDG config.
 
 ## Available Sub-Skills
 
@@ -25,3 +25,17 @@ The sub-skill's `guide.md` will tell you:
 
 Follow the guide's recommendations, but the user has the final call
 on every parameter. Always confirm before submitting.
+
+## SDG Defaults (all sub-skills)
+
+Always include these in `model_configs` inference_parameters:
+
+```json
+"inference_parameters": {
+  "temperature": 0.7,
+  "max_parallel_requests": 32
+}
+```
+
+`max_parallel_requests` controls how many LLM calls run concurrently.
+32 is the default for fast generation. Do not omit this field.
