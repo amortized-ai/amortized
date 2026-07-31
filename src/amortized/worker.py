@@ -12,6 +12,7 @@ import amortized.config as config_mod
 from amortized.backends import BackendHandle, Capability, JobSpec, Resources, S3Download
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.jobs import deserialize_handle
+from amortized.core.mlflow_client import MLflowClient
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
@@ -121,18 +122,12 @@ async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not mlflow_run_id:
         return ""
-    import httpx
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow/runs/get",
-                params={"run_id": mlflow_run_id},
-            )
-            resp.raise_for_status()
-            run = resp.json()["run"]
-            uri: str = run["info"]["artifact_uri"]
-            return uri
+        client = MLflowClient(tracking_uri)
+        run = await client.get_run(mlflow_run_id)
+        uri: str = run["info"]["artifact_uri"]
+        return uri
     except Exception:
         logger.warning(
             "Failed to resolve MLflow artifact URI for run %s", mlflow_run_id, exc_info=True
@@ -161,18 +156,10 @@ async def _set_mlflow_run_tag(mlflow_run_id: str, key: str, value: str) -> None:
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not mlflow_run_id:
         return
-    import httpx
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/set-tag",
-                json={
-                    "run_id": mlflow_run_id,
-                    "key": key,
-                    "value": value,
-                },
-            )
+        client = MLflowClient(tracking_uri)
+        await client.set_tag(mlflow_run_id, key, value)
     except Exception:
         logger.warning(
             "Failed to set MLflow tag %s=%s on run %s",
@@ -188,7 +175,6 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not mlflow_run_id:
         return False
-    import httpx
 
     model_id = job.get("config", {}).get("model_id", "unknown")
     algorithm = job.get("config", {}).get("algorithm", "sft")
@@ -196,29 +182,9 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
     model_name = f"{model_id}-{algorithm}-{job_id[:8]}"
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/registered-models/create",
-                json={"name": model_name},
-            )
-            if resp.status_code == 409:
-                logger.info("Model %s already registered", model_name)
-            elif resp.is_error:
-                logger.warning("Failed to create registered model: %s", resp.text)
-                return False
-
-            source = f"runs:/{mlflow_run_id}/model"
-            await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/model-versions/create",
-                json={
-                    "name": model_name,
-                    "source": source,
-                    "run_id": mlflow_run_id,
-                    "description": f"Fine-tuned {model_id} via {algorithm} (job {job_id[:8]})",
-                },
-            )
-            logger.info("Registered model version %s from run %s", model_name, mlflow_run_id)
-        return True
+        client = MLflowClient(tracking_uri)
+        description = f"Fine-tuned {model_id} via {algorithm} (job {job_id[:8]})"
+        return await client.register_model(model_name, mlflow_run_id, description)
     except Exception:
         logger.warning("Failed to register model %s", model_name, exc_info=True)
         return False
@@ -229,17 +195,11 @@ async def _fetch_document_content(document_id: str) -> str:
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not document_id:
         return ""
-    import httpx
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{tracking_uri.rstrip('/')}/api/2.0/mlflow-artifacts/artifacts/parsed_content.md",
-                params={"run_id": document_id},
-            )
-            if resp.is_success:
-                return resp.text
-            logger.warning("Failed to fetch document %s: %d", document_id, resp.status_code)
+        client = MLflowClient(tracking_uri)
+        content = await client.get_artifact_text(document_id, "parsed_content.md")
+        return content or ""
     except Exception:
         logger.warning("Failed to fetch document %s", document_id, exc_info=True)
     return ""
