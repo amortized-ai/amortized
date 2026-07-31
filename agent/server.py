@@ -41,7 +41,7 @@ MCP_AMORTIZED_URL = os.environ.get(
 MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
 WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
-MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
 
 
 def _detect_provider_id() -> str:
