@@ -30,7 +30,10 @@ k8s/base/morty-prompt.md
 k8s/base/morty-skills/
 .playwright-mcp/
 studio-*.png
-.claude/
+.claude/*
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/deploy.md
 .refactory/
 
 # Studio
