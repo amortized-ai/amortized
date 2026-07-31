@@ -179,8 +179,6 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 }]
 ```
 
-Always include `max_parallel_requests: 32` for fast generation.
-
 ### columns
 
 Columns define the generation pipeline. Each column can reference prior
