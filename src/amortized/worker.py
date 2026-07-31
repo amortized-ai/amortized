@@ -18,6 +18,29 @@ from amortized.models import JobStatus, JobType
 
 logger = logging.getLogger("amortized.worker")
 
+
+def _chunk_document(
+    content: str,
+    chunk_size: int = 2048,
+    chunk_overlap: int = 256,
+    tokenizer: str = "cl100k_base",
+) -> list[str]:
+    """Split document text into overlapping token-based chunks."""
+    import tiktoken
+
+    enc = tiktoken.get_encoding(tokenizer)
+    tokens = enc.encode(content)
+    if len(tokens) <= chunk_size:
+        return [content]
+    step = chunk_size - chunk_overlap
+    chunks: list[str] = []
+    for start in range(0, len(tokens), step):
+        chunk_tokens = tokens[start : start + chunk_size]
+        chunks.append(enc.decode(chunk_tokens))
+        if start + chunk_size >= len(tokens):
+            break
+    return chunks
+
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/data-designer:latest",
@@ -390,25 +413,43 @@ async def _run_job(job: dict[str, Any]) -> None:
             document_ids = [document_ids]
         doc_setup_cmds: list[str] = []
         if document_ids and config_mod.settings.mlflow_tracking_uri:
-            doc_count = 0
+            seed_config = config.get("seed_config", {})
+            source = seed_config.get("source", {})
+            chunk_size = source.pop("chunk_size", 2048)
+            chunk_overlap = source.pop("chunk_overlap", 256)
+            tokenizer = source.pop("tokenizer", "cl100k_base")
+            source.pop("sentences_per_chunk", None)
+            source.pop("min_text_length", None)
+
+            chunk_count = 0
             for doc_id in document_ids:
                 content = await _fetch_document_content(doc_id)
                 if content:
-                    config_files[f"doc_{doc_count}.md"] = content
-                    doc_count += 1
-            if doc_count:
+                    chunks = _chunk_document(content, chunk_size, chunk_overlap, tokenizer)
+                    for chunk_text in chunks:
+                        config_files[f"chunk_{chunk_count}.md"] = chunk_text
+                        chunk_count += 1
+
+            if chunk_count:
                 doc_setup_cmds = [
-                    "mkdir -p /tmp/docs",
-                    *(f"cp /amortized/doc_{i}.md /tmp/docs/" for i in range(doc_count)),
+                    "mkdir -p /tmp/chunks",
+                    *(f"cp /amortized/chunk_{i}.md /tmp/chunks/" for i in range(chunk_count)),
                 ]
-                seed_config = config.get("seed_config", {})
-                source = seed_config.get("source", {})
-                source.setdefault("seed_type", "document-chunker")
-                source.setdefault("path", "/tmp/docs")
-                source.setdefault("file_extensions", [".md"])
+                source["seed_type"] = "file_contents"
+                source["path"] = "/tmp/chunks"
+                source.setdefault("encoding", "utf-8")
                 seed_config["source"] = source
                 config["seed_config"] = seed_config
-                logger.info("Job %s: loaded %d documents as seed data", job_id, doc_count)
+                logger.info(
+                    "Job %s: chunked %d documents into %d chunks "
+                    "(size=%d, overlap=%d, tokenizer=%s)",
+                    job_id, len(document_ids), chunk_count,
+                    chunk_size, chunk_overlap, tokenizer,
+                )
+
+        for mc in config.get("model_configs", []):
+            params = mc.setdefault("inference_parameters", {})
+            params.setdefault("max_parallel_requests", 32)
 
         num_records = config.pop("num_records", 100)
         dd_config = {"data_designer": config}

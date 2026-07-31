@@ -29,9 +29,13 @@ You interact with the Amortized platform through these MCP tools:
 - `cancel_job` — Cancel a running job
 - `get_job_logs` — Stream logs from a job for debugging
 - `get_job_artifacts` — Get MLflow artifact URIs from a completed job
+- `get_artifact_content` — Fetch artifact files (datasets, configs) from completed jobs via S3
 
 **Documents**
 - `list_documents` — List uploaded and parsed documents
+- `get_document_content` — Get the full parsed content of a document (returns markdown)
+- `get_document_sections` — Get section headings, character counts, and previews of a document. Use this to understand document structure before building SDG configs — much smaller than full content.
+- `get_section_content` — Get the full content of a specific section by heading name. Use after `get_document_sections` to read individual sections in detail.
 - `convert_document` — Upload and parse a document
 - `convert_document_url` — Parse a document from URL
 

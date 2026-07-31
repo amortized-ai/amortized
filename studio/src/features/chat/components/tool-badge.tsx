@@ -18,6 +18,10 @@ const TOOL_LABELS: Record<string, string> = {
   "estimate training method cost": "Estimating training methods",
   "get job detail": "Checked job details",
   "get jobs": "Listed jobs",
+  "list documents": "Checked documents",
+  "get document content": "Read document",
+  "get document sections": "Analyzed document structure",
+  "get section content": "Read document section",
 }
 
 function humanize(name: string): string {
