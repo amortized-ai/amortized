@@ -412,6 +412,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         if isinstance(document_ids, str):
             document_ids = [document_ids]
         doc_setup_cmds: list[str] = []
+        chunk_count = 0
         if document_ids and config_mod.settings.mlflow_tracking_uri:
             seed_config = config.get("seed_config", {})
             source = seed_config.get("source", {})
@@ -421,7 +422,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             source.pop("sentences_per_chunk", None)
             source.pop("min_text_length", None)
 
-            chunk_count = 0
             for doc_id in document_ids:
                 content = await _fetch_document_content(doc_id)
                 if content:
@@ -446,12 +446,27 @@ async def _run_job(job: dict[str, Any]) -> None:
                     job_id, len(document_ids), chunk_count,
                     chunk_size, chunk_overlap, tokenizer,
                 )
+            else:
+                error_msg = (
+                    f"Job requires {len(document_ids)} document(s) but none"
+                    " could be fetched from MLflow. Check that the document"
+                    " IDs are valid and MLflow is reachable."
+                )
+                logger.error("Job %s: %s", job_id, error_msg)
+                await _update_job(
+                    job_id,
+                    status=JobStatus.failed.value,
+                    completed_at=datetime.now(UTC).isoformat(),
+                    error=error_msg,
+                )
+                return
 
         for mc in config.get("model_configs", []):
             params = mc.setdefault("inference_parameters", {})
             params.setdefault("max_parallel_requests", 32)
 
         num_records = config.pop("num_records", 100)
+        config.pop("topic", None)
         dd_config = {"data_designer": config}
         config_files["config.yaml"] = yaml.dump(
             dd_config, default_flow_style=False, sort_keys=False
@@ -529,6 +544,21 @@ async def _run_job(job: dict[str, Any]) -> None:
             if mlflow_run_id:
                 await _set_mlflow_run_tag(mlflow_run_id, "job_type", job["type"])
                 await _set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
+
+                if job["type"] == JobType.sdg.value:
+                    job_config = job.get("config", {})
+                    if isinstance(job_config, str):
+                        job_config = json.loads(job_config)
+                    nr = job_config.get("num_records", "")
+                    if nr:
+                        await _set_mlflow_run_tag(mlflow_run_id, "num_samples", str(nr))
+                    mc = job_config.get("model_configs", [])
+                    if mc and isinstance(mc, list):
+                        model_name = mc[0].get("model", "")
+                        await _set_mlflow_run_tag(mlflow_run_id, "teacher_model", model_name)
+                    topic = job_config.get("topic", "")
+                    if topic:
+                        await _set_mlflow_run_tag(mlflow_run_id, "dataset_topic", topic)
 
                 if job["type"] == JobType.training.value:
                     model_registered = await _register_training_model(job, mlflow_run_id)
