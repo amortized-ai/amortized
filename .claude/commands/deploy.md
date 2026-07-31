@@ -4,19 +4,19 @@ description: Deploy a branch or PR to the kind cluster on the GPU node. Use when
 
 # Deploy to Kind Cluster
 
-Deploy the current or specified branch to the mathale namespace on the GPU node.
+Deploy the current or specified branch to a developer namespace on the GPU node.
 
 ## Arguments
 
 Parse the user's input for:
+- **user** (required): The developer namespace to deploy to. If not provided, ask the user before proceeding. Valid users: `mathale`, `meyceoz`, `ssudalai`, `nmalepat`, `esivaram`.
 - **branch**: A branch name (e.g., `refactor/structured-agent-tools`). Defaults to the current branch.
 - **pr**: A PR number (e.g., `276`). Resolves to the PR's head branch.
-- **user**: The developer namespace to deploy to. Defaults to `mathale`.
 
 ## Remote Host
 
 - **Host:** `shiv@169.62.17.147`
-- **Workspace:** `/home/shiv/mathale/amortized` (adjust path if user is different: `/home/shiv/{user}/amortized`)
+- **Workspace:** `/home/shiv/{user}/amortized`
 - **Cluster context:** `kind-amortized`
 
 ## Steps
