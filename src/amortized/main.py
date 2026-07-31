@@ -205,11 +205,6 @@ app.include_router(datasets.router)
 app.include_router(documents.router)
 app.include_router(artifacts.router)
 app.include_router(ui.router)
-
-from amortized.api.models import router as models_router  # noqa: E402
-
-app.include_router(models_router)
-
 try:
     create_mcp_server(app)
 except Exception:
