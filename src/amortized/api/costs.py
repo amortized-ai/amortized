@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,14 @@ router = APIRouter(prefix="/api/v1/costs", tags=["costs"])
 # Model pricing lookup (local openrouter_costs.json)
 # ---------------------------------------------------------------------------
 
-_COSTS_FILE = Path(__file__).resolve().parent.parent.parent.parent / "openrouter_costs.json"
+_COSTS_FILE = (
+    Path(
+        os.environ.get(
+            "AMORTIZED_RECIPES_DIR", Path(__file__).resolve().parent.parent.parent.parent
+        )
+    )
+    / "openrouter_costs.json"
+)
 _pricing_data: list[dict[str, Any]] | None = None
 
 
