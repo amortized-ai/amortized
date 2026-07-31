@@ -130,7 +130,7 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const visibleToolResults = useMemo(() => {
-    const hidden = new Set<string>(["signal_phase", "get_document_sections", "get_section_content", "get_document_content", "list_documents"])
+    const hidden = new Set<string>(["signal_phase", "get_document_sections", "get_section_content", "get_document_content"])
     if (costEstimate) hidden.add("estimate_sdg_cost")
     if (trainingCostEstimate) hidden.add("estimate_training_cost")
     if (trainingMethodCost) hidden.add("estimate_training_method_cost")

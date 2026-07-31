@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 import aiosqlite
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
 from amortized.config import settings
 from amortized.db import get_db as _get_db
@@ -530,18 +530,31 @@ async def get_document_content(document_id: str) -> DocumentResult:
     )
 
 
+_MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+_CHAPTER_HEADING_RE = re.compile(r"^(CHAPTER\s+\d+)\.\s+(.+)$")
+_NUMBERED_HEADING_RE = re.compile(r"^(\d+(?:\.\d+)*)\.\s+([A-Z][A-Z\s\-:,/&()]+)$")
+
+
+def _match_heading(line: str) -> tuple[int, str] | None:
+    """Match a heading line and return (level, heading_text) or None."""
+    md = _MD_HEADING_RE.match(line)
+    if md:
+        return len(md.group(1)), md.group(2).strip()
+    ch = _CHAPTER_HEADING_RE.match(line)
+    if ch:
+        return 1, f"{ch.group(1)}. {ch.group(2).strip()}"
+    num = _NUMBERED_HEADING_RE.match(line)
+    if num:
+        return num.group(1).count(".") + 1, f"{num.group(1)}. {num.group(2).strip()}"
+    return None
+
+
 def _extract_sections(content: str) -> list[DocumentSection]:
     """Parse headings from markdown and return structured sections.
 
     Detects both standard markdown headings (## Heading) and docling-style
     ALL-CAPS numbered headings (CHAPTER 1. TITLE, 3.5. MONITORING).
     """
-    import re
-
-    _MD_HEADING = re.compile(r"^(#{1,6})\s+(.+)$")
-    _CHAPTER_HEADING = re.compile(r"^(CHAPTER\s+\d+)\.\s+(.+)$")
-    _NUMBERED_HEADING = re.compile(r"^(\d+(?:\.\d+)*)\.\s+([A-Z][A-Z\s\-:,/&()]+)$")
-
     lines = content.split("\n")
     sections: list[DocumentSection] = []
     current_heading = ""
@@ -563,43 +576,16 @@ def _extract_sections(content: str) -> list[DocumentSection]:
         ))
 
     for line in lines:
-        stripped = line.strip()
-        md_match = _MD_HEADING.match(stripped)
-        chapter_match = _CHAPTER_HEADING.match(stripped)
-        numbered_match = _NUMBERED_HEADING.match(stripped)
-
-        if md_match:
+        match = _match_heading(line.strip())
+        if match:
             _flush()
-            current_level = len(md_match.group(1))
-            current_heading = md_match.group(2).strip()
-            current_lines = []
-        elif chapter_match:
-            _flush()
-            current_level = 1
-            current_heading = f"{chapter_match.group(1)}. {chapter_match.group(2).strip()}"
-            current_lines = []
-        elif numbered_match:
-            _flush()
-            current_level = numbered_match.group(1).count(".") + 1
-            current_heading = f"{numbered_match.group(1)}. {numbered_match.group(2).strip()}"
+            current_level, current_heading = match
             current_lines = []
         else:
             current_lines.append(line)
 
     _flush()
     return sections
-
-
-def _is_heading(line: str) -> bool:
-    import re
-
-    if re.match(r"^#{1,6}\s+.+$", line):
-        return True
-    if re.match(r"^CHAPTER\s+\d+\.\s+.+$", line):
-        return True
-    if re.match(r"^\d+(?:\.\d+)*\.\s+[A-Z][A-Z\s\-:,/&()]+$", line):
-        return True
-    return False
 
 
 def _deduplicate_sections(sections: list[DocumentSection]) -> list[DocumentSection]:
@@ -623,6 +609,27 @@ def _deduplicate_sections(sections: list[DocumentSection]) -> list[DocumentSecti
     return [s for s in merged.values() if s.char_count > 0]
 
 
+def _collect_section_content(content: str, heading: str) -> str:
+    """Collect all content for a heading, merging across duplicate occurrences."""
+    lines = content.split("\n")
+    parts: list[str] = []
+    capturing = False
+
+    for line in lines:
+        match = _match_heading(line.strip())
+        if match:
+            _, matched_heading = match
+            if matched_heading == heading:
+                capturing = True
+                continue
+            elif capturing:
+                capturing = False
+        if capturing:
+            parts.append(line)
+
+    return "\n".join(parts).strip()
+
+
 @router.get(
     "/{document_id}/sections",
     response_model=DocumentSections,
@@ -642,34 +649,22 @@ async def get_document_sections(document_id: str) -> DocumentSections:
 
 
 @router.get(
-    "/{document_id}/sections/{section_heading}",
+    "/{document_id}/sections/by-heading",
     operation_id="get_section_content",
     summary="Get the full content of a specific document section by heading. Use after get_document_sections to read a section in detail.",
 )
-async def get_section_content(document_id: str, section_heading: str) -> dict[str, Any]:
+async def get_section_content(
+    document_id: str,
+    heading: str = Query(..., description="Section heading to retrieve"),
+) -> dict[str, Any]:
+    # TODO: cache document content to avoid N+1 MLflow fetches
     result = await get_document_content(document_id)
-    raw_sections = _extract_sections(result.content)
-    deduped = _deduplicate_sections(raw_sections)
-    for section in deduped:
-        if section.heading.lower() == section_heading.lower():
-            idx = next(
-                i for i, s in enumerate(raw_sections)
-                if s.heading == section.heading and s.char_count == section.char_count
-            )
-            lines = result.content.split("\n")
-            start = 0
-            count = 0
-            for i, line in enumerate(lines):
-                if _is_heading(line.strip()) and count <= idx:
-                    if count == idx:
-                        start = i + 1
-                    count += 1
-                elif count > idx and _is_heading(line.strip()):
-                    body = "\n".join(lines[start:i]).strip()
-                    return {"heading": section.heading, "content": body}
-            body = "\n".join(lines[start:]).strip()
-            return {"heading": section.heading, "content": body}
-    raise HTTPException(status_code=404, detail=f"Section not found: {section_heading}")
+    deduped = _deduplicate_sections(_extract_sections(result.content))
+    matched = next((s for s in deduped if s.heading.lower() == heading.lower()), None)
+    if not matched:
+        raise HTTPException(status_code=404, detail=f"Section not found: {heading}")
+    body = _collect_section_content(result.content, matched.heading)
+    return {"heading": matched.heading, "content": body}
 
 
 def _format_timestamp(ts: int | None) -> str:
