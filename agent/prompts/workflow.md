@@ -251,30 +251,30 @@ When a job fails:
 2. Call `get_job_logs` to inspect container output
 3. Diagnose and suggest fixes
 
-## Phase Signaling (MANDATORY)
+## Progress Signaling (MANDATORY)
 
-On EVERY response during a workflow, call `signal_phase` to tell the UI
-where you are. The frontend uses this to display the workflow progress bar.
+On EVERY response during a workflow, call BOTH `signal_phase` and
+`signal_progress` to update the UI.
+
+### signal_phase
+
+Tells the UI which phase/step you're in. Call once per response.
 
 **Phases:** `sdg`, `training`
 
-**Steps:**
-- `understand_task` — Understanding what the user wants to build
-- `load_skill` — Loading the relevant skill guidance
-- `gather_requirements` — Asking domain-specific questions
-- `estimate_cost` — Presenting cost estimates
-- `confirm` — Showing confirmation table, waiting for user approval
-- `execute` — Job submitted and running
-- `review` — Job completed, presenting results and next steps
+**Steps:** `understand_task`, `load_skill`, `gather_requirements`,
+`estimate_cost`, `confirm`, `execute`, `review`
 
-**Examples:**
-- First message: `signal_phase(phase="sdg", step="understand_task")`
-- Asking about topics, samples, model: `signal_phase(phase="sdg", step="gather_requirements")`
-- Showing confirmation table: `signal_phase(phase="sdg", step="confirm")`
-- Moving to training: `signal_phase(phase="training", step="load_skill")`
+### signal_progress
 
-Call `signal_phase` ONCE per response, then STOP — do not loop on it.
-If answering a general question (not part of a workflow), omit the call.
+Drives the dynamic progress bar. The frontend accumulates calls into
+a growing checklist. Call it on EVERY workflow response alongside
+`signal_phase`. Describe what you're currently doing — the step IDs
+and labels are yours to choose, not a fixed list.
+
+Call both `signal_phase` and `signal_progress` ONCE per response, then
+STOP — do not loop on them. If answering a general question (not part
+of a workflow), omit both calls.
 
 ## Honest Failure Handling
 
