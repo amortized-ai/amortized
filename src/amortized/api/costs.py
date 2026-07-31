@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("amortized.api.costs")
@@ -398,6 +400,62 @@ class EstimateEvalCostResponse(BaseModel):
     cost_per_sample: float
     comparison: list[EvalJudgeOption]
     manual_comparison: EvalManualComparison
+
+
+# ---------------------------------------------------------------------------
+# Model pricing lookup (local openrouter_costs.json)
+# ---------------------------------------------------------------------------
+
+_COSTS_FILE = Path(__file__).resolve().parent.parent.parent.parent / "openrouter_costs.json"
+_pricing_data: list[dict[str, Any]] | None = None
+
+
+def _load_pricing_data() -> list[dict[str, Any]]:
+    global _pricing_data
+    if _pricing_data is None:
+        with open(_COSTS_FILE, encoding="utf-8") as f:
+            _pricing_data = json.load(f)
+    return _pricing_data
+
+
+class ModelPricing(BaseModel):
+    model_id: str
+    name: str
+    prompt_cost_per_1m: float
+    completion_cost_per_1m: float
+    context_length: int
+
+
+class GetModelPricingResponse(BaseModel):
+    query: str
+    models: list[ModelPricing]
+
+
+@router.get(
+    "/models",
+    response_model=GetModelPricingResponse,
+    operation_id="get_model_pricing",
+    summary="Search model pricing by name. Returns matching models with per-1M-token costs.",
+)
+async def get_model_pricing(
+    q: str = Query(
+        ..., description="Model name to search for (e.g. 'claude sonnet', 'gpt-4o', 'llama')"
+    ),
+) -> GetModelPricingResponse:
+    data = _load_pricing_data()
+    query_lower = q.lower()
+    matches = [
+        ModelPricing(
+            model_id=m["id"],
+            name=m["name"],
+            prompt_cost_per_1m=m["prompt_cost_per_1m"],
+            completion_cost_per_1m=m["completion_cost_per_1m"],
+            context_length=m["context_length"],
+        )
+        for m in data
+        if query_lower in m["id"].lower() or query_lower in m["name"].lower()
+    ]
+    return GetModelPricingResponse(query=q, models=matches[:10])
 
 
 # ---------------------------------------------------------------------------

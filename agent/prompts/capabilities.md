@@ -44,6 +44,7 @@ You interact with the Amortized platform through these MCP tools:
 - `get_recipe` — Get details for a specific recipe
 
 **Cost Estimation**
+- `get_model_pricing` — Search model pricing by name (params: q). Returns per-1M-token costs.
 - `estimate_sdg_cost` — Estimate cost for an SDG job
 - `compare_sdg_models` — Compare costs across different teacher models
 - `estimate_training_cost` — Estimate cost for a training job
