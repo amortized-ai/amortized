@@ -18,6 +18,8 @@ spec:
         app: amortized
         component: mlflow-mcp
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: mlflow-mcp
           image: ghcr.io/us-all/mlflow-mcp-server:latest
