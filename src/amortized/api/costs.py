@@ -732,14 +732,6 @@ FP8 = 1
 FP4 = 0.5
 ADAMW_STATES = 2
 
-GPU_VRAM: dict[str, int] = {
-    "T4": 16,
-    "A10G": 24,
-    "L4": 24,
-    "A100": 80,
-    "H100": 80,
-}
-
 MODEL_SIZE_BUCKETS: list[dict[str, Any]] = [
     {
         "label": "0.5B",
@@ -945,24 +937,6 @@ def _estimate_vram_osft(
     return int(subtotal), int(subtotal * 1.1), int(subtotal * 1.3)
 
 
-def _recommend_gpu(vram_gb: float) -> str:
-    for gpu, vram in [("T4", 16), ("L4", 24), ("A10G", 24), ("A100", 80), ("H100", 80)]:
-        if vram_gb <= vram:
-            return gpu
-    return "H100"
-
-
-def _assess_feasibility(expected_gb: float, gpu: str) -> str:
-    capacity = GPU_VRAM.get(gpu, 80)
-    if expected_gb * 1.2 <= capacity:
-        return "fits"
-    if expected_gb <= capacity:
-        return "likely fits"
-    if expected_gb * 0.9 <= capacity:
-        return "may not fit"
-    return "does not fit"
-
-
 class TrainingEstimateRequest(BaseModel):
     model_size: str = Field(
         ...,
@@ -985,9 +959,6 @@ class TrainingEstimateResponse(BaseModel):
     num_gpus: int
     vram_per_gpu_gb: dict[str, float]
     total_vram_gb: dict[str, float]
-    recommended_gpu: str
-    feasibility: str
-    model_info: dict[str, Any]
 
 
 @router.post(
@@ -1027,9 +998,6 @@ async def estimate_training_resources(
     mid_gb = round(mid / to_gb, 1)
     high_gb = round(high / to_gb, 1)
 
-    gpu = _recommend_gpu(mid_gb)
-    feasibility = _assess_feasibility(mid_gb, gpu)
-
     return TrainingEstimateResponse(
         model_size=info["label"],
         method=body.method,
@@ -1039,13 +1007,5 @@ async def estimate_training_resources(
             "low": round(low_gb * body.num_gpus, 1),
             "expected": round(mid_gb * body.num_gpus, 1),
             "high": round(high_gb * body.num_gpus, 1),
-        },
-        recommended_gpu=gpu,
-        feasibility=feasibility,
-        model_info={
-            "num_params": info["num_params"],
-            "num_hidden_layers": info["num_hidden_layers"],
-            "hidden_size": info["hidden_size"],
-            "vocab_size": info["vocab_size"],
         },
     )
