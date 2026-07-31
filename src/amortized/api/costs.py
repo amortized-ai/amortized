@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("amortized.api.costs")
@@ -48,6 +50,7 @@ def _resolve_model_label(model: str) -> str:
         name = parts[1].replace("-", " ").replace("@", " ").title()
         return name
     return model
+
 
 INPUT_TOKENS_PER_SAMPLE = 500
 OUTPUT_TOKENS_PER_SAMPLE = 300
@@ -181,9 +184,11 @@ def _estimate_training_minutes(
     seconds = total_tokens / tokens_per_sec
     return seconds / 60
 
+
 # ---------------------------------------------------------------------------
 # OpenRouter live pricing (cached)
 # ---------------------------------------------------------------------------
+
 
 async def _fetch_gateway_models() -> list[tuple[str, str, str]]:
     """Fetch available models from MLflow AI Gateway, returns [(model_id, label, desc)]."""
@@ -194,9 +199,7 @@ async def _fetch_gateway_models() -> list[tuple[str, str, str]]:
         return []
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"{tracking_uri}/api/3.0/mlflow/gateway/endpoints/list"
-            )
+            resp = await client.get(f"{tracking_uri}/api/3.0/mlflow/gateway/endpoints/list")
             resp.raise_for_status()
             endpoints = resp.json().get("endpoints", [])
             result = []
@@ -408,6 +411,62 @@ class EstimateEvalCostResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Model pricing lookup (local openrouter_costs.json)
+# ---------------------------------------------------------------------------
+
+_COSTS_FILE = Path(__file__).resolve().parent.parent.parent.parent / "openrouter_costs.json"
+_pricing_data: list[dict[str, Any]] | None = None
+
+
+def _load_pricing_data() -> list[dict[str, Any]]:
+    global _pricing_data
+    if _pricing_data is None:
+        with open(_COSTS_FILE, encoding="utf-8") as f:
+            _pricing_data = json.load(f)
+    return _pricing_data
+
+
+class ModelPricing(BaseModel):
+    model_id: str
+    name: str
+    prompt_cost_per_1m: float
+    completion_cost_per_1m: float
+    context_length: int
+
+
+class GetModelPricingResponse(BaseModel):
+    query: str
+    models: list[ModelPricing]
+
+
+@router.get(
+    "/models",
+    response_model=GetModelPricingResponse,
+    operation_id="get_model_pricing",
+    summary="Search model pricing by name. Returns matching models with per-1M-token costs.",
+)
+async def get_model_pricing(
+    q: str = Query(
+        ..., description="Model name to search for (e.g. 'claude sonnet', 'gpt-4o', 'llama')"
+    ),
+) -> GetModelPricingResponse:
+    data = _load_pricing_data()
+    query_lower = q.lower()
+    matches = [
+        ModelPricing(
+            model_id=m["id"],
+            name=m["name"],
+            prompt_cost_per_1m=m["prompt_cost_per_1m"],
+            completion_cost_per_1m=m["completion_cost_per_1m"],
+            context_length=m["context_length"],
+        )
+        for m in data
+        if query_lower in m["id"].lower() or query_lower in m["name"].lower()
+    ]
+    return GetModelPricingResponse(query=q, models=matches[:10])
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -547,12 +606,9 @@ async def estimate_training_method_cost(
     base_minutes = _estimate_training_minutes(body.model_id, body.num_samples, body.num_epochs)
 
     method_configs = [
-        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest",
-         1.0, True),
-        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM",
-         1.2, False),
-        ("full_sft", "Full SFT", "Updates all model weights — highest quality",
-         3.5, False),
+        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest", 1.0, True),
+        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM", 1.2, False),
+        ("full_sft", "Full SFT", "Updates all model weights — highest quality", 3.5, False),
     ]
 
     methods = []
@@ -621,11 +677,13 @@ async def estimate_eval_cost(
     judge_options: list[tuple[str, str, str]] = []
     if body.models:
         for m in body.models:
-            judge_options.append((
-                m.model_id,
-                m.label or _resolve_model_label(m.model_id),
-                m.description or "",
-            ))
+            judge_options.append(
+                (
+                    m.model_id,
+                    m.label or _resolve_model_label(m.model_id),
+                    m.description or "",
+                )
+            )
     if not judge_options:
         judge_options = [("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model")]
     comparison = []
