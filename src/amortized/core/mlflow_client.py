@@ -208,7 +208,9 @@ class MLflowClient:
                 return None
             logger.warning(
                 "MLflow artifact fetch failed for run %s path %s: %d",
-                run_id, path, exc.response.status_code,
+                run_id,
+                path,
+                exc.response.status_code,
             )
             raise
         except Exception:
@@ -248,7 +250,7 @@ class MLflowClient:
         return True
 
     async def list_gateway_endpoints(self) -> list[dict[str, Any]]:
-        """Fetch MLflow AI Gateway endpoints."""
+        """Fetch raw MLflow AI Gateway endpoint dicts."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.get(
                 self._url("/api/3.0/mlflow/gateway/endpoints/list"),
@@ -256,3 +258,28 @@ class MLflowClient:
             resp.raise_for_status()
             endpoints: list[dict[str, Any]] = resp.json().get("endpoints", [])
             return endpoints
+
+    async def list_gateway_models(self) -> list[dict[str, str]]:
+        """Parse gateway endpoints into model records.
+
+        Returns a list of dicts with keys: name, provider, model_name.
+        """
+        endpoints = await self.list_gateway_endpoints()
+        models: list[dict[str, str]] = []
+        for ep in endpoints:
+            provider = ""
+            model_name = ""
+            for mapping in ep.get("model_mappings", []):
+                model_def = mapping.get("model_definition", {})
+                if model_def:
+                    provider = model_def.get("provider", "")
+                    model_name = model_def.get("model_name", "")
+                    break
+            models.append(
+                {
+                    "name": ep.get("name", ""),
+                    "provider": provider,
+                    "model_name": model_name,
+                }
+            )
+        return models
