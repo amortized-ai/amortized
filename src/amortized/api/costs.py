@@ -740,55 +740,109 @@ GPU_VRAM: dict[str, int] = {
     "H100": 80,
 }
 
-_hf_model_cache: dict[str, dict[str, Any]] = {}
+MODEL_SIZE_BUCKETS: list[dict[str, Any]] = [
+    {
+        "label": "0.5B",
+        "num_params": 500_000_000,
+        "num_hidden_layers": 24,
+        "hidden_size": 896,
+        "vocab_size": 151936,
+        "intermediate_size": 4864,
+        "num_attention_heads": 14,
+        "num_key_value_heads": 2,
+    },
+    {
+        "label": "1B",
+        "num_params": 1_000_000_000,
+        "num_hidden_layers": 28,
+        "hidden_size": 1024,
+        "vocab_size": 151936,
+        "intermediate_size": 3072,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 8,
+    },
+    {
+        "label": "3B",
+        "num_params": 3_000_000_000,
+        "num_hidden_layers": 36,
+        "hidden_size": 2048,
+        "vocab_size": 151936,
+        "intermediate_size": 8192,
+        "num_attention_heads": 16,
+        "num_key_value_heads": 8,
+    },
+    {
+        "label": "8B",
+        "num_params": 8_000_000_000,
+        "num_hidden_layers": 32,
+        "hidden_size": 4096,
+        "vocab_size": 128256,
+        "intermediate_size": 14336,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 8,
+    },
+    {
+        "label": "13B",
+        "num_params": 13_000_000_000,
+        "num_hidden_layers": 40,
+        "hidden_size": 5120,
+        "vocab_size": 32000,
+        "intermediate_size": 13824,
+        "num_attention_heads": 40,
+        "num_key_value_heads": 40,
+    },
+    {
+        "label": "32B",
+        "num_params": 32_000_000_000,
+        "num_hidden_layers": 64,
+        "hidden_size": 5120,
+        "vocab_size": 152064,
+        "intermediate_size": 27648,
+        "num_attention_heads": 40,
+        "num_key_value_heads": 8,
+    },
+    {
+        "label": "70B",
+        "num_params": 70_000_000_000,
+        "num_hidden_layers": 80,
+        "hidden_size": 8192,
+        "vocab_size": 128256,
+        "intermediate_size": 28672,
+        "num_attention_heads": 64,
+        "num_key_value_heads": 8,
+    },
+    {
+        "label": "120B",
+        "num_params": 120_000_000_000,
+        "num_hidden_layers": 96,
+        "hidden_size": 8192,
+        "vocab_size": 128256,
+        "intermediate_size": 32768,
+        "num_attention_heads": 64,
+        "num_key_value_heads": 8,
+    },
+]
 
 
-async def _fetch_hf_model_info(model_path: str) -> dict[str, Any]:
-    """Fetch model metadata from HuggingFace REST API."""
-    if model_path in _hf_model_cache:
-        return _hf_model_cache[model_path]
+def _resolve_model_size(model_size: str) -> dict[str, Any]:
+    """Resolve a model size label or param count to architecture metadata."""
+    size_lower = model_size.lower().strip()
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        api_resp = await client.get(f"https://huggingface.co/api/models/{model_path}")
-        api_resp.raise_for_status()
-        api_data = api_resp.json()
+    for bucket in MODEL_SIZE_BUCKETS:
+        if bucket["label"].lower() == size_lower:
+            return bucket
 
-        num_params = api_data.get("safetensors", {}).get("total", 0)
+    try:
+        raw = size_lower.rstrip("b")
+        num = float(raw) * 1_000_000_000
+    except ValueError:
+        num = 0.0
 
-        try:
-            config_resp = await client.get(
-                f"https://huggingface.co/{model_path}/raw/main/config.json"
-            )
-            config_resp.raise_for_status()
-            config = config_resp.json()
-        except httpx.HTTPStatusError:
-            config = {}
+    if num <= 0:
+        return MODEL_SIZE_BUCKETS[0]
 
-    info = {
-        "num_params": num_params,
-        "num_hidden_layers": config.get("num_hidden_layers", 0),
-        "hidden_size": config.get("hidden_size", 0),
-        "vocab_size": config.get("vocab_size", 0),
-        "intermediate_size": config.get("intermediate_size", 0),
-        "num_attention_heads": config.get("num_attention_heads", 0),
-        "num_key_value_heads": config.get("num_key_value_heads", 0),
-    }
-
-    if not info["num_hidden_layers"] and not info["hidden_size"]:
-        for key, model in TRAINING_MODELS.items():
-            if key in model_path.lower() or model_path.lower().endswith(key):
-                info.update(
-                    {
-                        "num_params": model["num_params"],
-                        "num_hidden_layers": model["num_layers"],
-                        "hidden_size": model["hidden_size"],
-                        "vocab_size": model["vocab_size"],
-                    }
-                )
-                break
-
-    _hf_model_cache[model_path] = info
-    return info
+    closest = min(MODEL_SIZE_BUCKETS, key=lambda b: abs(b["num_params"] - num))
+    return closest
 
 
 def _calc_weight_size_total(info: dict[str, Any]) -> int:
@@ -910,7 +964,10 @@ def _assess_feasibility(expected_gb: float, gpu: str) -> str:
 
 
 class TrainingEstimateRequest(BaseModel):
-    model_path: str = Field(..., description="HuggingFace model ID (e.g. 'Qwen/Qwen3-4B')")
+    model_size: str = Field(
+        ...,
+        description="Model size: '0.5B', '1B', '3B', '8B', '13B', '32B', '70B', or '120B'",
+    )
     method: str = Field("lora", description="Training method: sft, lora, qlora, osft")
     num_gpus: int = Field(1, description="Number of GPUs")
     batch_size: int | None = Field(None, description="Batch size (provide with max_seq_len)")
@@ -923,7 +980,7 @@ class TrainingEstimateRequest(BaseModel):
 
 
 class TrainingEstimateResponse(BaseModel):
-    model_path: str
+    model_size: str
     method: str
     num_gpus: int
     vram_per_gpu_gb: dict[str, float]
@@ -937,19 +994,12 @@ class TrainingEstimateResponse(BaseModel):
     "/training/estimate",
     response_model=TrainingEstimateResponse,
     operation_id="estimate_training_resources",
-    summary="Estimate GPU memory requirements for training a model.",
+    summary="Estimate GPU memory requirements for training a model by size.",
 )
 async def estimate_training_resources(
     body: TrainingEstimateRequest,
 ) -> TrainingEstimateResponse:
-    info = await _fetch_hf_model_info(body.model_path)
-
-    if not info["num_params"] or not info["num_hidden_layers"]:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Could not fetch model metadata for '{body.model_path}'. "
-            "Check the model path or use a public model.",
-        )
+    info = _resolve_model_size(body.model_size)
 
     if body.max_tokens_per_gpu:
         tokens_per_gpu = body.max_tokens_per_gpu
@@ -981,7 +1031,7 @@ async def estimate_training_resources(
     feasibility = _assess_feasibility(mid_gb, gpu)
 
     return TrainingEstimateResponse(
-        model_path=body.model_path,
+        model_size=info["label"],
         method=body.method,
         num_gpus=body.num_gpus,
         vram_per_gpu_gb={"low": low_gb, "expected": mid_gb, "high": high_gb},
