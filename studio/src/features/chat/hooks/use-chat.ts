@@ -97,11 +97,8 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
 const UI_TOOLS = new Set([
   "present_options",
   "signal_phase",
-  "estimate_sdg_cost",
-  "compare_sdg_models",
-  "estimate_training_cost",
-  "estimate_training_method_cost",
-  "estimate_eval_cost",
+  "get_model_pricing",
+  "estimate_training_resources",
   "submit_recipe_job",
   "create_job",
 ])

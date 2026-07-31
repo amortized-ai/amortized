@@ -7,10 +7,8 @@ import type { ChatMessage, OptionCard } from "../types"
 import { ToolActivity } from "./tool-badge"
 import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
-import { CostAnalysisCard } from "./cost-analysis-card"
-import { TrainingCostCard } from "./training-cost-card"
-import { ModelComparisonCard } from "./model-comparison-card"
-import { TrainingMethodCostCard } from "./training-method-cost-card"
+import { ModelPricingCard } from "./model-pricing-card"
+import { VRAMEstimateCard } from "./vram-estimate-card"
 import { JobMonitorCard } from "./job-monitor-card"
 import { extractJobInfo } from "../utils/parse-tool-result"
 
@@ -72,22 +70,9 @@ export function MessageBubble({
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
 
-  const costEstimate = useMemo(() => {
+  const modelPricing = useMemo(() => {
     if (isUser) return null
-    const costTool = message.toolResults.find(t => t.name === "estimate_sdg_cost")
-    if (!costTool?.result) return null
-    try {
-      const parsed = typeof costTool.result === "string"
-        ? JSON.parse(costTool.result)
-        : costTool.result
-      if (parsed?.cost && parsed?.comparison) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
-  const trainingCostEstimate = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "estimate_training_cost")
+    const tool = message.toolResults.find(t => t.name === "get_model_pricing")
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string"
@@ -98,41 +83,26 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const trainingMethodCost = useMemo(() => {
+  const vramEstimate = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "estimate_training_method_cost")
+    const tool = message.toolResults.find(t => t.name === "estimate_training_resources")
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string"
         ? JSON.parse(tool.result)
         : tool.result
-      if (parsed?.methods && Array.isArray(parsed.methods)) return parsed
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
-
-  const modelComparison = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "compare_sdg_models")
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string"
-        ? JSON.parse(tool.result)
-        : tool.result
-      if (parsed?.models && Array.isArray(parsed.models)) return parsed
+      if (parsed?.vram_per_gpu_gb) return parsed
     } catch { /* ignore parse errors */ }
     return null
   }, [isUser, message.toolResults])
 
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>(["signal_phase", "get_document_sections", "get_section_content", "get_document_content"])
-    if (costEstimate) hidden.add("estimate_sdg_cost")
-    if (trainingCostEstimate) hidden.add("estimate_training_cost")
-    if (trainingMethodCost) hidden.add("estimate_training_method_cost")
-    if (modelComparison) hidden.add("compare_sdg_models")
+    if (modelPricing) hidden.add("get_model_pricing")
+    if (vramEstimate) hidden.add("estimate_training_resources")
     if (structuredOptions) hidden.add("present_options")
     return message.toolResults.filter((t) => !hidden.has(t.name))
-  }, [message.toolResults, costEstimate, trainingCostEstimate, trainingMethodCost, modelComparison, structuredOptions])
+  }, [message.toolResults, modelPricing, vramEstimate, structuredOptions])
 
 
   return (
@@ -175,27 +145,15 @@ export function MessageBubble({
           )
         )}
 
-        {costEstimate && (
+        {modelPricing && (
           <div className="mt-3">
-            <CostAnalysisCard estimate={costEstimate} />
+            <ModelPricingCard data={modelPricing} />
           </div>
         )}
 
-        {trainingCostEstimate && (
+        {vramEstimate && (
           <div className="mt-3">
-            <TrainingCostCard estimate={trainingCostEstimate} />
-          </div>
-        )}
-
-        {trainingMethodCost && (
-          <div className="mt-3">
-            <TrainingMethodCostCard estimate={trainingMethodCost} />
-          </div>
-        )}
-
-        {modelComparison && (
-          <div className="mt-3">
-            <ModelComparisonCard estimate={modelComparison} />
+            <VRAMEstimateCard data={vramEstimate} />
           </div>
         )}
         {visibleToolResults.length > 0 && (
