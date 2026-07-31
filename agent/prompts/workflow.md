@@ -143,9 +143,7 @@ Chain jobs together using `parent_job_id`:
 only use models that have configured endpoints on the AI Gateway.
 
 1. Call `list_models` to discover available models from the AI Gateway
-2. Call `compare_sdg_models` with the models array — for each model, set
-   `model_id` to `provider/model_name` and `label` to the endpoint `name`
-   from `list_models`. The frontend renders this as a cost comparison card.
+2. Call `get_model_pricing` to look up pricing for the available models
 3. Call `present_options` with each model as an option. Use the endpoint
    `name` as the title, with `provider/model_name` in the description.
 4. Wait for the user to select one before proceeding
@@ -164,29 +162,26 @@ to add an endpoint before starting SDG."
 
 When asking which student model to fine-tune:
 
-1. Call `estimate_training_cost` with the current sample count — the
-   frontend renders this as a cost comparison card across model sizes
+1. Call `estimate_training_resources` for each candidate model size to show VRAM requirements
 2. Call `present_options` with the available student models
 
 ## Training Method Selection
 
 When asking which training method to use (LoRA SFT, QLoRA, Full SFT):
 
-1. Call `estimate_training_method_cost` with the selected model and
-   sample count — the frontend renders this as a method comparison card
+1. Call `estimate_training_resources` with the selected model size and each method (lora, qlora, osft) to compare VRAM requirements
 2. Call `present_options` with the training method options
 
 ## SDG Confirmation
 
-Before showing the SDG confirmation table, call `estimate_sdg_cost`
-with the selected model and sample count. The frontend renders this
-as a cost savings card.
+Before showing the SDG confirmation table, call `get_model_pricing`
+with the selected model name to show its pricing.
 
 ## Training Confirmation
 
 Before showing the training confirmation table, call
-`estimate_training_method_cost` with the final model, method, and
-sample count. The frontend renders this as a cost savings card.
+`estimate_training_resources` with the final model size and method
+to show VRAM requirements.
 
 ## SDG Job Config Format
 

@@ -45,9 +45,6 @@ You interact with the Amortized platform through these MCP tools:
 
 **Cost Estimation**
 - `get_model_pricing` — Search model pricing by name (params: q). Returns per-1M-token costs.
-- `estimate_sdg_cost` — Estimate cost for an SDG job
-- `compare_sdg_models` — Compare costs across different teacher models
-- `estimate_training_cost` — Estimate cost for a training job
 - `estimate_training_resources` — Estimate GPU memory by model size (params: model_size e.g. '8B', method, num_gpus)
 
 **Models**
