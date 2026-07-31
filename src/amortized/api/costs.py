@@ -198,18 +198,11 @@ async def _fetch_gateway_models() -> list[tuple[str, str, str]]:
         return []
     try:
         client = MLflowClient(tracking_uri)
-        endpoints = await client.list_gateway_endpoints()
+        models = await client.list_gateway_models()
         result = []
-        for ep in endpoints:
-            primary = next(
-                (m for m in ep.get("model_mappings", []) if m.get("linkage_type") == "PRIMARY"),
-                None,
-            )
-            if not primary:
-                continue
-            model_def = primary.get("model_definition", {})
-            provider = model_def.get("provider", "")
-            model_name = model_def.get("model_name", "")
+        for m in models:
+            provider = m["provider"]
+            model_name = m["model_name"]
             if provider and model_name:
                 model_id = f"{provider}/{model_name}"
                 label = _resolve_model_label(model_id)
