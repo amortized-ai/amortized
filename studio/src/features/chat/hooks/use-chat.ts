@@ -268,7 +268,7 @@ export function useChat() {
             if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
           } catch { /* ignore */ }
         }
-        const responseContent = parsed.content ?? session.text
+        const responseContent = session.text || parsed.content
 
         if (toolResults.length > 0) {
           setCurrentToolCall(toolResults[toolResults.length - 1]!)
