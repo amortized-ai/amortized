@@ -255,6 +255,8 @@ deploy-user: prompt ## Deploy a user's environment (USER=<name>)
 	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/nodeport-services.yaml
 	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/gpu-quota.yaml
 	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/rbac-jobs.yaml
+	@# Restart all deployments so pods pick up new configs / images
+	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio deployment/opencode deployment/claude-code
 	@# Wait for rollouts
 	@echo "Waiting for $(USER) deployments..."
 	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/amortized-server --timeout=120s
@@ -295,7 +297,6 @@ down-all: ## Tear down all user environments (keeps shared services)
 refresh-user: build-server build-studio load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
 	@if [ -z "$(USER)" ]; then echo "Usage: make refresh-user USER=<username>"; exit 1; fi
 	$(MAKE) deploy-user USER=$(USER)
-	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio deployment/opencode deployment/claude-code
 	@echo "$(USER) refreshed."
 
 # ──────────────────────────────────────────────
