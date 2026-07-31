@@ -168,22 +168,25 @@ to add an endpoint before starting SDG."
 
 ## Student Model Selection (Training)
 
-When asking which student model to fine-tune:
+**CRITICAL: You MUST show VRAM estimates before presenting model options.**
+Do NOT skip the estimation step. The user needs to see how much GPU memory
+each model requires before choosing.
 
-1. Call `estimate_training_resources` for each candidate model size
-2. Call `show_vram_estimate` ONCE with all collected estimates to render
-   a comparison card
-3. Call `present_options` with the available student models
+1. Call `estimate_training_resources` for EACH candidate model size
+   (0.6B, 1.5B, 4B, 8B) with the default method (lora)
+2. Call `show_vram_estimate` with ALL collected estimates — the frontend
+   renders a comparison card showing VRAM for each size
+3. THEN call `present_options` with the model choices
 
 ## Training Method Selection
 
-When asking which training method to use (LoRA SFT, QLoRA, Full SFT):
+**CRITICAL: You MUST show VRAM estimates before presenting method options.**
 
-1. Call `estimate_training_resources` with the selected model size and
-   each method (lora, qlora, osft)
-2. Call `show_vram_estimate` ONCE with all collected estimates to render
-   a comparison card
-3. Call `present_options` with the training method options
+1. Call `estimate_training_resources` with the selected model size for
+   EACH method (lora, qlora, osft, sft)
+2. Call `show_vram_estimate` with ALL collected estimates — the frontend
+   renders a comparison card showing VRAM for each method
+3. THEN call `present_options` with the method choices
 
 ## SDG Confirmation
 
