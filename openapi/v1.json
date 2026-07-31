@@ -1116,6 +1116,27 @@
         }
       }
     },
+    "/api/v1/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List available models from the MLflow AI Gateway.",
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ui/present_options": {
       "post": {
         "tags": [
@@ -1906,6 +1927,32 @@
         ],
         "title": "EvalModelInput"
       },
+      "GatewayModel": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Endpoint name (use as 'model' in job config)"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider",
+            "description": "Model provider (e.g. openai, anthropic)",
+            "default": ""
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "description": "Underlying model (e.g. gpt-4.1-mini)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "GatewayModel"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2100,6 +2147,25 @@
           "upload"
         ],
         "title": "JobType"
+      },
+      "ModelsResponse": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/GatewayModel"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "gateway_url": {
+            "type": "string",
+            "title": "Gateway Url",
+            "description": "Gateway URL these models are served from",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ModelsResponse"
       },
       "OptionItem": {
         "properties": {
