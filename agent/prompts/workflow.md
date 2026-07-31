@@ -143,9 +143,12 @@ Chain jobs together using `parent_job_id`:
 only use models that have configured endpoints on the AI Gateway.
 
 1. Call `list_models` to discover available models from the AI Gateway
-2. Call `get_model_pricing` to look up pricing for the available models
-3. Call `present_options` with each model as an option. Use the endpoint
-   `name` as the title, with `provider/model_name` in the description.
+2. Call `get_model_pricing` ONCE PER MODEL using the model_name as the
+   query (e.g. `q=gpt-4o-mini`, `q=gpt-oss`, `q=gpt-5.4-nano`). This
+   shows the user per-1M-token pricing for each available model.
+3. Call `present_options` with each model as an option. Include the
+   pricing in the description (e.g. "$0.15/1M input, $0.60/1M output").
+   Use the endpoint `name` as the title.
 4. Wait for the user to select one before proceeding
 5. NEVER auto-select a model, even if there is only one available
 
