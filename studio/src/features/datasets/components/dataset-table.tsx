@@ -67,7 +67,7 @@ export function DatasetTable({
           const topic = row.original.tags["dataset_topic"] ?? ""
           const runId = row.original.run_id
           return (
-            <div className="max-w-[180px]" onClick={(e) => e.stopPropagation()}>
+            <div className="max-w-[180px]" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               <EditableTitle
                 value={topic || "Add topic..."}
                 className={`text-sm ${topic ? "" : "text-muted-foreground/50 italic"}`}
