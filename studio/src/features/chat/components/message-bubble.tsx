@@ -12,6 +12,7 @@ import { TrainingCostCard } from "./training-cost-card"
 import { ModelComparisonCard } from "./model-comparison-card"
 import { TrainingMethodCostCard } from "./training-method-cost-card"
 import { JobMonitorCard } from "./job-monitor-card"
+import { extractJobInfo } from "../utils/parse-tool-result"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
@@ -58,21 +59,15 @@ export function MessageBubble({
     return structuredOptions ?? []
   }, [isUser, message.optionCards.length, structuredOptions])
 
-  // Extract job ID and type from job submission tool result
   const { jobId, jobType } = useMemo(() => {
     if (isUser) return { jobId: null, jobType: "SDG" }
-    const submitTool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
-    if (!submitTool?.result) return { jobId: null, jobType: "SDG" }
-    try {
-      const parsed = typeof submitTool.result === "string"
-        ? JSON.parse(submitTool.result)
-        : submitTool.result
-      const id = parsed?.id ?? null
-      const type = parsed?.type ? String(parsed.type).toUpperCase() : "SDG"
-      return { jobId: id, jobType: type }
-    } catch {
-      return { jobId: null, jobType: "SDG" }
+    const submitTools = message.toolResults.filter(t => t.name === "submit_recipe_job" || t.name === "create_job")
+    for (const tool of submitTools) {
+      if (!tool.result) continue
+      const info = extractJobInfo(tool.result)
+      if (info.jobId) return info
     }
+    return { jobId: null, jobType: "SDG" }
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
