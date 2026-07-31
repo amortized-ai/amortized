@@ -487,6 +487,10 @@ async def _run_job(job: dict[str, Any]) -> None:
                     chunk_size, chunk_overlap, tokenizer,
                 )
 
+        for mc in config.get("model_configs", []):
+            params = mc.setdefault("inference_parameters", {})
+            params.setdefault("max_parallel_requests", 32)
+
         num_records = config.pop("num_records", 100)
         dd_config = {"data_designer": config}
         config_files["config.yaml"] = yaml.dump(
