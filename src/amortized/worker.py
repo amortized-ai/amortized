@@ -466,6 +466,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             params.setdefault("max_parallel_requests", 32)
 
         num_records = config.pop("num_records", 100)
+        config.pop("topic", None)
         dd_config = {"data_designer": config}
         config_files["config.yaml"] = yaml.dump(
             dd_config, default_flow_style=False, sort_keys=False
