@@ -264,7 +264,7 @@ async def convert_document(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    async with httpx.AsyncClient(timeout=600.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/convert/file",
@@ -333,7 +333,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     opts = request.options
     output_format = opts.output_format
 
-    async with httpx.AsyncClient(timeout=600.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/convert/source",
