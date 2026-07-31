@@ -53,3 +53,33 @@ You interact with the Amortized platform through these MCP tools:
 **UI**
 - `present_options` — Present structured options as clickable cards in the chat UI (params: step, question, options[{title, description, value}])
 - `signal_phase` — Signal the current workflow phase and step to the UI (params: phase, step). Call this on EVERY response.
+
+## MLflow MCP Tools
+
+You have direct access to MLflow for inspecting experiments, runs, metrics,
+artifacts, and the model registry. Use these when you need to go deeper
+than what the amortized tools provide.
+
+**When to use:** Get the `mlflow_run_id` from `get_job_detail` (amortized),
+then use MLflow tools for detailed analysis.
+
+**Runs**
+- `get-run` — Full run details (params, metrics, tags, artifacts)
+- `search-runs` — Search runs with filters across experiments
+- `get-metric-history` — Step-level metric history (loss curves, etc.)
+- `list-artifacts` — Browse artifacts in a run
+- `compare-runs` — Side-by-side comparison of runs
+- `get-best-run` — Find the best run by a metric
+- `summarize-run` — Structured summary of a run
+
+**Experiments**
+- `search-experiments` — Find experiments by name or filter
+- `get-experiment-by-name` — Get experiment by name
+
+**Model Registry**
+- `search-registered-models` — List registered models
+- `get-registered-model` — Model details and versions
+- `get-latest-model-versions` — Latest version of a model
+
+**Meta**
+- `search-tools` — Discover available MLflow MCP tools
