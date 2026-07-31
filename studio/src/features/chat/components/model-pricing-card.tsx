@@ -11,7 +11,7 @@ interface ModelPricingModel {
 }
 
 interface ModelPricingData {
-  query: string
+  query?: string
   models: ModelPricingModel[]
 }
 
