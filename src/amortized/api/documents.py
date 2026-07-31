@@ -344,7 +344,9 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
 async def list_documents() -> list[DocumentSummary]:
     client = MLflowClient(_tracking_uri())
     try:
-        experiment_id = await client.ensure_experiment("amortized/documents")
+        experiment_id = await client.get_experiment("amortized/documents")
+        if experiment_id is None:
+            return []
         runs = await client.search_runs(
             experiment_ids=[experiment_id],
             filter_string="tags.job_type = 'document' AND attributes.status = 'FINISHED'",
