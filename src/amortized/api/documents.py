@@ -634,7 +634,7 @@ def _collect_section_content(content: str, heading: str) -> str:
     "/{document_id}/sections",
     response_model=DocumentSections,
     operation_id="get_document_sections",
-    summary="Get section headings and structure of a document. Use this to understand document layout before building SDG configs.",
+    summary="Get section headings and structure of a document.",
 )
 async def get_document_sections(document_id: str) -> DocumentSections:
     result = await get_document_content(document_id)
@@ -651,7 +651,7 @@ async def get_document_sections(document_id: str) -> DocumentSections:
 @router.get(
     "/{document_id}/sections/by-heading",
     operation_id="get_section_content",
-    summary="Get the full content of a specific document section by heading. Use after get_document_sections to read a section in detail.",
+    summary="Get the full content of a document section by heading.",
 )
 async def get_section_content(
     document_id: str,
