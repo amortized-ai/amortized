@@ -48,6 +48,7 @@ You interact with the Amortized platform through these MCP tools:
 - `estimate_sdg_cost` — Estimate cost for an SDG job
 - `compare_sdg_models` — Compare costs across different teacher models
 - `estimate_training_cost` — Estimate cost for a training job
+- `estimate_training_resources` — Estimate GPU memory for any HuggingFace model (params: model_path, method, num_gpus)
 
 **Models**
 - `list_models` — List available models from the AI Gateway

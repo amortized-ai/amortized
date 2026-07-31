@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("amortized.api.costs")
@@ -719,4 +719,283 @@ async def estimate_eval_cost(
             savings_amount=round(eval_savings, 2),
             savings_percent=round(eval_savings_pct, 1),
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Training resource estimation (from HuggingFace model metadata)
+# ---------------------------------------------------------------------------
+
+FP32 = 4
+FP16 = 2
+FP8 = 1
+FP4 = 0.5
+ADAMW_STATES = 2
+
+GPU_VRAM: dict[str, int] = {
+    "T4": 16,
+    "A10G": 24,
+    "L4": 24,
+    "A100": 80,
+    "H100": 80,
+}
+
+_hf_model_cache: dict[str, dict[str, Any]] = {}
+
+
+async def _fetch_hf_model_info(model_path: str) -> dict[str, Any]:
+    """Fetch model metadata from HuggingFace REST API."""
+    if model_path in _hf_model_cache:
+        return _hf_model_cache[model_path]
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        api_resp = await client.get(f"https://huggingface.co/api/models/{model_path}")
+        api_resp.raise_for_status()
+        api_data = api_resp.json()
+
+        num_params = api_data.get("safetensors", {}).get("total", 0)
+
+        try:
+            config_resp = await client.get(
+                f"https://huggingface.co/{model_path}/raw/main/config.json"
+            )
+            config_resp.raise_for_status()
+            config = config_resp.json()
+        except httpx.HTTPStatusError:
+            config = {}
+
+    info = {
+        "num_params": num_params,
+        "num_hidden_layers": config.get("num_hidden_layers", 0),
+        "hidden_size": config.get("hidden_size", 0),
+        "vocab_size": config.get("vocab_size", 0),
+        "intermediate_size": config.get("intermediate_size", 0),
+        "num_attention_heads": config.get("num_attention_heads", 0),
+        "num_key_value_heads": config.get("num_key_value_heads", 0),
+    }
+
+    if not info["num_hidden_layers"] and not info["hidden_size"]:
+        for key, model in TRAINING_MODELS.items():
+            if key in model_path.lower() or model_path.lower().endswith(key):
+                info.update(
+                    {
+                        "num_params": model["num_params"],
+                        "num_hidden_layers": model["num_layers"],
+                        "hidden_size": model["hidden_size"],
+                        "vocab_size": model["vocab_size"],
+                    }
+                )
+                break
+
+    _hf_model_cache[model_path] = info
+    return info
+
+
+def _calc_weight_size_total(info: dict[str, Any]) -> int:
+    """Calculate total LoRA-targetable weight dimensions from model config."""
+    hidden = info["hidden_size"]
+    intermediate = info.get("intermediate_size", hidden * 4)
+    num_heads = info.get("num_attention_heads", 1)
+    num_kv_heads = info.get("num_key_value_heads", num_heads)
+    head_dim = hidden // num_heads if num_heads else hidden
+    kv_dim = num_kv_heads * head_dim
+
+    per_layer = (
+        (hidden + hidden)
+        + (hidden + kv_dim)
+        + (hidden + kv_dim)
+        + (hidden + hidden)
+        + (hidden + intermediate)
+        + (hidden + intermediate)
+        + (intermediate + hidden)
+    )
+    return int(per_layer * info["num_hidden_layers"])
+
+
+def _estimate_vram_sft(
+    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int
+) -> tuple[int, int, int]:
+    n = info["num_params"]
+    layers = info["num_hidden_layers"]
+    hidden = info["hidden_size"]
+    vocab = info["vocab_size"]
+
+    model_mem = n * FP32 / num_gpus
+    grad_mem = n * FP32 / num_gpus
+    opt_mem = n * FP32 * ADAMW_STATES / num_gpus
+    act_mem = tokens_per_gpu * FP32 * layers * hidden
+    out_mem = tokens_per_gpu * FP32 * vocab * (8 / 3)
+
+    subtotal = model_mem + grad_mem + opt_mem + act_mem + out_mem
+    return int(subtotal), int(subtotal * 1.1), int(subtotal * 1.3)
+
+
+def _estimate_vram_lora(
+    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, lora_r: int
+) -> tuple[int, int, int]:
+    n = info["num_params"]
+    layers = info["num_hidden_layers"]
+    hidden = info["hidden_size"]
+    vocab = info["vocab_size"]
+    wst = _calc_weight_size_total(info)
+    ab_params = wst * lora_r
+
+    model_mem = (n * FP16 + ab_params * FP32) / num_gpus
+    grad_mem = FP16 * ab_params / num_gpus
+    opt_mem = FP16 * ab_params * ADAMW_STATES / num_gpus
+    act_mem = tokens_per_gpu * FP16 * layers * hidden
+    out_mem = tokens_per_gpu * FP16 * vocab * 2
+
+    subtotal = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
+    return int(subtotal * 0.95), int(subtotal * 1.1), int(subtotal * 1.2)
+
+
+def _estimate_vram_qlora(
+    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, lora_r: int
+) -> tuple[int, int, int]:
+    n = info["num_params"]
+    layers = info["num_hidden_layers"]
+    hidden = info["hidden_size"]
+    vocab = info["vocab_size"]
+    wst = _calc_weight_size_total(info)
+    ab_params = wst * lora_r
+
+    model_mem = (n * FP4 + ab_params * FP32) / num_gpus
+    grad_mem = FP16 * ab_params / num_gpus
+    opt_mem = FP16 * ab_params * ADAMW_STATES / num_gpus
+    act_mem = tokens_per_gpu * FP16 * layers * hidden
+    out_mem = tokens_per_gpu * FP16 * vocab * 2
+
+    subtotal = model_mem + max(grad_mem, out_mem) + opt_mem + act_mem
+    offload = n * FP8
+    effective = max(subtotal, offload / num_gpus)
+    return int(effective * 0.95), int(effective * 1.1), int(effective * 1.3)
+
+
+def _estimate_vram_osft(
+    info: dict[str, Any], tokens_per_gpu: int, num_gpus: int, unfreeze_ratio: float
+) -> tuple[int, int, int]:
+    n = info["num_params"]
+    layers = info["num_hidden_layers"]
+    hidden = info["hidden_size"]
+    vocab = info["vocab_size"]
+    osft_params = n * FP32
+
+    model_mem = osft_params / num_gpus
+    grad_mem = n * FP32 * unfreeze_ratio / num_gpus
+    opt_mem = n * FP32 * ADAMW_STATES / num_gpus
+    act_mem = tokens_per_gpu * FP32 * layers * hidden * unfreeze_ratio
+    out_mem = tokens_per_gpu * FP32 * vocab * (7 / 3)
+
+    subtotal = model_mem + grad_mem + opt_mem + act_mem + out_mem
+    return int(subtotal), int(subtotal * 1.1), int(subtotal * 1.3)
+
+
+def _recommend_gpu(vram_gb: float) -> str:
+    for gpu, vram in [("T4", 16), ("L4", 24), ("A10G", 24), ("A100", 80), ("H100", 80)]:
+        if vram_gb <= vram:
+            return gpu
+    return "H100"
+
+
+def _assess_feasibility(expected_gb: float, gpu: str) -> str:
+    capacity = GPU_VRAM.get(gpu, 80)
+    if expected_gb * 1.2 <= capacity:
+        return "fits"
+    if expected_gb <= capacity:
+        return "likely fits"
+    if expected_gb * 0.9 <= capacity:
+        return "may not fit"
+    return "does not fit"
+
+
+class TrainingEstimateRequest(BaseModel):
+    model_path: str = Field(..., description="HuggingFace model ID (e.g. 'Qwen/Qwen3-4B')")
+    method: str = Field("lora", description="Training method: sft, lora, qlora, osft")
+    num_gpus: int = Field(1, description="Number of GPUs")
+    batch_size: int | None = Field(None, description="Batch size (provide with max_seq_len)")
+    max_seq_len: int | None = Field(None, description="Max sequence length")
+    max_tokens_per_gpu: int | None = Field(
+        None, description="Max tokens per GPU (alternative to batch_size + max_seq_len)"
+    )
+    lora_r: int = Field(32, description="LoRA rank (only for lora/qlora)")
+    unfreeze_rank_ratio: float = Field(0.25, description="Unfreeze ratio (only for osft)")
+
+
+class TrainingEstimateResponse(BaseModel):
+    model_path: str
+    method: str
+    num_gpus: int
+    vram_per_gpu_gb: dict[str, float]
+    total_vram_gb: dict[str, float]
+    recommended_gpu: str
+    feasibility: str
+    model_info: dict[str, Any]
+
+
+@router.post(
+    "/training/estimate",
+    response_model=TrainingEstimateResponse,
+    operation_id="estimate_training_resources",
+    summary="Estimate GPU memory requirements for training a model.",
+)
+async def estimate_training_resources(
+    body: TrainingEstimateRequest,
+) -> TrainingEstimateResponse:
+    info = await _fetch_hf_model_info(body.model_path)
+
+    if not info["num_params"] or not info["num_hidden_layers"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not fetch model metadata for '{body.model_path}'. "
+            "Check the model path or use a public model.",
+        )
+
+    if body.max_tokens_per_gpu:
+        tokens_per_gpu = body.max_tokens_per_gpu
+    elif body.batch_size and body.max_seq_len:
+        tokens_per_gpu = body.batch_size * body.max_seq_len // body.num_gpus
+    else:
+        tokens_per_gpu = 4096
+
+    method = body.method.lower()
+    if method == "sft":
+        low, mid, high = _estimate_vram_sft(info, tokens_per_gpu, body.num_gpus)
+    elif method in ("lora", "lora_sft"):
+        low, mid, high = _estimate_vram_lora(info, tokens_per_gpu, body.num_gpus, body.lora_r)
+    elif method in ("qlora", "qlora_sft"):
+        low, mid, high = _estimate_vram_qlora(info, tokens_per_gpu, body.num_gpus, body.lora_r)
+    elif method == "osft":
+        low, mid, high = _estimate_vram_osft(
+            info, tokens_per_gpu, body.num_gpus, body.unfreeze_rank_ratio
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown training method: {body.method}")
+
+    to_gb = 1024**3
+    low_gb = round(low / to_gb, 1)
+    mid_gb = round(mid / to_gb, 1)
+    high_gb = round(high / to_gb, 1)
+
+    gpu = _recommend_gpu(mid_gb)
+    feasibility = _assess_feasibility(mid_gb, gpu)
+
+    return TrainingEstimateResponse(
+        model_path=body.model_path,
+        method=body.method,
+        num_gpus=body.num_gpus,
+        vram_per_gpu_gb={"low": low_gb, "expected": mid_gb, "high": high_gb},
+        total_vram_gb={
+            "low": round(low_gb * body.num_gpus, 1),
+            "expected": round(mid_gb * body.num_gpus, 1),
+            "high": round(high_gb * body.num_gpus, 1),
+        },
+        recommended_gpu=gpu,
+        feasibility=feasibility,
+        model_info={
+            "num_params": info["num_params"],
+            "num_hidden_layers": info["num_hidden_layers"],
+            "hidden_size": info["hidden_size"],
+            "vocab_size": info["vocab_size"],
+        },
     )
