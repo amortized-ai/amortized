@@ -181,9 +181,75 @@ export function useChat() {
 
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
+  const warmupPromiseRef = useRef<Promise<void> | null>(null)
+
+  useEffect(() => {
+    if (!currentConversationId) return
+    const sessionId = useChatStore.getState().getSessionId(currentConversationId)
+    if (!sessionId) return
+    const msgs = useChatStore.getState().getConversationMessages(currentConversationId)
+    if (msgs.length === 0) return
+
+    const convId = currentConversationId
+    let cancelled = false
+
+    async function warmup() {
+      try {
+        const resp = await fetch(`/agent/session/${sessionId}/message`)
+        if (resp.ok) {
+          if (!cancelled) useChatStore.getState().setSessionStatus(convId, "connected")
+          return
+        }
+      } catch { /* session is stale or unreachable */ }
+
+      if (cancelled) return
+      useChatStore.getState().setSessionStatus(convId, "reconnecting")
+      useChatStore.getState().clearSessionId(convId)
+
+      try {
+        const createResp = await fetch("/agent/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })
+        if (!createResp.ok) throw new Error("Failed to create session")
+        const { id: newSessionId } = await createResp.json()
+        useChatStore.getState().setSessionId(convId, newSessionId)
+
+        const { summarizeConversation } = await import("@/lib/context-summarizer")
+        const summary = summarizeConversation(msgs)
+        if (summary) {
+          await fetch(`/agent/session/${newSessionId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: summary }] }),
+          })
+        }
+        if (!cancelled) {
+          useChatStore.getState().setSessionStatus(convId, "restored")
+          logger.info("session warmup complete", { convId, newSessionId })
+        }
+      } catch (err) {
+        if (!cancelled) {
+          useChatStore.getState().clearSessionId(convId)
+          useChatStore.getState().setSessionStatus(convId, "unknown")
+          logger.warn("session warmup failed", { convId, error: err instanceof Error ? err.message : String(err) })
+        }
+      }
+    }
+
+    warmupPromiseRef.current = warmup()
+    return () => { cancelled = true }
+  }, [currentConversationId])
+
   const sendMessage = useCallback(
     async (content: string) => {
       if (chatState === "streaming") return
+
+      if (warmupPromiseRef.current) {
+        await warmupPromiseRef.current
+        warmupPromiseRef.current = null
+      }
 
       setError(null)
       setCurrentToolCall(null)
