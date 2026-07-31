@@ -96,13 +96,13 @@ export function MessageBubble({
 
   const vramEstimate = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "estimate_training_resources")
+    const tool = message.toolResults.find(t => t.name === "show_vram_estimate")
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string"
         ? JSON.parse(tool.result)
         : tool.result
-      if (parsed?.vram_per_gpu_gb) return parsed
+      if (parsed?.estimates && Array.isArray(parsed.estimates)) return parsed
     } catch { /* ignore parse errors */ }
     return null
   }, [isUser, message.toolResults])
@@ -113,7 +113,10 @@ export function MessageBubble({
       hidden.add("get_model_pricing")
       hidden.add("show_model_pricing")
     }
-    if (vramEstimate) hidden.add("estimate_training_resources")
+    if (vramEstimate) {
+      hidden.add("estimate_training_resources")
+      hidden.add("show_vram_estimate")
+    }
     if (structuredOptions) hidden.add("present_options")
     return message.toolResults.filter((t) => !hidden.has(t.name))
   }, [message.toolResults, modelPricing, vramEstimate, structuredOptions])

@@ -170,15 +170,20 @@ to add an endpoint before starting SDG."
 
 When asking which student model to fine-tune:
 
-1. Call `estimate_training_resources` for each candidate model size to show VRAM requirements
-2. Call `present_options` with the available student models
+1. Call `estimate_training_resources` for each candidate model size
+2. Call `show_vram_estimate` ONCE with all collected estimates to render
+   a comparison card
+3. Call `present_options` with the available student models
 
 ## Training Method Selection
 
 When asking which training method to use (LoRA SFT, QLoRA, Full SFT):
 
-1. Call `estimate_training_resources` with the selected model size and each method (lora, qlora, osft) to compare VRAM requirements
-2. Call `present_options` with the training method options
+1. Call `estimate_training_resources` with the selected model size and
+   each method (lora, qlora, osft)
+2. Call `show_vram_estimate` ONCE with all collected estimates to render
+   a comparison card
+3. Call `present_options` with the training method options
 
 ## SDG Confirmation
 
@@ -188,8 +193,8 @@ with the selected model name to show its pricing.
 ## Training Confirmation
 
 Before showing the training confirmation table, call
-`estimate_training_resources` with the final model size and method
-to show VRAM requirements.
+`estimate_training_resources` with the final model size and method,
+then `show_vram_estimate` with the result to render the card.
 
 ## SDG Job Config Format
 

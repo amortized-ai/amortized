@@ -75,6 +75,34 @@ async def show_model_pricing(body: ShowModelPricingRequest) -> ShowModelPricingR
     return ShowModelPricingResponse(models=body.models, rendered=True)
 
 
+class VRAMEstimateItem(BaseModel):
+    model_size: str = Field(..., description="Model size (e.g. '8B')")
+    method: str = Field(..., description="Training method (e.g. 'lora', 'qlora', 'osft')")
+    vram_per_gpu_gb: float = Field(..., description="Expected VRAM per GPU in GB")
+    vram_range: str = Field("", description="Low-high range (e.g. '17.6-22.2 GB')")
+
+
+class ShowVRAMEstimateRequest(BaseModel):
+    estimates: list[VRAMEstimateItem] = Field(
+        ..., description="VRAM estimates to display", min_length=1
+    )
+
+
+class ShowVRAMEstimateResponse(BaseModel):
+    estimates: list[VRAMEstimateItem]
+    rendered: bool = Field(True)
+
+
+@router.post(
+    "/show_vram_estimate",
+    response_model=ShowVRAMEstimateResponse,
+    operation_id="show_vram_estimate",
+    summary="Display a VRAM estimate comparison card in the chat UI",
+)
+async def show_vram_estimate(body: ShowVRAMEstimateRequest) -> ShowVRAMEstimateResponse:
+    return ShowVRAMEstimateResponse(estimates=body.estimates, rendered=True)
+
+
 class SignalPhaseRequest(BaseModel):
     phase: str = Field(..., description="Current workflow phase: 'sdg', 'training', or 'eval'")
     step: str = Field(

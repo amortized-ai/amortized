@@ -56,4 +56,5 @@ You interact with the Amortized platform through these MCP tools:
 **UI**
 - `present_options` — Present structured options as clickable cards in the chat UI (params: step, question, options[{title, description, value}])
 - `show_model_pricing` — Display a pricing comparison card in the chat UI (params: models[{model_id, name, prompt_cost_per_1m, completion_cost_per_1m, context_length}])
+- `show_vram_estimate` — Display a VRAM estimate comparison card in the chat UI (params: estimates[{model_size, method, vram_per_gpu_gb, vram_range}])
 - `signal_phase` — Signal the current workflow phase and step to the UI (params: phase, step). Call this on EVERY response.
