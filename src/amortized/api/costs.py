@@ -49,6 +49,7 @@ def _resolve_model_label(model: str) -> str:
         return name
     return model
 
+
 INPUT_TOKENS_PER_SAMPLE = 500
 OUTPUT_TOKENS_PER_SAMPLE = 300
 FRONTIER_API_COST_PER_SAMPLE = 0.012
@@ -181,40 +182,39 @@ def _estimate_training_minutes(
     seconds = total_tokens / tokens_per_sec
     return seconds / 60
 
+
 # ---------------------------------------------------------------------------
 # OpenRouter live pricing (cached)
 # ---------------------------------------------------------------------------
 
+
 async def _fetch_gateway_models() -> list[tuple[str, str, str]]:
     """Fetch available models from MLflow AI Gateway, returns [(model_id, label, desc)]."""
     import amortized.config as config_mod
+    from amortized.core.mlflow_client import MLflowClient
 
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri:
         return []
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"{tracking_uri}/api/3.0/mlflow/gateway/endpoints/list"
+        client = MLflowClient(tracking_uri)
+        endpoints = await client.list_gateway_endpoints()
+        result = []
+        for ep in endpoints:
+            primary = next(
+                (m for m in ep.get("model_mappings", []) if m.get("linkage_type") == "PRIMARY"),
+                None,
             )
-            resp.raise_for_status()
-            endpoints = resp.json().get("endpoints", [])
-            result = []
-            for ep in endpoints:
-                primary = next(
-                    (m for m in ep.get("model_mappings", []) if m.get("linkage_type") == "PRIMARY"),
-                    None,
-                )
-                if not primary:
-                    continue
-                model_def = primary.get("model_definition", {})
-                provider = model_def.get("provider", "")
-                model_name = model_def.get("model_name", "")
-                if provider and model_name:
-                    model_id = f"{provider}/{model_name}"
-                    label = _resolve_model_label(model_id)
-                    result.append((model_id, label, f"{provider} · {model_name}"))
-            return result
+            if not primary:
+                continue
+            model_def = primary.get("model_definition", {})
+            provider = model_def.get("provider", "")
+            model_name = model_def.get("model_name", "")
+            if provider and model_name:
+                model_id = f"{provider}/{model_name}"
+                label = _resolve_model_label(model_id)
+                result.append((model_id, label, f"{provider} · {model_name}"))
+        return result
     except Exception:
         logger.debug("Could not fetch gateway models, using defaults")
         return []
@@ -553,12 +553,9 @@ async def estimate_training_method_cost(
     base_minutes = _estimate_training_minutes(body.model_id, body.num_samples, body.num_epochs)
 
     method_configs = [
-        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest",
-         1.0, True),
-        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM",
-         1.2, False),
-        ("full_sft", "Full SFT", "Updates all model weights — highest quality",
-         3.5, False),
+        ("lora_sft", "LoRA SFT", "Trains adapter weights only — fastest and cheapest", 1.0, True),
+        ("qlora_sft", "QLoRA SFT", "4-bit quantized base + LoRA — lower VRAM", 1.2, False),
+        ("full_sft", "Full SFT", "Updates all model weights — highest quality", 3.5, False),
     ]
 
     methods = []
@@ -636,11 +633,13 @@ async def estimate_eval_cost(
     judge_options: list[tuple[str, str, str]] = []
     if body.models:
         for m in body.models:
-            judge_options.append((
-                m.model_id,
-                m.label or _resolve_model_label(m.model_id),
-                m.description or "",
-            ))
+            judge_options.append(
+                (
+                    m.model_id,
+                    m.label or _resolve_model_label(m.model_id),
+                    m.description or "",
+                )
+            )
     if not judge_options:
         judge_options = [("openai/gpt-4o-mini", "GPT-4o Mini", "Default judge model")]
     comparison = []
