@@ -1,0 +1,231 @@
+"""Async MLflow REST API client — shared primitives for experiment/run/artifact lifecycle."""
+
+from __future__ import annotations
+
+import logging
+from datetime import UTC, datetime
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger("amortized.core.mlflow_client")
+
+
+class MLflowClient:
+    """Thin async wrapper around the MLflow REST API."""
+
+    def __init__(self, tracking_uri: str, timeout: float = 30.0) -> None:
+        self._base = tracking_uri.rstrip("/")
+        self._timeout = timeout
+
+    def _url(self, path: str) -> str:
+        return f"{self._base}{path}"
+
+    async def ensure_experiment(self, name: str) -> str:
+        """Get or create an experiment by name. Returns the experiment ID."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(
+                self._url("/api/2.0/mlflow/experiments/get-by-name"),
+                params={"experiment_name": name},
+            )
+            if resp.status_code == 404 or "RESOURCE_DOES_NOT_EXIST" in resp.text:
+                create_resp = await client.post(
+                    self._url("/api/2.0/mlflow/experiments/create"),
+                    json={"name": name},
+                )
+                if create_resp.status_code == 409:
+                    refetch = await client.get(
+                        self._url("/api/2.0/mlflow/experiments/get-by-name"),
+                        params={"experiment_name": name},
+                    )
+                    refetch.raise_for_status()
+                    experiment_id: str = refetch.json()["experiment"]["experiment_id"]
+                    return experiment_id
+                create_resp.raise_for_status()
+                experiment_id = create_resp.json()["experiment_id"]
+                return experiment_id
+
+            resp.raise_for_status()
+            exp = resp.json()["experiment"]
+            experiment_id = exp["experiment_id"]
+            if exp.get("lifecycle_stage") == "deleted":
+                restore_resp = await client.post(
+                    self._url("/api/2.0/mlflow/experiments/restore"),
+                    json={"experiment_id": experiment_id},
+                )
+                restore_resp.raise_for_status()
+                logger.info("Restored deleted experiment %s", name)
+            return experiment_id
+
+    async def create_run(
+        self,
+        experiment_id: str,
+        name: str,
+        tags: dict[str, str] | None = None,
+    ) -> str:
+        """Create a run in an experiment. Returns the run ID."""
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        tag_list = [{"key": k, "value": v} for k, v in (tags or {}).items()]
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/create"),
+                json={
+                    "experiment_id": experiment_id,
+                    "run_name": name,
+                    "start_time": now_ms,
+                    "tags": tag_list,
+                },
+            )
+            resp.raise_for_status()
+            run_id: str = resp.json()["run"]["info"]["run_id"]
+            return run_id
+
+    async def upload_artifact(
+        self,
+        run_id: str,
+        path: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> None:
+        """Upload an artifact to a run."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.put(
+                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
+                params={"run_id": run_id},
+                content=content,
+                headers={"Content-Type": content_type},
+            )
+            resp.raise_for_status()
+
+    async def finish_run(self, run_id: str, status: str = "FINISHED") -> None:
+        """Mark a run as finished or failed."""
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        payload: dict[str, Any] = {"run_id": run_id, "status": status}
+        if status == "FINISHED":
+            payload["end_time"] = now_ms
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/update"),
+                json=payload,
+            )
+            resp.raise_for_status()
+
+    async def fail_run_quiet(self, run_id: str) -> None:
+        """Best-effort mark a run as FAILED. Swallows all errors."""
+        try:
+            await self.finish_run(run_id, status="FAILED")
+        except Exception:
+            logger.debug("Could not mark MLflow run %s as FAILED", run_id)
+
+    async def get_run(self, run_id: str) -> dict[str, Any]:
+        """Fetch a run by ID. Returns the full run dict."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(
+                self._url("/api/2.0/mlflow/runs/get"),
+                params={"run_id": run_id},
+            )
+            resp.raise_for_status()
+            run: dict[str, Any] = resp.json()["run"]
+            return run
+
+    async def search_runs(
+        self,
+        experiment_ids: list[str],
+        filter_string: str = "",
+        order_by: list[str] | None = None,
+        max_results: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Search runs across experiments."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            payload: dict[str, Any] = {
+                "experiment_ids": experiment_ids,
+                "max_results": max_results,
+            }
+            if filter_string:
+                payload["filter"] = filter_string
+            if order_by:
+                payload["order_by"] = order_by
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/search"),
+                json=payload,
+            )
+            resp.raise_for_status()
+            runs: list[dict[str, Any]] = resp.json().get("runs", [])
+            return runs
+
+    async def delete_run(self, run_id: str) -> None:
+        """Delete a run. Silently ignores 404."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/delete"),
+                json={"run_id": run_id},
+            )
+            if resp.status_code != 404:
+                resp.raise_for_status()
+
+    async def set_tag(self, run_id: str, key: str, value: str) -> None:
+        """Set a tag on a run."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            await client.post(
+                self._url("/api/2.0/mlflow/runs/set-tag"),
+                json={"run_id": run_id, "key": key, "value": value},
+            )
+
+    async def get_artifact(self, run_id: str, path: str) -> bytes:
+        """Download an artifact's raw bytes."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(
+                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
+                params={"run_id": run_id},
+            )
+            resp.raise_for_status()
+            return resp.content
+
+    async def get_artifact_text(self, run_id: str, path: str) -> str | None:
+        """Download an artifact as text. Returns None on failure."""
+        try:
+            data = await self.get_artifact(run_id, path)
+            return data.decode("utf-8")
+        except Exception:
+            return None
+
+    async def register_model(
+        self,
+        name: str,
+        run_id: str,
+        description: str = "",
+    ) -> bool:
+        """Register a model version from a run. Returns True on success."""
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/registered-models/create"),
+                json={"name": name},
+            )
+            if resp.status_code == 409:
+                logger.info("Model %s already registered", name)
+            elif resp.is_error:
+                logger.warning("Failed to create registered model: %s", resp.text)
+                return False
+
+            source = f"runs:/{run_id}/model"
+            await client.post(
+                self._url("/api/2.0/mlflow/model-versions/create"),
+                json={
+                    "name": name,
+                    "source": source,
+                    "run_id": run_id,
+                    "description": description,
+                },
+            )
+            logger.info("Registered model version %s from run %s", name, run_id)
+        return True
+
+    async def list_gateway_endpoints(self) -> list[dict[str, Any]]:
+        """Fetch MLflow AI Gateway endpoints."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                self._url("/api/3.0/mlflow/gateway/endpoints/list"),
+            )
+            resp.raise_for_status()
+            endpoints: list[dict[str, Any]] = resp.json().get("endpoints", [])
+            return endpoints

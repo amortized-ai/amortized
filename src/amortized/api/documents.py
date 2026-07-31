@@ -17,6 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from amortized.config import settings
+from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
@@ -39,15 +40,17 @@ _FORMAT_MAP = {
 
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
-_BLOCKED_HOSTNAMES = frozenset({
-    "169.254.169.254",
-    "metadata.google.internal",
-    "metadata.azure.com",
-    "localhost",
-    "127.0.0.1",
-    "::1",
-    "0.0.0.0",
-})
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "169.254.169.254",
+        "metadata.google.internal",
+        "metadata.azure.com",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "0.0.0.0",
+    }
+)
 
 
 def _sanitize_filename(name: str) -> str:
@@ -106,106 +109,42 @@ async def _store_in_mlflow(
     source_bytes: bytes | None = None,
     processing_time: float = 0.0,
 ) -> str:
-    tracking_uri = _tracking_uri()
-    run_id: str | None = None
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        experiment_name = "amortized/documents"
-        resp = await client.get(
-            f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-            params={"experiment_name": experiment_name},
+    client = MLflowClient(_tracking_uri())
+    experiment_id = await client.ensure_experiment("amortized/documents")
+    run_id = await client.create_run(
+        experiment_id,
+        name=filename,
+        tags={
+            "job_type": "document",
+            "filename": filename,
+            "format": output_format,
+            "processing_time": str(processing_time),
+            "content_length": str(len(content)),
+        },
+    )
+
+    try:
+        if source_bytes:
+            safe_name = _sanitize_filename(filename)
+            await client.upload_artifact(run_id, f"source/{safe_name}", source_bytes)
+
+        ext = output_format if output_format != "text" else "txt"
+        await client.upload_artifact(
+            run_id,
+            f"parsed_content.{ext}",
+            content.encode("utf-8"),
+            content_type="text/plain; charset=utf-8",
         )
-        if resp.status_code == 404 or "RESOURCE_DOES_NOT_EXIST" in resp.text:
-            create_resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/experiments/create",
-                json={"name": experiment_name},
-            )
-            if create_resp.status_code == 409:
-                refetch = await client.get(
-                    f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-                    params={"experiment_name": experiment_name},
-                )
-                refetch.raise_for_status()
-                experiment_id = refetch.json()["experiment"]["experiment_id"]
-            else:
-                create_resp.raise_for_status()
-                experiment_id = create_resp.json()["experiment_id"]
-        else:
-            resp.raise_for_status()
-            exp = resp.json()["experiment"]
-            experiment_id = exp["experiment_id"]
-            if exp.get("lifecycle_stage") == "deleted":
-                await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/experiments/restore",
-                    json={"experiment_id": experiment_id},
-                )
-                logger.info("Restored deleted experiment %s", experiment_name)
 
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-        run_resp = await client.post(
-            f"{tracking_uri}/api/2.0/mlflow/runs/create",
-            json={
-                "experiment_id": experiment_id,
-                "run_name": filename,
-                "start_time": now_ms,
-                "tags": [
-                    {"key": "job_type", "value": "document"},
-                    {"key": "filename", "value": filename},
-                    {"key": "format", "value": output_format},
-                    {"key": "processing_time", "value": str(processing_time)},
-                    {"key": "content_length", "value": str(len(content))},
-                ],
-            },
-        )
-        run_resp.raise_for_status()
-        run_id = run_resp.json()["run"]["info"]["run_id"]
+        await client.finish_run(run_id)
+    except Exception:
+        await client.fail_run_quiet(run_id)
+        raise
 
-        try:
-            if source_bytes:
-                safe_name = _sanitize_filename(filename)
-                src_resp = await client.put(
-                    f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts"
-                    f"/source/{safe_name}",
-                    params={"run_id": run_id},
-                    content=source_bytes,
-                    headers={"Content-Type": "application/octet-stream"},
-                )
-                src_resp.raise_for_status()
-
-            ext = output_format if output_format != "text" else "txt"
-            artifact_path = f"parsed_content.{ext}"
-            artifact_resp = await client.put(
-                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts/{artifact_path}",
-                params={"run_id": run_id},
-                content=content.encode("utf-8"),
-                headers={"Content-Type": "text/plain; charset=utf-8"},
-            )
-            artifact_resp.raise_for_status()
-
-            update_resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/update",
-                json={
-                    "run_id": run_id,
-                    "status": "FINISHED",
-                    "end_time": int(datetime.now(UTC).timestamp() * 1000),
-                },
-            )
-            update_resp.raise_for_status()
-        except Exception:
-            try:
-                await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/runs/update",
-                    json={"run_id": run_id, "status": "FAILED"},
-                )
-            except Exception:
-                logger.debug("Could not mark MLflow run %s as FAILED", run_id)
-            raise
-
-        return run_id
+    return run_id
 
 
-async def _call_docling(
-    client: httpx.AsyncClient, url: str, **kwargs: Any
-) -> dict[str, Any]:
+async def _call_docling(client: httpx.AsyncClient, url: str, **kwargs: Any) -> dict[str, Any]:
     try:
         resp = await client.post(url, **kwargs)
     except httpx.ConnectError:
@@ -222,9 +161,7 @@ async def _call_docling(
             status_code=502, detail="Document processing service communication error"
         ) from None
     if resp.is_error:
-        logger.error(
-            "Docling-serve returned %d: %s", resp.status_code, resp.text[:500]
-        )
+        logger.error("Docling-serve returned %d: %s", resp.status_code, resp.text[:500])
         raise HTTPException(
             status_code=502, detail=f"Document processing error: {resp.status_code}"
         )
@@ -405,47 +342,23 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     summary="List processed documents from MLflow.",
 )
 async def list_documents() -> list[DocumentSummary]:
-    tracking_uri = _tracking_uri()
+    client = MLflowClient(_tracking_uri())
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            exp_resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-                params={"experiment_name": "amortized/documents"},
-            )
-            if (
-                exp_resp.status_code == 404
-                or "RESOURCE_DOES_NOT_EXIST" in exp_resp.text
-            ):
-                return []
-            exp_resp.raise_for_status()
-            experiment_id = exp_resp.json()["experiment"]["experiment_id"]
-
-            runs_resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/search",
-                json={
-                    "experiment_ids": [experiment_id],
-                    "filter": "tags.job_type = 'document' AND attributes.status = 'FINISHED'",
-                    "order_by": ["start_time DESC"],
-                    "max_results": 100,
-                },
-            )
-            runs_resp.raise_for_status()
+        experiment_id = await client.ensure_experiment("amortized/documents")
+        runs = await client.search_runs(
+            experiment_ids=[experiment_id],
+            filter_string="tags.job_type = 'document' AND attributes.status = 'FINISHED'",
+            order_by=["start_time DESC"],
+        )
     except httpx.ConnectError:
-        raise HTTPException(
-            status_code=502, detail="Cannot connect to MLflow"
-        ) from None
+        raise HTTPException(status_code=502, detail="Cannot connect to MLflow") from None
     except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504, detail="MLflow request timed out"
-        ) from None
+        raise HTTPException(status_code=504, detail="MLflow request timed out") from None
 
     results: list[DocumentSummary] = []
-    for run in runs_resp.json().get("runs", []):
+    for run in runs:
         info = run.get("info", {})
-        tags = {
-            t["key"]: t["value"]
-            for t in run.get("data", {}).get("tags", [])
-        }
+        tags = {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
         results.append(
             DocumentSummary(
                 document_id=info.get("run_id", ""),
@@ -465,57 +378,37 @@ async def list_documents() -> list[DocumentSummary]:
     summary="Get parsed content of a document.",
 )
 async def get_document_content(document_id: str) -> DocumentResult:
-    tracking_uri = _tracking_uri()
+    client = MLflowClient(_tracking_uri())
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            run_resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow/runs/get",
-                params={"run_id": document_id},
-            )
-            if run_resp.status_code == 404:
+        try:
+            run = await client.get_run(document_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
                 raise HTTPException(
                     status_code=404,
                     detail=f"Document not found: {document_id}",
-                )
-            run_resp.raise_for_status()
-            run = run_resp.json()["run"]
-            info = run.get("info", {})
-            tags = {
-                t["key"]: t["value"]
-                for t in run.get("data", {}).get("tags", [])
-            }
+                ) from None
+            raise
+        info = run.get("info", {})
+        tags = {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
 
-            fmt = tags.get("format", "md")
-            ext = fmt if fmt != "text" else "txt"
-            artifact_path = f"parsed_content.{ext}"
-            content_resp = await client.get(
-                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts"
-                f"/{artifact_path}",
-                params={"run_id": document_id},
+        fmt = tags.get("format", "md")
+        ext = fmt if fmt != "text" else "txt"
+        content = await client.get_artifact_text(document_id, f"parsed_content.{ext}")
+        if content is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact not found for document {document_id}",
             )
-            if content_resp.is_error:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Artifact not found for document {document_id}",
-                )
-            content = content_resp.text
     except httpx.ConnectError:
-        raise HTTPException(
-            status_code=502, detail="Cannot connect to MLflow"
-        ) from None
+        raise HTTPException(status_code=502, detail="Cannot connect to MLflow") from None
     except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504, detail="MLflow request timed out"
-        ) from None
+        raise HTTPException(status_code=504, detail="MLflow request timed out") from None
     except HTTPException:
         raise
     except Exception:
-        logger.warning(
-            "Failed to retrieve document %s", document_id, exc_info=True
-        )
-        raise HTTPException(
-            status_code=500, detail="Failed to retrieve document"
-        ) from None
+        logger.warning("Failed to retrieve document %s", document_id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve document") from None
 
     return DocumentResult(
         document_id=document_id,
@@ -534,7 +427,6 @@ def _format_timestamp(ts: int | None) -> str:
     return datetime.fromtimestamp(ts / 1000, tz=UTC).isoformat()
 
 
-
 @router.delete(
     "/{document_id}",
     status_code=204,
@@ -550,13 +442,8 @@ async def delete_document(
 
     if tracking_uri:
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/runs/delete",
-                    json={"run_id": document_id},
-                )
-                if resp.status_code != 404:
-                    resp.raise_for_status()
+            client = MLflowClient(tracking_uri)
+            await client.delete_run(document_id)
         except httpx.HTTPError:
             logger.warning("Failed to delete MLflow run %s", document_id, exc_info=True)
 

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from amortized.config import settings
 from amortized.core.jobs import create_job
+from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import Job, JobType
@@ -35,96 +36,35 @@ def _sanitize_filename(name: str) -> str:
     return name or f"upload-{uuid.uuid4().hex[:8]}"
 
 
-def _tracking_uri() -> str:
-    uri = settings.mlflow_tracking_uri
-    if not uri:
-        raise HTTPException(status_code=503, detail="MLflow tracking URI not configured")
-    return uri
-
-
 async def _store_dataset_in_mlflow(
     filename: str,
     file_bytes: bytes,
 ) -> tuple[str, str]:
     """Create an MLflow run and upload the file under generated_data/."""
-    tracking_uri = _tracking_uri()
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        experiment_name = "amortized/datasets"
-        resp = await client.get(
-            f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-            params={"experiment_name": experiment_name},
-        )
-        if resp.status_code == 404 or "RESOURCE_DOES_NOT_EXIST" in resp.text:
-            create_resp = await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/experiments/create",
-                json={"name": experiment_name},
-            )
-            if create_resp.status_code == 409:
-                refetch = await client.get(
-                    f"{tracking_uri}/api/2.0/mlflow/experiments/get-by-name",
-                    params={"experiment_name": experiment_name},
-                )
-                refetch.raise_for_status()
-                experiment_id = refetch.json()["experiment"]["experiment_id"]
-            else:
-                create_resp.raise_for_status()
-                experiment_id = create_resp.json()["experiment_id"]
-        else:
-            resp.raise_for_status()
-            exp = resp.json()["experiment"]
-            experiment_id = exp["experiment_id"]
-            if exp.get("lifecycle_stage") == "deleted":
-                restore_resp = await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/experiments/restore",
-                    json={"experiment_id": experiment_id},
-                )
-                restore_resp.raise_for_status()
+    uri = settings.mlflow_tracking_uri
+    if not uri:
+        raise HTTPException(status_code=503, detail="MLflow tracking URI not configured")
 
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-        run_resp = await client.post(
-            f"{tracking_uri}/api/2.0/mlflow/runs/create",
-            json={
-                "experiment_id": experiment_id,
-                "run_name": filename,
-                "start_time": now_ms,
-                "tags": [
-                    {"key": "job_type", "value": "upload"},
-                    {"key": "dataset_name", "value": filename},
-                    {"key": "source", "value": "upload"},
-                ],
-            },
-        )
-        run_resp.raise_for_status()
-        run_id: str = run_resp.json()["run"]["info"]["run_id"]
+    mlflow = MLflowClient(uri, timeout=60.0)
+    experiment_id = await mlflow.ensure_experiment("amortized/datasets")
+    run_id = await mlflow.create_run(
+        experiment_id,
+        name=filename,
+        tags={
+            "job_type": "upload",
+            "dataset_name": filename,
+            "source": "upload",
+        },
+    )
 
-        try:
-            artifact_resp = await client.put(
-                f"{tracking_uri}/api/2.0/mlflow-artifacts/artifacts/generated_data/{filename}",
-                params={"run_id": run_id},
-                content=file_bytes,
-                headers={"Content-Type": "application/octet-stream"},
-            )
-            artifact_resp.raise_for_status()
+    try:
+        await mlflow.upload_artifact(run_id, f"generated_data/{filename}", file_bytes)
+        await mlflow.finish_run(run_id)
+    except Exception:
+        await mlflow.fail_run_quiet(run_id)
+        raise
 
-            await client.post(
-                f"{tracking_uri}/api/2.0/mlflow/runs/update",
-                json={
-                    "run_id": run_id,
-                    "status": "FINISHED",
-                    "end_time": int(datetime.now(UTC).timestamp() * 1000),
-                },
-            )
-        except Exception:
-            try:
-                await client.post(
-                    f"{tracking_uri}/api/2.0/mlflow/runs/update",
-                    json={"run_id": run_id, "status": "FAILED"},
-                )
-            except Exception:
-                logger.warning("Could not mark MLflow run %s as FAILED", run_id)
-            raise
-
-        return run_id, experiment_id
+    return run_id, experiment_id
 
 
 @router.post("/upload", response_model=Job)
