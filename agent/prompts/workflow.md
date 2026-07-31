@@ -143,13 +143,19 @@ Chain jobs together using `parent_job_id`:
 only use models that have configured endpoints on the AI Gateway.
 
 1. Call `list_models` to discover available models from the AI Gateway
-2. Call `compare_sdg_models` with the models array — for each model, set
-   `model_id` to `provider/model_name` and `label` to the endpoint `name`
-   from `list_models`. The frontend renders this as a cost comparison card.
-3. Call `present_options` with each model as an option. Use the endpoint
-   `name` as the title, with `provider/model_name` in the description.
-4. Wait for the user to select one before proceeding
-5. NEVER auto-select a model, even if there is only one available
+2. Look up pricing for EVERY model. For each model, call
+   `get_model_pricing` with a short, recognizable part of the model name
+   as the query. Try the most specific term first — if it returns no
+   results, try a shorter or broader term. Strip dates, version suffixes,
+   and provider prefixes to broaden the search.
+3. Call `show_model_pricing` ONCE with all the collected pricing data.
+   Pick the best match from each search result and include one entry per
+   gateway model. The frontend renders this as a pricing comparison card.
+4. Call `present_options` with each model as an option. Include the
+   pricing in the description (e.g. "$0.15/1M input, $0.60/1M output").
+   Use the endpoint `name` as the title.
+5. Wait for the user to select one before proceeding
+6. NEVER auto-select a model, even if there is only one available
 
 **Consistent naming:** Always use the endpoint `name` from `list_models`
 as the display label — in option cards, cost tool `label` fields, the
@@ -162,31 +168,36 @@ to add an endpoint before starting SDG."
 
 ## Student Model Selection (Training)
 
-When asking which student model to fine-tune:
+**CRITICAL: You MUST show VRAM estimates before presenting model options.**
+Do NOT skip the estimation step. The user needs to see how much GPU memory
+each model requires before choosing.
 
-1. Call `estimate_training_cost` with the current sample count — the
-   frontend renders this as a cost comparison card across model sizes
-2. Call `present_options` with the available student models
+1. Call `estimate_training_resources` for EACH candidate model size
+   (0.6B, 1.5B, 4B, 8B) with the default method (lora)
+2. Call `show_vram_estimate` with ALL collected estimates — the frontend
+   renders a comparison card showing VRAM for each size
+3. THEN call `present_options` with the model choices
 
 ## Training Method Selection
 
-When asking which training method to use (LoRA SFT, QLoRA, Full SFT):
+**CRITICAL: You MUST show VRAM estimates before presenting method options.**
 
-1. Call `estimate_training_method_cost` with the selected model and
-   sample count — the frontend renders this as a method comparison card
-2. Call `present_options` with the training method options
+1. Call `estimate_training_resources` with the selected model size for
+   EACH method (lora, qlora, osft, sft)
+2. Call `show_vram_estimate` with ALL collected estimates — the frontend
+   renders a comparison card showing VRAM for each method
+3. THEN call `present_options` with the method choices
 
 ## SDG Confirmation
 
-Before showing the SDG confirmation table, call `estimate_sdg_cost`
-with the selected model and sample count. The frontend renders this
-as a cost savings card.
+Before showing the SDG confirmation table, call `get_model_pricing`
+with the selected model name to show its pricing.
 
 ## Training Confirmation
 
 Before showing the training confirmation table, call
-`estimate_training_method_cost` with the final model, method, and
-sample count. The frontend renders this as a cost savings card.
+`estimate_training_resources` with the final model size and method,
+then `show_vram_estimate` with the result to render the card.
 
 ## SDG Job Config Format
 
