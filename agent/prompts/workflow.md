@@ -146,14 +146,16 @@ only use models that have configured endpoints on the AI Gateway.
 2. Look up pricing for EVERY model. For each model, call
    `get_model_pricing` with a short, recognizable part of the model name
    as the query. Try the most specific term first — if it returns no
-   results, try a shorter or broader term. Model names often contain
-   version suffixes or provider prefixes that don't match OpenRouter's
-   catalog, so strip dates and prefixes to broaden the search.
-3. Call `present_options` with each model as an option. Include the
+   results, try a shorter or broader term. Strip dates, version suffixes,
+   and provider prefixes to broaden the search.
+3. Call `show_model_pricing` ONCE with all the collected pricing data.
+   Pick the best match from each search result and include one entry per
+   gateway model. The frontend renders this as a pricing comparison card.
+4. Call `present_options` with each model as an option. Include the
    pricing in the description (e.g. "$0.15/1M input, $0.60/1M output").
    Use the endpoint `name` as the title.
-4. Wait for the user to select one before proceeding
-5. NEVER auto-select a model, even if there is only one available
+5. Wait for the user to select one before proceeding
+6. NEVER auto-select a model, even if there is only one available
 
 **Consistent naming:** Always use the endpoint `name` from `list_models`
 as the display label — in option cards, cost tool `label` fields, the

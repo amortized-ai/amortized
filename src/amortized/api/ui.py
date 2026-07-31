@@ -46,6 +46,35 @@ async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse
     )
 
 
+class ModelPricingItem(BaseModel):
+    model_id: str = Field(..., description="Model ID (e.g. 'openai/gpt-4o-mini')")
+    name: str = Field(..., description="Display name")
+    prompt_cost_per_1m: float = Field(..., description="Input cost per 1M tokens")
+    completion_cost_per_1m: float = Field(..., description="Output cost per 1M tokens")
+    context_length: int = Field(0, description="Context window size")
+
+
+class ShowModelPricingRequest(BaseModel):
+    models: list[ModelPricingItem] = Field(
+        ..., description="Models with pricing to display", min_length=1
+    )
+
+
+class ShowModelPricingResponse(BaseModel):
+    models: list[ModelPricingItem]
+    rendered: bool = Field(True)
+
+
+@router.post(
+    "/show_model_pricing",
+    response_model=ShowModelPricingResponse,
+    operation_id="show_model_pricing",
+    summary="Display a model pricing comparison card in the chat UI",
+)
+async def show_model_pricing(body: ShowModelPricingRequest) -> ShowModelPricingResponse:
+    return ShowModelPricingResponse(models=body.models, rendered=True)
+
+
 class SignalPhaseRequest(BaseModel):
     phase: str = Field(..., description="Current workflow phase: 'sdg', 'training', or 'eval'")
     step: str = Field(
