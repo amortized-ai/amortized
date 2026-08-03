@@ -68,21 +68,19 @@ stop and direct the user to Settings -> AI Gateway.
 
 Calculate based on document coverage.
 
-**CRITICAL: The minimum sample count = number of document chunks.**
-Each chunk gets at least one QA pair. Documents are chunked at upload
-time by docling-serve. Use `get_document_chunks(doc_id)` to get the
-actual chunk count.
+Documents are chunked at upload time by docling-serve. Use
+`get_document_chunks(doc_id)` to get the actual chunk count.
 
-Present options in the hundreds-to-thousands range. More samples =
-better model quality. The chunk count is the floor, not the target.
+Sample count is a multiplier of chunk count. Each chunk gets sampled
+multiple times with different topic/difficulty/question_type combinations.
+Present three options as multiples of the chunk count:
 
-1) 500 samples — Good starting point for most documents
-2) 1000 samples — Recommended for production-quality models
-3) 3000 samples — Best quality, thorough coverage of every chunk
+1) chunk_count x 30 — Good starting point
+2) chunk_count x 50 — Recommended for production-quality models
+3) chunk_count x 100 — Best quality, thorough coverage
 
-NEVER suggest fewer than 100 samples. Typical production runs use
-1000-3000 samples. Each chunk gets sampled multiple times with
-different topic/difficulty/question_type combinations.
+Show the actual computed numbers. For example, with 120 chunks:
+"3600 samples (30x), 6000 samples (50x), or 12000 samples (100x)"
 
 ### Step 7 — System prompt for the trained model
 
@@ -233,7 +231,7 @@ Before submitting the job, verify:
 - [ ] Question system prompt includes the answerability constraint
 - [ ] Answer system prompt includes "answerable from the provided context"
 - [ ] System prompt in the SFT processor is domain-specific
-- [ ] `num_records` >= document chunk count (from `get_document_chunks`)
+- [ ] `num_records` is a multiplier of chunk count (30x, 50x, or 100x)
 
 ## After SDG — Training
 
