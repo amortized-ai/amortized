@@ -3,11 +3,11 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
-  - ../dev/minio.yaml
-  - ../dev/mlflow.yaml
-  - ../dev/s3-secret.yaml
-  - ../dev/minio-init.yaml
-  - ../dev/postgres.yaml
+  - minio.yaml
+  - mlflow.yaml
+  - s3-secret.yaml
+  - minio-init.yaml
+  - postgres.yaml
   - nodeport-services.yaml
 
 patches:

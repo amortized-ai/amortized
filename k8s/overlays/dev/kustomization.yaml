@@ -4,12 +4,12 @@ kind: Kustomization
 resources:
   - ../../base
   # Dev-only: bundled MinIO + MLflow (production brings their own)
-  - minio.yaml
-  - mlflow.yaml
-  - s3-secret.yaml
+  - ../shared/minio.yaml
+  - ../shared/mlflow.yaml
+  - ../shared/s3-secret.yaml
   - s3-secret-jobs.yaml
-  - minio-init.yaml
-  - postgres.yaml
+  - ../shared/minio-init.yaml
+  - ../shared/postgres.yaml
   # Dev-only: OpenAI-based OpenCode config (production uses Vertex AI)
 
 patches:
