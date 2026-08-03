@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-asaluja
+  labels:
+    app: amortized
+    environment: dev
+    owner: asaluja
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: amortized-asaluja-jobs
+  labels:
+    app: amortized
+    environment: dev
+    owner: asaluja

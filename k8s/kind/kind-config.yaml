@@ -42,6 +42,13 @@ nodes:
       - containerPort: 31141
         hostPort: 31141
         protocol: TCP
+      # asaluja: studio=31150, server=31151
+      - containerPort: 31150
+        hostPort: 31150
+        protocol: TCP
+      - containerPort: 31151
+        hostPort: 31151
+        protocol: TCP
   - role: worker
     extraMounts:
       - hostPath: /dev/null

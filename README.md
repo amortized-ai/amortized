@@ -55,6 +55,7 @@ Amortized runs on a kind cluster with GPU passthrough. Each developer gets an is
 | mathale   | amortized-mathale  | 31120 | 31121 | 1 |
 | nmalepat  | amortized-nmalepat | 31130 | 31131 | 1 |
 | esivaram  | amortized-esivaram | 31140 | 31141 | 1 |
+| asaluja   | amortized-asaluja  | 31150 | 31151 | 1 |
 | *(shared)* | amortized         | —     | MLflow: 31082 | — |
 
 ### Quick start
