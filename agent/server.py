@@ -6,6 +6,8 @@ so Amortized Studio can talk to either backend without code changes.
 Endpoints:
   POST /session              → create a session
   POST /session/{id}/message → send a message, get a synchronous JSON response
+  POST /session/{id}/event   → receive a job event, generate follow-up response
+  GET  /session/{id}/pending → drain pending follow-up messages
   GET  /api/health           → health check
 """
 
@@ -15,9 +17,11 @@ import asyncio
 import json
 import os
 import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import httpx
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -59,6 +63,10 @@ PROVIDER_ID = _detect_provider_id()
 _session_map: dict[str, str] = {}
 _map_lock = asyncio.Lock()
 _morty_prompt: str = ""
+
+_pending_messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
+_pending_lock = asyncio.Lock()
+_background_tasks: set[asyncio.Task[None]] = set()
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -118,6 +126,14 @@ class MessageRequest(BaseModel):
     model: MessageModel | None = None
 
 
+class JobEvent(BaseModel):
+    type: str
+    job_id: str
+    status: str
+    job_type: str = ""
+    error: str | None = None
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {"healthy": True, "version": "0.1.0"}
@@ -129,21 +145,11 @@ async def create_session() -> SessionResponse:
     return SessionResponse(id=session_id)
 
 
-@app.post("/session/{session_id}/message")
-async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
-    user_text = ""
-    for part in body.parts:
-        if part.type == "text" and part.text:
-            user_text = part.text
-            break
-
-    if not user_text:
-        raise HTTPException(status_code=400, detail="no text part in message")
-
-    model = MODEL
-    if body.model and body.model.modelID:
-        model = body.model.modelID.replace("@default", "") or MODEL
-
+async def _run_agent(
+    session_id: str, prompt: str, model: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run an agent query and return (response_parts, result_info)."""
+    resolved_model = model or MODEL
     sdk_session_id = _session_map.get(session_id)
 
     options = ClaudeAgentOptions(
@@ -151,7 +157,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         allowed_tools=["mcp__*"],
         permission_mode="acceptEdits",
         setting_sources=[],
-        model=model,
+        model=resolved_model,
         cwd=WORKSPACE_DIR,
         mcp_servers={
             "amortized": {
@@ -172,7 +178,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     result_info: dict[str, Any] = {}
     new_sdk_session_id: str | None = None
 
-    async for message in query(prompt=user_text, options=options):
+    async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
@@ -207,7 +213,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
             result_info = {
                 "providerID": PROVIDER_ID,
-                "modelID": model,
+                "modelID": resolved_model,
                 "cost": cost,
                 "tokens": {
                     "input": input_tokens,
@@ -225,7 +231,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if not result_info:
         result_info = {
             "providerID": PROVIDER_ID,
-            "modelID": model,
+            "modelID": resolved_model,
             "cost": 0,
             "tokens": {"input": 0, "output": 0, "reasoning": 0},
             "finish": "stop",
@@ -233,7 +239,125 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
             "sessionID": session_id,
         }
 
+    return response_parts, result_info
+
+
+def _extract_job_id_from_output(output: Any) -> str | None:
+    """Extract job ID from MCP tool output in various formats."""
+    if isinstance(output, str):
+        try:
+            obj = json.loads(output)
+            if isinstance(obj, dict) and obj.get("id"):
+                return obj["id"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if isinstance(output, list):
+        for block in output:
+            if isinstance(block, dict) and block.get("type") == "text":
+                try:
+                    obj = json.loads(block.get("text", ""))
+                    if isinstance(obj, dict) and obj.get("id"):
+                        return obj["id"]
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    if isinstance(output, dict) and output.get("id"):
+        return output["id"]
+    return None
+
+
+async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]) -> None:
+    """Scan response for job creation tools and auto-register watches."""
+    for part in response_parts:
+        if part.get("type") != "tool" or part.get("state") != "completed":
+            continue
+        raw = (part.get("tool") or "")
+        tool_name = raw.replace("mcp_amortized__", "").replace("amortized_", "")
+        if tool_name not in ("create_job", "submit_recipe_job"):
+            continue
+        job_id = _extract_job_id_from_output(part.get("output"))
+        if not job_id:
+            continue
+        base_url = MCP_AMORTIZED_URL.replace("/mcp", "")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{base_url}/api/v1/ui/watch_job",
+                    json={"job_id": job_id, "session_id": session_id},
+                )
+        except Exception:
+            pass
+
+
+def _build_event_prompt(event: JobEvent) -> str:
+    short_id = event.job_id[:8]
+    jtype = event.job_type.upper() if event.job_type else ""
+    job_label = f"{jtype} job #{short_id}" if jtype else f"job #{short_id}"
+
+    if event.status == "running":
+        return (
+            f"[SYSTEM EVENT] {job_label} is now running. "
+            f"Acknowledge briefly in 1 sentence. Do NOT call present_options."
+        )
+    elif event.status == "succeeded":
+        return (
+            f"[SYSTEM EVENT] {job_label} succeeded. "
+            f"Congratulate briefly and call present_options with relevant next steps. "
+            f"For SDG jobs: offer 'Preview dataset', 'Start training with this data'. "
+            f"For training jobs: offer 'View model', 'View training metrics'. "
+            f"Call signal_phase with step='review'. Keep the message to 1-2 sentences."
+        )
+    elif event.status in ("failed", "cancelled"):
+        error_detail = f" Error: {event.error}" if event.error else ""
+        return (
+            f"[SYSTEM EVENT] {job_label} {event.status}.{error_detail} "
+            f"Explain briefly and call present_options with recovery options: "
+            f"'View logs', 'Try again with different settings', 'Start fresh'."
+        )
+    return f"[SYSTEM EVENT] {job_label} status changed to {event.status}."
+
+
+@app.post("/session/{session_id}/message")
+async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
+    user_text = ""
+    for part in body.parts:
+        if part.type == "text" and part.text:
+            user_text = part.text
+            break
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="no text part in message")
+
+    model = MODEL
+    if body.model and body.model.modelID:
+        model = body.model.modelID.replace("@default", "") or MODEL
+
+    response_parts, result_info = await _run_agent(session_id, user_text, model)
+
+    task = asyncio.create_task(_auto_watch_jobs(session_id, response_parts))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
     return {"info": result_info, "parts": response_parts}
+
+
+@app.post("/session/{session_id}/event")
+async def receive_event(session_id: str, body: JobEvent) -> dict[str, Any]:
+    prompt = _build_event_prompt(body)
+    response_parts, result_info = await _run_agent(session_id, prompt)
+
+    follow_up = {"info": result_info, "parts": response_parts}
+
+    async with _pending_lock:
+        _pending_messages[session_id].append(follow_up)
+
+    return {"status": "queued", "message_count": len(_pending_messages[session_id])}
+
+
+@app.get("/session/{session_id}/pending")
+async def get_pending(session_id: str) -> dict[str, Any]:
+    async with _pending_lock:
+        messages = _pending_messages.pop(session_id, [])
+    return {"messages": messages}
 
 
 async def _persist_session(external_id: str, sdk_session_id: str) -> None:

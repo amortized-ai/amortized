@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from amortized.watch import register_watch
+
 router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
 
 
@@ -123,3 +125,25 @@ class SignalPhaseResponse(BaseModel):
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
     return SignalPhaseResponse(phase=body.phase, step=body.step)
+
+
+class WatchJobRequest(BaseModel):
+    job_id: str = Field(..., description="Job ID to watch for status changes")
+    session_id: str = Field(..., description="Agent session ID to notify on status change")
+
+
+class WatchJobResponse(BaseModel):
+    job_id: str
+    session_id: str
+    watching: bool = Field(True, description="Whether the watch was registered")
+
+
+@router.post(
+    "/watch_job",
+    response_model=WatchJobResponse,
+    operation_id="watch_job",
+    summary="Register a job for automatic status change notifications to the agent session",
+)
+async def watch_job(body: WatchJobRequest) -> WatchJobResponse:
+    register_watch(body.job_id, body.session_id)
+    return WatchJobResponse(job_id=body.job_id, session_id=body.session_id)

@@ -15,8 +15,24 @@ from amortized.core.jobs import deserialize_handle
 from amortized.core.mlflow_client import MLflowClient
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
+from amortized.watch import emit_job_event
 
 logger = logging.getLogger("amortized.worker")
+
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _fire_event(job_id: str, status: str, job: dict[str, Any]) -> None:
+    task = asyncio.create_task(_safe_emit(job_id, status, job))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _safe_emit(job_id: str, status: str, job: dict[str, Any]) -> None:
+    try:
+        await emit_job_event(job_id, status, job)
+    except Exception:
+        logger.warning("Failed to emit job event for %s", job_id, exc_info=True)
 
 
 _JOB_TYPE_IMAGES: dict[str, str] = {
@@ -528,6 +544,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             if not transitioned_to_running:
                 await _update_job(job_id, status=JobStatus.running.value)
                 transitioned_to_running = True
+                _fire_event(job_id, "running", job)
             await asyncio.sleep(poll_interval)
 
         completed_at = datetime.now(UTC).isoformat()
@@ -571,6 +588,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 mlflow_run_id=mlflow_run_id,
             )
             logger.info("Job %s succeeded", job_id)
+            _fire_event(job_id, "succeeded", job)
         elif status.exit_code is not None and status.exit_code < 0:
             await _update_job(
                 job_id,
@@ -579,6 +597,9 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error="Job was cancelled",
             )
             logger.info("Job %s was cancelled", job_id)
+            _fire_event(
+                job_id, "cancelled", {**job, "error": "Job was cancelled"},
+            )
         else:
             error_msg = status.error or (
                 f"Job '{job_id}' failed on backend '{backend_name}'"
@@ -591,6 +612,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error=error_msg,
             )
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
+            _fire_event(job_id, "failed", {**job, "error": error_msg})
 
     except Exception as exc:
         error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
@@ -617,6 +639,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             backend_handle=fallback_handle,
         )
         logger.exception("Job %s failed with exception", job_id)
+        _fire_event(job_id, "failed", {**job, "error": error_text})
 
 
 async def cleanup_orphaned_jobs() -> None:
