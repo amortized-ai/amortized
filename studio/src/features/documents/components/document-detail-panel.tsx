@@ -9,7 +9,7 @@ import {
 import { X, FileText, Copy, Hash, Calendar, Loader2, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useDocumentContent, useDeleteDocument } from "../api/use-documents"
+import { useDocumentContent, useDocumentChunks, useDeleteDocument } from "../api/use-documents"
 import { EditableTitle } from "@/components/editable-title"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import { setMlflowRunTag } from "@/lib/api-client"
@@ -130,6 +130,7 @@ function PanelBody({ document }: { document: DocumentRecord }) {
     isError,
     error,
   } = useDocumentContent(document.document_id)
+  const { data: chunksData } = useDocumentChunks(document.document_id)
 
   return (
     <Tabs defaultValue="content" className="flex flex-col flex-1 min-h-0">
@@ -140,6 +141,12 @@ function PanelBody({ document }: { document: DocumentRecord }) {
             className="flex-1 transition-all duration-200"
           >
             Content
+          </TabsTrigger>
+          <TabsTrigger
+            value="chunks"
+            className="flex-1 transition-all duration-200"
+          >
+            Chunks{chunksData ? ` (${chunksData.chunks.length})` : ""}
           </TabsTrigger>
           <TabsTrigger
             value="info"
@@ -155,6 +162,13 @@ function PanelBody({ document }: { document: DocumentRecord }) {
         className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
       >
         <ContentTab content={content} isLoading={isLoading} isError={isError} error={error} />
+      </TabsContent>
+
+      <TabsContent
+        value="chunks"
+        className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
+      >
+        <ChunksTab chunksData={chunksData} />
       </TabsContent>
 
       <TabsContent
@@ -332,6 +346,46 @@ function InfoTab({
           )}
         </>
       )}
+    </div>
+  )
+}
+
+function ChunksTab({
+  chunksData,
+}: {
+  chunksData: import("@/types/api").DocumentChunksResponse | undefined
+}) {
+  if (!chunksData || chunksData.chunks.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+        No chunks available. This document may have been uploaded before chunking was enabled.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {chunksData.chunks.map((chunk) => (
+        <div
+          key={chunk.chunk_index}
+          className="rounded-lg border border-border/50 p-3 space-y-2"
+        >
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="font-medium">
+              Chunk {chunk.chunk_index}
+              {chunk.headings.length > 0 && (
+                <span className="ml-2 font-normal">{chunk.headings[0]}</span>
+              )}
+            </span>
+            {chunk.num_tokens != null && (
+              <span>{chunk.num_tokens} tokens</span>
+            )}
+          </div>
+          <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed font-mono bg-muted/30 rounded p-2">
+            {chunk.text}
+          </pre>
+        </div>
+      ))}
     </div>
   )
 }

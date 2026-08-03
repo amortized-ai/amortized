@@ -23,6 +23,8 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
     ConvertUrlRequest,
+    DocumentChunk,
+    DocumentChunks,
     DocumentResult,
     DocumentSection,
     DocumentSections,
@@ -648,6 +650,43 @@ async def get_section_content(
         raise HTTPException(status_code=404, detail=f"Section not found: {heading}")
     body = _collect_section_content(result.content, matched.heading)
     return {"heading": matched.heading, "content": body}
+
+
+@router.get(
+    "/{document_id}/chunks",
+    response_model=DocumentChunks,
+    operation_id="get_document_chunks",
+    summary="Get chunks for a document.",
+)
+async def get_document_chunks(document_id: str) -> DocumentChunks:
+    client = MLflowClient(_tracking_uri())
+    try:
+        run = await client.get_run(document_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Document not found") from None
+        raise
+
+    tags = {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
+    filename = tags.get("filename", run.get("info", {}).get("run_name", ""))
+
+    metadata_text = await client.get_artifact_text(document_id, "chunks/metadata.json")
+    if not metadata_text:
+        return DocumentChunks(document_id=document_id, filename=filename, chunks=[])
+
+    metadata = json.loads(metadata_text)
+    chunks: list[DocumentChunk] = []
+    for i, meta in enumerate(metadata):
+        text = await client.get_artifact_text(document_id, f"chunks/chunk_{i:03d}.md")
+        chunks.append(DocumentChunk(
+            chunk_index=meta.get("chunk_index", i),
+            text=text or "",
+            num_tokens=meta.get("num_tokens"),
+            headings=meta.get("headings") or [],
+            page_numbers=meta.get("page_numbers") or [],
+        ))
+
+    return DocumentChunks(document_id=document_id, filename=filename, chunks=chunks)
 
 
 def _format_timestamp(ts: int | None) -> str:

@@ -519,7 +519,7 @@ export function uploadDataset(file: File): Promise<Job> {
 
 // --- Documents ---
 
-import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
+import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
 export function getDocuments(): Promise<DocumentRecord[]> {
   return get<DocumentRecord[]>("/api/v1/documents")
@@ -527,6 +527,10 @@ export function getDocuments(): Promise<DocumentRecord[]> {
 
 export function getDocumentContent(id: string): Promise<DocumentUploadResponse> {
   return get<DocumentUploadResponse>(`/api/v1/documents/${id}/content`)
+}
+
+export function getDocumentChunks(id: string): Promise<DocumentChunksResponse> {
+  return get<DocumentChunksResponse>(`/api/v1/documents/${id}/chunks`)
 }
 
 export function deleteDocument(id: string): Promise<void> {

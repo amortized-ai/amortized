@@ -170,6 +170,20 @@ class DocumentSections(BaseModel):
     sections: list[DocumentSection] = Field(default_factory=list)
 
 
+class DocumentChunk(BaseModel):
+    chunk_index: int = Field(..., description="Chunk position in document")
+    text: str = Field("", description="Chunk content")
+    num_tokens: int | None = Field(None, description="Token count")
+    headings: list[str] = Field(default_factory=list, description="Section headings")
+    page_numbers: list[int] = Field(default_factory=list, description="Source pages")
+
+
+class DocumentChunks(BaseModel):
+    document_id: str = Field(..., description="Document identifier")
+    filename: str = Field("", description="Original filename")
+    chunks: list[DocumentChunk] = Field(default_factory=list)
+
+
 class DocumentSummary(_DocumentBase):
     created_at: str | None = Field(None, description="When the document was processed")
 

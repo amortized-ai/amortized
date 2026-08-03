@@ -3,11 +3,12 @@ import { toast } from "sonner"
 import {
   getDocuments,
   getDocumentContent,
+  getDocumentChunks,
   uploadDocument,
   convertDocumentUrl,
   deleteDocument,
 } from "@/lib/api-client"
-import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
+import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
 export function useDocuments() {
   return useQuery<DocumentRecord[]>({
@@ -20,6 +21,14 @@ export function useDocumentContent(id: string | null) {
   return useQuery<DocumentUploadResponse>({
     queryKey: ["documents", id, "content"],
     queryFn: () => getDocumentContent(id!),
+    enabled: !!id,
+  })
+}
+
+export function useDocumentChunks(id: string | null) {
+  return useQuery<DocumentChunksResponse>({
+    queryKey: ["documents", id, "chunks"],
+    queryFn: () => getDocumentChunks(id!),
     enabled: !!id,
   })
 }

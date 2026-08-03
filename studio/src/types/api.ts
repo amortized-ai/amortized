@@ -291,6 +291,20 @@ export interface DocumentUploadResponse {
   warnings: string[]
 }
 
+export interface DocumentChunkItem {
+  chunk_index: number
+  text: string
+  num_tokens: number | null
+  headings: string[]
+  page_numbers: number[]
+}
+
+export interface DocumentChunksResponse {
+  document_id: string
+  filename: string
+  chunks: DocumentChunkItem[]
+}
+
 // --- Query helpers ---
 
 export interface JobFilters {
