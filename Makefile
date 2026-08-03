@@ -303,13 +303,20 @@ clean-images: ## Remove old amortized images from kind nodes and reclaim disk
 	@echo "Cleaning old images from kind nodes..."
 	@for node in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker; do \
 		echo "  Cleaning $$node..."; \
-		docker exec $$node sh -c "\
-			ctr -n k8s.io images ls -q | \
+		IN_USE=$$(docker exec $$node crictl ps 2>/dev/null | awk 'NR>1 {print $$2}' | sort -u); \
+		ALL=$$(docker exec $$node crictl images 2>/dev/null | \
 			grep -E 'amortized-server|amortized-studio|library/studio' | \
-			grep -v '$(IMAGE_TAG)' | \
-			xargs -r ctr -n k8s.io images rm" 2>/dev/null || true; \
-		docker exec $$node sh -c "\
-			ctr -n k8s.io content prune references" 2>/dev/null || true; \
+			awk '{print $$3, $$1":"$$2}'); \
+		echo "$$ALL" | while read id ref; do \
+			KEEP=0; \
+			for used in $$IN_USE; do \
+				case "$$used" in "$$id"*) KEEP=1; break;; esac; \
+			done; \
+			if [ "$$KEEP" = "0" ] && [ -n "$$ref" ]; then \
+				docker exec $$node ctr -n k8s.io images rm "$$ref" 2>/dev/null || true; \
+			fi; \
+		done; \
+		docker exec $$node sh -c "ctr -n k8s.io content prune references" 2>/dev/null || true; \
 	done
 	@echo "Pruning Docker build cache..."
 	@docker builder prune -f --filter 'until=24h' 2>/dev/null || true
