@@ -75,12 +75,12 @@ Sample count is a multiplier of chunk count. Each chunk gets sampled
 multiple times with different topic/difficulty/question_type combinations.
 Present three options as multiples of the chunk count:
 
-1) chunk_count x 30 — Good starting point
-2) chunk_count x 50 — Recommended for production-quality models
-3) chunk_count x 100 — Best quality, thorough coverage
+1) chunk_count x 10 — Good starting point
+2) chunk_count x 20 — Recommended for production-quality models
+3) chunk_count x 30 — Best quality, thorough coverage
 
 Show the actual computed numbers. For example, with 120 chunks:
-"3600 samples (30x), 6000 samples (50x), or 12000 samples (100x)"
+"1200 samples (10x), 2400 samples (20x), or 3600 samples (30x)"
 
 ### Step 7 — System prompt for the trained model
 
