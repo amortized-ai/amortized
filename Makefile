@@ -5,7 +5,7 @@ STUDIO_DIR    ?= $(REPO_ROOT)/studio
 REPO_ROOT     := $(shell pwd)
 
 # Developer environments
-USERS := meyceoz ssudalai mathale nmalepat esivaram
+USERS := meyceoz ssudalai mathale nmalepat esivaram asaluja
 
 # GHCR images (used as base refs in kustomize, overridden via sed for local builds)
 SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
@@ -380,6 +380,8 @@ status: ## Show cluster status, pods, and access URLs
 	@echo "  nmalepat API:     http://localhost:31131"
 	@echo "  esivaram Studio:  http://localhost:31140"
 	@echo "  esivaram API:     http://localhost:31141"
+	@echo "  asaluja Studio:   http://localhost:31150"
+	@echo "  asaluja API:      http://localhost:31151"
 	@echo ""
 	@echo "  SSH tunnel:"
 	@echo "    ssh -L 31082:localhost:31082 \\"
@@ -388,4 +390,5 @@ status: ## Show cluster status, pods, and access URLs
 	@echo "        -L 31120:localhost:31120 -L 31121:localhost:31121 \\"
 	@echo "        -L 31130:localhost:31130 -L 31131:localhost:31131 \\"
 	@echo "        -L 31140:localhost:31140 -L 31141:localhost:31141 \\"
+	@echo "        -L 31150:localhost:31150 -L 31151:localhost:31151 \\"
 	@echo "        user@<gpu-host>"
