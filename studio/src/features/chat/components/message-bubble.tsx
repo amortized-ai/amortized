@@ -67,6 +67,7 @@ export function MessageBubble({
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
   const [jobTerminalStatus, setJobTerminalStatus] = useState<string | null>(null)
+  const [jobIsRunning, setJobIsRunning] = useState(false)
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
@@ -88,8 +89,15 @@ export function MessageBubble({
         { title: "Start Fresh", description: "Begin a new workflow", value: "Start a new workflow from scratch" },
       ]
     }
+    if (jobId && jobIsRunning) {
+      return [
+        { title: "View Job", description: "See job details and config", value: "Show me the details for this job" },
+        { title: "View Logs", description: "See live job output", value: "Show me the logs for this job" },
+        { title: "Cancel Job", description: "Stop the running job", value: "Cancel this job" },
+      ]
+    }
     return structuredOptions ?? []
-  }, [isUser, message.optionCards.length, structuredOptions, jobId, jobTerminalStatus, jobType])
+  }, [isUser, message.optionCards.length, structuredOptions, jobId, jobTerminalStatus, jobType, jobIsRunning])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
@@ -217,6 +225,7 @@ export function MessageBubble({
               jobType={jobType}
               onDismiss={() => setMonitorDismissed(true)}
               onComplete={(s) => setJobTerminalStatus(s)}
+              onRunning={() => setJobIsRunning(true)}
             />
           </div>
         )}
