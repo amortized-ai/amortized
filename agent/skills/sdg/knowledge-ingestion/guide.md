@@ -218,10 +218,18 @@ Use `schema_transform` to convert columns into SFT training format:
       {"role": "system", "content": "<domain-specific system prompt for the trained model>"},
       {"role": "user", "content": "{{ question }}"},
       {"role": "assistant", "content": "{{ answer }}"}
-    ]
+    ],
+    "context": "{{ content }}",
+    "topic": "{{ topic }}",
+    "difficulty": "{{ difficulty }}",
+    "question_type": "{{ question_type }}"
   }
 }]
 ```
+
+Always include the passthrough columns (`context`, `topic`, `difficulty`,
+`question_type`) in the processor template. Training uses `messages`;
+the other columns are retained for analysis and quality inspection.
 
 The system prompt here defines how the TRAINED MODEL should behave at
 inference time. It must be domain-specific and match what the user's

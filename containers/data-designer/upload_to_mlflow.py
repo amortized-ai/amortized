@@ -19,12 +19,8 @@ def main() -> None:
         print(f"ERROR: {upload_dir} not found")
         sys.exit(1)
 
-    raw_dir = os.path.join(dataset_dir, "parquet-files")
-
     with mlflow.start_run() as run:
         mlflow.log_artifacts(upload_dir, "generated_data")
-        if proc_subdir and os.path.isdir(raw_dir) and raw_dir != upload_dir:
-            mlflow.log_artifacts(raw_dir, "raw_data")
         print(f"AMORTIZED_MLFLOW_RUN_ID={run.info.run_id}")
         print(f"Uploaded {upload_dir} to MLflow run {run.info.run_id}")
 

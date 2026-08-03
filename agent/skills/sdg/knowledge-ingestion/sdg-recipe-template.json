@@ -76,7 +76,11 @@
               "role": "assistant",
               "content": "{{ answer }}"
             }
-          ]
+          ],
+          "context": "{{ content }}",
+          "topic": "{{ topic }}",
+          "difficulty": "{{ difficulty }}",
+          "question_type": "{{ question_type }}"
         }
       }
     ]
