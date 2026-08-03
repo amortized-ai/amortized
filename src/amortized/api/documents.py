@@ -36,13 +36,6 @@ logger = logging.getLogger("amortized.api.documents")
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
-_FORMAT_MAP = {
-    "md": "md_content",
-    "text": "text_content",
-    "json": "json_content",
-    "html": "html_content",
-}
-
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 _BLOCKED_HOSTNAMES = frozenset(
@@ -95,14 +88,6 @@ def _tracking_uri() -> str:
     if not settings.mlflow_tracking_uri:
         raise HTTPException(status_code=503, detail="MLflow tracking is not configured")
     return settings.mlflow_tracking_uri.rstrip("/")
-
-
-def _extract_content(document: dict[str, Any], output_format: str) -> str:
-    key = _FORMAT_MAP.get(output_format, "md_content")
-    content = document.get(key, "")
-    if isinstance(content, dict):
-        return json.dumps(content, indent=2)
-    return str(content)
 
 
 async def _store_in_mlflow(
@@ -209,50 +194,75 @@ _DEFAULT_CHUNK_MAX_TOKENS = 2048
 _DOCLING_TIMEOUT = 600.0
 
 
-async def _chunk_via_docling(
+_DOCLING_LABEL_PREFIX: dict[str, str] = {
+    "title": "# ",
+    "subtitle-level-1": "## ",
+    "section-header": "## ",
+}
+
+
+def _docling_json_to_markdown(doc_json: dict[str, Any]) -> str:
+    """Reconstruct markdown from a DoclingDocument JSON export."""
+    parts: list[str] = []
+    for node in doc_json.get("texts", []):
+        label = node.get("label", "text")
+        text = node.get("text", "")
+        if not text:
+            continue
+        prefix = _DOCLING_LABEL_PREFIX.get(label, "")
+        parts.append(f"{prefix}{text}")
+    return "\n\n".join(parts)
+
+
+async def _convert_and_chunk(
     base_url: str,
     filename: str,
     file_bytes: bytes,
     max_tokens: int = _DEFAULT_CHUNK_MAX_TOKENS,
-) -> list[dict[str, Any]]:
-    """Call docling-serve hybrid chunking endpoint and return the chunk list."""
+) -> tuple[str, list[dict[str, Any]], float]:
+    """Single call to docling-serve: parse, chunk, and return (content, chunks, time)."""
     async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/chunk/hybrid/file",
             files={"files": (filename, file_bytes, "application/octet-stream")},
-            data={"chunking_options": json.dumps({"max_tokens": max_tokens})},
+            data={
+                "chunking_options": json.dumps({"max_tokens": max_tokens}),
+                "include_converted_doc": "true",
+            },
         )
+
     chunks = data.get("chunks")
     if chunks is None:
-        logger.warning("Docling chunking response missing 'chunks' key for %s", filename)
-        return []
-    return chunks  # type: ignore[no-any-return]
+        logger.warning("Docling response missing 'chunks' key for %s", filename)
+        chunks = []
+
+    content = ""
+    documents = data.get("documents", [])
+    if documents:
+        doc_content = documents[0].get("content", {})
+        md = doc_content.get("md_content")
+        if md:
+            content = md
+        else:
+            doc_json = doc_content.get("json_content")
+            if doc_json:
+                content = _docling_json_to_markdown(doc_json)
+
+    processing_time: float = data.get("processing_time", 0.0)
+    return content, chunks, processing_time
 
 
-async def _chunk_and_store(
-    base_url: str,
+async def _store_and_build(
     filename: str,
     content: str,
     output_format: OutputFormat,
     source_bytes: bytes | None,
     processing_time: float,
-    chunk_max_tokens: int,
+    chunks: list[dict[str, Any]],
     warnings: list[str],
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Run chunking and MLflow storage, appending any warnings. Returns (chunks, mlflow_run_id)."""
-    chunks: list[dict[str, Any]] = []
-    if source_bytes:
-        try:
-            chunks = await _chunk_via_docling(
-                base_url, filename, source_bytes, chunk_max_tokens
-            )
-        except (httpx.HTTPError, HTTPException):
-            logger.warning("Chunking failed for %s", filename, exc_info=True)
-            warnings.append("Document converted but chunking failed")
-    else:
-        warnings.append("Chunking skipped — source document not available")
-
+    """Store in MLflow, appending any warnings. Returns (chunks, mlflow_run_id)."""
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
@@ -322,44 +332,24 @@ async def convert_document(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
-        data = await _call_docling(
-            client,
-            f"{base_url}/v1/convert/file",
-            files={
-                "files": (
-                    filename,
-                    file_bytes,
-                    "application/octet-stream",
-                ),
-            },
-            data={
-                "to_formats": output_format.value,
-                "do_ocr": str(do_ocr).lower(),
-                "ocr_engine": ocr_engine,
-                "table_mode": table_mode,
-            },
-        )
-
-    document = data.get("document", {})
-    content = _extract_content(document, output_format.value)
-    processing_time = data.get("processing_time", 0.0)
-    status = data.get("status", "success")
-
     warnings: list[str] = []
+    content, chunks, processing_time = await _convert_and_chunk(
+        base_url, filename, file_bytes, chunk_max_tokens
+    )
+
     if not content.strip():
         warnings.append("Document parsed but no content was extracted")
 
-    chunks, mlflow_run_id = await _chunk_and_store(
-        base_url, filename, content, output_format,
+    chunks, mlflow_run_id = await _store_and_build(
+        filename, content, output_format,
         source_bytes=file_bytes,
         processing_time=processing_time,
-        chunk_max_tokens=chunk_max_tokens,
+        chunks=chunks,
         warnings=warnings,
     )
 
     return _build_result(
-        filename, content, output_format, processing_time, status,
+        filename, content, output_format, processing_time, "success",
         warnings, chunks, mlflow_run_id,
     )
 
@@ -376,31 +366,8 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     opts = request.options
     output_format = opts.output_format
 
-    async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
-        data = await _call_docling(
-            client,
-            f"{base_url}/v1/convert/source",
-            json={
-                "sources": [{"kind": "http", "url": request.url}],
-                "options": {
-                    "to_formats": [output_format.value],
-                    "do_ocr": opts.do_ocr,
-                    "ocr_engine": opts.ocr_engine,
-                    "table_mode": opts.table_mode,
-                },
-            },
-        )
-
-    document = data.get("document", {})
-    content = _extract_content(document, output_format.value)
-    processing_time = data.get("processing_time", 0.0)
-    status = data.get("status", "success")
-
     filename = _sanitize_filename(request.url.rsplit("/", 1)[-1] or "document")
-
     warnings: list[str] = []
-    if not content.strip():
-        warnings.append("Document parsed but no content was extracted")
 
     source_bytes: bytes | None = None
     try:
@@ -414,16 +381,29 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
         logger.warning("Could not download source for archival: %s", request.url)
         warnings.append("Source document could not be archived")
 
-    chunks, mlflow_run_id = await _chunk_and_store(
-        base_url, filename, content, output_format,
+    if not source_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not download document from URL",
+        )
+
+    content, chunks, processing_time = await _convert_and_chunk(
+        base_url, filename, source_bytes, opts.chunk_max_tokens
+    )
+
+    if not content.strip():
+        warnings.append("Document parsed but no content was extracted")
+
+    chunks, mlflow_run_id = await _store_and_build(
+        filename, content, output_format,
         source_bytes=source_bytes,
         processing_time=processing_time,
-        chunk_max_tokens=opts.chunk_max_tokens,
+        chunks=chunks,
         warnings=warnings,
     )
 
     return _build_result(
-        filename, content, output_format, processing_time, status,
+        filename, content, output_format, processing_time, "success",
         warnings, chunks, mlflow_run_id,
     )
 
