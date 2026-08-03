@@ -227,9 +227,11 @@ Use `schema_transform` to convert columns into SFT training format:
 }]
 ```
 
-Always include the passthrough columns (`context`, `topic`, `difficulty`,
-`question_type`) in the processor template. Training uses `messages`;
-the other columns are retained for analysis and quality inspection.
+Include columns in the processor template that would be useful for
+post-analysis (e.g., source context, generation parameters). Training
+uses `messages`; extra columns are ignored by the trainer but
+preserved in the artifact for inspection. Default to preserving
+rather than dropping.
 
 The system prompt here defines how the TRAINED MODEL should behave at
 inference time. It must be domain-specific and match what the user's
