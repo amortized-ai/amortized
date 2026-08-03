@@ -79,8 +79,8 @@ Present three options as multiples of the chunk count:
 2) chunk_count x 20 — Recommended for production-quality models
 3) chunk_count x 30 — Best quality, thorough coverage
 
-Show the actual computed numbers. For example, with 120 chunks:
-"1200 samples (10x), 2400 samples (20x), or 3600 samples (30x)"
+Show the actual computed numbers. For example, with 50 chunks:
+"500 samples (10x), 1000 samples (20x), or 1500 samples (30x)"
 
 ### Step 7 — System prompt for the trained model
 
