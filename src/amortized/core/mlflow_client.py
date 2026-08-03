@@ -83,8 +83,13 @@ class MLflowClient:
         """
         if run_id in self._artifact_prefix_cache:
             return self._artifact_prefix_cache[run_id]
-        run = await self.get_run(run_id)
-        prefix = self._extract_artifact_prefix(run_id, run["info"]["artifact_uri"])
+        try:
+            run = await self.get_run(run_id)
+        except httpx.HTTPStatusError:
+            logger.error("Failed to resolve artifact prefix for run %s", run_id)
+            raise
+        artifact_uri = run["info"]["artifact_uri"]
+        prefix = self._extract_artifact_prefix(run_id, artifact_uri)
         self._artifact_prefix_cache[run_id] = prefix
         return prefix
 
@@ -92,7 +97,10 @@ class MLflowClient:
     def _extract_artifact_prefix(run_id: str, artifact_uri: str) -> str:
         suffix = f"/{run_id}/artifacts"
         if not artifact_uri.endswith(suffix):
-            return ""
+            raise ValueError(
+                f"Cannot extract artifact prefix: artifact_uri '{artifact_uri}' "
+                f"does not end with expected suffix '{suffix}'"
+            )
         experiment_location = artifact_uri[: -len(suffix)]
         artifact_root = experiment_location.rsplit("/", 1)[0] + "/"
         return artifact_uri[len(artifact_root):]
@@ -121,9 +129,9 @@ class MLflowClient:
             run_id: str = run_info["run_id"]
             artifact_uri = run_info.get("artifact_uri", "")
             if artifact_uri:
-                prefix = self._extract_artifact_prefix(run_id, artifact_uri)
-                if prefix:
-                    self._artifact_prefix_cache[run_id] = prefix
+                self._artifact_prefix_cache[run_id] = self._extract_artifact_prefix(
+                    run_id, artifact_uri
+                )
             return run_id
 
     async def upload_artifact(
@@ -135,7 +143,7 @@ class MLflowClient:
     ) -> None:
         """Upload an artifact to a run."""
         prefix = await self._resolve_artifact_prefix(run_id)
-        full_path = f"{prefix}/{path}" if prefix else path
+        full_path = f"{prefix}/{path}"
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.put(
                 self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
@@ -237,7 +245,7 @@ class MLflowClient:
     async def get_artifact(self, run_id: str, path: str) -> bytes:
         """Download an artifact's raw bytes."""
         prefix = await self._resolve_artifact_prefix(run_id)
-        full_path = f"{prefix}/{path}" if prefix else path
+        full_path = f"{prefix}/{path}"
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.get(
                 self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
