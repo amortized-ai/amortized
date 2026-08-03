@@ -519,7 +519,7 @@ export function uploadDataset(file: File): Promise<Job> {
 
 // --- Documents ---
 
-import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
+import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
 export function getDocuments(): Promise<DocumentRecord[]> {
   return get<DocumentRecord[]>("/api/v1/documents")
@@ -529,18 +529,25 @@ export function getDocumentContent(id: string): Promise<DocumentUploadResponse> 
   return get<DocumentUploadResponse>(`/api/v1/documents/${id}/content`)
 }
 
+export function getDocumentChunks(id: string): Promise<DocumentChunksResponse> {
+  return get<DocumentChunksResponse>(`/api/v1/documents/${id}/chunks`)
+}
+
 export function deleteDocument(id: string): Promise<void> {
   return del<void>(`/api/v1/documents/${id}`)
 }
 
 export async function uploadDocument(
   file: File,
-  options: { output_format?: string } = {},
+  options: { output_format?: string; chunk_max_tokens?: number } = {},
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData()
   formData.append("file", file)
   if (options.output_format) {
     formData.append("output_format", options.output_format)
+  }
+  if (options.chunk_max_tokens != null) {
+    formData.append("chunk_max_tokens", String(options.chunk_max_tokens))
   }
   return request<DocumentUploadResponse>("/api/v1/documents/convert", {
     method: "POST",
@@ -550,11 +557,14 @@ export async function uploadDocument(
 
 export function convertDocumentUrl(
   url: string,
-  options: { output_format?: string } = {},
+  options: { output_format?: string; chunk_max_tokens?: number } = {},
 ): Promise<DocumentUploadResponse> {
   return post<DocumentUploadResponse>("/api/v1/documents/convert/url", {
     url,
-    options: { output_format: options.output_format ?? "md" },
+    options: {
+      output_format: options.output_format ?? "md",
+      chunk_max_tokens: options.chunk_max_tokens ?? 2048,
+    },
   })
 }
 

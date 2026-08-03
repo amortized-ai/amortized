@@ -284,10 +284,25 @@ export interface DocumentUploadResponse {
   mlflow_run_id: string | null
   filename: string
   content: string
+  chunk_count: number
   format: string
   processing_time: number
   status: string
   warnings: string[]
+}
+
+export interface DocumentChunkItem {
+  chunk_index: number
+  text: string
+  num_tokens: number | null
+  headings: string[]
+  page_numbers: number[]
+}
+
+export interface DocumentChunksResponse {
+  document_id: string
+  filename: string
+  chunks: DocumentChunkItem[]
 }
 
 // --- Query helpers ---

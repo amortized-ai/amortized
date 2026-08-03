@@ -3,11 +3,12 @@ import { toast } from "sonner"
 import {
   getDocuments,
   getDocumentContent,
+  getDocumentChunks,
   uploadDocument,
   convertDocumentUrl,
   deleteDocument,
 } from "@/lib/api-client"
-import type { DocumentRecord, DocumentUploadResponse } from "@/types/api"
+import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
 export function useDocuments() {
   return useQuery<DocumentRecord[]>({
@@ -24,6 +25,14 @@ export function useDocumentContent(id: string | null) {
   })
 }
 
+export function useDocumentChunks(id: string | null) {
+  return useQuery<DocumentChunksResponse>({
+    queryKey: ["documents", id, "chunks"],
+    queryFn: () => getDocumentChunks(id!),
+    enabled: !!id,
+  })
+}
+
 export function useUploadDocument() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -32,7 +41,7 @@ export function useUploadDocument() {
       options,
     }: {
       file: File
-      options?: { output_format?: string }
+      options?: { output_format?: string; chunk_max_tokens?: number }
     }) => uploadDocument(file, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })
@@ -48,7 +57,7 @@ export function useConvertDocumentUrl() {
       options,
     }: {
       url: string
-      options?: { output_format?: string }
+      options?: { output_format?: string; chunk_max_tokens?: number }
     }) => convertDocumentUrl(url, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })

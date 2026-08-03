@@ -19,28 +19,6 @@ from amortized.models import JobStatus, JobType
 logger = logging.getLogger("amortized.worker")
 
 
-def _chunk_document(
-    content: str,
-    chunk_size: int = 2048,
-    chunk_overlap: int = 256,
-    tokenizer: str = "cl100k_base",
-) -> list[str]:
-    """Split document text into overlapping token-based chunks."""
-    import tiktoken
-
-    enc = tiktoken.get_encoding(tokenizer)
-    tokens = enc.encode(content)
-    if len(tokens) <= chunk_size:
-        return [content]
-    step = chunk_size - chunk_overlap
-    chunks: list[str] = []
-    for start in range(0, len(tokens), step):
-        chunk_tokens = tokens[start : start + chunk_size]
-        chunks.append(enc.decode(chunk_tokens))
-        if start + chunk_size >= len(tokens):
-            break
-    return chunks
-
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/data-designer:latest",
@@ -213,19 +191,28 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
         return False
 
 
-async def _fetch_document_content(document_id: str) -> str:
-    """Fetch parsed document content from MLflow artifact store."""
+async def _fetch_document_chunks(document_id: str) -> list[str]:
+    """Fetch pre-chunked document content from MLflow artifact store.
+
+    Uses chunks/metadata.json to discover chunk count, then fetches each
+    chunk file by index. Raises on failure so callers can fail the job.
+    """
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not document_id:
-        return ""
+        return []
 
-    try:
-        client = MLflowClient(tracking_uri)
-        content = await client.get_artifact_text(document_id, "parsed_content.md")
-        return content or ""
-    except Exception:
-        logger.warning("Failed to fetch document %s", document_id, exc_info=True)
-    return ""
+    client = MLflowClient(tracking_uri)
+    metadata_text = await client.get_artifact_text(document_id, "chunks/metadata.json")
+    if not metadata_text:
+        return []
+
+    metadata = json.loads(metadata_text)
+    chunks: list[str] = []
+    for i in range(len(metadata)):
+        text = await client.get_artifact_text(document_id, f"chunks/chunk_{i:03d}.md")
+        if text:
+            chunks.append(text)
+    return chunks
 
 
 async def _resolve_parent_artifacts(
@@ -416,19 +403,28 @@ async def _run_job(job: dict[str, Any]) -> None:
         if document_ids and config_mod.settings.mlflow_tracking_uri:
             seed_config = config.get("seed_config", {})
             source = seed_config.get("source", {})
-            chunk_size = source.pop("chunk_size", 2048)
-            chunk_overlap = source.pop("chunk_overlap", 256)
-            tokenizer = source.pop("tokenizer", "cl100k_base")
+            source.pop("chunk_size", None)
+            source.pop("chunk_overlap", None)
+            source.pop("tokenizer", None)
             source.pop("sentences_per_chunk", None)
             source.pop("min_text_length", None)
 
             for doc_id in document_ids:
-                content = await _fetch_document_content(doc_id)
-                if content:
-                    chunks = _chunk_document(content, chunk_size, chunk_overlap, tokenizer)
-                    for chunk_text in chunks:
-                        config_files[f"chunk_{chunk_count}.md"] = chunk_text
-                        chunk_count += 1
+                try:
+                    chunks = await _fetch_document_chunks(doc_id)
+                except Exception:
+                    error_msg = f"Failed to fetch chunks for document {doc_id}"
+                    logger.error("Job %s: %s", job_id, error_msg, exc_info=True)
+                    await _update_job(
+                        job_id,
+                        status=JobStatus.failed.value,
+                        completed_at=datetime.now(UTC).isoformat(),
+                        error=error_msg,
+                    )
+                    return
+                for chunk_text in chunks:
+                    config_files[f"chunk_{chunk_count}.md"] = chunk_text
+                    chunk_count += 1
 
             if chunk_count:
                 doc_setup_cmds = [
@@ -441,14 +437,12 @@ async def _run_job(job: dict[str, Any]) -> None:
                 seed_config["source"] = source
                 config["seed_config"] = seed_config
                 logger.info(
-                    "Job %s: chunked %d documents into %d chunks "
-                    "(size=%d, overlap=%d, tokenizer=%s)",
-                    job_id, len(document_ids), chunk_count,
-                    chunk_size, chunk_overlap, tokenizer,
+                    "Job %s: fetched %d pre-chunked chunks from %d document(s)",
+                    job_id, chunk_count, len(document_ids),
                 )
             else:
                 error_msg = (
-                    f"Job requires {len(document_ids)} document(s) but none"
+                    f"Job requires {len(document_ids)} document(s) but no chunks"
                     " could be fetched from MLflow. Check that the document"
                     " IDs are valid and MLflow is reachable."
                 )
