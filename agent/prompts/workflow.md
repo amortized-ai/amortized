@@ -124,6 +124,10 @@ After the user returns or asks about the job, call `get_job_detail` to
 check status. Based on the result, call `present_options` with appropriate
 next steps (continue to next phase, view results, try again, etc.).
 
+When an SDG job succeeds, call `get_dataset_samples` with the job's
+`mlflow_run_id` to show the user a preview of the generated data. Present
+2-3 sample QA pairs so they can verify quality before training.
+
 When the user is ready for the next stage (training after SDG),
 load the training skill guide and chain via `parent_job_id`.
 
@@ -198,6 +202,22 @@ with the selected model name to show its pricing.
 Before showing the training confirmation table, call
 `estimate_training_resources` with the final model size and method,
 then `show_vram_estimate` with the result to render the card.
+
+## Inspecting Datasets
+
+When the user asks about their datasets, generated data, or wants to
+compare datasets:
+
+1. Call `list_datasets` to show available datasets (use `search` param
+   to filter by name or topic if the user specified one)
+2. Call `get_dataset_samples` with the `run_id` to preview actual rows
+3. Show 2-3 representative samples in a readable format
+
+When comparing datasets, call `get_dataset_samples` for each and
+highlight differences in quality, coverage, or format.
+
+When the user asks "show me what was generated" after an SDG job, use
+the job's `mlflow_run_id` to call `get_dataset_samples`.
 
 ## SDG Job Config Format
 

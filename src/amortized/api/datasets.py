@@ -1,7 +1,9 @@
-"""Dataset upload endpoint."""
+"""Dataset management — upload, list, inspect, and sample datasets."""
 
 from __future__ import annotations
 
+import io
+import json
 import logging
 import os
 import re
@@ -11,7 +13,7 @@ from typing import Any
 
 import aiosqlite
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
 from amortized.config import settings
 from amortized.core.jobs import create_job
@@ -118,3 +120,171 @@ async def upload_dataset(
         raise HTTPException(status_code=500, detail="Failed to update job record")
 
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Query helpers
+# ---------------------------------------------------------------------------
+
+def _mlflow_client() -> MLflowClient:
+    uri = settings.mlflow_tracking_uri
+    if not uri:
+        raise HTTPException(status_code=503, detail="MLflow tracking URI not configured")
+    return MLflowClient(uri)
+
+
+def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
+    tags: dict[str, str] = {}
+    for t in run.get("data", {}).get("tags", []):
+        tags[t["key"]] = t["value"]
+    info = run.get("info", {})
+    return {
+        "run_id": info.get("run_id", ""),
+        "name": tags.get("dataset_name", info.get("run_name", "")),
+        "topic": tags.get("dataset_topic", ""),
+        "source": tags.get("source", "sdg"),
+        "samples": tags.get("num_samples", ""),
+        "teacher_model": tags.get("teacher_model", ""),
+        "job_id": tags.get("job_id", ""),
+        "experiment_id": info.get("experiment_id", ""),
+        "created_at": info.get("start_time"),
+    }
+
+
+async def _get_all_experiment_ids(mlflow: MLflowClient) -> list[str]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            f"{mlflow._base}/api/2.0/mlflow/experiments/search",
+            json={"max_results": 200},
+        )
+        resp.raise_for_status()
+        return [e["experiment_id"] for e in resp.json().get("experiments", [])]
+
+
+# ---------------------------------------------------------------------------
+# List / search datasets
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "",
+    operation_id="list_datasets",
+    summary="List datasets, optionally filtered by name or topic.",
+)
+async def list_datasets(
+    search: str = Query("", description="Filter by name or topic (substring)"),
+) -> list[dict[str, Any]]:
+    mlflow = _mlflow_client()
+    exp_ids = await _get_all_experiment_ids(mlflow)
+    if not exp_ids:
+        return []
+    sdg_runs = await mlflow.search_runs(
+        exp_ids,
+        filter_string="tags.job_type = 'sdg'",
+        order_by=["start_time DESC"],
+        max_results=200,
+    )
+    upload_runs = await mlflow.search_runs(
+        exp_ids,
+        filter_string="tags.job_type = 'upload'",
+        order_by=["start_time DESC"],
+        max_results=200,
+    )
+    seen: set[str] = set()
+    runs: list[dict[str, Any]] = []
+    for r in sdg_runs + upload_runs:
+        rid = r.get("info", {}).get("run_id", "")
+        if rid and rid not in seen:
+            seen.add(rid)
+            runs.append(r)
+    runs.sort(key=lambda r: r.get("info", {}).get("start_time", 0), reverse=True)
+    results = [_run_to_summary(r) for r in runs]
+    if search:
+        q = search.lower()
+        results = [
+            d for d in results
+            if q in d["name"].lower() or q in d["topic"].lower()
+        ]
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Get dataset detail
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{run_id}",
+    operation_id="get_dataset",
+    summary="Get full metadata and artifact list for a dataset.",
+)
+async def get_dataset(run_id: str) -> dict[str, Any]:
+    mlflow = _mlflow_client()
+    try:
+        run = await mlflow.get_run(run_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Dataset not found") from None
+        raise
+    summary = _run_to_summary(run)
+    artifacts = await mlflow.list_artifacts(run_id, "generated_data")
+    summary["artifacts"] = [
+        {"path": a.get("path", ""), "file_size": a.get("file_size", 0)}
+        for a in artifacts
+    ]
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Get dataset samples
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{run_id}/samples",
+    operation_id="get_dataset_samples",
+    summary="Preview rows from a dataset (parquet or JSONL).",
+)
+async def get_dataset_samples(
+    run_id: str,
+    limit: int = Query(5, ge=1, le=50, description="Max rows to return"),
+) -> list[dict[str, Any]]:
+    mlflow = _mlflow_client()
+    artifacts = await mlflow.list_artifacts(run_id, "generated_data")
+    if not artifacts:
+        raise HTTPException(status_code=404, detail="No artifacts found")
+
+    parquet = next((a for a in artifacts if a.get("path", "").endswith(".parquet")), None)
+    jsonl = next((a for a in artifacts if a.get("path", "").endswith(".jsonl")), None)
+    target = parquet or jsonl
+    if not target:
+        raise HTTPException(status_code=404, detail="No parquet or JSONL artifact found")
+
+    path = target["path"]
+
+    run = await mlflow.get_run(run_id)
+    artifact_uri = run.get("info", {}).get("artifact_uri", "")
+    if not artifact_uri or not artifact_uri.startswith("s3://"):
+        raise HTTPException(status_code=502, detail="Cannot resolve artifact storage")
+
+    from amortized.api.artifacts import _get_s3_client
+
+    parts = artifact_uri.replace("s3://", "").split("/", 1)
+    bucket = parts[0]
+    prefix = parts[1] if len(parts) > 1 else ""
+    s3_key = f"{prefix}/{path}"
+
+    try:
+        s3 = _get_s3_client()
+        obj = s3.get_object(Bucket=bucket, Key=s3_key)
+        data = obj["Body"].read()
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Artifact not found: {path}") from exc
+
+    if path.endswith(".parquet"):
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(io.BytesIO(data))
+        records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
+    else:
+        lines = data.decode("utf-8").strip().split("\n")
+        records = [json.loads(line) for line in lines[:limit]]
+
+    return records
