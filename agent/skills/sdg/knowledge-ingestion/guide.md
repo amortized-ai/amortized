@@ -216,7 +216,7 @@ Use `schema_transform` to convert columns into SFT training format:
   "template": {
     "messages": [
       {"role": "system", "content": "<domain-specific system prompt for the trained model>"},
-      {"role": "user", "content": "{{ question }}"},
+      {"role": "user", "content": "{{ content }}\n\n{{ question }}"},
       {"role": "assistant", "content": "{{ answer }}"}
     ],
     "context": "{{ content }}",

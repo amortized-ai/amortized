@@ -70,7 +70,7 @@
             },
             {
               "role": "user",
-              "content": "{{ question }}"
+              "content": "{{ content }}\n\n{{ question }}"
             },
             {
               "role": "assistant",
