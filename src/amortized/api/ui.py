@@ -123,38 +123,3 @@ class SignalPhaseResponse(BaseModel):
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
     return SignalPhaseResponse(phase=body.phase, step=body.step)
-
-
-class SignalProgressRequest(BaseModel):
-    phase: str = Field(
-        ..., description="Current workflow phase: 'sdg', 'training', or 'eval'"
-    )
-    step_id: str = Field(
-        ..., description="Stable snake_case step identifier, e.g. 'check_models'"
-    )
-    label: str = Field(
-        ..., description="Human-readable step label, e.g. 'Checking available models'"
-    )
-    status: str = Field(
-        "active",
-        description="Step status: 'active' or 'completed'",
-    )
-
-
-class SignalProgressResponse(BaseModel):
-    phase: str
-    step_id: str
-    label: str
-    status: str
-
-
-@router.post(
-    "/signal_progress",
-    response_model=SignalProgressResponse,
-    operation_id="signal_progress",
-    summary="Signal the current workflow step to the chat UI for dynamic progress display",
-)
-async def signal_progress(body: SignalProgressRequest) -> SignalProgressResponse:
-    return SignalProgressResponse(
-        phase=body.phase, step_id=body.step_id, label=body.label, status=body.status
-    )

@@ -2,7 +2,6 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Amortized",
-    "description": "Control plane for building task models",
     "version": "1.0.0"
   },
   "paths": {
@@ -650,161 +649,6 @@
         }
       }
     },
-    "/api/v1/datasets": {
-      "get": {
-        "tags": [
-          "datasets"
-        ],
-        "summary": "List datasets, optionally filtered by name or topic.",
-        "operationId": "list_datasets",
-        "parameters": [
-          {
-            "name": "search",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "Filter by name or topic (substring)",
-              "default": "",
-              "title": "Search"
-            },
-            "description": "Filter by name or topic (substring)"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": true
-                  },
-                  "title": "Response List Datasets"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/datasets/{run_id}": {
-      "get": {
-        "tags": [
-          "datasets"
-        ],
-        "summary": "Get full metadata and artifact list for a dataset.",
-        "operationId": "get_dataset",
-        "parameters": [
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Run Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Dataset"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/datasets/{run_id}/samples": {
-      "get": {
-        "tags": [
-          "datasets"
-        ],
-        "summary": "Preview rows from a dataset (parquet or JSONL).",
-        "operationId": "get_dataset_samples",
-        "parameters": [
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Run Id"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 50,
-              "minimum": 1,
-              "description": "Max rows to return",
-              "default": 5,
-              "title": "Limit"
-            },
-            "description": "Max rows to return"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": true
-                  },
-                  "title": "Response Get Dataset Samples"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/documents/convert": {
       "post": {
         "tags": [
@@ -850,18 +694,6 @@
               "type": "string",
               "default": "fast",
               "title": "Table Mode"
-            }
-          },
-          {
-            "name": "chunk_max_tokens",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 8192,
-              "minimum": 64,
-              "default": 2048,
-              "title": "Chunk Max Tokens"
             }
           }
         ],
@@ -1007,13 +839,13 @@
         }
       }
     },
-    "/api/v1/documents/{document_id}/chunks": {
+    "/api/v1/documents/{document_id}/sections": {
       "get": {
         "tags": [
           "documents"
         ],
-        "summary": "Get chunks for a document.",
-        "operationId": "get_document_chunks",
+        "summary": "Get section headings and structure of a document.",
+        "operationId": "get_document_sections",
         "parameters": [
           {
             "name": "document_id",
@@ -1031,7 +863,62 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentChunks"
+                  "$ref": "#/components/schemas/DocumentSections"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/sections/by-heading": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get the full content of a document section by heading.",
+        "operationId": "get_section_content",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "heading",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Section heading to retrieve",
+              "title": "Heading"
+            },
+            "description": "Section heading to retrieve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Section Content"
                 }
               }
             }
@@ -1560,13 +1447,6 @@
             "title": "Table Mode",
             "description": "Table detection mode: fast, accurate",
             "default": "fast"
-          },
-          "chunk_max_tokens": {
-            "type": "integer",
-            "minimum": 64.0,
-            "title": "Chunk Max Tokens",
-            "description": "Max tokens per chunk",
-            "default": 2048
           }
         },
         "type": "object",
@@ -1588,81 +1468,6 @@
           "url"
         ],
         "title": "ConvertUrlRequest"
-      },
-      "DocumentChunk": {
-        "properties": {
-          "chunk_index": {
-            "type": "integer",
-            "title": "Chunk Index",
-            "description": "Chunk position in document"
-          },
-          "text": {
-            "type": "string",
-            "title": "Text",
-            "description": "Chunk content",
-            "default": ""
-          },
-          "num_tokens": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Num Tokens",
-            "description": "Token count"
-          },
-          "headings": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Headings",
-            "description": "Section headings"
-          },
-          "page_numbers": {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array",
-            "title": "Page Numbers",
-            "description": "Source pages"
-          }
-        },
-        "type": "object",
-        "required": [
-          "chunk_index"
-        ],
-        "title": "DocumentChunk"
-      },
-      "DocumentChunks": {
-        "properties": {
-          "document_id": {
-            "type": "string",
-            "title": "Document Id",
-            "description": "Document identifier"
-          },
-          "filename": {
-            "type": "string",
-            "title": "Filename",
-            "description": "Original filename",
-            "default": ""
-          },
-          "chunks": {
-            "items": {
-              "$ref": "#/components/schemas/DocumentChunk"
-            },
-            "type": "array",
-            "title": "Chunks"
-          }
-        },
-        "type": "object",
-        "required": [
-          "document_id"
-        ],
-        "title": "DocumentChunks"
       },
       "DocumentResult": {
         "properties": {
@@ -1700,13 +1505,6 @@
             "description": "Parsed document content",
             "default": ""
           },
-          "chunk_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Chunk Count",
-            "description": "Number of chunks created",
-            "default": 0
-          },
           "processing_time": {
             "type": "number",
             "minimum": 0.0,
@@ -1734,6 +1532,71 @@
           "document_id"
         ],
         "title": "DocumentResult"
+      },
+      "DocumentSection": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading",
+            "description": "Section heading text"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level",
+            "description": "Heading depth (1 = #, 2 = ##, etc.)"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count",
+            "description": "Character count of section content"
+          },
+          "preview": {
+            "type": "string",
+            "title": "Preview",
+            "description": "First ~200 chars of the section content",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading",
+          "level",
+          "char_count"
+        ],
+        "title": "DocumentSection"
+      },
+      "DocumentSections": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "Document identifier"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "total_chars": {
+            "type": "integer",
+            "title": "Total Chars",
+            "description": "Total document character count",
+            "default": 0
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id"
+        ],
+        "title": "DocumentSections"
       },
       "DocumentSummary": {
         "properties": {
@@ -1776,12 +1639,6 @@
             ],
             "title": "Created At",
             "description": "When the document was processed"
-          },
-          "content_available": {
-            "type": "boolean",
-            "title": "Content Available",
-            "description": "Whether the parsed content artifact exists",
-            "default": true
           }
         },
         "type": "object",
@@ -2028,8 +1885,7 @@
         "enum": [
           "training",
           "sdg",
-          "upload",
-          "eval"
+          "upload"
         ],
         "title": "JobType"
       },
