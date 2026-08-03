@@ -35,7 +35,7 @@ import {
   Hash,
   Trash2,
 } from "lucide-react"
-import { useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
+import { useDataset, useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { DatasetRecord, DatasetSample } from "@/types/api"
 
@@ -53,7 +53,9 @@ export function DatasetDetailPanel({
   const queryClient = useQueryClient()
   const deleteMutation = useDeleteDataset()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const { data: fullDataset } = useDataset(dataset?.run_id ?? null)
   if (!dataset) return null
+  const resolved = fullDataset ?? dataset
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,7 +154,7 @@ export function DatasetDetailPanel({
             value="overview"
             className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
           >
-            <OverviewTab dataset={dataset} onClose={() => onOpenChange(false)} />
+            <OverviewTab dataset={resolved} onClose={() => onOpenChange(false)} />
           </TabsContent>
 
           <TabsContent
@@ -166,7 +168,7 @@ export function DatasetDetailPanel({
             value="config"
             className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
           >
-            <ConfigTab dataset={dataset} />
+            <ConfigTab dataset={resolved} />
           </TabsContent>
         </Tabs>
 
