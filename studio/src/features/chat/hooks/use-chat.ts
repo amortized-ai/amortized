@@ -106,7 +106,7 @@ const UI_TOOLS = new Set([
   "create_job",
 ])
 
-const ALL_TURN_TOOLS = new Set(["signal_progress", "signal_phase"])
+const ALL_TURN_TOOLS = new Set(["signal_phase"])
 
 function normalizeToolName(raw: string): string {
   return raw.replace(/^(?:mcp_amortized__|amortized_)/, "")
@@ -121,6 +121,7 @@ function extractSessionData(
   sessionMessages: OpenCodeResponse[],
   existingTools: ToolResult[],
 ): { tools: ToolResult[]; text: string } {
+  const seen = new Set(existingTools.map((t) => t.name.toLowerCase()))
   const tools = [...existingTools]
   const textParts: string[] = []
 
@@ -346,21 +347,12 @@ export function useChat() {
         const toolResults = session.tools
 
         let phase: string | null = null
-        const progressTool = [...toolResults].reverse().find((t) => t.name === "signal_progress")
-        if (progressTool?.result) {
+        const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
+        if (phaseTool?.result) {
           try {
-            const p = typeof progressTool.result === "string" ? JSON.parse(progressTool.result) : progressTool.result
-            if (p?.phase) phase = p.step_id ? `${p.phase}:${p.step_id}` : p.phase
+            const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+            if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
           } catch { /* ignore */ }
-        }
-        if (!phase) {
-          const phaseTool = toolResults.find((t) => t.name === "signal_phase")
-          if (phaseTool?.result) {
-            try {
-              const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-              if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-            } catch { /* ignore */ }
-          }
         }
         const responseContent = session.text || parsed.content
 

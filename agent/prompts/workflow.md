@@ -253,28 +253,24 @@ When a job fails:
 
 ## Progress Signaling (MANDATORY)
 
-On EVERY response during a workflow, call BOTH `signal_phase` and
-`signal_progress` to update the UI.
+On EVERY response during a workflow, call `signal_phase` to update
+the progress bar. The frontend maps each step to a descriptive label
+automatically — you just need to report which step you're on.
 
-### signal_phase
-
-Tells the UI which phase/step you're in. Call once per response.
+Call `signal_phase` ONCE per response with the current phase and step,
+then STOP — do not loop on it. If answering a general question (not
+part of a workflow), omit the call.
 
 **Phases:** `sdg`, `training`
 
-**Steps:** `understand_task`, `load_skill`, `gather_requirements`,
-`estimate_cost`, `confirm`, `execute`, `review`
-
-### signal_progress
-
-Drives the dynamic progress bar. The frontend accumulates calls into
-a growing checklist. Call it on EVERY workflow response alongside
-`signal_phase`. Describe what you're currently doing — the step IDs
-and labels are yours to choose, not a fixed list.
-
-Call both `signal_phase` and `signal_progress` ONCE per response, then
-STOP — do not loop on them. If answering a general question (not part
-of a workflow), omit both calls.
+**Steps (in order):**
+1. `understand_task` — when you first identify what the user wants
+2. `load_skill` — when you load the sub-skill guide
+3. `gather_requirements` — while asking the user for parameters
+4. `estimate_cost` — when checking models, comparing pricing
+5. `confirm` — when presenting the summary table
+6. `execute` — when submitting the job
+7. `review` — when checking job status or suggesting next steps
 
 ## Honest Failure Handling
 

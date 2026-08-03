@@ -7,13 +7,6 @@ const PHASE_LABELS: Record<PlanPhase, string> = {
   eval: "Evaluation",
 }
 
-interface ProgressEntry {
-  stepId: string
-  label: string
-  status: "active" | "completed"
-  phase: PlanPhase
-}
-
 function isValidPhase(s: string): s is PlanPhase {
   return s === "sdg" || s === "training" || s === "eval"
 }
@@ -28,44 +21,41 @@ function tryParseToolResult(result: string): Record<string, unknown> | null {
 }
 
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
-  const steps = new Map<string, ProgressEntry>()
   let latestPhase: PlanPhase | null = null
+  let highestStepIdx = -1
 
   for (const msg of messages) {
     for (const tool of msg.toolResults) {
-      if (tool.name !== "signal_progress" && tool.name !== "signal progress") continue
+      if (tool.name !== "signal_phase" && tool.name !== "signal phase") continue
       const data = tryParseToolResult(tool.result)
       if (!data) continue
       const phase = String(data.phase ?? "")
       if (!isValidPhase(phase)) continue
-      const stepId = String(data.step_id ?? "")
-      const label = String(data.label ?? "")
-      const status = data.status === "completed" ? "completed" : "active"
-      if (!stepId || !label) continue
+      const step = String(data.step ?? "")
 
       if (latestPhase && phase !== latestPhase) {
-        steps.clear()
+        highestStepIdx = -1
       }
       latestPhase = phase
-      steps.set(stepId, { stepId, label, status, phase })
+
+      const config = STATIC_PHASE_CONFIG[phase]
+      if (!config) continue
+      const idx = resolveStepIndex(config.steps, step)
+      if (idx > highestStepIdx) highestStepIdx = idx
     }
   }
 
-  if (!latestPhase || steps.size === 0) return null
+  if (!latestPhase || highestStepIdx < 0) return null
 
-  const stepList = [...steps.values()]
-  const lastActiveIdx = stepList.findLastIndex((s) => s.status === "active")
-  if (lastActiveIdx > 0) {
-    for (let i = 0; i < lastActiveIdx; i++) {
-      stepList[i]!.status = "completed"
-    }
-  }
+  const config = STATIC_PHASE_CONFIG[latestPhase]
+  if (!config) return null
 
-  return {
-    phase: latestPhase,
-    label: PHASE_LABELS[latestPhase],
-    steps: stepList.map((s): PlanStep => ({ label: s.label, status: s.status })),
-  }
+  const steps: PlanStep[] = config.steps.slice(0, highestStepIdx + 1).map((def, i) => ({
+    label: def.label,
+    status: i < highestStepIdx ? "completed" as const : "active" as const,
+  }))
+
+  return { phase: latestPhase, label: PHASE_LABELS[latestPhase], steps }
 }
 
 interface StepDef {
@@ -74,17 +64,23 @@ interface StepDef {
 }
 
 const SDG_STEPS: StepDef[] = [
-  { label: "Understand task", matchSteps: ["understand_task", "load_skill"] },
-  { label: "Configure", matchSteps: ["gather_requirements"] },
-  { label: "Estimate cost", matchSteps: ["estimate_cost", "confirm"] },
-  { label: "Generate data", matchSteps: ["execute", "review"] },
+  { label: "Understanding your task", matchSteps: ["understand_task"] },
+  { label: "Loading skill guide", matchSteps: ["load_skill"] },
+  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
+  { label: "Checking models & estimating cost", matchSteps: ["estimate_cost"] },
+  { label: "Reviewing configuration", matchSteps: ["confirm"] },
+  { label: "Submitting job", matchSteps: ["execute"] },
+  { label: "Checking results", matchSteps: ["review"] },
 ]
 
 const TRAINING_STEPS: StepDef[] = [
-  { label: "Select model", matchSteps: ["understand_task", "load_skill"] },
-  { label: "Configure", matchSteps: ["gather_requirements"] },
-  { label: "Estimate cost", matchSteps: ["estimate_cost", "confirm"] },
-  { label: "Train model", matchSteps: ["execute", "review"] },
+  { label: "Understanding your task", matchSteps: ["understand_task"] },
+  { label: "Loading training guide", matchSteps: ["load_skill"] },
+  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
+  { label: "Selecting model & estimating cost", matchSteps: ["estimate_cost"] },
+  { label: "Reviewing configuration", matchSteps: ["confirm"] },
+  { label: "Submitting training job", matchSteps: ["execute"] },
+  { label: "Checking results", matchSteps: ["review"] },
 ]
 
 const STATIC_PHASE_CONFIG: Partial<Record<PlanPhase, { label: string; steps: StepDef[] }>> = {
