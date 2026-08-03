@@ -10,7 +10,6 @@ import type {
   JobLogsResponse,
   JobRequest,
   MlflowGatewayRoute,
-  MlflowGatewayRouteCreate,
   MlflowMetricHistoryEntry,
   MlflowModelVersionsResponse,
   MlflowRegisteredModelsResponse,
@@ -426,7 +425,7 @@ export function renameMlflowRegisteredModel(name: string, newName: string): Prom
 
 // --- MLflow: AI Gateway (v3 endpoints API) ---
 
-import type { MlflowGatewayEndpoint, MlflowGatewayConnection, MlflowGatewayConnectionCreate } from "@/types/api"
+import type { MlflowGatewayEndpoint } from "@/types/api"
 
 export async function getMlflowGatewayRoutes(): Promise<{ routes: MlflowGatewayRoute[] }> {
   const data = await get<{ endpoints: MlflowGatewayEndpoint[] }>(
@@ -445,65 +444,6 @@ export async function getMlflowGatewayRoutes(): Promise<{ routes: MlflowGatewayR
     }
   })
   return { routes }
-}
-
-export async function createMlflowGatewayRoute(data: MlflowGatewayRouteCreate): Promise<MlflowGatewayRoute> {
-  const resp = await post<MlflowGatewayEndpoint>(
-    "/mlflow/api/3.0/mlflow/gateway/endpoints/create",
-    {
-      name: data.name,
-      model_configs: [{
-        provider: data.model.provider,
-        model_name: data.model.name,
-        secret_name: data.secret_name,
-      }],
-    }
-  )
-  return {
-    name: resp.name,
-    route_type: data.route_type,
-    model: data.model,
-    endpoint_id: resp.endpoint_id,
-  }
-}
-
-export async function deleteMlflowGatewayRoute(name: string): Promise<void> {
-  const data = await get<{ endpoints: MlflowGatewayEndpoint[] }>(
-    "/mlflow/api/3.0/mlflow/gateway/endpoints/list"
-  )
-  const ep = data.endpoints?.find((e) => e.name === name)
-  if (ep) {
-    await del<void>(`/mlflow/api/3.0/mlflow/gateway/endpoints/delete?endpoint_id=${encodeURIComponent(ep.endpoint_id)}`)
-  }
-}
-
-// --- MLflow: AI Gateway Connections (v3 secrets API) ---
-
-export async function getMlflowGatewayConnections(): Promise<MlflowGatewayConnection[]> {
-  const data = await get<{ secrets: MlflowGatewayConnection[] }>(
-    "/mlflow/api/3.0/mlflow/gateway/secrets/list"
-  )
-  return data.secrets ?? []
-}
-
-export async function createMlflowGatewayConnection(data: MlflowGatewayConnectionCreate): Promise<MlflowGatewayConnection> {
-  const resp = await post<{ secret: MlflowGatewayConnection }>(
-    "/mlflow/api/3.0/mlflow/gateway/secrets/create",
-    {
-      secret_name: data.name,
-      secret_value: { api_key: data.apiKey },
-      provider: data.provider,
-      created_by: "studio",
-    }
-  )
-  if (!resp.secret) {
-    throw new Error("createMlflowGatewayConnection: response missing 'secret' key")
-  }
-  return resp.secret
-}
-
-export async function deleteMlflowGatewayConnection(secretId: string): Promise<void> {
-  await del<void>("/mlflow/api/3.0/mlflow/gateway/secrets/delete", { secret_id: secretId })
 }
 
 // --- Datasets ---
