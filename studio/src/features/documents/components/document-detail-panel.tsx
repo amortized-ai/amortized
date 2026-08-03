@@ -175,7 +175,7 @@ function PanelBody({ document }: { document: DocumentRecord }) {
         value="info"
         className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
       >
-        <InfoTab document={document} content={content} />
+        <InfoTab document={document} content={content} chunksData={chunksData} />
       </TabsContent>
     </Tabs>
   )
@@ -236,9 +236,11 @@ function ContentTab({
 function InfoTab({
   document,
   content,
+  chunksData,
 }: {
   document: DocumentRecord
   content: import("@/types/api").DocumentUploadResponse | undefined
+  chunksData: import("@/types/api").DocumentChunksResponse | undefined
 }) {
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
@@ -324,12 +326,32 @@ function InfoTab({
           }
         />
       )}
+      {chunksData && chunksData.chunks.length > 0 && (() => {
+        const totalTokens = chunksData.chunks.reduce(
+          (sum, c) => sum + (c.num_tokens ?? 0), 0
+        )
+        const maxTokens = Math.max(
+          ...chunksData.chunks.map((c) => c.num_tokens ?? 0)
+        )
+        return (
+          <>
+            <MetadataRow
+              label="Total Tokens"
+              value={totalTokens.toLocaleString()}
+            />
+            <MetadataRow
+              label="Chunks"
+              value={chunksData.chunks.length}
+            />
+            <MetadataRow
+              label="Max Tokens per Chunk"
+              value={maxTokens.toLocaleString()}
+            />
+          </>
+        )
+      })()}
       {content && (
         <>
-          <MetadataRow
-            label="Content Length"
-            value={`${content.content.length.toLocaleString()} characters`}
-          />
           <MetadataRow
             label="Processing Time"
             value={`${content.processing_time.toFixed(1)}s`}
