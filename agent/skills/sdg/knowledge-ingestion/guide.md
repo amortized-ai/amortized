@@ -64,22 +64,14 @@ Present ONLY those models as options. Do NOT suggest models that aren't
 returned by `list_models` — they won't work. If no models are returned,
 stop and direct the user to Settings -> AI Gateway.
 
-### Step 6 — Chunking granularity
-
-How many tokens per chunk?
-Default: 2048 tokens with 256-token overlap (cl100k_base tokenizer).
-Larger chunks = broader context, smaller = more focused QA pairs.
-
-### Step 7 — How many samples?
+### Step 6 — How many samples?
 
 Calculate based on document coverage.
 
 **CRITICAL: The minimum sample count = number of document chunks.**
-Each chunk gets at least one QA pair. If a document produces 100 chunks,
-the minimum is 100 samples — anything less means parts of the document
-won't be covered at all.
-
-Use `get_document_chunks(doc_id)` to get the actual chunk count.
+Each chunk gets at least one QA pair. Documents are chunked at upload
+time by docling-serve. Use `get_document_chunks(doc_id)` to get the
+actual chunk count.
 
 Present options in the hundreds-to-thousands range. More samples =
 better model quality. The chunk count is the floor, not the target.
@@ -92,7 +84,7 @@ NEVER suggest fewer than 100 samples. Typical production runs use
 1000-3000 samples. Each chunk gets sampled multiple times with
 different topic/difficulty/question_type combinations.
 
-### Step 8 — System prompt for the trained model
+### Step 7 — System prompt for the trained model
 
 Do NOT ask the user to write a system prompt. Generate a domain-specific
 default based on the document content and include it in the config.
@@ -114,7 +106,6 @@ The SDG job config is submitted as:
   "config": {
     "document_ids": [...],
     "num_records": N,
-    "seed_config": { "source": { ... } },
     "model_configs": [ ... ],
     "columns": [ ... ],
     "processors": [ ... ]
@@ -130,26 +121,6 @@ markdown from MLflow for processing.
 ```json
 "document_ids": ["59d4ba25a8864e7fbbbb35cfc09603a1"]
 ```
-
-### seed_config
-
-Controls how documents are chunked. The worker splits documents into
-token-based chunks before generation. Each chunk becomes `{{ content }}`
-in column prompts.
-
-```json
-"seed_config": {
-  "source": {
-    "chunk_size": 2048,
-    "chunk_overlap": 256,
-    "tokenizer": "cl100k_base"
-  }
-}
-```
-
-- `chunk_size`: tokens per chunk (default 2048, using cl100k_base / GPT tokenizer)
-- `chunk_overlap`: overlap between chunks to prevent boundary issues (default 256)
-- `tokenizer`: tiktoken encoding name (default cl100k_base)
 
 ### model_configs
 
@@ -262,7 +233,7 @@ Before submitting the job, verify:
 - [ ] Question system prompt includes the answerability constraint
 - [ ] Answer system prompt includes "answerable from the provided context"
 - [ ] System prompt in the SFT processor is domain-specific
-- [ ] `num_records` >= estimated chunk count
+- [ ] `num_records` >= document chunk count (from `get_document_chunks`)
 
 ## After SDG — Training
 

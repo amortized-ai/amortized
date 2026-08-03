@@ -403,11 +403,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         if document_ids and config_mod.settings.mlflow_tracking_uri:
             seed_config = config.get("seed_config", {})
             source = seed_config.get("source", {})
-            source.pop("chunk_size", None)
-            source.pop("chunk_overlap", None)
-            source.pop("tokenizer", None)
-            source.pop("sentences_per_chunk", None)
-            source.pop("min_text_length", None)
 
             for doc_id in document_ids:
                 try:

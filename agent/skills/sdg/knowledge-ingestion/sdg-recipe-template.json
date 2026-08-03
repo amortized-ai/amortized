@@ -3,13 +3,6 @@
   "config": {
     "document_ids": ["<DOCUMENT_ID>"],
     "num_records": 100,
-    "seed_config": {
-      "source": {
-        "chunk_size": 2048,
-        "chunk_overlap": 256,
-        "tokenizer": "cl100k_base"
-      }
-    },
     "model_configs": [
       {
         "alias": "text",
