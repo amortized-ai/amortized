@@ -70,6 +70,9 @@ Documents are chunked at upload time by docling-serve. Use
 `get_document_chunks(doc_id)` to get the chunk count and token
 statistics.
 
+Use ALL chunks in the calculation — the worker sends every chunk
+to DataDesigner, so do not filter or exclude any chunks here.
+
 The goal is for total training tokens to be a multiple of total
 source tokens. Research suggests ~5x source coverage as a good
 target. Compute the per-chunk multiplier from the document's
@@ -78,9 +81,9 @@ actual chunk statistics:
 ```
 avg_qa_tokens ≈ 200  (empirical median across past runs; ranges 80-300
                       depending on prompt style and answer depth)
-mean_chunk_tokens = mean of num_tokens across all chunks
+mean_chunk_tokens = mean of num_tokens across ALL chunks
 multiplier = coverage × mean_chunk_tokens / avg_qa_tokens
-num_samples = multiplier × num_chunks
+num_samples = multiplier × num_chunks  (num_chunks = total, not filtered)
 ```
 
 Present three coverage tiers and show the computed sample counts:
