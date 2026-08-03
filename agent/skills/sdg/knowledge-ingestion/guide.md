@@ -78,8 +78,8 @@ actual chunk statistics:
 ```
 avg_qa_tokens ≈ 200  (empirical median across past runs; ranges 80-300
                       depending on prompt style and answer depth)
-median_chunk_tokens = median of num_tokens across all chunks
-multiplier = coverage × median_chunk_tokens / avg_qa_tokens
+mean_chunk_tokens = mean of num_tokens across all chunks
+multiplier = coverage × mean_chunk_tokens / avg_qa_tokens
 num_samples = multiplier × num_chunks
 ```
 
@@ -89,12 +89,12 @@ Present three coverage tiers and show the computed sample counts:
 2) 5x source coverage — Recommended (research-backed default)
 3) 8x source coverage — Best quality, thorough coverage
 
-For example, a document with 50 chunks of median 400 tokens:
+For example, a document with 50 chunks of mean 400 tokens:
 - 3x: multiplier = 3 × 400 / 200 = 6x → 300 samples
 - 5x: multiplier = 5 × 400 / 200 = 10x → 500 samples
 - 8x: multiplier = 8 × 400 / 200 = 16x → 800 samples
 
-A document with 20 chunks of median 2000 tokens:
+A document with 20 chunks of mean 2000 tokens:
 - 3x: multiplier = 3 × 2000 / 200 = 30x → 600 samples
 - 5x: multiplier = 5 × 2000 / 200 = 50x → 1000 samples
 - 8x: multiplier = 8 × 2000 / 200 = 80x → 1600 samples
