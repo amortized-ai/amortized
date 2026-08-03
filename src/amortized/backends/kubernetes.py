@@ -139,6 +139,7 @@ class KubernetesBackend:
             V1EmptyDirVolumeSource,
             V1EnvVar,
             V1EnvVarSource,
+            V1HostPathVolumeSource,
             V1PodSecurityContext,
             V1PodSpec,
             V1ResourceRequirements,
@@ -148,6 +149,7 @@ class KubernetesBackend:
             V1VolumeMount,
         )
 
+        work_host_path = f"/var/local-path-provisioner/job-work/{spec.job_id}"
         volumes = [
             V1Volume(
                 name="config",
@@ -155,7 +157,9 @@ class KubernetesBackend:
             ),
             V1Volume(
                 name="work",
-                empty_dir=V1EmptyDirVolumeSource(),
+                host_path=V1HostPathVolumeSource(
+                    path=work_host_path, type="DirectoryOrCreate",
+                ),
             ),
             V1Volume(
                 name="shm",
