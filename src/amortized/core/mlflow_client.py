@@ -188,6 +188,21 @@ class MLflowClient:
             )
             resp.raise_for_status()
 
+    async def list_artifacts(self, run_id: str, path: str = "") -> list[dict[str, Any]]:
+        """List artifacts under *path* for a run. Returns empty list on 404."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            params: dict[str, str] = {"run_id": run_id}
+            if path:
+                params["path"] = path
+            resp = await client.get(
+                self._url("/api/2.0/mlflow/artifacts/list"),
+                params=params,
+            )
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            return resp.json().get("files", [])  # type: ignore[no-any-return]
+
     async def get_artifact(self, run_id: str, path: str) -> bytes:
         """Download an artifact's raw bytes."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:
