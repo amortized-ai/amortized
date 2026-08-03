@@ -107,7 +107,7 @@ export function UploadDocumentDialog() {
           Upload Document
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Upload Document</DialogTitle>
           <DialogDescription>
