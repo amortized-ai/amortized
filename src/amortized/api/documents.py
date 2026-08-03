@@ -434,13 +434,22 @@ async def list_documents() -> list[DocumentSummary]:
     for run in runs:
         info = run.get("info", {})
         tags = {t["key"]: t["value"] for t in run.get("data", {}).get("tags", [])}
+        run_id = info.get("run_id", "")
+        fmt = tags.get("format", "md")
+        ext = fmt if fmt != "text" else "txt"
+        artifacts = await client.list_artifacts(run_id, "")
+        has_content = any(
+            a.get("path", "").startswith(f"parsed_content.{ext}")
+            for a in artifacts
+        )
         results.append(
             DocumentSummary(
-                document_id=info.get("run_id", ""),
-                mlflow_run_id=info.get("run_id", ""),
+                document_id=run_id,
+                mlflow_run_id=run_id,
                 filename=tags.get("filename", info.get("run_name", "")),
-                format=OutputFormat(tags.get("format", "md")),
+                format=OutputFormat(fmt),
                 created_at=_format_timestamp(info.get("start_time")),
+                content_available=has_content,
             )
         )
     return results

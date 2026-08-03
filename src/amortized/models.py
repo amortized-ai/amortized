@@ -186,6 +186,7 @@ class DocumentChunks(BaseModel):
 
 class DocumentSummary(_DocumentBase):
     created_at: str | None = Field(None, description="When the document was processed")
+    content_available: bool = Field(True, description="Whether the parsed content artifact exists")
 
 
 class ConfigResponse(BaseModel):
