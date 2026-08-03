@@ -326,7 +326,7 @@ clean-images: ## Remove old amortized images from kind nodes and reclaim disk
 # Refresh (rebuild + redeploy)
 # ──────────────────────────────────────────────
 
-refresh-user: build-server build-studio load-server load-studio clean-images ## Rebuild images and redeploy a user (USER=<name>)
+refresh-user: build-server build-studio clean-images load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
 	@if [ -z "$(USER)" ]; then echo "Usage: make refresh-user USER=<username>"; exit 1; fi
 	$(MAKE) deploy-user USER=$(USER)
 	@echo "$(USER) refreshed."
