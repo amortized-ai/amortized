@@ -17,6 +17,7 @@ class MLflowClient:
     def __init__(self, tracking_uri: str, timeout: float = 30.0) -> None:
         self._base = tracking_uri.rstrip("/")
         self._timeout = timeout
+        self._artifact_prefix_cache: dict[str, str] = {}
 
     def _url(self, path: str) -> str:
         return f"{self._base}{path}"
@@ -73,6 +74,29 @@ class MLflowClient:
                 logger.info("Restored deleted experiment %s", name)
             return experiment_id
 
+    async def _resolve_artifact_prefix(self, run_id: str) -> str:
+        """Resolve the artifact path prefix for the mlflow-artifacts proxy.
+
+        The proxy serves from the artifact root (--default-artifact-root).
+        Each run's artifact_uri includes experiment_id/run_id/artifacts under
+        that root.  We strip the root to get the relative prefix the proxy needs.
+        """
+        if run_id in self._artifact_prefix_cache:
+            return self._artifact_prefix_cache[run_id]
+        run = await self.get_run(run_id)
+        prefix = self._extract_artifact_prefix(run_id, run["info"]["artifact_uri"])
+        self._artifact_prefix_cache[run_id] = prefix
+        return prefix
+
+    @staticmethod
+    def _extract_artifact_prefix(run_id: str, artifact_uri: str) -> str:
+        suffix = f"/{run_id}/artifacts"
+        if not artifact_uri.endswith(suffix):
+            return ""
+        experiment_location = artifact_uri[: -len(suffix)]
+        artifact_root = experiment_location.rsplit("/", 1)[0] + "/"
+        return artifact_uri[len(artifact_root):]
+
     async def create_run(
         self,
         experiment_id: str,
@@ -93,7 +117,13 @@ class MLflowClient:
                 },
             )
             resp.raise_for_status()
-            run_id: str = resp.json()["run"]["info"]["run_id"]
+            run_info = resp.json()["run"]["info"]
+            run_id: str = run_info["run_id"]
+            artifact_uri = run_info.get("artifact_uri", "")
+            if artifact_uri:
+                prefix = self._extract_artifact_prefix(run_id, artifact_uri)
+                if prefix:
+                    self._artifact_prefix_cache[run_id] = prefix
             return run_id
 
     async def upload_artifact(
@@ -104,10 +134,11 @@ class MLflowClient:
         content_type: str = "application/octet-stream",
     ) -> None:
         """Upload an artifact to a run."""
+        prefix = await self._resolve_artifact_prefix(run_id)
+        full_path = f"{prefix}/{path}" if prefix else path
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.put(
-                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
-                params={"run_id": run_id},
+                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
                 content=content,
                 headers={"Content-Type": content_type},
             )
@@ -205,10 +236,11 @@ class MLflowClient:
 
     async def get_artifact(self, run_id: str, path: str) -> bytes:
         """Download an artifact's raw bytes."""
+        prefix = await self._resolve_artifact_prefix(run_id)
+        full_path = f"{prefix}/{path}" if prefix else path
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.get(
-                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
-                params={"run_id": run_id},
+                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
             )
             resp.raise_for_status()
             return resp.content
