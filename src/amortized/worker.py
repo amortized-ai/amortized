@@ -194,21 +194,22 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
 async def _fetch_document_chunks(document_id: str) -> list[str]:
     """Fetch pre-chunked document content from MLflow artifact store.
 
-    Raises on failure so callers can decide whether to fail the job.
+    Uses chunks/metadata.json to discover chunk count, then fetches each
+    chunk file by index. Raises on failure so callers can fail the job.
     """
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not document_id:
         return []
 
     client = MLflowClient(tracking_uri)
-    files = await client.list_artifacts(document_id, "chunks")
-    chunk_paths = sorted(
-        f["path"] for f in files
-        if f.get("path", "").endswith(".md")
-    )
+    metadata_text = await client.get_artifact_text(document_id, "chunks/metadata.json")
+    if not metadata_text:
+        return []
+
+    metadata = json.loads(metadata_text)
     chunks: list[str] = []
-    for path in chunk_paths:
-        text = await client.get_artifact_text(document_id, path)
+    for i in range(len(metadata)):
+        text = await client.get_artifact_text(document_id, f"chunks/chunk_{i:03d}.md")
         if text:
             chunks.append(text)
     return chunks
