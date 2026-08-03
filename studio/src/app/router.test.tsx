@@ -16,6 +16,7 @@ import SettingsPage from "@/features/settings/page"
 vi.mock("@/features/settings/api/use-settings", () => ({
   useHealth: () => ({ data: { status: "ok" }, isError: false, isLoading: false }),
   useConfig: () => ({ data: undefined, isLoading: false }),
+  useGpuUtilization: () => ({ data: { available: false, total_gpus_in_use: 0, jobs: [], reason: "requires_kubernetes_backend" }, isLoading: false, isError: false }),
   useGatewayRoutes: () => ({ data: [], isLoading: false }),
   useCreateGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),

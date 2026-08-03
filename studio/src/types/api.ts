@@ -238,6 +238,24 @@ export interface MlflowGatewayConnectionCreate {
   apiKey: string
 }
 
+// --- GPU Utilization ---
+
+export interface GpuJobInfo {
+  job_id: string
+  job_name: string
+  job_type: string
+  status: string
+  gpus_requested: number
+  started_at: string | null
+}
+
+export interface GpuUtilizationResponse {
+  available: boolean
+  total_gpus_in_use: number
+  jobs: GpuJobInfo[]
+  reason: string | null
+}
+
 // --- Derived view types ---
 
 export interface DatasetRecord {

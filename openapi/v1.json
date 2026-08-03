@@ -728,48 +728,6 @@
         }
       }
     },
-    "/api/v1/datasets/upload": {
-      "post": {
-        "tags": [
-          "datasets"
-        ],
-        "summary": "Upload Dataset",
-        "description": "Upload a JSONL or Parquet file as a training dataset.",
-        "operationId": "upload_dataset_api_v1_datasets_upload_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_dataset_api_v1_datasets_upload_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Job"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/documents/convert": {
       "post": {
         "tags": [
@@ -995,75 +953,12 @@
         }
       }
     },
-    "/api/v1/artifacts/{experiment_id}/{run_id}": {
-      "get": {
-        "tags": [
-          "artifacts"
-        ],
-        "summary": "List artifact files for a run.",
-        "operationId": "list_artifacts",
-        "parameters": [
-          {
-            "name": "experiment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Experiment Id"
-            }
-          },
-          {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Run Id"
-            }
-          },
-          {
-            "name": "path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Path"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Artifacts"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/artifacts/{experiment_id}/{run_id}/{path}": {
       "get": {
         "tags": [
           "artifacts"
         ],
-        "summary": "Fetch an artifact file directly from S3. Parquet files are returned as JSON.",
+        "summary": "Fetch an artifact file directly from S3.",
         "operationId": "get_artifact_content",
         "parameters": [
           {
@@ -1116,20 +1011,20 @@
         }
       }
     },
-    "/api/v1/models": {
+    "/api/v1/gpu": {
       "get": {
         "tags": [
-          "models"
+          "gpu"
         ],
-        "summary": "List available models from the MLflow AI Gateway.",
-        "operationId": "list_models",
+        "summary": "Get Gpu Utilization",
+        "operationId": "get_gpu_utilization",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelsResponse"
+                  "$ref": "#/components/schemas/GpuUtilizationResponse"
                 }
               }
             }
@@ -1219,6 +1114,27 @@
         }
       }
     },
+    "/api/v1/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List available models from the MLflow AI Gateway.",
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health",
@@ -1271,20 +1187,6 @@
           "file"
         ],
         "title": "Body_convert_document"
-      },
-      "Body_upload_dataset_api_v1_datasets_upload_post": {
-        "properties": {
-          "file": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "File"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file"
-        ],
-        "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
       "CompareSdgModelsRequest": {
         "properties": {
@@ -1953,6 +1855,87 @@
         ],
         "title": "GatewayModel"
       },
+      "GpuJobInfo": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "job_type": {
+            "type": "string",
+            "title": "Job Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "gpus_requested": {
+            "type": "integer",
+            "title": "Gpus Requested"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "job_name",
+          "job_type",
+          "status",
+          "gpus_requested"
+        ],
+        "title": "GpuJobInfo"
+      },
+      "GpuUtilizationResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "total_gpus_in_use": {
+            "type": "integer",
+            "title": "Total Gpus In Use",
+            "default": 0
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/GpuJobInfo"
+            },
+            "type": "array",
+            "title": "Jobs",
+            "default": []
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "GpuUtilizationResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2143,8 +2126,7 @@
         "type": "string",
         "enum": [
           "training",
-          "sdg",
-          "upload"
+          "sdg"
         ],
         "title": "JobType"
       },

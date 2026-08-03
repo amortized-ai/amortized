@@ -7,6 +7,7 @@ import type { HealthResponse, ConfigResponse, MlflowGatewayRoute } from "@/types
 
 const mockGetHealth = vi.fn()
 const mockGetConfig = vi.fn()
+const mockGetGpuUtilization = vi.fn()
 const mockGetGatewayRoutes = vi.fn()
 const mockGetGatewayConnections = vi.fn()
 const mockSearchMlflowRuns = vi.fn()
@@ -14,6 +15,7 @@ const mockSearchMlflowRuns = vi.fn()
 vi.mock("@/lib/api-client", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
+  getGpuUtilization: (...args: unknown[]) => mockGetGpuUtilization(...args),
   getMlflowGatewayRoutes: (...args: unknown[]) => mockGetGatewayRoutes(...args),
   getMlflowGatewayConnections: (...args: unknown[]) => mockGetGatewayConnections(...args),
   createMlflowGatewayRoute: vi.fn(),
@@ -66,6 +68,7 @@ describe("SettingsPage", () => {
   it("renders the settings page with config", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, total_gpus_in_use: 0, jobs: [], reason: "requires_kubernetes_backend" })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
@@ -86,6 +89,7 @@ describe("SettingsPage", () => {
   it("renders prerequisites card", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, total_gpus_in_use: 0, jobs: [], reason: "requires_kubernetes_backend" })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
@@ -98,6 +102,7 @@ describe("SettingsPage", () => {
   it("shows gateway routes when available", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, total_gpus_in_use: 0, jobs: [], reason: "requires_kubernetes_backend" })
     mockGetGatewayRoutes.mockResolvedValue({ routes })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
@@ -113,6 +118,7 @@ describe("SettingsPage", () => {
   it("shows empty gateway message when no routes", async () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
+    mockGetGpuUtilization.mockResolvedValue({ available: false, total_gpus_in_use: 0, jobs: [], reason: "requires_kubernetes_backend" })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
     mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
