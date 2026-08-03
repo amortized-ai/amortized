@@ -17,3 +17,4 @@ data:
   AMORTIZED_MLFLOW_TRACKING_URI: ""
   AMORTIZED_GATEWAY_URL: ""
   AMORTIZED_S3_BUCKET: ""
+  AMORTIZED_DOCLING_URL: "http://docling-serve.amortized.svc.cluster.local:5001"
