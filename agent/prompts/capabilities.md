@@ -39,6 +39,11 @@ You interact with the Amortized platform through these MCP tools:
 - `convert_document` — Upload and parse a document
 - `convert_document_url` — Parse a document from URL
 
+**Datasets**
+- `list_datasets` — List all datasets with name, topic, sample count, teacher model. Use `search` param to filter by name or topic.
+- `get_dataset` — Get full metadata and artifact list for a dataset by run_id
+- `get_dataset_samples` — Preview rows from a dataset (default 5 samples, max 50). Returns actual data records.
+
 **Recipes**
 - `get_recipes` — List available pre-built workflow recipes
 - `get_recipe` — Get details for a specific recipe
