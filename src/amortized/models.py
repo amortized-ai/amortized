@@ -133,6 +133,7 @@ class ConvertOptions(BaseModel):
     do_ocr: bool = Field(True, description="Enable OCR for scanned documents")
     ocr_engine: str = Field("easyocr", description="OCR engine: easyocr, tesseract")
     table_mode: str = Field("fast", description="Table detection mode: fast, accurate")
+    chunk_max_tokens: int = Field(2048, ge=64, description="Max tokens per chunk")
 
 
 class ConvertUrlRequest(BaseModel):
@@ -149,6 +150,7 @@ class _DocumentBase(BaseModel):
 
 class DocumentResult(_DocumentBase):
     content: str = Field("", description="Parsed document content")
+    chunk_count: int = Field(0, ge=0, description="Number of chunks created")
     processing_time: float = Field(0.0, ge=0, description="Processing time in seconds")
     status: str = Field("success", description="Conversion status")
     warnings: list[str] = Field(default_factory=list, description="Non-fatal issues")

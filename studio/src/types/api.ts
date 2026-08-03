@@ -284,6 +284,7 @@ export interface DocumentUploadResponse {
   mlflow_run_id: string | null
   filename: string
   content: string
+  chunk_count: number
   format: string
   processing_time: number
   status: string

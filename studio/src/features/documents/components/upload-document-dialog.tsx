@@ -36,6 +36,7 @@ export function UploadDocumentDialog() {
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
+  const [chunkMaxTokens, setChunkMaxTokens] = useState(2048)
   const [result, setResult] = useState<DocumentUploadResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -49,6 +50,7 @@ export function UploadDocumentDialog() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
+    setChunkMaxTokens(2048)
     setResult(null)
     setError(null)
     uploadMutation.reset()
@@ -66,7 +68,7 @@ export function UploadDocumentDialog() {
     setError(null)
     setResult(null)
     uploadMutation.mutate(
-      { file, options: { output_format: outputFormat } },
+      { file, options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
       {
         onSuccess: (data) => {
           setResult(data)
@@ -84,7 +86,7 @@ export function UploadDocumentDialog() {
     setError(null)
     setResult(null)
     urlMutation.mutate(
-      { url: url.trim(), options: { output_format: outputFormat } },
+      { url: url.trim(), options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
       {
         onSuccess: (data) => {
           setResult(data)
@@ -128,6 +130,7 @@ export function UploadDocumentDialog() {
               <p className="text-sm font-medium">{result.filename}</p>
               <p className="text-xs text-muted-foreground">
                 {result.content.length.toLocaleString()} characters &middot;{" "}
+                {result.chunk_count} chunks &middot;{" "}
                 {result.processing_time.toFixed(1)}s
               </p>
               {result.warnings.length > 0 && (
@@ -167,6 +170,10 @@ export function UploadDocumentDialog() {
                 <OutputFormatSelect
                   value={outputFormat}
                   onChange={setOutputFormat}
+                />
+                <ChunkMaxTokensInput
+                  value={chunkMaxTokens}
+                  onChange={setChunkMaxTokens}
                 />
               </div>
               <DialogFooter className="mt-4">
@@ -252,6 +259,32 @@ function OutputFormatSelect({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  )
+}
+
+function ChunkMaxTokensInput({
+  value,
+  onChange,
+}: {
+  value: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="chunk-max-tokens">Chunk Max Tokens</Label>
+      <Input
+        id="chunk-max-tokens"
+        type="number"
+        min={64}
+        max={8192}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value) || 2048)}
+        data-testid="doc-chunk-max-tokens"
+      />
+      <p className="text-xs text-muted-foreground">
+        Maximum tokens per chunk for document splitting
+      </p>
     </div>
   )
 }

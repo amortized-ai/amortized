@@ -535,12 +535,15 @@ export function deleteDocument(id: string): Promise<void> {
 
 export async function uploadDocument(
   file: File,
-  options: { output_format?: string } = {},
+  options: { output_format?: string; chunk_max_tokens?: number } = {},
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData()
   formData.append("file", file)
   if (options.output_format) {
     formData.append("output_format", options.output_format)
+  }
+  if (options.chunk_max_tokens != null) {
+    formData.append("chunk_max_tokens", String(options.chunk_max_tokens))
   }
   return request<DocumentUploadResponse>("/api/v1/documents/convert", {
     method: "POST",
@@ -550,11 +553,14 @@ export async function uploadDocument(
 
 export function convertDocumentUrl(
   url: string,
-  options: { output_format?: string } = {},
+  options: { output_format?: string; chunk_max_tokens?: number } = {},
 ): Promise<DocumentUploadResponse> {
   return post<DocumentUploadResponse>("/api/v1/documents/convert/url", {
     url,
-    options: { output_format: options.output_format ?? "md" },
+    options: {
+      output_format: options.output_format ?? "md",
+      chunk_max_tokens: options.chunk_max_tokens ?? 2048,
+    },
   })
 }
 

@@ -32,7 +32,7 @@ export function useUploadDocument() {
       options,
     }: {
       file: File
-      options?: { output_format?: string }
+      options?: { output_format?: string; chunk_max_tokens?: number }
     }) => uploadDocument(file, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })
@@ -48,7 +48,7 @@ export function useConvertDocumentUrl() {
       options,
     }: {
       url: string
-      options?: { output_format?: string }
+      options?: { output_format?: string; chunk_max_tokens?: number }
     }) => convertDocumentUrl(url, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })

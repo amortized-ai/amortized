@@ -110,9 +110,11 @@ async def _store_in_mlflow(
     output_format: str,
     source_bytes: bytes | None = None,
     processing_time: float = 0.0,
+    chunks: list[dict[str, Any]] | None = None,
 ) -> str:
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/documents")
+    chunk_count = len(chunks) if chunks else 0
     run_id = await client.create_run(
         experiment_id,
         name=filename,
@@ -122,6 +124,7 @@ async def _store_in_mlflow(
             "format": output_format,
             "processing_time": str(processing_time),
             "content_length": str(len(content)),
+            "chunk_count": str(chunk_count),
         },
     )
 
@@ -137,6 +140,33 @@ async def _store_in_mlflow(
             content.encode("utf-8"),
             content_type="text/plain; charset=utf-8",
         )
+
+        if chunks:
+            import json as _json
+
+            for i, chunk in enumerate(chunks):
+                chunk_text = chunk.get("text", "")
+                await client.upload_artifact(
+                    run_id,
+                    f"chunks/chunk_{i:03d}.md",
+                    chunk_text.encode("utf-8"),
+                    content_type="text/plain; charset=utf-8",
+                )
+            metadata = [
+                {
+                    "chunk_index": c.get("chunk_index", i),
+                    "num_tokens": c.get("num_tokens"),
+                    "headings": c.get("headings"),
+                    "page_numbers": c.get("page_numbers"),
+                }
+                for i, c in enumerate(chunks)
+            ]
+            await client.upload_artifact(
+                run_id,
+                "chunks/metadata.json",
+                _json.dumps(metadata, indent=2).encode("utf-8"),
+                content_type="application/json",
+            )
 
         await client.finish_run(run_id)
     except Exception:
@@ -176,6 +206,28 @@ async def _call_docling(client: httpx.AsyncClient, url: str, **kwargs: Any) -> d
         ) from None
 
 
+_DEFAULT_CHUNK_MAX_TOKENS = 2048
+
+
+async def _chunk_via_docling(
+    client: httpx.AsyncClient,
+    base_url: str,
+    filename: str,
+    file_bytes: bytes,
+    max_tokens: int = _DEFAULT_CHUNK_MAX_TOKENS,
+) -> list[dict[str, Any]]:
+    """Call docling-serve hybrid chunking endpoint and return the chunk list."""
+    import json as _json
+
+    data = await _call_docling(
+        client,
+        f"{base_url}/v1/chunk/hybrid/file",
+        files={"files": (filename, file_bytes, "application/octet-stream")},
+        data={"chunking_options": _json.dumps({"max_tokens": max_tokens})},
+    )
+    return data.get("chunks", [])  # type: ignore[no-any-return]
+
+
 @router.post(
     "/convert",
     response_model=DocumentResult,
@@ -188,6 +240,7 @@ async def convert_document(
     do_ocr: bool = True,
     ocr_engine: str = "easyocr",
     table_mode: str = "fast",
+    chunk_max_tokens: int = _DEFAULT_CHUNK_MAX_TOKENS,
 ) -> DocumentResult:
     base_url = _docling_url()
     filename = _sanitize_filename(file.filename or f"upload-{uuid.uuid4().hex[:8]}")
@@ -229,6 +282,16 @@ async def convert_document(
     if not content.strip():
         warnings.append("Document parsed but no content was extracted")
 
+    chunks: list[dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            chunks = await _chunk_via_docling(
+                client, base_url, filename, file_bytes, chunk_max_tokens
+            )
+    except (httpx.HTTPError, httpx.TimeoutException, HTTPException):
+        logger.warning("Chunking failed for %s", filename, exc_info=True)
+        warnings.append("Document converted but chunking failed")
+
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
@@ -238,6 +301,7 @@ async def convert_document(
                 output_format.value,
                 source_bytes=file_bytes,
                 processing_time=processing_time,
+                chunks=chunks,
             )
         except HTTPException:
             raise
@@ -251,6 +315,7 @@ async def convert_document(
         mlflow_run_id=mlflow_run_id,
         filename=filename,
         content=content,
+        chunk_count=len(chunks),
         format=output_format,
         processing_time=processing_time,
         status=status,
@@ -308,6 +373,17 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
         logger.warning("Could not download source for archival: %s", request.url)
         warnings.append("Source document could not be archived")
 
+    chunks: list[dict[str, Any]] = []
+    if source_bytes:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                chunks = await _chunk_via_docling(
+                    client, base_url, filename, source_bytes, opts.chunk_max_tokens
+                )
+        except (httpx.HTTPError, httpx.TimeoutException, HTTPException):
+            logger.warning("Chunking failed for %s", filename, exc_info=True)
+            warnings.append("Document converted but chunking failed")
+
     mlflow_run_id: str | None = None
     if settings.mlflow_tracking_uri:
         try:
@@ -317,6 +393,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
                 output_format.value,
                 source_bytes=source_bytes,
                 processing_time=processing_time,
+                chunks=chunks,
             )
         except HTTPException:
             raise
@@ -330,6 +407,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
         mlflow_run_id=mlflow_run_id,
         filename=filename,
         content=content,
+        chunk_count=len(chunks),
         format=output_format,
         processing_time=processing_time,
         status=status,
