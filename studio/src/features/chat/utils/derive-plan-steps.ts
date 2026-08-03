@@ -20,42 +20,76 @@ function tryParseToolResult(result: string): Record<string, unknown> | null {
   }
 }
 
+const TOOL_LABELS: Record<string, string> = {
+  "list_models": "Checking available models",
+  "get_config": "Checking platform readiness",
+  "get_model_pricing": "Comparing model pricing",
+  "show_model_pricing": "Comparing model pricing",
+  "compare_sdg_models": "Comparing model pricing",
+  "estimate_sdg_cost": "Estimating generation cost",
+  "estimate_training_cost": "Estimating training cost",
+  "estimate_training_resources": "Estimating training resources",
+  "estimate_training_method_cost": "Comparing training methods",
+  "show_vram_estimate": "Estimating GPU requirements",
+  "create_job": "Submitting job",
+  "get_job_detail": "Checking job status",
+  "get_job_logs": "Reading job logs",
+}
+
+const PHASE_STEP_LABELS: Record<string, string> = {
+  "understand_task": "Understanding your task",
+  "load_skill": "Loading skill guide",
+  "gather_requirements": "Gathering requirements",
+  "confirm": "Reviewing configuration",
+  "review": "Checking results",
+}
+
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
-  let highestStepIdx = -1
+  const seenLabels = new Set<string>()
+  const steps: Array<{ label: string }> = []
 
   for (const msg of messages) {
     for (const tool of msg.toolResults) {
-      if (tool.name !== "signal_phase" && tool.name !== "signal phase") continue
-      const data = tryParseToolResult(tool.result)
-      if (!data) continue
-      const phase = String(data.phase ?? "")
-      if (!isValidPhase(phase)) continue
-      const step = String(data.step ?? "")
+      if (tool.name === "signal_phase" || tool.name === "signal phase") {
+        const data = tryParseToolResult(tool.result)
+        if (!data) continue
+        const phase = String(data.phase ?? "")
+        if (!isValidPhase(phase)) continue
+        const step = String(data.step ?? "")
 
-      if (latestPhase && phase !== latestPhase) {
-        highestStepIdx = -1
+        if (latestPhase && phase !== latestPhase) {
+          seenLabels.clear()
+          steps.length = 0
+        }
+        latestPhase = phase
+
+        const label = PHASE_STEP_LABELS[step]
+        if (label && !seenLabels.has(label)) {
+          seenLabels.add(label)
+          steps.push({ label })
+        }
+        continue
       }
-      latestPhase = phase
 
-      const config = STATIC_PHASE_CONFIG[phase]
-      if (!config) continue
-      const idx = resolveStepIndex(config.steps, step)
-      if (idx > highestStepIdx) highestStepIdx = idx
+      const label = TOOL_LABELS[tool.name]
+      if (label && !seenLabels.has(label)) {
+        seenLabels.add(label)
+        steps.push({ label })
+      }
     }
   }
 
-  if (!latestPhase || highestStepIdx < 0) return null
+  if (!latestPhase || steps.length === 0) return null
 
-  const config = STATIC_PHASE_CONFIG[latestPhase]
-  if (!config) return null
-
-  const steps: PlanStep[] = config.steps.slice(0, highestStepIdx + 1).map((def, i) => ({
-    label: def.label,
-    status: i < highestStepIdx ? "completed" as const : "active" as const,
-  }))
-
-  return { phase: latestPhase, label: PHASE_LABELS[latestPhase], steps }
+  return {
+    phase: latestPhase,
+    label: PHASE_LABELS[latestPhase],
+    steps: steps.map((s, i): PlanStep => ({
+      label: s.label,
+      status: i < steps.length - 1 ? "completed" : "active",
+    })),
+  }
 }
 
 interface StepDef {
