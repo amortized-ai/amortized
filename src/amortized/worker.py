@@ -19,7 +19,6 @@ from amortized.models import JobStatus, JobType
 logger = logging.getLogger("amortized.worker")
 
 
-
 _JOB_TYPE_IMAGES: dict[str, str] = {
     "training": "ghcr.io/amortized-ai/training:latest",
     "sdg": "ghcr.io/amortized-ai/data-designer:latest",
@@ -193,27 +192,26 @@ async def _register_training_model(job: dict[str, Any], mlflow_run_id: str) -> b
 
 
 async def _fetch_document_chunks(document_id: str) -> list[str]:
-    """Fetch pre-chunked document content from MLflow artifact store."""
+    """Fetch pre-chunked document content from MLflow artifact store.
+
+    Raises on failure so callers can decide whether to fail the job.
+    """
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not document_id:
         return []
 
-    try:
-        client = MLflowClient(tracking_uri)
-        files = await client.list_artifacts(document_id, "chunks")
-        chunk_paths = sorted(
-            f["path"] for f in files
-            if f.get("path", "").endswith(".md")
-        )
-        chunks: list[str] = []
-        for path in chunk_paths:
-            text = await client.get_artifact_text(document_id, path)
-            if text:
-                chunks.append(text)
-        return chunks
-    except Exception:
-        logger.warning("Failed to fetch chunks for document %s", document_id, exc_info=True)
-    return []
+    client = MLflowClient(tracking_uri)
+    files = await client.list_artifacts(document_id, "chunks")
+    chunk_paths = sorted(
+        f["path"] for f in files
+        if f.get("path", "").endswith(".md")
+    )
+    chunks: list[str] = []
+    for path in chunk_paths:
+        text = await client.get_artifact_text(document_id, path)
+        if text:
+            chunks.append(text)
+    return chunks
 
 
 async def _resolve_parent_artifacts(
@@ -411,7 +409,18 @@ async def _run_job(job: dict[str, Any]) -> None:
             source.pop("min_text_length", None)
 
             for doc_id in document_ids:
-                chunks = await _fetch_document_chunks(doc_id)
+                try:
+                    chunks = await _fetch_document_chunks(doc_id)
+                except Exception:
+                    error_msg = f"Failed to fetch chunks for document {doc_id}"
+                    logger.error("Job %s: %s", job_id, error_msg, exc_info=True)
+                    await _update_job(
+                        job_id,
+                        status=JobStatus.failed.value,
+                        completed_at=datetime.now(UTC).isoformat(),
+                        error=error_msg,
+                    )
+                    return
                 for chunk_text in chunks:
                     config_files[f"chunk_{chunk_count}.md"] = chunk_text
                     chunk_count += 1

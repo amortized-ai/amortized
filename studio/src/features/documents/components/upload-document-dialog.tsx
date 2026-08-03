@@ -209,6 +209,10 @@ export function UploadDocumentDialog() {
                   value={outputFormat}
                   onChange={setOutputFormat}
                 />
+                <ChunkMaxTokensInput
+                  value={chunkMaxTokens}
+                  onChange={setChunkMaxTokens}
+                />
               </div>
               <DialogFooter className="mt-4">
                 <Button
