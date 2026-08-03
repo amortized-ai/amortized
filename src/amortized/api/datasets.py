@@ -177,12 +177,26 @@ async def list_datasets(
     exp_ids = await _get_all_experiment_ids(mlflow)
     if not exp_ids:
         return []
-    runs = await mlflow.search_runs(
+    sdg_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.job_type IN ('sdg', 'upload')",
+        filter_string="tags.job_type = 'sdg'",
         order_by=["start_time DESC"],
         max_results=200,
     )
+    upload_runs = await mlflow.search_runs(
+        exp_ids,
+        filter_string="tags.job_type = 'upload'",
+        order_by=["start_time DESC"],
+        max_results=200,
+    )
+    seen: set[str] = set()
+    runs: list[dict[str, Any]] = []
+    for r in sdg_runs + upload_runs:
+        rid = r.get("info", {}).get("run_id", "")
+        if rid and rid not in seen:
+            seen.add(rid)
+            runs.append(r)
+    runs.sort(key=lambda r: r.get("info", {}).get("start_time", 0), reverse=True)
     results = [_run_to_summary(r) for r in runs]
     if search:
         q = search.lower()
