@@ -258,13 +258,31 @@ async def get_dataset_samples(
         raise HTTPException(status_code=404, detail="No parquet or JSONL artifact found")
 
     path = target["path"]
-    data = await mlflow.get_artifact(run_id, path)
+
+    run = await mlflow.get_run(run_id)
+    artifact_uri = run.get("info", {}).get("artifact_uri", "")
+    if not artifact_uri or not artifact_uri.startswith("s3://"):
+        raise HTTPException(status_code=502, detail="Cannot resolve artifact storage")
+
+    from amortized.api.artifacts import _get_s3_client
+
+    parts = artifact_uri.replace("s3://", "").split("/", 1)
+    bucket = parts[0]
+    prefix = parts[1] if len(parts) > 1 else ""
+    s3_key = f"{prefix}/{path}"
+
+    try:
+        s3 = _get_s3_client()
+        obj = s3.get_object(Bucket=bucket, Key=s3_key)
+        data = obj["Body"].read()
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Artifact not found: {path}") from exc
 
     if path.endswith(".parquet"):
         import pyarrow.parquet as pq
 
         table = pq.read_table(io.BytesIO(data))
-        records = table.slice(0, limit).to_pylist()
+        records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
     else:
         lines = data.decode("utf-8").strip().split("\n")
         records = [json.loads(line) for line in lines[:limit]]
