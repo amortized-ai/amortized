@@ -76,7 +76,8 @@ target. Compute the per-chunk multiplier from the document's
 actual chunk statistics:
 
 ```
-avg_qa_tokens ≈ 200  (rough estimate — actual varies by domain)
+avg_qa_tokens ≈ 200  (empirical median across past runs; ranges 80-300
+                      depending on prompt style and answer depth)
 median_chunk_tokens = median of num_tokens across all chunks
 multiplier = coverage × median_chunk_tokens / avg_qa_tokens
 num_samples = multiplier × num_chunks
