@@ -206,6 +206,7 @@ async def _call_docling(client: httpx.AsyncClient, url: str, **kwargs: Any) -> d
 
 
 _DEFAULT_CHUNK_MAX_TOKENS = 2048
+_DOCLING_TIMEOUT = 600.0
 
 
 async def _chunk_via_docling(
@@ -215,7 +216,7 @@ async def _chunk_via_docling(
     max_tokens: int = _DEFAULT_CHUNK_MAX_TOKENS,
 ) -> list[dict[str, Any]]:
     """Call docling-serve hybrid chunking endpoint and return the chunk list."""
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/chunk/hybrid/file",
@@ -321,7 +322,7 @@ async def convert_document(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/convert/file",
@@ -375,7 +376,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     opts = request.options
     output_format = opts.output_format
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
         data = await _call_docling(
             client,
             f"{base_url}/v1/convert/source",
