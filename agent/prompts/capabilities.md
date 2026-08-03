@@ -34,8 +34,7 @@ You interact with the Amortized platform through these MCP tools:
 **Documents**
 - `list_documents` — List uploaded and parsed documents
 - `get_document_content` — Get the full parsed content of a document (returns markdown)
-- `get_document_sections` — Get section headings, character counts, and previews of a document. Use this to understand document structure before building SDG configs — much smaller than full content.
-- `get_section_content` — Get the full content of a specific section by heading name. Use after `get_document_sections` to read individual sections in detail.
+- `get_document_chunks` — Get document chunks with token counts, headings, and page numbers. Documents are chunked at upload time by docling-serve.
 - `convert_document` — Upload and parse a document
 - `convert_document_url` — Parse a document from URL
 

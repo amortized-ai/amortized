@@ -10,16 +10,10 @@ and documents. Before starting, read the template at
 `skills/sdg/knowledge-ingestion/sdg-recipe-template.json` for the
 config structure.
 
-**Document analysis workflow:** Never load the full document upfront.
-Use the structured tools in this order:
-
-1. `get_document_sections(doc_id)` — get headings, char counts, previews (~2KB)
-2. Derive topics and weights from the sections response
-3. `get_section_content(doc_id, heading)` — read specific sections only if
-   you need detail for prompt writing or to clarify a topic description
-
-This keeps your context small and focused. Only fall back to
-`get_document_content` if the other tools are unavailable.
+**Document analysis workflow:** Use `get_document_chunks(doc_id)` to
+get the document's chunks with token counts and headings. Derive
+topics from the chunk headings and content. Use `get_document_content`
+if you need the full text for prompt writing.
 
 **Keep it brief.** Do your analysis silently. Present results and ask
 for confirmation — do not narrate your reasoning.
@@ -36,22 +30,20 @@ uploaded yet, guide them to upload first.
 
 ### Step 2 — Read the document and derive topics
 
-After the user selects a document, call `get_document_sections` with the
-document ID. This returns section headings, character counts, and previews
-— everything you need to derive topics without loading the full document.
-
-Derive 5-9 topic values from the returned sections. Then present them
-briefly: "Here are the topics I suggest — proceed or adjust?" followed
-by `present_options`.
+After the user selects a document, call `get_document_chunks(doc_id)`
+to get the chunks with their headings and token counts. Derive 5-9
+topic values from the chunk headings. Then present them briefly:
+"Here are the topics I suggest — proceed or adjust?" followed by
+`present_options`.
 
 **CRITICAL: Topics must be section-level descriptions.**
 - GOOD: "Tier Management - Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits"
 - BAD: "access control"
 
 Each topic value should name the section AND summarize its key content
-in one line. Use `char_count` from `get_document_sections` to set
-weights — longer sections get higher weights. Weights must sum to 1.0
-and no topic should be below 0.05.
+in one line. Use token counts from chunks to set weights — sections
+with more content get higher weights. Weights must sum to 1.0 and no
+topic should be below 0.05.
 
 ### Step 3 — Question types
 
@@ -87,9 +79,7 @@ Each chunk gets at least one QA pair. If a document produces 100 chunks,
 the minimum is 100 samples — anything less means parts of the document
 won't be covered at all.
 
-Estimate chunk count: total_chars / (chunk_size x 4 chars/token).
-Use `total_chars` from `get_document_sections` to estimate.
-For example, a 144K-char document with 2048-token chunks: 144000 / (2048 * 4) ~ 18 chunks.
+Use `get_document_chunks(doc_id)` to get the actual chunk count.
 
 Present options in the hundreds-to-thousands range. More samples =
 better model quality. The chunk count is the floor, not the target.
@@ -266,7 +256,7 @@ specific product/technology name in the system prompts, not generic
 
 Before submitting the job, verify:
 
-- [ ] Topics are section-level descriptions derived from `get_document_sections`, not abstract categories
+- [ ] Topics are section-level descriptions derived from chunk headings, not abstract categories
 - [ ] Topic weights are proportional to section content density, not equal
 - [ ] Prompt variables (`topic`, `difficulty`, `question_type`) are on separate lines with labels
 - [ ] Question system prompt includes the answerability constraint
