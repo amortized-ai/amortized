@@ -66,21 +66,40 @@ stop and direct the user to Settings -> AI Gateway.
 
 ### Step 6 — How many samples?
 
-Calculate based on document coverage.
-
 Documents are chunked at upload time by docling-serve. Use
-`get_document_chunks(doc_id)` to get the actual chunk count.
+`get_document_chunks(doc_id)` to get the chunk count and token
+statistics.
 
-Sample count is a multiplier of chunk count. Each chunk gets sampled
-multiple times with different topic/difficulty/question_type combinations.
-Present three options as multiples of the chunk count:
+The goal is for total training tokens to be a multiple of total
+source tokens. Research suggests ~5x source coverage as a good
+target. Compute the per-chunk multiplier from the document's
+actual chunk statistics:
 
-1) chunk_count x 10 — Good starting point
-2) chunk_count x 20 — Recommended for production-quality models
-3) chunk_count x 30 — Best quality, thorough coverage
+```
+avg_qa_tokens ≈ 200  (rough estimate — actual varies by domain)
+median_chunk_tokens = median of num_tokens across all chunks
+multiplier = coverage × median_chunk_tokens / avg_qa_tokens
+num_samples = multiplier × num_chunks
+```
 
-Show the actual computed numbers. For example, with 50 chunks:
-"500 samples (10x), 1000 samples (20x), or 1500 samples (30x)"
+Present three coverage tiers and show the computed sample counts:
+
+1) 3x source coverage — Good starting point
+2) 5x source coverage — Recommended (research-backed default)
+3) 8x source coverage — Best quality, thorough coverage
+
+For example, a document with 50 chunks of median 400 tokens:
+- 3x: multiplier = 3 × 400 / 200 = 6x → 300 samples
+- 5x: multiplier = 5 × 400 / 200 = 10x → 500 samples
+- 8x: multiplier = 8 × 400 / 200 = 16x → 800 samples
+
+A document with 20 chunks of median 2000 tokens:
+- 3x: multiplier = 3 × 2000 / 200 = 30x → 600 samples
+- 5x: multiplier = 5 × 2000 / 200 = 50x → 1000 samples
+- 8x: multiplier = 8 × 2000 / 200 = 80x → 1600 samples
+
+Show the user the actual numbers, the multiplier, and the coverage
+tier so they understand the reasoning.
 
 ### Step 7 — System prompt for the trained model
 
@@ -231,7 +250,7 @@ Before submitting the job, verify:
 - [ ] Question system prompt includes the answerability constraint
 - [ ] Answer system prompt includes "answerable from the provided context"
 - [ ] System prompt in the SFT processor is domain-specific
-- [ ] `num_records` is a multiplier of chunk count (30x, 50x, or 100x)
+- [ ] `num_records` computed from chunk statistics (coverage × median_chunk_tokens / avg_qa_tokens × num_chunks)
 
 ## After SDG — Training
 
