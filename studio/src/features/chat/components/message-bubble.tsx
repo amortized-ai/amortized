@@ -43,7 +43,7 @@ export function MessageBubble({
 
   const structuredOptions = useMemo(() => {
     if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "present_options" || t.name === "present options")
+    const tool = message.toolResults.find(t => t.name === "present_options")
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
@@ -64,7 +64,7 @@ export function MessageBubble({
 
   const jobSubmissions = useMemo(() => {
     if (isUser) return []
-    const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "submit recipe job", "create_job", "create job"])
+    const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
     return message.toolResults
       .filter((t) => JOB_TOOL_NAMES.has(t.name))
       .map((t) => {
@@ -132,12 +132,8 @@ export function MessageBubble({
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>([
       "signal_phase",
-      "signal_progress",
-      "signal progress",
       "create_job",
-      "create job",
       "submit_recipe_job",
-      "submit recipe job",
       "get_document_sections",
       "get_section_content",
       "get_document_content",
@@ -151,7 +147,6 @@ export function MessageBubble({
       hidden.add("show_vram_estimate")
     }
     if (structuredOptions) hidden.add("present_options")
-    if (structuredOptions) hidden.add("present options")
     return message.toolResults.filter((t) => !hidden.has(t.name))
   }, [message.toolResults, modelPricing, vramEstimate, structuredOptions])
 
