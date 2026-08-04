@@ -30,7 +30,7 @@ export function GpuUtilizationCard() {
     return <CardSkeleton />
   }
 
-  const unavailable = isError || (data && !data.available)
+  const unavailable = isError || !data || !data.available
   const empty = data?.available && data.jobs.length === 0
 
   return (
