@@ -238,13 +238,18 @@ class TestResolveParentArtifacts:
         mock_repo = AsyncMock()
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
+        mock_mlflow_client = AsyncMock()
+        mock_mlflow_client.get_run = AsyncMock(return_value={
+            "info": {"artifact_uri": "s3://bucket/mlflow/abc"},
+        })
+
         with (
-            patch("amortized.worker._get_repo", return_value=mock_repo),
-            patch(
-                "amortized.worker._resolve_mlflow_artifact_uri",
-                return_value="s3://bucket/mlflow/abc",
-            ),
+            patch("amortized.db.connection._get_shared_db", new_callable=AsyncMock),
+            patch("amortized.db.repository.Repository", return_value=mock_repo),
+            patch("amortized.jobs.common.MLflowClient", return_value=mock_mlflow_client),
+            patch("amortized.jobs.common.config_mod") as mock_config,
         ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
             result = await _resolve_parent_artifacts(training_job, config, s3_downloads)
 
         assert result["data_path"] == "/amortized/work/data"
