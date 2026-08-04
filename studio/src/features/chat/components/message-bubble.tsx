@@ -62,36 +62,29 @@ export function MessageBubble({
     return structuredOptions ?? []
   }, [isUser, message.optionCards.length, structuredOptions])
 
-  const jobSubmissions = useMemo(() => {
-    if (isUser) return []
-    const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
-    return message.toolResults
-      .filter((t) => JOB_TOOL_NAMES.has(t.name))
-      .map((t) => {
-        const info = extractJobInfo(t.result)
-        return info.jobId ? { id: info.jobId, type: info.jobType } : null
-      })
-      .filter((j): j is { id: string; type: string } => !!j)
+  const { jobId, jobType } = useMemo(() => {
+    if (isUser) return { jobId: null, jobType: "SDG" }
+    const tool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
+    if (!tool?.result) return { jobId: null, jobType: "SDG" }
+    const info = extractJobInfo(tool.result)
+    return info.jobId ? { jobId: info.jobId, jobType: info.jobType } : { jobId: null, jobType: "SDG" }
   }, [isUser, message.toolResults])
 
-  const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
-  const [completedStatuses, setCompletedStatuses] = useState<Record<string, string>>({})
+  const [monitorDismissed, setMonitorDismissed] = useState(false)
+  const [completedStatus, setCompletedStatus] = useState<string | null>(null)
 
   const jobOptionCards = useMemo(() => {
-    if (jobSubmissions.length === 0) return [] as OptionCard[]
-    const lastJob = jobSubmissions[jobSubmissions.length - 1]!
-    const status = completedStatuses[lastJob.id]
-    if (!status) return [] as OptionCard[]
-    const viewJobCard: OptionCard = { title: "View Job", description: "Open the job in the Jobs page", value: `__nav:/jobs?job=${encodeURIComponent(lastJob.id)}` }
-    if (status === "failed" || status === "cancelled") {
+    if (!jobId || !completedStatus) return [] as OptionCard[]
+    const viewJobCard: OptionCard = { title: "View Job", description: "Open the job in the Jobs page", value: `__nav:/jobs?job=${encodeURIComponent(jobId)}` }
+    if (completedStatus === "failed" || completedStatus === "cancelled") {
       return [
         viewJobCard,
-        { title: "View Logs", description: "Check what went wrong", value: `__nav:/jobs?job=${encodeURIComponent(lastJob.id)}&tab=logs` },
+        { title: "View Logs", description: "Check what went wrong", value: `__nav:/jobs?job=${encodeURIComponent(jobId)}&tab=logs` },
         { title: "Try again", description: "Resubmit with the same settings", value: "Let's try running that job again with the same settings" },
       ] as OptionCard[]
     }
-    if (status === "succeeded") {
-      if (lastJob.type === "TRAINING") {
+    if (completedStatus === "succeeded") {
+      if (jobType === "TRAINING") {
         return [
           { title: "View Model", description: "Browse trained model artifacts", value: "__nav:/models" },
           { title: "Train with different settings", description: "Adjust model, method, or hyperparameters", value: "I'd like to train again with different settings" },
@@ -103,7 +96,7 @@ export function MessageBubble({
       ] as OptionCard[]
     }
     return [] as OptionCard[]
-  }, [jobSubmissions, completedStatuses])
+  }, [jobId, jobType, completedStatus])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
@@ -226,17 +219,15 @@ export function MessageBubble({
           </div>
         )}
 
-        {jobSubmissions.map((job) =>
-          !dismissedJobs.has(job.id) ? (
-            <div key={job.id} className="mt-3">
-              <JobMonitorCard
-                jobId={job.id}
-                jobType={job.type}
-                onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
-                onComplete={(status) => setCompletedStatuses((s) => ({ ...s, [job.id]: status }))}
-              />
-            </div>
-          ) : null,
+        {!monitorDismissed && jobId && (
+          <div className="mt-3">
+            <JobMonitorCard
+              jobId={jobId}
+              jobType={jobType}
+              onDismiss={() => setMonitorDismissed(true)}
+              onComplete={(s) => setCompletedStatus(s)}
+            />
+          </div>
         )}
 
         {jobOptionCards.length > 0 && onOptionSelect ? (
