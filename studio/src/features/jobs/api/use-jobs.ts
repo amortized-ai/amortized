@@ -12,7 +12,9 @@ import {
   getJobLogs,
   getMlflowRun,
   getMlflowMetricHistory,
+  getJobCostBreakdown,
 } from "@/lib/api-client"
+import type { CostBreakdownData } from "@/lib/api-client"
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
 
@@ -104,6 +106,15 @@ export function useJobLogs(jobId: string | null, isActive = false) {
     queryFn: () => getJobLogs(jobId!),
     enabled: !!jobId,
     refetchInterval: isActive ? 5000 : false,
+  })
+}
+
+export function useJobCostBreakdown(range: "7d" | "30d" | "90d") {
+  return useQuery<CostBreakdownData>({
+    queryKey: ["jobs", "cost-breakdown", range],
+    queryFn: () => getJobCostBreakdown(range),
+    staleTime: 30_000,
+    retry: 2,
   })
 }
 

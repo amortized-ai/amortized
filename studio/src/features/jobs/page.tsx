@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react"
 import { Link, useSearchParams } from "react-router"
 import { useJobs, useJob } from "./api/use-jobs"
+import { CostBreakdownChart } from "./components/cost-breakdown-chart"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
 import { useJobFilters } from "./hooks/use-job-filters"
 import { JobTable } from "./components/job-table"
@@ -134,6 +135,7 @@ export default function JobsPage() {
         <TableSkeleton columns={6} />
       ) : jobs.length > 0 ? (
         <>
+          <CostBreakdownChart />
           <div className="space-y-3">
             <p className="text-sm font-semibold text-muted-foreground">Filters</p>
             <div className="space-y-2.5">

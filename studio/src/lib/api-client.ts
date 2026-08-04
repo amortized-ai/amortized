@@ -132,6 +132,25 @@ export function getJobs(filters?: JobFilters, pagination?: PaginationParams): Pr
   return get<Job[]>(`/api/v1/jobs${query}`)
 }
 
+export interface DailyCost {
+  date: string
+  training: number
+  sdg: number
+}
+
+export interface CostBreakdownData {
+  total_cost: number
+  training_cost: number
+  sdg_cost: number
+  daily: DailyCost[]
+  gpu_rate_per_hour: number
+  currency: string
+}
+
+export function getJobCostBreakdown(range: string): Promise<CostBreakdownData> {
+  return get<CostBreakdownData>(`/api/v1/jobs/cost-breakdown?range=${range}`)
+}
+
 export function getJob(id: string): Promise<Job> {
   logger.debug("getJob", { id })
   return get<Job>(`/api/v1/jobs/${id}`)

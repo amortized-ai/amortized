@@ -1,13 +1,17 @@
 """Job management endpoints — unified CRUD."""
 
+import json
 import logging
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from amortized.api.costs import _load_pricing_data
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -45,14 +49,26 @@ logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+
 def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-_KNOWN_COLUMN_TYPES = frozenset({
-    "sampler", "llm-text", "llm-code", "llm-structured", "llm-judge",
-    "validation", "expression", "custom", "seed-dataset", "embedding", "image",
-})
+_KNOWN_COLUMN_TYPES = frozenset(
+    {
+        "sampler",
+        "llm-text",
+        "llm-code",
+        "llm-structured",
+        "llm-judge",
+        "validation",
+        "expression",
+        "custom",
+        "seed-dataset",
+        "embedding",
+        "image",
+    }
+)
 
 _LLM_COLUMN_TYPES = frozenset({"llm-text", "llm-code", "llm-structured", "llm-judge"})
 
@@ -184,6 +200,148 @@ async def get_jobs(
     repo = Repository(db)
     rows = await core_list_jobs(repo, status=status, job_type=type)
     return [_job_response(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Cost breakdown
+# ---------------------------------------------------------------------------
+
+_GPU_RATE_DEFAULT = 2.50
+_TOKENS_PER_SAMPLE = 2000
+_FALLBACK_TOKEN_RATE = 3.0  # $ per 1M tokens
+
+
+class DailyCost(BaseModel):
+    date: str
+    training: float
+    sdg: float
+
+
+class CostBreakdownResponse(BaseModel):
+    total_cost: float
+    training_cost: float
+    sdg_cost: float
+    daily: list[DailyCost]
+    gpu_rate_per_hour: float
+    currency: str
+
+
+def _estimate_training_cost(
+    config: dict[str, Any],
+    started_at: str,
+    completed_at: str,
+    gpu_rate: float,
+) -> float:
+    try:
+        t_start = datetime.fromisoformat(started_at)
+        t_end = datetime.fromisoformat(completed_at)
+        duration_hours = max((t_end - t_start).total_seconds() / 3600, 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+    compute = config.get("compute", {})
+    gpu_count = compute.get("gpus", 1) if isinstance(compute, dict) else 1
+    return duration_hours * gpu_count * gpu_rate
+
+
+def _estimate_sdg_cost(
+    config: dict[str, Any],
+    pricing_data: list[dict[str, Any]],
+) -> float:
+    model_name = config.get("model") or config.get("teacher_model") or ""
+    num_samples = int(config.get("num_samples", 100))
+    total_tokens = num_samples * _TOKENS_PER_SAMPLE
+
+    prompt_rate = _FALLBACK_TOKEN_RATE
+    completion_rate = _FALLBACK_TOKEN_RATE
+
+    if model_name:
+        model_lower = model_name.lower()
+        for entry in pricing_data:
+            entry_id = entry.get("id", "").lower()
+            entry_name = entry.get("name", "").lower()
+            if model_lower in entry_id or model_lower in entry_name:
+                prompt_rate = float(entry.get("prompt_cost_per_1m", _FALLBACK_TOKEN_RATE))
+                completion_rate = float(entry.get("completion_cost_per_1m", _FALLBACK_TOKEN_RATE))
+                break
+
+    return total_tokens * (prompt_rate + completion_rate) / 2_000_000
+
+
+@router.get(
+    "/cost-breakdown",
+    response_model=CostBreakdownResponse,
+    operation_id="get_job_cost_breakdown",
+)
+async def get_job_cost_breakdown(
+    time_range: str = Query("30d", alias="range", description="Time window: 7d, 30d, or 90d"),
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> CostBreakdownResponse:
+    num_days = {"7d": 7, "30d": 30, "90d": 90}.get(time_range, 30)
+    cutoff = (datetime.now(tz=UTC) - timedelta(days=num_days)).isoformat()
+    gpu_rate = float(os.environ.get("AMORTIZED_GPU_RATE", _GPU_RATE_DEFAULT))
+
+    cursor = await db.execute(
+        "SELECT type, config, started_at, completed_at "
+        "FROM jobs WHERE status = 'succeeded' AND completed_at > ? "
+        "ORDER BY completed_at",
+        (cutoff,),
+    )
+    rows = await cursor.fetchall()
+
+    pricing_data = _load_pricing_data()
+
+    daily_map: dict[str, dict[str, float]] = {}
+    training_total = 0.0
+    sdg_total = 0.0
+
+    for row in rows:
+        job_type = row[0]
+        try:
+            config = json.loads(row[1]) if isinstance(row[1], str) else row[1]
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+        started_at = row[2] or ""
+        completed_at = row[3] or ""
+
+        day = completed_at[:10] if completed_at else ""
+        if not day:
+            continue
+
+        if day not in daily_map:
+            daily_map[day] = {"training": 0.0, "sdg": 0.0}
+
+        if job_type == "training":
+            cost = _estimate_training_cost(config, started_at, completed_at, gpu_rate)
+            daily_map[day]["training"] += cost
+            training_total += cost
+        elif job_type == "sdg":
+            cost = _estimate_sdg_cost(config, pricing_data)
+            daily_map[day]["sdg"] += cost
+            sdg_total += cost
+
+    today = datetime.now(tz=UTC).date()
+    daily: list[DailyCost] = []
+    for i in range(num_days - 1, -1, -1):
+        d = today - timedelta(days=i)
+        date_str = d.isoformat()
+        entry = daily_map.get(date_str, {"training": 0.0, "sdg": 0.0})
+        daily.append(
+            DailyCost(
+                date=date_str,
+                training=round(entry["training"], 4),
+                sdg=round(entry["sdg"], 4),
+            )
+        )
+
+    return CostBreakdownResponse(
+        total_cost=round(training_total + sdg_total, 4),
+        training_cost=round(training_total, 4),
+        sdg_cost=round(sdg_total, 4),
+        daily=daily,
+        gpu_rate_per_hour=gpu_rate,
+        currency="USD",
+    )
 
 
 @router.get("/{job_id}", response_model=Job, operation_id="get_job")
