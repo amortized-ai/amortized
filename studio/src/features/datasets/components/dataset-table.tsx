@@ -33,11 +33,14 @@ export function DatasetTable({
       {
         accessorKey: "name",
         header: "Name",
+        size: 300,
+        minSize: 150,
+        maxSize: 500,
         cell: ({ row }) => {
           const isUpload = row.original.tags?.source === "upload"
           return (
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{row.original.name}</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-medium truncate">{row.original.name}</span>
               {isUpload ? (
                 <Badge
                   variant="secondary"
@@ -63,11 +66,14 @@ export function DatasetTable({
         accessorFn: (row) => row.tags["dataset_topic"] ?? "",
         id: "topic",
         header: "Topic",
+        size: 220,
+        minSize: 120,
+        maxSize: 400,
         cell: ({ row }) => {
           const topic = row.original.tags["dataset_topic"] ?? ""
           const runId = row.original.run_id
           return (
-            <div className="max-w-[180px]" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <div className="min-w-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               <EditableTitle
                 value={topic || "Add topic..."}
                 className={`text-sm ${topic ? "" : "text-muted-foreground/50 italic"}`}
@@ -84,6 +90,9 @@ export function DatasetTable({
         accessorFn: (row) => row.tags["num_samples"] ?? null,
         id: "samples",
         header: "Samples",
+        size: 90,
+        minSize: 70,
+        maxSize: 130,
         cell: ({ getValue }) => {
           const v = getValue() as string | null
           return (
@@ -97,8 +106,11 @@ export function DatasetTable({
         accessorFn: (row) => row.tags["teacher_model"] ?? "--",
         id: "model",
         header: "Teacher Model",
+        size: 160,
+        minSize: 100,
+        maxSize: 300,
         cell: ({ getValue }) => (
-          <span className="text-sm text-muted-foreground truncate max-w-[200px] block">
+          <span className="text-sm text-muted-foreground truncate block">
             {getValue() as string}
           </span>
         ),
@@ -114,6 +126,9 @@ export function DatasetTable({
           }),
         id: "created_at",
         header: "Created",
+        size: 180,
+        minSize: 140,
+        maxSize: 250,
         cell: ({ getValue }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {getValue() as string}

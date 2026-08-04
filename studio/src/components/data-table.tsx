@@ -8,6 +8,7 @@ import {
   type ColumnDef,
   type SortingState,
   type ColumnFiltersState,
+  type ColumnSizingState,
   type PaginationState,
   type OnChangeFn,
 } from "@tanstack/react-table"
@@ -22,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Search } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useState, type ReactNode } from "react"
 
 interface DataTableProps<TData> {
@@ -59,6 +61,7 @@ export function DataTable<TData>({
 }: DataTableProps<TData>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
   const [internalPagination, setInternalPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
@@ -73,10 +76,13 @@ export function DataTable<TData>({
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, columnFilters, pagination },
+    state: { sorting, columnFilters, pagination, columnSizing },
     onSortingChange: onSortingChangeFn,
     onColumnFiltersChange: setColumnFilters,
+    onColumnSizingChange: setColumnSizing,
     onPaginationChange: onPaginationChangeFn,
+    columnResizeMode: "onChange",
+    enableColumnResizing: true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: manualPagination ? undefined : getSortedRowModel(),
     getPaginationRowModel: manualPagination ? undefined : getPaginationRowModel(),
@@ -105,12 +111,16 @@ export function DataTable<TData>({
         </div>
       )}
       <div className="rounded-md border">
-        <Table>
+        <Table style={{ tableLayout: "fixed" }}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead
+                    key={header.id}
+                    className="group/header relative"
+                    style={{ width: header.getSize() }}
+                  >
                     {header.isPlaceholder ? null : header.column.getCanSort() ? (
                       <button
                         className="flex items-center gap-1 hover:text-foreground"
@@ -118,15 +128,26 @@ export function DataTable<TData>({
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {header.column.getIsSorted() === "asc" ? (
-                          <ArrowUp className="h-3 w-3" />
+                          <ArrowUp className="h-3 w-3 shrink-0" />
                         ) : header.column.getIsSorted() === "desc" ? (
-                          <ArrowDown className="h-3 w-3" />
+                          <ArrowDown className="h-3 w-3 shrink-0" />
                         ) : (
-                          <ArrowUpDown className="h-3 w-3 opacity-50" />
+                          <ArrowUpDown className="h-3 w-3 opacity-50 shrink-0" />
                         )}
                       </button>
                     ) : (
                       flexRender(header.column.columnDef.header, header.getContext())
+                    )}
+                    {header.column.getCanResize() && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        className={cn(
+                          "absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
+                          "opacity-0 group-hover/header:opacity-100 bg-border",
+                          header.column.getIsResizing() && "opacity-100 bg-primary",
+                        )}
+                      />
                     )}
                   </TableHead>
                 ))}
@@ -165,7 +186,7 @@ export function DataTable<TData>({
                   data-testid={rowTestId?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
+                    <TableCell key={cell.id} style={{ width: cell.column.getSize() }}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
