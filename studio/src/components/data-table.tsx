@@ -111,7 +111,7 @@ export function DataTable<TData>({
         </div>
       )}
       <div className="rounded-md border">
-        <Table style={{ width: table.getCenterTotalSize(), tableLayout: "fixed" }}>
+        <Table style={{ tableLayout: "fixed" }}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
