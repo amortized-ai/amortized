@@ -32,6 +32,15 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     placement: "bottom",
   },
   {
+    id: "documents",
+    route: "/documents",
+    target: "documents-header",
+    title: "Upload Documents",
+    description:
+      "Upload PDFs and DOCX files to use as grounding for synthetic data generation. Parsed content feeds directly into the SDG pipeline.",
+    placement: "bottom",
+  },
+  {
     id: "chat",
     route: "/chat",
     target: "chat-input",
