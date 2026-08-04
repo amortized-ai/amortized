@@ -17,11 +17,6 @@ vi.mock("@/features/settings/api/use-settings", () => ({
   useHealth: () => ({ data: { status: "ok" }, isError: false, isLoading: false }),
   useConfig: () => ({ data: undefined, isLoading: false }),
   useGatewayRoutes: () => ({ data: [], isLoading: false }),
-  useCreateGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteGatewayRoute: () => ({ mutate: vi.fn(), isPending: false }),
-  useGatewayConnections: () => ({ data: [], isLoading: false }),
-  useCreateGatewayConnection: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteGatewayConnection: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 vi.mock("@/features/jobs/api/use-jobs", async (importOriginal) => ({

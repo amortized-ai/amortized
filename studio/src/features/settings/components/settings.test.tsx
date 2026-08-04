@@ -8,18 +8,12 @@ import type { HealthResponse, ConfigResponse, MlflowGatewayRoute } from "@/types
 const mockGetHealth = vi.fn()
 const mockGetConfig = vi.fn()
 const mockGetGatewayRoutes = vi.fn()
-const mockGetGatewayConnections = vi.fn()
 const mockSearchMlflowRuns = vi.fn()
 
 vi.mock("@/lib/api-client", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
   getMlflowGatewayRoutes: (...args: unknown[]) => mockGetGatewayRoutes(...args),
-  getMlflowGatewayConnections: (...args: unknown[]) => mockGetGatewayConnections(...args),
-  createMlflowGatewayRoute: vi.fn(),
-  deleteMlflowGatewayRoute: vi.fn(),
-  createMlflowGatewayConnection: vi.fn(),
-  deleteMlflowGatewayConnection: vi.fn(),
   searchMlflowRuns: (...args: unknown[]) => mockSearchMlflowRuns(...args),
 }))
 
@@ -67,7 +61,6 @@ describe("SettingsPage", () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
-    mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
 
     render(<SettingsPage />, { wrapper })
@@ -87,7 +80,6 @@ describe("SettingsPage", () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
-    mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
 
     render(<SettingsPage />, { wrapper })
@@ -99,7 +91,6 @@ describe("SettingsPage", () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes })
-    mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
 
     render(<SettingsPage />, { wrapper })
@@ -114,7 +105,6 @@ describe("SettingsPage", () => {
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue(config)
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
-    mockGetGatewayConnections.mockResolvedValue([])
     mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
 
     render(<SettingsPage />, { wrapper })

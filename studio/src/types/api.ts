@@ -214,30 +214,6 @@ export interface MlflowGatewayEndpoint {
   }[]
 }
 
-export interface MlflowGatewayRouteCreate {
-  name: string
-  route_type: string
-  model: { name: string; provider: string }
-  secret_name: string
-}
-
-// --- MLflow: AI Gateway Connections ---
-
-export interface MlflowGatewayConnection {
-  secret_id: string
-  secret_name: string
-  provider: string | null
-  created_at: number
-  last_updated_at: number | null
-  masked_values: Record<string, string> | null
-}
-
-export interface MlflowGatewayConnectionCreate {
-  name: string
-  provider: string
-  apiKey: string
-}
-
 // --- Derived view types ---
 
 export interface DatasetRecord {
