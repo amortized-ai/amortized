@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, generateChatTitle } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { getLogger } from "@/lib/logger"
@@ -201,6 +201,9 @@ export function useChat() {
 
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
+  const chatStateRef = useRef(chatState)
+  useEffect(() => { chatStateRef.current = chatState }, [chatState])
+
   const warmupPromiseRef = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
@@ -261,6 +264,61 @@ export function useChat() {
     warmupPromiseRef.current = warmup()
     return () => { cancelled = true }
   }, [currentConversationId])
+
+  useEffect(() => {
+    if (!currentConversationId) return
+    const convId = currentConversationId
+
+    const pollPending = async () => {
+      if (chatStateRef.current === "streaming") return
+
+      try {
+        const pending = await fetchPendingMessages(convId)
+        if (pending.length === 0) return
+
+        for (const response of pending) {
+          const parsed = parseOpenCodeResponse(response)
+          const session = extractSessionData([response], parsed.toolResults)
+
+          const phaseTool = session.tools.find((t) => t.name === "signal_phase")
+          let phase: string | null = null
+          if (phaseTool?.result) {
+            try {
+              const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+              if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+            } catch { /* ignore */ }
+          }
+
+          const msgId = generateId()
+          const followUp: ChatMessage = {
+            id: msgId,
+            role: "assistant",
+            content: session.text || parsed.content,
+            timestamp: new Date().toISOString(),
+            toolResults: session.tools,
+            proposedAction: null,
+            optionCards: [],
+            phase: phase ?? undefined,
+          }
+
+          setMessages((prev) => [...prev, followUp])
+          addMessage(convId, {
+            id: msgId,
+            role: "assistant",
+            content: followUp.content,
+            timestamp: followUp.timestamp,
+            toolResults: followUp.toolResults,
+            phase: followUp.phase,
+          })
+        }
+      } catch {
+        // Silently continue polling
+      }
+    }
+
+    const interval = setInterval(pollPending, 5000)
+    return () => clearInterval(interval)
+  }, [currentConversationId, addMessage])
 
   const sendMessage = useCallback(
     async (content: string) => {

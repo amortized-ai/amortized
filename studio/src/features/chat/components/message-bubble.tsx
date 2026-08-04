@@ -57,11 +57,6 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const parsedOptions = useMemo(() => {
-    if (isUser || message.optionCards.length > 0) return []
-    return structuredOptions ?? []
-  }, [isUser, message.optionCards.length, structuredOptions])
-
   const { jobId, jobType } = useMemo(() => {
     if (isUser) return { jobId: null, jobType: "SDG" }
     const tool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
@@ -71,6 +66,11 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
+
+  const parsedOptions = useMemo(() => {
+    if (isUser || message.optionCards.length > 0) return []
+    return structuredOptions ?? []
+  }, [isUser, message.optionCards.length, structuredOptions])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null

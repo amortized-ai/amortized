@@ -6,6 +6,8 @@ so Amortized Studio can talk to either backend without code changes.
 Endpoints:
   POST /session              → create a session
   POST /session/{id}/message → send a message, get a synchronous JSON response
+  POST /session/{id}/event   → receive a job event, generate follow-up response
+  GET  /session/{id}/pending → drain pending follow-up messages
   GET  /api/health           → health check
 """
 
@@ -13,11 +15,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import time
 import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import httpx
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -27,7 +33,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
     query,
 )
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 MORTY_PROMPT_PATH = Path(os.environ.get("MORTY_PROMPT_PATH", "/app/morty.md"))
@@ -42,6 +48,8 @@ MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
 WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
+MAX_PENDING_PER_SESSION = 20
+EVENT_COOLDOWN_SECONDS = 10
 
 
 def _detect_provider_id() -> str:
@@ -55,10 +63,25 @@ def _detect_provider_id() -> str:
 
 
 PROVIDER_ID = _detect_provider_id()
+logger = logging.getLogger(__name__)
 
 _session_map: dict[str, str] = {}
 _map_lock = asyncio.Lock()
 _morty_prompt: str = ""
+
+_pending_messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
+_pending_lock = asyncio.Lock()
+_session_locks: dict[str, asyncio.Lock] = {}
+_session_locks_lock = asyncio.Lock()
+_last_event_time: dict[str, float] = {}
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+async def _get_session_lock(session_id: str) -> asyncio.Lock:
+    async with _session_locks_lock:
+        if session_id not in _session_locks:
+            _session_locks[session_id] = asyncio.Lock()
+        return _session_locks[session_id]
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -89,6 +112,21 @@ def _load_morty_prompt() -> str:
 app = FastAPI(title="Claude Code Agent (OpenCode-compatible)")
 
 
+PENDING_SWEEP_INTERVAL = 300
+
+
+async def _sweep_pending() -> None:
+    """Periodically remove pending messages for sessions that no longer exist."""
+    while True:
+        await asyncio.sleep(PENDING_SWEEP_INTERVAL)
+        async with _pending_lock:
+            stale = [sid for sid in _pending_messages if sid not in _session_map]
+            for sid in stale:
+                del _pending_messages[sid]
+            if stale:
+                logger.info("Swept %d stale pending queues", len(stale))
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     global _morty_prompt
@@ -96,6 +134,9 @@ async def _startup() -> None:
     if SESSION_MAP_PATH.exists():
         _session_map.update(json.loads(SESSION_MAP_PATH.read_text()))
     _morty_prompt = _load_morty_prompt()
+    task = asyncio.create_task(_sweep_pending())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class SessionResponse(BaseModel):
@@ -118,6 +159,14 @@ class MessageRequest(BaseModel):
     model: MessageModel | None = None
 
 
+class JobEvent(BaseModel):
+    type: str
+    job_id: str
+    status: str
+    job_type: str = ""
+    error: str | None = None
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {"healthy": True, "version": "0.1.0"}
@@ -129,21 +178,11 @@ async def create_session() -> SessionResponse:
     return SessionResponse(id=session_id)
 
 
-@app.post("/session/{session_id}/message")
-async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
-    user_text = ""
-    for part in body.parts:
-        if part.type == "text" and part.text:
-            user_text = part.text
-            break
-
-    if not user_text:
-        raise HTTPException(status_code=400, detail="no text part in message")
-
-    model = MODEL
-    if body.model and body.model.modelID:
-        model = body.model.modelID.replace("@default", "") or MODEL
-
+async def _run_agent(
+    session_id: str, prompt: str, model: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run an agent query and return (response_parts, result_info)."""
+    resolved_model = model or MODEL
     sdk_session_id = _session_map.get(session_id)
 
     options = ClaudeAgentOptions(
@@ -151,7 +190,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         allowed_tools=["mcp__*"],
         permission_mode="acceptEdits",
         setting_sources=[],
-        model=model,
+        model=resolved_model,
         cwd=WORKSPACE_DIR,
         mcp_servers={
             "amortized": {
@@ -172,7 +211,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     result_info: dict[str, Any] = {}
     new_sdk_session_id: str | None = None
 
-    async for message in query(prompt=user_text, options=options):
+    async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
@@ -207,7 +246,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
             result_info = {
                 "providerID": PROVIDER_ID,
-                "modelID": model,
+                "modelID": resolved_model,
                 "cost": cost,
                 "tokens": {
                     "input": input_tokens,
@@ -225,7 +264,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if not result_info:
         result_info = {
             "providerID": PROVIDER_ID,
-            "modelID": model,
+            "modelID": resolved_model,
             "cost": 0,
             "tokens": {"input": 0, "output": 0, "reasoning": 0},
             "finish": "stop",
@@ -233,7 +272,172 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
             "sessionID": session_id,
         }
 
+    return response_parts, result_info
+
+
+def _extract_job_id_from_output(output: Any) -> str | None:
+    """Extract job ID from MCP tool output in various formats."""
+    if isinstance(output, str):
+        try:
+            obj = json.loads(output)
+            if isinstance(obj, dict) and obj.get("id"):
+                return obj["id"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if isinstance(output, list):
+        for block in output:
+            if isinstance(block, dict) and block.get("type") == "text":
+                try:
+                    obj = json.loads(block.get("text", ""))
+                    if isinstance(obj, dict) and obj.get("id"):
+                        return obj["id"]
+                except (json.JSONDecodeError, TypeError):
+                    continue
+    if isinstance(output, dict) and output.get("id"):
+        return output["id"]
+    return None
+
+
+async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]) -> None:
+    """Scan response for job creation tools and auto-register watches."""
+    for part in response_parts:
+        if part.get("type") != "tool" or part.get("state") != "completed":
+            continue
+        raw = (part.get("tool") or "")
+        tool_name = raw.replace("mcp_amortized__", "").replace("amortized_", "")
+        if tool_name not in ("create_job", "submit_recipe_job"):
+            continue
+        job_id = _extract_job_id_from_output(part.get("output"))
+        if not job_id:
+            continue
+        base_url = MCP_AMORTIZED_URL.replace("/mcp", "")
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        api_key = os.environ.get("AMORTIZED_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{base_url}/api/v1/ui/watch_job",
+                    json={"job_id": job_id, "session_id": session_id},
+                    headers=headers,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "watch_job failed: %s %s", resp.status_code, resp.text[:200]
+                    )
+        except Exception:
+            logger.warning(
+                "watch_job request failed for job %s", job_id, exc_info=True
+            )
+
+
+def _sanitize_error(error: str | None, max_len: int = 200) -> str:
+    if not error:
+        return ""
+    truncated = error[:max_len]
+    if len(error) > max_len:
+        truncated += "..."
+    return truncated.replace("\n", " ").strip()
+
+
+def _build_event_prompt(event: JobEvent) -> str:
+    short_id = event.job_id[:8]
+    jtype = event.job_type.upper() if event.job_type else ""
+    job_label = f"{jtype} job #{short_id}" if jtype else f"job #{short_id}"
+
+    if event.status == "running":
+        return (
+            f"[SYSTEM EVENT] {job_label} is now running. "
+            f"Acknowledge briefly in 1 sentence. Do NOT call present_options."
+        )
+    elif event.status == "succeeded":
+        return (
+            f"[SYSTEM EVENT] {job_label} succeeded. "
+            f"Congratulate briefly and call present_options with relevant next steps. "
+            f"For SDG jobs: offer 'Preview dataset', 'Start training with this data'. "
+            f"For training jobs: offer 'View model', 'View training metrics'. "
+            f"Call signal_phase with step='review'. Keep the message to 1-2 sentences."
+        )
+    elif event.status in ("failed", "cancelled"):
+        sanitized = _sanitize_error(event.error)
+        error_detail = f" Error: {sanitized}" if sanitized else ""
+        return (
+            f"[SYSTEM EVENT] {job_label} {event.status}.{error_detail} "
+            f"Explain briefly and call present_options with recovery options: "
+            f"'View logs', 'Try again with different settings', 'Start fresh'."
+        )
+    return f"[SYSTEM EVENT] {job_label} status changed to {event.status}."
+
+
+@app.post("/session/{session_id}/message")
+async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
+    user_text = ""
+    for part in body.parts:
+        if part.type == "text" and part.text:
+            user_text = part.text
+            break
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="no text part in message")
+
+    model = MODEL
+    if body.model and body.model.modelID:
+        model = body.model.modelID.replace("@default", "") or MODEL
+
+    lock = await _get_session_lock(session_id)
+    async with lock:
+        response_parts, result_info = await _run_agent(session_id, user_text, model)
+
+    task = asyncio.create_task(_auto_watch_jobs(session_id, response_parts))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
     return {"info": result_info, "parts": response_parts}
+
+
+@app.post("/session/{session_id}/event")
+async def receive_event(session_id: str, body: JobEvent, request: Request) -> dict[str, Any]:
+    expected_secret = os.environ.get("AGENT_EVENT_SECRET", "")
+    if expected_secret:
+        provided = request.headers.get("X-Event-Secret", "")
+        if provided != expected_secret:
+            raise HTTPException(status_code=403, detail="invalid event secret")
+
+    if session_id not in _session_map:
+        raise HTTPException(status_code=404, detail="unknown session")
+
+    now = time.monotonic()
+    last = _last_event_time.get(session_id, 0.0)
+    if now - last < EVENT_COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429, detail="event cooldown active")
+
+    prompt = _build_event_prompt(body)
+
+    lock = await _get_session_lock(session_id)
+    async with lock:
+        response_parts, result_info = await _run_agent(session_id, prompt)
+
+    _last_event_time[session_id] = time.monotonic()
+
+    follow_up = {"info": result_info, "parts": response_parts}
+
+    async with _pending_lock:
+        msgs = _pending_messages[session_id]
+        if len(msgs) >= MAX_PENDING_PER_SESSION:
+            msgs.pop(0)
+        msgs.append(follow_up)
+
+    return {"status": "queued", "message_count": len(_pending_messages[session_id])}
+
+
+@app.get("/session/{session_id}/pending")
+async def get_pending(session_id: str) -> dict[str, Any]:
+    if session_id not in _session_map:
+        raise HTTPException(status_code=404, detail="unknown session")
+    async with _pending_lock:
+        messages = _pending_messages.pop(session_id, [])
+    return {"messages": messages}
 
 
 async def _persist_session(external_id: str, sdk_session_id: str) -> None:

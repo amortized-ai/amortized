@@ -443,27 +443,69 @@ class KubernetesBackend:
         try:
             job = await batch.read_namespaced_job(resource_name, self._namespace)
         except Exception as e:
-            return BackendStatus(
-                running=False,
-                error=(
-                    f"K8s API error checking job '{resource_name}'"
-                    f" in namespace '{self._namespace}': {e}"
-                ),
+            err_str = str(e)
+            if "404" in err_str or "NotFound" in err_str:
+                msg = (
+                    f"Job '{resource_name}' no longer exists."
+                    " It may have been cancelled or cleaned up."
+                )
+            else:
+                msg = "Unable to check job status. Please try again later."
+            logger.warning(
+                "K8s API error for job %s in %s: %s",
+                resource_name,
+                self._namespace,
+                e,
             )
+            return BackendStatus(running=False, error=msg)
 
         status = job.status
         if status.succeeded and status.succeeded > 0:
             return BackendStatus(running=False, exit_code=0)
         if status.failed and status.failed > 0:
+            reason = await self._get_pod_failure_reason(
+                resource_name, api_client
+            )
             return BackendStatus(
                 running=False,
                 exit_code=1,
-                error=(
-                    f"Job '{resource_name}' failed in namespace"
-                    f" '{self._namespace}'. Check logs for details."
-                ),
+                error=reason or "Job failed. Check logs for details.",
             )
         return BackendStatus(running=True)
+
+    async def _get_pod_failure_reason(
+        self, job_name: str, api_client: Any
+    ) -> str | None:
+        from kubernetes_asyncio.client import CoreV1Api
+
+        try:
+            core = CoreV1Api(api_client)
+            pods = await core.list_namespaced_pod(
+                self._namespace, label_selector=f"job-name={job_name}"
+            )
+            for pod in pods.items or []:
+                for cs in pod.status.container_statuses or []:
+                    if cs.state and cs.state.waiting:
+                        reason = cs.state.waiting.reason or ""
+                        if "ImagePull" in reason or "ErrImagePull" in reason:
+                            image = cs.image or "unknown"
+                            return (
+                                f"Failed to pull container image '{image}'."
+                                " Check that the image exists and is"
+                                " accessible."
+                            )
+                    if cs.state and cs.state.terminated:
+                        exit_code = cs.state.terminated.exit_code
+                        reason = cs.state.terminated.reason or ""
+                        if exit_code != 0:
+                            return (
+                                f"Job exited with code {exit_code}"
+                                f"{f': {reason}' if reason else ''}."
+                                " Check logs for details."
+                            )
+        except Exception:
+            logger.debug("Could not inspect pod for %s", job_name, exc_info=True)
+        return None
 
     async def cancel(self, handle: BackendHandle) -> None:
         resource_name = handle.scheduler_id

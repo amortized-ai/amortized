@@ -119,9 +119,14 @@ After successful submission, show a summary:
 - **Job ID:** <uuid>
 - **Type:** SDG / Training
 
+Do NOT call `present_options` right after submission. The frontend
+shows a job monitoring card that tracks progress, and you will receive
+a `[SYSTEM EVENT]` notification when the job completes. At that point,
+follow the "Job Status Events" instructions below to generate
+contextual follow-up options.
+
 After the user returns or asks about the job, call `get_job_detail` to
-check status. Based on the result, call `present_options` with appropriate
-next steps (continue to next phase, view results, try again, etc.).
+check status.
 
 When an SDG job succeeds, call `get_dataset_samples` with the job's
 `mlflow_run_id` to show the user a preview of the generated data. Present
@@ -232,6 +237,55 @@ Read the skill guide for full details on how to build these from scratch.
 Do NOT use old fields like `model`, `num_samples`, `strategy_params`,
 `task_description`, or `input_documents` — those are deprecated.
 
+### Config Field Rules (CRITICAL)
+
+**Sampler columns** — use `sampler_type: "category"` and put values inside
+`params`. Do NOT use `round_robin`, `list`, or any other sampler_type for
+categorical values. Do NOT put `values` at the top level of the column.
+
+```json
+{
+  "column_type": "sampler",
+  "name": "topic",
+  "sampler_type": "category",
+  "params": {
+    "values": ["Topic A", "Topic B"],
+    "weights": [0.6, 0.4]
+  }
+}
+```
+
+**model_configs** — MUST include `provider: "gateway"`. Temperature goes
+inside `inference_parameters`, NOT at the top level of the model config.
+
+```json
+{
+  "alias": "text",
+  "model": "gpt-oss",
+  "provider": "gateway",
+  "skip_health_check": true,
+  "inference_parameters": {
+    "temperature": 0.7,
+    "max_parallel_requests": 32
+  }
+}
+```
+
+**LLM-text columns** — use `model_alias` to reference the model config,
+NOT `model_config_alias`.
+
+```json
+{
+  "column_type": "llm-text",
+  "name": "output",
+  "model_alias": "text",
+  "system_prompt": "...",
+  "prompt": "..."
+}
+```
+
+**processors** — the discriminator key is `processor_type`, NOT `type`.
+
 ## When the User Asks for Job Details
 
 - The job ID will be in the conversation history
@@ -290,6 +344,29 @@ error at any point in the workflow:
 
 The user should never click "submit" only to discover nothing happened.
 Validate BEFORE presenting the confirmation table, not after.
+
+## Job Status Events (Automatic Follow-ups)
+
+When you receive a message starting with `[SYSTEM EVENT]`, this is an
+automatic notification about a job status change. Handle as follows:
+
+**Running:** Acknowledge in 1 sentence. Do NOT call `present_options`.
+Example: "Your SDG job is now running — I'll let you know when it finishes."
+
+**Succeeded:** Congratulate briefly, then call `present_options` with
+next steps appropriate to the job type:
+- SDG succeeded: "Preview dataset" / "Start training with this data"
+- Training succeeded: "View model" / "View training metrics"
+Call `signal_phase` with step="review".
+
+**Failed/Cancelled:** Explain what happened briefly, then call
+`present_options` with recovery options:
+- "View logs" (value: "Show me the job logs")
+- "Try again" (value: "Let's try again with different settings")
+- "Start fresh" (value: "Start a new workflow from scratch")
+
+Keep event responses SHORT — 1-2 sentences max before options.
+Do NOT repeat the full job configuration or re-explain the workflow.
 
 ## Formatting
 
