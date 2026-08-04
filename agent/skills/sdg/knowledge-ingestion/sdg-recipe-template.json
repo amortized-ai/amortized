@@ -21,7 +21,11 @@
         "name": "difficulty",
         "sampler_type": "category",
         "params": {
-          "values": ["Basic", "Intermediate", "Advanced"],
+          "values": [
+            "Basic - Simple factual question, single concept",
+            "Intermediate - Requires connecting multiple concepts or steps",
+            "Advanced - Multi-step reasoning, edge cases, comparing approaches"
+          ],
           "weights": [0.35, 0.45, 0.20]
         }
       },
@@ -30,7 +34,12 @@
         "name": "question_type",
         "sampler_type": "category",
         "params": {
-          "values": ["Factual", "Procedural", "Troubleshooting", "Comparison"],
+          "values": [
+            "Factual - Understanding what something is, why it works, or how components relate",
+            "Procedural - Step-by-step question about accomplishing a specific task",
+            "Troubleshooting - Diagnosing and resolving a specific error or unexpected behavior",
+            "Comparison - Choosing between options, understanding trade-offs, or comparing configurations"
+          ],
           "weights": [0.25, 0.35, 0.25, 0.15]
         }
       },

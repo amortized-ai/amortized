@@ -166,19 +166,27 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 Columns define the generation pipeline. Each column can reference prior
 columns and seed data via `{{ variable_name }}`.
 
-**Sampler columns** — always include difficulty, question_type, and topic:
+**Sampler columns** — always include difficulty, question_type, and topic.
+Each sampler value MUST include a description after the name, separated
+by " - ". This gives the LLM richer context for generation:
 
 ```json
 {
   "column_type": "sampler",
-  "name": "topic",
+  "name": "question_type",
   "sampler_type": "category",
   "params": {
-    "values": ["Section-level description 1", "Section-level description 2"],
+    "values": [
+      "Factual - Understanding what something is, why it works, or how components relate",
+      "Procedural - Step-by-step question about accomplishing a specific task"
+    ],
     "weights": [0.6, 0.4]
   }
 }
 ```
+
+Apply the same pattern to difficulty and topic samplers. See the
+template for the full default values.
 
 **LLM text columns** — question and answer generators:
 
