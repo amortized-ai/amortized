@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -48,6 +49,7 @@ WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
 MAX_PENDING_PER_SESSION = 20
+EVENT_COOLDOWN_SECONDS = 10
 
 
 def _detect_provider_id() -> str:
@@ -71,6 +73,7 @@ _pending_messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
 _pending_lock = asyncio.Lock()
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_locks_lock = asyncio.Lock()
+_last_event_time: dict[str, float] = {}
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -404,11 +407,18 @@ async def receive_event(session_id: str, body: JobEvent, request: Request) -> di
     if session_id not in _session_map:
         raise HTTPException(status_code=404, detail="unknown session")
 
+    now = time.monotonic()
+    last = _last_event_time.get(session_id, 0.0)
+    if now - last < EVENT_COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429, detail="event cooldown active")
+
     prompt = _build_event_prompt(body)
 
     lock = await _get_session_lock(session_id)
     async with lock:
         response_parts, result_info = await _run_agent(session_id, prompt)
+
+    _last_event_time[session_id] = time.monotonic()
 
     follow_up = {"info": result_info, "parts": response_parts}
 
@@ -423,6 +433,8 @@ async def receive_event(session_id: str, body: JobEvent, request: Request) -> di
 
 @app.get("/session/{session_id}/pending")
 async def get_pending(session_id: str) -> dict[str, Any]:
+    if session_id not in _session_map:
+        raise HTTPException(status_code=404, detail="unknown session")
     async with _pending_lock:
         messages = _pending_messages.pop(session_id, [])
     return {"messages": messages}
