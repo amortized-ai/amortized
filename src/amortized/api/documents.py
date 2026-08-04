@@ -437,8 +437,7 @@ async def list_documents() -> list[DocumentSummary]:
         run_id = info.get("run_id", "")
         fmt = tags.get("format", "md")
         ext = fmt if fmt != "text" else "txt"
-        content = await client.get_artifact_text(run_id, f"parsed_content.{ext}")
-        has_content = content is not None and len(content) > 10
+        has_content = await client.artifact_exists(run_id, f"parsed_content.{ext}")
         results.append(
             DocumentSummary(
                 document_id=run_id,
