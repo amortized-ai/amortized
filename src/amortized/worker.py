@@ -464,6 +464,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             params = mc.setdefault("inference_parameters", {})
             params.setdefault("max_parallel_requests", 32)
 
+        for col in config.get("columns", []):
+            if "model_config_alias" in col:
+                col.setdefault("model_alias", col.pop("model_config_alias"))
+
         num_records = config.pop("num_records", 100)
         config.pop("topic", None)
         dd_config = {"data_designer": config}
