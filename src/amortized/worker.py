@@ -436,6 +436,11 @@ async def _run_job(job: dict[str, Any]) -> None:
                 source.setdefault("encoding", "utf-8")
                 seed_config["source"] = source
                 config["seed_config"] = seed_config
+                for col in config.get("columns", []):
+                    for field in ("prompt", "system_prompt"):
+                        val = col.get(field, "")
+                        if "{{ text }}" in val:
+                            col[field] = val.replace("{{ text }}", "{{ content }}")
                 logger.info(
                     "Job %s: fetched %d pre-chunked chunks from %d document(s)",
                     job_id, chunk_count, len(document_ids),

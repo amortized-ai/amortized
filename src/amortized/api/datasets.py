@@ -137,14 +137,29 @@ def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
     tags: dict[str, str] = {}
     for t in run.get("data", {}).get("tags", []):
         tags[t["key"]] = t["value"]
+    params: dict[str, str] = {}
+    for p in run.get("data", {}).get("params", []):
+        params[p["key"]] = p["value"]
+    metrics: dict[str, float] = {}
+    for m in run.get("data", {}).get("metrics", []):
+        metrics[m["key"]] = m["value"]
     info = run.get("info", {})
+
+    samples = tags.get("num_samples", "")
+    if not samples and "num_samples_generated" in metrics:
+        samples = str(int(metrics["num_samples_generated"]))
+
+    teacher = tags.get("teacher_model", "")
+    if not teacher:
+        teacher = params.get("model", "")
+
     return {
         "run_id": info.get("run_id", ""),
         "name": tags.get("dataset_name", info.get("run_name", "")),
         "topic": tags.get("dataset_topic", ""),
         "source": tags.get("source", "sdg"),
-        "samples": tags.get("num_samples", ""),
-        "teacher_model": tags.get("teacher_model", ""),
+        "samples": samples,
+        "teacher_model": teacher,
         "job_id": tags.get("job_id", ""),
         "experiment_id": info.get("experiment_id", ""),
         "created_at": info.get("start_time"),

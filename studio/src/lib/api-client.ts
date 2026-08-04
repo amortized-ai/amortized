@@ -508,6 +508,23 @@ export async function deleteMlflowGatewayConnection(secretId: string): Promise<v
 
 // --- Datasets ---
 
+export interface DatasetListItem {
+  run_id: string
+  name: string
+  topic: string
+  source: string
+  samples: string
+  teacher_model: string
+  job_id: string
+  experiment_id: string
+  created_at: number
+}
+
+export function listDatasets(search = ""): Promise<DatasetListItem[]> {
+  const query = search ? buildQuery({ search }) : ""
+  return get<DatasetListItem[]>(`/api/v1/datasets${query}`)
+}
+
 export function uploadDataset(file: File): Promise<Job> {
   const formData = new FormData()
   formData.append("file", file)

@@ -1,12 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
-  searchMlflowExperiments,
-  searchMlflowRuns,
   getMlflowRun,
   getMlflowArtifactContent,
   listArtifacts,
   getArtifactJson,
+  listDatasets,
   deleteDataset,
   uploadDataset,
 } from "@/lib/api-client"
@@ -39,16 +38,25 @@ export function useDatasets() {
   return useQuery<DatasetRecord[]>({
     queryKey: ["mlflow", "datasets"],
     queryFn: async () => {
-      const exps = await searchMlflowExperiments()
-      const ids = (exps.experiments ?? []).map((e) => e.experiment_id)
-      if (ids.length === 0) return []
-      const resp = await searchMlflowRuns({
-        experiment_ids: ids,
-        filter_string: "tags.job_type IN ('sdg', 'upload')",
-        order_by: ["start_time DESC"],
-        max_results: 100,
-      })
-      return (resp.runs ?? []).map(runToDataset)
+      const items = await listDatasets()
+      return items.map((d) => ({
+        run_id: d.run_id,
+        name: d.name,
+        run_name: d.name,
+        experiment_id: d.experiment_id,
+        artifact_uri: "",
+        created_at: d.created_at ?? 0,
+        metrics: {},
+        params: {},
+        tags: {
+          dataset_name: d.name,
+          dataset_topic: d.topic,
+          num_samples: d.samples,
+          teacher_model: d.teacher_model,
+          job_id: d.job_id,
+          source: d.source,
+        },
+      }))
     },
   })
 }
