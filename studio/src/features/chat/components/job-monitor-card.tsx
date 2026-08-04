@@ -9,7 +9,6 @@ interface JobMonitorCardProps {
   jobType?: string
   onDismiss?: () => void
   onComplete?: (status: string) => void
-  onRunning?: () => void
 }
 
 const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"]
@@ -69,7 +68,7 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, onRunning }: JobMonitorCardProps) {
+export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -77,7 +76,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const completeFired = useRef(false)
-  const runningFired = useRef(false)
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
@@ -94,10 +92,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
       } else if (!jobStartRef.current && job.created_at) {
         jobStartRef.current = new Date(job.created_at).getTime()
       }
-      if (!runningFired.current && (job.status === "running" || job.status === "provisioning")) {
-        runningFired.current = true
-        onRunning?.()
-      }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
@@ -109,7 +103,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, onComplete, onRunning])
+  }, [jobId, onComplete])
 
   // Elapsed timer — uses job's server-side start time so it survives tab switches
   useEffect(() => {

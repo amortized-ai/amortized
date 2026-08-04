@@ -120,9 +120,10 @@ After successful submission, show a summary:
 - **Type:** SDG / Training
 
 Do NOT call `present_options` right after submission. The frontend
-automatically shows a job monitoring card that tracks progress and
-presents status-appropriate options when the job completes (succeeded,
-failed, or cancelled). Adding your own options creates stale duplicates.
+shows a job monitoring card that tracks progress, and you will receive
+a `[SYSTEM EVENT]` notification when the job completes. At that point,
+follow the "Job Status Events" instructions below to generate
+contextual follow-up options.
 
 After the user returns or asks about the job, call `get_job_detail` to
 check status.

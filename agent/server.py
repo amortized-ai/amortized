@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from collections import defaultdict
@@ -31,7 +32,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
     query,
 )
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 MORTY_PROMPT_PATH = Path(os.environ.get("MORTY_PROMPT_PATH", "/app/morty.md"))
@@ -46,6 +47,7 @@ MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
 WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
+MAX_PENDING_PER_SESSION = 20
 
 
 def _detect_provider_id() -> str:
@@ -59,6 +61,7 @@ def _detect_provider_id() -> str:
 
 
 PROVIDER_ID = _detect_provider_id()
+logger = logging.getLogger(__name__)
 
 _session_map: dict[str, str] = {}
 _map_lock = asyncio.Lock()
@@ -66,7 +69,16 @@ _morty_prompt: str = ""
 
 _pending_messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
 _pending_lock = asyncio.Lock()
+_session_locks: dict[str, asyncio.Lock] = {}
+_session_locks_lock = asyncio.Lock()
 _background_tasks: set[asyncio.Task[None]] = set()
+
+
+async def _get_session_lock(session_id: str) -> asyncio.Lock:
+    async with _session_locks_lock:
+        if session_id not in _session_locks:
+            _session_locks[session_id] = asyncio.Lock()
+        return _session_locks[session_id]
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -97,6 +109,21 @@ def _load_morty_prompt() -> str:
 app = FastAPI(title="Claude Code Agent (OpenCode-compatible)")
 
 
+PENDING_SWEEP_INTERVAL = 300
+
+
+async def _sweep_pending() -> None:
+    """Periodically remove pending messages for sessions that no longer exist."""
+    while True:
+        await asyncio.sleep(PENDING_SWEEP_INTERVAL)
+        async with _pending_lock:
+            stale = [sid for sid in _pending_messages if sid not in _session_map]
+            for sid in stale:
+                del _pending_messages[sid]
+            if stale:
+                logger.info("Swept %d stale pending queues", len(stale))
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     global _morty_prompt
@@ -104,6 +131,9 @@ async def _startup() -> None:
     if SESSION_MAP_PATH.exists():
         _session_map.update(json.loads(SESSION_MAP_PATH.read_text()))
     _morty_prompt = _load_morty_prompt()
+    task = asyncio.create_task(_sweep_pending())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class SessionResponse(BaseModel):
@@ -278,14 +308,34 @@ async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]
         if not job_id:
             continue
         base_url = MCP_AMORTIZED_URL.replace("/mcp", "")
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        api_key = os.environ.get("AMORTIZED_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
+                resp = await client.post(
                     f"{base_url}/api/v1/ui/watch_job",
                     json={"job_id": job_id, "session_id": session_id},
+                    headers=headers,
                 )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "watch_job failed: %s %s", resp.status_code, resp.text[:200]
+                    )
         except Exception:
-            pass
+            logger.warning(
+                "watch_job request failed for job %s", job_id, exc_info=True
+            )
+
+
+def _sanitize_error(error: str | None, max_len: int = 200) -> str:
+    if not error:
+        return ""
+    truncated = error[:max_len]
+    if len(error) > max_len:
+        truncated += "..."
+    return truncated.replace("\n", " ").strip()
 
 
 def _build_event_prompt(event: JobEvent) -> str:
@@ -307,7 +357,8 @@ def _build_event_prompt(event: JobEvent) -> str:
             f"Call signal_phase with step='review'. Keep the message to 1-2 sentences."
         )
     elif event.status in ("failed", "cancelled"):
-        error_detail = f" Error: {event.error}" if event.error else ""
+        sanitized = _sanitize_error(event.error)
+        error_detail = f" Error: {sanitized}" if sanitized else ""
         return (
             f"[SYSTEM EVENT] {job_label} {event.status}.{error_detail} "
             f"Explain briefly and call present_options with recovery options: "
@@ -331,7 +382,9 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if body.model and body.model.modelID:
         model = body.model.modelID.replace("@default", "") or MODEL
 
-    response_parts, result_info = await _run_agent(session_id, user_text, model)
+    lock = await _get_session_lock(session_id)
+    async with lock:
+        response_parts, result_info = await _run_agent(session_id, user_text, model)
 
     task = asyncio.create_task(_auto_watch_jobs(session_id, response_parts))
     _background_tasks.add(task)
@@ -341,14 +394,29 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
 
 @app.post("/session/{session_id}/event")
-async def receive_event(session_id: str, body: JobEvent) -> dict[str, Any]:
+async def receive_event(session_id: str, body: JobEvent, request: Request) -> dict[str, Any]:
+    expected_secret = os.environ.get("AGENT_EVENT_SECRET", "")
+    if expected_secret:
+        provided = request.headers.get("X-Event-Secret", "")
+        if provided != expected_secret:
+            raise HTTPException(status_code=403, detail="invalid event secret")
+
+    if session_id not in _session_map:
+        raise HTTPException(status_code=404, detail="unknown session")
+
     prompt = _build_event_prompt(body)
-    response_parts, result_info = await _run_agent(session_id, prompt)
+
+    lock = await _get_session_lock(session_id)
+    async with lock:
+        response_parts, result_info = await _run_agent(session_id, prompt)
 
     follow_up = {"info": result_info, "parts": response_parts}
 
     async with _pending_lock:
-        _pending_messages[session_id].append(follow_up)
+        msgs = _pending_messages[session_id]
+        if len(msgs) >= MAX_PENDING_PER_SESSION:
+            msgs.pop(0)
+        msgs.append(follow_up)
 
     return {"status": "queued", "message_count": len(_pending_messages[session_id])}
 

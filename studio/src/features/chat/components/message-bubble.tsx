@@ -66,38 +66,11 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
-  const [jobTerminalStatus, setJobTerminalStatus] = useState<string | null>(null)
-  const [jobIsRunning, setJobIsRunning] = useState(false)
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
-    if (jobId && jobTerminalStatus) {
-      if (jobTerminalStatus === "succeeded") {
-        return jobType === "TRAINING"
-          ? [
-              { title: "View Model", description: "See the trained model details", value: "Show me the trained model" },
-              { title: "View Metrics", description: "See training metrics and logs", value: "Show me the training metrics" },
-            ]
-          : [
-              { title: "Preview Dataset", description: "View the generated data", value: "Show me the generated dataset" },
-              { title: "Start Training", description: "Train a model with this data", value: "Start training with the data from this SDG job" },
-            ]
-      }
-      return [
-        { title: "View Logs", description: "See what went wrong", value: "Show me the logs for this job" },
-        { title: "Try Again", description: "Retry with different settings", value: "Let's try again with different settings" },
-        { title: "Start Fresh", description: "Begin a new workflow", value: "Start a new workflow from scratch" },
-      ]
-    }
-    if (jobId && jobIsRunning) {
-      return [
-        { title: "View Job", description: "See job details and config", value: "Show me the details for this job" },
-        { title: "View Logs", description: "See live job output", value: "Show me the logs for this job" },
-        { title: "Cancel Job", description: "Stop the running job", value: "Cancel this job" },
-      ]
-    }
     return structuredOptions ?? []
-  }, [isUser, message.optionCards.length, structuredOptions, jobId, jobTerminalStatus, jobType, jobIsRunning])
+  }, [isUser, message.optionCards.length, structuredOptions])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
@@ -224,8 +197,6 @@ export function MessageBubble({
               jobId={jobId}
               jobType={jobType}
               onDismiss={() => setMonitorDismissed(true)}
-              onComplete={(s) => setJobTerminalStatus(s)}
-              onRunning={() => setJobIsRunning(true)}
             />
           </div>
         )}

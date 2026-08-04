@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -50,11 +51,17 @@ async def emit_job_event(
         "error": job.get("error"),
     }
 
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    event_secret = os.environ.get("AGENT_EVENT_SECRET", "")
+    if event_secret:
+        headers["X-Event-Secret"] = event_secret
+
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{agent_url}/session/{session_id}/event",
                 json=event,
+                headers=headers,
             )
             if resp.status_code != 200:
                 logger.warning(
