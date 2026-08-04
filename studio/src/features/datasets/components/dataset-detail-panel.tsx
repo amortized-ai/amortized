@@ -628,7 +628,7 @@ function MessageBubble({ role, content }: { role: string; content: unknown }) {
 
 function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
   const jobId = dataset.tags["job_id"] ?? null
-  const { data: job } = useJob(jobId)
+  const { data: job, isError: jobError } = useJob(jobId)
   const [configOpen, setConfigOpen] = useState(true)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -655,7 +655,11 @@ function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
               <JsonTreeViewer data={job!.config} collapsed={2} />
             ) : (
               <p className="text-sm text-muted-foreground">
-                {jobId ? "Loading config..." : "No linked job found."}
+                {!jobId
+                  ? "No linked job found."
+                  : jobError
+                    ? "Job no longer exists."
+                    : "Loading config..."}
               </p>
             )}
           </div>
