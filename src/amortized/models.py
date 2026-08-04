@@ -12,6 +12,7 @@ class JobType(StrEnum):
     training = "training"
     sdg = "sdg"
     upload = "upload"
+    eval = "eval"
 
 
 class JobStatus(StrEnum):
