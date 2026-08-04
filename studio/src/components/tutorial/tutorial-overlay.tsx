@@ -63,10 +63,10 @@ function computeTooltipPos(
   sw: number,
   sh: number,
   placement: "top" | "right" | "bottom" | "left" = "bottom",
+  estH = 200,
 ): { top: number; left: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const estH = 260
 
   let top = 0
   let left = 0
@@ -124,6 +124,8 @@ export function TutorialOverlay() {
   const [rect, setRect] = useState<TargetRect | null>(null)
   const [tooltipVisible, setTooltipVisible] = useState(false)
   const timersRef = useRef<number[]>([])
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [tooltipH, setTooltipH] = useState(200)
 
   const step = TUTORIAL_STEPS[stepIndex]
   const displayedStep = TUTORIAL_STEPS[displayedStepIndex]
@@ -243,6 +245,12 @@ export function TutorialOverlay() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [active, stepIndex, totalSteps, nextStep, prevStep, skipTutorial])
+
+  useEffect(() => {
+    if (!tooltipRef.current) return
+    const h = tooltipRef.current.offsetHeight
+    if (h > 0) setTooltipH(h)
+  }, [tooltipVisible, displayedStepIndex])
 
   useEffect(() => {
     return clearTimers
@@ -368,18 +376,24 @@ export function TutorialOverlay() {
     : 0
 
   const isRecipeStep = displayedStep.id.startsWith("recipe-step")
-  const tooltipWidth = isRecipeStep ? RECIPE_TOOLTIP_W : TOOLTIP_W
+  const isRecipeBrowser = displayedStep.id === "recipes"
+  const tooltipWidth = isRecipeStep || isRecipeBrowser ? RECIPE_TOOLTIP_W : TOOLTIP_W
 
   let tooltipPos: { top: number; left: number }
 
-  if (isRecipeStep && rect) {
+  if (isRecipeBrowser && rect) {
+    tooltipPos = {
+      top: Math.max(MARGIN, st + sh / 2 - 110),
+      left: MARGIN,
+    }
+  } else if (isRecipeStep && rect) {
     const stepCenterY = st + sh / 2
     tooltipPos = {
       top: Math.max(MARGIN, stepCenterY - 110),
       left: Math.max(MARGIN, sl - GAP - RECIPE_TOOLTIP_W),
     }
   } else if (rect) {
-    tooltipPos = computeTooltipPos(st, sl, sw, sh, displayedStep.placement)
+    tooltipPos = computeTooltipPos(st, sl, sw, sh, displayedStep.placement, tooltipH)
   } else {
     tooltipPos = {
       top: window.innerHeight / 2,
@@ -428,6 +442,7 @@ export function TutorialOverlay() {
 
       {/* Tooltip */}
       <div
+        ref={tooltipRef}
         className="fixed z-[10002] bg-card border border-border/80 rounded-xl shadow-xl p-4"
         style={{
           top: tooltipPos.top,
@@ -456,26 +471,16 @@ export function TutorialOverlay() {
           {displayedStep.id === "settings" && (
             <div className="flex flex-col gap-1.5 pt-1">
               <a
-                href="#section-system"
-                onClick={(e) => {
-                  e.preventDefault()
-                  document
-                    .getElementById("section-system")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }}
+                href="https://github.com/amortized-ai/amortized#readme"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
-                <Server className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Set up Backend &
+                <Server className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Setup Backend &
                 MLflow
               </a>
               <a
-                href="#section-gateway"
-                onClick={(e) => {
-                  e.preventDefault()
-                  document
-                    .getElementById("section-gateway")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }}
+                href="/mlflow/#/gateway"
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
                 <Zap className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Configure AI Gateway
