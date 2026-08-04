@@ -35,7 +35,8 @@ import {
   Hash,
   Trash2,
 } from "lucide-react"
-import { useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
+import { useDataset, useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
+import { useJob } from "@/features/jobs/api/use-jobs"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { DatasetRecord, DatasetSample } from "@/types/api"
 
@@ -53,7 +54,9 @@ export function DatasetDetailPanel({
   const queryClient = useQueryClient()
   const deleteMutation = useDeleteDataset()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const { data: fullDataset } = useDataset(dataset?.run_id ?? null)
   if (!dataset) return null
+  const resolved = fullDataset ?? dataset
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,7 +155,7 @@ export function DatasetDetailPanel({
             value="overview"
             className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
           >
-            <OverviewTab dataset={dataset} onClose={() => onOpenChange(false)} />
+            <OverviewTab dataset={resolved} onClose={() => onOpenChange(false)} />
           </TabsContent>
 
           <TabsContent
@@ -166,7 +169,7 @@ export function DatasetDetailPanel({
             value="config"
             className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4"
           >
-            <ConfigTab dataset={dataset} />
+            <ConfigTab dataset={resolved} />
           </TabsContent>
         </Tabs>
 
@@ -624,35 +627,64 @@ function MessageBubble({ role, content }: { role: string; content: unknown }) {
 // ---------------------------------------------------------------------------
 
 function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
-  const [paramsOpen, setParamsOpen] = useState(true)
+  const jobId = dataset.tags["job_id"] ?? null
+  const { data: job, isError: jobError } = useJob(jobId)
+  const [configOpen, setConfigOpen] = useState(true)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [paramsOpen, setParamsOpen] = useState(false)
   const [metricsOpen, setMetricsOpen] = useState(false)
+
+  const hasConfig = job?.config && Object.keys(job.config).length > 0
+  const hasParams = Object.keys(dataset.params).length > 0
+  const hasMetrics = Object.keys(dataset.metrics).length > 0
+  const hasTags = Object.keys(dataset.tags).length > 0
 
   return (
     <div className="space-y-2 pt-2">
-      {/* Parameters */}
-      <Collapsible open={paramsOpen} onOpenChange={setParamsOpen}>
+      {/* Job Config (SDG config: columns, model_configs, processors, etc.) */}
+      <Collapsible open={configOpen} onOpenChange={setConfigOpen}>
         <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted transition-colors duration-150">
-          Parameters
+          Job Config
           <ChevronDown
-            className={`h-4 w-4 transition-transform duration-200 ${paramsOpen ? "rotate-180" : ""}`}
+            className={`h-4 w-4 transition-transform duration-200 ${configOpen ? "rotate-180" : ""}`}
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
-            {Object.keys(dataset.params).length > 0 ? (
-              <JsonTreeViewer data={dataset.params} collapsed={1} />
+            {hasConfig ? (
+              <JsonTreeViewer data={job!.config} collapsed={2} />
             ) : (
               <p className="text-sm text-muted-foreground">
-                No parameters recorded.
+                {!jobId
+                  ? "No linked job found."
+                  : jobError
+                    ? "Job no longer exists."
+                    : "Loading config..."}
               </p>
             )}
           </div>
         </CollapsibleContent>
       </Collapsible>
 
+      {/* Parameters */}
+      {hasParams && (
+        <Collapsible open={paramsOpen} onOpenChange={setParamsOpen}>
+          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted transition-colors duration-150">
+            Parameters
+            <ChevronDown
+              className={`h-4 w-4 transition-transform duration-200 ${paramsOpen ? "rotate-180" : ""}`}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
+              <JsonTreeViewer data={dataset.params} collapsed={1} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
       {/* Metrics */}
-      {Object.keys(dataset.metrics).length > 0 && (
+      {hasMetrics && (
         <Collapsible open={metricsOpen} onOpenChange={setMetricsOpen}>
           <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted transition-colors duration-150">
             Metrics
@@ -676,29 +708,31 @@ function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
       )}
 
       {/* Tags */}
-      <Collapsible open={tagsOpen} onOpenChange={setTagsOpen}>
-        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted transition-colors duration-150">
-          Tags ({Object.keys(dataset.tags).length})
-          <ChevronDown
-            className={`h-4 w-4 transition-transform duration-200 ${tagsOpen ? "rotate-180" : ""}`}
-          />
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(dataset.tags).map(([key, value]) => (
-                <Badge
-                  key={key}
-                  variant="outline"
-                  className="font-mono text-xs"
-                >
-                  {key}: {value}
-                </Badge>
-              ))}
+      {hasTags && (
+        <Collapsible open={tagsOpen} onOpenChange={setTagsOpen}>
+          <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium hover:bg-muted transition-colors duration-150">
+            Tags ({Object.keys(dataset.tags).length})
+            <ChevronDown
+              className={`h-4 w-4 transition-transform duration-200 ${tagsOpen ? "rotate-180" : ""}`}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(dataset.tags).map(([key, value]) => (
+                  <Badge
+                    key={key}
+                    variant="outline"
+                    className="font-mono text-xs"
+                  >
+                    {key}: {value}
+                  </Badge>
+                ))}
+              </div>
             </div>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   )
 }

@@ -242,6 +242,18 @@ class MLflowClient:
             resp.raise_for_status()
             return resp.json().get("files", [])  # type: ignore[no-any-return]
 
+    async def artifact_exists(self, run_id: str, path: str) -> bool:
+        """Check if an artifact exists without downloading it."""
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.head(
+                    self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
+                    params={"run_id": run_id},
+                )
+                return resp.status_code == 200
+        except Exception:
+            return False
+
     async def get_artifact(self, run_id: str, path: str) -> bytes:
         """Download an artifact's raw bytes."""
         prefix = await self._resolve_artifact_prefix(run_id)

@@ -67,7 +67,7 @@ Ask the user these questions (one at a time, with numbered options):
         "name": "label",
         "model_alias": "text",
         "system_prompt": "Classify the text. Output ONLY the label.",
-        "prompt": "Text: {{ text }}\n\nClassify as one of: <categories>. Output ONLY the label."
+        "prompt": "Text: {{ content }}\n\nClassify as one of: <categories>. Output ONLY the label."
       }
     ],
     "processors": [
@@ -77,7 +77,7 @@ Ask the user these questions (one at a time, with numbered options):
         "template": {
           "messages": [
             {"role": "system", "content": "<classification system prompt>"},
-            {"role": "user", "content": "{{ text }}"},
+            {"role": "user", "content": "{{ content }}"},
             {"role": "assistant", "content": "{{ label }}"}
           ]
         }
