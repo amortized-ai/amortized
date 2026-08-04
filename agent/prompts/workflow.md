@@ -118,7 +118,6 @@ After successful submission, show a summary:
 
 - **Job ID:** <uuid>
 - **Type:** SDG / Training
-- **Status:** Queued
 
 After the user returns or asks about the job, call `get_job_detail` to
 check status. Based on the result, call `present_options` with appropriate
@@ -252,30 +251,26 @@ When a job fails:
 2. Call `get_job_logs` to inspect container output
 3. Diagnose and suggest fixes
 
-## Phase Signaling (MANDATORY)
+## Progress Signaling (MANDATORY)
 
-On EVERY response during a workflow, call `signal_phase` to tell the UI
-where you are. The frontend uses this to display the workflow progress bar.
+On EVERY response during a workflow, call `signal_phase` to update
+the progress bar. The frontend maps each step to a descriptive label
+automatically — you just need to report which step you're on.
+
+Call `signal_phase` ONCE per response with the current phase and step,
+then STOP — do not loop on it. If answering a general question (not
+part of a workflow), omit the call.
 
 **Phases:** `sdg`, `training`
 
-**Steps:**
-- `understand_task` — Understanding what the user wants to build
-- `load_skill` — Loading the relevant skill guidance
-- `gather_requirements` — Asking domain-specific questions
-- `estimate_cost` — Presenting cost estimates
-- `confirm` — Showing confirmation table, waiting for user approval
-- `execute` — Job submitted and running
-- `review` — Job completed, presenting results and next steps
-
-**Examples:**
-- First message: `signal_phase(phase="sdg", step="understand_task")`
-- Asking about topics, samples, model: `signal_phase(phase="sdg", step="gather_requirements")`
-- Showing confirmation table: `signal_phase(phase="sdg", step="confirm")`
-- Moving to training: `signal_phase(phase="training", step="load_skill")`
-
-Call `signal_phase` ONCE per response, then STOP — do not loop on it.
-If answering a general question (not part of a workflow), omit the call.
+**Steps (in order):**
+1. `understand_task` — when you first identify what the user wants
+2. `load_skill` — when you load the sub-skill guide
+3. `gather_requirements` — while asking the user for parameters
+4. `estimate_cost` — when checking models, comparing pricing
+5. `confirm` — when presenting the summary table
+6. `execute` — when submitting the job
+7. `review` — when checking job status or suggesting next steps
 
 ## Honest Failure Handling
 
