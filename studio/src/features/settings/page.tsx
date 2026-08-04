@@ -13,6 +13,7 @@ import {
   EyeOff,
   ArrowRight,
   Bot,
+  Box,
   ExternalLink,
 } from "lucide-react"
 import { Link } from "react-router"
@@ -20,6 +21,7 @@ import { PageHeader } from "@/components/page-header"
 import { SearchInput } from "@/components/search-input"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { PrerequisitesCard } from "./components/prerequisites-card"
+import { ModelRegistryCard } from "./components/model-registry-card"
 import {
   useHealth,
   useConfig,
@@ -204,7 +206,7 @@ export default function SettingsPage() {
         <PageHeader title="Settings" description="Manage connections, compute backends, and API keys" />
 
         {/* Jump-to nav */}
-        <div className="animate-message-in grid gap-2.5 md:grid-cols-3">
+        <div className="animate-message-in grid gap-2.5 grid-cols-2 md:grid-cols-4">
         <button
           type="button"
           onClick={() => document.getElementById("section-system")?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -246,6 +248,21 @@ export default function SettingsPage() {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">AI Gateway</p>
             <p className="text-xs text-muted-foreground">LLM routes for SDG</p>
+          </div>
+          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => document.getElementById("section-models")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-all duration-200 hover:border-[#b9e5e5] hover:shadow-sm cursor-pointer dark:hover:border-[#004d4d]"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#daf2f2] text-[#147878] transition-colors duration-200 group-hover:bg-[#9ad8d8] dark:bg-[#003333]/40 dark:text-[#37a3a3]">
+            <Box className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Models</p>
+            <p className="text-xs text-muted-foreground">Registry status</p>
           </div>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
@@ -356,6 +373,11 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Model Registry */}
+      <div id="section-models" className="scroll-mt-6">
+        <ModelRegistryCard />
+      </div>
 
       {/* Agent Provider */}
       <AgentProviderSection />
