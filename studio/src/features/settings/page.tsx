@@ -3,20 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import {
   Plus,
-  Trash2,
   Server,
   Zap,
   Cpu,
@@ -24,7 +13,7 @@ import {
   EyeOff,
   ArrowRight,
   Bot,
-  KeyRound,
+  ExternalLink,
 } from "lucide-react"
 import { Link } from "react-router"
 import { PageHeader } from "@/components/page-header"
@@ -35,210 +24,11 @@ import {
   useHealth,
   useConfig,
   useGatewayRoutes,
-  useCreateGatewayRoute,
-  useDeleteGatewayRoute,
-  useGatewayConnections,
-  useCreateGatewayConnection,
-  useDeleteGatewayConnection,
 } from "./api/use-settings"
 import { useSettingsStore } from "@/stores/settings-store"
 import { PROVIDER_CATALOG } from "@/features/chat/models"
 import { useProviderStatus } from "@/features/chat/api/use-providers"
 import { useProviderAuthorize } from "@/features/chat/api/use-provider-auth"
-
-function CreateConnectionDialog() {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [provider, setProvider] = useState("")
-  const [apiKey, setApiKey] = useState("")
-  const createConnection = useCreateGatewayConnection()
-
-  function handleSubmit() {
-    createConnection.mutate(
-      { name, provider, apiKey },
-      { onSuccess: () => { setOpen(false); setName(""); setProvider(""); setApiKey("") } },
-    )
-  }
-
-  const canSubmit = name.trim() && provider.trim() && apiKey.trim()
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setName(""); setProvider(""); setApiKey(""); createConnection.reset() } }}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" data-testid="add-gateway-connection">
-          <Plus className="h-4 w-4 mr-1" />
-          Add Connection
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add LLM Connection</DialogTitle>
-          <DialogDescription>
-            Store an API key for an LLM provider. Connections are encrypted and managed by the MLflow AI Gateway.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="conn-name">Connection Name</Label>
-            <Input
-              id="conn-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. my-openai-key"
-              data-testid="conn-name-input"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="conn-provider">Provider</Label>
-            <Input
-              id="conn-provider"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              placeholder="e.g. openai, anthropic, google"
-              data-testid="conn-provider-input"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="conn-apikey">API Key</Label>
-            <Input
-              id="conn-apikey"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter API key..."
-              type="password"
-              className="font-mono text-xs"
-              data-testid="conn-apikey-input"
-            />
-          </div>
-        </div>
-        {createConnection.isError && (
-          <p className="text-sm text-destructive">
-            Failed to create connection. Check the name and API key and try again.
-          </p>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!canSubmit || createConnection.isPending}
-            data-testid="conn-submit"
-          >
-            {createConnection.isPending ? "Creating..." : "Create Connection"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function CreateRouteDialog() {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState("")
-  const [provider, setProvider] = useState("")
-  const [modelName, setModelName] = useState("")
-  const [secretName, setSecretName] = useState("")
-  const createRoute = useCreateGatewayRoute()
-  const { data: connections = [], isError: connectionsError, isLoading: connectionsLoading } = useGatewayConnections()
-
-  function handleSubmit() {
-    createRoute.mutate(
-      { name, route_type: "llm/v1/chat", model: { name: modelName, provider }, secret_name: secretName },
-      { onSuccess: () => { setOpen(false); setName(""); setProvider(""); setModelName(""); setSecretName("") } },
-    )
-  }
-
-  const canSubmit = name.trim() && provider.trim() && modelName.trim() && secretName.trim()
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setName(""); setProvider(""); setModelName(""); setSecretName(""); createRoute.reset() } }}>
-      <DialogTrigger asChild>
-        <Button size="sm" data-testid="add-gateway-route">
-          <Plus className="h-4 w-4 mr-1" />
-          Add Endpoint
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add AI Gateway Endpoint</DialogTitle>
-          <DialogDescription>
-            Configure an LLM provider endpoint for SDG jobs.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <Label htmlFor="route-name">Endpoint Name</Label>
-            <Input
-              id="route-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. openai-gpt4o"
-              data-testid="route-name-input"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="route-provider">Provider</Label>
-            <Input
-              id="route-provider"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              placeholder="e.g. openai, anthropic, google"
-              data-testid="route-provider-input"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="route-model">Model Name</Label>
-            <Input
-              id="route-model"
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-              placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
-              data-testid="route-model-input"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="route-connection">LLM Connection</Label>
-            {connectionsLoading ? (
-              <p className="text-xs text-muted-foreground py-2">Loading connections...</p>
-            ) : connectionsError ? (
-              <p className="text-xs text-destructive py-2">
-                Failed to load connections. Check that the AI Gateway is reachable.
-              </p>
-            ) : connections.length > 0 ? (
-              <select
-                id="route-connection"
-                value={secretName}
-                onChange={(e) => setSecretName(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                data-testid="route-connection-select"
-              >
-                <option value="">Select a connection...</option>
-                {connections.map((c) => (
-                  <option key={c.secret_id} value={c.secret_name}>
-                    {c.secret_name}{c.provider ? ` (${c.provider})` : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-xs text-muted-foreground py-2">
-                No connections yet. Create an LLM connection first to store your API key.
-              </p>
-            )}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!canSubmit || createRoute.isPending}
-            data-testid="route-submit"
-          >
-            {createRoute.isPending ? "Creating..." : "Create Endpoint"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 function ConfigRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -394,9 +184,6 @@ export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
   const { data: healthData } = useHealth({ refetchInterval: 30000 })
   const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
-  const { data: connections = [], isLoading: connectionsLoading } = useGatewayConnections()
-  const deleteRoute = useDeleteGatewayRoute()
-  const deleteConnection = useDeleteGatewayConnection()
   const [routeSearch, setRouteSearch] = useState("")
 
   const filteredRoutes = useMemo(() => {
@@ -587,60 +374,18 @@ export default function SettingsPage() {
           {config?.mlflow_gateway_uri && (
             <div className="rounded-lg border border-[#95d58e] bg-[#e9f5e8] px-4 py-3 dark:border-[#163b11] dark:bg-[#0d2009]/40">
               <p className="text-xs text-[#1e4f18] dark:text-[#5ba352]">
-                SDG jobs auto-route through the gateway. Manage LLM connections below to configure provider credentials.
+                SDG and evaluation jobs auto-route through the gateway. Manage endpoints in the{" "}
+                <a
+                  href="/mlflow/#/gateway"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2 hover:text-[#163b11] dark:hover:text-[#7ec975]"
+                >
+                  MLflow AI Gateway
+                </a>.
               </p>
             </div>
           )}
-
-          {/* LLM Connections */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h4 className="text-sm font-medium">LLM Connections</h4>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  API keys stored encrypted in the MLflow AI Gateway.
-                </p>
-              </div>
-              <CreateConnectionDialog />
-            </div>
-            {connectionsLoading ? (
-              <TableSkeleton columns={3} rows={2} />
-            ) : connections.length > 0 ? (
-              <div className="space-y-2">
-                {connections.map((conn) => (
-                  <div
-                    key={conn.secret_id}
-                    className="group flex items-center justify-between rounded-lg border px-3 py-2.5 transition-all duration-200 hover:bg-muted/30 hover:border-border"
-                  >
-                    <div className="flex items-center gap-3">
-                      <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="font-medium text-sm">{conn.secret_name}</span>
-                      {conn.provider && (
-                        <Badge variant="outline" className="text-xs">{conn.provider}</Badge>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive transition-all duration-200"
-                      onClick={() => deleteConnection.mutate(conn.secret_id)}
-                      disabled={deleteConnection.isPending}
-                      aria-label={`Delete connection ${conn.secret_name}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 space-y-1">
-                <p className="text-sm text-muted-foreground">No LLM connections configured.</p>
-                <p className="text-xs text-muted-foreground">
-                  Add a connection to securely store an LLM provider API key.
-                </p>
-              </div>
-            )}
-          </div>
 
           {/* Endpoints */}
           <div>
@@ -648,10 +393,20 @@ export default function SettingsPage() {
               <div>
                 <h4 className="text-sm font-medium">Endpoints</h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  LLM endpoints for SDG jobs.
+                  LLM endpoints for SDG and evaluation jobs.
                 </p>
               </div>
-              <CreateRouteDialog />
+              <a
+                href="/mlflow/#/gateway"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 hover:bg-muted hover:border-border"
+                data-testid="add-gateway-route"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Endpoint
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              </a>
             </div>
             {routesLoading ? (
               <TableSkeleton columns={3} rows={3} />
@@ -671,37 +426,25 @@ export default function SettingsPage() {
                     {filteredRoutes.map((route) => (
                       <div
                         key={route.name}
-                        className="group flex items-center justify-between rounded-lg border px-3 py-2.5 transition-all duration-200 hover:bg-muted/30 hover:border-border"
+                        className="flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-all duration-200 hover:bg-muted/30 hover:border-border"
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium text-sm">{route.name}</span>
-                          <Badge variant="outline" className="text-xs">{route.route_type}</Badge>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {route.model.provider}/{route.model.name}
-                          </span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive transition-all duration-200"
-                          onClick={() => deleteRoute.mutate(route.name)}
-                          disabled={deleteRoute.isPending}
-                          aria-label={`Delete endpoint ${route.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <span className="font-medium text-sm">{route.name}</span>
+                        <Badge variant="outline" className="text-xs">{route.route_type}</Badge>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {route.model.provider}/{route.model.name}
+                        </span>
                       </div>
                     ))}
                   </div>
                 ) : routes.length > 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No endpoints match "{routeSearch}"
+                    No endpoints match &ldquo;{routeSearch}&rdquo;
                   </p>
                 ) : (
                   <div className="text-center py-4 space-y-1">
                     <p className="text-sm text-muted-foreground">No endpoints configured.</p>
                     <p className="text-xs text-muted-foreground">
-                      Add an endpoint to connect an LLM for SDG jobs.
+                      Add an endpoint in the MLflow AI Gateway to connect an LLM for SDG and evaluation jobs.
                     </p>
                   </div>
                 )}
