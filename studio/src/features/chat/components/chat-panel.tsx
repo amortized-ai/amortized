@@ -11,7 +11,7 @@ import { SessionStatusBanner } from "./session-status-banner"
 import { MessageList } from "./message-list"
 import { ChatInput } from "./chat-input"
 import { PlanProgress } from "./plan-progress"
-import { derivePhasePlan } from "../utils/derive-plan-steps"
+import { derivePlan } from "../utils/derive-plan-steps"
 
 export function ChatPanel() {
   const { panelOpen, setPanelOpen } = useChatStore()
@@ -29,7 +29,7 @@ export function ChatPanel() {
   )
 
   const phasePlan = useMemo(
-    () => derivePhasePlan(messages),
+    () => derivePlan(messages),
     [messages],
   )
 

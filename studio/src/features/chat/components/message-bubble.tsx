@@ -47,7 +47,12 @@ export function MessageBubble({
     if (!tool?.result) return null
     try {
       const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-      if (parsed?.options && Array.isArray(parsed.options)) return parsed.options as OptionCard[]
+      if (parsed?.options && Array.isArray(parsed.options)) {
+        return (parsed.options as OptionCard[]).map((opt) => ({
+          ...opt,
+          value: opt.description ? `${opt.title} — ${opt.description}` : opt.title,
+        }))
+      }
     } catch { /* ignore parse errors */ }
     return null
   }, [isUser, message.toolResults])
@@ -59,13 +64,10 @@ export function MessageBubble({
 
   const { jobId, jobType } = useMemo(() => {
     if (isUser) return { jobId: null, jobType: "SDG" }
-    const submitTools = message.toolResults.filter(t => t.name === "submit_recipe_job" || t.name === "create_job")
-    for (const tool of submitTools) {
-      if (!tool.result) continue
-      const info = extractJobInfo(tool.result)
-      if (info.jobId) return info
-    }
-    return { jobId: null, jobType: "SDG" }
+    const tool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
+    if (!tool?.result) return { jobId: null, jobType: "SDG" }
+    const info = extractJobInfo(tool.result)
+    return info.jobId ? { jobId: info.jobId, jobType: info.jobType } : { jobId: null, jobType: "SDG" }
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
@@ -95,7 +97,12 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const visibleToolResults = useMemo(() => {
-    const hidden = new Set<string>(["signal_phase", "get_document_sections", "get_section_content", "get_document_content"])
+    const hidden = new Set<string>([
+      "signal_phase",
+      "get_document_sections",
+      "get_section_content",
+      "get_document_content",
+    ])
     if (modelPricing) {
       hidden.add("get_model_pricing")
       hidden.add("show_model_pricing")
@@ -184,7 +191,6 @@ export function MessageBubble({
           </div>
         )}
 
-        {/* Job monitoring card - only for latest message with submit_recipe_job */}
         {!monitorDismissed && jobId && (
           <div className="mt-3">
             <JobMonitorCard

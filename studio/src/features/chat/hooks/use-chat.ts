@@ -105,6 +105,8 @@ const UI_TOOLS = new Set([
   "create_job",
 ])
 
+const ALL_TURN_TOOLS = new Set(["signal_phase"])
+
 function normalizeToolName(raw: string): string {
   return raw.replace(/^(?:mcp_amortized__|amortized_)/, "")
 }
@@ -118,6 +120,7 @@ function extractSessionData(
   sessionMessages: OpenCodeResponse[],
   existingTools: ToolResult[],
 ): { tools: ToolResult[]; text: string } {
+  const seen = new Set(existingTools.map((t) => t.name.toLowerCase()))
   const tools = [...existingTools]
   const textParts: string[] = []
 
@@ -130,6 +133,23 @@ function extractSessionData(
     ? sessionMessages.slice(lastUserIdx + 1)
     : sessionMessages
 
+  for (const msg of sessionMessages) {
+    const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
+    if (info?.role !== "assistant") continue
+
+    for (const part of msg.parts) {
+      if (part.type === "tool") {
+        const name = normalizeToolName(part.tool ?? "")
+        if (ALL_TURN_TOOLS.has(name)) {
+          const stateObj = part.state as Record<string, unknown> | undefined
+          const rawOutput = part.output ?? stateObj?.output ?? ""
+          const output = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput)
+          tools.push({ name, result: output, collapsed: true })
+        }
+      }
+    }
+  }
+
   for (const msg of currentTurnMessages) {
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
@@ -139,7 +159,8 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        if (UI_TOOLS.has(name)) {
+        if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && !seen.has(name.toLowerCase())) {
+          seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
           const rawOutput = part.output ?? stateObj?.output ?? ""
           const output = typeof rawOutput === "string" ? rawOutput : JSON.stringify(rawOutput)
@@ -323,8 +344,8 @@ export function useChat() {
         const session = extractSessionData(sessionMessages, parsed.toolResults)
         const toolResults = session.tools
 
-        const phaseTool = toolResults.find((t) => t.name === "signal_phase")
         let phase: string | null = null
+        const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
         if (phaseTool?.result) {
           try {
             const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result

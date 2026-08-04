@@ -23,7 +23,7 @@ import { Plus, Bot } from "lucide-react"
 import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
 import { clearConversationSession } from "@/lib/api-client"
 
-import { derivePhasePlan } from "./utils/derive-plan-steps"
+import { derivePlan } from "./utils/derive-plan-steps"
 
 function ChatContent() {
   const navigate = useNavigate()
@@ -38,7 +38,7 @@ function ChatContent() {
   } = useChat()
 
   const phasePlan = useMemo(
-    () => derivePhasePlan(messages),
+    () => derivePlan(messages),
     [messages],
   )
 

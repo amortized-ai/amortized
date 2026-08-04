@@ -48,7 +48,7 @@ export interface PlanStep {
   status: "pending" | "active" | "completed"
 }
 
-export type PlanPhase = "sdg" | "training"
+export type PlanPhase = "sdg" | "training" | "eval"
 
 export interface PhasePlan {
   phase: PlanPhase
