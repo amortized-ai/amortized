@@ -329,6 +329,21 @@ export async function fetchSessionMessages(
   }
 }
 
+export async function fetchPendingMessages(
+  conversationId: string,
+): Promise<OpenCodeResponse[]> {
+  const sessionId = useChatStore.getState().getSessionId(conversationId)
+  if (!sessionId) return []
+  try {
+    const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/pending`)
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return data.messages ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function generateChatTitle(message: string): Promise<string> {
   const resp = await fetch(`${getBaseUrl()}/agent/title`, {
     method: "POST",

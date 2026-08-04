@@ -1390,6 +1390,47 @@
         }
       }
     },
+    "/api/v1/ui/watch_job": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Register a job for automatic status change notifications to the agent session",
+        "operationId": "watch_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health",
@@ -2607,6 +2648,50 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WatchJobRequest": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job ID to watch for status changes"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Agent session ID to notify on status change"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "session_id"
+        ],
+        "title": "WatchJobRequest"
+      },
+      "WatchJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "watching": {
+            "type": "boolean",
+            "title": "Watching",
+            "description": "Whether the watch was registered",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "session_id"
+        ],
+        "title": "WatchJobResponse"
       }
     }
   }
