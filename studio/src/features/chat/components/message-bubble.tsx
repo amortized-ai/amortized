@@ -71,32 +71,6 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [monitorDismissed, setMonitorDismissed] = useState(false)
-  const [completedStatus, setCompletedStatus] = useState<string | null>(null)
-
-  const jobOptionCards = useMemo(() => {
-    if (!jobId || !completedStatus) return [] as OptionCard[]
-    const viewJobCard: OptionCard = { title: "View Job", description: "Open the job in the Jobs page", value: `__nav:/jobs?job=${encodeURIComponent(jobId)}` }
-    if (completedStatus === "failed" || completedStatus === "cancelled") {
-      return [
-        viewJobCard,
-        { title: "View Logs", description: "Check what went wrong", value: `__nav:/jobs?job=${encodeURIComponent(jobId)}&tab=logs` },
-        { title: "Try again", description: "Resubmit with the same settings", value: "Let's try running that job again with the same settings" },
-      ] as OptionCard[]
-    }
-    if (completedStatus === "succeeded") {
-      if (jobType === "TRAINING") {
-        return [
-          { title: "View Model", description: "Browse trained model artifacts", value: "__nav:/models" },
-          { title: "Train with different settings", description: "Adjust model, method, or hyperparameters", value: "I'd like to train again with different settings" },
-        ] as OptionCard[]
-      }
-      return [
-        { title: "Continue to training", description: "Fine-tune a student model on this data", value: "Let's continue to the training step" },
-        { title: "Generate more samples", description: "Create a larger dataset", value: "Generate more samples with broader coverage" },
-      ] as OptionCard[]
-    }
-    return [] as OptionCard[]
-  }, [jobId, jobType, completedStatus])
 
   const modelPricing = useMemo(() => {
     if (isUser) return null
@@ -125,8 +99,6 @@ export function MessageBubble({
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>([
       "signal_phase",
-      "create_job",
-      "submit_recipe_job",
       "get_document_sections",
       "get_section_content",
       "get_document_content",
@@ -225,20 +197,15 @@ export function MessageBubble({
               jobId={jobId}
               jobType={jobType}
               onDismiss={() => setMonitorDismissed(true)}
-              onComplete={(s) => setCompletedStatus(s)}
             />
           </div>
         )}
 
-        {jobOptionCards.length > 0 && onOptionSelect ? (
-          <div className="mt-3">
-            <OptionCards cards={jobOptionCards} onSelect={onOptionSelect} selectedValue={message.selectedOptionValue} />
-          </div>
-        ) : parsedOptions.length > 0 && onOptionSelect ? (
+        {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">
             <OptionCards cards={parsedOptions} onSelect={onOptionSelect} selectedValue={message.selectedOptionValue} />
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   )
