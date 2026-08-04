@@ -523,30 +523,33 @@
         }
       }
     },
-    "/api/v1/costs/sdg": {
-      "post": {
+    "/api/v1/costs/models": {
+      "get": {
         "tags": [
           "costs"
         ],
-        "summary": "Estimate the cost of generating synthetic training data with a teacher model.",
-        "operationId": "estimate_sdg_cost",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateSdgCostRequest"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "Search model pricing by name. Returns matching models with per-1M-token costs.",
+        "operationId": "get_model_pricing",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Model name to search for (e.g. 'claude sonnet', 'gpt-4o', 'llama')",
+              "title": "Q"
+            },
+            "description": "Model name to search for (e.g. 'claude sonnet', 'gpt-4o', 'llama')"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateSdgCostResponse"
+                  "$ref": "#/components/schemas/GetModelPricingResponse"
                 }
               }
             }
@@ -564,18 +567,18 @@
         }
       }
     },
-    "/api/v1/costs/sdg/compare": {
+    "/api/v1/costs/training/estimate": {
       "post": {
         "tags": [
           "costs"
         ],
-        "summary": "Compare cost estimates across teacher models for synthetic data generation.",
-        "operationId": "compare_sdg_models",
+        "summary": "Estimate GPU memory requirements for training a model by size.",
+        "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CompareSdgModelsRequest"
+                "$ref": "#/components/schemas/TrainingEstimateRequest"
               }
             }
           },
@@ -587,130 +590,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompareSdgModelsResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/costs/training": {
-      "post": {
-        "tags": [
-          "costs"
-        ],
-        "summary": "Estimate training cost and time for each student model size.",
-        "operationId": "estimate_training_cost",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateTrainingCostRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateTrainingCostResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/costs/training/method": {
-      "post": {
-        "tags": [
-          "costs"
-        ],
-        "summary": "Estimate cost for a specific model across training methods (LoRA, QLoRA, Full SFT).",
-        "operationId": "estimate_training_method_cost",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateTrainingMethodCostRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateTrainingMethodCostResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/costs/eval": {
-      "post": {
-        "tags": [
-          "costs"
-        ],
-        "summary": "Estimate evaluation cost using an LLM judge model.",
-        "operationId": "estimate_eval_cost",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateEvalCostRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateEvalCostResponse"
+                  "$ref": "#/components/schemas/TrainingEstimateResponse"
                 }
               }
             }
@@ -753,6 +633,161 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "List datasets, optionally filtered by name or topic.",
+        "operationId": "list_datasets",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Filter by name or topic (substring)",
+              "default": "",
+              "title": "Search"
+            },
+            "description": "Filter by name or topic (substring)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Datasets"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{run_id}": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Get full metadata and artifact list for a dataset.",
+        "operationId": "get_dataset",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Dataset"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{run_id}/samples": {
+      "get": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Preview rows from a dataset (parquet or JSONL).",
+        "operationId": "get_dataset_samples",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Max rows to return",
+              "default": 5,
+              "title": "Limit"
+            },
+            "description": "Max rows to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Dataset Samples"
                 }
               }
             }
@@ -815,6 +850,18 @@
               "type": "string",
               "default": "fast",
               "title": "Table Mode"
+            }
+          },
+          {
+            "name": "chunk_max_tokens",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 8192,
+              "minimum": 64,
+              "default": 2048,
+              "title": "Chunk Max Tokens"
             }
           }
         ],
@@ -943,6 +990,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocumentResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/chunks": {
+      "get": {
+        "tags": [
+          "documents"
+        ],
+        "summary": "Get chunks for a document.",
+        "operationId": "get_document_chunks",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChunks"
                 }
               }
             }
@@ -1178,6 +1267,88 @@
         }
       }
     },
+    "/api/v1/ui/show_model_pricing": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Display a model pricing comparison card in the chat UI",
+        "operationId": "show_model_pricing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowModelPricingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShowModelPricingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/show_vram_estimate": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Display a VRAM estimate comparison card in the chat UI",
+        "operationId": "show_vram_estimate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowVRAMEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShowVRAMEstimateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ui/signal_phase": {
       "post": {
         "tags": [
@@ -1286,54 +1457,6 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
-      "CompareSdgModelsRequest": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples",
-            "description": "Number of training samples to generate",
-            "default": 100
-          },
-          "models": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/SdgModelSpec"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Models",
-            "description": "Available models to compare (from AI Gateway). Uses defaults if omitted."
-          }
-        },
-        "type": "object",
-        "title": "CompareSdgModelsRequest"
-      },
-      "CompareSdgModelsResponse": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples"
-          },
-          "models": {
-            "items": {
-              "$ref": "#/components/schemas/SdgModelComparison"
-            },
-            "type": "array",
-            "title": "Models"
-          }
-        },
-        "type": "object",
-        "required": [
-          "num_samples",
-          "models"
-        ],
-        "title": "CompareSdgModelsResponse"
-      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -1437,6 +1560,13 @@
             "title": "Table Mode",
             "description": "Table detection mode: fast, accurate",
             "default": "fast"
+          },
+          "chunk_max_tokens": {
+            "type": "integer",
+            "minimum": 64.0,
+            "title": "Chunk Max Tokens",
+            "description": "Max tokens per chunk",
+            "default": 2048
           }
         },
         "type": "object",
@@ -1458,6 +1588,81 @@
           "url"
         ],
         "title": "ConvertUrlRequest"
+      },
+      "DocumentChunk": {
+        "properties": {
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index",
+            "description": "Chunk position in document"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Chunk content",
+            "default": ""
+          },
+          "num_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Tokens",
+            "description": "Token count"
+          },
+          "headings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Headings",
+            "description": "Section headings"
+          },
+          "page_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Page Numbers",
+            "description": "Source pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_index"
+        ],
+        "title": "DocumentChunk"
+      },
+      "DocumentChunks": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "Document identifier"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChunk"
+            },
+            "type": "array",
+            "title": "Chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id"
+        ],
+        "title": "DocumentChunks"
       },
       "DocumentResult": {
         "properties": {
@@ -1494,6 +1699,13 @@
             "title": "Content",
             "description": "Parsed document content",
             "default": ""
+          },
+          "chunk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Count",
+            "description": "Number of chunks created",
+            "default": 0
           },
           "processing_time": {
             "type": "number",
@@ -1564,6 +1776,12 @@
             ],
             "title": "Created At",
             "description": "When the document was processed"
+          },
+          "content_available": {
+            "type": "boolean",
+            "title": "Content Available",
+            "description": "Whether the parsed content artifact exists",
+            "default": true
           }
         },
         "type": "object",
@@ -1571,361 +1789,6 @@
           "document_id"
         ],
         "title": "DocumentSummary"
-      },
-      "EstimateEvalCostRequest": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples",
-            "description": "Number of evaluation samples",
-            "default": 100
-          },
-          "judge_model": {
-            "type": "string",
-            "title": "Judge Model",
-            "description": "Judge model ID",
-            "default": "openai/gpt-4o-mini"
-          },
-          "models": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/EvalModelInput"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Models",
-            "description": "Available judge models from gateway"
-          }
-        },
-        "type": "object",
-        "title": "EstimateEvalCostRequest"
-      },
-      "EstimateEvalCostResponse": {
-        "properties": {
-          "judge_model": {
-            "type": "string",
-            "title": "Judge Model"
-          },
-          "judge_model_label": {
-            "type": "string",
-            "title": "Judge Model Label"
-          },
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples"
-          },
-          "input_tokens": {
-            "type": "integer",
-            "title": "Input Tokens"
-          },
-          "output_tokens": {
-            "type": "integer",
-            "title": "Output Tokens"
-          },
-          "input_cost": {
-            "type": "number",
-            "title": "Input Cost"
-          },
-          "output_cost": {
-            "type": "number",
-            "title": "Output Cost"
-          },
-          "total_cost": {
-            "type": "number",
-            "title": "Total Cost"
-          },
-          "cost_per_sample": {
-            "type": "number",
-            "title": "Cost Per Sample"
-          },
-          "comparison": {
-            "items": {
-              "$ref": "#/components/schemas/EvalJudgeOption"
-            },
-            "type": "array",
-            "title": "Comparison"
-          },
-          "manual_comparison": {
-            "$ref": "#/components/schemas/EvalManualComparison"
-          }
-        },
-        "type": "object",
-        "required": [
-          "judge_model",
-          "judge_model_label",
-          "num_samples",
-          "input_tokens",
-          "output_tokens",
-          "input_cost",
-          "output_cost",
-          "total_cost",
-          "cost_per_sample",
-          "comparison",
-          "manual_comparison"
-        ],
-        "title": "EstimateEvalCostResponse"
-      },
-      "EstimateSdgCostRequest": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples",
-            "description": "Number of training samples to generate",
-            "default": 100
-          },
-          "model": {
-            "type": "string",
-            "title": "Model",
-            "description": "Teacher model ID in LiteLLM format",
-            "default": "openai/gpt-4o-mini"
-          }
-        },
-        "type": "object",
-        "title": "EstimateSdgCostRequest"
-      },
-      "EstimateSdgCostResponse": {
-        "properties": {
-          "model": {
-            "type": "string",
-            "title": "Model"
-          },
-          "model_label": {
-            "type": "string",
-            "title": "Model Label"
-          },
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples"
-          },
-          "tokens": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Tokens"
-          },
-          "cost": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Cost"
-          },
-          "comparison": {
-            "additionalProperties": {
-              "type": "number"
-            },
-            "type": "object",
-            "title": "Comparison"
-          }
-        },
-        "type": "object",
-        "required": [
-          "model",
-          "model_label",
-          "num_samples",
-          "tokens",
-          "cost",
-          "comparison"
-        ],
-        "title": "EstimateSdgCostResponse"
-      },
-      "EstimateTrainingCostRequest": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples",
-            "description": "Number of training samples",
-            "default": 100
-          },
-          "num_epochs": {
-            "type": "integer",
-            "title": "Num Epochs",
-            "description": "Number of training epochs",
-            "default": 3
-          }
-        },
-        "type": "object",
-        "title": "EstimateTrainingCostRequest"
-      },
-      "EstimateTrainingCostResponse": {
-        "properties": {
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples"
-          },
-          "num_epochs": {
-            "type": "integer",
-            "title": "Num Epochs"
-          },
-          "models": {
-            "items": {
-              "$ref": "#/components/schemas/TrainingModelEstimate"
-            },
-            "type": "array",
-            "title": "Models"
-          }
-        },
-        "type": "object",
-        "required": [
-          "num_samples",
-          "num_epochs",
-          "models"
-        ],
-        "title": "EstimateTrainingCostResponse"
-      },
-      "EstimateTrainingMethodCostRequest": {
-        "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id",
-            "description": "Student model ID",
-            "default": "qwen3-0.6b"
-          },
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples",
-            "description": "Number of training samples",
-            "default": 100
-          },
-          "num_epochs": {
-            "type": "integer",
-            "title": "Num Epochs",
-            "description": "Number of training epochs",
-            "default": 3
-          }
-        },
-        "type": "object",
-        "title": "EstimateTrainingMethodCostRequest"
-      },
-      "EstimateTrainingMethodCostResponse": {
-        "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
-          },
-          "model_label": {
-            "type": "string",
-            "title": "Model Label"
-          },
-          "num_samples": {
-            "type": "integer",
-            "title": "Num Samples"
-          },
-          "num_epochs": {
-            "type": "integer",
-            "title": "Num Epochs"
-          },
-          "methods": {
-            "items": {
-              "$ref": "#/components/schemas/TrainingMethodEstimate"
-            },
-            "type": "array",
-            "title": "Methods"
-          },
-          "comparison": {
-            "$ref": "#/components/schemas/TrainingMethodComparison"
-          }
-        },
-        "type": "object",
-        "required": [
-          "model_id",
-          "model_label",
-          "num_samples",
-          "num_epochs",
-          "methods",
-          "comparison"
-        ],
-        "title": "EstimateTrainingMethodCostResponse"
-      },
-      "EvalJudgeOption": {
-        "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "total_cost": {
-            "type": "number",
-            "title": "Total Cost"
-          },
-          "per_sample_cost": {
-            "type": "number",
-            "title": "Per Sample Cost"
-          },
-          "recommended": {
-            "type": "boolean",
-            "title": "Recommended"
-          }
-        },
-        "type": "object",
-        "required": [
-          "model_id",
-          "label",
-          "description",
-          "total_cost",
-          "per_sample_cost",
-          "recommended"
-        ],
-        "title": "EvalJudgeOption"
-      },
-      "EvalManualComparison": {
-        "properties": {
-          "manual_evaluation_total": {
-            "type": "number",
-            "title": "Manual Evaluation Total"
-          },
-          "savings_amount": {
-            "type": "number",
-            "title": "Savings Amount"
-          },
-          "savings_percent": {
-            "type": "number",
-            "title": "Savings Percent"
-          }
-        },
-        "type": "object",
-        "required": [
-          "manual_evaluation_total",
-          "savings_amount",
-          "savings_percent"
-        ],
-        "title": "EvalManualComparison"
-      },
-      "EvalModelInput": {
-        "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label",
-            "default": ""
-          },
-          "description": {
-            "type": "string",
-            "title": "Description",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "required": [
-          "model_id"
-        ],
-        "title": "EvalModelInput"
       },
       "GatewayModel": {
         "properties": {
@@ -1952,6 +1815,27 @@
           "name"
         ],
         "title": "GatewayModel"
+      },
+      "GetModelPricingResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPricing"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "models"
+        ],
+        "title": "GetModelPricingResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2144,9 +2028,81 @@
         "enum": [
           "training",
           "sdg",
-          "upload"
+          "upload",
+          "eval"
         ],
         "title": "JobType"
+      },
+      "ModelPricing": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prompt_cost_per_1m": {
+            "type": "number",
+            "title": "Prompt Cost Per 1M"
+          },
+          "completion_cost_per_1m": {
+            "type": "number",
+            "title": "Completion Cost Per 1M"
+          },
+          "context_length": {
+            "type": "integer",
+            "title": "Context Length"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "name",
+          "prompt_cost_per_1m",
+          "completion_cost_per_1m",
+          "context_length"
+        ],
+        "title": "ModelPricing"
+      },
+      "ModelPricingItem": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id",
+            "description": "Model ID (e.g. 'openai/gpt-4o-mini')"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Display name"
+          },
+          "prompt_cost_per_1m": {
+            "type": "number",
+            "title": "Prompt Cost Per 1M",
+            "description": "Input cost per 1M tokens"
+          },
+          "completion_cost_per_1m": {
+            "type": "number",
+            "title": "Completion Cost Per 1M",
+            "description": "Output cost per 1M tokens"
+          },
+          "context_length": {
+            "type": "integer",
+            "title": "Context Length",
+            "description": "Context window size",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "name",
+          "prompt_cost_per_1m",
+          "completion_cost_per_1m"
+        ],
+        "title": "ModelPricingItem"
       },
       "ModelsResponse": {
         "properties": {
@@ -2351,61 +2307,83 @@
         ],
         "title": "SaveRecipeRequest"
       },
-      "SdgModelComparison": {
+      "ShowModelPricingRequest": {
         "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "total_cost": {
-            "type": "number",
-            "title": "Total Cost"
-          },
-          "per_sample_cost": {
-            "type": "number",
-            "title": "Per Sample Cost"
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPricingItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Models",
+            "description": "Models with pricing to display"
           }
         },
         "type": "object",
         "required": [
-          "model_id",
-          "label",
-          "description",
-          "total_cost",
-          "per_sample_cost"
+          "models"
         ],
-        "title": "SdgModelComparison"
+        "title": "ShowModelPricingRequest"
       },
-      "SdgModelSpec": {
+      "ShowModelPricingResponse": {
         "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPricingItem"
+            },
+            "type": "array",
+            "title": "Models"
           },
-          "label": {
-            "type": "string",
-            "title": "Label",
-            "default": ""
-          },
-          "description": {
-            "type": "string",
-            "title": "Description",
-            "default": ""
+          "rendered": {
+            "type": "boolean",
+            "title": "Rendered",
+            "default": true
           }
         },
         "type": "object",
         "required": [
-          "model_id"
+          "models"
         ],
-        "title": "SdgModelSpec"
+        "title": "ShowModelPricingResponse"
+      },
+      "ShowVRAMEstimateRequest": {
+        "properties": {
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/VRAMEstimateItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Estimates",
+            "description": "VRAM estimates to display"
+          }
+        },
+        "type": "object",
+        "required": [
+          "estimates"
+        ],
+        "title": "ShowVRAMEstimateRequest"
+      },
+      "ShowVRAMEstimateResponse": {
+        "properties": {
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/VRAMEstimateItem"
+            },
+            "type": "array",
+            "title": "Estimates"
+          },
+          "rendered": {
+            "type": "boolean",
+            "title": "Rendered",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "estimates"
+        ],
+        "title": "ShowVRAMEstimateResponse"
       },
       "SignalPhaseRequest": {
         "properties": {
@@ -2445,139 +2423,150 @@
         ],
         "title": "SignalPhaseResponse"
       },
-      "TrainingMethodComparison": {
+      "TrainingEstimateRequest": {
         "properties": {
-          "automated_label": {
+          "model_size": {
             "type": "string",
-            "title": "Automated Label"
+            "title": "Model Size",
+            "description": "Model size: '0.5B', '1B', '3B', '8B', '13B', '32B', '70B', or '120B'"
           },
-          "automated_cost": {
-            "type": "number",
-            "title": "Automated Cost"
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Training method: sft, lora, qlora, osft",
+            "default": "lora"
           },
-          "manual_training_total": {
-            "type": "number",
-            "title": "Manual Training Total"
+          "num_gpus": {
+            "type": "integer",
+            "title": "Num Gpus",
+            "description": "Number of GPUs",
+            "default": 1
           },
-          "savings_amount": {
-            "type": "number",
-            "title": "Savings Amount"
+          "batch_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Size",
+            "description": "Batch size (provide with max_seq_len)"
           },
-          "savings_percent": {
+          "max_seq_len": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Seq Len",
+            "description": "Max sequence length"
+          },
+          "max_tokens_per_gpu": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens Per Gpu",
+            "description": "Max tokens per GPU (alternative to batch_size + max_seq_len)"
+          },
+          "lora_r": {
+            "type": "integer",
+            "title": "Lora R",
+            "description": "LoRA rank (only for lora/qlora)",
+            "default": 32
+          },
+          "unfreeze_rank_ratio": {
             "type": "number",
-            "title": "Savings Percent"
+            "title": "Unfreeze Rank Ratio",
+            "description": "Unfreeze ratio (only for osft)",
+            "default": 0.25
           }
         },
         "type": "object",
         "required": [
-          "automated_label",
-          "automated_cost",
-          "manual_training_total",
-          "savings_amount",
-          "savings_percent"
+          "model_size"
         ],
-        "title": "TrainingMethodComparison"
+        "title": "TrainingEstimateRequest"
       },
-      "TrainingMethodEstimate": {
+      "TrainingEstimateResponse": {
         "properties": {
+          "model_size": {
+            "type": "string",
+            "title": "Model Size"
+          },
           "method": {
             "type": "string",
             "title": "Method"
           },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "gpu_type": {
-            "type": "string",
-            "title": "Gpu Type"
-          },
-          "vram_gb": {
-            "type": "number",
-            "title": "Vram Gb"
-          },
-          "estimated_time_minutes": {
-            "type": "number",
-            "title": "Estimated Time Minutes"
-          },
-          "estimated_cost": {
-            "type": "number",
-            "title": "Estimated Cost"
-          },
-          "relative_time": {
-            "type": "string",
-            "title": "Relative Time"
-          },
-          "recommended": {
-            "type": "boolean",
-            "title": "Recommended"
-          }
-        },
-        "type": "object",
-        "required": [
-          "method",
-          "label",
-          "description",
-          "gpu_type",
-          "vram_gb",
-          "estimated_time_minutes",
-          "estimated_cost",
-          "relative_time",
-          "recommended"
-        ],
-        "title": "TrainingMethodEstimate"
-      },
-      "TrainingModelEstimate": {
-        "properties": {
-          "model_id": {
-            "type": "string",
-            "title": "Model Id"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "gpu_type": {
-            "type": "string",
-            "title": "Gpu Type"
-          },
-          "vram_gb": {
+          "num_gpus": {
             "type": "integer",
-            "title": "Vram Gb"
+            "title": "Num Gpus"
           },
-          "estimated_time_minutes": {
-            "type": "number",
-            "title": "Estimated Time Minutes"
+          "vram_per_gpu_gb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Vram Per Gpu Gb"
           },
-          "estimated_cost": {
-            "type": "number",
-            "title": "Estimated Cost"
-          },
-          "cost_per_gpu_hour": {
-            "type": "number",
-            "title": "Cost Per Gpu Hour"
+          "total_vram_gb": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Total Vram Gb"
           }
         },
         "type": "object",
         "required": [
-          "model_id",
-          "label",
-          "description",
-          "gpu_type",
-          "vram_gb",
-          "estimated_time_minutes",
-          "estimated_cost",
-          "cost_per_gpu_hour"
+          "model_size",
+          "method",
+          "num_gpus",
+          "vram_per_gpu_gb",
+          "total_vram_gb"
         ],
-        "title": "TrainingModelEstimate"
+        "title": "TrainingEstimateResponse"
+      },
+      "VRAMEstimateItem": {
+        "properties": {
+          "model_size": {
+            "type": "string",
+            "title": "Model Size",
+            "description": "Model size (e.g. '8B')"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "Training method (e.g. 'lora', 'qlora', 'osft')"
+          },
+          "vram_per_gpu_gb": {
+            "type": "number",
+            "title": "Vram Per Gpu Gb",
+            "description": "Expected VRAM per GPU in GB"
+          },
+          "vram_range": {
+            "type": "string",
+            "title": "Vram Range",
+            "description": "Low-high range (e.g. '17.6-22.2 GB')",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_size",
+          "method",
+          "vram_per_gpu_gb"
+        ],
+        "title": "VRAMEstimateItem"
       },
       "ValidationError": {
         "properties": {
