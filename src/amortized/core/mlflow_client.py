@@ -245,10 +245,11 @@ class MLflowClient:
     async def artifact_exists(self, run_id: str, path: str) -> bool:
         """Check if an artifact exists without downloading it."""
         try:
+            prefix = await self._resolve_artifact_prefix(run_id)
+            full_path = f"{prefix}/{path}"
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.head(
-                    self._url(f"/api/2.0/mlflow-artifacts/artifacts/{path}"),
-                    params={"run_id": run_id},
+                    self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
                 )
                 return resp.status_code == 200
         except Exception:
