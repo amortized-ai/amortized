@@ -44,7 +44,7 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4">
+      <div className="space-y-4" data-tutorial="documents-header">
         <PageHeader
           title="Documents"
           description="Upload and manage documents for synthetic data generation."
