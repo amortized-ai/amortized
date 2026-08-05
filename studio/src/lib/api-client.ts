@@ -509,17 +509,30 @@ export function deleteDocument(id: string): Promise<void> {
   return del<void>(`/api/v1/documents/${id}`)
 }
 
+export interface ChunkOptions {
+  output_format?: string
+  chunker_type?: string
+  chunk_size?: number
+  chunk_overlap?: number
+}
+
 export async function uploadDocument(
   file: File,
-  options: { output_format?: string; chunk_max_tokens?: number } = {},
+  options: ChunkOptions = {},
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData()
   formData.append("file", file)
   if (options.output_format) {
     formData.append("output_format", options.output_format)
   }
-  if (options.chunk_max_tokens != null) {
-    formData.append("chunk_max_tokens", String(options.chunk_max_tokens))
+  if (options.chunker_type) {
+    formData.append("chunker_type", options.chunker_type)
+  }
+  if (options.chunk_size != null) {
+    formData.append("chunk_size", String(options.chunk_size))
+  }
+  if (options.chunk_overlap != null) {
+    formData.append("chunk_overlap", String(options.chunk_overlap))
   }
   return request<DocumentUploadResponse>("/api/v1/documents/convert", {
     method: "POST",
@@ -529,13 +542,15 @@ export async function uploadDocument(
 
 export function convertDocumentUrl(
   url: string,
-  options: { output_format?: string; chunk_max_tokens?: number } = {},
+  options: ChunkOptions = {},
 ): Promise<DocumentUploadResponse> {
   return post<DocumentUploadResponse>("/api/v1/documents/convert/url", {
     url,
     options: {
       output_format: options.output_format ?? "md",
-      chunk_max_tokens: options.chunk_max_tokens ?? 2048,
+      chunker_type: options.chunker_type ?? "recursive",
+      chunk_size: options.chunk_size ?? 512,
+      chunk_overlap: options.chunk_overlap ?? 0,
     },
   })
 }

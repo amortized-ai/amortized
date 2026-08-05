@@ -86,6 +86,11 @@ def _load_backends() -> None:
         _settings.docling_url = docling_url
         logger.info("Docling-serve URL: %s", docling_url)
 
+    chonkie_url = config.get("chonkie_url", "")
+    if chonkie_url:
+        _settings.chonkie_url = chonkie_url
+        logger.info("Chonkie-serve URL: %s", chonkie_url)
+
     backends = config.get("compute", {}).get("backends", {})
     for name, spec in backends.items():
         if not isinstance(spec, dict):
@@ -257,6 +262,7 @@ async def get_config() -> ConfigResponse:
         mlflow_tracking_uri=_settings.mlflow_tracking_uri,
         mlflow_gateway_uri=mlflow_gateway_uri,
         docling_enabled=bool(_settings.docling_url),
+        chonkie_enabled=bool(_settings.chonkie_url),
         image_registry=_settings.image_registry,
         available_backends=list(get_all_backends().keys()),
     )

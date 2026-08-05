@@ -810,7 +810,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Upload and convert a document via docling-serve.",
+        "summary": "Upload and convert a document via docling-serve, chunk via chonkie.",
         "operationId": "convert_document",
         "parameters": [
           {
@@ -853,15 +853,35 @@
             }
           },
           {
-            "name": "chunk_max_tokens",
+            "name": "chunker_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ChunkerType",
+              "default": "recursive"
+            }
+          },
+          {
+            "name": "chunk_size",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
               "maximum": 8192,
               "minimum": 64,
-              "default": 2048,
-              "title": "Chunk Max Tokens"
+              "default": 512,
+              "title": "Chunk Size"
+            }
+          },
+          {
+            "name": "chunk_overlap",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Chunk Overlap"
             }
           }
         ],
@@ -904,7 +924,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Convert a document from URL via docling-serve.",
+        "summary": "Convert a document from URL via docling-serve, chunk via chonkie.",
         "operationId": "convert_document_url",
         "requestBody": {
           "content": {
@@ -1498,6 +1518,15 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
+      "ChunkerType": {
+        "type": "string",
+        "enum": [
+          "recursive",
+          "token",
+          "sentence"
+        ],
+        "title": "ChunkerType"
+      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -1561,6 +1590,11 @@
             "title": "Docling Enabled",
             "default": false
           },
+          "chonkie_enabled": {
+            "type": "boolean",
+            "title": "Chonkie Enabled",
+            "default": false
+          },
           "image_registry": {
             "type": "string",
             "title": "Image Registry",
@@ -1602,12 +1636,25 @@
             "description": "Table detection mode: fast, accurate",
             "default": "fast"
           },
-          "chunk_max_tokens": {
+          "chunker_type": {
+            "$ref": "#/components/schemas/ChunkerType",
+            "description": "Chunker: recursive, token, sentence",
+            "default": "recursive"
+          },
+          "chunk_size": {
             "type": "integer",
+            "maximum": 8192.0,
             "minimum": 64.0,
-            "title": "Chunk Max Tokens",
+            "title": "Chunk Size",
             "description": "Max tokens per chunk",
-            "default": 2048
+            "default": 512
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Overlap",
+            "description": "Token overlap between chunks (token/sentence only)",
+            "default": 0
           }
         },
         "type": "object",

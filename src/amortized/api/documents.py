@@ -1,4 +1,4 @@
-"""Document processing endpoints — proxy to docling-serve with MLflow artifact storage."""
+"""Document processing endpoints — Docling for conversion, Chonkie for chunking."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
+    ChunkerType,
     ConvertUrlRequest,
     DocumentChunk,
     DocumentChunks,
@@ -188,8 +189,15 @@ async def _call_docling(client: httpx.AsyncClient, url: str, **kwargs: Any) -> d
         ) from None
 
 
-_DEFAULT_CHUNK_MAX_TOKENS = 2048
+_DEFAULT_CHUNK_SIZE = 512
 _DOCLING_TIMEOUT = 600.0
+_CHONKIE_TIMEOUT = 120.0
+
+_CHONKIE_CHUNKER_ENDPOINTS: dict[str, str] = {
+    "recursive": "/v1/chunk/recursive",
+    "token": "/v1/chunk/token",
+    "sentence": "/v1/chunk/sentence",
+}
 
 
 _DOCLING_LABEL_PREFIX: dict[str, str] = {
@@ -212,28 +220,61 @@ def _docling_json_to_markdown(doc_json: dict[str, Any]) -> str:
     return "\n\n".join(parts)
 
 
-async def _convert_and_chunk(
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+
+
+def _extract_headings(text: str) -> list[str]:
+    return [m.group(2).strip() for m in _HEADING_RE.finditer(text)]
+
+
+def _chonkie_url() -> str:
+    if not settings.chonkie_url:
+        raise HTTPException(status_code=503, detail="Chunking service is not configured")
+    return settings.chonkie_url.rstrip("/")
+
+
+async def _call_chonkie(
+    client: httpx.AsyncClient, url: str, payload: dict[str, Any]
+) -> list[dict[str, Any]]:
+    try:
+        resp = await client.post(url, json=payload)
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502, detail="Chunking service is temporarily unavailable"
+        ) from None
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504, detail="Chunking request timed out"
+        ) from None
+    except httpx.TransportError:
+        raise HTTPException(
+            status_code=502, detail="Chunking service communication error"
+        ) from None
+    if resp.is_error:
+        logger.error("Chonkie-serve returned %d: %s", resp.status_code, resp.text[:500])
+        raise HTTPException(
+            status_code=502, detail=f"Chunking error: {resp.status_code}"
+        )
+    try:
+        return resp.json()  # type: ignore[no-any-return]
+    except ValueError:
+        raise HTTPException(
+            status_code=502, detail="Chunking service returned non-JSON response"
+        ) from None
+
+
+async def _convert(
     base_url: str,
     filename: str,
     file_bytes: bytes,
-    max_tokens: int = _DEFAULT_CHUNK_MAX_TOKENS,
-) -> tuple[str, list[dict[str, Any]], float]:
-    """Single call to docling-serve: parse, chunk, and return (content, chunks, time)."""
+) -> tuple[str, float]:
+    """Call docling-serve for document conversion only (no chunking)."""
     async with httpx.AsyncClient(timeout=_DOCLING_TIMEOUT) as client:
         data = await _call_docling(
             client,
-            f"{base_url}/v1/chunk/hybrid/file",
+            f"{base_url}/v1/convert/file",
             files={"files": (filename, file_bytes, "application/octet-stream")},
-            data={
-                "chunking_options": json.dumps({"max_tokens": max_tokens}),
-                "include_converted_doc": "true",
-            },
         )
-
-    chunks = data.get("chunks")
-    if chunks is None:
-        logger.warning("Docling response missing 'chunks' key for %s", filename)
-        chunks = []
 
     content = ""
     documents = data.get("documents", [])
@@ -248,6 +289,52 @@ async def _convert_and_chunk(
                 content = _docling_json_to_markdown(doc_json)
 
     processing_time: float = data.get("processing_time", 0.0)
+    return content, processing_time
+
+
+async def _chunk_with_chonkie(
+    content: str,
+    chunker_type: str = "recursive",
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = 0,
+) -> list[dict[str, Any]]:
+    """Chunk content via chonkie-serve HTTP API."""
+    if not content.strip():
+        return []
+
+    base_url = _chonkie_url()
+    endpoint = _CHONKIE_CHUNKER_ENDPOINTS.get(chunker_type, "/v1/chunk/recursive")
+
+    payload: dict[str, Any] = {"text": content, "chunk_size": chunk_size}
+    if chunker_type in ("token", "sentence") and chunk_overlap > 0:
+        payload["chunk_overlap"] = chunk_overlap
+
+    async with httpx.AsyncClient(timeout=_CHONKIE_TIMEOUT) as client:
+        raw_chunks = await _call_chonkie(client, f"{base_url}{endpoint}", payload)
+
+    return [
+        {
+            "text": c["text"],
+            "chunk_index": i,
+            "num_tokens": c.get("token_count"),
+            "headings": _extract_headings(c["text"]),
+            "page_numbers": [],
+        }
+        for i, c in enumerate(raw_chunks)
+    ]
+
+
+async def _convert_and_chunk(
+    base_url: str,
+    filename: str,
+    file_bytes: bytes,
+    chunker_type: str = "recursive",
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = 0,
+) -> tuple[str, list[dict[str, Any]], float]:
+    """Docling for conversion, chonkie-serve for chunking."""
+    content, processing_time = await _convert(base_url, filename, file_bytes)
+    chunks = await _chunk_with_chonkie(content, chunker_type, chunk_size, chunk_overlap)
     return content, chunks, processing_time
 
 
@@ -308,7 +395,7 @@ def _build_result(
     "/convert",
     response_model=DocumentResult,
     operation_id="convert_document",
-    summary="Upload and convert a document via docling-serve.",
+    summary="Upload and convert a document via docling-serve, chunk via chonkie.",
 )
 async def convert_document(
     file: UploadFile,
@@ -316,7 +403,9 @@ async def convert_document(
     do_ocr: bool = True,
     ocr_engine: str = "easyocr",
     table_mode: str = "fast",
-    chunk_max_tokens: int = Query(_DEFAULT_CHUNK_MAX_TOKENS, ge=64, le=8192),
+    chunker_type: ChunkerType = ChunkerType.recursive,
+    chunk_size: int = Query(_DEFAULT_CHUNK_SIZE, ge=64, le=8192),
+    chunk_overlap: int = Query(0, ge=0),
 ) -> DocumentResult:
     base_url = _docling_url()
     filename = _sanitize_filename(file.filename or f"upload-{uuid.uuid4().hex[:8]}")
@@ -332,7 +421,7 @@ async def convert_document(
 
     warnings: list[str] = []
     content, chunks, processing_time = await _convert_and_chunk(
-        base_url, filename, file_bytes, chunk_max_tokens
+        base_url, filename, file_bytes, chunker_type.value, chunk_size, chunk_overlap,
     )
 
     if not content.strip():
@@ -356,7 +445,7 @@ async def convert_document(
     "/convert/url",
     response_model=DocumentResult,
     operation_id="convert_document_url",
-    summary="Convert a document from URL via docling-serve.",
+    summary="Convert a document from URL via docling-serve, chunk via chonkie.",
 )
 async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     _validate_url(request.url)
@@ -386,7 +475,8 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
         )
 
     content, chunks, processing_time = await _convert_and_chunk(
-        base_url, filename, source_bytes, opts.chunk_max_tokens
+        base_url, filename, source_bytes,
+        opts.chunker_type.value, opts.chunk_size, opts.chunk_overlap,
     )
 
     if not content.strip():

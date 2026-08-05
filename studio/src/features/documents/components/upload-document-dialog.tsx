@@ -31,12 +31,20 @@ const OUTPUT_FORMATS = [
   { value: "html", label: "HTML" },
 ] as const
 
+const CHUNKER_TYPES = [
+  { value: "recursive", label: "Recursive" },
+  { value: "token", label: "Token" },
+  { value: "sentence", label: "Sentence" },
+] as const
+
 export function UploadDocumentDialog() {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
-  const [chunkMaxTokens, setChunkMaxTokens] = useState(2048)
+  const [chunkerType, setChunkerType] = useState("recursive")
+  const [chunkSize, setChunkSize] = useState(512)
+  const [chunkOverlap, setChunkOverlap] = useState(0)
   const [result, setResult] = useState<DocumentUploadResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -45,12 +53,15 @@ export function UploadDocumentDialog() {
   const urlMutation = useConvertDocumentUrl()
 
   const isPending = uploadMutation.isPending || urlMutation.isPending
+  const supportsOverlap = chunkerType === "token" || chunkerType === "sentence"
 
   function reset() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
-    setChunkMaxTokens(2048)
+    setChunkerType("recursive")
+    setChunkSize(512)
+    setChunkOverlap(0)
     setResult(null)
     setError(null)
     uploadMutation.reset()
@@ -63,12 +74,19 @@ export function UploadDocumentDialog() {
     if (!v) reset()
   }
 
+  const chunkOptions = {
+    output_format: outputFormat,
+    chunker_type: chunkerType,
+    chunk_size: chunkSize,
+    chunk_overlap: chunkOverlap,
+  }
+
   function handleFileSubmit() {
     if (!file) return
     setError(null)
     setResult(null)
     uploadMutation.mutate(
-      { file, options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
+      { file, options: chunkOptions },
       {
         onSuccess: (data) => {
           setResult(data)
@@ -86,7 +104,7 @@ export function UploadDocumentDialog() {
     setError(null)
     setResult(null)
     urlMutation.mutate(
-      { url: url.trim(), options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
+      { url: url.trim(), options: chunkOptions },
       {
         onSuccess: (data) => {
           setResult(data)
@@ -171,9 +189,14 @@ export function UploadDocumentDialog() {
                   value={outputFormat}
                   onChange={setOutputFormat}
                 />
-                <ChunkMaxTokensInput
-                  value={chunkMaxTokens}
-                  onChange={setChunkMaxTokens}
+                <ChunkerConfig
+                  chunkerType={chunkerType}
+                  chunkSize={chunkSize}
+                  chunkOverlap={chunkOverlap}
+                  supportsOverlap={supportsOverlap}
+                  onChunkerTypeChange={setChunkerType}
+                  onChunkSizeChange={setChunkSize}
+                  onChunkOverlapChange={setChunkOverlap}
                 />
               </div>
               <DialogFooter className="mt-4">
@@ -209,9 +232,14 @@ export function UploadDocumentDialog() {
                   value={outputFormat}
                   onChange={setOutputFormat}
                 />
-                <ChunkMaxTokensInput
-                  value={chunkMaxTokens}
-                  onChange={setChunkMaxTokens}
+                <ChunkerConfig
+                  chunkerType={chunkerType}
+                  chunkSize={chunkSize}
+                  chunkOverlap={chunkOverlap}
+                  supportsOverlap={supportsOverlap}
+                  onChunkerTypeChange={setChunkerType}
+                  onChunkSizeChange={setChunkSize}
+                  onChunkOverlapChange={setChunkOverlap}
                 />
               </div>
               <DialogFooter className="mt-4">
@@ -267,27 +295,68 @@ function OutputFormatSelect({
   )
 }
 
-function ChunkMaxTokensInput({
-  value,
-  onChange,
+function ChunkerConfig({
+  chunkerType,
+  chunkSize,
+  chunkOverlap,
+  supportsOverlap,
+  onChunkerTypeChange,
+  onChunkSizeChange,
+  onChunkOverlapChange,
 }: {
-  value: number
-  onChange: (v: number) => void
+  chunkerType: string
+  chunkSize: number
+  chunkOverlap: number
+  supportsOverlap: boolean
+  onChunkerTypeChange: (v: string) => void
+  onChunkSizeChange: (v: number) => void
+  onChunkOverlapChange: (v: number) => void
 }) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor="chunk-max-tokens">Chunk Max Tokens</Label>
-      <Input
-        id="chunk-max-tokens"
-        type="number"
-        min={64}
-        max={8192}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 2048)}
-        data-testid="doc-chunk-max-tokens"
-      />
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>Chunker</Label>
+        <Select value={chunkerType} onValueChange={onChunkerTypeChange}>
+          <SelectTrigger data-testid="doc-chunker-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CHUNKER_TYPES.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                {c.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="chunk-size">Chunk Size</Label>
+          <Input
+            id="chunk-size"
+            type="number"
+            min={64}
+            max={8192}
+            value={chunkSize}
+            onChange={(e) => onChunkSizeChange(Number(e.target.value) || 512)}
+            data-testid="doc-chunk-size"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="chunk-overlap">Overlap</Label>
+          <Input
+            id="chunk-overlap"
+            type="number"
+            min={0}
+            value={chunkOverlap}
+            disabled={!supportsOverlap}
+            onChange={(e) => onChunkOverlapChange(Number(e.target.value) || 0)}
+            data-testid="doc-chunk-overlap"
+          />
+        </div>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Maximum tokens per chunk for document splitting
+        Max tokens per chunk. Overlap applies to token/sentence chunkers only.
       </p>
     </div>
   )

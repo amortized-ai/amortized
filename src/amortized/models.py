@@ -129,12 +129,24 @@ class OutputFormat(StrEnum):
     html = "html"
 
 
+class ChunkerType(StrEnum):
+    recursive = "recursive"
+    token = "token"
+    sentence = "sentence"
+
+
 class ConvertOptions(BaseModel):
     output_format: OutputFormat = Field(OutputFormat.md, description="Output format")
     do_ocr: bool = Field(True, description="Enable OCR for scanned documents")
     ocr_engine: str = Field("easyocr", description="OCR engine: easyocr, tesseract")
     table_mode: str = Field("fast", description="Table detection mode: fast, accurate")
-    chunk_max_tokens: int = Field(2048, ge=64, description="Max tokens per chunk")
+    chunker_type: ChunkerType = Field(
+        ChunkerType.recursive, description="Chunker: recursive, token, sentence"
+    )
+    chunk_size: int = Field(512, ge=64, le=8192, description="Max tokens per chunk")
+    chunk_overlap: int = Field(
+        0, ge=0, description="Token overlap between chunks (token/sentence only)"
+    )
 
 
 class ConvertUrlRequest(BaseModel):
@@ -184,5 +196,6 @@ class ConfigResponse(BaseModel):
     mlflow_tracking_uri: str = ""
     mlflow_gateway_uri: str = ""
     docling_enabled: bool = False
+    chonkie_enabled: bool = False
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
