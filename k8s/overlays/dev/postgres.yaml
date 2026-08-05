@@ -40,10 +40,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "amortized"]
