@@ -56,6 +56,7 @@ export function UploadDocumentDialog() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobFilename, setJobFilename] = useState("")
   const [toastId, setToastId] = useState<string | number | null>(null)
+  const [minimized, setMinimized] = useState(false)
   const [handled, setHandled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -75,7 +76,8 @@ export function UploadDocumentDialog() {
     setHandled(true)
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
     if (toastId) {
-      toast.success(`${jobFilename || "Document"} processed`, { id: toastId })
+      toast.dismiss(toastId)
+      toast.success(`${jobFilename || "Document"} processed`)
       setToastId(null)
     }
     setTimeout(() => setOpen(false), 2000)
@@ -83,7 +85,8 @@ export function UploadDocumentDialog() {
   if (isFailed && !handled) {
     setHandled(true)
     if (toastId) {
-      toast.error(`${jobFilename || "Document"} failed`, { id: toastId })
+      toast.dismiss(toastId)
+      toast.error(`${jobFilename || "Document"} failed`)
       setToastId(null)
     }
     setError(job?.error ?? "Document processing failed")
@@ -100,6 +103,7 @@ export function UploadDocumentDialog() {
     setJobId(null)
     setJobFilename("")
     setToastId(null)
+    setMinimized(false)
     setHandled(false)
     setError(null)
     uploadMutation.reset()
@@ -109,14 +113,14 @@ export function UploadDocumentDialog() {
 
   function handleOpenChange(v: boolean) {
     if (!v && jobId && !handled) {
-      toast.loading(`Uploading ${jobFilename || "document"}...`, {
+      const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
         duration: Infinity,
-        id: "doc-upload",
       })
-      setToastId("doc-upload")
+      setToastId(tid)
+      setMinimized(true)
     }
     setOpen(v)
-    if (!v && !jobId) reset()
+    if (!v && !minimized && !jobId) reset()
   }
 
   const chunkOptions = {
