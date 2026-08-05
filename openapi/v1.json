@@ -853,15 +853,6 @@
             }
           },
           {
-            "name": "chunker_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ChunkerType",
-              "default": "recursive"
-            }
-          },
-          {
             "name": "chunk_size",
             "in": "query",
             "required": false,
@@ -880,7 +871,7 @@
             "schema": {
               "type": "integer",
               "minimum": 0,
-              "default": 0,
+              "default": 64,
               "title": "Chunk Overlap"
             }
           }
@@ -1518,15 +1509,6 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
-      "ChunkerType": {
-        "type": "string",
-        "enum": [
-          "recursive",
-          "token",
-          "sentence"
-        ],
-        "title": "ChunkerType"
-      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -1636,11 +1618,6 @@
             "description": "Table detection mode: fast, accurate",
             "default": "fast"
           },
-          "chunker_type": {
-            "$ref": "#/components/schemas/ChunkerType",
-            "description": "Chunker: recursive, token, sentence",
-            "default": "recursive"
-          },
           "chunk_size": {
             "type": "integer",
             "maximum": 8192.0,
@@ -1653,8 +1630,8 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Chunk Overlap",
-            "description": "Token overlap between chunks (token/sentence only)",
-            "default": 0
+            "description": "Token overlap between chunks",
+            "default": 64
           }
         },
         "type": "object",

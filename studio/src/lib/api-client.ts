@@ -511,7 +511,6 @@ export function deleteDocument(id: string): Promise<void> {
 
 export interface ChunkOptions {
   output_format?: string
-  chunker_type?: string
   chunk_size?: number
   chunk_overlap?: number
 }
@@ -524,9 +523,6 @@ export async function uploadDocument(
   formData.append("file", file)
   if (options.output_format) {
     formData.append("output_format", options.output_format)
-  }
-  if (options.chunker_type) {
-    formData.append("chunker_type", options.chunker_type)
   }
   if (options.chunk_size != null) {
     formData.append("chunk_size", String(options.chunk_size))
@@ -548,9 +544,8 @@ export function convertDocumentUrl(
     url,
     options: {
       output_format: options.output_format ?? "md",
-      chunker_type: options.chunker_type ?? "recursive",
       chunk_size: options.chunk_size ?? 512,
-      chunk_overlap: options.chunk_overlap ?? 0,
+      chunk_overlap: options.chunk_overlap ?? 64,
     },
   })
 }
