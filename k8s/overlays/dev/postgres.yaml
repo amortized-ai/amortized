@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres
   namespace: amortized
@@ -8,12 +8,11 @@ metadata:
     component: postgres
 spec:
   replicas: 1
+  serviceName: postgres
   selector:
     matchLabels:
       app: amortized
       component: postgres
-  strategy:
-    type: Recreate
   template:
     metadata:
       labels:
@@ -37,6 +36,13 @@ spec:
               value: "amortized"
             - name: PGDATA
               value: "/var/lib/postgresql/data/pgdata"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -50,25 +56,17 @@ spec:
               command: ["pg_isready", "-U", "amortized"]
             initialDelaySeconds: 10
             periodSeconds: 10
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: postgres-data
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-data
-  namespace: amortized
-  labels:
-    app: amortized
-    component: postgres
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: amortized
+          component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: v1
 kind: Service
