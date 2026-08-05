@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-import aiosqlite
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -114,7 +114,7 @@ recipe_jobs_router = APIRouter(tags=["recipes"])
 async def submit_recipe_job(
     request: RecipeJobRequest,
     http_request: Request,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job | JSONResponse:
     try:
         recipe = load_recipe(request.recipe)

@@ -75,13 +75,6 @@ def _wrap_command(
 # ---------------------------------------------------------------------------
 
 
-async def _get_repo() -> Repository:
-    from amortized.db.connection import _get_shared_db
-
-    db = await _get_shared_db()
-    return Repository(db)
-
-
 def _serialize_handle(handle: BackendHandle) -> str:
     return json.dumps(
         {
@@ -97,13 +90,19 @@ def _serialize_handle(handle: BackendHandle) -> str:
 
 
 async def _update_job(job_id: str, **kwargs: Any) -> None:
-    repo = await _get_repo()
-    await repo.update_job(job_id, **kwargs)
+    from amortized.db.connection import get_pool
+
+    async with get_pool().acquire() as conn:
+        repo = Repository(conn)
+        await repo.update_job(job_id, **kwargs)
 
 
 async def _pick_pending_job() -> dict[str, Any] | None:
-    repo = await _get_repo()
-    return await repo.pick_pending_job()
+    from amortized.db.connection import get_pool
+
+    async with get_pool().acquire() as conn:
+        repo = Repository(conn)
+        return await repo.pick_pending_job()
 
 
 async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
@@ -386,8 +385,12 @@ async def _run_job(job: dict[str, Any]) -> None:
 
 
 async def cleanup_orphaned_jobs() -> None:
-    repo = await _get_repo()
-    running_jobs = await repo.list_jobs(status=JobStatus.running)
+    from amortized.db.connection import get_pool
+
+    async with get_pool().acquire() as conn:
+        repo = Repository(conn)
+        running_jobs = await repo.list_jobs(status=JobStatus.running)
+
     now = datetime.now(UTC).isoformat()
 
     for job in running_jobs:
@@ -407,7 +410,7 @@ async def cleanup_orphaned_jobs() -> None:
         if alive:
             logger.info("Re-adopted running job %s", job_id)
         else:
-            await repo.update_job(
+            await _update_job(
                 job_id,
                 status=JobStatus.failed.value,
                 completed_at=now,

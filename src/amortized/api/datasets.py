@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-import aiosqlite
+import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
@@ -72,7 +72,7 @@ async def _store_dataset_in_mlflow(
 @router.post("/upload", response_model=Job)
 async def upload_dataset(
     file: UploadFile,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Any:
     """Upload a JSONL or Parquet file as a training dataset."""
     name = _sanitize_filename(file.filename or "dataset")

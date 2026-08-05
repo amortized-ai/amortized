@@ -1,14 +1,14 @@
-"""SQLite database layer for job persistence.
+"""PostgreSQL database layer for job persistence.
 
-Uses a single shared connection so the API and worker always see the same
-data — separate connections in WAL mode can have snapshot-visibility gaps.
+Uses a connection pool so the API acquires/releases per-request
+and the worker acquires/releases per-operation.
 """
 
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-import aiosqlite
+import asyncpg
 
 from amortized.config import settings
 
@@ -16,34 +16,31 @@ logger = logging.getLogger("amortized.db")
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
-_shared_db: aiosqlite.Connection | None = None
+_pool: asyncpg.Pool | None = None  # type: ignore[type-arg]
 
 
-async def _get_shared_db() -> aiosqlite.Connection:
-    global _shared_db
-    if _shared_db is None:
-        settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-        _shared_db = await aiosqlite.connect(str(settings.db_path))
-        _shared_db.row_factory = aiosqlite.Row
-        logger.info("Opened shared DB connection to %s", settings.db_path)
-    return _shared_db
+def get_pool() -> asyncpg.Pool:  # type: ignore[type-arg]
+    assert _pool is not None, "Database not initialized — call init_db() first"
+    return _pool
 
 
-async def get_db() -> AsyncIterator[aiosqlite.Connection]:
-    yield await _get_shared_db()
+async def get_db() -> AsyncIterator[asyncpg.Connection]:  # type: ignore[type-arg]
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        yield conn
 
 
 async def init_db() -> None:
-    db = await _get_shared_db()
+    global _pool
+    _pool = await asyncpg.create_pool(dsn=settings.database_url, min_size=2, max_size=10)
     schema_sql = _SCHEMA_PATH.read_text()
-    await db.execute("PRAGMA journal_mode=WAL")
-    await db.executescript(schema_sql)
-    await db.commit()
-    logger.info("Database initialized at %s", settings.db_path)
+    async with _pool.acquire() as conn:
+        await conn.execute(schema_sql)
+    logger.info("Database initialized at %s", settings.database_url.split("@")[-1])
 
 
 async def close_db() -> None:
-    global _shared_db
-    if _shared_db is not None:
-        await _shared_db.close()
-        _shared_db = None
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None

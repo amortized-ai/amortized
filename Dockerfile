@@ -11,7 +11,7 @@ RUN uv pip install --system --no-cache .
 
 USER 1001
 
-ENV AMORTIZED_DB_PATH=/data/amortized.db \
+ENV AMORTIZED_DATABASE_URL=postgresql://amortized:amortized@localhost:5432/amortized \
     AMORTIZED_DATA_DIR=/data \
     AMORTIZED_RECIPES_DIR=/app
 

@@ -67,12 +67,12 @@ async def resolve_parent_artifacts(
     if not parent_job_id:
         return config, []
 
-    from amortized.db.connection import _get_shared_db
+    from amortized.db.connection import get_pool
     from amortized.db.repository import Repository
 
-    db = await _get_shared_db()
-    repo = Repository(db)
-    parent = await repo.get_job(parent_job_id)
+    async with get_pool().acquire() as conn:
+        repo = Repository(conn)
+        parent = await repo.get_job(parent_job_id)
 
     if not parent:
         logger.warning("Parent job %s not found", parent_job_id)
