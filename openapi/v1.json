@@ -853,6 +853,15 @@
             }
           },
           {
+            "name": "chunker_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ChunkerType",
+              "default": "token"
+            }
+          },
+          {
             "name": "chunk_size",
             "in": "query",
             "required": false,
@@ -1509,6 +1518,15 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
+      "ChunkerType": {
+        "type": "string",
+        "enum": [
+          "token",
+          "recursive",
+          "sentence"
+        ],
+        "title": "ChunkerType"
+      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -1617,6 +1635,11 @@
             "title": "Table Mode",
             "description": "Table detection mode: fast, accurate",
             "default": "fast"
+          },
+          "chunker_type": {
+            "$ref": "#/components/schemas/ChunkerType",
+            "description": "Chunker type",
+            "default": "token"
           },
           "chunk_size": {
             "type": "integer",

@@ -22,6 +22,7 @@ from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
+    ChunkerType,
     ConvertUrlRequest,
     DocumentChunk,
     DocumentChunks,
@@ -193,6 +194,12 @@ _DEFAULT_CHUNK_OVERLAP = 200
 _DOCLING_TIMEOUT = 600.0
 _CHONKIE_TIMEOUT = 120.0
 
+_CHONKIE_ENDPOINTS: dict[str, str] = {
+    "token": "/v1/chunk/token",
+    "recursive": "/v1/chunk/recursive",
+    "sentence": "/v1/chunk/sentence",
+}
+
 
 _DOCLING_LABEL_PREFIX: dict[str, str] = {
     "title": "# ",
@@ -286,23 +293,23 @@ async def _convert(
 
 async def _chunk_with_chonkie(
     content: str,
+    chunker_type: str = "token",
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP,
 ) -> list[dict[str, Any]]:
-    """Chunk content via chonkie-serve token chunker."""
+    """Chunk content via chonkie-serve."""
     if not content.strip():
         return []
 
     base_url = _chonkie_url()
-    payload: dict[str, Any] = {
-        "text": content,
-        "chunk_size": chunk_size,
-        "chunk_overlap": chunk_overlap,
-    }
+    endpoint = _CHONKIE_ENDPOINTS.get(chunker_type, "/v1/chunk/token")
+    payload: dict[str, Any] = {"text": content, "chunk_size": chunk_size}
+    if chunker_type in ("token", "sentence"):
+        payload["chunk_overlap"] = chunk_overlap
 
     async with httpx.AsyncClient(timeout=_CHONKIE_TIMEOUT) as client:
         raw_chunks = await _call_chonkie(
-            client, f"{base_url}/v1/chunk/token", payload
+            client, f"{base_url}{endpoint}", payload
         )
 
     return [
@@ -321,12 +328,15 @@ async def _convert_and_chunk(
     base_url: str,
     filename: str,
     file_bytes: bytes,
+    chunker_type: str = "token",
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP,
 ) -> tuple[str, list[dict[str, Any]], float]:
     """Docling for conversion, chonkie-serve for chunking."""
     content, processing_time = await _convert(base_url, filename, file_bytes)
-    chunks = await _chunk_with_chonkie(content, chunk_size, chunk_overlap)
+    chunks = await _chunk_with_chonkie(
+        content, chunker_type, chunk_size, chunk_overlap
+    )
     return content, chunks, processing_time
 
 
@@ -395,6 +405,7 @@ async def convert_document(
     do_ocr: bool = True,
     ocr_engine: str = "easyocr",
     table_mode: str = "fast",
+    chunker_type: ChunkerType = ChunkerType.token,
     chunk_size: int = Query(_DEFAULT_CHUNK_SIZE, ge=64, le=8192),
     chunk_overlap: int = Query(_DEFAULT_CHUNK_OVERLAP, ge=0),
 ) -> DocumentResult:
@@ -412,7 +423,8 @@ async def convert_document(
 
     warnings: list[str] = []
     content, chunks, processing_time = await _convert_and_chunk(
-        base_url, filename, file_bytes, chunk_size, chunk_overlap,
+        base_url, filename, file_bytes,
+        chunker_type.value, chunk_size, chunk_overlap,
     )
 
     if not content.strip():
@@ -467,7 +479,7 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
 
     content, chunks, processing_time = await _convert_and_chunk(
         base_url, filename, source_bytes,
-        opts.chunk_size, opts.chunk_overlap,
+        opts.chunker_type.value, opts.chunk_size, opts.chunk_overlap,
     )
 
     if not content.strip():

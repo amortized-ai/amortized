@@ -129,11 +129,18 @@ class OutputFormat(StrEnum):
     html = "html"
 
 
+class ChunkerType(StrEnum):
+    token = "token"
+    recursive = "recursive"
+    sentence = "sentence"
+
+
 class ConvertOptions(BaseModel):
     output_format: OutputFormat = Field(OutputFormat.md, description="Output format")
     do_ocr: bool = Field(True, description="Enable OCR for scanned documents")
     ocr_engine: str = Field("easyocr", description="OCR engine: easyocr, tesseract")
     table_mode: str = Field("fast", description="Table detection mode: fast, accurate")
+    chunker_type: ChunkerType = Field(ChunkerType.token, description="Chunker type")
     chunk_size: int = Field(2048, ge=64, le=8192, description="Max tokens per chunk")
     chunk_overlap: int = Field(200, ge=0, description="Token overlap between chunks")
 

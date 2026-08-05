@@ -31,11 +31,18 @@ const OUTPUT_FORMATS = [
   { value: "html", label: "HTML" },
 ] as const
 
+const CHUNKER_TYPES = [
+  { value: "token", label: "Token" },
+  { value: "recursive", label: "Recursive" },
+  { value: "sentence", label: "Sentence" },
+] as const
+
 export function UploadDocumentDialog() {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
+  const [chunkerType, setChunkerType] = useState("token")
   const [chunkSize, setChunkSize] = useState(2048)
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [result, setResult] = useState<DocumentUploadResponse | null>(null)
@@ -51,6 +58,7 @@ export function UploadDocumentDialog() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
+    setChunkerType("token")
     setChunkSize(2048)
     setChunkOverlap(200)
     setResult(null)
@@ -67,6 +75,7 @@ export function UploadDocumentDialog() {
 
   const chunkOptions = {
     output_format: outputFormat,
+    chunker_type: chunkerType,
     chunk_size: chunkSize,
     chunk_overlap: chunkOverlap,
   }
@@ -180,8 +189,10 @@ export function UploadDocumentDialog() {
                   onChange={setOutputFormat}
                 />
                 <ChunkSettings
+                  chunkerType={chunkerType}
                   chunkSize={chunkSize}
                   chunkOverlap={chunkOverlap}
+                  onChunkerTypeChange={setChunkerType}
                   onChunkSizeChange={setChunkSize}
                   onChunkOverlapChange={setChunkOverlap}
                 />
@@ -220,8 +231,10 @@ export function UploadDocumentDialog() {
                   onChange={setOutputFormat}
                 />
                 <ChunkSettings
+                  chunkerType={chunkerType}
                   chunkSize={chunkSize}
                   chunkOverlap={chunkOverlap}
+                  onChunkerTypeChange={setChunkerType}
                   onChunkSizeChange={setChunkSize}
                   onChunkOverlapChange={setChunkOverlap}
                 />
@@ -280,18 +293,38 @@ function OutputFormatSelect({
 }
 
 function ChunkSettings({
+  chunkerType,
   chunkSize,
   chunkOverlap,
+  onChunkerTypeChange,
   onChunkSizeChange,
   onChunkOverlapChange,
 }: {
+  chunkerType: string
   chunkSize: number
   chunkOverlap: number
+  onChunkerTypeChange: (v: string) => void
   onChunkSizeChange: (v: number) => void
   onChunkOverlapChange: (v: number) => void
 }) {
+  const supportsOverlap = chunkerType === "token" || chunkerType === "sentence"
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>Chunker</Label>
+        <Select value={chunkerType} onValueChange={onChunkerTypeChange}>
+          <SelectTrigger data-testid="doc-chunker-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CHUNKER_TYPES.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                {c.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor="chunk-size">Chunk Size</Label>
@@ -312,13 +345,14 @@ function ChunkSettings({
             type="number"
             min={0}
             value={chunkOverlap}
+            disabled={!supportsOverlap}
             onChange={(e) => onChunkOverlapChange(Number(e.target.value) || 0)}
             data-testid="doc-chunk-overlap"
           />
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        Max tokens per chunk and overlap between adjacent chunks.
+        Overlap applies to token and sentence chunkers only.
       </p>
     </div>
   )
