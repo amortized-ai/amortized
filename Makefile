@@ -20,6 +20,7 @@ TRAINING_IMAGE ?= ghcr.io/amortized-ai/training:latest
 DATA_DESIGNER_IMAGE ?= ghcr.io/amortized-ai/data-designer:latest
 OPENCODE_IMAGE ?= ghcr.io/anomalyco/opencode:latest
 DOCLING_IMAGE  ?= ghcr.io/docling-project/docling-serve:latest
+POSTGRES_IMAGE ?= docker.io/library/postgres:16-alpine
 
 # GHCR credentials (set GHCR_USER and GHCR_TOKEN to enable private image pulls)
 GHCR_USER  ?=
@@ -111,7 +112,7 @@ build-studio: ## Build studio image
 
 pull-images: ## Pull third-party images (MinIO, MLflow, docling-serve, training, etc.)
 	@echo "Pulling third-party images..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE) $(POSTGRES_IMAGE); do \
 		docker pull $$img 2>/dev/null || true; \
 	done
 	@echo "Pulling ML images (training image is ~12GB, this may take a while)..."
@@ -138,7 +139,7 @@ load-studio: ## Load studio image into kind
 
 load-deps: ## Load third-party images into kind
 	@echo "Loading third-party images into kind..."
-	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE); do \
+	@for img in $(MINIO_IMAGE) $(MLFLOW_IMAGE) $(DOCLING_IMAGE) $(AWSCLI_IMAGE) $(OPENCODE_IMAGE) $(POSTGRES_IMAGE); do \
 		kind load docker-image $$img --name $(CLUSTER_NAME) 2>/dev/null || true; \
 	done
 	@echo "Loading ML images into kind (training is ~12GB, be patient)..."
@@ -195,7 +196,7 @@ prompt: ## Build combined Morty prompt and sync skills to k8s
 # Deploy shared services (MLflow, MinIO)
 # ──────────────────────────────────────────────
 
-deploy-shared: ## Deploy shared services (MLflow, MinIO) into amortized namespace
+deploy-shared: ## Deploy shared services (MLflow, MinIO, PostgreSQL) into amortized namespace
 	@echo "Deploying shared services..."
 	$(KUBECTL) apply -k k8s/overlays/shared
 	@echo "Waiting for MinIO to be ready..."
@@ -207,6 +208,8 @@ deploy-shared: ## Deploy shared services (MLflow, MinIO) into amortized namespac
 		|| echo "  Warning: could not create MinIO bucket (may already exist)."
 	@echo "Waiting for MLflow..."
 	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
+	@echo "Waiting for PostgreSQL..."
+	@$(KUBECTL) -n amortized rollout status deployment/postgres --timeout=120s
 	@echo "Shared services deployed."
 
 # ──────────────────────────────────────────────

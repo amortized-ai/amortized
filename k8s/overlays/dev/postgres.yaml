@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: amortized
+  labels:
+    app: amortized
+    component: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: false
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:16-alpine
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "amortized"
+            - name: POSTGRES_USER
+              value: "amortized"
+            - name: POSTGRES_PASSWORD
+              value: "amortized"
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "amortized"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "amortized"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: amortized
+  labels:
+    app: amortized
+    component: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: amortized
+  labels:
+    app: amortized
+    component: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
