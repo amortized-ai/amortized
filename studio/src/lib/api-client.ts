@@ -522,19 +522,13 @@ export async function uploadDocument(
 ): Promise<DocumentUploadResponse> {
   const formData = new FormData()
   formData.append("file", file)
-  if (options.output_format) {
-    formData.append("output_format", options.output_format)
-  }
-  if (options.chunker_type) {
-    formData.append("chunker_type", options.chunker_type)
-  }
-  if (options.chunk_size != null) {
-    formData.append("chunk_size", String(options.chunk_size))
-  }
-  if (options.chunk_overlap != null) {
-    formData.append("chunk_overlap", String(options.chunk_overlap))
-  }
-  return request<DocumentUploadResponse>("/api/v1/documents/convert", {
+  const params = new URLSearchParams()
+  if (options.output_format) params.set("output_format", options.output_format)
+  if (options.chunker_type) params.set("chunker_type", options.chunker_type)
+  if (options.chunk_size != null) params.set("chunk_size", String(options.chunk_size))
+  if (options.chunk_overlap != null) params.set("chunk_overlap", String(options.chunk_overlap))
+  const qs = params.toString()
+  return request<DocumentUploadResponse>(`/api/v1/documents/convert${qs ? `?${qs}` : ""}`, {
     method: "POST",
     body: formData,
   })
