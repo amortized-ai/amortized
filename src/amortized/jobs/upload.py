@@ -50,10 +50,11 @@ async def build(
 
     config_files["config.json"] = json.dumps(config_dict)
 
-    image = config_mod.settings.image_registry + "/document:latest"
+    image = f"{config_mod.settings.image_registry}/document:latest"
 
+    cmd = "mkdir -p /amortized/work/.cache && python3 /app/process_document.py"
     return JobBuildResult(
-        command=["python3", "/app/process_document.py"],
+        command=["sh", "-c", cmd],
         config_files=config_files,
         s3_downloads=s3_downloads,
         resources=Resources(gpus=0),
