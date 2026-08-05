@@ -3,11 +3,17 @@
 import os
 from unittest.mock import AsyncMock, patch
 
+import asyncpg
 import httpx
 import pytest
 import yaml
 
 from amortized.main import app
+
+TEST_DATABASE_URL = os.environ.get(
+    "AMORTIZED_TEST_DATABASE_URL",
+    "postgresql://amortized:amortized@localhost:5432/amortized_test",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -15,8 +21,7 @@ def _use_temp_db(tmp_path: object) -> None:
     import amortized.config as config_mod
     import amortized.db.connection as db_conn_mod
 
-    db_path = str(tmp_path) + "/test.db"
-    os.environ["AMORTIZED_DB_PATH"] = db_path
+    os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
@@ -82,9 +87,6 @@ class TestWorkerJobExecution:
 class TestOrphanedJobCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_orphaned_jobs(self, client: httpx.AsyncClient) -> None:
-        import aiosqlite
-
-        from amortized.config import settings
         from amortized.worker import cleanup_orphaned_jobs
 
         response = await client.post(
@@ -100,12 +102,12 @@ class TestOrphanedJobCleanup:
         )
         job_id = response.json()["id"]
 
-        async with aiosqlite.connect(str(settings.db_path)) as db:
-            await db.execute(
-                "UPDATE jobs SET status = ? WHERE id = ?",
-                ("running", job_id),
-            )
-            await db.commit()
+        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE jobs SET status = $1 WHERE id = $2",
+                    "running", job_id,
+                )
 
         await cleanup_orphaned_jobs()
 
@@ -118,10 +120,6 @@ class TestOrphanedJobCleanup:
 class TestCancelRunningJob:
     @pytest.mark.asyncio
     async def test_cancel_completed_job_rejected(self, client: httpx.AsyncClient) -> None:
-        import aiosqlite
-
-        from amortized.config import settings
-
         response = await client.post(
             "/api/v1/jobs",
             json={
@@ -135,12 +133,12 @@ class TestCancelRunningJob:
         )
         job_id = response.json()["id"]
 
-        async with aiosqlite.connect(str(settings.db_path)) as db:
-            await db.execute(
-                "UPDATE jobs SET status = ? WHERE id = ?",
-                ("succeeded", job_id),
-            )
-            await db.commit()
+        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE jobs SET status = $1 WHERE id = $2",
+                    "succeeded", job_id,
+                )
 
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 400
@@ -237,7 +235,7 @@ class TestResolveParentArtifacts:
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
         with (
-            patch("amortized.db.connection._get_shared_db", new_callable=AsyncMock),
+            patch("amortized.db.connection.get_pool", return_value=AsyncMock()),
             patch("amortized.db.repository.Repository", return_value=mock_repo),
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):

@@ -1,24 +1,28 @@
 """Tests for the Repository CRUD class — no HTTP server required."""
 
-import aiosqlite
+import os
+from pathlib import Path
+
+import asyncpg
 import pytest
 
-from amortized.db.connection import _SCHEMA_PATH
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
+TEST_DATABASE_URL = os.environ.get(
+    "AMORTIZED_TEST_DATABASE_URL",
+    "postgresql://amortized:amortized@localhost:5432/amortized_test",
+)
+
 
 @pytest.fixture
-async def repo(tmp_path):
-    db_path = tmp_path / "test.db"
-    db = await aiosqlite.connect(str(db_path))
-    db.row_factory = aiosqlite.Row
-    schema_sql = _SCHEMA_PATH.read_text()
-    await db.executescript(schema_sql)
-    await db.commit()
-    repo = Repository(db)
-    yield repo
-    await db.close()
+async def repo():
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
+    schema_sql = (Path(__file__).parent.parent / "src" / "amortized" / "db" / "schema.sql").read_text()
+    await conn.execute("DROP TABLE IF EXISTS jobs")
+    await conn.execute(schema_sql)
+    yield Repository(conn)
+    await conn.close()
 
 
 class TestJobCRUD:
@@ -103,7 +107,6 @@ class TestJobCRUD:
             created_at="2026-01-01T00:00:00",
         )
         await repo.conn.execute("UPDATE jobs SET error = 'None' WHERE id = 'j1'")
-        await repo.conn.commit()
         job = await repo.get_job("j1")
         assert job is not None
         assert job["error"] is None
