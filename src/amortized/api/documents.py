@@ -271,16 +271,14 @@ async def _convert(
         )
 
     content = ""
-    documents = data.get("documents", [])
-    if documents:
-        doc_content = documents[0].get("content", {})
-        md = doc_content.get("md_content")
-        if md:
-            content = md
-        else:
-            doc_json = doc_content.get("json_content")
-            if doc_json:
-                content = _docling_json_to_markdown(doc_json)
+    doc = data.get("document") or {}
+    md = doc.get("md_content")
+    if md:
+        content = md
+    else:
+        doc_json = doc.get("json_content")
+        if doc_json:
+            content = _docling_json_to_markdown(doc_json)
 
     processing_time: float = data.get("processing_time", 0.0)
     return content, processing_time
