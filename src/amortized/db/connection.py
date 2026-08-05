@@ -1,12 +1,11 @@
 """PostgreSQL database layer for job persistence.
 
-Uses a connection pool so the API acquires/releases per-request
-and the worker acquires/releases per-operation.
+Uses a connection pool with retry logic and health checking.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import asyncpg
 
@@ -14,9 +13,10 @@ from amortized.config import settings
 
 logger = logging.getLogger("amortized.db")
 
-_SCHEMA_PATH = Path(__file__).parent / "schema.sql"
-
 _pool: asyncpg.Pool | None = None
+
+_MAX_RETRIES = 5
+_BASE_DELAY = 1.0
 
 
 def get_pool() -> asyncpg.Pool:
@@ -32,11 +32,43 @@ async def get_db() -> AsyncIterator[asyncpg.Connection]:
 
 async def init_db() -> None:
     global _pool
-    _pool = await asyncpg.create_pool(dsn=settings.database_url, min_size=2, max_size=10)
-    schema_sql = _SCHEMA_PATH.read_text()
-    async with _pool.acquire() as conn:
-        await conn.execute(schema_sql)
-    logger.info("Database initialized at %s", settings.database_url.split("@")[-1])
+    last_error: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            _pool = await asyncpg.create_pool(
+                dsn=settings.database_url,
+                min_size=2,
+                max_size=10,
+                command_timeout=30.0,
+                server_settings={"application_name": "amortized"},
+            )
+            logger.info("Database pool created (%s)", settings.database_url.split("@")[-1])
+            return
+        except (OSError, asyncpg.PostgresError) as exc:
+            last_error = exc
+            delay = _BASE_DELAY * (2**attempt)
+            logger.warning(
+                "DB connect attempt %d/%d failed, retrying in %.0fs: %s",
+                attempt + 1,
+                _MAX_RETRIES,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+    raise RuntimeError(
+        f"Failed to connect to database after {_MAX_RETRIES} attempts"
+    ) from last_error
+
+
+async def check_db_health() -> bool:
+    if _pool is None:
+        return False
+    try:
+        async with _pool.acquire(timeout=2.0) as conn:
+            await conn.fetchval("SELECT 1")
+        return True
+    except Exception:
+        return False
 
 
 async def close_db() -> None:
