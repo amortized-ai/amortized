@@ -108,14 +108,15 @@ export function UploadDocumentDialog() {
   }
 
   function handleOpenChange(v: boolean) {
-    if (!v && isProcessing) {
-      const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
+    if (!v && jobId && !handled) {
+      toast.loading(`Uploading ${jobFilename || "document"}...`, {
         duration: Infinity,
+        id: "doc-upload",
       })
-      setToastId(tid)
+      setToastId("doc-upload")
     }
     setOpen(v)
-    if (!v && !isProcessing) reset()
+    if (!v && !jobId) reset()
   }
 
   const chunkOptions = {
