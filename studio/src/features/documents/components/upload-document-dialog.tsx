@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, Loader2, CheckCircle2 } from "lucide-react"
+import { Upload, Loader2, CheckCircle2, Minimize2 } from "lucide-react"
+import { toast } from "sonner"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
 import { useJob } from "@/features/jobs"
 import { useQueryClient } from "@tanstack/react-query"
@@ -53,6 +54,9 @@ export function UploadDocumentDialog() {
   const [chunkSize, setChunkSize] = useState(2048)
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [jobId, setJobId] = useState<string | null>(null)
+  const [jobFilename, setJobFilename] = useState("")
+  const [minimized, setMinimized] = useState(false)
+  const [toastId, setToastId] = useState<string | number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -69,9 +73,17 @@ export function UploadDocumentDialog() {
 
   if (isSucceeded && !error) {
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
+    if (toastId) {
+      toast.success(`${jobFilename || "Document"} processed`, { id: toastId })
+      setToastId(null)
+    }
     setTimeout(() => handleOpenChange(false), 2000)
   }
   if (isFailed && !error) {
+    if (toastId) {
+      toast.error(`${jobFilename || "Document"} failed`, { id: toastId })
+      setToastId(null)
+    }
     setError(job?.error ?? "Document processing failed")
     setJobId(null)
   }
@@ -84,15 +96,27 @@ export function UploadDocumentDialog() {
     setChunkSize(2048)
     setChunkOverlap(200)
     setJobId(null)
+    setJobFilename("")
+    setMinimized(false)
+    setToastId(null)
     setError(null)
     uploadMutation.reset()
     urlMutation.reset()
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
+  function handleMinimize() {
+    const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
+      duration: Infinity,
+    })
+    setToastId(tid)
+    setMinimized(true)
+    setOpen(false)
+  }
+
   function handleOpenChange(v: boolean) {
     setOpen(v)
-    if (!v) reset()
+    if (!v && !minimized) reset()
   }
 
   const chunkOptions = {
@@ -106,6 +130,7 @@ export function UploadDocumentDialog() {
     if (!file) return
     setError(null)
     setJobId(null)
+    setJobFilename(file.name)
     uploadMutation.mutate(
       { file, options: chunkOptions },
       {
@@ -121,6 +146,7 @@ export function UploadDocumentDialog() {
     if (!url.trim()) return
     setError(null)
     setJobId(null)
+    setJobFilename(url.trim().split("/").pop() || "document")
     urlMutation.mutate(
       { url: url.trim(), options: chunkOptions },
       {
@@ -160,6 +186,15 @@ export function UploadDocumentDialog() {
             <p className="text-sm text-muted-foreground">
               {STATUS_LABELS[job?.status ?? ""] ?? "Processing..."}
             </p>
+            <p className="text-xs text-muted-foreground">{jobFilename}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleMinimize}
+            >
+              <Minimize2 className="h-3 w-3 mr-1" />
+              Minimize
+            </Button>
           </div>
         ) : isSucceeded ? (
           <div className="flex flex-col items-center gap-3 py-6">
