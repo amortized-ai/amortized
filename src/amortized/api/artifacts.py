@@ -44,6 +44,20 @@ def _get_mlflow_client() -> MLflowClient:
     return MLflowClient(settings.mlflow_tracking_uri)
 
 
+def _handle_mlflow_error(exc: Exception, context: str) -> HTTPException:
+    """Translate httpx errors from MLflow into appropriate HTTP responses."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return HTTPException(status_code=404, detail=context)
+    if isinstance(exc, httpx.ConnectError):
+        logger.warning("MLflow connection failed: %s", exc)
+        return HTTPException(status_code=502, detail=f"Cannot connect to MLflow: {exc}")
+    if isinstance(exc, httpx.TimeoutException):
+        logger.warning("MLflow request timed out: %s", exc)
+        return HTTPException(status_code=504, detail=f"MLflow request timed out: {exc}")
+    logger.warning("MLflow request failed (%s): %s", context, exc)
+    return HTTPException(status_code=502, detail=f"Failed to fetch from MLflow: {exc}")
+
+
 @router.get(
     "/{experiment_id}/{run_id}",
     operation_id="list_artifacts",
@@ -57,24 +71,9 @@ async def list_artifacts(
     client = _get_mlflow_client()
     try:
         files = await client.list_artifacts(run_id, path)
-        return {"files": files}
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Artifacts not found for run {run_id}",
-            ) from None
-        logger.warning("MLflow list_artifacts failed for run %s: %s", run_id, exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to list artifacts from MLflow: {exc}",
-        ) from None
-    except httpx.ConnectError as exc:
-        logger.warning("MLflow connection failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cannot connect to MLflow: {exc}",
-        ) from None
+    except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException) as exc:
+        raise _handle_mlflow_error(exc, f"Artifacts not found for run {run_id}") from None
+    return {"files": files}
 
 
 @router.get(
@@ -90,23 +89,8 @@ async def get_artifact_content(
     client = _get_mlflow_client()
     try:
         body = await client.get_artifact(run_id, path)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Artifact not found: {path}",
-            ) from None
-        logger.warning("MLflow get_artifact failed for run %s path %s: %s", run_id, path, exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to read artifact from MLflow: {exc}",
-        ) from None
-    except httpx.ConnectError as exc:
-        logger.warning("MLflow connection failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cannot connect to MLflow: {exc}",
-        ) from None
+    except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException) as exc:
+        raise _handle_mlflow_error(exc, f"Artifact not found: {path}") from None
 
     if path.endswith(".parquet"):
         import io
@@ -114,8 +98,14 @@ async def get_artifact_content(
         import pyarrow.parquet as pq
         from fastapi.responses import JSONResponse
 
-        table = pq.read_table(io.BytesIO(body))  # type: ignore[no-untyped-call]
-        records = table.to_pylist()
+        try:
+            table = pq.read_table(io.BytesIO(body))  # type: ignore[no-untyped-call]
+            records = table.to_pylist()
+        except Exception as exc:
+            logger.warning("Failed to parse parquet artifact %s: %s", path, exc)
+            raise HTTPException(
+                status_code=422, detail=f"Failed to parse artifact as parquet: {exc}"
+            ) from None
         return JSONResponse(content=records)
 
     content_type = _content_type_for(path)

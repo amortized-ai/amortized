@@ -168,13 +168,7 @@ def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _get_all_experiment_ids(mlflow: MLflowClient) -> list[str]:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(
-            f"{mlflow._base}/api/2.0/mlflow/experiments/search",
-            json={"max_results": 200},
-        )
-        resp.raise_for_status()
-        return [e["experiment_id"] for e in resp.json().get("experiments", [])]
+    return await mlflow.list_experiment_ids()
 
 
 # ---------------------------------------------------------------------------
@@ -279,15 +273,30 @@ async def get_dataset_samples(
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             raise HTTPException(status_code=404, detail=f"Artifact not found: {path}") from None
-        raise
+        logger.warning("MLflow get_artifact failed for run %s path %s: %s", run_id, path, exc)
+        raise HTTPException(
+            status_code=502, detail=f"Failed to read artifact from MLflow: {exc}"
+        ) from None
+    except httpx.ConnectError as exc:
+        logger.warning("MLflow connection failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Cannot connect to MLflow: {exc}") from None
+    except httpx.TimeoutException as exc:
+        logger.warning("MLflow request timed out: %s", exc)
+        raise HTTPException(status_code=504, detail=f"MLflow request timed out: {exc}") from None
 
-    if path.endswith(".parquet"):
-        import pyarrow.parquet as pq
+    try:
+        if path.endswith(".parquet"):
+            import pyarrow.parquet as pq
 
-        table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
-        records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
-    else:
-        lines = data.decode("utf-8").strip().split("\n")
-        records = [json.loads(line) for line in lines[:limit]]
+            table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
+            records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
+        else:
+            lines = data.decode("utf-8").strip().split("\n")
+            records = [json.loads(line) for line in lines[:limit]]
+    except Exception as exc:
+        logger.warning("Failed to parse artifact %s: %s", path, exc)
+        raise HTTPException(
+            status_code=422, detail=f"Failed to parse dataset artifact: {exc}"
+        ) from None
 
     return records
