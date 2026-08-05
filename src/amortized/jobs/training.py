@@ -115,7 +115,7 @@ async def build(
         config_files=config_files,
         s3_downloads=s3_downloads,
         env=env,
-        resources=Resources(gpus=1),
+        resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=IMAGE,
         resolved_config=dict(config),
     )

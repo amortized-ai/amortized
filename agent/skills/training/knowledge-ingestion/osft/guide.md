@@ -25,11 +25,10 @@ Ask the user:
 1. **What model?** — Default: `Qwen/Qwen3-8B`. Explain tradeoffs:
    - 0.6B–1.5B: fast inference, lower accuracy, good for prototyping
    - 4B: balanced, single GPU fine-tuning possible
-   - 8B: best accuracy for knowledge tasks, needs 8 GPUs
+   - 8B: best accuracy for knowledge tasks
    The model choice affects all other hyperparameters — set them after.
-2. **How many GPUs?** — Default: 8 for 8B models. Explain the constraint:
-   `effective_batch_size` = `per_gpu_batch × nproc_per_node`.
-   Fewer GPUs → smaller effective batch → may need more epochs.
+2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
+   user how many GPUs they have or offer GPU count options.
 3. **Training data** — Should come from a completed SDG job. Use
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.
@@ -45,14 +44,14 @@ Ask the user:
     "data_path": "<resolved from parent SDG job or specified directly>",
     "num_train_epochs": 5,
     "learning_rate": 2e-05,
-    "effective_batch_size": 256,
+    "effective_batch_size": 32,
     "max_length": 11000,
     "unfreeze_rank_ratio": 0.2,
     "warmup_steps": 25,
     "save_samples": 0,
     "accelerate_full_state_at_epoch": false,
     "checkpoint_at_epoch": true,
-    "nproc_per_node": 8,
+    "nproc_per_node": 1,
     "data_output_dir": "data-output",
     "bf16": true,
     "max_tokens_per_gpu": 15000,
@@ -73,10 +72,10 @@ presenting the confirmation table.
 | `model_name_or_path` | User's chosen model |
 | `num_train_epochs` | 3–5 for <1000 samples, 2–3 for 1000–5000, 1–2 for 5000+. More data needs fewer epochs to avoid overfitting |
 | `learning_rate` | 2e-5 for 8B models, 5e-5 for 4B, 1e-4 for 0.6B–1.5B. Larger models need lower LR |
-| `effective_batch_size` | 32 × nproc_per_node. With 8 GPUs = 256, with 4 GPUs = 128, with 1 GPU = 32 |
+| `effective_batch_size` | Always 32 (1 GPU × 32 per-GPU batch) |
 | `max_length` | Must fit the longest context + question + answer from SDG. For knowledge QA with 15-sentence chunks: ~11000. For classification: ~2048 |
 | `unfreeze_rank_ratio` | 0.2 is the OSFT default — fraction of weights trainable. Only adjust if user asks |
-| `nproc_per_node` | Match user's available GPUs |
+| `nproc_per_node` | Always 1 |
 | `max_tokens_per_gpu` | 15000 for H100 (80GB), 8000 for A100 (40GB), 4000 for consumer GPUs. Reduce if OOM |
 | `warmup_steps` | ~1% of total steps. total_steps = (num_samples / effective_batch_size) × num_epochs |
 | `bf16` | true for Ampere+ GPUs (A100, H100). Use fp16 for older GPUs |
@@ -102,8 +101,7 @@ the SDG `schema_transform` processor produces:
 
 ## Compute Requirements
 
-- **8 GPUs** recommended for 8B models
-- ~30 minutes for 3000 samples with 8× H100s
+- All training runs use 1 GPU
 - Checkpoint saved at each epoch
 
 ## After Training
