@@ -8,6 +8,5 @@ RUN mkdir -p /opt/cache/torch && \
     chmod -R a+rw /opt/cache
 
 COPY process_document.py /app/process_document.py
-USER 1000
 
 WORKDIR /app
