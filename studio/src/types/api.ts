@@ -267,6 +267,12 @@ export interface DocumentUploadResponse {
   warnings: string[]
 }
 
+export interface DocumentUploadAccepted {
+  job_id: string
+  filename: string
+  status: string
+}
+
 export interface DocumentChunkItem {
   chunk_index: number
   text: string

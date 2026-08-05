@@ -491,7 +491,7 @@ export function uploadDataset(file: File): Promise<Job> {
 
 // --- Documents ---
 
-import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
+import type { DocumentChunksResponse, DocumentRecord, DocumentUploadAccepted, DocumentUploadResponse } from "@/types/api"
 
 export function getDocuments(): Promise<DocumentRecord[]> {
   return get<DocumentRecord[]>("/api/v1/documents")
@@ -519,7 +519,7 @@ export interface ChunkOptions {
 export async function uploadDocument(
   file: File,
   options: ChunkOptions = {},
-): Promise<DocumentUploadResponse> {
+): Promise<DocumentUploadAccepted> {
   const formData = new FormData()
   formData.append("file", file)
   const params = new URLSearchParams()
@@ -528,7 +528,7 @@ export async function uploadDocument(
   if (options.chunk_size != null) params.set("chunk_size", String(options.chunk_size))
   if (options.chunk_overlap != null) params.set("chunk_overlap", String(options.chunk_overlap))
   const qs = params.toString()
-  return request<DocumentUploadResponse>(`/api/v1/documents/convert${qs ? `?${qs}` : ""}`, {
+  return request<DocumentUploadAccepted>(`/api/v1/documents/convert${qs ? `?${qs}` : ""}`, {
     method: "POST",
     body: formData,
   })
@@ -537,8 +537,8 @@ export async function uploadDocument(
 export function convertDocumentUrl(
   url: string,
   options: ChunkOptions = {},
-): Promise<DocumentUploadResponse> {
-  return post<DocumentUploadResponse>("/api/v1/documents/convert/url", {
+): Promise<DocumentUploadAccepted> {
+  return post<DocumentUploadAccepted>("/api/v1/documents/convert/url", {
     url,
     options: {
       output_format: options.output_format ?? "md",

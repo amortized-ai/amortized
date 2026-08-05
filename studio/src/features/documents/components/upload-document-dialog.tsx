@@ -21,7 +21,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, Loader2, CheckCircle2 } from "lucide-react"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
-import type { DocumentUploadResponse } from "@/types/api"
+import { useJob } from "@/features/jobs"
+import { useQueryClient } from "@tanstack/react-query"
 
 const ACCEPTED_FORMATS = ".pdf,.docx,.pptx,.html,.txt,.md,.xlsx"
 const OUTPUT_FORMATS = [
@@ -37,6 +38,12 @@ const CHUNKER_TYPES = [
   { value: "recursive", label: "Recursive" },
 ] as const
 
+const STATUS_LABELS: Record<string, string> = {
+  queued: "Queued...",
+  provisioning: "Provisioning...",
+  running: "Processing document...",
+}
+
 export function UploadDocumentDialog() {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -45,14 +52,29 @@ export function UploadDocumentDialog() {
   const [chunkerType, setChunkerType] = useState("sentence")
   const [chunkSize, setChunkSize] = useState(2048)
   const [chunkOverlap, setChunkOverlap] = useState(200)
-  const [result, setResult] = useState<DocumentUploadResponse | null>(null)
+  const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   const uploadMutation = useUploadDocument()
   const urlMutation = useConvertDocumentUrl()
+  const { data: job } = useJob(jobId)
 
-  const isPending = uploadMutation.isPending || urlMutation.isPending
+  const isUploading = uploadMutation.isPending || urlMutation.isPending
+  const jobStatus = job?.status
+  const isProcessing = jobId != null && jobStatus !== "succeeded" && jobStatus !== "failed"
+  const isSucceeded = jobStatus === "succeeded"
+  const isFailed = jobStatus === "failed"
+
+  if (isSucceeded && !error) {
+    void queryClient.invalidateQueries({ queryKey: ["documents"] })
+    setTimeout(() => handleOpenChange(false), 2000)
+  }
+  if (isFailed && !error) {
+    setError(job?.error ?? "Document processing failed")
+    setJobId(null)
+  }
 
   function reset() {
     setFile(null)
@@ -61,7 +83,7 @@ export function UploadDocumentDialog() {
     setChunkerType("sentence")
     setChunkSize(2048)
     setChunkOverlap(200)
-    setResult(null)
+    setJobId(null)
     setError(null)
     uploadMutation.reset()
     urlMutation.reset()
@@ -83,14 +105,11 @@ export function UploadDocumentDialog() {
   function handleFileSubmit() {
     if (!file) return
     setError(null)
-    setResult(null)
+    setJobId(null)
     uploadMutation.mutate(
       { file, options: chunkOptions },
       {
-        onSuccess: (data) => {
-          setResult(data)
-          setTimeout(() => handleOpenChange(false), 2000)
-        },
+        onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
           setError(err instanceof Error ? err.message : "Upload failed")
         },
@@ -101,14 +120,11 @@ export function UploadDocumentDialog() {
   function handleUrlSubmit() {
     if (!url.trim()) return
     setError(null)
-    setResult(null)
+    setJobId(null)
     urlMutation.mutate(
       { url: url.trim(), options: chunkOptions },
       {
-        onSuccess: (data) => {
-          setResult(data)
-          setTimeout(() => handleOpenChange(false), 2000)
-        },
+        onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
           setError(err instanceof Error ? err.message : "Conversion failed")
         },
@@ -133,28 +149,26 @@ export function UploadDocumentDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        {isPending ? (
+        {isUploading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Uploading file...</p>
+          </div>
+        ) : isProcessing ? (
           <div className="flex flex-col items-center justify-center gap-3 py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Processing document...
+              {STATUS_LABELS[job?.status ?? ""] ?? "Processing..."}
             </p>
           </div>
-        ) : result ? (
+        ) : isSucceeded ? (
           <div className="flex flex-col items-center gap-3 py-6">
             <CheckCircle2 className="h-6 w-6 text-[#1e4f18] dark:text-[#5ba352]" />
             <div className="text-center space-y-1">
-              <p className="text-sm font-medium">{result.filename}</p>
+              <p className="text-sm font-medium">Document processed</p>
               <p className="text-xs text-muted-foreground">
-                {result.content.length.toLocaleString()} characters &middot;{" "}
-                {result.chunk_count} chunks &middot;{" "}
-                {result.processing_time.toFixed(1)}s
+                Ready for use in training data generation.
               </p>
-              {result.warnings.length > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {result.warnings.join(", ")}
-                </p>
-              )}
             </div>
           </div>
         ) : (
