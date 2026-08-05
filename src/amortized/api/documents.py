@@ -1,5 +1,3 @@
-"""Document processing endpoints — async job creation + MLflow retrieval."""
-
 from __future__ import annotations
 
 import contextlib
@@ -101,10 +99,6 @@ def _format_timestamp(ts: int | None) -> str:
 )
 async def convert_document(
     file: UploadFile,
-    output_format: OutputFormat = OutputFormat.md,
-    do_ocr: bool = True,
-    ocr_engine: str = "easyocr",
-    table_mode: str = "fast",
     chunker_type: ChunkerType = ChunkerType.sentence,
     chunk_size: int = Query(2048, ge=64, le=8192),
     chunk_overlap: int = Query(200, ge=0),
@@ -121,7 +115,16 @@ async def convert_document(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    job_id = str(uuid.uuid4())
+    config_dict = {
+        "filename": filename,
+        "chunker_type": chunker_type.value,
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+    }
+
+    repo = Repository(db)
+    job = await create_job(repo, job_type=JobType.upload, config=config_dict)
+    job_id = job["id"]
 
     s3 = _get_s3_client()
     bucket = _get_bucket()
@@ -130,23 +133,11 @@ async def convert_document(
         Key=f"uploads/{job_id}/{filename}",
         Body=file_bytes,
     )
-
-    s3_uri = f"s3://{bucket}/uploads/{job_id}/{filename}"
-
-    config_dict = {
-        "s3_uri": s3_uri,
-        "filename": filename,
-        "output_format": output_format.value,
-        "chunker_type": chunker_type.value,
-        "chunk_size": chunk_size,
-        "chunk_overlap": chunk_overlap,
-    }
-
-    repo = Repository(db)
-    job = await create_job(repo, job_type=JobType.upload, config=config_dict)
+    config_dict["s3_uri"] = f"s3://{bucket}/uploads/{job_id}/{filename}"
+    await repo.update_job(job_id, config=json.dumps(config_dict))
 
     return DocumentUploadAccepted(
-        job_id=job["id"],
+        job_id=job_id,
         filename=filename,
         status="processing",
     )
@@ -185,7 +176,16 @@ async def convert_document_url(
             detail="Could not download document from URL",
         )
 
-    job_id = str(uuid.uuid4())
+    config_dict = {
+        "filename": filename,
+        "chunker_type": opts.chunker_type.value,
+        "chunk_size": opts.chunk_size,
+        "chunk_overlap": opts.chunk_overlap,
+    }
+
+    repo = Repository(db)
+    job = await create_job(repo, job_type=JobType.upload, config=config_dict)
+    job_id = job["id"]
 
     s3 = _get_s3_client()
     bucket = _get_bucket()
@@ -194,23 +194,11 @@ async def convert_document_url(
         Key=f"uploads/{job_id}/{filename}",
         Body=source_bytes,
     )
-
-    s3_uri = f"s3://{bucket}/uploads/{job_id}/{filename}"
-
-    config_dict = {
-        "s3_uri": s3_uri,
-        "filename": filename,
-        "output_format": opts.output_format.value,
-        "chunker_type": opts.chunker_type.value,
-        "chunk_size": opts.chunk_size,
-        "chunk_overlap": opts.chunk_overlap,
-    }
-
-    repo = Repository(db)
-    job = await create_job(repo, job_type=JobType.upload, config=config_dict)
+    config_dict["s3_uri"] = f"s3://{bucket}/uploads/{job_id}/{filename}"
+    await repo.update_job(job_id, config=json.dumps(config_dict))
 
     return DocumentUploadAccepted(
-        job_id=job["id"],
+        job_id=job_id,
         filename=filename,
         status="processing",
     )

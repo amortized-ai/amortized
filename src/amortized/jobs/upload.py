@@ -1,5 +1,3 @@
-"""Upload job builder — document processing via containerized docling + chonkie."""
-
 from __future__ import annotations
 
 import json

@@ -56,6 +56,7 @@ export function UploadDocumentDialog() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobFilename, setJobFilename] = useState("")
   const [toastId, setToastId] = useState<string | number | null>(null)
+  const [handled, setHandled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -70,15 +71,17 @@ export function UploadDocumentDialog() {
   const isSucceeded = jobStatus === "succeeded"
   const isFailed = jobStatus === "failed"
 
-  if (isSucceeded && !error) {
+  if (isSucceeded && !handled) {
+    setHandled(true)
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
     if (toastId) {
       toast.success(`${jobFilename || "Document"} processed`, { id: toastId })
       setToastId(null)
     }
-    setTimeout(() => handleOpenChange(false), 2000)
+    setTimeout(() => setOpen(false), 2000)
   }
-  if (isFailed && !error) {
+  if (isFailed && !handled) {
+    setHandled(true)
     if (toastId) {
       toast.error(`${jobFilename || "Document"} failed`, { id: toastId })
       setToastId(null)
@@ -97,6 +100,7 @@ export function UploadDocumentDialog() {
     setJobId(null)
     setJobFilename("")
     setToastId(null)
+    setHandled(false)
     setError(null)
     uploadMutation.reset()
     urlMutation.reset()

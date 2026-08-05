@@ -18,7 +18,6 @@ def main():
     chunk_overlap = config.get("chunk_overlap", 200)
     tokenizer = config.get("tokenizer", "cl100k_base")
 
-    # Step 1: Convert with docling
     start = time.time()
     from docling.document_converter import DocumentConverter
     converter = DocumentConverter()
@@ -31,7 +30,6 @@ def main():
     if not content.strip():
         print("WARNING: No content extracted from document")
 
-    # Step 2: Chunk with chonkie
     chunks = []
     if content.strip():
         from chonkie import SentenceChunker, TokenChunker, RecursiveChunker
@@ -51,7 +49,6 @@ def main():
         chunks = [{"text": c.text, "token_count": c.token_count} for c in raw_chunks]
         print(f"Chunked into {len(chunks)} chunks using {chunker_type}")
 
-    # Step 3: Upload to MLflow
     mlflow.set_experiment("amortized/documents")
     with mlflow.start_run(run_name=filename) as run:
         run_id = run.info.run_id
