@@ -20,8 +20,11 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, Loader2, CheckCircle2 } from "lucide-react"
+import { toast } from "sonner"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
-import type { DocumentUploadResponse } from "@/types/api"
+import { useJob } from "@/features/jobs"
+import { getJob } from "@/lib/api-client"
+import { useQueryClient } from "@tanstack/react-query"
 
 const ACCEPTED_FORMATS = ".pdf,.docx,.pptx,.html,.txt,.md,.xlsx"
 const OUTPUT_FORMATS = [
@@ -31,27 +34,66 @@ const OUTPUT_FORMATS = [
   { value: "html", label: "HTML" },
 ] as const
 
+const CHUNKER_TYPES = [
+  { value: "sentence", label: "Sentence" },
+  { value: "token", label: "Token" },
+  { value: "recursive", label: "Recursive" },
+] as const
+
+const STATUS_LABELS: Record<string, string> = {
+  queued: "Queued...",
+  provisioning: "Provisioning...",
+  running: "Processing document...",
+}
+
 export function UploadDocumentDialog() {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
-  const [chunkMaxTokens, setChunkMaxTokens] = useState(2048)
-  const [result, setResult] = useState<DocumentUploadResponse | null>(null)
+  const [chunkerType, setChunkerType] = useState("sentence")
+  const [chunkSize, setChunkSize] = useState(2048)
+  const [chunkOverlap, setChunkOverlap] = useState(200)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [jobFilename, setJobFilename] = useState("")
+  const [minimized, setMinimized] = useState(false)
+  const [handled, setHandled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   const uploadMutation = useUploadDocument()
   const urlMutation = useConvertDocumentUrl()
+  const { data: job } = useJob(jobId)
 
-  const isPending = uploadMutation.isPending || urlMutation.isPending
+  const isUploading = uploadMutation.isPending || urlMutation.isPending
+  const jobStatus = job?.status
+  const isProcessing = jobId != null && jobStatus !== "succeeded" && jobStatus !== "failed"
+  const isSucceeded = jobStatus === "succeeded"
+  const isFailed = jobStatus === "failed"
+
+  if (isSucceeded && !handled) {
+    setHandled(true)
+    void queryClient.invalidateQueries({ queryKey: ["documents"] })
+    setTimeout(() => setOpen(false), 2000)
+  }
+  if (isFailed && !handled) {
+    setHandled(true)
+    setError(job?.error ?? "Document processing failed")
+    setJobId(null)
+  }
 
   function reset() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
-    setChunkMaxTokens(2048)
-    setResult(null)
+    setChunkerType("sentence")
+    setChunkSize(2048)
+    setChunkOverlap(200)
+    setJobId(null)
+    setJobFilename("")
+    setMinimized(false)
+    setHandled(false)
     setError(null)
     uploadMutation.reset()
     urlMutation.reset()
@@ -59,21 +101,49 @@ export function UploadDocumentDialog() {
   }
 
   function handleOpenChange(v: boolean) {
+    if (!v && jobId && !handled) {
+      const name = jobFilename || "document"
+      const trackingJobId = jobId
+      toast.loading(`Uploading ${name}...`, { duration: Infinity, id: "doc-upload" })
+      setMinimized(true)
+
+      const interval = setInterval(async () => {
+        try {
+          const j = await getJob(trackingJobId)
+          if (j.status === "succeeded") {
+            clearInterval(interval)
+            toast.success(`${name} processed`, { id: "doc-upload" })
+            void queryClient.invalidateQueries({ queryKey: ["documents"] })
+          } else if (j.status === "failed") {
+            clearInterval(interval)
+            toast.error(`${name} failed`, { id: "doc-upload" })
+          }
+        } catch {
+          clearInterval(interval)
+          toast.error(`${name} - lost connection`, { id: "doc-upload" })
+        }
+      }, 3000)
+    }
     setOpen(v)
-    if (!v) reset()
+    if (!v && !minimized && !jobId) reset()
+  }
+
+  const chunkOptions = {
+    output_format: outputFormat,
+    chunker_type: chunkerType,
+    chunk_size: chunkSize,
+    chunk_overlap: chunkOverlap,
   }
 
   function handleFileSubmit() {
     if (!file) return
     setError(null)
-    setResult(null)
+    setJobId(null)
+    setJobFilename(file.name)
     uploadMutation.mutate(
-      { file, options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
+      { file, options: chunkOptions },
       {
-        onSuccess: (data) => {
-          setResult(data)
-          setTimeout(() => handleOpenChange(false), 2000)
-        },
+        onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
           setError(err instanceof Error ? err.message : "Upload failed")
         },
@@ -84,14 +154,12 @@ export function UploadDocumentDialog() {
   function handleUrlSubmit() {
     if (!url.trim()) return
     setError(null)
-    setResult(null)
+    setJobId(null)
+    setJobFilename(url.trim().split("/").pop() || "document")
     urlMutation.mutate(
-      { url: url.trim(), options: { output_format: outputFormat, chunk_max_tokens: chunkMaxTokens } },
+      { url: url.trim(), options: chunkOptions },
       {
-        onSuccess: (data) => {
-          setResult(data)
-          setTimeout(() => handleOpenChange(false), 2000)
-        },
+        onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
           setError(err instanceof Error ? err.message : "Conversion failed")
         },
@@ -116,28 +184,27 @@ export function UploadDocumentDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        {isPending ? (
+        {isUploading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Uploading file...</p>
+          </div>
+        ) : isProcessing ? (
           <div className="flex flex-col items-center justify-center gap-3 py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Processing document...
+              {STATUS_LABELS[job?.status ?? ""] ?? "Processing..."}
             </p>
+            <p className="text-xs text-muted-foreground">{jobFilename}</p>
           </div>
-        ) : result ? (
+        ) : isSucceeded ? (
           <div className="flex flex-col items-center gap-3 py-6">
             <CheckCircle2 className="h-6 w-6 text-[#1e4f18] dark:text-[#5ba352]" />
             <div className="text-center space-y-1">
-              <p className="text-sm font-medium">{result.filename}</p>
+              <p className="text-sm font-medium">Document processed</p>
               <p className="text-xs text-muted-foreground">
-                {result.content.length.toLocaleString()} characters &middot;{" "}
-                {result.chunk_count} chunks &middot;{" "}
-                {result.processing_time.toFixed(1)}s
+                Ready for use in training data generation.
               </p>
-              {result.warnings.length > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  {result.warnings.join(", ")}
-                </p>
-              )}
             </div>
           </div>
         ) : (
@@ -171,9 +238,13 @@ export function UploadDocumentDialog() {
                   value={outputFormat}
                   onChange={setOutputFormat}
                 />
-                <ChunkMaxTokensInput
-                  value={chunkMaxTokens}
-                  onChange={setChunkMaxTokens}
+                <ChunkSettings
+                  chunkerType={chunkerType}
+                  chunkSize={chunkSize}
+                  chunkOverlap={chunkOverlap}
+                  onChunkerTypeChange={setChunkerType}
+                  onChunkSizeChange={setChunkSize}
+                  onChunkOverlapChange={setChunkOverlap}
                 />
               </div>
               <DialogFooter className="mt-4">
@@ -209,9 +280,13 @@ export function UploadDocumentDialog() {
                   value={outputFormat}
                   onChange={setOutputFormat}
                 />
-                <ChunkMaxTokensInput
-                  value={chunkMaxTokens}
-                  onChange={setChunkMaxTokens}
+                <ChunkSettings
+                  chunkerType={chunkerType}
+                  chunkSize={chunkSize}
+                  chunkOverlap={chunkOverlap}
+                  onChunkerTypeChange={setChunkerType}
+                  onChunkSizeChange={setChunkSize}
+                  onChunkOverlapChange={setChunkOverlap}
                 />
               </div>
               <DialogFooter className="mt-4">
@@ -267,27 +342,67 @@ function OutputFormatSelect({
   )
 }
 
-function ChunkMaxTokensInput({
-  value,
-  onChange,
+function ChunkSettings({
+  chunkerType,
+  chunkSize,
+  chunkOverlap,
+  onChunkerTypeChange,
+  onChunkSizeChange,
+  onChunkOverlapChange,
 }: {
-  value: number
-  onChange: (v: number) => void
+  chunkerType: string
+  chunkSize: number
+  chunkOverlap: number
+  onChunkerTypeChange: (v: string) => void
+  onChunkSizeChange: (v: number) => void
+  onChunkOverlapChange: (v: number) => void
 }) {
+  const supportsOverlap = chunkerType === "token" || chunkerType === "sentence"
   return (
-    <div className="space-y-2">
-      <Label htmlFor="chunk-max-tokens">Chunk Max Tokens</Label>
-      <Input
-        id="chunk-max-tokens"
-        type="number"
-        min={64}
-        max={8192}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 2048)}
-        data-testid="doc-chunk-max-tokens"
-      />
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>Chunker</Label>
+        <Select value={chunkerType} onValueChange={onChunkerTypeChange}>
+          <SelectTrigger data-testid="doc-chunker-type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CHUNKER_TYPES.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                {c.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="chunk-size">Chunk Size</Label>
+          <Input
+            id="chunk-size"
+            type="number"
+            min={64}
+            max={8192}
+            value={chunkSize}
+            onChange={(e) => onChunkSizeChange(Number(e.target.value) || 2048)}
+            data-testid="doc-chunk-size"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="chunk-overlap">Overlap</Label>
+          <Input
+            id="chunk-overlap"
+            type="number"
+            min={0}
+            value={chunkOverlap}
+            disabled={!supportsOverlap}
+            onChange={(e) => onChunkOverlapChange(Number(e.target.value) || 0)}
+            data-testid="doc-chunk-overlap"
+          />
+        </div>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Maximum tokens per chunk for document splitting
+        Overlap applies to token and sentence chunkers only.
       </p>
     </div>
   )

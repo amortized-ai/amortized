@@ -8,6 +8,7 @@ import {
   convertDocumentUrl,
   deleteDocument,
 } from "@/lib/api-client"
+import type { ChunkOptions } from "@/lib/api-client"
 import type { DocumentChunksResponse, DocumentRecord, DocumentUploadResponse } from "@/types/api"
 
 export function useDocuments() {
@@ -41,7 +42,7 @@ export function useUploadDocument() {
       options,
     }: {
       file: File
-      options?: { output_format?: string; chunk_max_tokens?: number }
+      options?: ChunkOptions
     }) => uploadDocument(file, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })
@@ -57,7 +58,7 @@ export function useConvertDocumentUrl() {
       options,
     }: {
       url: string
-      options?: { output_format?: string; chunk_max_tokens?: number }
+      options?: ChunkOptions
     }) => convertDocumentUrl(url, options),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] })

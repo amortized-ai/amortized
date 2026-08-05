@@ -22,10 +22,13 @@ spec:
         runAsNonRoot: false
       containers:
         - name: docling-serve
-          image: ghcr.io/docling-project/docling-serve:latest
+          image: docling-serve:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 5001
+            - name: chonkie
+              containerPort: 8900
           env:
             - name: DOCLING_SERVE_ENABLE_UI
               value: "1"
@@ -70,3 +73,6 @@ spec:
     - name: http
       port: 5001
       targetPort: http
+    - name: chonkie
+      port: 8900
+      targetPort: chonkie
