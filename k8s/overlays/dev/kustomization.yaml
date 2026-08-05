@@ -3,10 +3,9 @@ kind: Kustomization
 
 resources:
   - ../../base
-  # Dev-only: bundled MinIO + MLflow + docling-serve (production brings their own)
+  # Dev-only: bundled MinIO + MLflow (production brings their own)
   - minio.yaml
   - mlflow.yaml
-  - docling.yaml
   - s3-secret.yaml
   - s3-secret-jobs.yaml
   - minio-init.yaml
@@ -27,9 +26,6 @@ patches:
       - op: replace
         path: /data/AMORTIZED_S3_BUCKET
         value: "amortized"
-      - op: replace
-        path: /data/AMORTIZED_DOCLING_URL
-        value: "http://docling-serve.amortized.svc.cluster.local:5001"
   # Dev: IfNotPresent for kind, relax security for images that run as root
   - target:
       kind: Deployment

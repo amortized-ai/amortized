@@ -810,50 +810,20 @@
         "tags": [
           "documents"
         ],
-        "summary": "Upload and convert a document via docling-serve.",
+        "summary": "Upload a document and create an async processing job.",
         "operationId": "convert_document",
         "parameters": [
           {
-            "name": "output_format",
+            "name": "chunker_type",
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/OutputFormat",
-              "default": "md"
+              "$ref": "#/components/schemas/ChunkerType",
+              "default": "sentence"
             }
           },
           {
-            "name": "do_ocr",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": true,
-              "title": "Do Ocr"
-            }
-          },
-          {
-            "name": "ocr_engine",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "easyocr",
-              "title": "Ocr Engine"
-            }
-          },
-          {
-            "name": "table_mode",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "fast",
-              "title": "Table Mode"
-            }
-          },
-          {
-            "name": "chunk_max_tokens",
+            "name": "chunk_size",
             "in": "query",
             "required": false,
             "schema": {
@@ -861,7 +831,18 @@
               "maximum": 8192,
               "minimum": 64,
               "default": 2048,
-              "title": "Chunk Max Tokens"
+              "title": "Chunk Size"
+            }
+          },
+          {
+            "name": "chunk_overlap",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 200,
+              "title": "Chunk Overlap"
             }
           }
         ],
@@ -876,12 +857,12 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentResult"
+                  "$ref": "#/components/schemas/DocumentUploadAccepted"
                 }
               }
             }
@@ -904,7 +885,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Convert a document from URL via docling-serve.",
+        "summary": "Convert a document from URL via async processing job.",
         "operationId": "convert_document_url",
         "requestBody": {
           "content": {
@@ -917,12 +898,12 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentResult"
+                  "$ref": "#/components/schemas/DocumentUploadAccepted"
                 }
               }
             }
@@ -1152,7 +1133,7 @@
         "tags": [
           "artifacts"
         ],
-        "summary": "Fetch an artifact file directly from S3. Parquet files are returned as JSON.",
+        "summary": "Fetch an artifact file from MLflow. Parquet files are returned as JSON.",
         "operationId": "get_artifact_content",
         "parameters": [
           {
@@ -1498,6 +1479,15 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
+      "ChunkerType": {
+        "type": "string",
+        "enum": [
+          "sentence",
+          "token",
+          "recursive"
+        ],
+        "title": "ChunkerType"
+      },
       "ComputeSpec": {
         "properties": {
           "backend": {
@@ -1556,11 +1546,6 @@
             "title": "Mlflow Gateway Uri",
             "default": ""
           },
-          "docling_enabled": {
-            "type": "boolean",
-            "title": "Docling Enabled",
-            "default": false
-          },
           "image_registry": {
             "type": "string",
             "title": "Image Registry",
@@ -1579,35 +1564,25 @@
       },
       "ConvertOptions": {
         "properties": {
-          "output_format": {
-            "$ref": "#/components/schemas/OutputFormat",
-            "description": "Output format",
-            "default": "md"
+          "chunker_type": {
+            "$ref": "#/components/schemas/ChunkerType",
+            "description": "Chunker type",
+            "default": "sentence"
           },
-          "do_ocr": {
-            "type": "boolean",
-            "title": "Do Ocr",
-            "description": "Enable OCR for scanned documents",
-            "default": true
-          },
-          "ocr_engine": {
-            "type": "string",
-            "title": "Ocr Engine",
-            "description": "OCR engine: easyocr, tesseract",
-            "default": "easyocr"
-          },
-          "table_mode": {
-            "type": "string",
-            "title": "Table Mode",
-            "description": "Table detection mode: fast, accurate",
-            "default": "fast"
-          },
-          "chunk_max_tokens": {
+          "chunk_size": {
             "type": "integer",
+            "maximum": 8192.0,
             "minimum": 64.0,
-            "title": "Chunk Max Tokens",
+            "title": "Chunk Size",
             "description": "Max tokens per chunk",
             "default": 2048
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Overlap",
+            "description": "Token overlap between chunks",
+            "default": 200
           }
         },
         "type": "object",
@@ -1830,6 +1805,32 @@
           "document_id"
         ],
         "title": "DocumentSummary"
+      },
+      "DocumentUploadAccepted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job ID to poll for status"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Processing status",
+            "default": "processing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "DocumentUploadAccepted"
       },
       "GatewayModel": {
         "properties": {

@@ -130,6 +130,13 @@ def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
             TrainingJobConfig(**config)
         elif job_type == JobType.sdg:
             return _validate_sdg_config(config)
+        elif job_type == JobType.upload:
+            errors: list[str] = []
+            if not config.get("s3_uri"):
+                errors.append("s3_uri is required for upload jobs")
+            if not config.get("filename"):
+                errors.append("filename is required for upload jobs")
+            return errors
     except ValidationError as exc:
         return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
     return []

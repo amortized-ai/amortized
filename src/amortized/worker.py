@@ -14,13 +14,13 @@ from amortized.core.compute import MissingCapabilityError, check_capabilities, g
 from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
 from amortized.jobs import get_builder
+from amortized.jobs.base import JobBuildError
 from amortized.jobs.common import (
     resolve_parent_artifacts as _resolve_parent_artifacts,
 )
 from amortized.jobs.common import (
     set_mlflow_run_tag,
 )
-from amortized.jobs.sdg import SDGBuildError
 from amortized.jobs.training import _training_hub_config_yaml  # noqa: F401
 from amortized.models import JobStatus, JobType
 from amortized.watch import emit_job_event
@@ -132,6 +132,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     output_dir_names = {
         JobType.training.value: "training_output",
         JobType.sdg.value: "sdg_output",
+        JobType.upload.value: "upload_output",
     }
     dir_name = output_dir_names.get(job_type, f"{job_type}_output")
     base_dir = str(config_mod.settings.data_dir / dir_name)
@@ -210,7 +211,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     try:
         result = await builder.build(job, config, config_files, s3_downloads)
-    except SDGBuildError as exc:
+    except JobBuildError as exc:
         logger.error("Job %s: %s", job_id, exc)
         await _update_job(
             job_id,
