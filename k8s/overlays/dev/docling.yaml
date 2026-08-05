@@ -53,8 +53,8 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
         - name: chonkie-serve
-          image: ghcr.io/chonkie-ai/chonkie:latest
-          command: ["chonkie", "serve", "--port", "8900"]
+          image: chonkie-serve:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - name: chonkie
               containerPort: 8900
