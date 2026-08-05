@@ -55,7 +55,6 @@ export function UploadDocumentDialog() {
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobFilename, setJobFilename] = useState("")
-  const [toastId, setToastId] = useState<string | number | null>(null)
   const [minimized, setMinimized] = useState(false)
   const [handled, setHandled] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,19 +74,17 @@ export function UploadDocumentDialog() {
   if (isSucceeded && !handled) {
     setHandled(true)
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
-    if (toastId) {
-      toast.dismiss(toastId)
+    toast.dismiss("doc-upload")
+    if (minimized) {
       toast.success(`${jobFilename || "Document"} processed`)
-      setToastId(null)
     }
     setTimeout(() => setOpen(false), 2000)
   }
   if (isFailed && !handled) {
     setHandled(true)
-    if (toastId) {
-      toast.dismiss(toastId)
+    toast.dismiss("doc-upload")
+    if (minimized) {
       toast.error(`${jobFilename || "Document"} failed`)
-      setToastId(null)
     }
     setError(job?.error ?? "Document processing failed")
     setJobId(null)
@@ -102,7 +99,6 @@ export function UploadDocumentDialog() {
     setChunkOverlap(200)
     setJobId(null)
     setJobFilename("")
-    setToastId(null)
     setMinimized(false)
     setHandled(false)
     setError(null)
@@ -113,10 +109,10 @@ export function UploadDocumentDialog() {
 
   function handleOpenChange(v: boolean) {
     if (!v && jobId && !handled) {
-      const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
+      toast.loading(`Uploading ${jobFilename || "document"}...`, {
         duration: Infinity,
+        id: "doc-upload",
       })
-      setToastId(tid)
       setMinimized(true)
     }
     setOpen(v)
