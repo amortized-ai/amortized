@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
-    storage_bucket: str = Field("", description="S3 bucket name for artifact storage")
 
     external_url: str = Field("", description="Externally reachable server URL")
     gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")

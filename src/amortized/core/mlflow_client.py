@@ -22,6 +22,16 @@ class MLflowClient:
     def _url(self, path: str) -> str:
         return f"{self._base}{path}"
 
+    async def list_experiment_ids(self, max_results: int = 200) -> list[str]:
+        """Return all experiment IDs."""
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/experiments/search"),
+                json={"max_results": max_results},
+            )
+            resp.raise_for_status()
+            return [e["experiment_id"] for e in resp.json().get("experiments", [])]
+
     async def get_experiment(self, name: str) -> str | None:
         """Get an experiment ID by name. Returns None if it doesn't exist."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:

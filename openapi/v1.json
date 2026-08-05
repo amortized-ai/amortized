@@ -1133,7 +1133,7 @@
         "tags": [
           "artifacts"
         ],
-        "summary": "Fetch an artifact file directly from S3. Parquet files are returned as JSON.",
+        "summary": "Fetch an artifact file from MLflow. Parquet files are returned as JSON.",
         "operationId": "get_artifact_content",
         "parameters": [
           {

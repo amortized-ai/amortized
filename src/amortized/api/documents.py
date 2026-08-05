@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import aiosqlite
+import boto3
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
-from amortized.api.artifacts import _get_bucket, _get_s3_client
 from amortized.config import settings
 from amortized.core.jobs import create_job
 from amortized.core.mlflow_client import MLflowClient
@@ -37,6 +37,14 @@ logger = logging.getLogger("amortized.api.documents")
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+def _s3_client():  # type: ignore[no-untyped-def]
+    kwargs: dict[str, str] = {}
+    endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "")
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
+    return boto3.client("s3", **kwargs)
 
 _BLOCKED_HOSTNAMES = frozenset(
     {
@@ -126,8 +134,8 @@ async def convert_document(
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)
     job_id = job["id"]
 
-    s3 = _get_s3_client()
-    bucket = _get_bucket()
+    s3 = _s3_client()
+    bucket = settings.storage_bucket or "amortized"
     s3.put_object(
         Bucket=bucket,
         Key=f"uploads/{job_id}/{filename}",
@@ -187,8 +195,8 @@ async def convert_document_url(
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)
     job_id = job["id"]
 
-    s3 = _get_s3_client()
-    bucket = _get_bucket()
+    s3 = _s3_client()
+    bucket = settings.storage_bucket or "amortized"
     s3.put_object(
         Bucket=bucket,
         Key=f"uploads/{job_id}/{filename}",
@@ -323,13 +331,15 @@ async def get_document_chunks(document_id: str) -> DocumentChunks:
     chunks: list[DocumentChunk] = []
     for i, meta in enumerate(metadata):
         text = await client.get_artifact_text(document_id, f"chunks/chunk_{i:03d}.md")
-        chunks.append(DocumentChunk(
-            chunk_index=meta.get("chunk_index", i),
-            text=text or "",
-            num_tokens=meta.get("num_tokens"),
-            headings=meta.get("headings") or [],
-            page_numbers=meta.get("page_numbers") or [],
-        ))
+        chunks.append(
+            DocumentChunk(
+                chunk_index=meta.get("chunk_index", i),
+                text=text or "",
+                num_tokens=meta.get("num_tokens"),
+                headings=meta.get("headings") or [],
+                page_numbers=meta.get("page_numbers") or [],
+            )
+        )
 
     return DocumentChunks(document_id=document_id, filename=filename, chunks=chunks)
 
@@ -341,7 +351,6 @@ async def get_document_chunks(document_id: str) -> DocumentChunks:
 )
 async def delete_document(
     document_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
 ) -> None:
     tracking_uri: str | None = None
     with contextlib.suppress(HTTPException):
@@ -353,6 +362,3 @@ async def delete_document(
             await client.delete_run(document_id)
         except httpx.HTTPError:
             logger.warning("Failed to delete MLflow run %s", document_id, exc_info=True)
-
-    repo = Repository(db)
-    await repo.delete_document(document_id)
