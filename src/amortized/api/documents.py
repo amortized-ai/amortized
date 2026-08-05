@@ -303,7 +303,11 @@ async def _chunk_with_chonkie(
 
     base_url = _chonkie_url()
     endpoint = _CHONKIE_ENDPOINTS.get(chunker_type, "/v1/chunk/token")
-    payload: dict[str, Any] = {"text": content, "chunk_size": chunk_size}
+    payload: dict[str, Any] = {
+        "text": content,
+        "chunk_size": chunk_size,
+        "tokenizer": "cl100k_base",
+    }
     if chunker_type in ("token", "sentence"):
         payload["chunk_overlap"] = chunk_overlap
 
