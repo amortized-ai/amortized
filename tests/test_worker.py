@@ -102,12 +102,12 @@ class TestOrphanedJobCleanup:
         )
         job_id = response.json()["id"]
 
-        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE jobs SET status = $1 WHERE id = $2",
-                    "running", job_id,
-                )
+        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool, pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE jobs SET status = $1 WHERE id = $2",
+                "running",
+                job_id,
+            )
 
         await cleanup_orphaned_jobs()
 
@@ -133,12 +133,12 @@ class TestCancelRunningJob:
         )
         job_id = response.json()["id"]
 
-        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE jobs SET status = $1 WHERE id = $2",
-                    "succeeded", job_id,
-                )
+        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool, pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE jobs SET status = $1 WHERE id = $2",
+                "succeeded",
+                job_id,
+            )
 
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 400

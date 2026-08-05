@@ -16,15 +16,15 @@ logger = logging.getLogger("amortized.db")
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
-_pool: asyncpg.Pool | None = None  # type: ignore[type-arg]
+_pool: asyncpg.Pool | None = None
 
 
-def get_pool() -> asyncpg.Pool:  # type: ignore[type-arg]
+def get_pool() -> asyncpg.Pool:
     assert _pool is not None, "Database not initialized — call init_db() first"
     return _pool
 
 
-async def get_db() -> AsyncIterator[asyncpg.Connection]:  # type: ignore[type-arg]
+async def get_db() -> AsyncIterator[asyncpg.Connection]:
     pool = get_pool()
     async with pool.acquire() as conn:
         yield conn

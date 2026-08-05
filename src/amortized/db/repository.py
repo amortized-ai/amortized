@@ -9,7 +9,7 @@ from amortized.models import JobStatus, JobType
 
 
 class Repository:
-    def __init__(self, conn: asyncpg.Connection) -> None:  # type: ignore[type-arg]
+    def __init__(self, conn: asyncpg.Connection) -> None:
         self.conn = conn
 
     async def create_job(
@@ -123,7 +123,7 @@ class Repository:
         return _row_to_job(row)
 
     async def delete_job(self, job_id: str) -> bool:
-        result = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
+        result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"
 
 

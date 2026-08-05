@@ -2,10 +2,10 @@
 
 import io
 import os
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from amortized.main import app
 

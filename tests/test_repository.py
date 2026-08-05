@@ -18,7 +18,8 @@ TEST_DATABASE_URL = os.environ.get(
 @pytest.fixture
 async def repo():
     conn = await asyncpg.connect(TEST_DATABASE_URL)
-    schema_sql = (Path(__file__).parent.parent / "src" / "amortized" / "db" / "schema.sql").read_text()
+    schema_path = Path(__file__).parent.parent / "src" / "amortized" / "db" / "schema.sql"
+    schema_sql = schema_path.read_text()
     await conn.execute("DROP TABLE IF EXISTS jobs")
     await conn.execute(schema_sql)
     yield Repository(conn)
