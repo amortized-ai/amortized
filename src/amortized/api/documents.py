@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import aiosqlite
-import boto3
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
@@ -37,14 +36,6 @@ logger = logging.getLogger("amortized.api.documents")
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
-
-
-def _s3_client():  # type: ignore[no-untyped-def]
-    kwargs: dict[str, str] = {}
-    endpoint = os.environ.get("MLFLOW_S3_ENDPOINT_URL", "")
-    if endpoint:
-        kwargs["endpoint_url"] = endpoint
-    return boto3.client("s3", **kwargs)
 
 _BLOCKED_HOSTNAMES = frozenset(
     {
@@ -130,22 +121,21 @@ async def convert_document(
         "chunk_overlap": chunk_overlap,
     }
 
+    client = MLflowClient(_tracking_uri())
+    experiment_id = await client.ensure_experiment("amortized/uploads")
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    await client.upload_artifact(run_id, f"source/{filename}", file_bytes)
+
+    run = await client.get_run(run_id)
+    artifact_uri = run["info"]["artifact_uri"]
+    config_dict["mlflow_upload_run_id"] = run_id
+    config_dict["s3_uri"] = f"{artifact_uri}/source/{filename}"
+
     repo = Repository(db)
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)
-    job_id = job["id"]
-
-    s3 = _s3_client()
-    bucket = settings.storage_bucket or "amortized"
-    s3.put_object(
-        Bucket=bucket,
-        Key=f"uploads/{job_id}/{filename}",
-        Body=file_bytes,
-    )
-    config_dict["s3_uri"] = f"s3://{bucket}/uploads/{job_id}/{filename}"
-    await repo.update_job(job_id, config=json.dumps(config_dict))
 
     return DocumentUploadAccepted(
-        job_id=job_id,
+        job_id=job["id"],
         filename=filename,
         status="processing",
     )
@@ -191,22 +181,21 @@ async def convert_document_url(
         "chunk_overlap": opts.chunk_overlap,
     }
 
+    client = MLflowClient(_tracking_uri())
+    experiment_id = await client.ensure_experiment("amortized/uploads")
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    await client.upload_artifact(run_id, f"source/{filename}", source_bytes)
+
+    run = await client.get_run(run_id)
+    artifact_uri = run["info"]["artifact_uri"]
+    config_dict["mlflow_upload_run_id"] = run_id
+    config_dict["s3_uri"] = f"{artifact_uri}/source/{filename}"
+
     repo = Repository(db)
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)
-    job_id = job["id"]
-
-    s3 = _s3_client()
-    bucket = settings.storage_bucket or "amortized"
-    s3.put_object(
-        Bucket=bucket,
-        Key=f"uploads/{job_id}/{filename}",
-        Body=source_bytes,
-    )
-    config_dict["s3_uri"] = f"s3://{bucket}/uploads/{job_id}/{filename}"
-    await repo.update_job(job_id, config=json.dumps(config_dict))
 
     return DocumentUploadAccepted(
-        job_id=job_id,
+        job_id=job["id"],
         filename=filename,
         status="processing",
     )
