@@ -15,4 +15,7 @@ def get_builder(job_type: str) -> ModuleType | None:
     if job_type == JobType.sdg.value:
         from amortized.jobs import sdg
         return sdg
+    if job_type == JobType.upload.value:
+        from amortized.jobs import upload
+        return upload
     return None

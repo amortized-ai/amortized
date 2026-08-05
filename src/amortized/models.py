@@ -166,6 +166,12 @@ class DocumentResult(_DocumentBase):
 
 
 
+class DocumentUploadAccepted(BaseModel):
+    job_id: str = Field(..., description="Job ID to poll for status")
+    filename: str = Field("", description="Original filename")
+    status: str = Field("processing", description="Processing status")
+
+
 class DocumentChunk(BaseModel):
     chunk_index: int = Field(..., description="Chunk position in document")
     text: str = Field("", description="Chunk content")

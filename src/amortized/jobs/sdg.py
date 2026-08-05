@@ -8,7 +8,7 @@ from typing import Any
 
 import amortized.config as config_mod
 from amortized.backends import Resources, S3Download
-from amortized.jobs.base import JobBuildResult
+from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.sdg")
@@ -35,7 +35,7 @@ _STALE_CONFIG_KEYS = (
 )
 
 
-class SDGBuildError(Exception):
+class SDGBuildError(JobBuildError):
     """Raised when SDG config building fails and the job should be marked failed."""
 
 

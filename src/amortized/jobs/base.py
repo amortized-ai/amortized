@@ -8,6 +8,10 @@ from typing import Any, Protocol
 from amortized.backends import Resources, S3Download
 
 
+class JobBuildError(Exception):
+    """Raised when job building fails and the job should be marked failed."""
+
+
 @dataclass
 class JobBuildResult:
     """Output of a job builder — everything needed to construct a JobSpec."""

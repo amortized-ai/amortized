@@ -810,7 +810,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Upload and convert a document via docling-serve, chunk via chonkie.",
+        "summary": "Upload a document and create an async processing job.",
         "operationId": "convert_document",
         "parameters": [
           {
@@ -896,12 +896,12 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentResult"
+                  "$ref": "#/components/schemas/DocumentUploadAccepted"
                 }
               }
             }
@@ -924,7 +924,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Convert a document from URL via docling-serve, chunk via chonkie.",
+        "summary": "Convert a document from URL via async processing job.",
         "operationId": "convert_document_url",
         "requestBody": {
           "content": {
@@ -937,12 +937,12 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DocumentResult"
+                  "$ref": "#/components/schemas/DocumentUploadAccepted"
                 }
               }
             }
@@ -1877,6 +1877,32 @@
           "document_id"
         ],
         "title": "DocumentSummary"
+      },
+      "DocumentUploadAccepted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "Job ID to poll for status"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Processing status",
+            "default": "processing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "DocumentUploadAccepted"
       },
       "GatewayModel": {
         "properties": {
