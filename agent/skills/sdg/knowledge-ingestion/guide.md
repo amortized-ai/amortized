@@ -7,13 +7,12 @@ or RAG-deployed knowledge models.
 
 You will create an SDG config for the user's specific domain
 and documents. Before starting, read the template at
-`skills/sdg/knowledge-ingestion/sdg-recipe-template.json` for the
+`templates/sdg/knowledge-ingestion.yaml` for the
 config structure.
 
 **Document analysis workflow:** Use `get_document_chunks(doc_id)` to
-get the document's chunks with token counts and headings. Derive
-topics from the chunk headings and content. Use `get_document_content`
-if you need the full text for prompt writing.
+get the document's chunks with token counts and headings. Use
+`get_document_content` if you need the full text for prompt writing.
 
 **Keep it brief.** Do your analysis silently. Present results and ask
 for confirmation — do not narrate your reasoning.
@@ -28,24 +27,7 @@ Check if they've already uploaded documents via the Documents page. Use
 `list_documents` to show available documents with their IDs. If not
 uploaded yet, guide them to upload first.
 
-### Step 2 — Read the document and derive topics
-
-After the user selects a document, call `get_document_chunks(doc_id)`
-to get the chunks with their headings and token counts. Derive 5-9
-topic values from the chunk headings. Then present them briefly:
-"Here are the topics I suggest — proceed or adjust?" followed by
-`present_options`.
-
-**CRITICAL: Topics must be section-level descriptions.**
-- GOOD: "Tier Management - Creating, editing, deleting tiers via dashboard, configuring token rate limits and request rate limits"
-- BAD: "access control"
-
-Each topic value should name the section AND summarize its key content
-in one line. Use token counts from chunks to set weights — sections
-with more content get higher weights. Weights must sum to 1.0 and no
-topic should be below 0.05.
-
-### Step 3 — Question types
+### Step 2 — Question types
 
 What kinds of questions should it handle?
 Default: factual (25%), procedural (35%), troubleshooting (25%),
@@ -53,46 +35,54 @@ comparison (15%). Adapt to the domain — a troubleshooting guide
 needs more troubleshooting questions, a reference manual needs more
 factual ones.
 
-### Step 4 — Difficulty levels
+### Step 3 — Difficulty levels
 
 Default: basic (35%), intermediate (45%), advanced (20%).
 
-### Step 5 — Which teacher model?
+### Step 4 — Which teacher model?
 
 Call `list_models` to get the models configured on the AI Gateway.
 Present ONLY those models as options. Do NOT suggest models that aren't
 returned by `list_models` — they won't work. If no models are returned,
 stop and direct the user to Settings -> AI Gateway.
 
-### Step 6 — Chunking granularity
+### Step 5 — How many samples?
 
-How many tokens per chunk?
-Default: 2048 tokens with 256-token overlap (cl100k_base tokenizer).
-Larger chunks = broader context, smaller = more focused QA pairs.
+Documents are chunked at upload time. Use
+`get_document_chunks(doc_id)` to get the chunk count and token
+statistics.
 
-### Step 7 — How many samples?
+Use ALL chunks in the calculation — the worker sends every chunk
+to DataDesigner, so do not filter or exclude any chunks here.
 
-Calculate based on document coverage.
+The goal is for total training tokens to be a multiple of total
+source tokens. Research suggests ~5x source coverage as a good
+target. Compute the per-chunk multiplier from the document's
+actual chunk statistics:
 
-**CRITICAL: The minimum sample count = number of document chunks.**
-Each chunk gets at least one QA pair. If a document produces 100 chunks,
-the minimum is 100 samples — anything less means parts of the document
-won't be covered at all.
+```
+avg_qa_tokens ≈ 200  (empirical median across past runs; ranges 80-300
+                      depending on prompt style and answer depth)
+mean_chunk_tokens = mean of num_tokens across ALL chunks
+multiplier = coverage × mean_chunk_tokens / avg_qa_tokens
+num_samples = multiplier × num_chunks  (num_chunks = total, not filtered)
+```
 
-Use `get_document_chunks(doc_id)` to get the actual chunk count.
+Present three coverage tiers and show the computed sample counts:
 
-Present options in the hundreds-to-thousands range. More samples =
-better model quality. The chunk count is the floor, not the target.
+1) 3x source coverage — Good starting point
+2) 5x source coverage — Recommended (research-backed default)
+3) 8x source coverage — Best quality, thorough coverage
 
-1) 500 samples — Good starting point for most documents
-2) 1000 samples — Recommended for production-quality models
-3) 3000 samples — Best quality, thorough coverage of every chunk
+For example, a document with 50 chunks of mean 400 tokens:
+- 3x: multiplier = 3 × 400 / 200 = 6x → 300 samples
+- 5x: multiplier = 5 × 400 / 200 = 10x → 500 samples
+- 8x: multiplier = 8 × 400 / 200 = 16x → 800 samples
 
-NEVER suggest fewer than 100 samples. Typical production runs use
-1000-3000 samples. Each chunk gets sampled multiple times with
-different topic/difficulty/question_type combinations.
+Show the user the actual numbers, the multiplier, and the coverage
+tier so they understand the reasoning.
 
-### Step 8 — System prompt for the trained model
+### Step 6 — System prompt for the trained model
 
 Do NOT ask the user to write a system prompt. Generate a domain-specific
 default based on the document content and include it in the config.
@@ -101,8 +91,8 @@ they want to.
 
 ## Building the Config
 
-Follow the template structure (`sdg-recipe-template.json`). Customize
-topic values, prompts, and system prompt for the user's domain.
+Follow the template structure (`templates/sdg/knowledge-ingestion.yaml`). Customize
+prompts and system prompt for the user's domain.
 
 ### Structure
 
@@ -114,7 +104,6 @@ The SDG job config is submitted as:
   "config": {
     "document_ids": [...],
     "num_records": N,
-    "seed_config": { "source": { ... } },
     "model_configs": [ ... ],
     "columns": [ ... ],
     "processors": [ ... ]
@@ -130,26 +119,6 @@ markdown from MLflow for processing.
 ```json
 "document_ids": ["59d4ba25a8864e7fbbbb35cfc09603a1"]
 ```
-
-### seed_config
-
-Controls how documents are chunked. The worker splits documents into
-token-based chunks before generation. Each chunk becomes `{{ content }}`
-in column prompts.
-
-```json
-"seed_config": {
-  "source": {
-    "chunk_size": 2048,
-    "chunk_overlap": 256,
-    "tokenizer": "cl100k_base"
-  }
-}
-```
-
-- `chunk_size`: tokens per chunk (default 2048, using cl100k_base / GPT tokenizer)
-- `chunk_overlap`: overlap between chunks to prevent boundary issues (default 256)
-- `tokenizer`: tiktoken encoding name (default cl100k_base)
 
 ### model_configs
 
@@ -174,19 +143,32 @@ AI Gateway. Always set `skip_health_check: true` with the gateway.
 Columns define the generation pipeline. Each column can reference prior
 columns and seed data via `{{ variable_name }}`.
 
-**Sampler columns** — always include difficulty, question_type, and topic:
+**Sampler columns** — include difficulty and question_type. Each sampler
+value MUST include a description after the name, separated by " - ".
+This gives the LLM richer context for generation:
 
 ```json
 {
   "column_type": "sampler",
-  "name": "topic",
+  "name": "question_type",
   "sampler_type": "category",
   "params": {
-    "values": ["Section-level description 1", "Section-level description 2"],
+    "values": [
+      "Factual - Understanding what something is, why it works, or how components relate",
+      "Procedural - Step-by-step question about accomplishing a specific task"
+    ],
     "weights": [0.6, 0.4]
   }
 }
 ```
+
+Apply the same pattern to the difficulty sampler. See the template for
+the full default values.
+
+Do NOT include a `topic` sampler. The chunk content (`{{ content }}`)
+determines what each QA pair is about — an independent topic sampler
+creates mismatches where the LLM ignores the context and hallucinates
+answers based on the topic instead.
 
 **LLM text columns** — question and answer generators:
 
@@ -196,7 +178,7 @@ columns and seed data via `{{ variable_name }}`.
   "name": "question",
   "model_alias": "text",
   "system_prompt": "<domain-specific system prompt with answerability constraint>",
-  "prompt": "Documentation context:\n{{ content }}\n\nTopic: {{ topic }}\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
+  "prompt": "Documentation context:\n{{ content }}\n\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
 }
 ```
 
@@ -204,13 +186,12 @@ columns and seed data via `{{ variable_name }}`.
 with a label:**
 
 ```
-Topic: {{ topic }}
 Difficulty: {{ difficulty }}
 Question type: {{ question_type }}
 ```
 
 Do NOT embed variables inline in a sentence like
-"Generate a {{ difficulty }} {{ question_type }} question about {{ topic }}".
+"Generate a {{ difficulty }} {{ question_type }} question".
 Separate lines make each attribute more salient to the LLM.
 
 ### processors — OUTPUT FORMAT
@@ -231,6 +212,12 @@ Use `schema_transform` to convert columns into SFT training format:
 }]
 ```
 
+Include columns in the processor template that would be useful for
+post-analysis (e.g., source context, generation parameters). Training
+uses `messages`; extra columns are ignored by the trainer but
+preserved in the artifact for inspection. Default to preserving
+rather than dropping.
+
 The system prompt here defines how the TRAINED MODEL should behave at
 inference time. It must be domain-specific and match what the user's
 deployment will use.
@@ -242,11 +229,22 @@ deployment will use.
 context. Do not ask about concepts that are merely mentioned but not explained
 in the context."
 
-**Answer system prompt — trust the context:**
-Include: "The question is answerable from the provided context, so read it
-carefully and answer from it."
+**Answer system prompt — ONLY from context:**
+Include: "Answer ONLY using information from the provided documentation
+context. Do not add commands, procedures, or details that are not
+explicitly present in the context."
+Do NOT include: "Include specific commands, YAML snippets" — this
+encourages the model to fabricate details not in the context.
 Do NOT include: "If the documentation does not cover the topic, say so." —
 this teaches the model to refuse, which is undesirable for FAQ assistants.
+
+**Groundedness is critical.** The generated QA pairs train a model.
+Answers that fabricate details — even plausible ones — teach the model
+to hallucinate. A short answer that only uses what's in the context is
+better than a long answer that adds invented details. Do not add
+trailing instructions like "Provide a thorough answer" or "Generate a
+question that matches" to the user prompt — the system prompt is
+sufficient. Keep user prompts minimal: context + variables only.
 
 **Domain-specific:** Adapt both prompts to the user's domain. Reference the
 specific product/technology name in the system prompts, not generic
@@ -256,13 +254,12 @@ specific product/technology name in the system prompts, not generic
 
 Before submitting the job, verify:
 
-- [ ] Topics are section-level descriptions derived from chunk headings, not abstract categories
-- [ ] Topic weights are proportional to section content density, not equal
-- [ ] Prompt variables (`topic`, `difficulty`, `question_type`) are on separate lines with labels
+- [ ] No `topic` sampler — chunk content drives QA subject matter
+- [ ] Prompt variables (`difficulty`, `question_type`) are on separate lines with labels
 - [ ] Question system prompt includes the answerability constraint
-- [ ] Answer system prompt includes "answerable from the provided context"
+- [ ] Answer system prompt includes "Answer ONLY using information from the provided documentation context"
 - [ ] System prompt in the SFT processor is domain-specific
-- [ ] `num_records` >= estimated chunk count
+- [ ] `num_records` computed from chunk statistics (coverage x mean_chunk_tokens / avg_qa_tokens x num_chunks)
 
 ## After SDG — Training
 

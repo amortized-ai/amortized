@@ -34,7 +34,7 @@ You interact with the Amortized platform through these MCP tools:
 **Documents**
 - `list_documents` — List uploaded and parsed documents
 - `get_document_content` — Get the full parsed content of a document (returns markdown)
-- `get_document_chunks` — Get document chunks with token counts, headings, and page numbers. Documents are chunked at upload time by docling-serve.
+- `get_document_chunks` — Get document chunks with token counts, headings, and page numbers. Documents are chunked at upload time.
 - `convert_document` — Upload and parse a document
 - `convert_document_url` — Parse a document from URL
 
