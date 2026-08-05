@@ -36,8 +36,8 @@ export function UploadDocumentDialog() {
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
-  const [chunkSize, setChunkSize] = useState(512)
-  const [chunkOverlap, setChunkOverlap] = useState(64)
+  const [chunkSize, setChunkSize] = useState(2048)
+  const [chunkOverlap, setChunkOverlap] = useState(200)
   const [result, setResult] = useState<DocumentUploadResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -51,8 +51,8 @@ export function UploadDocumentDialog() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
-    setChunkSize(512)
-    setChunkOverlap(64)
+    setChunkSize(2048)
+    setChunkOverlap(200)
     setResult(null)
     setError(null)
     uploadMutation.reset()
@@ -301,7 +301,7 @@ function ChunkSettings({
             min={64}
             max={8192}
             value={chunkSize}
-            onChange={(e) => onChunkSizeChange(Number(e.target.value) || 512)}
+            onChange={(e) => onChunkSizeChange(Number(e.target.value) || 2048)}
             data-testid="doc-chunk-size"
           />
         </div>

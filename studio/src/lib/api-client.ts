@@ -544,8 +544,8 @@ export function convertDocumentUrl(
     url,
     options: {
       output_format: options.output_format ?? "md",
-      chunk_size: options.chunk_size ?? 512,
-      chunk_overlap: options.chunk_overlap ?? 64,
+      chunk_size: options.chunk_size ?? 2048,
+      chunk_overlap: options.chunk_overlap ?? 200,
     },
   })
 }

@@ -188,8 +188,8 @@ async def _call_docling(client: httpx.AsyncClient, url: str, **kwargs: Any) -> d
         ) from None
 
 
-_DEFAULT_CHUNK_SIZE = 512
-_DEFAULT_CHUNK_OVERLAP = 64
+_DEFAULT_CHUNK_SIZE = 2048
+_DEFAULT_CHUNK_OVERLAP = 200
 _DOCLING_TIMEOUT = 600.0
 _CHONKIE_TIMEOUT = 120.0
 

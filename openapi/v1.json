@@ -860,7 +860,7 @@
               "type": "integer",
               "maximum": 8192,
               "minimum": 64,
-              "default": 512,
+              "default": 2048,
               "title": "Chunk Size"
             }
           },
@@ -871,7 +871,7 @@
             "schema": {
               "type": "integer",
               "minimum": 0,
-              "default": 64,
+              "default": 200,
               "title": "Chunk Overlap"
             }
           }
@@ -1624,14 +1624,14 @@
             "minimum": 64.0,
             "title": "Chunk Size",
             "description": "Max tokens per chunk",
-            "default": 512
+            "default": 2048
           },
           "chunk_overlap": {
             "type": "integer",
             "minimum": 0.0,
             "title": "Chunk Overlap",
             "description": "Token overlap between chunks",
-            "default": 64
+            "default": 200
           }
         },
         "type": "object",
