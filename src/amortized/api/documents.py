@@ -13,14 +13,11 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-import aiosqlite
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 
 from amortized.config import settings
 from amortized.core.mlflow_client import MLflowClient
-from amortized.db import get_db as _get_db
-from amortized.db.repository import Repository
 from amortized.models import (
     ConvertUrlRequest,
     DocumentChunk,
@@ -339,7 +336,9 @@ async def convert_document(
         warnings.append("Document parsed but no content was extracted")
 
     chunks, mlflow_run_id = await _store_and_build(
-        filename, content, output_format,
+        filename,
+        content,
+        output_format,
         source_bytes=file_bytes,
         processing_time=processing_time,
         chunks=chunks,
@@ -347,8 +346,14 @@ async def convert_document(
     )
 
     return _build_result(
-        filename, content, output_format, processing_time, "success",
-        warnings, chunks, mlflow_run_id,
+        filename,
+        content,
+        output_format,
+        processing_time,
+        "success",
+        warnings,
+        chunks,
+        mlflow_run_id,
     )
 
 
@@ -393,7 +398,9 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
         warnings.append("Document parsed but no content was extracted")
 
     chunks, mlflow_run_id = await _store_and_build(
-        filename, content, output_format,
+        filename,
+        content,
+        output_format,
         source_bytes=source_bytes,
         processing_time=processing_time,
         chunks=chunks,
@@ -401,8 +408,14 @@ async def convert_document_url(request: ConvertUrlRequest) -> DocumentResult:
     )
 
     return _build_result(
-        filename, content, output_format, processing_time, "success",
-        warnings, chunks, mlflow_run_id,
+        filename,
+        content,
+        output_format,
+        processing_time,
+        "success",
+        warnings,
+        chunks,
+        mlflow_run_id,
     )
 
 
@@ -525,13 +538,15 @@ async def get_document_chunks(document_id: str) -> DocumentChunks:
     chunks: list[DocumentChunk] = []
     for i, meta in enumerate(metadata):
         text = await client.get_artifact_text(document_id, f"chunks/chunk_{i:03d}.md")
-        chunks.append(DocumentChunk(
-            chunk_index=meta.get("chunk_index", i),
-            text=text or "",
-            num_tokens=meta.get("num_tokens"),
-            headings=meta.get("headings") or [],
-            page_numbers=meta.get("page_numbers") or [],
-        ))
+        chunks.append(
+            DocumentChunk(
+                chunk_index=meta.get("chunk_index", i),
+                text=text or "",
+                num_tokens=meta.get("num_tokens"),
+                headings=meta.get("headings") or [],
+                page_numbers=meta.get("page_numbers") or [],
+            )
+        )
 
     return DocumentChunks(document_id=document_id, filename=filename, chunks=chunks)
 
@@ -549,7 +564,6 @@ def _format_timestamp(ts: int | None) -> str:
 )
 async def delete_document(
     document_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
 ) -> None:
     tracking_uri: str | None = None
     with contextlib.suppress(HTTPException):
@@ -561,6 +575,3 @@ async def delete_document(
             await client.delete_run(document_id)
         except httpx.HTTPError:
             logger.warning("Failed to delete MLflow run %s", document_id, exc_info=True)
-
-    repo = Repository(db)
-    await repo.delete_document(document_id)

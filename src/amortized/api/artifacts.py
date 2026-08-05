@@ -1,14 +1,16 @@
-"""Artifact proxy — stream files from S3 (MinIO) without mlflow-artifacts."""
+"""Artifact proxy — stream files from MLflow's artifact store."""
 
 from __future__ import annotations
 
 import logging
-import os
+from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from amortized.config import settings
+from amortized.core.mlflow_client import MLflowClient
 
 logger = logging.getLogger("amortized.api.artifacts")
 
@@ -33,61 +35,13 @@ def _content_type_for(path: str) -> str:
     return "application/octet-stream"
 
 
-def _get_s3_client():  # type: ignore[no-untyped-def]
-    import boto3
-    from botocore.config import Config as BotoConfig
-
-    endpoint_url = (
-        os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MLFLOW_S3_ENDPOINT_URL") or ""
-    )
-    if not endpoint_url:
+def _get_mlflow_client() -> MLflowClient:
+    if not settings.mlflow_tracking_uri:
         raise HTTPException(
             status_code=503,
-            detail="S3 endpoint is not configured"
-            " (set AWS_S3_ENDPOINT_URL or MLFLOW_S3_ENDPOINT_URL)",
+            detail="MLflow tracking URI is not configured (set AMORTIZED_MLFLOW_TRACKING_URI)",
         )
-
-    return boto3.client(
-        "s3",
-        endpoint_url=endpoint_url,
-        config=BotoConfig(signature_version="s3v4"),
-    )
-
-
-def _get_bucket() -> str:
-    bucket = settings.storage_bucket or os.environ.get("AMORTIZED_STORAGE_BUCKET", "amortized")
-    if not bucket:
-        raise HTTPException(status_code=503, detail="Storage bucket is not configured")
-    return bucket
-
-
-def _read_s3_object(bucket: str, s3_key: str) -> bytes:
-    from botocore.exceptions import ClientError
-
-    try:
-        s3 = _get_s3_client()
-        obj = s3.get_object(Bucket=bucket, Key=s3_key)
-        return obj["Body"].read()
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code", "")
-        if code in ("NoSuchKey", "404"):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Artifact not found: {s3_key}",
-            ) from None
-        logger.warning("S3 read failed for %s/%s: %s", bucket, s3_key, exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to read artifact from S3: {exc}",
-        ) from None
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("S3 read failed for %s/%s: %s", bucket, s3_key, exc)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Failed to read artifact from S3: {exc}",
-        ) from None
+    return MLflowClient(settings.mlflow_tracking_uri)
 
 
 @router.get(
@@ -99,45 +53,60 @@ async def list_artifacts(
     experiment_id: str,
     run_id: str,
     path: str = "",
-) -> dict:
-    bucket = _get_bucket()
-    prefix = f"mlflow/{experiment_id}/{run_id}/artifacts/"
-    if path:
-        prefix += path.rstrip("/") + "/"
-
+) -> dict[str, Any]:
+    client = _get_mlflow_client()
     try:
-        s3 = _get_s3_client()
-        resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        files = []
-        for obj in resp.get("Contents", []):
-            key = obj["Key"]
-            relative = key[len(prefix):]
-            if relative:
-                files.append({
-                    "path": (path + "/" + relative).lstrip("/") if path else relative,
-                    "file_size": obj.get("Size", 0),
-                })
+        files = await client.list_artifacts(run_id, path)
         return {"files": files}
-    except Exception as exc:
-        logger.warning("S3 list failed for %s/%s: %s", bucket, prefix, exc)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifacts not found for run {run_id}",
+            ) from None
+        logger.warning("MLflow list_artifacts failed for run %s: %s", run_id, exc)
         raise HTTPException(
-            status_code=502, detail=f"Failed to list artifacts: {exc}",
+            status_code=502,
+            detail=f"Failed to list artifacts from MLflow: {exc}",
+        ) from None
+    except httpx.ConnectError as exc:
+        logger.warning("MLflow connection failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot connect to MLflow: {exc}",
         ) from None
 
 
 @router.get(
     "/{experiment_id}/{run_id}/{path:path}",
     operation_id="get_artifact_content",
-    summary="Fetch an artifact file directly from S3. Parquet files are returned as JSON.",
+    summary="Fetch an artifact file from MLflow. Parquet files are returned as JSON.",
 )
 async def get_artifact_content(
     experiment_id: str,
     run_id: str,
     path: str,
 ) -> Response:
-    bucket = _get_bucket()
-    s3_key = f"mlflow/{experiment_id}/{run_id}/artifacts/{path}"
-    body = _read_s3_object(bucket, s3_key)
+    client = _get_mlflow_client()
+    try:
+        body = await client.get_artifact(run_id, path)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact not found: {path}",
+            ) from None
+        logger.warning("MLflow get_artifact failed for run %s path %s: %s", run_id, path, exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to read artifact from MLflow: {exc}",
+        ) from None
+    except httpx.ConnectError as exc:
+        logger.warning("MLflow connection failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot connect to MLflow: {exc}",
+        ) from None
 
     if path.endswith(".parquet"):
         import io
@@ -145,7 +114,7 @@ async def get_artifact_content(
         import pyarrow.parquet as pq
         from fastapi.responses import JSONResponse
 
-        table = pq.read_table(io.BytesIO(body))
+        table = pq.read_table(io.BytesIO(body))  # type: ignore[no-untyped-call]
         records = table.to_pylist()
         return JSONResponse(content=records)
 
