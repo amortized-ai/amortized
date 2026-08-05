@@ -23,6 +23,7 @@ import { Upload, Loader2, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
 import { useJob } from "@/features/jobs"
+import { getJob } from "@/lib/api-client"
 import { useQueryClient } from "@tanstack/react-query"
 
 const ACCEPTED_FORMATS = ".pdf,.docx,.pptx,.html,.txt,.md,.xlsx"
@@ -74,18 +75,10 @@ export function UploadDocumentDialog() {
   if (isSucceeded && !handled) {
     setHandled(true)
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
-    toast.dismiss("doc-upload")
-    if (minimized) {
-      toast.success(`${jobFilename || "Document"} processed`)
-    }
     setTimeout(() => setOpen(false), 2000)
   }
   if (isFailed && !handled) {
     setHandled(true)
-    toast.dismiss("doc-upload")
-    if (minimized) {
-      toast.error(`${jobFilename || "Document"} failed`)
-    }
     setError(job?.error ?? "Document processing failed")
     setJobId(null)
   }
@@ -109,11 +102,27 @@ export function UploadDocumentDialog() {
 
   function handleOpenChange(v: boolean) {
     if (!v && jobId && !handled) {
-      toast.loading(`Uploading ${jobFilename || "document"}...`, {
-        duration: Infinity,
-        id: "doc-upload",
-      })
+      const name = jobFilename || "document"
+      const trackingJobId = jobId
+      toast.loading(`Uploading ${name}...`, { duration: Infinity, id: "doc-upload" })
       setMinimized(true)
+
+      const interval = setInterval(async () => {
+        try {
+          const j = await getJob(trackingJobId)
+          if (j.status === "succeeded") {
+            clearInterval(interval)
+            toast.success(`${name} processed`, { id: "doc-upload" })
+            void queryClient.invalidateQueries({ queryKey: ["documents"] })
+          } else if (j.status === "failed") {
+            clearInterval(interval)
+            toast.error(`${name} failed`, { id: "doc-upload" })
+          }
+        } catch {
+          clearInterval(interval)
+          toast.error(`${name} - lost connection`, { id: "doc-upload" })
+        }
+      }, 3000)
     }
     setOpen(v)
     if (!v && !minimized && !jobId) reset()
