@@ -126,6 +126,7 @@ async def upload_dataset(
 # Query helpers
 # ---------------------------------------------------------------------------
 
+
 def _mlflow_client() -> MLflowClient:
     uri = settings.mlflow_tracking_uri
     if not uri:
@@ -167,18 +168,13 @@ def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _get_all_experiment_ids(mlflow: MLflowClient) -> list[str]:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(
-            f"{mlflow._base}/api/2.0/mlflow/experiments/search",
-            json={"max_results": 200},
-        )
-        resp.raise_for_status()
-        return [e["experiment_id"] for e in resp.json().get("experiments", [])]
+    return await mlflow.list_experiment_ids()
 
 
 # ---------------------------------------------------------------------------
 # List / search datasets
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "",
@@ -215,16 +211,14 @@ async def list_datasets(
     results = [_run_to_summary(r) for r in runs]
     if search:
         q = search.lower()
-        results = [
-            d for d in results
-            if q in d["name"].lower() or q in d["topic"].lower()
-        ]
+        results = [d for d in results if q in d["name"].lower() or q in d["topic"].lower()]
     return results
 
 
 # ---------------------------------------------------------------------------
 # Get dataset detail
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{run_id}",
@@ -242,8 +236,7 @@ async def get_dataset(run_id: str) -> dict[str, Any]:
     summary = _run_to_summary(run)
     artifacts = await mlflow.list_artifacts(run_id, "generated_data")
     summary["artifacts"] = [
-        {"path": a.get("path", ""), "file_size": a.get("file_size", 0)}
-        for a in artifacts
+        {"path": a.get("path", ""), "file_size": a.get("file_size", 0)} for a in artifacts
     ]
     return summary
 
@@ -251,6 +244,7 @@ async def get_dataset(run_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Get dataset samples
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{run_id}/samples",
@@ -274,32 +268,35 @@ async def get_dataset_samples(
 
     path = target["path"]
 
-    run = await mlflow.get_run(run_id)
-    artifact_uri = run.get("info", {}).get("artifact_uri", "")
-    if not artifact_uri or not artifact_uri.startswith("s3://"):
-        raise HTTPException(status_code=502, detail="Cannot resolve artifact storage")
-
-    from amortized.api.artifacts import _get_s3_client
-
-    parts = artifact_uri.replace("s3://", "").split("/", 1)
-    bucket = parts[0]
-    prefix = parts[1] if len(parts) > 1 else ""
-    s3_key = f"{prefix}/{path}"
+    try:
+        data = await mlflow.get_artifact(run_id, path)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Artifact not found: {path}") from None
+        logger.warning("MLflow get_artifact failed for run %s path %s: %s", run_id, path, exc)
+        raise HTTPException(
+            status_code=502, detail=f"Failed to read artifact from MLflow: {exc}"
+        ) from None
+    except httpx.ConnectError as exc:
+        logger.warning("MLflow connection failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Cannot connect to MLflow: {exc}") from None
+    except httpx.TimeoutException as exc:
+        logger.warning("MLflow request timed out: %s", exc)
+        raise HTTPException(status_code=504, detail=f"MLflow request timed out: {exc}") from None
 
     try:
-        s3 = _get_s3_client()
-        obj = s3.get_object(Bucket=bucket, Key=s3_key)
-        data = obj["Body"].read()
+        if path.endswith(".parquet"):
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
+            records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
+        else:
+            lines = data.decode("utf-8").strip().split("\n")
+            records = [json.loads(line) for line in lines[:limit]]
     except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Artifact not found: {path}") from exc
-
-    if path.endswith(".parquet"):
-        import pyarrow.parquet as pq
-
-        table = pq.read_table(io.BytesIO(data))
-        records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
-    else:
-        lines = data.decode("utf-8").strip().split("\n")
-        records = [json.loads(line) for line in lines[:limit]]
+        logger.warning("Failed to parse artifact %s: %s", path, exc)
+        raise HTTPException(
+            status_code=422, detail=f"Failed to parse dataset artifact: {exc}"
+        ) from None
 
     return records
