@@ -858,7 +858,7 @@
             "required": false,
             "schema": {
               "$ref": "#/components/schemas/ChunkerType",
-              "default": "token"
+              "default": "sentence"
             }
           },
           {
@@ -1521,9 +1521,9 @@
       "ChunkerType": {
         "type": "string",
         "enum": [
+          "sentence",
           "token",
-          "recursive",
-          "sentence"
+          "recursive"
         ],
         "title": "ChunkerType"
       },
@@ -1639,7 +1639,7 @@
           "chunker_type": {
             "$ref": "#/components/schemas/ChunkerType",
             "description": "Chunker type",
-            "default": "token"
+            "default": "sentence"
           },
           "chunk_size": {
             "type": "integer",

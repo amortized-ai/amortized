@@ -542,7 +542,7 @@ export function convertDocumentUrl(
     url,
     options: {
       output_format: options.output_format ?? "md",
-      chunker_type: options.chunker_type ?? "token",
+      chunker_type: options.chunker_type ?? "sentence",
       chunk_size: options.chunk_size ?? 2048,
       chunk_overlap: options.chunk_overlap ?? 200,
     },

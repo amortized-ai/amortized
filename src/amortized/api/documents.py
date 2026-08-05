@@ -293,7 +293,7 @@ async def _convert(
 
 async def _chunk_with_chonkie(
     content: str,
-    chunker_type: str = "token",
+    chunker_type: str = "sentence",
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP,
 ) -> list[dict[str, Any]]:
@@ -332,7 +332,7 @@ async def _convert_and_chunk(
     base_url: str,
     filename: str,
     file_bytes: bytes,
-    chunker_type: str = "token",
+    chunker_type: str = "sentence",
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = _DEFAULT_CHUNK_OVERLAP,
 ) -> tuple[str, list[dict[str, Any]], float]:
@@ -409,7 +409,7 @@ async def convert_document(
     do_ocr: bool = True,
     ocr_engine: str = "easyocr",
     table_mode: str = "fast",
-    chunker_type: ChunkerType = ChunkerType.token,
+    chunker_type: ChunkerType = ChunkerType.sentence,
     chunk_size: int = Query(_DEFAULT_CHUNK_SIZE, ge=64, le=8192),
     chunk_overlap: int = Query(_DEFAULT_CHUNK_OVERLAP, ge=0),
 ) -> DocumentResult:

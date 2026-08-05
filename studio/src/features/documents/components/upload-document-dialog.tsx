@@ -32,9 +32,9 @@ const OUTPUT_FORMATS = [
 ] as const
 
 const CHUNKER_TYPES = [
+  { value: "sentence", label: "Sentence" },
   { value: "token", label: "Token" },
   { value: "recursive", label: "Recursive" },
-  { value: "sentence", label: "Sentence" },
 ] as const
 
 export function UploadDocumentDialog() {
@@ -42,7 +42,7 @@ export function UploadDocumentDialog() {
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
-  const [chunkerType, setChunkerType] = useState("token")
+  const [chunkerType, setChunkerType] = useState("sentence")
   const [chunkSize, setChunkSize] = useState(2048)
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [result, setResult] = useState<DocumentUploadResponse | null>(null)
@@ -58,7 +58,7 @@ export function UploadDocumentDialog() {
     setFile(null)
     setUrl("")
     setOutputFormat("md")
-    setChunkerType("token")
+    setChunkerType("sentence")
     setChunkSize(2048)
     setChunkOverlap(200)
     setResult(null)
