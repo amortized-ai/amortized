@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, Loader2, CheckCircle2, Minimize2 } from "lucide-react"
+import { Upload, Loader2, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
 import { useJob } from "@/features/jobs"
@@ -55,7 +55,6 @@ export function UploadDocumentDialog() {
   const [chunkOverlap, setChunkOverlap] = useState(200)
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobFilename, setJobFilename] = useState("")
-  const [minimized, setMinimized] = useState(false)
   const [toastId, setToastId] = useState<string | number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -97,7 +96,6 @@ export function UploadDocumentDialog() {
     setChunkOverlap(200)
     setJobId(null)
     setJobFilename("")
-    setMinimized(false)
     setToastId(null)
     setError(null)
     uploadMutation.reset()
@@ -105,18 +103,15 @@ export function UploadDocumentDialog() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  function handleMinimize() {
-    const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
-      duration: Infinity,
-    })
-    setToastId(tid)
-    setMinimized(true)
-    setOpen(false)
-  }
-
   function handleOpenChange(v: boolean) {
+    if (!v && isProcessing) {
+      const tid = toast.loading(`Uploading ${jobFilename || "document"}...`, {
+        duration: Infinity,
+      })
+      setToastId(tid)
+    }
     setOpen(v)
-    if (!v && !minimized) reset()
+    if (!v && !isProcessing) reset()
   }
 
   const chunkOptions = {
@@ -187,14 +182,6 @@ export function UploadDocumentDialog() {
               {STATUS_LABELS[job?.status ?? ""] ?? "Processing..."}
             </p>
             <p className="text-xs text-muted-foreground">{jobFilename}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleMinimize}
-            >
-              <Minimize2 className="h-3 w-3 mr-1" />
-              Minimize
-            </Button>
           </div>
         ) : isSucceeded ? (
           <div className="flex flex-col items-center gap-3 py-6">
