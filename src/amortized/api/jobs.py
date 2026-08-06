@@ -195,13 +195,85 @@ async def create_job(
     return _job_response(row)
 
 
+_COLUMN_TYPE_TO_CLASS = {
+    "sampler": "SamplerColumnConfig",
+    "llm-text": "LLMTextColumnConfig",
+    "llm-code": "LLMCodeColumnConfig",
+    "llm-judge": "LLMJudgeColumnConfig",
+    "llm-structured": "LLMStructuredColumnConfig",
+    "expression": "ExpressionColumnConfig",
+    "validation": "ValidationColumnConfig",
+    "seed-dataset": "SeedDatasetColumnConfig",
+    "embedding": "EmbeddingColumnConfig",
+    "image": "ImageColumnConfig",
+    "custom": "CustomColumnConfig",
+}
+
+
+def _simplify_sdg_errors(
+    exc: ValidationError,
+    body: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Filter Pydantic union errors to only the matching column type."""
+    columns = body.get("columns", [])
+    valid_types = sorted(_COLUMN_TYPE_TO_CLASS.keys())
+    simplified: list[dict[str, str]] = []
+
+    bad_col_types: list[tuple[int, str]] = []
+    if isinstance(columns, list):
+        for i, col in enumerate(columns):
+            if isinstance(col, dict):
+                ct = col.get("column_type", "")
+                if ct and ct not in _COLUMN_TYPE_TO_CLASS:
+                    bad_col_types.append((i, ct))
+    if bad_col_types:
+        for idx, ct in bad_col_types:
+            simplified.append(
+                {
+                    "field": f"columns[{idx}].column_type",
+                    "error": f"'{ct}' is not valid. Valid types: {valid_types}",
+                }
+            )
+        return simplified
+
+    for err in exc.errors():
+        loc = err.get("loc", ())
+        if len(loc) >= 3 and loc[0] == "columns" and isinstance(loc[1], int):
+            idx = loc[1]
+            col = columns[idx] if idx < len(columns) else {}
+            col_type = col.get("column_type", "")
+            expected_cls = _COLUMN_TYPE_TO_CLASS.get(col_type, "")
+            loc_str = str(loc[2]) if len(loc) > 2 else ""
+            if expected_cls and expected_cls not in loc_str:
+                continue
+            field = str(loc[-1]) if len(loc) > 2 else ""
+            path = f"columns[{idx}].{field}" if field else f"columns[{idx}]"
+            simplified.append({"field": path, "error": err["msg"]})
+        else:
+            path = ".".join(str(part) for part in loc)
+            simplified.append({"field": path, "error": err["msg"]})
+
+    if not simplified:
+        for err in exc.errors()[:5]:
+            path = ".".join(str(part) for part in err.get("loc", ()))
+            simplified.append({"field": path, "error": err["msg"]})
+
+    return simplified
+
+
 @router.post("/sdg", status_code=201, response_model=Job, operation_id="create_sdg_job")
 async def create_sdg_job(
-    request: SDGJobRequest,
     http_request: Request,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
+    body = await http_request.json()
+    try:
+        request = SDGJobRequest(**body)
+    except ValidationError as exc:
+        errors = _simplify_sdg_errors(exc, body)
+        raise HTTPException(status_code=422, detail=errors) from exc
+
     config = request.model_dump(exclude_none=True)
 
     mode = config.pop("mode", "create")
