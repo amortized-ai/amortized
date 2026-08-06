@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, Capability, JobSpec, S3Download
+from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
@@ -198,7 +198,6 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     # --- Resolve parent artifacts ---
     config_files: dict[str, str] = {}
-    s3_downloads: list[S3Download] = []
     config, parent_pre_commands = await _resolve_parent_artifacts(job, config)
 
     # --- Job-type-specific build ---
@@ -213,7 +212,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         return
 
     try:
-        result = await builder.build(job, config, config_files, s3_downloads)
+        result = await builder.build(job, config, config_files)
     except JobBuildError as exc:
         logger.error("Job %s: %s", job_id, exc)
         await _update_job(
@@ -258,7 +257,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         work_dir=output_dir,
         image=result.image,
         config_files=result.config_files,
-        s3_downloads=result.s3_downloads,
         job_type=job_type,
         user_id=job.get("user_id", ""),
         resources=result.resources,

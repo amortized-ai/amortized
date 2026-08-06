@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from amortized.backends import Resources, S3Download
+from amortized.backends import Resources
 
 
 class JobBuildError(Exception):
@@ -18,7 +18,6 @@ class JobBuildResult:
 
     command: list[str]
     config_files: dict[str, str] = field(default_factory=dict)
-    s3_downloads: list[S3Download] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     resources: Resources = field(default_factory=Resources)
     image: str = ""
@@ -35,7 +34,6 @@ class JobBuilder(Protocol):
         job: dict[str, Any],
         config: dict[str, Any],
         config_files: dict[str, str],
-        s3_downloads: list[S3Download],
     ) -> JobBuildResult:
         """Build the job spec from config. May raise to fail the job."""
         ...

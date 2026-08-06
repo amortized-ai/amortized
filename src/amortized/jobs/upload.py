@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import Resources, S3Download
+from amortized.backends import Resources
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import set_mlflow_run_tag
 
@@ -16,7 +16,6 @@ async def build(
     job: dict[str, Any],
     config: dict[str, Any],
     config_files: dict[str, str],
-    s3_downloads: list[S3Download],
 ) -> JobBuildResult:
     run_id = config.get("mlflow_upload_run_id")
     if not run_id:
@@ -57,7 +56,6 @@ async def build(
     return JobBuildResult(
         command=["python3", "/app/process_document.py"],
         config_files=config_files,
-        s3_downloads=s3_downloads,
         pre_commands=[pre_cmd],
         resources=Resources(gpus=0),
         image=image,
