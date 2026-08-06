@@ -267,7 +267,14 @@ async def create_sdg_job(
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
-    body = await http_request.json()
+    try:
+        body = await http_request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Request body must be a JSON object") from None
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Request body must be a JSON object")
+
     try:
         request = SDGJobRequest(**body)
     except ValidationError as exc:
