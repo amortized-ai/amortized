@@ -415,7 +415,7 @@ async def cleanup_orphaned_jobs() -> None:
                     """UPDATE jobs SET status = $1, completed_at = $2,
                        error = $3 WHERE id = $4 AND status = $5""",
                     JobStatus.failed.value,
-                    now,
+                    datetime.fromisoformat(now),
                     "Orphaned job — process no longer running",
                     job_id,
                     JobStatus.running.value,

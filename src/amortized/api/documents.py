@@ -10,6 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
+import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 

@@ -1,11 +1,18 @@
 """Repository wrapping all CRUD operations on the jobs table."""
 
 import json
+from datetime import datetime
 from typing import Any, ClassVar
 
 import asyncpg
 
 from amortized.models import JobStatus, JobType
+
+
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value)
 
 
 class Repository:
@@ -34,7 +41,7 @@ class Repository:
             recipe,
             parent_job_id,
             user_id,
-            created_at,
+            _parse_ts(created_at),
         )
         result = await self.get_job(job_id)
         assert result is not None
@@ -100,10 +107,13 @@ class Repository:
         fields: list[str] = []
         params: list[Any] = []
 
+        ts_columns = {"started_at", "completed_at", "created_at"}
         for i, (key, value) in enumerate(kwargs.items(), 1):
             if key not in self._UPDATABLE_COLUMNS:
                 raise ValueError(f"Cannot update column: {key!r}")
             fields.append(f"{key} = ${i}")
+            if key in ts_columns and isinstance(value, str):
+                value = _parse_ts(value)
             params.append(value)
 
         params.append(job_id)
@@ -138,8 +148,6 @@ class Repository:
 
 
 def _row_to_job(row: Any) -> dict[str, Any]:
-    from datetime import datetime
-
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
     if d.get("error") in ("", "None"):
