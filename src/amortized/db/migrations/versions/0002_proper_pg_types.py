@@ -16,6 +16,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.execute("ALTER TABLE jobs ALTER COLUMN config SET DEFAULT '{}'::jsonb")
     op.execute(
         """
         ALTER TABLE jobs
@@ -41,3 +42,4 @@ def downgrade() -> None:
                 USING COALESCE(completed_at::text, '')
         """
     )
+    op.execute("ALTER TABLE jobs ALTER COLUMN config SET DEFAULT '{}'::text")
