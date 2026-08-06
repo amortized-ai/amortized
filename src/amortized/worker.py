@@ -22,7 +22,6 @@ from amortized.jobs.common import (
 from amortized.jobs.common import (
     set_mlflow_run_tag,
 )
-from amortized.jobs.training import _training_hub_config_yaml  # noqa: F401
 from amortized.models import JobStatus, JobType
 from amortized.watch import emit_job_event
 
@@ -42,6 +41,33 @@ async def _safe_emit(job_id: str, status: str, job: dict[str, Any]) -> None:
         await emit_job_event(job_id, status, job)
     except Exception:
         logger.warning("Failed to emit job event for %s", job_id, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Command wrapping
+# ---------------------------------------------------------------------------
+
+
+def _wrap_command(
+    command: list[str],
+    pre_commands: list[str],
+    post_commands: list[str],
+) -> list[str]:
+    """Wrap a command with pre/post commands using shell chaining.
+
+    Pre-commands use && (fail fast). Post-commands use ; (best-effort).
+    """
+    if not pre_commands and not post_commands:
+        return command
+    if command[:2] == ["sh", "-c"] and len(command) == 3:
+        main_cmd = command[2]
+    else:
+        main_cmd = shlex.join(command)
+    pre_chain = " && ".join([*pre_commands, main_cmd])
+    if post_commands:
+        post_chain = " ; ".join(post_commands)
+        return ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
+    return ["sh", "-c", pre_chain]
 
 
 # ---------------------------------------------------------------------------
@@ -233,21 +259,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     await _update_job(job_id, config=json.dumps(result.resolved_config))
 
     # --- Wrap command with pre/post commands ---
-    # Pre-commands use && (fail fast — no point running the job without data).
-    # Post-commands use ; (best-effort — don't fail a completed job because
-    # MLflow is temporarily unreachable).
-    final_command = result.command
-    if all_pre_commands or result.post_commands:
-        if result.command[:2] == ["sh", "-c"] and len(result.command) == 3:
-            main_cmd = result.command[2]
-        else:
-            main_cmd = shlex.join(result.command)
-        pre_chain = " && ".join([*all_pre_commands, main_cmd])
-        if result.post_commands:
-            post_chain = " ; ".join(result.post_commands)
-            final_command = ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
-        else:
-            final_command = ["sh", "-c", pre_chain]
+    final_command = _wrap_command(result.command, all_pre_commands, result.post_commands)
 
     # --- Submit ---
     spec = JobSpec(

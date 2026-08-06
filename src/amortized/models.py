@@ -59,7 +59,6 @@ class TrainingJobConfig(BaseModel):
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
-    report_to: str | None = Field(None, description="Logging backend (none, mlflow)")
 
 
 class JobRequest(BaseModel):
@@ -159,7 +158,6 @@ class DocumentResult(_DocumentBase):
     processing_time: float = Field(0.0, ge=0, description="Processing time in seconds")
     status: str = Field("success", description="Conversion status")
     warnings: list[str] = Field(default_factory=list, description="Non-fatal issues")
-
 
 
 class DocumentUploadAccepted(BaseModel):

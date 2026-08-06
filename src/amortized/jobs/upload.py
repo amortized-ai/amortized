@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
@@ -29,7 +30,12 @@ async def build(
 
     artifact_path = config.get("artifact_path", "source")
     input_dir = "/amortized/work/input"
-    pre_cmd = f"mlflow artifacts download -r {run_id} -a {artifact_path} -d {input_dir}"
+    pre_cmd = (
+        f"mlflow artifacts download"
+        f" -r {shlex.quote(run_id)}"
+        f" -a {shlex.quote(artifact_path)}"
+        f" -d {shlex.quote(input_dir)}"
+    )
 
     config_dict = {
         "input_path": f"{input_dir}/{artifact_path}/{filename}",

@@ -1,7 +1,6 @@
 """Tests for the background worker job execution lifecycle."""
 
 import os
-import shlex
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -149,7 +148,7 @@ class TestCancelRunningJob:
 
 class TestTrainingHubConfig:
     def test_thub_config_yaml_sft(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "sft",
@@ -173,7 +172,7 @@ class TestTrainingHubConfig:
         assert "micro_batch_size" not in parsed
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "gepa",
@@ -186,7 +185,7 @@ class TestTrainingHubConfig:
         assert "ckpt_output_dir" not in parsed
 
     def test_thub_config_skips_keys(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "sft",
@@ -202,7 +201,7 @@ class TestTrainingHubConfig:
         assert "qlora" not in parsed
 
     def test_thub_config_handles_any_algorithm(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         algos = ("sft", "lora_sft", "osft", "grpo", "lora_grpo", "gepa", "dpo", "kto")
         for algo in algos:
@@ -248,8 +247,7 @@ class TestResolveParentArtifacts:
         assert result_config["data_path"] == "/amortized/work/data/generated_data"
         assert len(pre_commands) == 1
         assert pre_commands[0] == (
-            "mlflow artifacts download -r mlflow-run-abc -a generated_data"
-            " -d /amortized/work/data"
+            "mlflow artifacts download -r mlflow-run-abc -a generated_data -d /amortized/work/data"
         )
 
     @pytest.mark.asyncio
@@ -264,66 +262,84 @@ class TestResolveParentArtifacts:
 
 
 class TestCommandWrapping:
-    def _wrap(
-        self,
-        command: list[str],
-        pre_commands: list[str] | None = None,
-        post_commands: list[str] | None = None,
-    ) -> list[str]:
-        pre = pre_commands or []
-        post = post_commands or []
-        final = command
-        if pre or post:
-            if command[:2] == ["sh", "-c"] and len(command) == 3:
-                main_cmd = command[2]
-            else:
-                main_cmd = shlex.join(command)
-            pre_chain = " && ".join([*pre, main_cmd])
-            if post:
-                post_chain = " ; ".join(post)
-                final = ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
-            else:
-                final = ["sh", "-c", pre_chain]
-        return final
-
     def test_no_pre_post_passes_through(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
-        assert self._wrap(cmd) == cmd
+        assert _wrap_command(cmd, [], []) == cmd
 
     def test_pre_commands_only(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
-        result = self._wrap(cmd, pre_commands=["python3 -c 'download()'"])
+        result = _wrap_command(cmd, ["mlflow artifacts download -r abc"], [])
         assert result[0:2] == ["sh", "-c"]
-        assert "python3 -c 'download()' && thub" in result[2]
+        assert "mlflow artifacts download -r abc && thub" in result[2]
 
     def test_post_commands_only(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
-        result = self._wrap(cmd, post_commands=["python3 -c 'upload()'"])
+        result = _wrap_command(cmd, [], ["python3 -c 'upload()'"])
         assert result[0:2] == ["sh", "-c"]
         assert "thub" in result[2]
         assert "{ python3 -c 'upload()' ; true; }" in result[2]
 
     def test_pre_and_post(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
-        result = self._wrap(
+        result = _wrap_command(
             cmd,
-            pre_commands=["python3 -c 'download()'"],
-            post_commands=["python3 -c 'upload()'"],
+            ["mlflow artifacts download -r abc"],
+            ["python3 -c 'upload()'"],
         )
         shell_cmd = result[2]
-        pre_idx = shell_cmd.index("download()")
+        pre_idx = shell_cmd.index("mlflow artifacts download")
         main_idx = shell_cmd.index("thub")
         post_idx = shell_cmd.index("upload()")
         assert pre_idx < main_idx < post_idx
 
     def test_existing_sh_c_not_double_wrapped(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["sh", "-c", "data-designer create && upload.py"]
-        result = self._wrap(cmd, pre_commands=["python3 -c 'download()'"])
+        result = _wrap_command(cmd, ["mlflow artifacts download -r abc"], [])
         shell_cmd = result[2]
         assert "data-designer create && upload.py" in shell_cmd
         assert shell_cmd.count("sh -c") == 0
 
     def test_post_commands_dont_fail_job(self) -> None:
+        from amortized.worker import _wrap_command
+
         cmd = ["thub", "train"]
-        result = self._wrap(cmd, post_commands=["false"])
+        result = _wrap_command(cmd, [], ["false"])
         assert "; true; }" in result[2]
+
+
+class TestUploadBuilder:
+    @pytest.mark.asyncio
+    async def test_build_generates_pre_command(self) -> None:
+        from amortized.jobs.upload import build
+
+        job = {"id": "doc-1", "type": "upload"}
+        config = {
+            "mlflow_upload_run_id": "abc123",
+            "artifact_path": "source",
+            "filename": "test.pdf",
+        }
+        result = await build(job, config, {})
+        assert len(result.pre_commands) == 1
+        assert "mlflow artifacts download" in result.pre_commands[0]
+        assert "abc123" in result.pre_commands[0]
+        assert "-a source" in result.pre_commands[0]
+
+    @pytest.mark.asyncio
+    async def test_build_missing_run_id_raises(self) -> None:
+        from amortized.jobs.base import JobBuildError
+        from amortized.jobs.upload import build
+
+        job = {"id": "doc-1", "type": "upload"}
+        config = {"filename": "test.pdf"}
+        with pytest.raises(JobBuildError, match="mlflow_upload_run_id"):
+            await build(job, config, {})

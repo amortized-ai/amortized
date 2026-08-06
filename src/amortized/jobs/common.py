@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
@@ -91,7 +92,10 @@ async def resolve_parent_artifacts(
         if not existing or not existing.startswith("s3://"):
             local_dir = "/amortized/work/data"
             pre_cmd = (
-                f"mlflow artifacts download -r {parent_run_id} -a generated_data -d {local_dir}"
+                f"mlflow artifacts download"
+                f" -r {shlex.quote(parent_run_id)}"
+                f" -a generated_data"
+                f" -d {shlex.quote(local_dir)}"
             )
             pre_commands.append(pre_cmd)
             config["data_path"] = f"{local_dir}/generated_data"
