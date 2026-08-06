@@ -23,7 +23,8 @@ extraction, routing, summarization, QA, knowledge ingestion). The workflow is:
 You interact with the Amortized platform through these MCP tools:
 
 **Jobs**
-- `create_job` — Create an SDG or training job with a config
+- `create_sdg_job` — Create an SDG job with typed Data Designer parameters (columns, model_configs, processors, etc.)
+- `create_job` — Create a training or upload job with a config
 - `list_jobs` — List all jobs with status and metadata
 - `get_job_detail` — Get full details for a specific job
 - `cancel_job` — Cancel a running job
