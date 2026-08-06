@@ -89,7 +89,7 @@ Ask the user these questions (one at a time, with numbered options):
 
 Create columns, prompts, and categories based on the user's specific task.
 Use the model name from `list_models` in the `model_configs`.
-Submit via `create_job`.
+Submit via `create_sdg_job` (not `create_job`).
 
 Call `present_options` with step="sdg-domain" and these options:
 - title: "Software/technical support", description: "Bug reports, feature requests, troubleshooting", value: "Software/technical support — Bug reports, feature requests, troubleshooting"

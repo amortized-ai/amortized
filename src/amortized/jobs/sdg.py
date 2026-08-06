@@ -126,22 +126,13 @@ async def build(
     dd_config = {"data_designer": config}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
-    if mode == "preview":
-        preview_records = min(num_records, 10)
-        dd_cmd = (
-            "data-designer preview /amortized/config.yaml"
-            f" --num-records {preview_records}"
-            " --save-results"
-            " --artifact-path /amortized/work"
-            " --non-interactive"
-        )
-    else:
-        dd_cmd = (
-            "data-designer create /amortized/config.yaml"
-            f" --num-records {num_records}"
-            " --artifact-path /amortized/work"
-            " --no-tui"
-        )
+    records = min(num_records, 10) if mode == "preview" else num_records
+    dd_cmd = (
+        "data-designer create /amortized/config.yaml"
+        f" --num-records {records}"
+        " --artifact-path /amortized/work"
+        " --no-tui"
+    )
     processor_names = [p.get("name", "") for p in config.get("processors", [])]
     proc_dir = f"processors-files/{processor_names[-1]}" if processor_names else ""
     upload_cmd = f"python3 /usr/local/bin/upload_to_mlflow.py /amortized/work/dataset {proc_dir}"

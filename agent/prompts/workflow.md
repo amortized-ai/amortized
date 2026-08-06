@@ -50,18 +50,19 @@ that leads to a dead end.
 Using the skill guide's instructions, **create a brand new Data Designer
 config** (for SDG) or **training config** (for training) from scratch.
 
-**For SDG jobs:** Build a complete config with:
-- `topic` — a 1-5 word summary of what this dataset is for (e.g.
-  "OpenShift AI troubleshooting", "billing FAQ", "product docs QA").
-  Derive from the documents used or the task the user described.
-- `document_ids` — from uploaded documents
+**For SDG jobs:** Use the `create_sdg_job` tool. It accepts typed
+parameters with full validation — the tool schema documents every
+field. Key parameters:
 - `columns` — samplers and LLM prompts tailored to the user's domain
 - `model_configs` — which model to use (from `list_models`)
 - `processors` — schema_transform for SFT output format
+- `document_ids` — from uploaded documents
+- `num_records` — how many samples to generate
+- `topic` — 1-5 word summary (e.g. "OpenShift troubleshooting")
+- `mode` — "create" for full run, "preview" for ~10 sample test run
 
-Read the skill guide carefully — it explains every field and how to
-create columns dynamically. Do NOT use `submit_recipe_job` — build
-the config yourself and use `create_job`.
+Read the skill guide for prompt engineering guidance. Do NOT use
+`create_job` for SDG — use `create_sdg_job`.
 
 **For training jobs:** Build a config with:
 - `algorithm: osft`
@@ -87,30 +88,26 @@ Then ask:
 
 Only submit AFTER the user confirms.
 
-**First, validate the config** by calling `create_job` with `dry_run: true`.
-If the dry run returns `valid: false`, do NOT show raw error messages to
-the user. Instead:
+**For SDG jobs:** Call `create_sdg_job` with `mode: "preview"` first.
+This runs Data Designer with ~10 samples so you and the user can verify
+the config produces good output. If the tool returns a validation error,
+read the error to understand what field is wrong and fix it — the errors
+are specific (e.g. "columns[0].model_alias: Field required").
 
-1. Read the errors to understand what's missing or malformed
-2. Map each error to the information you need from the user
-3. Ask a natural follow-up question to gather or correct that information
+Once the preview job succeeds and the user is happy with the samples,
+call `create_sdg_job` again with `mode: "create"` for the full run.
 
-Examples:
-- "model_configs: required when columns use llm-text" → "Which model
-  should I use for generation? Let me check what's available..." then
-  call `list_models` and present options
-- "model_alias: 'teacher' not found in model_configs" → "The model alias
-  'teacher' isn't in the config — did you mean '[alias from model_configs]'?"
-- "columns: must be a non-empty list" → "I need to know what kind of
-  data to generate. What type of questions should the model handle?"
+**For training jobs:** Call `create_job` with `dry_run: true` to validate,
+then without `dry_run` to submit.
 
-After gathering the missing info, rebuild the config, dry-run again,
-and only submit once validation passes.
+If `create_sdg_job` returns a validation error, do NOT show the raw
+error to the user. Instead:
+1. Read the error to understand what field is wrong
+2. Ask a natural follow-up question to gather the missing info
+3. Rebuild and retry
 
-Once validated, call `create_job` without `dry_run` to actually submit.
-
-NEVER call `create_job` (non-dry-run) more than once per conversation
-for the same job.
+NEVER call `create_sdg_job` with `mode: "create"` more than once per
+conversation for the same job.
 
 ### Step 7 — Post-Job and Chaining
 
@@ -223,70 +220,15 @@ highlight differences in quality, coverage, or format.
 When the user asks "show me what was generated" after an SDG job, use
 the job's `mlflow_run_id` to call `get_dataset_samples`.
 
-## SDG Job Config Format
+## SDG Job Submission
 
-SDG jobs use NVIDIA Data Designer. The config has:
-- `document_ids` — list of document IDs (from Documents page)
-- `num_records` — how many samples to generate
-- `model_configs` — which LLM to use
-- `columns` — sampler and LLM-text columns (the generation pipeline)
-- `processors` — schema_transform for SFT output format
+Use `create_sdg_job` for all SDG jobs. The tool schema documents every
+field — refer to the tool's parameter descriptions for config format.
+Do NOT use `create_job` for SDG.
 
-Read the skill guide for full details on how to build these from scratch.
-Do NOT use old fields like `model`, `num_samples`, `strategy_params`,
-`task_description`, or `input_documents` — those are deprecated.
-
-### Config Field Rules (CRITICAL)
-
-**Sampler columns** — use `sampler_type: "category"` and put values inside
-`params`. Do NOT use `round_robin`, `list`, or any other sampler_type for
-categorical values. Do NOT put `values` at the top level of the column.
-
-```json
-{
-  "column_type": "sampler",
-  "name": "question_type",
-  "sampler_type": "category",
-  "params": {
-    "values": [
-      "Factual - Understanding what something is, why it works, or how components relate",
-      "Procedural - Step-by-step question about accomplishing a specific task"
-    ],
-    "weights": [0.6, 0.4]
-  }
-}
-```
-
-**model_configs** — MUST include `provider: "gateway"`. Temperature goes
-inside `inference_parameters`, NOT at the top level of the model config.
-
-```json
-{
-  "alias": "text",
-  "model": "gpt-oss",
-  "provider": "gateway",
-  "skip_health_check": true,
-  "inference_parameters": {
-    "temperature": 0.7,
-    "max_parallel_requests": 32
-  }
-}
-```
-
-**LLM-text columns** — use `model_alias` to reference the model config,
-NOT `model_config_alias`.
-
-```json
-{
-  "column_type": "llm-text",
-  "name": "output",
-  "model_alias": "text",
-  "system_prompt": "...",
-  "prompt": "..."
-}
-```
-
-**processors** — the discriminator key is `processor_type`, NOT `type`.
+Key parameters: `columns`, `model_configs`, `processors`, `num_records`,
+`document_ids`, `topic`, `mode`. Read the skill guide for prompt
+engineering guidance and domain-specific customization.
 
 ## When the User Asks for Job Details
 

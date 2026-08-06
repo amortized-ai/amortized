@@ -94,22 +94,10 @@ they want to.
 Follow the template structure (`templates/sdg/knowledge-ingestion.yaml`). Customize
 prompts and system prompt for the user's domain.
 
-### Structure
+### Submission
 
-The SDG job config is submitted as:
-
-```json
-{
-  "type": "sdg",
-  "config": {
-    "document_ids": [...],
-    "num_records": N,
-    "model_configs": [ ... ],
-    "columns": [ ... ],
-    "processors": [ ... ]
-  }
-}
-```
+Submit SDG jobs via `create_sdg_job` (not `create_job`). The tool
+accepts typed parameters directly — no wrapper object needed:
 
 ### document_ids
 
