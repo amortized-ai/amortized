@@ -228,7 +228,6 @@ the job's `mlflow_run_id` to call `get_dataset_samples`.
 SDG jobs use NVIDIA Data Designer. The config has:
 - `document_ids` — list of document IDs (from Documents page)
 - `num_records` — how many samples to generate
-- `seed_config` — chunking parameters
 - `model_configs` — which LLM to use
 - `columns` — sampler and LLM-text columns (the generation pipeline)
 - `processors` — schema_transform for SFT output format
@@ -246,10 +245,13 @@ categorical values. Do NOT put `values` at the top level of the column.
 ```json
 {
   "column_type": "sampler",
-  "name": "topic",
+  "name": "question_type",
   "sampler_type": "category",
   "params": {
-    "values": ["Topic A", "Topic B"],
+    "values": [
+      "Factual - Understanding what something is, why it works, or how components relate",
+      "Procedural - Step-by-step question about accomplishing a specific task"
+    ],
     "weights": [0.6, 0.4]
   }
 }
