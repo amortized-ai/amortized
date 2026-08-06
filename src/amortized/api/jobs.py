@@ -124,10 +124,16 @@ def _validate_sdg_config(config: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
+async def _validate_config(
+    job_type: JobType,
+    config: dict[str, Any],
+    request: JobRequest,
+    db: aiosqlite.Connection,
+) -> list[str]:
     try:
         if job_type == JobType.training:
             TrainingJobConfig(**config)
+            return await _validate_training_data(config, request, db)
         elif job_type == JobType.sdg:
             return _validate_sdg_config(config)
         elif job_type == JobType.upload:
@@ -142,6 +148,43 @@ def _validate_config(job_type: JobType, config: dict[str, Any]) -> list[str]:
     return []
 
 
+async def _validate_training_data(
+    config: dict[str, Any],
+    request: JobRequest,
+    db: aiosqlite.Connection,
+) -> list[str]:
+    errors: list[str] = []
+    parent_job_id = request.parent_job_id or config.get("parent_job_id", "")
+    data_path = config.get("data_path", "")
+
+    if not parent_job_id and not data_path:
+        errors.append(
+            "training jobs require either parent_job_id (to chain from an"
+            " SDG job) or data_path (direct path to training data)"
+        )
+        return errors
+
+    if parent_job_id and not data_path:
+        repo = Repository(db)
+        parent = await repo.get_job(parent_job_id)
+        if parent is None:
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' not found"
+            )
+        elif parent.get("status") != "succeeded":
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has status"
+                f" '{parent.get('status')}' (must be 'succeeded')"
+            )
+        elif not parent.get("mlflow_run_id"):
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has no MLflow"
+                " artifacts — the dataset may not have been uploaded"
+            )
+
+    return errors
+
+
 @router.post("", status_code=201, response_model=Job, operation_id="create_job")
 async def create_job(
     request: JobRequest,
@@ -150,7 +193,7 @@ async def create_job(
 ) -> Job | JSONResponse:
     job_type = request.type
 
-    errors = _validate_config(job_type, request.config)
+    errors = await _validate_config(job_type, request.config, request, db)
 
     if request.dry_run:
         dry_resp = DryRunResponse(
