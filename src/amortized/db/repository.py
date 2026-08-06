@@ -35,11 +35,11 @@ class Repository:
         await self.conn.execute(
             """INSERT INTO jobs
                (id, type, status, config, recipe, parent_job_id, user_id, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
-            config,
+            json.dumps(config),
             recipe,
             parent_job_id,
             user_id,
@@ -113,9 +113,13 @@ class Repository:
         for i, (key, value) in enumerate(kwargs.items(), 1):
             if key not in self._UPDATABLE_COLUMNS:
                 raise ValueError(f"Cannot update column: {key!r}")
-            fields.append(f"{key} = ${i}")
             if key in ts_columns and isinstance(value, str):
                 value = _parse_ts(value)
+            if key == "config" and isinstance(value, dict):
+                fields.append(f"{key} = ${i}::jsonb")
+                value = json.dumps(value)
+            else:
+                fields.append(f"{key} = ${i}")
             params.append(value)
 
         params.append(job_id)
