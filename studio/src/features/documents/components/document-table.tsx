@@ -1,8 +1,7 @@
 import { type ColumnDef } from "@tanstack/react-table"
-import { FileText, Eye } from "lucide-react"
+import { FileText } from "lucide-react"
 import { useMemo } from "react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
 import type { DocumentRecord } from "@/types/api"
@@ -34,13 +33,19 @@ export function DocumentTable({
       {
         accessorKey: "filename",
         header: "Filename",
+        size: 350,
+        minSize: 150,
+        maxSize: 600,
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.filename}</span>
+          <span className="font-medium truncate block">{row.original.filename}</span>
         ),
       },
       {
         accessorKey: "format",
         header: "Format",
+        size: 90,
+        minSize: 70,
+        maxSize: 150,
         cell: ({ row }) => (
           <Badge variant="secondary" className="uppercase text-[10px]">
             {row.original.format}
@@ -60,32 +65,17 @@ export function DocumentTable({
             : "--",
         id: "created_at",
         header: "Created",
+        size: 180,
+        minSize: 140,
+        maxSize: 250,
         cell: ({ getValue }) => (
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {getValue() as string}
           </span>
         ),
       },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              onSelectDocument(row.original)
-            }}
-            aria-label={`View ${row.original.filename}`}
-          >
-            <Eye className="h-4 w-4" />
-          </Button>
-        ),
-        enableSorting: false,
-      },
     ],
-    [onSelectDocument],
+    [],
   )
 
   const paginationState = useMemo(
@@ -98,6 +88,7 @@ export function DocumentTable({
       columns={columns}
       data={sorted}
       onRowClick={onSelectDocument}
+      storageKey="documents-column-sizes"
       pagination={paginationState}
       onPaginationChange={(updater) => {
         const next = typeof updater === "function" ? updater(paginationState) : updater
