@@ -110,6 +110,26 @@ async def build(
     thub_subcommand = algorithm.replace("_", "-")
     cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
 
+    # After training, upload output dir to the MLflow run that TRL created.
+    # Uses MlflowClient (not fluent API) — runs in a separate process with
+    # no active run context.
+    _upload_script = (
+        "import os, mlflow; "
+        "tracking_uri = os.environ.get('MLFLOW_TRACKING_URI', ''); "
+        "exp_name = os.environ.get('MLFLOW_EXPERIMENT_NAME', ''); "
+        "output = '/amortized/work/output'; "
+        "c = mlflow.MlflowClient(tracking_uri) if tracking_uri else None; "
+        "exp = c.get_experiment_by_name(exp_name) if c and exp_name else None; "
+        "runs = c.search_runs("
+        "[exp.experiment_id], order_by=['start_time DESC'], max_results=1"
+        ") if exp else []; "
+        "run_id = runs[0].info.run_id if runs else ''; "
+        "run_id and os.path.isdir(output) "
+        "and c.log_artifacts(run_id, output, 'model'); "
+        "print(f'AMORTIZED_MLFLOW_RUN_ID={run_id}') if run_id else None"
+    )
+    post_cmd = f'python3 -c "{_upload_script}"'
+
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
@@ -118,6 +138,7 @@ async def build(
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=IMAGE,
         resolved_config=dict(config),
+        post_commands=[post_cmd],
     )
 
 

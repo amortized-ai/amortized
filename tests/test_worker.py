@@ -215,7 +215,6 @@ class TestTrainingHubConfig:
 class TestResolveParentArtifacts:
     @pytest.mark.asyncio
     async def test_upload_parent_chains_data_path(self) -> None:
-        from amortized.backends import S3Download
         from amortized.worker import _resolve_parent_artifacts
 
         parent_job = {
@@ -233,26 +232,22 @@ class TestResolveParentArtifacts:
             "algorithm": "sft",
             "model_name_or_path": "test/model",
         }
-        s3_downloads: list[S3Download] = []
 
         mock_repo = AsyncMock()
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
-        mock_mlflow_client = AsyncMock()
-        mock_mlflow_client.get_run = AsyncMock(return_value={
-            "info": {"artifact_uri": "s3://bucket/mlflow/abc"},
-        })
-
         with (
             patch("amortized.db.connection._get_shared_db", new_callable=AsyncMock),
             patch("amortized.db.repository.Repository", return_value=mock_repo),
-            patch("amortized.jobs.common.MLflowClient", return_value=mock_mlflow_client),
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):
             mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
-            result = await _resolve_parent_artifacts(training_job, config, s3_downloads)
+            result_config, pre_commands = await _resolve_parent_artifacts(
+                training_job, config
+            )
 
-        assert result["data_path"] == "/amortized/work/data"
-        assert len(s3_downloads) == 1
-        assert s3_downloads[0].s3_uri == "s3://bucket/mlflow/abc/generated_data/"
-        assert s3_downloads[0].local_path == "/amortized/work/data"
+        assert result_config["data_path"] == "/amortized/work/data"
+        assert len(pre_commands) == 1
+        assert "mlflow.artifacts.download_artifacts" in pre_commands[0]
+        assert "run_id='mlflow-run-abc'" in pre_commands[0]
+        assert "artifact_path='generated_data'" in pre_commands[0]
