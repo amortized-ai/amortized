@@ -1,6 +1,7 @@
 """Tests for core/jobs.py — no HTTP server required."""
 
-from pathlib import Path
+import os
+import subprocess
 
 import asyncpg
 import pytest
@@ -20,11 +21,13 @@ from amortized.models import JobStatus, JobType
 
 @pytest.fixture
 async def repo():
+    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
     conn = await asyncpg.connect(TEST_DATABASE_URL)
-    schema_path = Path(__file__).parent.parent / "src" / "amortized" / "db" / "schema.sql"
-    schema_sql = schema_path.read_text()
+    await conn.execute("DROP TABLE IF EXISTS alembic_version")
     await conn.execute("DROP TABLE IF EXISTS jobs")
-    await conn.execute(schema_sql)
+    await conn.close()
+    subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
     yield Repository(conn)
     await conn.close()
 

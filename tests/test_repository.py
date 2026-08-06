@@ -1,6 +1,7 @@
 """Tests for the Repository CRUD class — no HTTP server required."""
 
-from pathlib import Path
+import os
+import subprocess
 
 import asyncpg
 import pytest
@@ -12,11 +13,13 @@ from amortized.models import JobStatus, JobType
 
 @pytest.fixture
 async def repo():
+    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
     conn = await asyncpg.connect(TEST_DATABASE_URL)
-    schema_path = Path(__file__).parent.parent / "src" / "amortized" / "db" / "schema.sql"
-    schema_sql = schema_path.read_text()
+    await conn.execute("DROP TABLE IF EXISTS alembic_version")
     await conn.execute("DROP TABLE IF EXISTS jobs")
-    await conn.execute(schema_sql)
+    await conn.close()
+    subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
     yield Repository(conn)
     await conn.close()
 
@@ -28,7 +31,7 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={"model_name_or_path": "test"},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         assert row["id"] == "j1"
         assert row["type"] == "training"
@@ -49,13 +52,13 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         await repo.create_job(
             job_id="j2",
             job_type=JobType.sdg,
             config={},
-            created_at="2026-01-01T00:00:01",
+            created_at="2026-01-01T00:00:01+00:00",
         )
 
         all_jobs = await repo.list_jobs()
@@ -71,16 +74,16 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         updated = await repo.update_job(
             "j1",
             status=JobStatus.running.value,
-            started_at="2026-01-01T00:01:00",
+            started_at="2026-01-01T00:01:00+00:00",
         )
         assert updated is not None
         assert updated["status"] == "running"
-        assert updated["started_at"] == "2026-01-01T00:01:00"
+        assert updated["started_at"] == "2026-01-01T00:01:00+00:00"
 
     @pytest.mark.asyncio
     async def test_error_field_null_not_string_none(self, repo: Repository) -> None:
@@ -88,7 +91,7 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         job = await repo.get_job("j1")
         assert job is not None
@@ -100,7 +103,7 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         await repo.conn.execute("UPDATE jobs SET error = 'None' WHERE id = 'j1'")
         job = await repo.get_job("j1")
@@ -113,7 +116,7 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
             recipe="models/qwen-1.5b",
             parent_job_id="parent-1",
         )
@@ -126,13 +129,13 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         await repo.create_job(
             job_id="j2",
             job_type=JobType.sdg,
             config={},
-            created_at="2026-01-01T00:00:01",
+            created_at="2026-01-01T00:00:01+00:00",
         )
         job = await repo.pick_pending_job()
         assert job is not None
@@ -148,7 +151,7 @@ class TestJobCRUD:
             job_id="j1",
             job_type=JobType.training,
             config={},
-            created_at="2026-01-01T00:00:00",
+            created_at="2026-01-01T00:00:00+00:00",
         )
         updated = await repo.update_job("j1", mlflow_run_id="abc123def456")
         assert updated is not None
@@ -160,7 +163,7 @@ class TestJobCRUD:
             job_id="del1",
             job_type=JobType.training,
             config={"algorithm": "sft"},
-            created_at="2024-01-01T00:00:00",
+            created_at="2024-01-01T00:00:00+00:00",
         )
         assert await repo.delete_job("del1") is True
         assert await repo.get_job("del1") is None
@@ -175,13 +178,13 @@ class TestJobCRUD:
             job_id="f1",
             job_type=JobType.training,
             config={},
-            created_at="2024-01-01T00:00:00",
+            created_at="2024-01-01T00:00:00+00:00",
         )
         await repo.create_job(
             job_id="f2",
             job_type=JobType.sdg,
             config={},
-            created_at="2024-01-02T00:00:00",
+            created_at="2024-01-02T00:00:00+00:00",
         )
         jobs = await repo.list_jobs(status=JobStatus.queued, job_type=JobType.training)
         assert len(jobs) == 1
