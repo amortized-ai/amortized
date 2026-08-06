@@ -6,13 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.main import app
-
-TEST_DATABASE_URL = os.environ.get(
-    "AMORTIZED_TEST_DATABASE_URL",
-    "postgresql://amortized:amortized@localhost:5432/amortized_test",
-)
 
 
 @pytest.fixture(autouse=True)

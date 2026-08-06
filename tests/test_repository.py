@@ -1,18 +1,13 @@
 """Tests for the Repository CRUD class — no HTTP server required."""
 
-import os
 from pathlib import Path
 
 import asyncpg
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
-
-TEST_DATABASE_URL = os.environ.get(
-    "AMORTIZED_TEST_DATABASE_URL",
-    "postgresql://amortized:amortized@localhost:5432/amortized_test",
-)
 
 
 @pytest.fixture
@@ -158,3 +153,36 @@ class TestJobCRUD:
         updated = await repo.update_job("j1", mlflow_run_id="abc123def456")
         assert updated is not None
         assert updated["mlflow_run_id"] == "abc123def456"
+
+    @pytest.mark.asyncio
+    async def test_delete_existing_job(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="del1",
+            job_type=JobType.training,
+            config={"algorithm": "sft"},
+            created_at="2024-01-01T00:00:00",
+        )
+        assert await repo.delete_job("del1") is True
+        assert await repo.get_job("del1") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_job(self, repo: Repository) -> None:
+        assert await repo.delete_job("nonexistent") is False
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_with_both_filters(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="f1",
+            job_type=JobType.training,
+            config={},
+            created_at="2024-01-01T00:00:00",
+        )
+        await repo.create_job(
+            job_id="f2",
+            job_type=JobType.sdg,
+            config={},
+            created_at="2024-01-02T00:00:00",
+        )
+        jobs = await repo.list_jobs(status=JobStatus.queued, job_type=JobType.training)
+        assert len(jobs) == 1
+        assert jobs[0]["id"] == "f1"

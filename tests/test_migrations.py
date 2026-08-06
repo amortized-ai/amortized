@@ -5,11 +5,7 @@ import subprocess
 
 import asyncpg
 import pytest
-
-TEST_DATABASE_URL = os.environ.get(
-    "AMORTIZED_TEST_DATABASE_URL",
-    "postgresql://amortized:amortized@localhost:5432/amortized_test",
-)
+from conftest import TEST_DATABASE_URL
 
 
 @pytest.fixture(autouse=True)

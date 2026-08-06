@@ -5,14 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 import asyncpg
 import pytest
+from conftest import TEST_DATABASE_URL
 
 import amortized.db.connection as db_conn
 from amortized.config import Settings
-
-TEST_DATABASE_URL = os.environ.get(
-    "AMORTIZED_TEST_DATABASE_URL",
-    "postgresql://amortized:amortized@localhost:5432/amortized_test",
-)
 
 
 @pytest.fixture(autouse=True)
@@ -83,4 +79,26 @@ class TestInitDbResilience:
             patch("amortized.db.connection.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(RuntimeError, match="Failed to connect"),
         ):
+            await db_conn.init_db()
+
+    @pytest.mark.asyncio
+    async def test_fails_immediately_on_config_error(self) -> None:
+        os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
+        db_conn.settings = Settings()
+
+        with (
+            patch(
+                "amortized.db.connection.asyncpg.create_pool",
+                side_effect=asyncpg.InvalidPasswordError("wrong password"),
+            ),
+            pytest.raises(RuntimeError, match="Database configuration error"),
+        ):
+            await db_conn.init_db()
+
+    @pytest.mark.asyncio
+    async def test_fails_on_empty_database_url(self) -> None:
+        os.environ["AMORTIZED_DATABASE_URL"] = ""
+        db_conn.settings = Settings()
+
+        with pytest.raises(RuntimeError, match="AMORTIZED_DATABASE_URL is not set"):
             await db_conn.init_db()

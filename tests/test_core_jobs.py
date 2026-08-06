@@ -1,10 +1,10 @@
 """Tests for core/jobs.py — no HTTP server required."""
 
-import os
 from pathlib import Path
 
 import asyncpg
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -16,11 +16,6 @@ from amortized.core.jobs import (
 )
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
-
-TEST_DATABASE_URL = os.environ.get(
-    "AMORTIZED_TEST_DATABASE_URL",
-    "postgresql://amortized:amortized@localhost:5432/amortized_test",
-)
 
 
 @pytest.fixture

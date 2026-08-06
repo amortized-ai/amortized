@@ -1,8 +1,15 @@
 """Shared test fixtures and markers."""
 
+import os
+
 import pytest
 
 import amortized.db.connection as db_conn_mod
+
+TEST_DATABASE_URL = os.environ.get(
+    "AMORTIZED_TEST_DATABASE_URL",
+    "postgresql://amortized:amortized@localhost:5432/amortized_test",
+)
 
 
 @pytest.fixture(autouse=True)
