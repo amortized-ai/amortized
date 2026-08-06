@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
 
 logger = logging.getLogger("amortized.jobs")
+
+ArtifactResult = tuple[dict[str, Any], list[str]]
 
 
 async def set_mlflow_run_tag(mlflow_run_id: str, key: str, value: str) -> None:
@@ -53,14 +56,16 @@ async def fetch_document_chunks(document_id: str) -> list[str]:
 async def resolve_parent_artifacts(
     job: dict[str, Any],
     config: dict[str, Any],
-    s3_downloads: list,
-) -> dict[str, Any]:
-    """Resolve parent job artifacts and inject into config for chaining."""
-    from amortized.backends import S3Download
+) -> ArtifactResult:
+    """Resolve parent job artifacts and inject into config for chaining.
 
+    Returns (config, pre_commands) where pre_commands are shell strings that
+    download artifacts via ``mlflow.artifacts.download_artifacts()``.
+    The caller must place pre_commands into ``JobBuildResult.pre_commands``.
+    """
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
     if not parent_job_id:
-        return config
+        return config, []
 
     from amortized.db.connection import _get_shared_db
     from amortized.db.repository import Repository
@@ -71,47 +76,33 @@ async def resolve_parent_artifacts(
 
     if not parent:
         logger.warning("Parent job %s not found", parent_job_id)
-        return config
+        return config, []
 
     parent_run_id = parent.get("mlflow_run_id", "")
     if not parent_run_id:
         logger.warning("Parent job %s has no mlflow_run_id", parent_job_id)
-        return config
+        return config, []
 
-    tracking_uri = config_mod.settings.mlflow_tracking_uri
-    if not tracking_uri:
-        return config
-
-    try:
-        client = MLflowClient(tracking_uri)
-        run = await client.get_run(parent_run_id)
-        artifact_uri: str = run["info"]["artifact_uri"]
-    except Exception:
-        logger.warning(
-            "Could not resolve artifact URI for run %s", parent_run_id, exc_info=True
-        )
-        return config
-
+    pre_commands: list[str] = []
     config = dict(config)
     from amortized.models import JobType
 
     if job["type"] == JobType.training.value and parent["type"] in ("sdg", "upload"):
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
-            s3_dir = f"{artifact_uri}/generated_data/"
             local_dir = "/amortized/work/data"
-            s3_downloads.append(
-                S3Download(
-                    s3_uri=s3_dir,
-                    local_path=local_dir,
-                    is_directory=True,
-                )
+            pre_cmd = (
+                f"mlflow artifacts download"
+                f" -r {shlex.quote(parent_run_id)}"
+                f" -a generated_data"
+                f" -d {shlex.quote(local_dir)}"
             )
-            config["data_path"] = local_dir
+            pre_commands.append(pre_cmd)
+            config["data_path"] = f"{local_dir}/generated_data"
             logger.info(
-                "Injected SDG data from MLflow run %s: %s",
+                "Will download artifacts from MLflow run %s to %s",
                 parent_run_id,
-                s3_dir,
+                local_dir,
             )
 
-    return config
+    return config, pre_commands

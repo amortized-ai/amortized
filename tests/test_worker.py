@@ -148,7 +148,7 @@ class TestCancelRunningJob:
 
 class TestTrainingHubConfig:
     def test_thub_config_yaml_sft(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "sft",
@@ -172,7 +172,7 @@ class TestTrainingHubConfig:
         assert "micro_batch_size" not in parsed
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "gepa",
@@ -185,7 +185,7 @@ class TestTrainingHubConfig:
         assert "ckpt_output_dir" not in parsed
 
     def test_thub_config_skips_keys(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         config = {
             "algorithm": "sft",
@@ -201,7 +201,7 @@ class TestTrainingHubConfig:
         assert "qlora" not in parsed
 
     def test_thub_config_handles_any_algorithm(self) -> None:
-        from amortized.worker import _training_hub_config_yaml
+        from amortized.jobs.training import _training_hub_config_yaml
 
         algos = ("sft", "lora_sft", "osft", "grpo", "lora_grpo", "gepa", "dpo", "kto")
         for algo in algos:
@@ -215,7 +215,6 @@ class TestTrainingHubConfig:
 class TestResolveParentArtifacts:
     @pytest.mark.asyncio
     async def test_upload_parent_chains_data_path(self) -> None:
-        from amortized.backends import S3Download
         from amortized.worker import _resolve_parent_artifacts
 
         parent_job = {
@@ -233,26 +232,114 @@ class TestResolveParentArtifacts:
             "algorithm": "sft",
             "model_name_or_path": "test/model",
         }
-        s3_downloads: list[S3Download] = []
 
         mock_repo = AsyncMock()
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
-        mock_mlflow_client = AsyncMock()
-        mock_mlflow_client.get_run = AsyncMock(return_value={
-            "info": {"artifact_uri": "s3://bucket/mlflow/abc"},
-        })
-
         with (
             patch("amortized.db.connection._get_shared_db", new_callable=AsyncMock),
             patch("amortized.db.repository.Repository", return_value=mock_repo),
-            patch("amortized.jobs.common.MLflowClient", return_value=mock_mlflow_client),
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):
             mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
-            result = await _resolve_parent_artifacts(training_job, config, s3_downloads)
+            result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
 
-        assert result["data_path"] == "/amortized/work/data"
-        assert len(s3_downloads) == 1
-        assert s3_downloads[0].s3_uri == "s3://bucket/mlflow/abc/generated_data/"
-        assert s3_downloads[0].local_path == "/amortized/work/data"
+        assert result_config["data_path"] == "/amortized/work/data/generated_data"
+        assert len(pre_commands) == 1
+        assert pre_commands[0] == (
+            "mlflow artifacts download -r mlflow-run-abc -a generated_data -d /amortized/work/data"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_parent_returns_unchanged(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        config: dict[str, object] = {"algorithm": "sft"}
+        job: dict[str, object] = {"id": "j1", "type": "training"}
+        result_config, pre_commands = await _resolve_parent_artifacts(job, config)
+        assert result_config == config
+        assert pre_commands == []
+
+
+class TestCommandWrapping:
+    def test_no_pre_post_passes_through(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        assert _wrap_command(cmd, [], []) == cmd
+
+    def test_pre_commands_only(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = _wrap_command(cmd, ["mlflow artifacts download -r abc"], [])
+        assert result[0:2] == ["sh", "-c"]
+        assert "mlflow artifacts download -r abc && thub" in result[2]
+
+    def test_post_commands_only(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = _wrap_command(cmd, [], ["python3 -c 'upload()'"])
+        assert result[0:2] == ["sh", "-c"]
+        assert "thub" in result[2]
+        assert "{ python3 -c 'upload()' ; true; }" in result[2]
+
+    def test_pre_and_post(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = _wrap_command(
+            cmd,
+            ["mlflow artifacts download -r abc"],
+            ["python3 -c 'upload()'"],
+        )
+        shell_cmd = result[2]
+        pre_idx = shell_cmd.index("mlflow artifacts download")
+        main_idx = shell_cmd.index("thub")
+        post_idx = shell_cmd.index("upload()")
+        assert pre_idx < main_idx < post_idx
+
+    def test_existing_sh_c_not_double_wrapped(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["sh", "-c", "data-designer create && upload.py"]
+        result = _wrap_command(cmd, ["mlflow artifacts download -r abc"], [])
+        shell_cmd = result[2]
+        assert "data-designer create && upload.py" in shell_cmd
+        assert shell_cmd.count("sh -c") == 0
+
+    def test_post_commands_dont_fail_job(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "train"]
+        result = _wrap_command(cmd, [], ["false"])
+        assert "; true; }" in result[2]
+
+
+class TestUploadBuilder:
+    @pytest.mark.asyncio
+    async def test_build_generates_pre_command(self) -> None:
+        from amortized.jobs.upload import build
+
+        job = {"id": "doc-1", "type": "upload"}
+        config = {
+            "mlflow_upload_run_id": "abc123",
+            "artifact_path": "source",
+            "filename": "test.pdf",
+        }
+        result = await build(job, config, {})
+        assert len(result.pre_commands) == 1
+        assert "mlflow artifacts download" in result.pre_commands[0]
+        assert "abc123" in result.pre_commands[0]
+        assert "-a source" in result.pre_commands[0]
+
+    @pytest.mark.asyncio
+    async def test_build_missing_run_id_raises(self) -> None:
+        from amortized.jobs.base import JobBuildError
+        from amortized.jobs.upload import build
+
+        job = {"id": "doc-1", "type": "upload"}
+        config = {"filename": "test.pdf"}
+        with pytest.raises(JobBuildError, match="mlflow_upload_run_id"):
+            await build(job, config, {})

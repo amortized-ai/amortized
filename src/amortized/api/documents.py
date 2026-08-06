@@ -126,10 +126,8 @@ async def convert_document(
     run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
     await client.upload_artifact(run_id, f"source/{filename}", file_bytes)
 
-    run = await client.get_run(run_id)
-    artifact_uri = run["info"]["artifact_uri"]
     config_dict["mlflow_upload_run_id"] = run_id
-    config_dict["s3_uri"] = f"{artifact_uri}/source/{filename}"
+    config_dict["artifact_path"] = "source"
 
     repo = Repository(db)
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)
@@ -186,10 +184,8 @@ async def convert_document_url(
     run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
     await client.upload_artifact(run_id, f"source/{filename}", source_bytes)
 
-    run = await client.get_run(run_id)
-    artifact_uri = run["info"]["artifact_uri"]
     config_dict["mlflow_upload_run_id"] = run_id
-    config_dict["s3_uri"] = f"{artifact_uri}/source/{filename}"
+    config_dict["artifact_path"] = "source"
 
     repo = Repository(db)
     job = await create_job(repo, job_type=JobType.upload, config=config_dict)

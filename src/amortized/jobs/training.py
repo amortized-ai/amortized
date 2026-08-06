@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import Resources, S3Download
+from amortized.backends import Resources
 from amortized.core.mlflow_client import MLflowClient
 from amortized.jobs.base import JobBuildResult
 
@@ -81,30 +81,10 @@ async def build(
     job: dict[str, Any],
     config: dict[str, Any],
     config_files: dict[str, str],
-    s3_downloads: list[S3Download],
 ) -> JobBuildResult:
-    env: dict[str, str] = {}
-
-    if config_mod.settings.mlflow_tracking_uri:
-        config.setdefault("report_to", "mlflow")
-        env["HF_MLFLOW_LOG_ARTIFACTS"] = "true"
-
     algo_aliases = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
     algorithm = config.get("algorithm", "sft")
     algorithm = algo_aliases.get(algorithm, algorithm)
-
-    data_path = config.get("data_path", config.get("dataset", ""))
-    if data_path.startswith("s3://"):
-        is_dir = data_path.endswith("/")
-        if is_dir:
-            local_path = "/amortized/work/data"
-        else:
-            local_name = data_path.split("/")[-1]
-            local_path = f"/amortized/work/{local_name}"
-        s3_downloads.append(
-            S3Download(s3_uri=data_path, local_path=local_path, is_directory=is_dir)
-        )
-        config = {**config, "data_path": local_path}
 
     config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
     thub_subcommand = algorithm.replace("_", "-")
@@ -113,8 +93,6 @@ async def build(
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
-        s3_downloads=s3_downloads,
-        env=env,
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=IMAGE,
         resolved_config=dict(config),

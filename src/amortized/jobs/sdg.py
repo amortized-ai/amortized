@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import Resources, S3Download
+from amortized.backends import Resources
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
@@ -43,7 +43,6 @@ async def build(
     job: dict[str, Any],
     config: dict[str, Any],
     config_files: dict[str, str],
-    s3_downloads: list[S3Download],
 ) -> JobBuildResult:
     import yaml
 
@@ -143,7 +142,6 @@ async def build(
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
-        s3_downloads=s3_downloads,
         env=env,
         resources=Resources(gpus=0),
         image=IMAGE,
