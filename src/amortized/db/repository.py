@@ -138,12 +138,16 @@ class Repository:
 
 
 def _row_to_job(row: Any) -> dict[str, Any]:
+    from datetime import datetime
+
     d = dict(row)
     d["config"] = json.loads(d["config"]) if isinstance(d["config"], str) else d["config"]
     if d.get("error") in ("", "None"):
         d["error"] = None
-    if d.get("started_at") == "":
-        d["started_at"] = None
-    if d.get("completed_at") == "":
-        d["completed_at"] = None
+    for ts_field in ("created_at", "started_at", "completed_at"):
+        val = d.get(ts_field)
+        if isinstance(val, datetime):
+            d[ts_field] = val.isoformat()
+        elif val == "":
+            d[ts_field] = None
     return d
