@@ -114,10 +114,20 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self) -> dict[str, Any] | None:
-        row = await self.conn.fetchrow(
-            "SELECT * FROM jobs WHERE status = $1 ORDER BY created_at ASC LIMIT 1",
-            JobStatus.queued.value,
-        )
+        async with self.conn.transaction():
+            row = await self.conn.fetchrow(
+                """UPDATE jobs SET status = $1
+                   WHERE id = (
+                       SELECT id FROM jobs
+                       WHERE status = $2
+                       ORDER BY created_at ASC
+                       LIMIT 1
+                       FOR UPDATE SKIP LOCKED
+                   )
+                   RETURNING *""",
+                JobStatus.provisioning.value,
+                JobStatus.queued.value,
+            )
         if row is None:
             return None
         return _row_to_job(row)

@@ -217,8 +217,7 @@ migrate: ## Run alembic migrations against the shared PostgreSQL
 	@$(KUBECTL) run alembic-migrate --rm -i --restart=Never \
 		--image=amortized-server:$(IMAGE_TAG) \
 		--namespace=amortized \
-		--overrides='{"spec":{"containers":[{"name":"migrate","image":"amortized-server:$(IMAGE_TAG)","command":["sh","-c","cd /app && alembic upgrade head"],"envFrom":[{"configMapRef":{"name":"amortized-config"}}]}]}}' \
-		|| echo "  Warning: migration job failed."
+		--overrides='{"spec":{"containers":[{"name":"migrate","image":"amortized-server:$(IMAGE_TAG)","command":["sh","-c","cd /app && alembic upgrade head"],"envFrom":[{"configMapRef":{"name":"amortized-config"}}]}]}}'
 	@echo "Migrations complete."
 
 # ──────────────────────────────────────────────

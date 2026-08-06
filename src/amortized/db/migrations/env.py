@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from alembic import context
 from sqlalchemy import pool
@@ -10,7 +11,7 @@ DATABASE_URL = os.environ.get(
     "postgresql://amortized:amortized@localhost:5432/amortized",
 )
 
-ASYNC_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+ASYNC_URL = re.sub(r"^postgresql(\+\w+)?://", "postgresql+asyncpg://", DATABASE_URL)
 
 target_metadata = None
 
@@ -37,4 +38,12 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        loop.create_task(run_migrations_online())
+    else:
+        asyncio.run(run_migrations_online())

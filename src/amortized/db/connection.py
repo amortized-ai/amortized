@@ -32,6 +32,10 @@ async def get_db() -> AsyncIterator[asyncpg.Connection]:
 
 async def init_db() -> None:
     global _pool
+    if not settings.database_url:
+        raise RuntimeError(
+            "AMORTIZED_DATABASE_URL is not set — configure it in the environment or configmap"
+        )
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
@@ -44,7 +48,7 @@ async def init_db() -> None:
             )
             logger.info("Database pool created (%s)", settings.database_url.split("@")[-1])
             return
-        except (OSError, asyncpg.PostgresError) as exc:
+        except (OSError, asyncpg.InterfaceError) as exc:
             last_error = exc
             delay = _BASE_DELAY * (2**attempt)
             logger.warning(
@@ -55,6 +59,8 @@ async def init_db() -> None:
                 exc,
             )
             await asyncio.sleep(delay)
+        except asyncpg.PostgresError as exc:
+            raise RuntimeError(f"Database configuration error: {exc}") from exc
     raise RuntimeError(
         f"Failed to connect to database after {_MAX_RETRIES} attempts"
     ) from last_error
@@ -67,7 +73,8 @@ async def check_db_health() -> bool:
         async with _pool.acquire(timeout=2.0) as conn:
             await conn.fetchval("SELECT 1")
         return True
-    except Exception:
+    except (OSError, asyncpg.InterfaceError, asyncpg.PostgresError):
+        logger.warning("Database health check failed", exc_info=True)
         return False
 
 

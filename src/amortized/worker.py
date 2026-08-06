@@ -410,13 +410,18 @@ async def cleanup_orphaned_jobs() -> None:
         if alive:
             logger.info("Re-adopted running job %s", job_id)
         else:
-            await _update_job(
-                job_id,
-                status=JobStatus.failed.value,
-                completed_at=now,
-                error="Orphaned job — process no longer running",
-            )
-            logger.warning("Marked orphaned job %s as failed", job_id)
+            async with get_pool().acquire() as conn:
+                result = await conn.execute(
+                    """UPDATE jobs SET status = $1, completed_at = $2,
+                       error = $3 WHERE id = $4 AND status = $5""",
+                    JobStatus.failed.value,
+                    now,
+                    "Orphaned job — process no longer running",
+                    job_id,
+                    JobStatus.running.value,
+                )
+            if result == "UPDATE 1":
+                logger.warning("Marked orphaned job %s as failed", job_id)
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
