@@ -29,15 +29,7 @@ async def build(
 
     artifact_path = config.get("artifact_path", "source")
     input_dir = "/amortized/work/input"
-    pre_cmd = (
-        f'python3 -c "'
-        f"import mlflow; "
-        f"mlflow.artifacts.download_artifacts("
-        f"run_id='{run_id}', "
-        f"artifact_path='{artifact_path}', "
-        f"dst_path='{input_dir}')"
-        f'"'
-    )
+    pre_cmd = f"mlflow artifacts download -r {run_id} -a {artifact_path} -d {input_dir}"
 
     config_dict = {
         "input_path": f"{input_dir}/{artifact_path}/{filename}",

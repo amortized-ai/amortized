@@ -247,9 +247,10 @@ class TestResolveParentArtifacts:
 
         assert result_config["data_path"] == "/amortized/work/data/generated_data"
         assert len(pre_commands) == 1
-        assert "mlflow.artifacts.download_artifacts" in pre_commands[0]
-        assert "run_id='mlflow-run-abc'" in pre_commands[0]
-        assert "artifact_path='generated_data'" in pre_commands[0]
+        assert pre_commands[0] == (
+            "mlflow artifacts download -r mlflow-run-abc -a generated_data"
+            " -d /amortized/work/data"
+        )
 
     @pytest.mark.asyncio
     async def test_no_parent_returns_unchanged(self) -> None:

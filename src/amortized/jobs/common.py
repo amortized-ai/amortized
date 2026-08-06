@@ -91,13 +91,7 @@ async def resolve_parent_artifacts(
         if not existing or not existing.startswith("s3://"):
             local_dir = "/amortized/work/data"
             pre_cmd = (
-                f'python3 -c "'
-                f"import mlflow; "
-                f"mlflow.artifacts.download_artifacts("
-                f"run_id='{parent_run_id}', "
-                f"artifact_path='generated_data', "
-                f"dst_path='{local_dir}')"
-                f'"'
+                f"mlflow artifacts download -r {parent_run_id} -a generated_data -d {local_dir}"
             )
             pre_commands.append(pre_cmd)
             config["data_path"] = f"{local_dir}/generated_data"
