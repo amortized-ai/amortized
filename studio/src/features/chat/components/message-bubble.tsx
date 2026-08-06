@@ -14,6 +14,7 @@ import { extractJobInfo } from "../utils/parse-tool-result"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
+const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
@@ -59,7 +60,6 @@ export function MessageBubble({
 
   const jobSubmissions = useMemo(() => {
     if (isUser) return []
-    const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
     return message.toolResults
       .filter((t) => JOB_TOOL_NAMES.has(t.name))
       .map((t) => {
@@ -195,8 +195,9 @@ export function MessageBubble({
           </div>
         )}
 
-        {jobSubmissions.map((job) =>
-          !dismissedJobs.has(job.id) ? (
+        {jobSubmissions
+          .filter((job) => !dismissedJobs.has(job.id))
+          .map((job) => (
             <div key={job.id} className="mt-3">
               <JobMonitorCard
                 jobId={job.id}
@@ -204,8 +205,7 @@ export function MessageBubble({
                 onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
               />
             </div>
-          ) : null,
-        )}
+          ))}
 
         {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">
