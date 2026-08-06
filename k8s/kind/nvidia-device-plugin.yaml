@@ -34,7 +34,7 @@ spec:
             - name: FAIL_ON_INIT_ERROR
               value: "false"
             - name: NVIDIA_VISIBLE_DEVICES
-              value: "all"
+              value: "0,1,2,3,4,5"
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "compute,utility"
             - name: DEVICE_LIST_STRATEGY
