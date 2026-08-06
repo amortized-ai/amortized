@@ -149,6 +149,7 @@ export function DatasetTable({
       columns={columns}
       data={sorted}
       onRowClick={onSelectDataset}
+      storageKey="datasets-column-sizes"
       pagination={paginationState}
       onPaginationChange={(updater) => {
         const next = typeof updater === "function" ? updater(paginationState) : updater

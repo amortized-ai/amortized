@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useState, type ReactNode } from "react"
+import { useCallback, useState, type ReactNode } from "react"
 
 interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[]
@@ -41,6 +41,7 @@ interface DataTableProps<TData> {
   sorting?: SortingState
   onSortingChange?: OnChangeFn<SortingState>
   rowTestId?: (row: TData) => string
+  storageKey?: string
 }
 
 export function DataTable<TData>({
@@ -58,10 +59,30 @@ export function DataTable<TData>({
   sorting: controlledSorting,
   onSortingChange,
   rowTestId,
+  storageKey,
 }: DataTableProps<TData>) {
   const [internalSorting, setInternalSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+    if (!storageKey) return {}
+    try {
+      const stored = localStorage.getItem(storageKey)
+      return stored ? JSON.parse(stored) : {}
+    } catch { return {} }
+  })
+
+  const handleColumnSizingChange = useCallback<OnChangeFn<ColumnSizingState>>(
+    (updater) => {
+      setColumnSizing((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater
+        if (storageKey) {
+          try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch { /* ignore */ }
+        }
+        return next
+      })
+    },
+    [storageKey],
+  )
   const [internalPagination, setInternalPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
@@ -79,7 +100,7 @@ export function DataTable<TData>({
     state: { sorting, columnFilters, pagination, columnSizing },
     onSortingChange: onSortingChangeFn,
     onColumnFiltersChange: setColumnFilters,
-    onColumnSizingChange: setColumnSizing,
+    onColumnSizingChange: handleColumnSizingChange,
     onPaginationChange: onPaginationChangeFn,
     columnResizeMode: "onChange",
     enableColumnResizing: true,
