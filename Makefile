@@ -33,7 +33,7 @@ VERTEX_LOCATION ?= global
 
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
-        prompt deploy-shared deploy-all deploy-user \
+        prompt deploy-shared migrate deploy-all deploy-user \
         down-all down-user clean-images \
         cluster gpu ghcr-pull-secret \
         socat-setup destroy status
@@ -209,8 +209,17 @@ deploy-shared: ## Deploy shared services (MLflow, MinIO, PostgreSQL) into amorti
 	@echo "Waiting for MLflow..."
 	@$(KUBECTL) -n amortized rollout status deployment/mlflow --timeout=120s
 	@echo "Waiting for PostgreSQL..."
-	@$(KUBECTL) -n amortized rollout status deployment/postgres --timeout=120s
+	@$(KUBECTL) -n amortized rollout status statefulset/postgres --timeout=120s
 	@echo "Shared services deployed."
+
+migrate: ## Run alembic migrations against the shared PostgreSQL
+	@echo "Running migrations against shared PostgreSQL..."
+	@$(KUBECTL) run alembic-migrate --rm -i --restart=Never \
+		--image=amortized-server:$(IMAGE_TAG) \
+		--namespace=amortized \
+		--overrides='{"spec":{"containers":[{"name":"migrate","image":"amortized-server:$(IMAGE_TAG)","command":["sh","-c","cd /app && alembic upgrade head"],"envFrom":[{"configMapRef":{"name":"amortized-config"}}]}]}}' \
+		|| echo "  Warning: migration job failed."
+	@echo "Migrations complete."
 
 # ──────────────────────────────────────────────
 # Deploy per-user environment

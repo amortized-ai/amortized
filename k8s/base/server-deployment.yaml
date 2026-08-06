@@ -24,29 +24,22 @@ spec:
       securityContext:
         runAsNonRoot: true
       initContainers:
-        - name: migrate
-          image: ghcr.io/amortized-ai/amortized:latest
+        - name: wait-for-db
+          image: docker.io/library/postgres:16-alpine
           command: ["sh", "-c"]
           args:
             - |
-              cd /app &&
-              python -c "
-              import asyncio, asyncpg, os
-              async def check():
-                  conn = await asyncpg.connect(os.environ['AMORTIZED_DATABASE_URL'])
-                  has_jobs = await conn.fetchrow(\"SELECT 1 FROM information_schema.tables WHERE table_name='jobs'\")
-                  has_alembic = await conn.fetchrow(\"SELECT 1 FROM information_schema.tables WHERE table_name='alembic_version'\")
-                  await conn.close()
-                  return bool(has_jobs and not has_alembic)
-              if asyncio.run(check()): print('Stamping existing schema'); exit(0)
-              exit(1)
-              " 2>/dev/null && alembic stamp head;
-              alembic upgrade head
-          envFrom:
-            - configMapRef:
-                name: amortized-config
-            - secretRef:
-                name: amortized-s3
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+          env:
+            - name: PGHOST
+              value: "postgres.amortized.svc.cluster.local"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "amortized"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

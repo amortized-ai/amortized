@@ -43,6 +43,14 @@ jobs:
       - name: Lint
         run: ruff check src/ tests/
 
+      - name: Check migrations for unsafe operations
+        run: |
+          if grep -rEi 'DROP COLUMN|RENAME COLUMN|RENAME TABLE|ALTER COLUMN.*TYPE' \
+            src/amortized/db/migrations/versions/*.py; then
+            echo "::error::Unsafe migration detected — breaking schema changes must be split into two PRs"
+            exit 1
+          fi
+
       - name: Type check
         run: mypy src/
 
