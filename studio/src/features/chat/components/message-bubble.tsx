@@ -14,6 +14,7 @@ import { extractJobInfo } from "../utils/parse-tool-result"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
+const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
@@ -57,15 +58,18 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
-  const { jobId, jobType } = useMemo(() => {
-    if (isUser) return { jobId: null, jobType: "SDG" }
-    const tool = message.toolResults.find(t => t.name === "submit_recipe_job" || t.name === "create_job")
-    if (!tool?.result) return { jobId: null, jobType: "SDG" }
-    const info = extractJobInfo(tool.result)
-    return info.jobId ? { jobId: info.jobId, jobType: info.jobType } : { jobId: null, jobType: "SDG" }
+  const jobSubmissions = useMemo(() => {
+    if (isUser) return []
+    return message.toolResults
+      .filter((t) => JOB_TOOL_NAMES.has(t.name))
+      .map((t) => {
+        const info = extractJobInfo(t.result)
+        return info.jobId ? { id: info.jobId, type: info.jobType } : null
+      })
+      .filter((j): j is { id: string; type: string } => !!j)
   }, [isUser, message.toolResults])
 
-  const [monitorDismissed, setMonitorDismissed] = useState(false)
+  const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
@@ -191,15 +195,17 @@ export function MessageBubble({
           </div>
         )}
 
-        {!monitorDismissed && jobId && (
-          <div className="mt-3">
-            <JobMonitorCard
-              jobId={jobId}
-              jobType={jobType}
-              onDismiss={() => setMonitorDismissed(true)}
-            />
-          </div>
-        )}
+        {jobSubmissions
+          .filter((job) => !dismissedJobs.has(job.id))
+          .map((job) => (
+            <div key={job.id} className="mt-3">
+              <JobMonitorCard
+                jobId={job.id}
+                jobType={job.type}
+                onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
+              />
+            </div>
+          ))}
 
         {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">
