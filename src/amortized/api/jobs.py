@@ -5,6 +5,7 @@ from typing import Any
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -163,6 +164,12 @@ async def create_job(
 ) -> Job | JSONResponse:
     job_type = request.type
 
+    if job_type == JobType.sdg:
+        raise HTTPException(
+            status_code=400,
+            detail="Use create_sdg_job for SDG jobs",
+        )
+
     errors = _validate_config(job_type, request.config)
 
     if request.dry_run:
@@ -211,7 +218,7 @@ _COLUMN_TYPE_TO_CLASS = {
 
 
 def _simplify_sdg_errors(
-    exc: ValidationError,
+    exc: ValidationError | RequestValidationError,
     body: dict[str, Any],
 ) -> list[dict[str, str]]:
     """Filter Pydantic union errors to only the matching column type."""
@@ -237,8 +244,11 @@ def _simplify_sdg_errors(
         return simplified
 
     for err in exc.errors():
-        loc = err.get("loc", ())
-        if len(loc) >= 3 and loc[0] == "columns" and isinstance(loc[1], int):
+        loc = tuple(err.get("loc", ()))
+        if loc and loc[0] == "body":
+            loc = loc[1:]
+
+        if len(loc) >= 2 and loc[0] == "columns" and isinstance(loc[1], int):
             idx = loc[1]
             col = columns[idx] if idx < len(columns) else {}
             col_type = col.get("column_type", "")
@@ -255,7 +265,10 @@ def _simplify_sdg_errors(
 
     if not simplified:
         for err in exc.errors()[:5]:
-            path = ".".join(str(part) for part in err.get("loc", ()))
+            loc = tuple(err.get("loc", ()))
+            if loc and loc[0] == "body":
+                loc = loc[1:]
+            path = ".".join(str(part) for part in loc)
             simplified.append({"field": path, "error": err["msg"]})
 
     return simplified
@@ -263,24 +276,11 @@ def _simplify_sdg_errors(
 
 @router.post("/sdg", status_code=201, response_model=Job, operation_id="create_sdg_job")
 async def create_sdg_job(
+    request: SDGJobRequest,
     http_request: Request,
     db: aiosqlite.Connection = Depends(_get_db),
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
-    try:
-        body = await http_request.json()
-    except Exception:
-        raise HTTPException(status_code=422, detail="Request body must be a JSON object") from None
-
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=422, detail="Request body must be a JSON object")
-
-    try:
-        request = SDGJobRequest(**body)
-    except ValidationError as exc:
-        errors = _simplify_sdg_errors(exc, body)
-        raise HTTPException(status_code=422, detail=errors) from exc
-
     config = request.model_dump(exclude_none=True)
 
     mode = config.pop("mode", "create")

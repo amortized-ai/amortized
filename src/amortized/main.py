@@ -178,9 +178,34 @@ async def http_exception_handler(_request: Request, exc: StarletteHTTPException)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
-    _request: Request,
+    request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    if request.url.path == "/api/v1/jobs/sdg":
+        from amortized.api.jobs import _simplify_sdg_errors
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "code": "validation_error",
+                    "message": "Request body must be a JSON object",
+                    "details": [],
+                },
+            )
+        errors = _simplify_sdg_errors(exc, body)
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "validation_error",
+                "message": str(errors),
+                "details": errors,
+            },
+        )
     return JSONResponse(
         status_code=422,
         content={
