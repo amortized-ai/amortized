@@ -33,7 +33,7 @@ VERTEX_LOCATION ?= global
 .PHONY: help up build build-server build-studio pull-images \
         load load-server load-studio load-deps \
         prompt deploy-shared deploy-all deploy-user \
-        down-all down-user \
+        down-all down-user clean-images \
         cluster gpu ghcr-pull-secret \
         socat-setup destroy status
 
@@ -97,10 +97,15 @@ gpu: ## Install NVIDIA runtime in worker + deploy device plugin
 build: build-server build-studio pull-images ## Build all images
 
 build-server: ## Build amortized server image
+	@echo "Removing old amortized-server images from Docker..."
+	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^amortized-server:kind-' | xargs -r docker rmi 2>/dev/null || true
 	@echo "Building amortized-server:$(IMAGE_TAG)..."
 	docker build -t amortized-server:$(IMAGE_TAG) -f Dockerfile .
 
 build-studio: ## Build studio image
+	@echo "Removing old amortized-studio images from Docker..."
+	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^amortized-studio:kind-' | xargs -r docker rmi 2>/dev/null || true
+	@docker images --format '{{.Repository}}:{{.Tag}}' | grep '^studio:kind-' | xargs -r docker rmi 2>/dev/null || true
 	@echo "Building amortized-studio:$(IMAGE_TAG)..."
 	docker build -t amortized-studio:$(IMAGE_TAG) -f $(STUDIO_DIR)/Dockerfile.kind $(STUDIO_DIR)
 
@@ -291,10 +296,37 @@ down-all: ## Tear down all user environments (keeps shared services)
 	@echo "All user environments removed. Shared services untouched."
 
 # ──────────────────────────────────────────────
+# Image cleanup
+# ──────────────────────────────────────────────
+
+clean-images: ## Remove old amortized images from kind nodes and reclaim disk
+	@echo "Cleaning old images from kind nodes..."
+	@for node in $(CLUSTER_NAME)-control-plane $(CLUSTER_NAME)-worker; do \
+		echo "  Cleaning $$node..."; \
+		IN_USE=$$(docker exec $$node crictl ps 2>/dev/null | awk 'NR>1 {print $$2}' | sort -u); \
+		ALL=$$(docker exec $$node crictl images 2>/dev/null | \
+			grep -E 'amortized-server|amortized-studio|library/studio' | \
+			awk '{print $$3, $$1":"$$2}'); \
+		echo "$$ALL" | while read id ref; do \
+			KEEP=0; \
+			for used in $$IN_USE; do \
+				case "$$used" in "$$id"*) KEEP=1; break;; esac; \
+			done; \
+			if [ "$$KEEP" = "0" ] && [ -n "$$ref" ]; then \
+				docker exec $$node ctr -n k8s.io images rm "$$ref" 2>/dev/null || true; \
+			fi; \
+		done; \
+		docker exec $$node sh -c "ctr -n k8s.io content prune references" 2>/dev/null || true; \
+	done
+	@echo "Pruning Docker build cache..."
+	@docker builder prune -f --filter 'until=24h' 2>/dev/null || true
+	@echo "Image cleanup complete."
+
+# ──────────────────────────────────────────────
 # Refresh (rebuild + redeploy)
 # ──────────────────────────────────────────────
 
-refresh-user: build-server build-studio load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
+refresh-user: build-server build-studio clean-images load-server load-studio ## Rebuild images and redeploy a user (USER=<name>)
 	@if [ -z "$(USER)" ]; then echo "Usage: make refresh-user USER=<username>"; exit 1; fi
 	$(MAKE) deploy-user USER=$(USER)
 	@echo "$(USER) refreshed."
