@@ -1,6 +1,7 @@
 """Tests for the background worker job execution lifecycle."""
 
 import os
+import shlex
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -242,12 +243,86 @@ class TestResolveParentArtifacts:
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):
             mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
-            result_config, pre_commands = await _resolve_parent_artifacts(
-                training_job, config
-            )
+            result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
 
-        assert result_config["data_path"] == "/amortized/work/data"
+        assert result_config["data_path"] == "/amortized/work/data/generated_data"
         assert len(pre_commands) == 1
         assert "mlflow.artifacts.download_artifacts" in pre_commands[0]
         assert "run_id='mlflow-run-abc'" in pre_commands[0]
         assert "artifact_path='generated_data'" in pre_commands[0]
+
+    @pytest.mark.asyncio
+    async def test_no_parent_returns_unchanged(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        config: dict[str, object] = {"algorithm": "sft"}
+        job: dict[str, object] = {"id": "j1", "type": "training"}
+        result_config, pre_commands = await _resolve_parent_artifacts(job, config)
+        assert result_config == config
+        assert pre_commands == []
+
+
+class TestCommandWrapping:
+    def _wrap(
+        self,
+        command: list[str],
+        pre_commands: list[str] | None = None,
+        post_commands: list[str] | None = None,
+    ) -> list[str]:
+        pre = pre_commands or []
+        post = post_commands or []
+        final = command
+        if pre or post:
+            if command[:2] == ["sh", "-c"] and len(command) == 3:
+                main_cmd = command[2]
+            else:
+                main_cmd = shlex.join(command)
+            pre_chain = " && ".join([*pre, main_cmd])
+            if post:
+                post_chain = " ; ".join(post)
+                final = ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
+            else:
+                final = ["sh", "-c", pre_chain]
+        return final
+
+    def test_no_pre_post_passes_through(self) -> None:
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        assert self._wrap(cmd) == cmd
+
+    def test_pre_commands_only(self) -> None:
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = self._wrap(cmd, pre_commands=["python3 -c 'download()'"])
+        assert result[0:2] == ["sh", "-c"]
+        assert "python3 -c 'download()' && thub" in result[2]
+
+    def test_post_commands_only(self) -> None:
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = self._wrap(cmd, post_commands=["python3 -c 'upload()'"])
+        assert result[0:2] == ["sh", "-c"]
+        assert "thub" in result[2]
+        assert "{ python3 -c 'upload()' ; true; }" in result[2]
+
+    def test_pre_and_post(self) -> None:
+        cmd = ["thub", "lora-sft", "--config", "/amortized/config.yaml"]
+        result = self._wrap(
+            cmd,
+            pre_commands=["python3 -c 'download()'"],
+            post_commands=["python3 -c 'upload()'"],
+        )
+        shell_cmd = result[2]
+        pre_idx = shell_cmd.index("download()")
+        main_idx = shell_cmd.index("thub")
+        post_idx = shell_cmd.index("upload()")
+        assert pre_idx < main_idx < post_idx
+
+    def test_existing_sh_c_not_double_wrapped(self) -> None:
+        cmd = ["sh", "-c", "data-designer create && upload.py"]
+        result = self._wrap(cmd, pre_commands=["python3 -c 'download()'"])
+        shell_cmd = result[2]
+        assert "data-designer create && upload.py" in shell_cmd
+        assert shell_cmd.count("sh -c") == 0
+
+    def test_post_commands_dont_fail_job(self) -> None:
+        cmd = ["thub", "train"]
+        result = self._wrap(cmd, post_commands=["false"])
+        assert "; true; }" in result[2]

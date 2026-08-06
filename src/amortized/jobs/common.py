@@ -100,7 +100,7 @@ async def resolve_parent_artifacts(
                 f'"'
             )
             pre_commands.append(pre_cmd)
-            config["data_path"] = local_dir
+            config["data_path"] = f"{local_dir}/generated_data"
             logger.info(
                 "Will download artifacts from MLflow run %s to %s",
                 parent_run_id,

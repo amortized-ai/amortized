@@ -234,14 +234,21 @@ async def _run_job(job: dict[str, Any]) -> None:
     await _update_job(job_id, config=json.dumps(result.resolved_config))
 
     # --- Wrap command with pre/post commands ---
+    # Pre-commands use && (fail fast — no point running the job without data).
+    # Post-commands use ; (best-effort — don't fail a completed job because
+    # MLflow is temporarily unreachable).
     final_command = result.command
     if all_pre_commands or result.post_commands:
         if result.command[:2] == ["sh", "-c"] and len(result.command) == 3:
             main_cmd = result.command[2]
         else:
             main_cmd = shlex.join(result.command)
-        parts = [*all_pre_commands, main_cmd, *result.post_commands]
-        final_command = ["sh", "-c", " && ".join(parts)]
+        pre_chain = " && ".join([*all_pre_commands, main_cmd])
+        if result.post_commands:
+            post_chain = " ; ".join(result.post_commands)
+            final_command = ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
+        else:
+            final_command = ["sh", "-c", pre_chain]
 
     # --- Submit ---
     spec = JobSpec(
