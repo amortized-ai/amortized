@@ -9,9 +9,11 @@ import asyncpg
 from amortized.models import JobStatus, JobType
 
 
-def _parse_ts(value: str | None) -> datetime | None:
-    if not value:
+def _parse_ts(value: str | datetime | None) -> datetime | None:
+    if value is None or value == "":
         return None
+    if isinstance(value, datetime):
+        return value
     return datetime.fromisoformat(value)
 
 
@@ -25,7 +27,7 @@ class Repository:
         job_id: str,
         job_type: JobType,
         config: dict[str, Any],
-        created_at: str,
+        created_at: str | datetime,
         recipe: str = "",
         parent_job_id: str = "",
         user_id: str = "",
@@ -37,7 +39,7 @@ class Repository:
             job_id,
             job_type.value,
             JobStatus.queued.value,
-            json.dumps(config),
+            config,
             recipe,
             parent_job_id,
             user_id,

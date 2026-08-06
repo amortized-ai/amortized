@@ -150,7 +150,7 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
 async def _run_job(job: dict[str, Any]) -> None:
     job_id = job["id"]
     job_type = job["type"]
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
     config = dict(job["config"])
     config.pop("_secrets", None)
 
@@ -182,7 +182,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
-            completed_at=datetime.now(UTC).isoformat(),
+            completed_at=datetime.now(UTC),
             error=f"Unknown compute backend: {backend_name!r}",
         )
         return
@@ -195,7 +195,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             await _update_job(
                 job_id,
                 status=JobStatus.failed.value,
-                completed_at=datetime.now(UTC).isoformat(),
+                completed_at=datetime.now(UTC),
                 error=f"Job '{job_id}' cannot run on backend '{backend_name}': {exc}",
             )
             return
@@ -231,7 +231,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
-            completed_at=datetime.now(UTC).isoformat(),
+            completed_at=datetime.now(UTC),
             error=f"Unsupported job type: {job_type!r}",
         )
         return
@@ -243,7 +243,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
-            completed_at=datetime.now(UTC).isoformat(),
+            completed_at=datetime.now(UTC),
             error=str(exc),
         )
         return
@@ -255,7 +255,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     all_pre_commands = parent_pre_commands + result.pre_commands
 
     # Persist resolved config
-    await _update_job(job_id, config=json.dumps(result.resolved_config))
+    await _update_job(job_id, config=result.resolved_config)
 
     # --- Wrap command with pre/post commands ---
     final_command = _wrap_command(result.command, all_pre_commands, result.post_commands)
@@ -301,7 +301,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 _fire_event(job_id, "running", job)
             await asyncio.sleep(poll_interval)
 
-        completed_at = datetime.now(UTC).isoformat()
+        completed_at = datetime.now(UTC)
 
         if handle.secret_names and hasattr(backend, "cleanup_secrets"):
             try:
@@ -371,7 +371,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
-            completed_at=datetime.now(UTC).isoformat(),
+            completed_at=datetime.now(UTC),
             error=error_text,
             backend_handle=fallback_handle,
         )
@@ -391,7 +391,7 @@ async def cleanup_orphaned_jobs() -> None:
         repo = Repository(conn)
         running_jobs = await repo.list_jobs(status=JobStatus.running)
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
 
     for job in running_jobs:
         job_id = job["id"]
@@ -415,7 +415,7 @@ async def cleanup_orphaned_jobs() -> None:
                     """UPDATE jobs SET status = $1, completed_at = $2,
                        error = $3 WHERE id = $4 AND status = $5""",
                     JobStatus.failed.value,
-                    datetime.fromisoformat(now),
+                    now,
                     "Orphaned job — process no longer running",
                     job_id,
                     JobStatus.running.value,

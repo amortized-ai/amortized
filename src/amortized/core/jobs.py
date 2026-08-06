@@ -31,7 +31,7 @@ async def create_job(
         parent_job_id = config.get("parent_job_id", "")
 
     job_id = str(uuid.uuid4())
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
 
     stored_config = dict(config)
     if "parent_job_id" in stored_config:
@@ -75,7 +75,7 @@ async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:
     if current_status == JobStatus.cancelled.value:
         return row
 
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
 
     if current_status == JobStatus.running.value:
         handle_json = row.get("backend_handle")
@@ -132,11 +132,13 @@ class InvalidJobStateError(Exception):
     pass
 
 
-_TERMINAL_STATUSES = frozenset({
-    JobStatus.succeeded.value,
-    JobStatus.failed.value,
-    JobStatus.cancelled.value,
-})
+_TERMINAL_STATUSES = frozenset(
+    {
+        JobStatus.succeeded.value,
+        JobStatus.failed.value,
+        JobStatus.cancelled.value,
+    }
+)
 
 
 async def delete_job(repo: Repository, job_id: str) -> None:
