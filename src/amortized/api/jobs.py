@@ -37,6 +37,7 @@ from amortized.models import (
     JobRequest,
     JobStatus,
     JobType,
+    SDGJobRequest,
     TrainingJobConfig,
 )
 from amortized.worker import _resolve_mlflow_artifact_uri
@@ -45,14 +46,26 @@ logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+
 def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-_KNOWN_COLUMN_TYPES = frozenset({
-    "sampler", "llm-text", "llm-code", "llm-structured", "llm-judge",
-    "validation", "expression", "custom", "seed-dataset", "embedding", "image",
-})
+_KNOWN_COLUMN_TYPES = frozenset(
+    {
+        "sampler",
+        "llm-text",
+        "llm-code",
+        "llm-structured",
+        "llm-judge",
+        "validation",
+        "expression",
+        "custom",
+        "seed-dataset",
+        "embedding",
+        "image",
+    }
+)
 
 _LLM_COLUMN_TYPES = frozenset({"llm-text", "llm-code", "llm-structured", "llm-judge"})
 
@@ -175,6 +188,42 @@ async def create_job(
             config=request.config,
             recipe=request.recipe,
             parent_job_id=request.parent_job_id,
+            user_id=user_id,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _job_response(row)
+
+
+@router.post("/sdg", status_code=201, response_model=Job, operation_id="create_sdg_job")
+async def create_sdg_job(
+    request: SDGJobRequest,
+    http_request: Request,
+    db: aiosqlite.Connection = Depends(_get_db),
+) -> Job:
+    """Create a synthetic data generation job using Data Designer."""
+    config = request.model_dump(exclude_none=True)
+
+    mode = config.pop("mode", "create")
+    document_ids = config.pop("document_ids", [])
+    parent_job_id = config.pop("parent_job_id", "")
+    topic = config.get("topic", "")
+
+    config["document_ids"] = document_ids
+    if topic:
+        config["topic"] = topic
+    if mode != "create":
+        config["mode"] = mode
+
+    user_id = http_request.headers.get("X-Forwarded-User", "")
+
+    repo = Repository(db)
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.sdg,
+            config=config,
+            parent_job_id=parent_job_id,
             user_id=user_id,
         )
     except InvalidJobStateError as exc:
