@@ -5,11 +5,12 @@ import json
 import logging
 import os
 import re
+import shlex
 from datetime import UTC, datetime
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import BackendHandle, Capability, JobSpec, S3Download
+from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
@@ -21,7 +22,6 @@ from amortized.jobs.common import (
 from amortized.jobs.common import (
     set_mlflow_run_tag,
 )
-from amortized.jobs.training import _training_hub_config_yaml  # noqa: F401
 from amortized.models import JobStatus, JobType
 from amortized.watch import emit_job_event
 
@@ -44,8 +44,36 @@ async def _safe_emit(job_id: str, status: str, job: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Command wrapping
+# ---------------------------------------------------------------------------
+
+
+def _wrap_command(
+    command: list[str],
+    pre_commands: list[str],
+    post_commands: list[str],
+) -> list[str]:
+    """Wrap a command with pre/post commands using shell chaining.
+
+    Pre-commands use && (fail fast). Post-commands use ; (best-effort).
+    """
+    if not pre_commands and not post_commands:
+        return command
+    if command[:2] == ["sh", "-c"] and len(command) == 3:
+        main_cmd = command[2]
+    else:
+        main_cmd = shlex.join(command)
+    pre_chain = " && ".join([*pre_commands, main_cmd])
+    if post_commands:
+        post_chain = " ; ".join(post_commands)
+        return ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
+    return ["sh", "-c", pre_chain]
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 async def _get_repo() -> Repository:
     from amortized.db.connection import _get_shared_db
@@ -118,6 +146,7 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
 # ---------------------------------------------------------------------------
 # Job execution
 # ---------------------------------------------------------------------------
+
 
 async def _run_job(job: dict[str, Any]) -> None:
     job_id = job["id"]
@@ -195,8 +224,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     # --- Resolve parent artifacts ---
     config_files: dict[str, str] = {}
-    s3_downloads: list[S3Download] = []
-    config = await _resolve_parent_artifacts(job, config, s3_downloads)
+    config, parent_pre_commands = await _resolve_parent_artifacts(job, config)
 
     # --- Job-type-specific build ---
     builder = get_builder(job_type)
@@ -210,7 +238,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         return
 
     try:
-        result = await builder.build(job, config, config_files, s3_downloads)
+        result = await builder.build(job, config, config_files)
     except JobBuildError as exc:
         logger.error("Job %s: %s", job_id, exc)
         await _update_job(
@@ -224,18 +252,23 @@ async def _run_job(job: dict[str, Any]) -> None:
     # Merge builder env into spec_env
     spec_env.update(result.env)
 
+    # Merge parent artifact pre_commands with builder pre_commands
+    all_pre_commands = parent_pre_commands + result.pre_commands
+
     # Persist resolved config
     await _update_job(job_id, config=json.dumps(result.resolved_config))
+
+    # --- Wrap command with pre/post commands ---
+    final_command = _wrap_command(result.command, all_pre_commands, result.post_commands)
 
     # --- Submit ---
     spec = JobSpec(
         job_id=job_id,
-        command=result.command,
+        command=final_command,
         env=spec_env,
         work_dir=output_dir,
         image=result.image,
         config_files=result.config_files,
-        s3_downloads=result.s3_downloads,
         job_type=job_type,
         user_id=job.get("user_id", ""),
         resources=result.resources,
@@ -275,9 +308,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             try:
                 await backend.cleanup_secrets(handle)
             except Exception:
-                logger.warning(
-                    "Failed to clean up secrets for job %s", job_id, exc_info=True
-                )
+                logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
 
         # --- Completion handling ---
         if status.exit_code == 0:
@@ -304,7 +335,9 @@ async def _run_job(job: dict[str, Any]) -> None:
             )
             logger.info("Job %s was cancelled", job_id)
             _fire_event(
-                job_id, "cancelled", {**job, "error": "Job was cancelled"},
+                job_id,
+                "cancelled",
+                {**job, "error": "Job was cancelled"},
             )
         else:
             error_msg = status.error or (
@@ -321,10 +354,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             _fire_event(job_id, "failed", {**job, "error": error_msg})
 
     except Exception as exc:
-        error_text = (
-            f"Job '{job_id}' failed during submission"
-            f" to backend '{backend_name}': {exc}"
-        )
+        error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
         try:
             stderr_path = os.path.join(output_dir, "stderr.log")
             os.makedirs(output_dir, exist_ok=True)
@@ -353,6 +383,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
+
 
 async def cleanup_orphaned_jobs() -> None:
     repo = await _get_repo()

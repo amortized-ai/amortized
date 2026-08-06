@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
-from amortized.backends import Resources, S3Download
+from amortized.backends import Resources
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import set_mlflow_run_tag
 
@@ -16,11 +17,10 @@ async def build(
     job: dict[str, Any],
     config: dict[str, Any],
     config_files: dict[str, str],
-    s3_downloads: list[S3Download],
 ) -> JobBuildResult:
-    s3_uri = config.get("s3_uri")
-    if not s3_uri:
-        raise JobBuildError("s3_uri is required for upload jobs")
+    run_id = config.get("mlflow_upload_run_id")
+    if not run_id:
+        raise JobBuildError("mlflow_upload_run_id is required for upload jobs")
 
     filename = config.get("filename", "document")
     output_format = config.get("output_format", "md")
@@ -28,16 +28,17 @@ async def build(
     chunk_size = config.get("chunk_size", 2048)
     chunk_overlap = config.get("chunk_overlap", 200)
 
-    s3_downloads.append(
-        S3Download(
-            s3_uri=s3_uri,
-            local_path=f"/amortized/work/input/{filename}",
-            is_directory=False,
-        )
+    artifact_path = config.get("artifact_path", "source")
+    input_dir = "/amortized/work/input"
+    pre_cmd = (
+        f"mlflow artifacts download"
+        f" -r {shlex.quote(run_id)}"
+        f" -a {shlex.quote(artifact_path)}"
+        f" -d {shlex.quote(input_dir)}"
     )
 
     config_dict = {
-        "input_path": f"/amortized/work/input/{filename}",
+        "input_path": f"{input_dir}/{artifact_path}/{filename}",
         "filename": filename,
         "output_format": output_format,
         "chunker_type": chunker_type,
@@ -53,7 +54,7 @@ async def build(
     return JobBuildResult(
         command=["python3", "/app/process_document.py"],
         config_files=config_files,
-        s3_downloads=s3_downloads,
+        pre_commands=[pre_cmd],
         resources=Resources(gpus=0),
         image=image,
         resolved_config=config_dict,

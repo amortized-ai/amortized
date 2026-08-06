@@ -277,38 +277,7 @@ class KubernetesBackend:
             node_selector = {"nvidia.com/gpu.present": "true"}
             runtime_class_name = "nvidia"
 
-        init_security_context = V1SecurityContext(
-            allow_privilege_escalation=False,
-            run_as_non_root=False,
-        )
-
-        init_containers: list[Any] = []
-        for download in spec.s3_downloads:
-            s3_cmd = "aws s3 sync" if download.is_directory else "aws s3 cp"
-            init_containers.append(
-                V1Container(
-                    name=f"s3-download-{len(init_containers)}",
-                    image="docker.io/amazon/aws-cli:latest",
-                    command=[
-                        "sh",
-                        "-c",
-                        f"mkdir -p $(dirname {download.local_path}) && cd / && "
-                        f"{s3_cmd} {download.s3_uri} {download.local_path} "
-                        f"--endpoint-url $AWS_S3_ENDPOINT && "
-                        f"ls -la {download.local_path}",
-                    ],
-                    env_from=[V1EnvFromSource(secret_ref=V1SecretEnvSource(name="amortized-s3"))],
-                    volume_mounts=[V1VolumeMount(name="work", mount_path="/amortized/work")],
-                    security_context=init_security_context,
-                    resources=V1ResourceRequirements(
-                        requests={"cpu": "100m", "memory": "128Mi"},
-                        limits={"cpu": "500m", "memory": "512Mi"},
-                    ),
-                )
-            )
-
         return V1PodSpec(
-            init_containers=init_containers or None,
             containers=[container],
             volumes=volumes,
             restart_policy="Never",
