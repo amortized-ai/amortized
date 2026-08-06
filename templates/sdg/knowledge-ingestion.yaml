@@ -2,22 +2,13 @@ type: sdg
 description: Knowledge ingestion — generate QA training data from documents.
 
 config:
-  # Set num_records >= estimated chunk count. Each chunk needs at least one QA pair.
   num_records: 100
-
-  # Token-based chunking using cl100k_base (GPT tokenizer).
-  # 2048 tokens per chunk with 256-token overlap prevents boundary issues.
-  # The worker splits documents into chunk files before DD sees them.
-  seed_config:
-    source:
-      chunk_size: 2048
-      chunk_overlap: 256
-      tokenizer: cl100k_base
 
   model_configs:
     - alias: text
       model: gpt-4o-mini
-      provider: openai
+      provider: gateway
+      skip_health_check: true
       inference_parameters:
         temperature: 0.7
         max_parallel_requests: 32
@@ -27,37 +18,23 @@ config:
       name: difficulty
       sampler_type: category
       params:
-        values: [Basic, Intermediate, Advanced]
+        values:
+          - "Basic - Simple factual question, single concept"
+          - "Intermediate - Requires connecting multiple concepts or steps"
+          - "Advanced - Multi-step reasoning, edge cases, comparing approaches"
         weights: [0.35, 0.45, 0.20]
 
     - column_type: sampler
       name: question_type
       sampler_type: category
       params:
-        values: [Factual, Procedural, Troubleshooting, Comparison]
+        values:
+          - "Factual - Understanding what something is, why it works, or how components relate"
+          - "Procedural - Step-by-step question about accomplishing a specific task"
+          - "Troubleshooting - Diagnosing and resolving a specific error or unexpected behavior"
+          - "Comparison - Choosing between options, understanding trade-offs, or comparing configurations"
         weights: [0.25, 0.35, 0.25, 0.15]
 
-    # Topics must be section-level descriptions from the document, not abstract
-    # categories. Use get_document_sections to derive them. Weight by content
-    # density — longer sections get higher weights. Weights must sum to 1.0.
-    # Minimum weight per topic: 0.05 (even small sections need coverage).
-    # Example (MaaS doc): "Tier Management - Creating, editing, deleting tiers
-    #   via dashboard, configuring token rate limits and request rate limits"
-    # Bad: "access control"
-    - column_type: sampler
-      name: topic
-      sampler_type: category
-      params:
-        values:
-          - "[Section heading - key concepts covered in this section]"
-          - "[Section heading - key concepts covered in this section]"
-          - "[Section heading - key concepts covered in this section]"
-        weights: [0.34, 0.33, 0.33]
-
-    # The answerability constraint ("MUST be fully answerable using ONLY the
-    # provided context") reduced unanswerable questions from 21% to 0%.
-    # Place each variable on its own line — inline embedding reduces salience.
-    # {{ content }} is one chunk (~2048 tokens), not the full document.
     - column_type: llm-text
       name: question
       model_alias: text
@@ -71,22 +48,19 @@ config:
         Documentation context:
         {{ content }}
 
-        Topic: {{ topic }}
         Difficulty: {{ difficulty }}
         Question type: {{ question_type }}
 
-    # "answerable from the provided context" prevents disclaimer answers.
-    # Do NOT include "If the documentation does not cover the topic, say so."
     - column_type: llm-text
       name: answer
       model_alias: text
       system_prompt: >
         You are a knowledgeable documentation assistant for [DOMAIN].
-        Answer accurately based on the documentation context provided.
-        Include specific commands, YAML snippets, and step-by-step
-        instructions when relevant. Be concise but thorough.
-        The question is answerable from the provided context, so read it
-        carefully and answer from it.
+        Answer ONLY using information from the provided documentation
+        context. Do not add commands, procedures, or details that are
+        not explicitly present in the context. Be concise but thorough.
+        The question is answerable from the provided context, so read
+        it carefully and answer from it.
       prompt: >
         Documentation context:
         {{ content }}
@@ -94,8 +68,6 @@ config:
         Question: {{ question }}
 
   processors:
-    # This system prompt defines the trained model's behavior at inference.
-    # It must match what the deployment will use.
     - processor_type: schema_transform
       name: sft_format
       template:
