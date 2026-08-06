@@ -137,8 +137,15 @@ async def submit_recipe_job(
     config = flatten_recipe_to_config(recipe)
 
     from amortized.api.jobs import _validate_config
+    from amortized.models import JobRequest as _JobRequest
 
-    errors = _validate_config(job_type, config)
+    job_req = _JobRequest(
+        type=job_type,
+        config=config,
+        parent_job_id=request.parent_job_id,
+        dry_run=request.dry_run,
+    )
+    errors = await _validate_config(job_type, config, job_req, db)
 
     if request.dry_run:
         dry_resp = DryRunResponse(
