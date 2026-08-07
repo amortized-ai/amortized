@@ -23,6 +23,27 @@ spec:
       serviceAccountName: amortized-server
       securityContext:
         runAsNonRoot: true
+      initContainers:
+        - name: wait-for-db
+          image: docker.io/library/postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+          env:
+            - name: PGHOST
+              value: "postgres.amortized.svc.cluster.local"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "amortized"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: server
           image: ghcr.io/amortized-ai/amortized:latest

@@ -236,10 +236,14 @@ def _detect_gpu() -> dict[str, object]:
 
 @app.get("/api/v1/health", response_model=HealthResponse, operation_id="health")
 async def health() -> dict[str, object]:
+    from amortized.db import check_db_health
+
+    db_ok = await check_db_health()
     return {
-        "status": "ok",
+        "status": "ok" if db_ok else "degraded",
         "timestamp": datetime.now(UTC).isoformat(),
         "gpu": _detect_gpu(),
+        "db": "ok" if db_ok else "unreachable",
     }
 
 

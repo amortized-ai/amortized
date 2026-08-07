@@ -7,7 +7,7 @@ metadata:
     app: amortized
     component: server
 data:
-  AMORTIZED_DB_PATH: "/data/amortized.db"
+  AMORTIZED_DATABASE_URL: ""
   AMORTIZED_DATA_DIR: "/data"
   AMORTIZED_COMPUTE_BACKEND: "kubernetes"
   AMORTIZED_COMPUTE_NAMESPACE: "amortized-jobs"

@@ -1,5 +1,6 @@
 """Database layer for job persistence."""
 
+from amortized.db.connection import check_db_health as check_db_health
 from amortized.db.connection import close_db as close_db
 from amortized.db.connection import get_db as get_db
 from amortized.db.connection import init_db as init_db
