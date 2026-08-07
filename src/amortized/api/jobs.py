@@ -45,14 +45,26 @@ logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+
 def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-_KNOWN_COLUMN_TYPES = frozenset({
-    "sampler", "llm-text", "llm-code", "llm-structured", "llm-judge",
-    "validation", "expression", "custom", "seed-dataset", "embedding", "image",
-})
+_KNOWN_COLUMN_TYPES = frozenset(
+    {
+        "sampler",
+        "llm-text",
+        "llm-code",
+        "llm-structured",
+        "llm-judge",
+        "validation",
+        "expression",
+        "custom",
+        "seed-dataset",
+        "embedding",
+        "image",
+    }
+)
 
 _LLM_COLUMN_TYPES = frozenset({"llm-text", "llm-code", "llm-structured", "llm-judge"})
 
@@ -128,7 +140,7 @@ async def _validate_config(
     job_type: JobType,
     config: dict[str, Any],
     request: JobRequest,
-    db: aiosqlite.Connection,
+    db: asyncpg.Connection,
 ) -> list[str]:
     try:
         if job_type == JobType.training:
@@ -151,7 +163,7 @@ async def _validate_config(
 async def _validate_training_data(
     config: dict[str, Any],
     request: JobRequest,
-    db: aiosqlite.Connection,
+    db: asyncpg.Connection,
 ) -> list[str]:
     errors: list[str] = []
     parent_job_id = request.parent_job_id or config.get("parent_job_id", "")
@@ -168,9 +180,7 @@ async def _validate_training_data(
         repo = Repository(db)
         parent = await repo.get_job(parent_job_id)
         if parent is None:
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' not found"
-            )
+            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
         elif parent.get("status") != "succeeded":
             errors.append(
                 f"parent_job_id: job '{parent_job_id}' has status"
