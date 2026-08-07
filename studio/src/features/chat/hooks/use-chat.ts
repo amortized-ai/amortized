@@ -183,26 +183,32 @@ function extractSessionData(
 
 const _firedJobEvents = new Set<string>()
 
-function _jobFollowUpOptions(jobType: string, status: string, jobId: string) {
+function _jobFollowUpOptions(jobType: string, status: string, _jobId: string) {
+  const isTraining = jobType.toLowerCase().includes("training")
   if (status === "running") {
-    return [
-      { title: "View on Jobs page", description: "Check progress and logs" },
-      { title: "Set up training while waiting", description: "Configure the next step now" },
-      { title: "Continue chatting", description: "Ask me anything else" },
-    ]
+    return isTraining
+      ? [
+          { title: "View on Jobs page", description: "Check progress and logs" },
+          { title: "Check training metrics", description: "See loss curves and training progress" },
+          { title: "Continue chatting", description: "Ask me anything else" },
+        ]
+      : [
+          { title: "View on Jobs page", description: "Check progress and logs" },
+          { title: "Set up training while waiting", description: "Configure the next step now" },
+          { title: "Continue chatting", description: "Ask me anything else" },
+        ]
   }
   if (status === "succeeded") {
-    const isTraining = jobType.toLowerCase().includes("training")
     return isTraining
       ? [
           { title: "View model", description: "See the trained model in the registry" },
-          { title: "View job details", description: "Check training metrics and logs" },
+          { title: "Train with different settings", description: "Try different hyperparameters or data" },
           { title: "Start a new task", description: "Build another model or generate more data" },
         ]
       : [
           { title: "Preview generated data", description: "Browse the dataset samples" },
           { title: "Start training", description: "Fine-tune a model on this data" },
-          { title: "View job details", description: "Check job logs and output" },
+          { title: "Generate more samples", description: "Create additional synthetic data" },
         ]
   }
   return [
@@ -660,6 +666,12 @@ export function useChat() {
 
       const convId = currentConversationId ?? useChatStore.getState().currentConversationId
       if (!convId) return
+
+      const shortIdCheck = jobId.slice(0, 8)
+      const alreadyHandled = messagesRef.current.some(
+        (m) => m.role === "assistant" && m.content.includes(shortIdCheck) && m.content.includes(status),
+      )
+      if (alreadyHandled) return
 
       const shortId = jobId.slice(0, 8)
       const fallbackOptions = _jobFollowUpOptions(jobType, status, jobId)

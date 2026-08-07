@@ -78,6 +78,10 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const completeFired = useRef(false)
   const lastReportedStatus = useRef<string>("queued")
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => { onStatusChangeRef.current = onStatusChange }, [onStatusChange])
+  const onCompleteRef = useRef(onComplete)
+  useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
@@ -95,20 +99,20 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
       }
       if (job.status !== lastReportedStatus.current) {
         lastReportedStatus.current = job.status
-        onStatusChange?.(job.status)
+        onStatusChangeRef.current?.(job.status)
       }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
         if (!completeFired.current) {
           completeFired.current = true
-          onComplete?.(job.status)
+          onCompleteRef.current?.(job.status)
         }
       }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, onComplete, onStatusChange])
+  }, [jobId])
 
   // Elapsed timer — uses job's server-side start time so it survives tab switches
   useEffect(() => {
