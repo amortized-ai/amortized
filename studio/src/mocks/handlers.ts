@@ -135,10 +135,29 @@ const mockModelVersions: MlflowModelVersionsResponse = {
   ],
 }
 
+const mockDatasets = [
+  {
+    run_id: "run-sdg-001",
+    name: "ticket-classifier-data",
+    topic: "Support tickets",
+    source: "sdg",
+    samples: "200",
+    teacher_model: "gpt-4o-mini",
+    job_id: "job-002",
+    experiment_id: "exp-001",
+    created_at: 1717200000000,
+  },
+]
+
 export const handlers = [
   // Health
   http.get("*/api/v1/health", () => {
     return HttpResponse.json(mockHealth)
+  }),
+
+  // Datasets
+  http.get("*/api/v1/datasets", () => {
+    return HttpResponse.json(mockDatasets)
   }),
 
   // Config
