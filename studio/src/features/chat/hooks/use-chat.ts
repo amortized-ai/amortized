@@ -183,6 +183,35 @@ function extractSessionData(
 
 const _firedJobEvents = new Set<string>()
 
+function _jobFollowUpOptions(jobType: string, status: string, jobId: string) {
+  if (status === "running") {
+    return [
+      { title: "View on Jobs page", description: "Check progress and logs" },
+      { title: "Set up training while waiting", description: "Configure the next step now" },
+      { title: "Continue chatting", description: "Ask me anything else" },
+    ]
+  }
+  if (status === "succeeded") {
+    const isTraining = jobType.toLowerCase().includes("training")
+    return isTraining
+      ? [
+          { title: "View model", description: "See the trained model in the registry" },
+          { title: "View job details", description: "Check training metrics and logs" },
+          { title: "Start a new task", description: "Build another model or generate more data" },
+        ]
+      : [
+          { title: "Preview generated data", description: "Browse the dataset samples" },
+          { title: "Start training", description: "Fine-tune a model on this data" },
+          { title: "View job details", description: "Check job logs and output" },
+        ]
+  }
+  return [
+    { title: "View logs", description: "Check what happened" },
+    { title: "Try again", description: "Retry with the same or different settings" },
+    { title: "Start fresh", description: "Begin a new workflow from scratch" },
+  ]
+}
+
 /**
  * Chat hook. Designed to be mounted inside a keyed component so that
  * React handles conversation switching via unmount/remount — no
@@ -633,6 +662,7 @@ export function useChat() {
       if (!convId) return
 
       const shortId = jobId.slice(0, 8)
+      const fallbackOptions = _jobFollowUpOptions(jobType, status, jobId)
       let prompt: string
       if (status === "running") {
         prompt = `[System event: The ${jobType} job ${shortId} is now running. You MUST call the present_options tool with 2-3 options (e.g. view job on Jobs page, set up training while waiting, continue chatting). Keep your text response to one sentence. Do NOT repeat the job details table.]`
@@ -650,12 +680,17 @@ export function useChat() {
         const sessionMessages = await fetchSessionMessages(convId)
         const session = extractSessionData(sessionMessages, parsed.toolResults)
 
+        const hasOptions = session.tools.some((t) => t.name === "present_options")
+        const toolResults = hasOptions
+          ? session.tools
+          : [...session.tools, { name: "present_options", result: JSON.stringify({ options: fallbackOptions }), collapsed: true }]
+
         const followUp: ChatMessage = {
           id: assistantId,
           role: "assistant",
           content: session.text || parsed.content,
           timestamp: new Date().toISOString(),
-          toolResults: session.tools,
+          toolResults,
           proposedAction: null,
           optionCards: [],
         }
