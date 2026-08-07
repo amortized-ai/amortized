@@ -59,6 +59,9 @@ class TrainingJobConfig(BaseModel):
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
+    unfreeze_rank_ratio: float | None = Field(
+        None, description="OSFT: fraction of weights trainable (default 0.2)"
+    )
 
 
 class TrainingJobRequest(TrainingJobConfig):
