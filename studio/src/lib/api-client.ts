@@ -222,7 +222,8 @@ async function getOrCreateSession(conversationId: string): Promise<string> {
     body: JSON.stringify({}),
   })
   if (!resp.ok) {
-    throw new ApiError(resp.status, resp.statusText, null)
+    const friendly = friendlyServiceError("/agent/", resp.status)
+    throw new ApiError(resp.status, resp.statusText, friendly)
   }
   const data = await resp.json()
   const sessionId = data.id as string
@@ -319,6 +320,12 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
     break
   }
   useChatStore.getState().clearSessionId(conversationId)
+  if (lastError instanceof ApiError && (lastError.status === 502 || lastError.status === 503)) {
+    throw new ApiError(lastError.status, lastError.statusText, "Cannot reach Morty. Make sure the agent service is running.")
+  }
+  if (lastError instanceof TypeError || (lastError instanceof Error && lastError.message.includes("fetch"))) {
+    throw new ApiError(0, "Network Error", "Cannot reach Morty. Make sure the agent service is running.")
+  }
   throw lastError!
 }
 
