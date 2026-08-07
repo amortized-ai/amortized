@@ -618,9 +618,12 @@ export function useChat() {
   }, [currentConversationId])
 
   const firedJobEvents = useRef(new Set<string>())
+  const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "cancelled"])
 
   const handleJobStatusChange = useCallback(
     async (jobId: string, jobType: string, status: string) => {
+      if (!TERMINAL_JOB_STATUSES.has(status)) return
+
       const eventKey = `${jobId}:${status}`
       if (firedJobEvents.current.has(eventKey)) return
       firedJobEvents.current.add(eventKey)
@@ -628,7 +631,10 @@ export function useChat() {
       const convId = currentConversationId ?? useChatStore.getState().currentConversationId
       if (!convId) return
 
-      const prompt = `[System event: The ${jobType} job ${jobId.slice(0, 8)} just changed to "${status}". Respond to the user with appropriate next steps and present_options. Do NOT repeat the job details table.]`
+      const shortId = jobId.slice(0, 8)
+      const prompt = status === "succeeded"
+        ? `[System event: The ${jobType} job ${shortId} just succeeded. You MUST call the present_options tool with 2-3 next step options for the user (e.g. preview the generated data, start training, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
+        : `[System event: The ${jobType} job ${shortId} just ${status}. You MUST call the present_options tool with 2-3 options (e.g. view job logs, retry, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
 
       const assistantId = generateId()
       try {
