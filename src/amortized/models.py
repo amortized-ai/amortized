@@ -63,6 +63,13 @@ class TrainingJobConfig(BaseModel):
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )
 
+    @model_validator(mode="after")
+    def check_osft_requires_urr(self) -> "TrainingJobConfig":
+        if self.algorithm == "osft" and self.unfreeze_rank_ratio is None:
+            msg = "unfreeze_rank_ratio is required for OSFT (e.g. 0.2)"
+            raise ValueError(msg)
+        return self
+
 
 class TrainingJobRequest(TrainingJobConfig):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
