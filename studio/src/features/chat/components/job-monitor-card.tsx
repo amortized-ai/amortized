@@ -108,7 +108,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, onComplete])
+  }, [jobId, onComplete, onStatusChange])
 
   // Elapsed timer — uses job's server-side start time so it survives tab switches
   useEffect(() => {
