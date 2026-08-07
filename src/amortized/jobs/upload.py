@@ -51,10 +51,16 @@ async def build(
 
     image = f"{config_mod.settings.image_registry}/document:latest"
 
+    post_commands = [
+        "mlflow artifacts log-artifact -l /tmp/parsed_content.md -r $MLFLOW_RUN_ID",
+        "mlflow artifacts log-artifacts -l /tmp/chunks -r $MLFLOW_RUN_ID -a chunks",
+    ]
+
     return JobBuildResult(
         command=["python3", "/app/process_document.py"],
         config_files=config_files,
         pre_commands=[pre_cmd],
+        post_commands=post_commands,
         resources=Resources(gpus=0),
         image=image,
         resolved_config=config_dict,
