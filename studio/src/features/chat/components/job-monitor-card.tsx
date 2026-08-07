@@ -9,6 +9,7 @@ interface JobMonitorCardProps {
   jobType?: string
   onDismiss?: () => void
   onComplete?: (status: string) => void
+  onStatusChange?: (status: string) => void
 }
 
 const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"]
@@ -68,7 +69,7 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
+export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, onStatusChange }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -76,6 +77,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const completeFired = useRef(false)
+  const lastReportedStatus = useRef<string>("queued")
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
@@ -86,11 +88,14 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       const job = await getJob(jobId)
       setStatus(job.status)
       if (job.error) setError(job.error)
-      // Always prefer server timestamp; update on every poll until we have started_at
       if (job.started_at) {
         jobStartRef.current = new Date(job.started_at).getTime()
       } else if (!jobStartRef.current && job.created_at) {
         jobStartRef.current = new Date(job.created_at).getTime()
+      }
+      if (job.status !== lastReportedStatus.current) {
+        lastReportedStatus.current = job.status
+        onStatusChange?.(job.status)
       }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)

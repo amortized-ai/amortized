@@ -26,6 +26,7 @@ interface MessageBubbleProps {
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
+  onJobStatusChange?: (jobId: string, jobType: string, status: string) => void
 }
 
 export function MessageBubble({
@@ -34,6 +35,7 @@ export function MessageBubble({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onJobStatusChange,
 }: MessageBubbleProps) {
   const isUser = message.role === "user"
 
@@ -203,6 +205,7 @@ export function MessageBubble({
                 jobId={job.id}
                 jobType={job.type}
                 onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
+                onStatusChange={onJobStatusChange ? (s) => onJobStatusChange(job.id, job.type, s) : undefined}
               />
             </div>
           ))}

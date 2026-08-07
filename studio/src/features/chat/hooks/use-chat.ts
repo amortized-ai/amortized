@@ -617,6 +617,52 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
+  const firedJobEvents = useRef(new Set<string>())
+
+  const handleJobStatusChange = useCallback(
+    async (jobId: string, jobType: string, status: string) => {
+      const eventKey = `${jobId}:${status}`
+      if (firedJobEvents.current.has(eventKey)) return
+      firedJobEvents.current.add(eventKey)
+
+      const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+      if (!convId) return
+
+      const prompt = `[System event: The ${jobType} job ${jobId.slice(0, 8)} just changed to "${status}". Respond to the user with appropriate next steps and present_options. Do NOT repeat the job details table.]`
+
+      const assistantId = generateId()
+      try {
+        const { chatModelSelection } = useSettingsStore.getState()
+        const response = await sendOpenCodeMessage(convId, prompt, chatModelSelection)
+        const parsed = parseOpenCodeResponse(response)
+        const sessionMessages = await fetchSessionMessages(convId)
+        const session = extractSessionData(sessionMessages, parsed.toolResults)
+
+        const followUp: ChatMessage = {
+          id: assistantId,
+          role: "assistant",
+          content: session.text || parsed.content,
+          timestamp: new Date().toISOString(),
+          toolResults: session.tools,
+          proposedAction: null,
+          optionCards: [],
+        }
+
+        setMessages((prev) => [...prev, followUp])
+        addMessage(convId, {
+          id: assistantId,
+          role: "assistant",
+          content: followUp.content,
+          timestamp: followUp.timestamp,
+          toolResults: followUp.toolResults,
+        })
+      } catch {
+        logger.warn("job follow-up failed", { jobId, status })
+      }
+    },
+    [currentConversationId, addMessage],
+  )
+
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
@@ -625,6 +671,7 @@ export function useChat() {
     messages,
     sendMessage,
     selectOption,
+    handleJobStatusChange,
     isStreaming,
     error,
     chatState,
