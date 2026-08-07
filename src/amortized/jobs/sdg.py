@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
@@ -135,9 +136,21 @@ async def build(
     )
     processor_names = [p.get("name", "") for p in config.get("processors", [])]
     proc_dir = f"processors-files/{processor_names[-1]}" if processor_names else ""
-    upload_cmd = f"python3 /usr/local/bin/upload_to_mlflow.py /amortized/work/dataset {proc_dir}"
-    all_cmds = [*doc_setup_cmds, dd_cmd, upload_cmd]
+    upload_dir = (
+        f"/amortized/work/dataset/{proc_dir}"
+        if proc_dir
+        else "/amortized/work/dataset/parquet-files"
+    )
+
+    all_cmds = [*doc_setup_cmds, dd_cmd]
     cmd = ["sh", "-c", " && ".join(all_cmds)]
+
+    post_cmd = (
+        f"mlflow artifacts log-artifacts"
+        f" -l {shlex.quote(upload_dir)}"
+        f" -r $MLFLOW_RUN_ID"
+        f" -a generated_data"
+    )
 
     resolved_config = dict(config)
     resolved_config["num_records"] = records
@@ -148,6 +161,7 @@ async def build(
         command=cmd,
         config_files=config_files,
         env=env,
+        post_commands=[post_cmd],
         resources=Resources(gpus=0),
         image=IMAGE,
         resolved_config=resolved_config,
