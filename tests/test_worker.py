@@ -42,25 +42,19 @@ class TestWorkerJobExecution:
     @pytest.mark.asyncio
     async def test_worker_picks_oldest_job_first(self, client: httpx.AsyncClient) -> None:
         resp1 = await client.post(
-            "/api/v1/jobs",
+            "/api/v1/jobs/training",
             json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/first",
-                    "data_path": "./data.jsonl",
-                },
+                "algorithm": "sft",
+                "model_name_or_path": "test/first",
+                "data_path": "./data.jsonl",
             },
         )
         await client.post(
-            "/api/v1/jobs",
+            "/api/v1/jobs/training",
             json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/second",
-                    "data_path": "./data.jsonl",
-                },
+                "algorithm": "sft",
+                "model_name_or_path": "test/second",
+                "data_path": "./data.jsonl",
             },
         )
         first_id = resp1.json()["id"]
@@ -88,14 +82,11 @@ class TestOrphanedJobCleanup:
         from amortized.worker import cleanup_orphaned_jobs
 
         response = await client.post(
-            "/api/v1/jobs",
+            "/api/v1/jobs/training",
             json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/model",
-                    "data_path": "./data.jsonl",
-                },
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
+                "data_path": "./data.jsonl",
             },
         )
         job_id = response.json()["id"]
@@ -123,14 +114,11 @@ class TestCancelRunningJob:
         from amortized.config import settings
 
         response = await client.post(
-            "/api/v1/jobs",
+            "/api/v1/jobs/training",
             json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test/model",
-                    "data_path": "./data.jsonl",
-                },
+                "algorithm": "sft",
+                "model_name_or_path": "test/model",
+                "data_path": "./data.jsonl",
             },
         )
         job_id = response.json()["id"]

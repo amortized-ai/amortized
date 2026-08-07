@@ -496,9 +496,7 @@ def submit(
     adapter: Annotated[
         str | None, typer.Option("--adapter", help="LoRA adapter artifact ID or path")
     ] = None,
-    serve: Annotated[
-        str | None, typer.Option("--serve", help="Serve job ID for inference")
-    ] = None,
+    serve: Annotated[str | None, typer.Option("--serve", help="Serve job ID for inference")] = None,
     set_values: Annotated[
         list[str] | None, typer.Option("--set", help="Override KEY=VALUE")
     ] = None,
@@ -574,8 +572,12 @@ def submit(
                 except json.JSONDecodeError:
                     cfg[k] = v
 
-            body = {"type": job_type, "config": cfg, "dry_run": not confirm}
-            resp = client.post("/api/v1/jobs", json=body)
+            if job_type == "training":
+                cfg["parent_job_id"] = ""
+                resp = client.post("/api/v1/jobs/training", json=cfg)
+            else:
+                body = {"type": job_type, "config": cfg}
+                resp = client.post("/api/v1/jobs", json=body)
 
         resp_data = _handle_response(resp)
         if "valid" in resp_data and "id" not in resp_data:

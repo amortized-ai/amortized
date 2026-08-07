@@ -32,20 +32,38 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         yield c  # type: ignore[misc]
 
 
+TRAINING_BODY = {
+    "algorithm": "sft",
+    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
+    "data_path": "./data.jsonl",
+}
+
+SDG_BODY = {
+    "num_records": 10,
+    "columns": [
+        {
+            "column_type": "sampler",
+            "name": "q",
+            "sampler_type": "category",
+            "params": {"values": ["A", "B"]},
+        }
+    ],
+}
+
+
+async def _create_training(client: httpx.AsyncClient, **overrides: object) -> httpx.Response:
+    body = {**TRAINING_BODY, **overrides}
+    return await client.post("/api/v1/jobs/training", json=body)
+
+
+async def _create_sdg(client: httpx.AsyncClient) -> httpx.Response:
+    return await client.post("/api/v1/jobs/sdg", json=SDG_BODY)
+
+
 class TestCreateJob:
     @pytest.mark.asyncio
     async def test_create_training_job(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
-                    "data_path": "./data.jsonl",
-                },
-            },
-        )
+        response = await _create_training(client)
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "training"
@@ -68,9 +86,7 @@ class TestCreateJob:
                         "prompt": "Context: {{ content }}",
                     }
                 ],
-                "model_configs": [
-                    {"alias": "text", "model": "gpt-4o", "provider": "gateway"}
-                ],
+                "model_configs": [{"alias": "text", "model": "gpt-4o", "provider": "gateway"}],
             },
         )
         assert response.status_code == 201
@@ -80,86 +96,29 @@ class TestCreateJob:
         assert data["config"]["num_records"] == 10
 
     @pytest.mark.asyncio
-    async def test_create_job_rejects_sdg(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={"type": "sdg", "config": {"columns": []}},
-        )
-        assert response.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_create_with_recipe(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-                "recipe": "models/qwen-1.5b-lora",
-            },
-        )
-        assert response.status_code == 201
-        assert response.json()["recipe"] == "models/qwen-1.5b-lora"
-
-    @pytest.mark.asyncio
-    async def test_create_with_parent_job_id(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-                "parent_job_id": "abc-123",
-            },
-        )
+    async def test_create_training_with_parent_job_id(
+        self,
+        client: httpx.AsyncClient,
+    ) -> None:
+        response = await _create_training(client, parent_job_id="abc-123")
         assert response.status_code == 201
         assert response.json()["parent_job_id"] == "abc-123"
 
     @pytest.mark.asyncio
-    async def test_create_unknown_type(self, client: httpx.AsyncClient) -> None:
+    async def test_training_missing_algorithm(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "unknown",
-                "config": {},
-            },
+            "/api/v1/jobs/training",
+            json={"model_name_or_path": "test"},
         )
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_dry_run(self, client: httpx.AsyncClient) -> None:
+    async def test_training_missing_model(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-                "dry_run": True,
-            },
+            "/api/v1/jobs/training",
+            json={"algorithm": "sft"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["dry_run"] is True
-        assert data["valid"] is True
-
-
-    @pytest.mark.asyncio
-    async def test_create_job_rejects_sdg_validation(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs",
-            json={"type": "sdg", "config": {}},
-        )
-        assert response.status_code == 400
-        assert "create_sdg_job" in str(response.json())
+        assert response.status_code == 422
 
 
 class TestListJobs:
@@ -171,24 +130,8 @@ class TestListJobs:
 
     @pytest.mark.asyncio
     async def test_list_after_create(self, client: httpx.AsyncClient) -> None:
-        await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
-        await client.post(
-            "/api/v1/jobs/sdg",
-            json={
-                "num_records": 10,
-                "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}],
-            },
-        )
+        await _create_training(client)
+        await _create_sdg(client)
         response = await client.get("/api/v1/jobs")
         assert response.status_code == 200
         jobs = response.json()
@@ -196,24 +139,8 @@ class TestListJobs:
 
     @pytest.mark.asyncio
     async def test_filter_by_type(self, client: httpx.AsyncClient) -> None:
-        await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
-        await client.post(
-            "/api/v1/jobs/sdg",
-            json={
-                "num_records": 10,
-                "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}],
-            },
-        )
+        await _create_training(client)
+        await _create_sdg(client)
         response = await client.get("/api/v1/jobs?type=training")
         assert response.status_code == 200
         jobs = response.json()
@@ -224,17 +151,7 @@ class TestListJobs:
 class TestGetJob:
     @pytest.mark.asyncio
     async def test_get_existing_job(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
+        create_resp = await _create_training(client)
         job_id = create_resp.json()["id"]
         response = await client.get(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
@@ -249,17 +166,7 @@ class TestGetJob:
 class TestCancelJob:
     @pytest.mark.asyncio
     async def test_cancel_pending_job(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
+        create_resp = await _create_training(client)
         job_id = create_resp.json()["id"]
         response = await client.delete(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
@@ -274,17 +181,7 @@ class TestCancelJob:
 class TestErrorFieldSerialization:
     @pytest.mark.asyncio
     async def test_error_is_null_not_string_none(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
+        create_resp = await _create_training(client)
         job_id = create_resp.json()["id"]
         response = await client.get(f"/api/v1/jobs/{job_id}")
         assert response.status_code == 200
@@ -320,17 +217,7 @@ class TestConfig:
 class TestJobLogs:
     @pytest.mark.asyncio
     async def test_logs_no_handle(self, client: httpx.AsyncClient) -> None:
-        create_resp = await client.post(
-            "/api/v1/jobs",
-            json={
-                "type": "training",
-                "config": {
-                    "algorithm": "sft",
-                    "model_name_or_path": "test",
-                    "data_path": "test",
-                },
-            },
-        )
+        create_resp = await _create_training(client)
         job_id = create_resp.json()["id"]
         response = await client.get(f"/api/v1/jobs/{job_id}/logs")
         assert response.status_code == 200

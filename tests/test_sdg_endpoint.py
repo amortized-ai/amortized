@@ -67,6 +67,7 @@ def _get_detail(response: httpx.Response) -> list[dict[str, str]]:
         return body["detail"]
     if "message" in body and isinstance(body["message"], str):
         import ast
+
         try:
             parsed = ast.literal_eval(body["message"])
             if isinstance(parsed, list):
@@ -187,9 +188,7 @@ class TestSDGMissingFields:
     @pytest.mark.asyncio
     async def test_empty_columns_list(self, client: httpx.AsyncClient) -> None:
         """columns: [] → accepted (DD allows empty columns list)."""
-        response = await client.post(
-            "/api/v1/jobs/sdg", json={"columns": []}
-        )
+        response = await client.post("/api/v1/jobs/sdg", json={"columns": []})
         assert response.status_code == 201
 
     @pytest.mark.asyncio
@@ -213,9 +212,7 @@ class TestSDGMissingFields:
         assert "required" in _err_str(response).lower()
 
     @pytest.mark.asyncio
-    async def test_missing_model_alias_on_llm_text(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_missing_model_alias_on_llm_text(self, client: httpx.AsyncClient) -> None:
         """llm-text without model_alias → columns[0].model_alias: Field required."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -282,9 +279,7 @@ class TestSDGInvalidColumnType:
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "columns": [
-                    {"column_type": "llm-chat", "name": "q", "prompt": "hi"}
-                ],
+                "columns": [{"column_type": "llm-chat", "name": "q", "prompt": "hi"}],
             },
         )
         assert response.status_code == 422
@@ -294,16 +289,12 @@ class TestSDGInvalidColumnType:
         assert "llm-text" in errors
 
     @pytest.mark.asyncio
-    async def test_typo_column_type_underscore(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_typo_column_type_underscore(self, client: httpx.AsyncClient) -> None:
         """'llm_text' (underscore) → not valid."""
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "columns": [
-                    {"column_type": "llm_text", "name": "q", "prompt": "hi"}
-                ],
+                "columns": [{"column_type": "llm_text", "name": "q", "prompt": "hi"}],
             },
         )
         assert response.status_code == 422
@@ -311,16 +302,12 @@ class TestSDGInvalidColumnType:
         assert "not valid" in _err_str(response).lower()
 
     @pytest.mark.asyncio
-    async def test_completely_bogus_column_type(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_completely_bogus_column_type(self, client: httpx.AsyncClient) -> None:
         """'magic-generator' → not valid."""
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
-                "columns": [
-                    {"column_type": "magic-generator", "name": "q"}
-                ],
+                "columns": [{"column_type": "magic-generator", "name": "q"}],
             },
         )
         assert response.status_code == 422
@@ -398,9 +385,7 @@ class TestSDGModelAlias:
         assert "required" in errors.lower()
 
     @pytest.mark.asyncio
-    async def test_multiple_aliases_one_missing(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_multiple_aliases_one_missing(self, client: httpx.AsyncClient) -> None:
         """Two llm columns, one alias present and one missing."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -454,9 +439,7 @@ class TestSDGInvalidSampler:
         assert "random" in errors.lower() or "bernoulli" in errors.lower()
 
     @pytest.mark.asyncio
-    async def test_sampler_wrong_params_for_type(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_sampler_wrong_params_for_type(self, client: httpx.AsyncClient) -> None:
         """category sampler with gaussian params → error about 'values'."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -638,9 +621,7 @@ class TestSDGNumRecords:
 
 class TestSDGErrorMessageQuality:
     @pytest.mark.asyncio
-    async def test_error_has_field_and_error_keys(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_error_has_field_and_error_keys(self, client: httpx.AsyncClient) -> None:
         """Every error dict has 'field' and 'error' keys."""
         response = await client.post("/api/v1/jobs/sdg", json={})
         assert response.status_code == 422
@@ -651,9 +632,7 @@ class TestSDGErrorMessageQuality:
             assert "error" in err, f"Error missing 'error' key: {err}"
 
     @pytest.mark.asyncio
-    async def test_field_path_includes_index(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_field_path_includes_index(self, client: httpx.AsyncClient) -> None:
         """Column errors include the column index in the field path."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -711,9 +690,7 @@ class TestSDGErrorMessageQuality:
             assert expected in errors, f"Valid type '{expected}' not listed in error"
 
     @pytest.mark.asyncio
-    async def test_alias_mismatch_lists_available(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_alias_mismatch_lists_available(self, client: httpx.AsyncClient) -> None:
         """Alias mismatch lists what aliases ARE available."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -742,9 +719,7 @@ class TestSDGErrorMessageQuality:
 
 class TestSDGCompoundErrors:
     @pytest.mark.asyncio
-    async def test_multiple_columns_different_errors(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_multiple_columns_different_errors(self, client: httpx.AsyncClient) -> None:
         """Two columns each with a different error."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -770,9 +745,7 @@ class TestSDGCompoundErrors:
         assert "prompt" in errors.lower() or "columns[1]" in errors
 
     @pytest.mark.asyncio
-    async def test_good_and_bad_columns_mixed(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_good_and_bad_columns_mixed(self, client: httpx.AsyncClient) -> None:
         """One valid column + one invalid → only invalid column's errors."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -790,9 +763,7 @@ class TestSDGCompoundErrors:
         )
         assert response.status_code == 422
         fields = _err_fields(response)
-        assert not any("columns[0]" in f for f in fields), (
-            "Valid column should not have errors"
-        )
+        assert not any("columns[0]" in f for f in fields), "Valid column should not have errors"
         assert any("columns[1]" in f for f in fields)
 
 
@@ -812,9 +783,7 @@ class TestSDGEdgeCases:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_column_missing_column_type(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_column_missing_column_type(self, client: httpx.AsyncClient) -> None:
         """Column without column_type → discriminator error."""
         response = await client.post(
             "/api/v1/jobs/sdg",
@@ -825,9 +794,7 @@ class TestSDGEdgeCases:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_model_configs_not_a_list(
-        self, client: httpx.AsyncClient
-    ) -> None:
+    async def test_model_configs_not_a_list(self, client: httpx.AsyncClient) -> None:
         """model_configs: {} → type error."""
         response = await client.post(
             "/api/v1/jobs/sdg",

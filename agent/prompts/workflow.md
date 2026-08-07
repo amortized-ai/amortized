@@ -61,8 +61,7 @@ field. Key parameters:
 - `topic` — 1-5 word summary (e.g. "OpenShift troubleshooting")
 - `mode` — "create" for full run, "preview" for ~10 sample test run
 
-Read the skill guide for prompt engineering guidance. Do NOT use
-`create_job` for SDG — use `create_sdg_job`.
+Read the skill guide for prompt engineering guidance.
 
 **For training jobs:** Build a config with:
 - `algorithm: osft`
@@ -97,8 +96,8 @@ are specific (e.g. "columns[0].model_alias: Field required").
 Once the preview job succeeds and the user is happy with the samples,
 call `create_sdg_job` again with `mode: "create"` for the full run.
 
-**For training jobs:** Call `create_job` with `dry_run: true` to validate,
-then without `dry_run` to submit.
+**For training jobs:** Call `create_training_job` with the training
+parameters (algorithm, model_name_or_path, parent_job_id, etc.).
 
 If `create_sdg_job` returns a validation error, do NOT show the raw
 error to the user. Instead:
@@ -222,13 +221,9 @@ the job's `mlflow_run_id` to call `get_dataset_samples`.
 
 ## SDG Job Submission
 
-Use `create_sdg_job` for all SDG jobs. The tool schema documents every
-field — refer to the tool's parameter descriptions for config format.
-Do NOT use `create_job` for SDG.
-
-Key parameters: `columns`, `model_configs`, `processors`, `num_records`,
-`document_ids`, `topic`, `mode`. Read the skill guide for prompt
-engineering guidance and domain-specific customization.
+Use `create_sdg_job` for SDG jobs, `create_training_job` for training
+jobs. Both tools have typed parameters — refer to the tool schema for
+field documentation.
 
 ## When the User Asks for Job Details
 

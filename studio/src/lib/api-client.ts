@@ -8,7 +8,6 @@ import type {
   Job,
   JobFilters,
   JobLogsResponse,
-  JobRequest,
   MlflowGatewayRoute,
   MlflowMetricHistoryEntry,
   MlflowModelVersionsResponse,
@@ -135,11 +134,6 @@ export function getJobs(filters?: JobFilters, pagination?: PaginationParams): Pr
 export function getJob(id: string): Promise<Job> {
   logger.debug("getJob", { id })
   return get<Job>(`/api/v1/jobs/${id}`)
-}
-
-export function createJob(config: JobRequest): Promise<Job> {
-  logger.info("createJob", { config })
-  return post<Job>("/api/v1/jobs", config)
 }
 
 export function cancelJob(id: string): Promise<Job> {

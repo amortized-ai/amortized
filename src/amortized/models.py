@@ -61,13 +61,8 @@ class TrainingJobConfig(BaseModel):
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
 
 
-class JobRequest(BaseModel):
-    type: JobType = Field(..., description="Job type: training or sdg")
-    config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
-    recipe: str = Field("", description="Recipe name if used")
-    parent_job_id: str = Field("", description="Parent job ID for lineage")
-    compute: ComputeSpec = Field(default_factory=ComputeSpec)
-    dry_run: bool = Field(False, description="Validate without creating the job")
+class TrainingJobRequest(TrainingJobConfig):
+    parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
 
 
 class Job(BaseModel):
@@ -99,15 +94,6 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: str
     gpu: dict[str, Any] = Field(default_factory=dict)
-
-
-class DryRunResponse(BaseModel):
-    dry_run: bool = True
-    valid: bool
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    type: str
-    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class GatewayModel(BaseModel):

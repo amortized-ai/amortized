@@ -132,11 +132,13 @@ class InvalidJobStateError(Exception):
     pass
 
 
-_TERMINAL_STATUSES = frozenset({
-    JobStatus.succeeded.value,
-    JobStatus.failed.value,
-    JobStatus.cancelled.value,
-})
+_TERMINAL_STATUSES = frozenset(
+    {
+        JobStatus.succeeded.value,
+        JobStatus.failed.value,
+        JobStatus.cancelled.value,
+    }
+)
 
 
 async def delete_job(repo: Repository, job_id: str) -> None:

@@ -200,7 +200,7 @@ class TestRecipeAPI:
         assert data["status"] == "queued"
 
     @pytest.mark.asyncio
-    async def test_submit_recipe_dry_run(self, client: httpx.AsyncClient) -> None:
+    async def test_submit_recipe_validates_config(self, client: httpx.AsyncClient) -> None:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
@@ -209,34 +209,15 @@ class TestRecipeAPI:
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
                 },
-                "dry_run": True,
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
-        assert data["valid"] is True
-        assert data["type"] == "training"
-        assert "id" not in data
-
-    @pytest.mark.asyncio
-    async def test_submit_recipe_dry_run_returns_config(self, client: httpx.AsyncClient) -> None:
-        resp = await client.post(
-            "/api/v1/jobs/recipe",
-            json={
-                "recipe": "templates/training/knowledge-ingestion",
-                "overrides": {},
-                "dry_run": True,
-            },
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["dry_run"] is True
         assert data["type"] == "training"
 
     @pytest.mark.asyncio
     async def test_submit_sdg_flat_overrides_reach_config(self, client: httpx.AsyncClient) -> None:
-        """Flat overrides sent by the UI must land in the stored job config,
-        not silently dropped at the recipe root."""
+        """Flat overrides sent by the UI must land in the stored job config."""
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
@@ -244,12 +225,10 @@ class TestRecipeAPI:
                 "overrides": {
                     "config.num_records": 20,
                 },
-                "dry_run": True,
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
-        assert data["valid"] is True
         assert data["type"] == "sdg"
         assert data["config"]["num_records"] == 20
 
@@ -264,10 +243,9 @@ class TestRecipeAPI:
                 "overrides": {
                     "config.num_records": 50,
                 },
-                "dry_run": True,
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert "columns" in data["config"]
         assert data["config"]["num_records"] == 50
