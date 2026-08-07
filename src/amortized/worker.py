@@ -144,6 +144,42 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
         return ""
 
 
+async def _create_mlflow_run(
+    experiment_name: str,
+    job_id: str,
+    job_type: str,
+) -> str | None:
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return None
+    try:
+        from amortized.core.mlflow_client import MLflowClient
+
+        client = MLflowClient(tracking_uri)
+        experiment_id = await client.ensure_experiment(experiment_name)
+        return await client.create_run(
+            experiment_id,
+            name=f"{job_type}-{job_id[:8]}",
+            tags={"job_type": job_type, "job_id": job_id},
+        )
+    except Exception:
+        logger.warning("Failed to create MLflow run for job %s", job_id, exc_info=True)
+        return None
+
+
+async def _finish_mlflow_run(run_id: str, status: str = "FINISHED") -> None:
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri or not run_id:
+        return
+    try:
+        from amortized.core.mlflow_client import MLflowClient
+
+        client = MLflowClient(tracking_uri)
+        await client.finish_run(run_id, status=status)
+    except Exception:
+        logger.warning("Failed to finish MLflow run %s", run_id, exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # Job execution
 # ---------------------------------------------------------------------------
@@ -222,6 +258,15 @@ async def _run_job(job: dict[str, Any]) -> None:
             if val:
                 spec_env[s3_var] = val
         await _update_job(job_id, mlflow_experiment=mlflow_experiment)
+
+    # --- Create MLflow run before dispatch ---
+    mlflow_run_id = ""
+    if config_mod.settings.mlflow_tracking_uri:
+        run_id = await _create_mlflow_run(mlflow_experiment, job_id, job_type)
+        if run_id:
+            mlflow_run_id = run_id
+            spec_env["MLFLOW_RUN_ID"] = mlflow_run_id
+            await _update_job(job_id, mlflow_run_id=mlflow_run_id)
 
     # --- Resolve parent artifacts ---
     config_files: dict[str, str] = {}
@@ -313,11 +358,13 @@ async def _run_job(job: dict[str, Any]) -> None:
 
         # --- Completion handling ---
         if status.exit_code == 0:
-            mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
+            if not mlflow_run_id:
+                mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             if mlflow_run_id:
                 await set_mlflow_run_tag(mlflow_run_id, "job_type", job_type)
                 await set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
                 await builder.on_success(job, mlflow_run_id)
+                await _finish_mlflow_run(mlflow_run_id)
 
             await _update_job(
                 job_id,
@@ -328,6 +375,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             logger.info("Job %s succeeded", job_id)
             _fire_event(job_id, "succeeded", job)
         elif status.exit_code is not None and status.exit_code < 0:
+            await _finish_mlflow_run(mlflow_run_id, "FAILED")
             await _update_job(
                 job_id,
                 status=JobStatus.cancelled.value,
@@ -341,6 +389,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 {**job, "error": "Job was cancelled"},
             )
         else:
+            await _finish_mlflow_run(mlflow_run_id, "FAILED")
             error_msg = status.error or (
                 f"Job '{job_id}' failed on backend '{backend_name}'"
                 f" with exit code {status.exit_code}. Check logs for details."
@@ -355,6 +404,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             _fire_event(job_id, "failed", {**job, "error": error_msg})
 
     except Exception as exc:
+        await _finish_mlflow_run(mlflow_run_id, "FAILED")
         error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
         try:
             stderr_path = os.path.join(output_dir, "stderr.log")
