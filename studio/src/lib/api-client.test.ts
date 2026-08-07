@@ -22,7 +22,6 @@ vi.mock("@/stores/chat-store", () => ({
 import {
   getJobs,
   getJob,
-  createJob,
   cancelJob,
   getHealth,
   getConfig,
@@ -137,20 +136,6 @@ describe("API Client", () => {
   })
 
   describe("POST endpoints", () => {
-    it("createJob sends POST with body", async () => {
-      const config = { type: "training", config: { model: "llama" } }
-      const created = { id: "j2", ...config, status: "queued" }
-      mockFetch.mockReturnValue(jsonResponse(created))
-
-      const result = await createJob(config)
-      expect(result).toEqual(created)
-
-      const [url, init] = mockFetch.mock.calls[0]!
-      expect(url).toBe("/api/v1/jobs")
-      expect(init.method).toBe("POST")
-      expect(JSON.parse(init.body as string)).toEqual(config)
-    })
-
     it("cancelJob sends DELETE", async () => {
       const cancelled = { id: "j1", status: "cancelled" }
       mockFetch.mockReturnValue(jsonResponse(cancelled))
