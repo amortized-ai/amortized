@@ -237,7 +237,7 @@ class TestSubmit:
     def test_submit_with_config(self) -> None:
         fake = _FakeClient(
             {
-                ("POST", "/api/v1/jobs"): _mock_response(
+                ("POST", "/api/v1/jobs/training"): _mock_response(
                     201,
                     {
                         "id": "job_new",
@@ -260,7 +260,7 @@ class TestSubmit:
     def test_submit_dry_run_valid(self) -> None:
         fake = _FakeClient(
             {
-                ("POST", "/api/v1/jobs"): _mock_response(
+                ("POST", "/api/v1/jobs/training"): _mock_response(
                     200,
                     {"valid": True, "errors": [], "warnings": []},
                 ),
@@ -278,7 +278,7 @@ class TestSubmit:
     def test_submit_dry_run_invalid(self) -> None:
         fake = _FakeClient(
             {
-                ("POST", "/api/v1/jobs"): _mock_response(
+                ("POST", "/api/v1/jobs/training"): _mock_response(
                     200,
                     {"valid": False, "errors": ["missing model_path"], "warnings": ["low VRAM"]},
                 ),

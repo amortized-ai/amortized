@@ -3,9 +3,9 @@
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class JobType(StrEnum):
@@ -59,15 +59,20 @@ class TrainingJobConfig(BaseModel):
     lora_r: int | None = Field(None, ge=1, description="LoRA rank")
     lora_alpha: int | None = Field(None, ge=1, description="LoRA alpha")
     lora_dropout: float | None = Field(None, description="LoRA dropout rate")
+    unfreeze_rank_ratio: float | None = Field(
+        None, description="OSFT: fraction of weights trainable (default 0.2)"
+    )
+
+    @model_validator(mode="after")
+    def check_osft_requires_urr(self) -> "TrainingJobConfig":
+        if self.algorithm == "osft" and self.unfreeze_rank_ratio is None:
+            msg = "unfreeze_rank_ratio is required for OSFT (e.g. 0.2)"
+            raise ValueError(msg)
+        return self
 
 
-class JobRequest(BaseModel):
-    type: JobType = Field(..., description="Job type: training or sdg")
-    config: dict[str, Any] = Field(..., description="Job-type-specific configuration")
-    recipe: str = Field("", description="Recipe name if used")
-    parent_job_id: str = Field("", description="Parent job ID for lineage")
-    compute: ComputeSpec = Field(default_factory=ComputeSpec)
-    dry_run: bool = Field(False, description="Validate without creating the job")
+class TrainingJobRequest(TrainingJobConfig):
+    parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
 
 
 class Job(BaseModel):
@@ -100,15 +105,6 @@ class HealthResponse(BaseModel):
     timestamp: str
     gpu: dict[str, Any] = Field(default_factory=dict)
     db: str = "ok"
-
-
-class DryRunResponse(BaseModel):
-    dry_run: bool = True
-    valid: bool
-    errors: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    type: str
-    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class GatewayModel(BaseModel):
@@ -194,3 +190,112 @@ class ConfigResponse(BaseModel):
     mlflow_gateway_uri: str = ""
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# SDG job models — uses Data Designer's own Pydantic config types
+# ---------------------------------------------------------------------------
+
+from data_designer.config.column_types import ColumnConfigT as SDGColumn  # noqa: E402
+from data_designer.config.mcp import ToolConfig as DDToolConfig  # noqa: E402
+from data_designer.config.models import ModelConfig as DDModelConfig  # noqa: E402
+from data_designer.config.processor_types import ProcessorConfigT as SDGProcessor  # noqa: E402
+from data_designer.config.sampler_constraints import ColumnConstraintInputT  # noqa: E402
+
+
+class SDGJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    columns: list[SDGColumn] = Field(
+        ...,
+        description=(
+            "Generation pipeline columns. Evaluated in order; "
+            "later columns reference earlier ones via {{ column_name }}"
+        ),
+    )
+    model_configs: list[DDModelConfig] = Field(
+        default_factory=list,
+        description=(
+            "LLM model configurations. Required when using llm-text/code/judge/structured columns"
+        ),
+    )
+    processors: list[SDGProcessor] = Field(
+        default_factory=list,
+        description=(
+            "Output processors. Use schema_transform for SFT format, "
+            "drop_columns to remove intermediate columns"
+        ),
+    )
+    seed_config: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Seed data configuration (auto-configured when document_ids is provided). "
+            "source.seed_type: local, hf, directory, file_contents, agent_rollout"
+        ),
+    )
+    constraints: list[ColumnConstraintInputT] = Field(
+        default_factory=list,
+        description="Column value constraints (inequality checks)",
+    )
+    tool_configs: list[DDToolConfig] = Field(
+        default_factory=list,
+        description="MCP tool configurations for tool-use columns",
+    )
+
+    num_records: int = Field(100, ge=1, description="Number of samples to generate")
+    document_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Document IDs (from the Documents page) to use as seed data. "
+            "Chunks are fetched from MLflow."
+        ),
+    )
+    topic: str = Field(
+        "",
+        description=(
+            "1-5 word dataset topic for MLflow tracking (e.g. 'OpenShift troubleshooting')"
+        ),
+    )
+    parent_job_id: str = Field(
+        "",
+        description="Parent job ID for lineage chaining (SDG -> Training)",
+    )
+    mode: Literal["create", "preview"] = Field(
+        "create",
+        description=(
+            "'create' for full generation, 'preview' to generate "
+            "~10 samples and verify config before committing"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def check_model_aliases(self) -> "SDGJobRequest":
+        aliases_needed: list[str] = []
+        for i, col in enumerate(self.columns):
+            alias = getattr(col, "model_alias", None)
+            if alias is not None:
+                if not alias:
+                    msg = f"columns[{i}].model_alias: must not be empty"
+                    raise ValueError(msg)
+                aliases_needed.append(alias)
+
+        if not aliases_needed:
+            return self
+
+        if not self.model_configs:
+            msg = (
+                "model_configs is required when columns use "
+                "LLM generation (llm-text, llm-code, etc.)"
+            )
+            raise ValueError(msg)
+
+        defined = {mc.alias for mc in self.model_configs}
+        missing = [a for a in aliases_needed if a not in defined]
+        if missing:
+            msg = (
+                f"model_alias {missing} not found in model_configs "
+                f"(available: {sorted(defined) or 'none'})"
+            )
+            raise ValueError(msg)
+
+        return self

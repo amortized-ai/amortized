@@ -33,16 +33,6 @@ export interface ComputeSpec {
   gpu_type?: string
 }
 
-export interface JobRequest {
-  type: string
-  config: Record<string, unknown>
-  metadata?: Record<string, unknown>
-  recipe?: string
-  parent_job_id?: string
-  compute?: ComputeSpec
-  dry_run?: boolean
-}
-
 export interface Recipe {
   name: string
   type: string

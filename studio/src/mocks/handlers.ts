@@ -165,7 +165,11 @@ export const handlers = [
     })
   }),
 
-  http.post("*/api/v1/jobs", () => {
+  http.post("*/api/v1/jobs/sdg", () => {
+    return HttpResponse.json(mockJobs[0], { status: 201 })
+  }),
+
+  http.post("*/api/v1/jobs/training", () => {
     return HttpResponse.json(mockJobs[0], { status: 201 })
   }),
 

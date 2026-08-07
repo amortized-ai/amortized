@@ -5,9 +5,14 @@ analyzers, or content moderators.
 
 ## How This Works
 
-You will **create a brand new Data Designer config** from scratch. The
-classification pipeline generates labeled examples where each sample has
-input text and a classification label.
+You will gather requirements and call `create_sdg_job` with the
+appropriate parameters. The classification pipeline generates labeled
+examples where each sample has input text and a classification label.
+
+There is no classification template yet — use the knowledge-ingestion
+template via `get_recipe("templates/sdg/knowledge-ingestion")` as a
+structural reference for how columns, model_configs, and processors
+are organized.
 
 ## Requirement Gathering
 
@@ -37,59 +42,17 @@ Ask the user these questions (one at a time, with numbered options):
 6. **Distribution** — Should categories be balanced or weighted?
    Default: roughly balanced unless the real-world distribution is known.
 
-## Building the Config
+## Tool Parameters
 
-```json
-{
-  "type": "sdg",
-  "config": {
-    "num_records": 500,
-    "model_configs": [{"alias": "text", "model": "<selected_model>", "provider": "gateway", "skip_health_check": true}],
-    "columns": [
-      {
-        "column_type": "sampler",
-        "name": "category",
-        "sampler_type": "category",
-        "params": {
-          "values": ["<CATEGORY_1>", "<CATEGORY_2>", "<CATEGORY_3>"],
-          "weights": [0.4, 0.35, 0.25]
-        }
-      },
-      {
-        "column_type": "llm-text",
-        "name": "text",
-        "model_alias": "text",
-        "system_prompt": "<domain-specific prompt for generating realistic input text>",
-        "prompt": "Generate a realistic {{ category }} example..."
-      },
-      {
-        "column_type": "llm-text",
-        "name": "label",
-        "model_alias": "text",
-        "system_prompt": "Classify the text. Output ONLY the label.",
-        "prompt": "Text: {{ content }}\n\nClassify as one of: <categories>. Output ONLY the label."
-      }
-    ],
-    "processors": [
-      {
-        "processor_type": "schema_transform",
-        "name": "sft_format",
-        "template": {
-          "messages": [
-            {"role": "system", "content": "<classification system prompt>"},
-            {"role": "user", "content": "{{ content }}"},
-            {"role": "assistant", "content": "{{ label }}"}
-          ]
-        }
-      }
-    ]
-  }
-}
-```
+Call `create_sdg_job` with these parameters. Customize columns,
+prompts, and categories based on the user's specific task. Use the
+model name from `list_models` in `model_configs`.
 
-Create columns, prompts, and categories based on the user's specific task.
-Use the model name from `list_models` in the `model_configs`.
-Submit via `create_job`.
+Key parameters for classification:
+- `columns` — a category sampler, an LLM column to generate text, an LLM column to generate labels
+- `model_configs` — `[{"alias": "text", "model": "<from list_models>", "provider": "gateway", "skip_health_check": true}]`
+- `processors` — schema_transform to produce SFT `messages` format
+- `num_records` — based on category count (see sample count step)
 
 Call `present_options` with step="sdg-domain" and these options:
 - title: "Software/technical support", description: "Bug reports, feature requests, troubleshooting", value: "Software/technical support — Bug reports, feature requests, troubleshooting"

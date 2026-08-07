@@ -158,7 +158,8 @@ class KubernetesBackend:
             V1Volume(
                 name="work",
                 host_path=V1HostPathVolumeSource(
-                    path=work_host_path, type="DirectoryOrCreate",
+                    path=work_host_path,
+                    type="DirectoryOrCreate",
                 ),
             ),
             V1Volume(
@@ -432,9 +433,7 @@ class KubernetesBackend:
         if status.succeeded and status.succeeded > 0:
             return BackendStatus(running=False, exit_code=0)
         if status.failed and status.failed > 0:
-            reason = await self._get_pod_failure_reason(
-                resource_name, api_client
-            )
+            reason = await self._get_pod_failure_reason(resource_name, api_client)
             return BackendStatus(
                 running=False,
                 exit_code=1,
@@ -442,9 +441,7 @@ class KubernetesBackend:
             )
         return BackendStatus(running=True)
 
-    async def _get_pod_failure_reason(
-        self, job_name: str, api_client: Any
-    ) -> str | None:
+    async def _get_pod_failure_reason(self, job_name: str, api_client: Any) -> str | None:
         from kubernetes_asyncio.client import CoreV1Api
 
         try:

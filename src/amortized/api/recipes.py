@@ -5,8 +5,7 @@ from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from amortized.core.jobs import InvalidJobStateError
 from amortized.core.jobs import create_job as core_create_job
@@ -24,7 +23,7 @@ from amortized.core.recipes import (
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import DryRunResponse, Job, JobType, RecipeSummary
+from amortized.models import Job, JobType, RecipeSummary, TrainingJobConfig
 
 logger = logging.getLogger("amortized.api.recipes")
 
@@ -82,7 +81,6 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     return {"name": name, **recipe_data}
 
 
-
 @router.delete("/{name:path}", status_code=204, operation_id="delete_recipe")
 async def delete_recipe(name: str) -> None:
     try:
@@ -95,11 +93,22 @@ async def delete_recipe(name: str) -> None:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _validate_recipe_config(
+    job_type: JobType,
+    config: dict[str, Any],
+) -> list[str]:
+    if job_type == JobType.training:
+        try:
+            TrainingJobConfig(**config)
+        except ValidationError as exc:
+            return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
+    return []
+
+
 class RecipeJobRequest(BaseModel):
     recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
     overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
-    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG→Training)")
-    dry_run: bool = Field(False, description="Validate without creating the job")
+    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG -> Training)")
 
 
 recipe_jobs_router = APIRouter(tags=["recipes"])
@@ -115,7 +124,7 @@ async def submit_recipe_job(
     request: RecipeJobRequest,
     http_request: Request,
     db: asyncpg.Connection = Depends(_get_db),
-) -> Job | JSONResponse:
+) -> Job:
     try:
         recipe = load_recipe(request.recipe)
     except RecipeNotFoundError as exc:
@@ -136,27 +145,11 @@ async def submit_recipe_job(
 
     config = flatten_recipe_to_config(recipe)
 
-    from amortized.api.jobs import _validate_config
-    from amortized.models import JobRequest as _JobRequest
+    errors = _validate_recipe_config(job_type, config)
+    if job_type == JobType.training:
+        from amortized.api.jobs import _validate_training_data
 
-    job_req = _JobRequest(
-        type=job_type,
-        config=config,
-        parent_job_id=request.parent_job_id,
-        dry_run=request.dry_run,
-    )
-    errors = await _validate_config(job_type, config, job_req, db)
-
-    if request.dry_run:
-        dry_resp = DryRunResponse(
-            valid=not errors,
-            errors=errors,
-            warnings=[],
-            type=recipe_type,
-            config=config,
-        )
-        return JSONResponse(content=dry_resp.model_dump(), status_code=200)
-
+        errors.extend(await _validate_training_data(config, request.parent_job_id, db))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 

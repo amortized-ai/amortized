@@ -113,7 +113,7 @@ class MLflowClient:
             )
         experiment_location = artifact_uri[: -len(suffix)]
         artifact_root = experiment_location.rsplit("/", 1)[0] + "/"
-        return artifact_uri[len(artifact_root):]
+        return artifact_uri[len(artifact_root) :]
 
     async def create_run(
         self,

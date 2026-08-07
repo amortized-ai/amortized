@@ -31,7 +31,8 @@ const TOOL_LABELS: Record<string, string> = {
   "estimate_training_resources": "Estimating training resources",
   "estimate_training_method_cost": "Comparing training methods",
   "show_vram_estimate": "Estimating GPU requirements",
-  "create_job": "Submitting job",
+  "create_sdg_job": "Submitting SDG job",
+  "create_training_job": "Submitting training job",
   "get_job_detail": "Checking job status",
   "get_job_logs": "Reading job logs",
 }

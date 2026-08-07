@@ -32,9 +32,7 @@ def get_watcher(job_id: str) -> str | None:
     return _job_watchers.get(job_id)
 
 
-async def emit_job_event(
-    job_id: str, status: str, job: dict[str, Any]
-) -> None:
+async def emit_job_event(job_id: str, status: str, job: dict[str, Any]) -> None:
     session_id = _job_watchers.get(job_id)
     if not session_id:
         return
@@ -64,9 +62,7 @@ async def emit_job_event(
                 headers=headers,
             )
             if resp.status_code != 200:
-                logger.warning(
-                    "Agent event delivery failed: %s %s", resp.status_code, resp.text
-                )
+                logger.warning("Agent event delivery failed: %s %s", resp.status_code, resp.text)
     except Exception:
         logger.warning("Failed to deliver event to agent server", exc_info=True)
 

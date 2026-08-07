@@ -63,8 +63,11 @@ async def build(
         seed_config = config.get("seed_config", {})
         source = seed_config.get("source", {})
         stale_source_keys = (
-            "chunk_size", "chunk_overlap", "tokenizer",
-            "sentences_per_chunk", "min_text_length",
+            "chunk_size",
+            "chunk_overlap",
+            "tokenizer",
+            "sentences_per_chunk",
+            "min_text_length",
         )
         for key in stale_source_keys:
             source.pop(key, None)
@@ -97,7 +100,9 @@ async def build(
 
             logger.info(
                 "Job %s: fetched %d pre-chunked chunks from %d document(s)",
-                job_id, chunk_count, len(document_ids),
+                job_id,
+                chunk_count,
+                len(document_ids),
             )
         else:
             raise SDGBuildError(
@@ -115,29 +120,29 @@ async def build(
             col.setdefault("model_alias", col.pop("model_config_alias"))
 
     num_records = config.pop("num_records", 100)
+    mode = config.pop("mode", "create")
     config.pop("topic", None)
 
     dd_config = {"data_designer": config}
-    config_files["config.yaml"] = yaml.dump(
-        dd_config, default_flow_style=False, sort_keys=False
-    )
+    config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
+    records = min(num_records, 10) if mode == "preview" else num_records
     dd_cmd = (
         "data-designer create /amortized/config.yaml"
-        f" --num-records {num_records}"
+        f" --num-records {records}"
         " --artifact-path /amortized/work"
         " --no-tui"
     )
     processor_names = [p.get("name", "") for p in config.get("processors", [])]
     proc_dir = f"processors-files/{processor_names[-1]}" if processor_names else ""
-    upload_cmd = (
-        f"python3 /usr/local/bin/upload_to_mlflow.py /amortized/work/dataset {proc_dir}"
-    )
+    upload_cmd = f"python3 /usr/local/bin/upload_to_mlflow.py /amortized/work/dataset {proc_dir}"
     all_cmds = [*doc_setup_cmds, dd_cmd, upload_cmd]
     cmd = ["sh", "-c", " && ".join(all_cmds)]
 
     resolved_config = dict(config)
-    resolved_config["num_records"] = num_records
+    resolved_config["num_records"] = records
+    if mode != "create":
+        resolved_config["mode"] = mode
 
     return JobBuildResult(
         command=cmd,

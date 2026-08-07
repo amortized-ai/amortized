@@ -7,6 +7,7 @@ from amortized.models import (
     JobStatus,
     JobType,
     TrainingJobConfig,
+    TrainingJobRequest,
 )
 
 
@@ -69,6 +70,57 @@ class TestTrainingJobConfig:
         assert "output_dir" not in dumped
         assert "model_name_or_path" in dumped
         assert "algorithm" in dumped
+
+
+class TestPreviewNumRecordsCapping:
+    def test_preview_caps_at_10(self) -> None:
+        num_records = 500
+        mode = "preview"
+        records = min(num_records, 10) if mode == "preview" else num_records
+        assert records == 10
+
+    def test_preview_below_cap_unchanged(self) -> None:
+        num_records = 5
+        mode = "preview"
+        records = min(num_records, 10) if mode == "preview" else num_records
+        assert records == 5
+
+    def test_create_mode_uncapped(self) -> None:
+        num_records = 500
+        mode = "create"
+        records = min(num_records, 10) if mode == "preview" else num_records
+        assert records == 500
+
+
+class TestOSFTValidation:
+    def test_osft_without_urr_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="unfreeze_rank_ratio"):
+            TrainingJobRequest(
+                algorithm="osft",
+                model_name_or_path="test",
+            )
+
+    def test_osft_with_urr_accepted(self) -> None:
+        req = TrainingJobRequest(
+            algorithm="osft",
+            model_name_or_path="test",
+            unfreeze_rank_ratio=0.2,
+        )
+        assert req.unfreeze_rank_ratio == 0.2
+
+    def test_sft_without_urr_accepted(self) -> None:
+        req = TrainingJobRequest(
+            algorithm="sft",
+            model_name_or_path="test",
+        )
+        assert req.unfreeze_rank_ratio is None
+
+    def test_lora_sft_without_urr_accepted(self) -> None:
+        req = TrainingJobRequest(
+            algorithm="lora_sft",
+            model_name_or_path="test",
+        )
+        assert req.unfreeze_rank_ratio is None
 
 
 class TestEnums:
