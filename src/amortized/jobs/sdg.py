@@ -113,8 +113,7 @@ async def build(
 
     for mc in config.get("model_configs", []):
         params = mc.setdefault("inference_parameters", {})
-        if params.get("max_parallel_requests", 0) < 32:
-            params["max_parallel_requests"] = 32
+        params.setdefault("max_parallel_requests", 32)
 
     for col in config.get("columns", []):
         if "model_config_alias" in col:

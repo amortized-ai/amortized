@@ -186,8 +186,15 @@ async def validation_exception_handler(
 
         try:
             body = await request.json()
-        except Exception:
-            body = {}
+        except (ValueError, UnicodeDecodeError):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "code": "validation_error",
+                    "message": "Request body must be valid JSON",
+                    "details": [],
+                },
+            )
         if not isinstance(body, dict):
             return JSONResponse(
                 status_code=422,
@@ -202,7 +209,7 @@ async def validation_exception_handler(
             status_code=422,
             content={
                 "code": "validation_error",
-                "message": str(errors),
+                "message": f"Validation failed with {len(errors)} error(s)",
                 "details": errors,
             },
         )
