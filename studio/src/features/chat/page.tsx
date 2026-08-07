@@ -33,6 +33,7 @@ function ChatContent() {
     selectOption,
     isStreaming,
     chatState,
+    error,
     confirmAction,
     rejectAction,
   } = useChat()
@@ -75,7 +76,7 @@ function ChatContent() {
       {chatState === "error" && (
         <Alert variant="destructive">
           <AlertDescription>
-            <strong>Chat error.</strong> Make sure the agent service is running and reachable.
+            {error || "Something went wrong. Make sure the agent service is running and reachable."}
           </AlertDescription>
         </Alert>
       )}

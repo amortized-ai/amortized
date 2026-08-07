@@ -46,10 +46,12 @@ function createWrapper() {
 }
 
 describe("useSystemHealth", () => {
-  it("returns ok when health endpoint succeeds", async () => {
+  it("returns ok when health and mlflow endpoints succeed", async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/health"))
         return jsonResponse({ status: "ok", timestamp: "2026-06-10T12:00:00Z" })
+      if (url.includes("/mlflow/"))
+        return jsonResponse({ runs: [] })
       return jsonResponse({})
     })
 
@@ -57,12 +59,14 @@ describe("useSystemHealth", () => {
 
     await waitFor(() => {
       expect(result.current.backend).toBe("ok")
+      expect(result.current.mlflow).toBe("ok")
     })
   })
 
   it("returns error when health endpoint fails", async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/health")) return errorResponse()
+      if (url.includes("/mlflow/")) return jsonResponse({ runs: [] })
       return jsonResponse({})
     })
 
@@ -70,6 +74,23 @@ describe("useSystemHealth", () => {
 
     await waitFor(() => {
       expect(result.current.backend).toBe("error")
+      expect(result.current.mlflow).toBe("ok")
+    })
+  })
+
+  it("returns error when mlflow endpoint fails", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("/health"))
+        return jsonResponse({ status: "ok", timestamp: "2026-06-10T12:00:00Z" })
+      if (url.includes("/mlflow/")) return errorResponse()
+      return jsonResponse({})
+    })
+
+    const { result } = renderHook(() => useSystemHealth(), { wrapper: createWrapper() })
+
+    await waitFor(() => {
+      expect(result.current.backend).toBe("ok")
+      expect(result.current.mlflow).toBe("error")
     })
   })
 
@@ -79,12 +100,15 @@ describe("useSystemHealth", () => {
     const { result } = renderHook(() => useSystemHealth(), { wrapper: createWrapper() })
 
     expect(result.current.backend).toBe("loading")
+    expect(result.current.mlflow).toBe("loading")
   })
 
-  it("only returns backend status (no apiKeys, computeBackends, gpu)", async () => {
+  it("only returns backend and mlflow status", async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/health"))
         return jsonResponse({ status: "ok", timestamp: "2026-06-10T12:00:00Z" })
+      if (url.includes("/mlflow/"))
+        return jsonResponse({ runs: [] })
       return jsonResponse({})
     })
 
@@ -94,6 +118,6 @@ describe("useSystemHealth", () => {
       expect(result.current.backend).toBe("ok")
     })
 
-    expect(Object.keys(result.current)).toEqual(["backend"])
+    expect(Object.keys(result.current).sort()).toEqual(["backend", "mlflow"])
   })
 })

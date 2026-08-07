@@ -1,10 +1,11 @@
 import { Badge } from "@/components/ui/badge"
 import { useSystemHealth, type StatusLevel } from "@/hooks/use-system-health"
 import { statusVariants } from "@/lib/status-variants"
-import { Wifi, Loader2 } from "lucide-react"
+import { Wifi, Database, Loader2 } from "lucide-react"
 
 const STATUS_ITEMS = [
-  { key: "backend" as const, label: "Backend Connection", icon: Wifi },
+  { key: "backend" as const, label: "Backend", icon: Wifi },
+  { key: "mlflow" as const, label: "MLflow", icon: Database },
 ] as const
 
 function badgeClassName(level: StatusLevel): string {
