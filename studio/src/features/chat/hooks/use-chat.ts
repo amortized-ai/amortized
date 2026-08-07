@@ -200,6 +200,24 @@ function _markJobEventFired(key: string): void {
   } catch { /* ignore */ }
 }
 
+const _FOLLOW_UP_STATUSES = new Set(["running", "succeeded", "failed", "cancelled"])
+
+function _jobFollowUpText(jobType: string, status: string): string {
+  const label = jobType.toLowerCase().includes("training") ? "training" : "SDG"
+  switch (status) {
+    case "running":
+      return `Your ${label} job is now running.`
+    case "succeeded":
+      return `Your ${label} job completed successfully!`
+    case "failed":
+      return `Your ${label} job failed.`
+    case "cancelled":
+      return `Your ${label} job was cancelled.`
+    default:
+      return `Your ${label} job status changed to ${status}.`
+  }
+}
+
 function _jobFollowUpOptions(jobType: string, status: string, _jobId: string) {
   const isTraining = jobType.toLowerCase().includes("training")
   if (status === "running") {
@@ -671,11 +689,10 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-  const FOLLOW_UP_STATUSES = new Set(["running", "succeeded", "failed", "cancelled"])
 
   const handleJobStatusChange = useCallback(
-    async (jobId: string, jobType: string, status: string) => {
-      if (!FOLLOW_UP_STATUSES.has(status)) return
+    (jobId: string, jobType: string, status: string) => {
+      if (!_FOLLOW_UP_STATUSES.has(status)) return
 
       const eventKey = `${jobId}:${status}`
       if (_hasJobEventFired(eventKey)) return
@@ -684,57 +701,26 @@ export function useChat() {
       const convId = currentConversationId ?? useChatStore.getState().currentConversationId
       if (!convId) return
 
-      const shortIdCheck = jobId.slice(0, 8)
-      const alreadyHandled = messagesRef.current.some(
-        (m) => m.role === "assistant" && m.content.includes(shortIdCheck) && m.content.includes(status),
-      )
-      if (alreadyHandled) return
-
-      const shortId = jobId.slice(0, 8)
-      const fallbackOptions = _jobFollowUpOptions(jobType, status, jobId)
-      let prompt: string
-      if (status === "running") {
-        prompt = `[System event: The ${jobType} job ${shortId} is now running. You MUST call the present_options tool with 2-3 options (e.g. view job on Jobs page, set up training while waiting, continue chatting). Keep your text response to one sentence. Do NOT repeat the job details table.]`
-      } else if (status === "succeeded") {
-        prompt = `[System event: The ${jobType} job ${shortId} just succeeded. You MUST call the present_options tool with 2-3 next step options for the user (e.g. preview the generated data, start training, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
-      } else {
-        prompt = `[System event: The ${jobType} job ${shortId} just ${status}. You MUST call the present_options tool with 2-3 options (e.g. view job logs, retry, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
-      }
-
+      const options = _jobFollowUpOptions(jobType, status, jobId)
       const assistantId = generateId()
-      try {
-        const { chatModelSelection } = useSettingsStore.getState()
-        const response = await sendOpenCodeMessage(convId, prompt, chatModelSelection)
-        const parsed = parseOpenCodeResponse(response)
-        const sessionMessages = await fetchSessionMessages(convId)
-        const session = extractSessionData(sessionMessages, parsed.toolResults)
-
-        const hasOptions = session.tools.some((t) => t.name === "present_options")
-        const toolResults = hasOptions
-          ? session.tools
-          : [...session.tools, { name: "present_options", result: JSON.stringify({ options: fallbackOptions }), collapsed: true }]
-
-        const followUp: ChatMessage = {
-          id: assistantId,
-          role: "assistant",
-          content: session.text || parsed.content,
-          timestamp: new Date().toISOString(),
-          toolResults,
-          proposedAction: null,
-          optionCards: [],
-        }
-
-        setMessages((prev) => [...prev, followUp])
-        addMessage(convId, {
-          id: assistantId,
-          role: "assistant",
-          content: followUp.content,
-          timestamp: followUp.timestamp,
-          toolResults: followUp.toolResults,
-        })
-      } catch {
-        logger.warn("job follow-up failed", { jobId, status })
+      const followUp: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        content: _jobFollowUpText(jobType, status),
+        timestamp: new Date().toISOString(),
+        toolResults: [{ name: "present_options", result: JSON.stringify({ options }), collapsed: true }],
+        proposedAction: null,
+        optionCards: [],
       }
+
+      setMessages((prev) => [...prev, followUp])
+      addMessage(convId, {
+        id: assistantId,
+        role: "assistant",
+        content: followUp.content,
+        timestamp: followUp.timestamp,
+        toolResults: followUp.toolResults,
+      })
     },
     [currentConversationId, addMessage],
   )
