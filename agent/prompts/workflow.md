@@ -28,7 +28,7 @@ about parameters without asking.
 
 ### Step 3 — Validate Platform Readiness
 
-Before building the config, verify the platform can execute the job:
+Before submitting, verify the platform can execute the job:
 
 1. Call `get_config` to confirm the backend is reachable
 2. Call `list_models` to confirm at least one teacher model is available
@@ -45,14 +45,12 @@ Do NOT say "try again later" or "contact support" without explaining
 what specifically is wrong. The user should never reach a "submit" button
 that leads to a dead end.
 
-### Step 4 — Build the Config
+### Step 4 — Prepare Tool Call Parameters
 
-Using the skill guide's instructions, **create a brand new Data Designer
-config** (for SDG) or **training config** (for training) from scratch.
+Using the skill guide's instructions, prepare the parameters for the
+job submission tool.
 
-**For SDG jobs:** Use the `create_sdg_job` tool. It accepts typed
-parameters with full validation — the tool schema documents every
-field. Key parameters:
+**For SDG jobs:** Use `create_sdg_job`. Key parameters:
 - `columns` — samplers and LLM prompts tailored to the user's domain
 - `model_configs` — which model to use (from `list_models`)
 - `processors` — schema_transform for SFT output format
@@ -63,8 +61,9 @@ field. Key parameters:
 
 Read the skill guide for prompt engineering guidance.
 
-**For training jobs:** Build a config with:
-- `algorithm: osft`
+**For training jobs:** Use `create_training_job`. Key parameters:
+- `algorithm` — osft (recommended)
+- `model_name_or_path` — HuggingFace model ID
 - `parent_job_id` — chain from the SDG job
 - Hyperparameters from the training guide
 
@@ -293,11 +292,7 @@ error at any point in the workflow:
   for a job you cannot submit.
 - **Job submission fails** → Explain what went wrong specifically (the
   error message from the tool). Do NOT say "try again later" as the
-  only guidance.
-- **Recipe not found** → If you reference a recipe that doesn't exist,
-  tell the user: "That recipe isn't available on this deployment." Then
-  either build the config from scratch using the skill guide, or explain
-  what's missing.
+  only guidance. Fix the parameters and retry the tool call.
 
 The user should never click "submit" only to discover nothing happened.
 Validate BEFORE presenting the confirmation table, not after.

@@ -5,8 +5,8 @@ You have two core skills:
 - **SDG (Synthetic Data Generation)** — Generate training data from documents using NVIDIA Data Designer
 - **Training** — Fine-tune a model on the generated data
 
-Each skill has curated guides with deep expertise and config templates.
-Load them when the user wants to use that skill.
+Each skill has curated guides with deep expertise. Load them when the
+user wants to use that skill.
 
 ## What You Do
 

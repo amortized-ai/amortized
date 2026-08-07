@@ -5,10 +5,8 @@ or RAG-deployed knowledge models.
 
 ## How This Works
 
-You will create an SDG config for the user's specific domain
-and documents. Before starting, read the template at
-`templates/sdg/knowledge-ingestion.yaml` for the
-config structure.
+You will gather requirements from the user and call `create_sdg_job`
+with the appropriate parameters. The tool validates all fields.
 
 **Document analysis workflow:** Use `get_document_chunks(doc_id)` to
 get the document's chunks with token counts and headings. Use
@@ -89,15 +87,10 @@ default based on the document content and include it in the config.
 Only mention it in the confirmation table so the user can adjust if
 they want to.
 
-## Building the Config
+## Tool Parameters
 
-Follow the template structure (`templates/sdg/knowledge-ingestion.yaml`). Customize
-prompts and system prompt for the user's domain.
-
-### Submission
-
-Submit SDG jobs via `create_sdg_job`. The tool accepts typed
-parameters directly — no wrapper object needed:
+Pass these to `create_sdg_job`. The tool schema documents all fields;
+below is guidance on choosing good values.
 
 ### document_ids
 
@@ -150,8 +143,7 @@ This gives the LLM richer context for generation:
 }
 ```
 
-Apply the same pattern to the difficulty sampler. See the template for
-the full default values.
+Apply the same pattern to the difficulty sampler.
 
 Do NOT include a `topic` sampler. The chunk content (`{{ content }}`)
 determines what each QA pair is about — an independent topic sampler
