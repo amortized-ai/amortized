@@ -3,6 +3,7 @@
 import os
 import subprocess
 
+import asyncpg
 import pytest
 
 import amortized.db.connection as db_conn_mod
@@ -12,16 +13,17 @@ TEST_DATABASE_URL = os.environ.get(
     "postgresql://amortized:amortized@localhost:5432/amortized_test",
 )
 
+_ALEMBIC_ENV = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _run_migrations() -> None:
     """Run alembic migrations once per session."""
-    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
     subprocess.run(
         ["alembic", "upgrade", "head"],
         capture_output=True,
         check=True,
-        env=env,
+        env=_ALEMBIC_ENV,
     )
 
 
@@ -29,11 +31,19 @@ def _run_migrations() -> None:
 async def _reset_db() -> None:
     """Truncate jobs table and close the pool after each test."""
     try:
-        import asyncpg
-
         conn = await asyncpg.connect(TEST_DATABASE_URL)
-        await conn.execute("TRUNCATE jobs")
-        await conn.close()
+        try:
+            await conn.execute("TRUNCATE jobs")
+        finally:
+            await conn.close()
+    except asyncpg.UndefinedTableError:
+        # Migration tests may have dropped the schema; restore it
+        subprocess.run(
+            ["alembic", "upgrade", "head"],
+            capture_output=True,
+            check=True,
+            env=_ALEMBIC_ENV,
+        )
     except OSError:
         pass
 
