@@ -45,7 +45,8 @@ describe("SystemStatus", () => {
 
     render(<SystemStatus />)
 
-    expect(screen.getByText(/Checking…/)).toBeInTheDocument()
+    const badge = screen.getByTestId("status-backend")
+    expect(badge).toHaveTextContent("Checking…")
   })
 
   it("displays Backend label", () => {
