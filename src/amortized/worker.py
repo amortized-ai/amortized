@@ -9,6 +9,8 @@ import shlex
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
+
 import amortized.config as config_mod
 from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
@@ -141,6 +143,7 @@ async def _extract_mlflow_run_id(backend: Any, handle: BackendHandle) -> str:
         match = re.search(r"/runs/([a-f0-9]{32})", log_text)
         return match.group(1) if match else ""
     except Exception:
+        logger.warning("Failed to extract MLflow run ID from logs", exc_info=True)
         return ""
 
 
@@ -162,12 +165,14 @@ async def _create_mlflow_run(
             name=f"{job_type}-{job_id[:8]}",
             tags={"job_type": job_type, "job_id": job_id},
         )
-    except Exception:
+    except (httpx.HTTPStatusError, httpx.RequestError, OSError):
         logger.warning("Failed to create MLflow run for job %s", job_id, exc_info=True)
         return None
 
 
-async def _finish_mlflow_run(run_id: str, status: str = "FINISHED") -> None:
+async def _finish_mlflow_run(
+    run_id: str, status: str = "FINISHED", *, critical: bool = False
+) -> None:
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not run_id:
         return
@@ -177,7 +182,8 @@ async def _finish_mlflow_run(run_id: str, status: str = "FINISHED") -> None:
         client = MLflowClient(tracking_uri)
         await client.finish_run(run_id, status=status)
     except Exception:
-        logger.warning("Failed to finish MLflow run %s", run_id, exc_info=True)
+        log = logger.error if critical else logger.warning
+        log("Failed to finish MLflow run %s", run_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -261,10 +267,12 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     # --- Create MLflow run before dispatch ---
     mlflow_run_id = ""
+    mlflow_run_created = False
     if config_mod.settings.mlflow_tracking_uri:
         run_id = await _create_mlflow_run(mlflow_experiment, job_id, job_type)
         if run_id:
             mlflow_run_id = run_id
+            mlflow_run_created = True
             spec_env["MLFLOW_RUN_ID"] = mlflow_run_id
             await _update_job(job_id, mlflow_run_id=mlflow_run_id)
 
@@ -305,7 +313,8 @@ async def _run_job(job: dict[str, Any]) -> None:
     await _update_job(job_id, config=result.resolved_config)
 
     # --- Wrap command with pre/post commands ---
-    final_command = _wrap_command(result.command, all_pre_commands, result.post_commands)
+    post_commands = result.post_commands if mlflow_run_created else []
+    final_command = _wrap_command(result.command, all_pre_commands, post_commands)
 
     # --- Submit ---
     spec = JobSpec(
@@ -364,7 +373,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 await set_mlflow_run_tag(mlflow_run_id, "job_type", job_type)
                 await set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
                 await builder.on_success(job, mlflow_run_id)
-                await _finish_mlflow_run(mlflow_run_id)
+                await _finish_mlflow_run(mlflow_run_id, critical=True)
 
             await _update_job(
                 job_id,
