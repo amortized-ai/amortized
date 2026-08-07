@@ -13,22 +13,28 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
-@pytest.fixture(autouse=True)
-async def _reset_db() -> None:
-    """Ensure a clean jobs table and close the pool after each test."""
+@pytest.fixture(autouse=True, scope="session")
+def _run_migrations() -> None:
+    """Run alembic migrations once per session."""
     env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
     subprocess.run(
         ["alembic", "upgrade", "head"],
         capture_output=True,
+        check=True,
         env=env,
     )
+
+
+@pytest.fixture(autouse=True)
+async def _reset_db() -> None:
+    """Truncate jobs table and close the pool after each test."""
     try:
         import asyncpg
 
         conn = await asyncpg.connect(TEST_DATABASE_URL)
         await conn.execute("TRUNCATE jobs")
         await conn.close()
-    except (OSError, asyncpg.PostgresError):
+    except OSError:
         pass
 
     yield
