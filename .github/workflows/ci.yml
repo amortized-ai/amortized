@@ -11,6 +11,25 @@ jobs:
     name: Backend — lint, type-check, test
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: amortized_test
+          POSTGRES_USER: amortized
+          POSTGRES_PASSWORD: amortized
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U amortized -d amortized_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      AMORTIZED_DATABASE_URL: postgresql://amortized:amortized@localhost:5432/amortized_test
+      AMORTIZED_TEST_DATABASE_URL: postgresql://amortized:amortized@localhost:5432/amortized_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +43,19 @@ jobs:
       - name: Lint
         run: ruff check src/ tests/
 
+      - name: Check migrations for unsafe operations
+        run: |
+          if grep -rEi 'DROP COLUMN|RENAME COLUMN|RENAME TABLE' \
+            src/amortized/db/migrations/versions/*.py; then
+            echo "::error::Unsafe migration detected — breaking schema changes must be split into two PRs"
+            exit 1
+          fi
+
       - name: Type check
         run: mypy src/
+
+      - name: Run migrations
+        run: alembic upgrade head
 
       - name: Test
         run: pytest tests/ -v

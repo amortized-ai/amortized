@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-import aiosqlite
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -189,7 +189,7 @@ async def _validate_training_data(
 async def create_job(
     request: JobRequest,
     http_request: Request,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job | JSONResponse:
     job_type = request.type
 
@@ -229,7 +229,7 @@ async def create_job(
 async def get_jobs(
     status: JobStatus | None = None,
     type: JobType | None = None,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> list[Job]:
     repo = Repository(db)
     rows = await core_list_jobs(repo, status=status, job_type=type)
@@ -239,7 +239,7 @@ async def get_jobs(
 @router.get("/{job_id}", response_model=Job, operation_id="get_job")
 async def get_job_detail(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
     row = await core_get_job(repo, job_id)
@@ -251,7 +251,7 @@ async def get_job_detail(
 @router.delete("/{job_id}", response_model=Job, operation_id="cancel_job")
 async def cancel_job(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
     try:
@@ -267,7 +267,7 @@ async def cancel_job(
 async def get_job_logs(
     job_id: str,
     tail: int = 100,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
     repo = Repository(db)
     row = await core_get_job(repo, job_id)
@@ -301,7 +301,7 @@ async def get_job_logs(
 @router.get("/{job_id}/artifacts", operation_id="get_job_artifacts")
 async def get_job_artifacts(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
     """Return MLflow artifact URI for a completed job."""
     repo = Repository(db)
@@ -328,7 +328,7 @@ async def get_job_artifacts(
 @router.post("/{job_id}/delete", status_code=204, operation_id="delete_job")
 async def delete_job(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> None:
     repo = Repository(db)
     try:

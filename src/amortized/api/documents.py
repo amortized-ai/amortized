@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-import aiosqlite
+import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 
@@ -101,7 +101,7 @@ async def convert_document(
     chunker_type: ChunkerType = ChunkerType.sentence,
     chunk_size: int = Query(2048, ge=64, le=8192),
     chunk_overlap: int = Query(200, ge=0),
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> DocumentUploadAccepted:
     filename = _sanitize_filename(file.filename or f"upload-{uuid.uuid4().hex[:8]}")
     file_bytes = await file.read()
@@ -148,7 +148,7 @@ async def convert_document(
 )
 async def convert_document_url(
     request: ConvertUrlRequest,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> DocumentUploadAccepted:
     _validate_url(request.url)
     opts = request.options

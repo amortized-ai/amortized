@@ -1,49 +1,85 @@
-"""SQLite database layer for job persistence.
+"""PostgreSQL database layer for job persistence.
 
-Uses a single shared connection so the API and worker always see the same
-data — separate connections in WAL mode can have snapshot-visibility gaps.
+Uses a connection pool with retry logic and health checking.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from pathlib import Path
 
-import aiosqlite
+import asyncpg
 
 from amortized.config import settings
 
 logger = logging.getLogger("amortized.db")
 
-_SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+_pool: asyncpg.Pool | None = None
 
-_shared_db: aiosqlite.Connection | None = None
-
-
-async def _get_shared_db() -> aiosqlite.Connection:
-    global _shared_db
-    if _shared_db is None:
-        settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-        _shared_db = await aiosqlite.connect(str(settings.db_path))
-        _shared_db.row_factory = aiosqlite.Row
-        logger.info("Opened shared DB connection to %s", settings.db_path)
-    return _shared_db
+_MAX_RETRIES = 5
+_BASE_DELAY = 1.0
 
 
-async def get_db() -> AsyncIterator[aiosqlite.Connection]:
-    yield await _get_shared_db()
+def get_pool() -> asyncpg.Pool:
+    assert _pool is not None, "Database not initialized — call init_db() first"
+    return _pool
+
+
+async def get_db() -> AsyncIterator[asyncpg.Connection]:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        yield conn
 
 
 async def init_db() -> None:
-    db = await _get_shared_db()
-    schema_sql = _SCHEMA_PATH.read_text()
-    await db.execute("PRAGMA journal_mode=WAL")
-    await db.executescript(schema_sql)
-    await db.commit()
-    logger.info("Database initialized at %s", settings.db_path)
+    global _pool
+    if not settings.database_url:
+        raise RuntimeError(
+            "AMORTIZED_DATABASE_URL is not set — configure it in the environment or configmap"
+        )
+    last_error: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            _pool = await asyncpg.create_pool(
+                dsn=settings.database_url,
+                min_size=2,
+                max_size=10,
+                command_timeout=30.0,
+                server_settings={"application_name": "amortized"},
+            )
+            logger.info("Database pool created (%s)", settings.database_url.split("@")[-1])
+            return
+        except (OSError, asyncpg.InterfaceError) as exc:
+            last_error = exc
+            delay = _BASE_DELAY * (2**attempt)
+            logger.warning(
+                "DB connect attempt %d/%d failed, retrying in %.0fs: %s",
+                attempt + 1,
+                _MAX_RETRIES,
+                delay,
+                exc,
+            )
+            await asyncio.sleep(delay)
+        except asyncpg.PostgresError as exc:
+            raise RuntimeError(f"Database configuration error: {exc}") from exc
+    raise RuntimeError(
+        f"Failed to connect to database after {_MAX_RETRIES} attempts"
+    ) from last_error
+
+
+async def check_db_health() -> bool:
+    if _pool is None:
+        return False
+    try:
+        async with _pool.acquire(timeout=2.0) as conn:
+            await conn.fetchval("SELECT 1")
+        return True
+    except (OSError, asyncpg.InterfaceError, asyncpg.PostgresError):
+        logger.warning("Database health check failed", exc_info=True)
+        return False
 
 
 async def close_db() -> None:
-    global _shared_db
-    if _shared_db is not None:
-        await _shared_db.close()
-        _shared_db = None
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None

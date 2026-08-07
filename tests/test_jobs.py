@@ -4,6 +4,7 @@ import os
 
 import httpx
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.main import app
 
@@ -13,8 +14,7 @@ def _use_temp_db(tmp_path: object) -> None:
     import amortized.config as config_mod
     import amortized.db.connection as db_conn_mod
 
-    db_path = str(tmp_path) + "/test.db"
-    os.environ["AMORTIZED_DB_PATH"] = db_path
+    os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
@@ -70,9 +70,7 @@ class TestCreateJob:
                             "prompt": "Context: {{ content }}",
                         }
                     ],
-                    "model_configs": [
-                        {"alias": "text", "model": "gpt-4o"}
-                    ],
+                    "model_configs": [{"alias": "text", "model": "gpt-4o"}],
                 },
             },
         )
@@ -146,7 +144,6 @@ class TestCreateJob:
         assert data["dry_run"] is True
         assert data["valid"] is True
 
-
     @pytest.mark.asyncio
     async def test_sdg_missing_columns(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
@@ -176,20 +173,23 @@ class TestCreateJob:
 
     @pytest.mark.asyncio
     async def test_sdg_llm_text_missing_model_configs(
-        self, client: httpx.AsyncClient,
+        self,
+        client: httpx.AsyncClient,
     ) -> None:
         response = await client.post(
             "/api/v1/jobs",
             json={
                 "type": "sdg",
                 "config": {
-                    "columns": [{
-                        "column_type": "llm-text",
-                        "name": "question",
-                        "model_alias": "text",
-                        "system_prompt": "Generate a question.",
-                        "prompt": "{{ content }}",
-                    }],
+                    "columns": [
+                        {
+                            "column_type": "llm-text",
+                            "name": "question",
+                            "model_alias": "text",
+                            "system_prompt": "Generate a question.",
+                            "prompt": "{{ content }}",
+                        }
+                    ],
                 },
             },
         )
@@ -203,13 +203,15 @@ class TestCreateJob:
             json={
                 "type": "sdg",
                 "config": {
-                    "columns": [{
-                        "column_type": "llm-text",
-                        "name": "question",
-                        "model_alias": "nonexistent",
-                        "system_prompt": "Generate.",
-                        "prompt": "{{ content }}",
-                    }],
+                    "columns": [
+                        {
+                            "column_type": "llm-text",
+                            "name": "question",
+                            "model_alias": "nonexistent",
+                            "system_prompt": "Generate.",
+                            "prompt": "{{ content }}",
+                        }
+                    ],
                     "model_configs": [
                         {"alias": "text", "model": "gpt-4o"},
                     ],
@@ -240,12 +242,14 @@ class TestCreateJob:
             json={
                 "type": "sdg",
                 "config": {
-                    "columns": [{
-                        "column_type": "sampler",
-                        "name": "id",
-                        "sampler_type": "uuid",
-                        "params": {},
-                    }],
+                    "columns": [
+                        {
+                            "column_type": "sampler",
+                            "name": "id",
+                            "sampler_type": "uuid",
+                            "params": {},
+                        }
+                    ],
                 },
                 "dry_run": True,
             },
@@ -299,12 +303,14 @@ class TestCreateJob:
             json={
                 "type": "sdg",
                 "config": {
-                    "columns": [{
-                        "column_type": "sampler",
-                        "name": "topic",
-                        "sampler_type": "category",
-                        "params": {"values": ["A", "B"]},
-                    }],
+                    "columns": [
+                        {
+                            "column_type": "sampler",
+                            "name": "topic",
+                            "sampler_type": "category",
+                            "params": {"values": ["A", "B"]},
+                        }
+                    ],
                 },
                 "dry_run": True,
             },
@@ -339,7 +345,17 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"num_records": 10, "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}]},
+                "config": {
+                    "num_records": 10,
+                    "columns": [
+                        {
+                            "column_type": "sampler",
+                            "name": "q",
+                            "sampler_type": "category",
+                            "params": {"values": ["A", "B"]},
+                        }
+                    ],
+                },
             },
         )
         response = await client.get("/api/v1/jobs")
@@ -364,7 +380,17 @@ class TestListJobs:
             "/api/v1/jobs",
             json={
                 "type": "sdg",
-                "config": {"num_records": 10, "columns": [{"column_type": "sampler", "name": "q", "sampler_type": "category", "params": {"values": ["A", "B"]}}]},
+                "config": {
+                    "num_records": 10,
+                    "columns": [
+                        {
+                            "column_type": "sampler",
+                            "name": "q",
+                            "sampler_type": "category",
+                            "params": {"values": ["A", "B"]},
+                        }
+                    ],
+                },
             },
         )
         response = await client.get("/api/v1/jobs?type=training")

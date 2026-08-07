@@ -29,6 +29,9 @@ patches:
       - op: replace
         path: /data/AMORTIZED_S3_BUCKET
         value: "amortized"
+      - op: replace
+        path: /data/AMORTIZED_DATABASE_URL
+        value: "postgresql://amortized:amortized@postgres.amortized.svc.cluster.local:5432/amortized"
 
   - target:
       kind: Deployment
