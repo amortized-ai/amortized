@@ -51,7 +51,7 @@ export function MessageBubble({
       if (parsed?.options && Array.isArray(parsed.options)) {
         return (parsed.options as OptionCard[]).map((opt) => ({
           ...opt,
-          value: opt.description ? `${opt.title} — ${opt.description}` : opt.title,
+          value: opt.value || (opt.description ? `${opt.title} — ${opt.description}` : opt.title),
         }))
       }
     } catch { /* ignore parse errors */ }
