@@ -230,8 +230,17 @@ class TestResolveParentArtifacts:
         mock_repo = AsyncMock()
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
+        from unittest.mock import MagicMock
+
+        mock_conn = AsyncMock()
+        mock_acquire = MagicMock()
+        mock_acquire.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_acquire.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value = mock_acquire
+
         with (
-            patch("amortized.db.connection.get_pool", return_value=AsyncMock()),
+            patch("amortized.db.connection.get_pool", return_value=mock_pool),
             patch("amortized.db.repository.Repository", return_value=mock_repo),
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):

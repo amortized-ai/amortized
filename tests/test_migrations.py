@@ -62,7 +62,7 @@ class TestAlembicMigrations:
         env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
         subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
         result = subprocess.run(["alembic", "current"], capture_output=True, text=True, env=env)
-        assert "0001" in result.stdout
+        assert "(head)" in result.stdout
 
     def test_upgrade_is_idempotent(self) -> None:
         env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
