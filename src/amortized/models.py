@@ -200,7 +200,6 @@ from data_designer.config.mcp import ToolConfig as DDToolConfig  # noqa: E402
 from data_designer.config.models import ModelConfig as DDModelConfig  # noqa: E402
 from data_designer.config.processor_types import ProcessorConfigT as SDGProcessor  # noqa: E402
 from data_designer.config.sampler_constraints import ColumnConstraintInputT  # noqa: E402
-from data_designer.config.seed import SeedConfig as DDSeedConfig  # noqa: E402
 
 
 class SDGJobRequest(BaseModel):
@@ -226,9 +225,12 @@ class SDGJobRequest(BaseModel):
             "drop_columns to remove intermediate columns"
         ),
     )
-    seed_config: DDSeedConfig | None = Field(
+    seed_config: dict[str, Any] | None = Field(
         None,
-        description=("Seed data configuration. Auto-configured when document_ids is provided"),
+        description=(
+            "Seed data configuration (auto-configured when document_ids is provided). "
+            "source.seed_type: local, hf, directory, file_contents, agent_rollout"
+        ),
     )
     constraints: list[ColumnConstraintInputT] = Field(
         default_factory=list,
@@ -268,9 +270,12 @@ class SDGJobRequest(BaseModel):
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":
         aliases_needed: list[str] = []
-        for col in self.columns:
+        for i, col in enumerate(self.columns):
             alias = getattr(col, "model_alias", None)
-            if alias:
+            if alias is not None:
+                if not alias:
+                    msg = f"columns[{i}].model_alias: must not be empty"
+                    raise ValueError(msg)
                 aliases_needed.append(alias)
 
         if not aliases_needed:

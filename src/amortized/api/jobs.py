@@ -138,17 +138,7 @@ async def create_sdg_job(
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
     config = request.model_dump(exclude_none=True)
-
-    mode = config.pop("mode", "create")
-    document_ids = config.pop("document_ids", [])
     parent_job_id = config.pop("parent_job_id", "")
-    topic = config.get("topic", "")
-
-    config["document_ids"] = document_ids
-    if topic:
-        config["topic"] = topic
-    if mode != "create":
-        config["mode"] = mode
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
