@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import warnings
 
 import asyncpg
 import pytest
