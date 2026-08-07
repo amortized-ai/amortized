@@ -305,7 +305,9 @@ async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]
             continue
         raw = (part.get("tool") or "")
         tool_name = raw.replace("mcp_amortized__", "").replace("amortized_", "")
-        if tool_name not in ("create_job", "submit_recipe_job"):
+        if tool_name not in (
+            "create_sdg_job", "create_training_job", "submit_recipe_job",
+        ):
             continue
         job_id = _extract_job_id_from_output(part.get("output"))
         if not job_id:

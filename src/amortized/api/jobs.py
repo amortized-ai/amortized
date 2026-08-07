@@ -1,11 +1,11 @@
-"""Job management endpoints — unified CRUD."""
+"""Job management endpoints."""
 
 import logging
 from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
 from amortized.core.compute import get_backend
@@ -32,12 +32,11 @@ from amortized.core.jobs import (
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
-    DryRunResponse,
     Job,
-    JobRequest,
     JobStatus,
     JobType,
-    TrainingJobConfig,
+    SDGJobRequest,
+    TrainingJobRequest,
 )
 from amortized.worker import _resolve_mlflow_artifact_uri
 
@@ -45,116 +44,99 @@ logger = logging.getLogger("amortized.api.jobs")
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
+
 def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-_KNOWN_COLUMN_TYPES = frozenset({
-    "sampler", "llm-text", "llm-code", "llm-structured", "llm-judge",
-    "validation", "expression", "custom", "seed-dataset", "embedding", "image",
-})
+# ---------------------------------------------------------------------------
+# SDG error simplification
+# ---------------------------------------------------------------------------
 
-_LLM_COLUMN_TYPES = frozenset({"llm-text", "llm-code", "llm-structured", "llm-judge"})
+_COLUMN_TYPE_TO_CLASS = {
+    "sampler": "SamplerColumnConfig",
+    "llm-text": "LLMTextColumnConfig",
+    "llm-code": "LLMCodeColumnConfig",
+    "llm-judge": "LLMJudgeColumnConfig",
+    "llm-structured": "LLMStructuredColumnConfig",
+    "expression": "ExpressionColumnConfig",
+    "validation": "ValidationColumnConfig",
+    "seed-dataset": "SeedDatasetColumnConfig",
+    "embedding": "EmbeddingColumnConfig",
+    "image": "ImageColumnConfig",
+    "custom": "CustomColumnConfig",
+}
 
 
-def _validate_sdg_config(config: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
+def _simplify_sdg_errors(
+    exc: ValidationError | RequestValidationError,
+    body: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Filter Pydantic union errors to only the matching column type."""
+    columns = body.get("columns", [])
+    valid_types = sorted(_COLUMN_TYPE_TO_CLASS.keys())
+    simplified: list[dict[str, str]] = []
 
-    columns = config.get("columns")
-    if columns is None:
-        return ["columns: Data Designer config requires a 'columns' field"]
-    if not isinstance(columns, list) or len(columns) == 0:
-        return ["columns: must be a non-empty list"]
-
-    model_aliases_needed: list[str] = []
-
-    for i, col in enumerate(columns):
-        prefix = f"columns[{i}]"
-        col_type = col.get("column_type")
-        if not col_type:
-            errors.append(f"{prefix}.column_type: required")
-            continue
-        if col_type not in _KNOWN_COLUMN_TYPES:
-            errors.append(
-                f"{prefix}.column_type: unknown type '{col_type}'"
-                f" (valid: {', '.join(sorted(_KNOWN_COLUMN_TYPES))})"
+    bad_col_types: list[tuple[int, str]] = []
+    if isinstance(columns, list):
+        for i, col in enumerate(columns):
+            if isinstance(col, dict):
+                ct = col.get("column_type", "")
+                if ct and ct not in _COLUMN_TYPE_TO_CLASS:
+                    bad_col_types.append((i, ct))
+    if bad_col_types:
+        for idx, ct in bad_col_types:
+            simplified.append(
+                {
+                    "field": f"columns[{idx}].column_type",
+                    "error": f"'{ct}' is not valid. Valid types: {valid_types}",
+                }
             )
-            continue
-        if not col.get("name"):
-            errors.append(f"{prefix}.name: required")
+        return simplified
 
-        if col_type == "sampler":
-            if not col.get("sampler_type"):
-                errors.append(f"{prefix}.sampler_type: required for sampler columns")
-            sampler_type = col.get("sampler_type", "")
-            if sampler_type in ("category", "subcategory"):
-                params = col.get("params", {})
-                values = params.get("values") if isinstance(params, dict) else None
-                if not values or not isinstance(values, list) or len(values) == 0:
-                    errors.append(f"{prefix}.params.values: required for {sampler_type} samplers")
-        elif col_type in _LLM_COLUMN_TYPES:
-            alias = col.get("model_alias")
-            if not alias:
-                errors.append(f"{prefix}.model_alias: required for {col_type} columns")
-            else:
-                model_aliases_needed.append(alias)
-            if not col.get("system_prompt"):
-                errors.append(f"{prefix}.system_prompt: required for {col_type} columns")
-            if not col.get("prompt"):
-                errors.append(f"{prefix}.prompt: required for {col_type} columns")
+    for err in exc.errors():
+        loc = tuple(err.get("loc", ()))
+        if loc and loc[0] == "body":
+            loc = loc[1:]
 
-    if model_aliases_needed:
-        model_configs = config.get("model_configs")
-        if not model_configs or not isinstance(model_configs, list):
-            errors.append("model_configs: required when columns use llm-text")
+        if len(loc) >= 2 and loc[0] == "columns" and isinstance(loc[1], int):
+            idx = loc[1]
+            col = columns[idx] if idx < len(columns) else {}
+            col_type = col.get("column_type", "")
+            expected_cls = _COLUMN_TYPE_TO_CLASS.get(col_type, "")
+            loc_str = str(loc[2]) if len(loc) > 2 else ""
+            if expected_cls and expected_cls not in loc_str:
+                continue
+            field = str(loc[-1]) if len(loc) > 2 else ""
+            path = f"columns[{idx}].{field}" if field else f"columns[{idx}]"
+            simplified.append({"field": path, "error": err["msg"]})
         else:
-            for j, mc in enumerate(model_configs):
-                if not mc.get("alias"):
-                    errors.append(f"model_configs[{j}].alias: required")
-                if not mc.get("model"):
-                    errors.append(f"model_configs[{j}].model: required")
-            defined_aliases = {mc.get("alias") for mc in model_configs if mc.get("alias")}
-            for alias in model_aliases_needed:
-                if alias not in defined_aliases:
-                    errors.append(
-                        f"model_alias: '{alias}' not found in model_configs "
-                        f"(available: {', '.join(sorted(defined_aliases)) or 'none'})"
-                    )
+            path = ".".join(str(part) for part in loc)
+            simplified.append({"field": path, "error": err["msg"]})
 
-    return errors
+    if not simplified:
+        for err in exc.errors()[:5]:
+            loc = tuple(err.get("loc", ()))
+            if loc and loc[0] == "body":
+                loc = loc[1:]
+            path = ".".join(str(part) for part in loc)
+            simplified.append({"field": path, "error": err["msg"]})
+
+    return simplified
 
 
-async def _validate_config(
-    job_type: JobType,
-    config: dict[str, Any],
-    request: JobRequest,
-    db: aiosqlite.Connection,
-) -> list[str]:
-    try:
-        if job_type == JobType.training:
-            TrainingJobConfig(**config)
-            return await _validate_training_data(config, request, db)
-        elif job_type == JobType.sdg:
-            return _validate_sdg_config(config)
-        elif job_type == JobType.upload:
-            errors: list[str] = []
-            if not config.get("s3_uri"):
-                errors.append("s3_uri is required for upload jobs")
-            if not config.get("filename"):
-                errors.append("filename is required for upload jobs")
-            return errors
-    except ValidationError as exc:
-        return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
-    return []
+# ---------------------------------------------------------------------------
+# Training data validation
+# ---------------------------------------------------------------------------
 
 
 async def _validate_training_data(
     config: dict[str, Any],
-    request: JobRequest,
-    db: aiosqlite.Connection,
+    parent_job_id: str,
+    db: asyncpg.Connection,
 ) -> list[str]:
+    """Validate that training data is available (via parent job or data_path)."""
     errors: list[str] = []
-    parent_job_id = request.parent_job_id or config.get("parent_job_id", "")
     data_path = config.get("data_path", "")
 
     if not parent_job_id and not data_path:
@@ -168,9 +150,7 @@ async def _validate_training_data(
         repo = Repository(db)
         parent = await repo.get_job(parent_job_id)
         if parent is None:
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' not found"
-            )
+            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
         elif parent.get("status") != "succeeded":
             errors.append(
                 f"parent_job_id: job '{parent_job_id}' has status"
@@ -185,26 +165,53 @@ async def _validate_training_data(
     return errors
 
 
-@router.post("", status_code=201, response_model=Job, operation_id="create_job")
-async def create_job(
-    request: JobRequest,
+# ---------------------------------------------------------------------------
+# Job creation endpoints (one per job type)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sdg", status_code=201, response_model=Job, operation_id="create_sdg_job")
+async def create_sdg_job(
+    request: SDGJobRequest,
     http_request: Request,
     db: asyncpg.Connection = Depends(_get_db),
-) -> Job | JSONResponse:
-    job_type = request.type
+) -> Job:
+    """Create a synthetic data generation job using Data Designer."""
+    config = request.model_dump(exclude_none=True)
+    parent_job_id = config.pop("parent_job_id", "")
 
-    errors = await _validate_config(job_type, request.config, request, db)
+    user_id = http_request.headers.get("X-Forwarded-User", "")
 
-    if request.dry_run:
-        dry_resp = DryRunResponse(
-            valid=not errors,
-            errors=errors,
-            warnings=[],
-            type=job_type.value,
-            config=request.config,
+    repo = Repository(db)
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.sdg,
+            config=config,
+            parent_job_id=parent_job_id,
+            user_id=user_id,
         )
-        return JSONResponse(content=dry_resp.model_dump(), status_code=200)
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _job_response(row)
 
+
+@router.post(
+    "/training",
+    status_code=201,
+    response_model=Job,
+    operation_id="create_training_job",
+)
+async def create_training_job(
+    request: TrainingJobRequest,
+    http_request: Request,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Job:
+    """Create a model training job."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+
+    errors = await _validate_training_data(config, parent_job_id, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -214,15 +221,19 @@ async def create_job(
     try:
         row = await core_create_job(
             repo,
-            job_type=job_type,
-            config=request.config,
-            recipe=request.recipe,
-            parent_job_id=request.parent_job_id,
+            job_type=JobType.training,
+            config=config,
+            parent_job_id=parent_job_id,
             user_id=user_id,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _job_response(row)
+
+
+# ---------------------------------------------------------------------------
+# Job CRUD
+# ---------------------------------------------------------------------------
 
 
 @router.get("", response_model=list[Job], operation_id="list_jobs")

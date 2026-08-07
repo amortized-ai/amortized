@@ -14,7 +14,7 @@ import { extractJobInfo } from "../utils/parse-tool-result"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
-const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_job"])
+const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_sdg_job", "create_training_job"])
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()

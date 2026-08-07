@@ -2,26 +2,26 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Amortized",
-    "description": "Control plane for building task models",
     "version": "1.0.0"
   },
   "paths": {
-    "/api/v1/jobs": {
+    "/api/v1/jobs/sdg": {
       "post": {
         "tags": [
           "jobs"
         ],
-        "summary": "Create Job",
-        "operationId": "create_job",
+        "summary": "Create Sdg Job",
+        "description": "Create a synthetic data generation job using Data Designer.",
+        "operationId": "create_sdg_job",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JobRequest"
+                "$ref": "#/components/schemas/SDGJobRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -45,7 +45,51 @@
             }
           }
         }
-      },
+      }
+    },
+    "/api/v1/jobs/training": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create Training Job",
+        "description": "Create a model training job.",
+        "operationId": "create_training_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
       "get": {
         "tags": [
           "jobs"
@@ -1451,6 +1495,151 @@
   },
   "components": {
     "schemas": {
+      "AudioContext": {
+        "properties": {
+          "modality": {
+            "type": "string",
+            "const": "audio",
+            "title": "Modality",
+            "default": "audio"
+          },
+          "column_name": {
+            "type": "string",
+            "title": "Column Name"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModalityDataType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audio_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "column_name"
+        ],
+        "title": "AudioContext",
+        "description": "Configuration for providing audio context to multimodal models.\n\nAudio context values are URL or base64 media values. Local paths may be\npassed through only in explicit URL mode so colocated model endpoints can\nread them directly. ``audio_format`` is consulted only for base64 sources."
+      },
+      "AudioFormat": {
+        "type": "string",
+        "enum": [
+          "mp3",
+          "wav"
+        ],
+        "title": "AudioFormat",
+        "description": "Supported audio formats for audio context."
+      },
+      "BaseModel": {
+        "properties": {},
+        "type": "object",
+        "title": "BaseModel"
+      },
+      "BernoulliMixtureSamplerParams": {
+        "properties": {
+          "p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "P",
+            "description": "Bernoulli distribution probability of success."
+          },
+          "dist_name": {
+            "type": "string",
+            "title": "Dist Name",
+            "description": "Mixture distribution name. Samples will be equal to the distribution sample with probability `p`, otherwise equal to 0. Must be a valid scipy.stats distribution name."
+          },
+          "dist_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dist Params",
+            "description": "Parameters of the scipy.stats distribution given in `dist_name`."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "bernoulli_mixture",
+            "title": "Sampler Type",
+            "default": "bernoulli_mixture"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "p",
+          "dist_name",
+          "dist_params"
+        ],
+        "title": "BernoulliMixtureSamplerParams",
+        "description": "Parameters for sampling from a Bernoulli mixture distribution.\n\nCombines a Bernoulli distribution with another continuous distribution, creating a mixture\nwhere values are either 0 (with probability 1-p) or sampled from the specified distribution\n(with probability p). This is useful for modeling scenarios with many zero values mixed with\na continuous distribution of non-zero values.\n\nCommon use cases include modeling sparse events, zero-inflated data, or situations where\nan outcome either doesn't occur (0) or follows a specific distribution when it does occur.\n\nAttributes:\n    p (required): Probability of sampling from the mixture distribution (non-zero outcome).\n        Must be between 0.0 and 1.0 (inclusive). With probability 1-p, the sample is 0.\n    dist_name (required): Name of the scipy.stats distribution to sample from when outcome is non-zero.\n        Must be a valid scipy.stats distribution name (e.g., \"norm\", \"gamma\", \"expon\").\n    dist_params (required): Parameters for the specified scipy.stats distribution."
+      },
+      "BernoulliSamplerParams": {
+        "properties": {
+          "p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "P",
+            "description": "Probability of success."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "bernoulli",
+            "title": "Sampler Type",
+            "default": "bernoulli"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "p"
+        ],
+        "title": "BernoulliSamplerParams",
+        "description": "Parameters for sampling from a Bernoulli distribution.\n\nSamples binary values (0 or 1) representing the outcome of a single trial with a fixed\nprobability of success. This is the simplest discrete probability distribution, useful for\nmodeling binary outcomes like success/failure, yes/no, or true/false.\n\nAttributes:\n    p (required): Probability of success (sampling 1). Must be between 0.0 and 1.0 (inclusive).\n        The probability of failure (sampling 0) is automatically 1 - p."
+      },
+      "BinomialSamplerParams": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N",
+            "description": "Number of trials."
+          },
+          "p": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "P",
+            "description": "Probability of success on each trial."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "binomial",
+            "title": "Sampler Type",
+            "default": "binomial"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "n",
+          "p"
+        ],
+        "title": "BinomialSamplerParams",
+        "description": "Parameters for sampling from a Binomial distribution.\n\nSamples integer values representing the number of successes in a fixed number of independent\nBernoulli trials, each with the same probability of success. Commonly used to model the number\nof successful outcomes in repeated experiments.\n\nAttributes:\n    n (required): Number of independent trials. Must be a positive integer.\n    p (required): Probability of success on each trial. Must be between 0.0 and 1.0 (inclusive)."
+      },
       "Body_convert_document": {
         "properties": {
           "file": {
@@ -1479,6 +1668,147 @@
         ],
         "title": "Body_upload_dataset_api_v1_datasets_upload_post"
       },
+      "CategorySamplerParams": {
+        "properties": {
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Values",
+            "description": "List of possible categorical values that can be sampled from."
+          },
+          "weights": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights",
+            "description": "List of unnormalized probability weights to assigned to each value, in order. Larger values will be sampled with higher probability."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "category",
+            "title": "Sampler Type",
+            "default": "category"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "values"
+        ],
+        "title": "CategorySamplerParams",
+        "description": "Parameters for categorical sampling with optional probability weighting.\n\nSamples values from a discrete set of categories. When weights are provided, values are\nsampled according to their assigned probabilities. Without weights, uniform sampling is used.\n\nAttributes:\n    values (required): List of possible categorical values to sample from. Can contain strings, integers,\n        or floats. Must contain at least one value.\n    weights: Optional unnormalized probability weights for each value. If provided, must be\n        the same length as `values`. Weights are automatically normalized to sum to 1.0.\n        Larger weights result in higher sampling probability for the corresponding value."
+      },
+      "ChatCompletionInferenceParams": {
+        "properties": {
+          "generation_type": {
+            "type": "string",
+            "const": "chat-completion",
+            "title": "Generation Type",
+            "default": "chat-completion"
+          },
+          "max_parallel_requests": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Parallel Requests",
+            "default": 4
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "extra_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Body"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "$ref": "#/components/schemas/UniformDistribution"
+              },
+              {
+                "$ref": "#/components/schemas/ManualDistribution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "$ref": "#/components/schemas/UniformDistribution"
+              },
+              {
+                "$ref": "#/components/schemas/ManualDistribution"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ChatCompletionInferenceParams",
+        "description": "Configuration for LLM inference parameters.\n\nAttributes:\n    generation_type: Type of generation, always \"chat-completion\" for this class.\n    temperature: Sampling temperature (0.0-2.0). Can be a fixed value or a distribution for dynamic sampling.\n    top_p: Nucleus sampling probability (0.0-1.0). Can be a fixed value or a distribution for dynamic sampling.\n    max_tokens: Maximum number of tokens to generate in the response."
+      },
       "ChunkerType": {
         "type": "string",
         "enum": [
@@ -1488,36 +1818,88 @@
         ],
         "title": "ChunkerType"
       },
-      "ComputeSpec": {
+      "CodeLang": {
+        "type": "string",
+        "enum": [
+          "bash",
+          "c",
+          "cobol",
+          "cpp",
+          "csharp",
+          "go",
+          "java",
+          "javascript",
+          "kotlin",
+          "python",
+          "ruby",
+          "rust",
+          "scala",
+          "swift",
+          "typescript",
+          "sql:sqlite",
+          "sql:tsql",
+          "sql:bigquery",
+          "sql:mysql",
+          "sql:postgres",
+          "sql:ansi"
+        ],
+        "title": "CodeLang"
+      },
+      "CodeValidatorParams": {
         "properties": {
-          "backend": {
+          "validator_type": {
             "type": "string",
-            "title": "Backend",
-            "description": "Compute backend name",
-            "default": "local"
+            "const": "code",
+            "title": "Validator Type",
+            "description": "Validator type discriminator, always 'code' for this validator",
+            "default": "code"
           },
-          "gpus": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Gpus",
-            "description": "Number of GPUs requested",
-            "default": 0
-          },
-          "gpu_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gpu Type",
-            "description": "GPU type (e.g. 'A100', 'H100')"
+          "code_lang": {
+            "$ref": "#/components/schemas/CodeLang",
+            "description": "The language of the code to validate"
           }
         },
+        "additionalProperties": false,
         "type": "object",
-        "title": "ComputeSpec"
+        "required": [
+          "code_lang"
+        ],
+        "title": "CodeValidatorParams",
+        "description": "Configuration for code validation. Supports Python and SQL code validation.\n\nAttributes:\n    code_lang (required): The language of the code to validate. Supported values include: `python`,\n        `sql:sqlite`, `sql:postgres`, `sql:mysql`, `sql:tsql`, `sql:bigquery`, `sql:ansi`."
+      },
+      "ColumnInequalityConstraint": {
+        "properties": {
+          "target_column": {
+            "type": "string",
+            "title": "Target Column",
+            "description": "Name of the sampler column this constraint applies to"
+          },
+          "constraint_type": {
+            "type": "string",
+            "const": "column_inequality",
+            "title": "Constraint Type",
+            "description": "Constraint type discriminator, always 'column_inequality' for this constraint",
+            "default": "column_inequality"
+          },
+          "rhs": {
+            "type": "string",
+            "title": "Rhs",
+            "description": "Name of the other sampler column to compare against"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/InequalityOperator",
+            "description": "Comparison operator"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_column",
+          "rhs",
+          "operator"
+        ],
+        "title": "ColumnInequalityConstraint",
+        "description": "Constrain a sampler column to be less/greater than another sampler column.\n\nOnly applies to sampler columns.\n\nAttributes:\n    rhs (required): Name of the other sampler column to compare against.\n    operator (required): Comparison operator (lt, le, gt, ge).\n\nInherited Attributes:\n    target_column (required): Name of the sampler column this constraint applies to."
       },
       "ConfigResponse": {
         "properties": {
@@ -1604,6 +1986,120 @@
           "url"
         ],
         "title": "ConvertUrlRequest"
+      },
+      "CustomColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "custom",
+            "title": "Column Type",
+            "default": "custom"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "generator_function": {
+            "title": "Generator Function",
+            "description": "Function decorated with @custom_column_generator"
+          },
+          "generation_strategy": {
+            "$ref": "#/components/schemas/GenerationStrategy",
+            "description": "Generation strategy: 'cell_by_cell' for row-based or 'full_column' for batch-based",
+            "default": "cell_by_cell"
+          },
+          "generator_params": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional typed configuration object passed as second argument to generator function"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "generator_function"
+        ],
+        "title": "CustomColumnConfig",
+        "description": "Configuration for custom user-defined column generators.\n\nCustom columns allow users to provide their own generation logic via a callable function\ndecorated with `@custom_column_generator`. Two strategies are supported: cell_by_cell\n(default, row-based) and full_column (batch-based with DataFrame access).\n\nAttributes:\n    generator_function (required): A callable decorated with @custom_column_generator.\n    generation_strategy: \"cell_by_cell\" (row-based) or \"full_column\" (batch-based).\n    generator_params: Optional typed configuration object (Pydantic BaseModel) passed\n        as the second argument to the generator function.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "DatetimeSamplerParams": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "title": "Start",
+            "description": "Earliest possible datetime for sampling range, inclusive."
+          },
+          "end": {
+            "type": "string",
+            "title": "End",
+            "description": "Exclusive upper bound for datetime sampling range."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "Y",
+              "M",
+              "D",
+              "h",
+              "m",
+              "s"
+            ],
+            "title": "Unit",
+            "description": "Sampling units, e.g. the smallest possible time interval between samples.",
+            "default": "D"
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "datetime",
+            "title": "Sampler Type",
+            "default": "datetime"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "DatetimeSamplerParams",
+        "description": "Parameters for uniform datetime sampling within a specified range.\n\nSamples datetime values uniformly between a start and end date with a specified granularity.\nThe sampling unit determines the smallest possible time interval between consecutive samples.\n\nAttributes:\n    start (required): Earliest possible datetime for the sampling range (inclusive). Must be a valid\n        datetime string parseable by pandas.to_datetime().\n    end (required): Exclusive upper bound for the sampling range. Must be a valid\n        datetime string parseable by pandas.to_datetime().\n    unit: Time unit for sampling granularity. Options:\n        - \"Y\": Years\n        - \"M\": Months\n        - \"D\": Days (default)\n        - \"h\": Hours\n        - \"m\": Minutes\n        - \"s\": Seconds"
+      },
+      "DistributionType": {
+        "type": "string",
+        "enum": [
+          "uniform",
+          "manual"
+        ],
+        "title": "DistributionType",
+        "description": "Types of distributions for sampling inference parameters."
       },
       "DocumentChunk": {
         "properties": {
@@ -1832,6 +2328,215 @@
         ],
         "title": "DocumentUploadAccepted"
       },
+      "DropColumnsProcessorConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the processor, used to identify the processor in the results and to write the artifacts to disk."
+          },
+          "processor_type": {
+            "type": "string",
+            "const": "drop_columns",
+            "title": "Processor Type",
+            "default": "drop_columns"
+          },
+          "column_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Column Names",
+            "description": "List of column names to drop from the output dataset."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "column_names"
+        ],
+        "title": "DropColumnsProcessorConfig",
+        "description": "Drop columns from the output dataset (prefer ``drop=True`` in the column config).\n\nThis processor removes specified columns from the generated dataset. The dropped\ncolumns are saved separately in the `dropped-columns-parquet-files` directory for reference.\nWhen this processor is added via the config builder, the corresponding column\nconfigs are automatically marked with `drop = True`.\n\nAttributes:\n    column_names (required): List of column names to remove from the output dataset.\n\nInherited Attributes:\n    name (required): Name of the processor."
+      },
+      "EmbeddingColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "embedding",
+            "title": "Column Type",
+            "default": "embedding"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "target_column": {
+            "type": "string",
+            "title": "Target Column",
+            "description": "Name of the text column to generate embeddings for"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model to use for embedding generation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "target_column",
+          "model_alias"
+        ],
+        "title": "EmbeddingColumnConfig",
+        "description": "Configuration for embedding generation columns.\n\nEmbedding columns generate embeddings for text input using a specified model.\n\nAttributes:\n    target_column (required): The column to generate embeddings for. The column could be a single text string or a list of text strings in stringified JSON format.\n        If it is a list of text strings in stringified JSON format, the embeddings will be generated for each text string.\n    model_alias (required): The model to use for embedding generation.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "EmbeddingInferenceParams": {
+        "properties": {
+          "generation_type": {
+            "type": "string",
+            "const": "embedding",
+            "title": "Generation Type",
+            "default": "embedding"
+          },
+          "max_parallel_requests": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Parallel Requests",
+            "default": 4
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "extra_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Body"
+          },
+          "encoding_format": {
+            "type": "string",
+            "enum": [
+              "float",
+              "base64"
+            ],
+            "title": "Encoding Format",
+            "default": "float"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EmbeddingInferenceParams",
+        "description": "Configuration for embedding generation parameters.\n\nAttributes:\n    generation_type: Type of generation, always \"embedding\" for this class.\n    encoding_format: Format of the embedding encoding (\"float\" or \"base64\").\n    dimensions: Number of dimensions for the embedding."
+      },
+      "ExpressionColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "expression",
+            "title": "Column Type",
+            "default": "expression"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "expr": {
+            "type": "string",
+            "title": "Expr",
+            "description": "Jinja2 expression to compute the column value from other columns"
+          },
+          "dtype": {
+            "type": "string",
+            "enum": [
+              "int",
+              "float",
+              "str",
+              "bool"
+            ],
+            "title": "Dtype",
+            "description": "Data type for expression result: 'int', 'float', 'str', or 'bool'",
+            "default": "str"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "expr"
+        ],
+        "title": "ExpressionColumnConfig",
+        "description": "Configuration for derived columns using Jinja2 expressions.\n\nExpression columns compute values by evaluating Jinja2 templates that reference other\ncolumns. Useful for transformations, concatenations, conditional logic, and derived\nfeatures without requiring LLM generation. The expression is evaluated row-by-row.\n\nAttributes:\n    expr (required): Jinja2 expression to evaluate. Can reference other column values using\n        {{ column_name }} syntax. Supports filters, conditionals, and arithmetic.\n        Must be a valid, non-empty Jinja2 template.\n    dtype: Data type to cast the result to. Must be one of \"int\", \"float\", \"str\", or \"bool\".\n        Defaults to \"str\". Type conversion is applied after expression evaluation.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
       "GatewayModel": {
         "properties": {
           "name": {
@@ -1857,6 +2562,55 @@
           "name"
         ],
         "title": "GatewayModel"
+      },
+      "GaussianSamplerParams": {
+        "properties": {
+          "mean": {
+            "type": "number",
+            "title": "Mean",
+            "description": "Mean of the Gaussian distribution"
+          },
+          "stddev": {
+            "type": "number",
+            "title": "Stddev",
+            "description": "Standard deviation of the Gaussian distribution"
+          },
+          "decimal_places": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimal Places",
+            "description": "Number of decimal places to round the sampled values to."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "gaussian",
+            "title": "Sampler Type",
+            "default": "gaussian"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mean",
+          "stddev"
+        ],
+        "title": "GaussianSamplerParams",
+        "description": "Parameters for sampling from a Gaussian (Normal) distribution.\n\nSamples continuous values from a normal distribution characterized by its mean and standard\ndeviation. The Gaussian distribution is one of the most commonly used probability distributions,\nappearing naturally in many real-world phenomena due to the Central Limit Theorem.\n\nAttributes:\n    mean (required): Mean (center) of the Gaussian distribution. This is the expected value and the\n        location of the distribution's peak.\n    stddev (required): Standard deviation of the Gaussian distribution. Controls the spread or width\n        of the distribution. Must be positive.\n    decimal_places: Optional number of decimal places to round sampled values to. If None,\n        values are not rounded."
+      },
+      "GenerationStrategy": {
+        "type": "string",
+        "enum": [
+          "cell_by_cell",
+          "full_column"
+        ],
+        "title": "GenerationStrategy",
+        "description": "Strategy for custom column generation."
       },
       "GetModelPricingResponse": {
         "properties": {
@@ -1919,6 +2673,199 @@
           "timestamp"
         ],
         "title": "HealthResponse"
+      },
+      "ImageColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "image",
+            "title": "Column Type",
+            "default": "image"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Jinja2 template for the image generation prompt; can reference other columns via {{ column_name }}"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model to use for image generation"
+          },
+          "multi_modal_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContext"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "modality",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioContext",
+                      "image": "#/components/schemas/ImageContext",
+                      "video": "#/components/schemas/VideoContext"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Modal Context",
+            "description": "Optional list of multimodal context inputs for image generation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "model_alias"
+        ],
+        "title": "ImageColumnConfig",
+        "description": "Configuration for image generation columns.\n\nImage columns generate images using either autoregressive or diffusion models.\nThe API used is automatically determined based on the model name:\n\nAttributes:\n    prompt (required): Prompt template for image generation. Supports Jinja2 templating to\n        reference other columns (e.g., \"Generate an image of a {{ character_name }}\").\n        Must be a valid Jinja2 template.\n    model_alias (required): The model to use for image generation.\n    multi_modal_context: Optional list of multimodal contexts for generation.\n        Enables autoregressive multimodal models to generate images based on image, audio, or video inputs.\n        Ignored by diffusion image-generation routes, which do not consume multimodal context.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "ImageContext": {
+        "properties": {
+          "modality": {
+            "type": "string",
+            "const": "image",
+            "title": "Modality",
+            "default": "image"
+          },
+          "column_name": {
+            "type": "string",
+            "title": "Column Name"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModalityDataType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "column_name"
+        ],
+        "title": "ImageContext",
+        "description": "Configuration for providing image context to multimodal models.\n\nAttributes:\n    modality: The modality type (always \"image\").\n    column_name: Name of the column containing image data.\n    data_type: Format of the image data (\"url\", \"base64\", or None for auto-detection).\n        When None, the format is auto-detected: URLs are passed through, file paths that\n        exist under base_path are loaded as base64, and other values are assumed to be base64.\n    image_format: Image format (required when data_type is explicitly \"base64\")."
+      },
+      "ImageFormat": {
+        "type": "string",
+        "enum": [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp"
+        ],
+        "title": "ImageFormat",
+        "description": "Supported image formats for image modality."
+      },
+      "ImageInferenceParams": {
+        "properties": {
+          "generation_type": {
+            "type": "string",
+            "const": "image",
+            "title": "Generation Type",
+            "default": "image"
+          },
+          "max_parallel_requests": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Parallel Requests",
+            "default": 4
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout"
+          },
+          "extra_body": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Body"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ImageInferenceParams",
+        "description": "Configuration for image generation models.\n\nWorks for both diffusion and autoregressive image generation models. Pass all model-specific image options via `extra_body`.\n\nAttributes:\n    generation_type: Type of generation, always \"image\" for this class.\n\nExample:\n    ```python\n    # OpenAI-style (DALL\u00b7E): quality and size in extra_body or as top-level kwargs\n    dd.ImageInferenceParams(\n        extra_body={\"size\": \"1024x1024\", \"quality\": \"hd\"}\n    )\n\n    # Gemini-style: generationConfig.imageConfig\n    dd.ImageInferenceParams(\n        extra_body={\n            \"generationConfig\": {\n                \"imageConfig\": {\n                    \"aspectRatio\": \"1:1\",\n                    \"imageSize\": \"1024\"\n                }\n            }\n        }\n    )\n    ```"
+      },
+      "InequalityOperator": {
+        "type": "string",
+        "enum": [
+          "lt",
+          "le",
+          "gt",
+          "ge"
+        ],
+        "title": "InequalityOperator"
       },
       "Job": {
         "properties": {
@@ -2017,47 +2964,6 @@
         ],
         "title": "Job"
       },
-      "JobRequest": {
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/JobType",
-            "description": "Job type: training or sdg"
-          },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config",
-            "description": "Job-type-specific configuration"
-          },
-          "recipe": {
-            "type": "string",
-            "title": "Recipe",
-            "description": "Recipe name if used",
-            "default": ""
-          },
-          "parent_job_id": {
-            "type": "string",
-            "title": "Parent Job Id",
-            "description": "Parent job ID for lineage",
-            "default": ""
-          },
-          "compute": {
-            "$ref": "#/components/schemas/ComputeSpec"
-          },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run",
-            "description": "Validate without creating the job",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "type",
-          "config"
-        ],
-        "title": "JobRequest"
-      },
       "JobStatus": {
         "type": "string",
         "enum": [
@@ -2079,6 +2985,675 @@
           "eval"
         ],
         "title": "JobType"
+      },
+      "LLMCodeColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "llm-code",
+            "title": "Column Type",
+            "default": "llm-code"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Jinja2 template for the LLM prompt; can reference other columns via {{ column_name }}"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model configuration to use for generation"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "Optional system prompt to set model behavior and constraints"
+          },
+          "multi_modal_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContext"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "modality",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioContext",
+                      "image": "#/components/schemas/ImageContext",
+                      "video": "#/components/schemas/VideoContext"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Modal Context",
+            "description": "Optional list of multimodal context inputs"
+          },
+          "tool_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Alias",
+            "description": "Optional alias of the tool configuration to use for MCP tool calls"
+          },
+          "with_trace": {
+            "$ref": "#/components/schemas/TraceType",
+            "description": "Trace capture mode: NONE, LAST_MESSAGE, or ALL_MESSAGES",
+            "default": "none"
+          },
+          "extract_reasoning_content": {
+            "type": "boolean",
+            "title": "Extract Reasoning Content",
+            "description": "If True, capture chain-of-thought in {name}__reasoning_content column",
+            "default": false
+          },
+          "code_lang": {
+            "$ref": "#/components/schemas/CodeLang",
+            "description": "Target programming language or SQL dialect for code extraction from LLM response"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "model_alias",
+          "code_lang"
+        ],
+        "title": "LLMCodeColumnConfig",
+        "description": "Configuration for code generation columns using Large Language Models.\n\nExtends LLMTextColumnConfig to generate code snippets in specific programming languages\nor SQL dialects. The generated code is automatically extracted from markdown code blocks\nfor the specified language. Inherits all prompt templating capabilities from LLMTextColumnConfig.\n\nAttributes:\n    code_lang (required): Programming language or SQL dialect for code generation. Supported\n        values include: \"python\", \"javascript\", \"typescript\", \"java\", \"kotlin\", \"go\",\n        \"rust\", \"ruby\", \"scala\", \"swift\", \"sql:sqlite\", \"sql:postgres\", \"sql:mysql\",\n        \"sql:tsql\", \"sql:bigquery\", \"sql:ansi\". See CodeLang enum for complete list.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    prompt (required): Prompt template for code generation (supports Jinja2).\n    model_alias (required): Alias of the model configuration to use.\n    system_prompt: Optional system prompt (supports Jinja2).\n    multi_modal_context: Optional multimodal contexts for generation.\n    tool_alias: Optional tool configuration alias for MCP tool calls.\n    with_trace: Specifies what trace information to capture in a `{column_name}__trace`\n        column. Options are `TraceType.NONE` (default), `TraceType.LAST_MESSAGE`, or\n        `TraceType.ALL_MESSAGES`.\n    extract_reasoning_content: If True, creates a `{column_name}__reasoning_content`\n        column containing the reasoning content from the final assistant response.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "LLMJudgeColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "llm-judge",
+            "title": "Column Type",
+            "default": "llm-judge"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Jinja2 template for the LLM prompt; can reference other columns via {{ column_name }}"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model configuration to use for generation"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "Optional system prompt to set model behavior and constraints"
+          },
+          "multi_modal_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContext"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "modality",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioContext",
+                      "image": "#/components/schemas/ImageContext",
+                      "video": "#/components/schemas/VideoContext"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Modal Context",
+            "description": "Optional list of multimodal context inputs"
+          },
+          "tool_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Alias",
+            "description": "Optional alias of the tool configuration to use for MCP tool calls"
+          },
+          "with_trace": {
+            "$ref": "#/components/schemas/TraceType",
+            "description": "Trace capture mode: NONE, LAST_MESSAGE, or ALL_MESSAGES",
+            "default": "none"
+          },
+          "extract_reasoning_content": {
+            "type": "boolean",
+            "title": "Extract Reasoning Content",
+            "description": "If True, capture chain-of-thought in {name}__reasoning_content column",
+            "default": false
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/Score"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Scores",
+            "description": "List of Score objects defining rubric criteria for LLM judge evaluation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "model_alias",
+          "scores"
+        ],
+        "title": "LLMJudgeColumnConfig",
+        "description": "Configuration for LLM-as-a-judge quality assessment and scoring columns.\n\nExtends LLMTextColumnConfig to create judge columns that evaluate and score other\ngenerated content based on the defined criteria. Useful for quality assessment, preference\nranking, and multi-dimensional evaluation of generated data. Inherits prompt templating\ncapabilities from LLMTextColumnConfig.\n\nAttributes:\n    scores (required): List of Score objects defining the evaluation dimensions. Each score\n        represents a different aspect to evaluate (e.g., accuracy, relevance, fluency).\n        Must contain at least one score.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    prompt (required): Prompt template for the judge evaluation (supports Jinja2).\n    model_alias (required): Alias of the model configuration to use.\n    system_prompt: Optional system prompt (supports Jinja2).\n    multi_modal_context: Optional multimodal contexts for generation.\n    tool_alias: Optional tool configuration alias for MCP tool calls.\n    with_trace: Specifies what trace information to capture in a `{column_name}__trace`\n        column. Options are `TraceType.NONE` (default), `TraceType.LAST_MESSAGE`, or\n        `TraceType.ALL_MESSAGES`.\n    extract_reasoning_content: If True, creates a `{column_name}__reasoning_content`\n        column containing the reasoning content from the final assistant response.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "LLMStructuredColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "llm-structured",
+            "title": "Column Type",
+            "default": "llm-structured"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Jinja2 template for the LLM prompt; can reference other columns via {{ column_name }}"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model configuration to use for generation"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "Optional system prompt to set model behavior and constraints"
+          },
+          "multi_modal_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContext"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "modality",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioContext",
+                      "image": "#/components/schemas/ImageContext",
+                      "video": "#/components/schemas/VideoContext"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Modal Context",
+            "description": "Optional list of multimodal context inputs"
+          },
+          "tool_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Alias",
+            "description": "Optional alias of the tool configuration to use for MCP tool calls"
+          },
+          "with_trace": {
+            "$ref": "#/components/schemas/TraceType",
+            "description": "Trace capture mode: NONE, LAST_MESSAGE, or ALL_MESSAGES",
+            "default": "none"
+          },
+          "extract_reasoning_content": {
+            "type": "boolean",
+            "title": "Extract Reasoning Content",
+            "description": "If True, capture chain-of-thought in {name}__reasoning_content column",
+            "default": false
+          },
+          "output_format": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {}
+            ],
+            "title": "Output Format",
+            "description": "Pydantic model or JSON schema dict defining the expected structured output shape"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "model_alias",
+          "output_format"
+        ],
+        "title": "LLMStructuredColumnConfig",
+        "description": "Configuration for structured JSON generation columns using Large Language Models.\n\nExtends LLMTextColumnConfig to generate structured data conforming to a specified schema.\nUses JSON schema or Pydantic models to define the expected output structure, enabling\ntype-safe and validated structured output generation. Inherits prompt templating capabilities\nfrom LLMTextColumnConfig.\n\nAttributes:\n    output_format (required): The schema defining the expected output structure. Can be either:\n        - A Pydantic BaseModel class (recommended)\n        - A JSON schema dictionary\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    prompt (required): Prompt template for structured generation (supports Jinja2).\n    model_alias (required): Alias of the model configuration to use.\n    system_prompt: Optional system prompt (supports Jinja2).\n    multi_modal_context: Optional multimodal contexts for generation.\n    tool_alias: Optional tool configuration alias for MCP tool calls.\n    with_trace: Specifies what trace information to capture in a `{column_name}__trace`\n        column. Options are `TraceType.NONE` (default), `TraceType.LAST_MESSAGE`, or\n        `TraceType.ALL_MESSAGES`.\n    extract_reasoning_content: If True, creates a `{column_name}__reasoning_content`\n        column containing the reasoning content from the final assistant response.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "LLMTextColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "llm-text",
+            "title": "Column Type",
+            "default": "llm-text"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "description": "Jinja2 template for the LLM prompt; can reference other columns via {{ column_name }}"
+          },
+          "model_alias": {
+            "type": "string",
+            "title": "Model Alias",
+            "description": "Alias of the model configuration to use for generation"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "Optional system prompt to set model behavior and constraints"
+          },
+          "multi_modal_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ImageContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioContext"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoContext"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "modality",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioContext",
+                      "image": "#/components/schemas/ImageContext",
+                      "video": "#/components/schemas/VideoContext"
+                    }
+                  }
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multi Modal Context",
+            "description": "Optional list of multimodal context inputs"
+          },
+          "tool_alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Alias",
+            "description": "Optional alias of the tool configuration to use for MCP tool calls"
+          },
+          "with_trace": {
+            "$ref": "#/components/schemas/TraceType",
+            "description": "Trace capture mode: NONE, LAST_MESSAGE, or ALL_MESSAGES",
+            "default": "none"
+          },
+          "extract_reasoning_content": {
+            "type": "boolean",
+            "title": "Extract Reasoning Content",
+            "description": "If True, capture chain-of-thought in {name}__reasoning_content column",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "prompt",
+          "model_alias"
+        ],
+        "title": "LLMTextColumnConfig",
+        "description": "Configuration for text generation columns using Large Language Models.\n\nLLM text columns generate free-form text content using language models.\nPrompts support Jinja2 templating to reference values from other columns, enabling\ncontext-aware generation. The generated text can optionally include message traces\ncapturing the full conversation history.\n\nAttributes:\n    prompt (required): Prompt template for text generation. Supports Jinja2 syntax to\n        reference other columns (e.g., \"Write a story about {{ character_name }}\").\n        Must be a valid Jinja2 template.\n    model_alias (required): Alias of the model configuration to use for generation.\n        Must match a model alias defined when initializing the DataDesignerConfigBuilder.\n    system_prompt: Optional system prompt to set model behavior and constraints.\n        Also supports Jinja2 templating. If provided, must be a valid Jinja2 template.\n        Do not put any output parsing instructions in the system prompt. Instead,\n        use the appropriate column type for the output you want to generate - e.g.,\n        `LLMStructuredColumnConfig` for structured output, `LLMCodeColumnConfig` for code.\n    multi_modal_context: Optional list of multimodal contexts for generation.\n        Enables capable models to generate text based on image, audio, or video inputs.\n    tool_alias: Optional alias of the tool configuration to use for MCP tool calls.\n        Must match a tool alias defined when initializing the DataDesignerConfigBuilder.\n        When provided, the model may call permitted tools during generation.\n    with_trace: Specifies what trace information to capture in a `{column_name}__trace`\n        column. Options are:\n        - `TraceType.NONE` (default): No trace is captured.\n        - `TraceType.LAST_MESSAGE`: Only the final assistant message is captured.\n        - `TraceType.ALL_MESSAGES`: Full conversation history (system/user/assistant/tool).\n    extract_reasoning_content: If True, creates a `{column_name}__reasoning_content` column\n        containing only the reasoning_content from the final assistant response. This is\n        useful for models that expose chain-of-thought reasoning separately from the main\n        response. Defaults to False.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "LocalCallableValidatorParams": {
+        "properties": {
+          "validator_type": {
+            "type": "string",
+            "const": "local_callable",
+            "title": "Validator Type",
+            "description": "Validator type discriminator, always 'local_callable' for this validator",
+            "default": "local_callable"
+          },
+          "validation_function": {
+            "title": "Validation Function",
+            "description": "Function (Callable[[pd.DataFrame], pd.DataFrame]) to validate the data"
+          },
+          "output_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Schema",
+            "description": "Expected schema for local callable validator's output"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "validation_function"
+        ],
+        "title": "LocalCallableValidatorParams",
+        "description": "Configuration for local callable validation. Expects a function to be passed that validates the data.\n\nAttributes:\n    validation_function (required): Function (`Callable[[pd.DataFrame], pd.DataFrame]`) to validate the\n        data. Output must contain a column `is_valid` of type `bool`.\n    output_schema: The JSON schema for the local callable validator's output. If not provided,\n        the output will not be validated."
+      },
+      "ManualDistribution": {
+        "properties": {
+          "distribution_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributionType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "manual"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ManualDistributionParams"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "params"
+        ],
+        "title": "ManualDistribution",
+        "description": "Manual (discrete) distribution for sampling inference parameters.\n\nSamples from a discrete set of values with optional weights. Useful for testing\nspecific values or creating custom probability distributions for temperature or top_p.\n\nAttributes:\n    distribution_type: Type of distribution (\"manual\").\n    params: Distribution parameters (values, weights)."
+      },
+      "ManualDistributionParams": {
+        "properties": {
+          "values": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Values"
+          },
+          "weights": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weights"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "values"
+        ],
+        "title": "ManualDistributionParams",
+        "description": "Parameters for manual distribution sampling.\n\nAttributes:\n    values: List of possible values to sample from.\n    weights: Optional list of weights for each value. If not provided, all values have equal probability."
+      },
+      "ModalityDataType": {
+        "type": "string",
+        "enum": [
+          "url",
+          "base64"
+        ],
+        "title": "ModalityDataType",
+        "description": "Data type formats for multimodal data."
+      },
+      "ModelConfig": {
+        "properties": {
+          "alias": {
+            "type": "string",
+            "title": "Alias"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "inference_parameters": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChatCompletionInferenceParams"
+              },
+              {
+                "$ref": "#/components/schemas/EmbeddingInferenceParams"
+              },
+              {
+                "$ref": "#/components/schemas/ImageInferenceParams"
+              }
+            ],
+            "title": "Inference Parameters",
+            "discriminator": {
+              "propertyName": "generation_type",
+              "mapping": {
+                "chat-completion": "#/components/schemas/ChatCompletionInferenceParams",
+                "embedding": "#/components/schemas/EmbeddingInferenceParams",
+                "image": "#/components/schemas/ImageInferenceParams"
+              }
+            }
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "skip_health_check": {
+            "type": "boolean",
+            "title": "Skip Health Check",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "alias",
+          "model",
+          "provider"
+        ],
+        "title": "ModelConfig",
+        "description": "Configuration for a model used for generation.\n\nAttributes:\n    alias: User-defined alias to reference in column configurations.\n    model: Model identifier (e.g., from build.nvidia.com or other providers).\n    inference_parameters: Inference parameters for the model (temperature, top_p, max_tokens, etc.).\n        The generation_type is determined by the type of inference_parameters.\n    provider: Name of the model provider. Must match the ``name`` field of a\n        ``ModelProvider`` registered with the surrounding ``DataDesigner`` instance.\n    skip_health_check: Whether to skip the health check for this model. Defaults to False."
       },
       "ModelPricing": {
         "properties": {
@@ -2206,6 +3781,204 @@
         ],
         "title": "OutputFormat"
       },
+      "PersonFromFakerSamplerParams": {
+        "properties": {
+          "locale": {
+            "type": "string",
+            "title": "Locale",
+            "description": "Locale string, determines the language and geographic locale that a synthetic person will be sampled from. E.g, en_US, en_GB, fr_FR, ...",
+            "default": "en_US"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Male",
+                  "Female"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sex",
+            "description": "If specified, then only synthetic people of the specified sex will be sampled."
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City",
+            "description": "If specified, then only synthetic people from these cities will be sampled."
+          },
+          "age_range": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Age Range",
+            "description": "If specified, then only synthetic people within this age range will be sampled.",
+            "default": [
+              18,
+              114
+            ]
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "person_from_faker",
+            "title": "Sampler Type",
+            "default": "person_from_faker"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PersonFromFakerSamplerParams",
+        "description": "Parameters for sampling synthetic person data with demographic attributes from Faker.\n\nUses the Faker library to generate random personal information. The data is basic and not demographically\naccurate, but is useful for quick testing, prototyping, or when realistic demographic distributions are not\nrelevant for your use case. For demographically accurate person data, use the `PersonSamplerParams` sampler.\n\nAttributes:\n    locale: Locale string determining the language and geographic region for synthetic people.\n        Can be any locale supported by Faker.\n    sex: If specified, filters to only sample people of the specified sex. Options: \"Male\" or\n        \"Female\". If None, samples both sexes.\n    city: If specified, filters to only sample people from the specified city or cities. Can be\n        a single city name (string) or a list of city names.\n    age_range: Two-element list [min_age, max_age] specifying the age range to sample from\n        (inclusive). Defaults to a standard age range. Both values must be between the minimum and\n        maximum allowed ages.\n    sampler_type: Discriminator for the sampler type. Must be `SamplerType.PERSON_FROM_FAKER`."
+      },
+      "PersonSamplerParams": {
+        "properties": {
+          "locale": {
+            "type": "string",
+            "title": "Locale",
+            "description": "Locale that determines the language and geographic location that a synthetic person will be sampled from. Must be a locale supported by a managed Nemotron Personas dataset. Managed datasets exist for the following locales: en_US, en_IN, en_SG, fr_FR, hi_Deva_IN, hi_Latn_IN, ja_JP, ko_KR, pt_BR.",
+            "default": "en_US"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Male",
+                  "Female"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sex",
+            "description": "If specified, then only synthetic people of the specified sex will be sampled."
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City",
+            "description": "If specified, then only synthetic people from these cities will be sampled."
+          },
+          "age_range": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Age Range",
+            "description": "If specified, then only synthetic people within this age range will be sampled.",
+            "default": [
+              18,
+              114
+            ]
+          },
+          "select_field_values": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Select Field Values",
+            "description": "Sample synthetic people with the specified field values. This is meant to be a flexible argument for selecting a subset of the population from the managed dataset. Note that this sampler does not support rare combinations of field values and will likely fail if your desired subset is not well-represented in the managed Nemotron Personas dataset. We generally recommend using the `sex`, `city`, and `age_range` arguments to filter the population when possible.",
+            "examples": [
+              {
+                "education_level": [
+                  "high_school",
+                  "some_college",
+                  "bachelors"
+                ],
+                "state": [
+                  "NY",
+                  "CA",
+                  "OH",
+                  "TX",
+                  "NV"
+                ]
+              }
+            ]
+          },
+          "with_synthetic_personas": {
+            "type": "boolean",
+            "title": "With Synthetic Personas",
+            "description": "If True, then append synthetic persona columns to each generated person.",
+            "default": false
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "person",
+            "title": "Sampler Type",
+            "default": "person"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PersonSamplerParams",
+        "description": "Parameters for sampling synthetic person data with demographic attributes.\n\nGenerates realistic synthetic person data including names, addresses, phone numbers, and other\ndemographic information from managed datasets. The sampler supports filtering by locale, sex, age,\ngeographic location, and selected managed-dataset fields, and can optionally include synthetic\npersona descriptions. For Faker-generated person data, use PersonFromFakerSamplerParams.\n\nAttributes:\n    locale: Locale string determining the language and geographic region for synthetic people.\n        Must be a locale supported by a managed Nemotron Personas dataset. The dataset must\n        be downloaded and available in the managed assets directory.\n    sex: If specified, filters to only sample people of the specified sex. Options: \"Male\" or\n        \"Female\". If None, samples both sexes.\n    city: If specified, filters to only sample people from the specified city or cities. Can be\n        a single city name (string) or a list of city names.\n    age_range: Two-element list [min_age, max_age] specifying the age range to sample from\n        (inclusive). Defaults to a standard age range. Both values must be between minimum and\n        maximum allowed ages.\n    with_synthetic_personas: If True, appends additional synthetic persona columns including\n        personality traits, interests, and background descriptions. Only supported for certain\n        locales with managed datasets.\n    select_field_values: Optional field-value filters for managed datasets. Supported field\n        names are checked against the managed person data fields."
+      },
+      "PoissonSamplerParams": {
+        "properties": {
+          "mean": {
+            "type": "number",
+            "title": "Mean",
+            "description": "Mean number of events in a fixed interval."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "poisson",
+            "title": "Sampler Type",
+            "default": "poisson"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mean"
+        ],
+        "title": "PoissonSamplerParams",
+        "description": "Parameters for sampling from a Poisson distribution.\n\nSamples non-negative integer values representing the number of events occurring in a fixed\ninterval of time or space. The Poisson distribution is commonly used to model count data\nlike the number of arrivals, occurrences, or events per time period.\n\nThe distribution is characterized by a single parameter (mean/rate), and both the mean and\nvariance equal this parameter value.\n\nAttributes:\n    mean (required): Mean number of events in the fixed interval (also called rate parameter \u03bb).\n        Must be positive. This represents both the expected value and the variance of the\n        distribution."
+      },
       "PresentOptionsRequest": {
         "properties": {
           "step": {
@@ -2284,14 +4057,8 @@
           "parent_job_id": {
             "type": "string",
             "title": "Parent Job Id",
-            "description": "Parent job ID for chaining (SDG\u2192Training)",
+            "description": "Parent job ID for chaining (SDG -> Training)",
             "default": ""
-          },
-          "dry_run": {
-            "type": "boolean",
-            "title": "Dry Run",
-            "description": "Validate without creating the job",
-            "default": false
           }
         },
         "type": "object",
@@ -2328,6 +4095,435 @@
         ],
         "title": "RecipeSummary"
       },
+      "RemoteValidatorParams": {
+        "properties": {
+          "validator_type": {
+            "type": "string",
+            "const": "remote",
+            "title": "Validator Type",
+            "description": "Validator type discriminator, always 'remote' for this validator",
+            "default": "remote"
+          },
+          "endpoint_url": {
+            "type": "string",
+            "title": "Endpoint Url",
+            "description": "URL of the remote endpoint"
+          },
+          "output_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Schema",
+            "description": "Expected schema for remote validator's output"
+          },
+          "timeout": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Timeout",
+            "description": "The timeout for the HTTP request",
+            "default": 30.0
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Retries",
+            "description": "The maximum number of retry attempts",
+            "default": 3
+          },
+          "retry_backoff": {
+            "type": "number",
+            "exclusiveMinimum": 1.0,
+            "title": "Retry Backoff",
+            "description": "The backoff factor for the retry delay",
+            "default": 2.0
+          },
+          "max_parallel_requests": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Parallel Requests",
+            "description": "The maximum number of parallel requests to make",
+            "default": 4
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "endpoint_url"
+        ],
+        "title": "RemoteValidatorParams",
+        "description": "Configuration for remote validation. Sends data to a remote endpoint for validation.\n\nAttributes:\n    endpoint_url (required): The URL of the remote endpoint.\n    output_schema: The JSON schema for the remote validator's output. If not provided,\n        the output will not be validated.\n    timeout: The timeout for the HTTP request in seconds. Defaults to 30.0.\n    max_retries: The maximum number of retry attempts. Defaults to 3.\n    retry_backoff: The backoff factor for the retry delay in seconds. Defaults to 2.0.\n    max_parallel_requests: The maximum number of parallel requests to make. Defaults to 4."
+      },
+      "SDGJobRequest": {
+        "properties": {
+          "columns": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CustomColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/ExpressionColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/LLMCodeColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/LLMJudgeColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/LLMStructuredColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/LLMTextColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/SamplerColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/SeedDatasetColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/ValidationColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/EmbeddingColumnConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageColumnConfig"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Columns",
+            "description": "Generation pipeline columns. Evaluated in order; later columns reference earlier ones via {{ column_name }}"
+          },
+          "model_configs": {
+            "items": {
+              "$ref": "#/components/schemas/ModelConfig"
+            },
+            "type": "array",
+            "title": "Model Configs",
+            "description": "LLM model configurations. Required when using llm-text/code/judge/structured columns"
+          },
+          "processors": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DropColumnsProcessorConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemaTransformProcessorConfig"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Processors",
+            "description": "Output processors. Use schema_transform for SFT format, drop_columns to remove intermediate columns"
+          },
+          "seed_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed Config",
+            "description": "Seed data configuration (auto-configured when document_ids is provided). source.seed_type: local, hf, directory, file_contents, agent_rollout"
+          },
+          "constraints": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ScalarInequalityConstraint"
+                },
+                {
+                  "$ref": "#/components/schemas/ColumnInequalityConstraint"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Constraints",
+            "description": "Column value constraints (inequality checks)"
+          },
+          "tool_configs": {
+            "items": {
+              "$ref": "#/components/schemas/ToolConfig"
+            },
+            "type": "array",
+            "title": "Tool Configs",
+            "description": "MCP tool configurations for tool-use columns"
+          },
+          "num_records": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Num Records",
+            "description": "Number of samples to generate",
+            "default": 100
+          },
+          "document_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Document Ids",
+            "description": "Document IDs (from the Documents page) to use as seed data. Chunks are fetched from MLflow."
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic",
+            "description": "1-5 word dataset topic for MLflow tracking (e.g. 'OpenShift troubleshooting')",
+            "default": ""
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "description": "Parent job ID for lineage chaining (SDG -> Training)",
+            "default": ""
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "preview"
+            ],
+            "title": "Mode",
+            "description": "'create' for full generation, 'preview' to generate ~10 samples and verify config before committing",
+            "default": "create"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "columns"
+        ],
+        "title": "SDGJobRequest"
+      },
+      "SamplerColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "sampler",
+            "title": "Column Type",
+            "default": "sampler"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "sampler_type": {
+            "$ref": "#/components/schemas/SamplerType",
+            "description": "Type of sampler to use (e.g., uuid, category, uniform, gaussian, person, datetime)"
+          },
+          "params": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SubcategorySamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/CategorySamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/DatetimeSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/PersonSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/PersonFromFakerSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/TimeDeltaSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/UUIDSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/BernoulliSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/BernoulliMixtureSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/BinomialSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/GaussianSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/PoissonSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/UniformSamplerParams"
+              },
+              {
+                "$ref": "#/components/schemas/ScipySamplerParams"
+              }
+            ],
+            "title": "Params",
+            "description": "Parameters specific to the chosen sampler type",
+            "discriminator": {
+              "propertyName": "sampler_type",
+              "mapping": {
+                "bernoulli": "#/components/schemas/BernoulliSamplerParams",
+                "bernoulli_mixture": "#/components/schemas/BernoulliMixtureSamplerParams",
+                "binomial": "#/components/schemas/BinomialSamplerParams",
+                "category": "#/components/schemas/CategorySamplerParams",
+                "datetime": "#/components/schemas/DatetimeSamplerParams",
+                "gaussian": "#/components/schemas/GaussianSamplerParams",
+                "person": "#/components/schemas/PersonSamplerParams",
+                "person_from_faker": "#/components/schemas/PersonFromFakerSamplerParams",
+                "poisson": "#/components/schemas/PoissonSamplerParams",
+                "scipy": "#/components/schemas/ScipySamplerParams",
+                "subcategory": "#/components/schemas/SubcategorySamplerParams",
+                "timedelta": "#/components/schemas/TimeDeltaSamplerParams",
+                "uniform": "#/components/schemas/UniformSamplerParams",
+                "uuid": "#/components/schemas/UUIDSamplerParams"
+              }
+            }
+          },
+          "conditional_params": {
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SubcategorySamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/CategorySamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/DatetimeSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/PersonSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/PersonFromFakerSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/TimeDeltaSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/UUIDSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/BernoulliSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/BernoulliMixtureSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/BinomialSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/GaussianSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/PoissonSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/UniformSamplerParams"
+                },
+                {
+                  "$ref": "#/components/schemas/ScipySamplerParams"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "sampler_type",
+                "mapping": {
+                  "bernoulli": "#/components/schemas/BernoulliSamplerParams",
+                  "bernoulli_mixture": "#/components/schemas/BernoulliMixtureSamplerParams",
+                  "binomial": "#/components/schemas/BinomialSamplerParams",
+                  "category": "#/components/schemas/CategorySamplerParams",
+                  "datetime": "#/components/schemas/DatetimeSamplerParams",
+                  "gaussian": "#/components/schemas/GaussianSamplerParams",
+                  "person": "#/components/schemas/PersonSamplerParams",
+                  "person_from_faker": "#/components/schemas/PersonFromFakerSamplerParams",
+                  "poisson": "#/components/schemas/PoissonSamplerParams",
+                  "scipy": "#/components/schemas/ScipySamplerParams",
+                  "subcategory": "#/components/schemas/SubcategorySamplerParams",
+                  "timedelta": "#/components/schemas/TimeDeltaSamplerParams",
+                  "uniform": "#/components/schemas/UniformSamplerParams",
+                  "uuid": "#/components/schemas/UUIDSamplerParams"
+                }
+              }
+            },
+            "type": "object",
+            "title": "Conditional Params",
+            "description": "Optional dictionary for conditional parameters; keys are conditions, values are params to use when met"
+          },
+          "convert_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convert To",
+            "description": "Optional type conversion after sampling: 'float', 'int', or 'str' for numerical samplers; a strftime format string (e.g., '%Y-%m-%d') for datetime/timedelta samplers. Datetime/timedelta columns default to ISO-8601 (e.g., 2024-01-15T09:30:00) when omitted."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "sampler_type",
+          "params"
+        ],
+        "title": "SamplerColumnConfig",
+        "description": "Configuration for columns generated using built-in samplers.\n\nSampler columns provide efficient data generation for common data types and\ndistributions. Supported samplers include UUID generation,\ndatetime/timedelta sampling, person generation, category / subcategory sampling,\nand various statistical distributions (uniform, gaussian, binomial, poisson, scipy).\n\nAttributes:\n    sampler_type (required): Type of sampler to use. Available types include:\n        \"uuid\", \"category\", \"subcategory\", \"uniform\", \"gaussian\", \"bernoulli\",\n        \"bernoulli_mixture\", \"binomial\", \"poisson\", \"scipy\", \"person\",\n        \"person_from_faker\", \"datetime\", \"timedelta\".\n    params (required): Parameters specific to the chosen sampler type. Type varies based on the `sampler_type`\n        (e.g., `CategorySamplerParams`, `UniformSamplerParams`, `PersonSamplerParams`).\n    conditional_params: Optional dictionary for conditional parameters. The dict keys\n        are the conditions that must be met (e.g., \"age > 21\") for the conditional parameters\n        to be used. The values of dict are the parameters to use when the condition is met.\n    convert_to: Optional type conversion to apply after sampling. For numerical samplers,\n        must be one of \"float\", \"int\", or \"str\". For datetime and timedelta samplers, accepts\n        a strftime format string (e.g., ``\"%Y-%m-%d\"``, ``\"%m/%d/%Y %H:%M\"``). When omitted,\n        datetime/timedelta columns default to ISO-8601 format (e.g., ``2024-01-15T09:30:00``).\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset.\n\n!!! tip \"Displaying available samplers and their parameters\"\n    The config builder has an `info` attribute that can be used to display the\n    available samplers and their parameters:\n    ```python\n    config_builder.info.display(\"samplers\")\n    ```"
+      },
+      "SamplerType": {
+        "type": "string",
+        "enum": [
+          "bernoulli",
+          "bernoulli_mixture",
+          "binomial",
+          "category",
+          "datetime",
+          "gaussian",
+          "person",
+          "person_from_faker",
+          "poisson",
+          "scipy",
+          "subcategory",
+          "timedelta",
+          "uniform",
+          "uuid"
+        ],
+        "title": "SamplerType"
+      },
       "SaveRecipeRequest": {
         "properties": {
           "type": {
@@ -2353,6 +4549,183 @@
           "type"
         ],
         "title": "SaveRecipeRequest"
+      },
+      "ScalarInequalityConstraint": {
+        "properties": {
+          "target_column": {
+            "type": "string",
+            "title": "Target Column",
+            "description": "Name of the sampler column this constraint applies to"
+          },
+          "constraint_type": {
+            "type": "string",
+            "const": "scalar_inequality",
+            "title": "Constraint Type",
+            "description": "Constraint type discriminator, always 'scalar_inequality' for this constraint",
+            "default": "scalar_inequality"
+          },
+          "rhs": {
+            "type": "number",
+            "title": "Rhs",
+            "description": "Scalar value to compare against"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/InequalityOperator",
+            "description": "Comparison operator"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_column",
+          "rhs",
+          "operator"
+        ],
+        "title": "ScalarInequalityConstraint",
+        "description": "Constrain a sampler column to be less/greater than a scalar value.\n\nOnly applies to sampler columns.\n\nAttributes:\n    rhs (required): Scalar value to compare against.\n    operator (required): Comparison operator (lt, le, gt, ge).\n\nInherited Attributes:\n    target_column (required): Name of the sampler column this constraint applies to."
+      },
+      "SchemaTransformProcessorConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The name of the processor, used to identify the processor in the results and to write the artifacts to disk."
+          },
+          "processor_type": {
+            "type": "string",
+            "const": "schema_transform",
+            "title": "Processor Type",
+            "default": "schema_transform"
+          },
+          "template": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Template",
+            "description": "\n        Dictionary specifying columns and templates to use in the new dataset with transformed schema.\n\n        Each key is a new column name, and each value is an object containing Jinja2 templates - for instance, a string or a list of strings.\n        Values must be JSON-serializable.\n\n        Example:\n\n        ```python\n        template = {\n            \"list_of_strings\": [\"{{ col1 }}\", \"{{ col2 }}\"],\n            \"uppercase_string\": \"{{ col1 | upper }}\",\n            \"lowercase_string\": \"{{ col2 | lower }}\",\n        }\n        ```\n\n        The above templates will create an new dataset with three columns: \"list_of_strings\", \"uppercase_string\", and \"lowercase_string\".\n        References to columns \"col1\" and \"col2\" in the templates will be replaced with the actual values of the columns in the dataset.\n        "
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "template"
+        ],
+        "title": "SchemaTransformProcessorConfig",
+        "description": "Configuration for transforming the dataset schema using Jinja2 templates.\n\nThis processor creates a new dataset with a transformed schema. Each key in the\ntemplate becomes a column in the output, and values are Jinja2 templates that\ncan reference any column in the batch. The transformed dataset is written to\na `processors-files/{processor_name}/` directory alongside the main dataset.\n\nAttributes:\n    template (required): Dictionary defining the output schema. Keys are new column names,\n        values are Jinja2 templates (strings, lists, or nested structures).\n        Must be JSON-serializable.\n\nInherited Attributes:\n    name (required): Name of the processor."
+      },
+      "ScipySamplerParams": {
+        "properties": {
+          "dist_name": {
+            "type": "string",
+            "title": "Dist Name",
+            "description": "Name of a scipy.stats distribution."
+          },
+          "dist_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dist Params",
+            "description": "Parameters of the scipy.stats distribution given in `dist_name`."
+          },
+          "decimal_places": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimal Places",
+            "description": "Number of decimal places to round the sampled values to."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "scipy",
+            "title": "Sampler Type",
+            "default": "scipy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dist_name",
+          "dist_params"
+        ],
+        "title": "ScipySamplerParams",
+        "description": "Parameters for sampling from any scipy.stats continuous or discrete distribution.\n\nProvides a flexible interface to sample from the wide range of probability distributions\navailable in scipy.stats. This enables advanced statistical sampling beyond the built-in\ndistribution types (Gaussian, Uniform, etc.).\n\nSee: [scipy.stats documentation](https://docs.scipy.org/doc/scipy/reference/stats.html)\n\nAttributes:\n    dist_name (required): Name of the scipy.stats distribution to sample from (e.g., \"beta\", \"gamma\",\n        \"lognorm\", \"expon\"). Must be a valid distribution name from scipy.stats.\n    dist_params (required): Dictionary of parameters for the specified distribution. Parameter names\n        and values must match the scipy.stats distribution specification (e.g., {\"a\": 2, \"b\": 5}\n        for beta distribution, {\"scale\": 1.5} for exponential).\n    decimal_places: Optional number of decimal places to round sampled values to. If None,\n        values are not rounded."
+      },
+      "Score": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "A clear name for this score."
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "An informative and detailed assessment guide for using this score."
+          },
+          "options": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Options",
+            "description": "Score options in the format of {score: description}."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "options"
+        ],
+        "title": "Score",
+        "description": "Configuration for a \"score\" in an LLM judge evaluation.\n\nDefines a single scoring criterion with its possible values and descriptions. Multiple\nScore objects can be combined in an LLMJudgeColumnConfig to create multi-dimensional\nquality assessments.\n\nAttributes:\n    name (required): A clear, concise name for this scoring dimension (e.g., \"Relevance\", \"Fluency\").\n    description (required): An informative and detailed assessment guide explaining how to evaluate\n        this dimension. Should provide clear criteria for scoring.\n    options (required): Dictionary mapping score values to their descriptions. Keys can be integers\n        (e.g., 1-5 scale) or strings (e.g., \"Poor\", \"Good\", \"Excellent\"). Values are\n        descriptions explaining what each score level means."
+      },
+      "SeedDatasetColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "seed-dataset",
+            "title": "Column Type",
+            "default": "seed-dataset"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SeedDatasetColumnConfig",
+        "description": "Configuration for columns sourced from seed datasets.\n\nThis config marks columns that come from seed data. It is typically created\nautomatically when calling `with_seed_dataset()` on the builder, rather than\nbeing instantiated directly by users.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
       },
       "ShowModelPricingRequest": {
         "properties": {
@@ -2470,6 +4843,200 @@
         ],
         "title": "SignalPhaseResponse"
       },
+      "SkipConfig": {
+        "properties": {
+          "when": {
+            "type": "string",
+            "title": "When",
+            "description": "Jinja2 expression (including {{ }} delimiters); when truthy, skip generation for this row."
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "Value to write for skipped cells. Defaults to None (becomes NaN/pd.NA in DataFrame)."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "when"
+        ],
+        "title": "SkipConfig",
+        "description": "Expression gate for conditional column generation.\n\nAttach to a ``SingleColumnConfig`` via ``skip=SkipConfig(...)`` to gate\ngeneration on a Jinja2 expression.  Controls *when* to skip; propagation\nof upstream skips is controlled separately by ``propagate_skip`` on\n``SingleColumnConfig``.\n\nAttributes:\n    when: Jinja2 expression (including ``{{ }}`` delimiters); when truthy,\n        skip generation for this row.\n    value: Value to write for skipped cells.  Defaults to ``None``\n        (becomes ``NaN``/``pd.NA`` in the DataFrame)."
+      },
+      "SubcategorySamplerParams": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "description": "Name of parent category to this subcategory."
+          },
+          "values": {
+            "additionalProperties": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Values",
+            "description": "Mapping from each value of parent category to a list of subcategory values."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "subcategory",
+            "title": "Sampler Type",
+            "default": "subcategory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "values"
+        ],
+        "title": "SubcategorySamplerParams",
+        "description": "Parameters for subcategory sampling conditioned on a parent category column.\n\nSamples subcategory values based on the value of a parent category column. Each parent\ncategory value maps to its own list of possible subcategory values, enabling hierarchical\nor conditional sampling patterns.\n\nAttributes:\n    category (required): Name of the parent category column that this subcategory depends on.\n        The parent column must be generated before this subcategory column.\n    values (required): Mapping from each parent category value to a list of possible subcategory values.\n        Each key must correspond to a value that appears in the parent category column."
+      },
+      "TimeDeltaSamplerParams": {
+        "properties": {
+          "dt_min": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Dt Min",
+            "description": "Minimum possible time-delta for sampling range, inclusive. Must be less than `dt_max`."
+          },
+          "dt_max": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Dt Max",
+            "description": "Maximum possible time-delta for sampling range, exclusive. Must be greater than `dt_min`."
+          },
+          "reference_column_name": {
+            "type": "string",
+            "title": "Reference Column Name",
+            "description": "Name of an existing datetime column to condition time-delta sampling on."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "D",
+              "h",
+              "m",
+              "s"
+            ],
+            "title": "Unit",
+            "description": "Sampling units, e.g. the smallest possible time interval between samples.",
+            "default": "D"
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "timedelta",
+            "title": "Sampler Type",
+            "default": "timedelta"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "dt_min",
+          "dt_max",
+          "reference_column_name"
+        ],
+        "title": "TimeDeltaSamplerParams",
+        "description": "Parameters for sampling time deltas relative to a reference datetime column.\n\nSamples time offsets within a specified range and adds them to values from a reference\ndatetime column. This is useful for generating related datetime columns like order dates\nand delivery dates, or event start times and end times.\n\nNote:\n    Years and months are not supported as timedelta units because they have variable lengths.\n    See: [pandas timedelta documentation](https://pandas.pydata.org/docs/user_guide/timedeltas.html)\n\nAttributes:\n    dt_min (required): Minimum time-delta value (inclusive). Must be non-negative and less than `dt_max`.\n        Specified in units defined by the `unit` parameter.\n    dt_max (required): Maximum time-delta value (exclusive). Must be positive and greater than `dt_min`.\n        Specified in units defined by the `unit` parameter.\n    reference_column_name (required): Name of an existing datetime column to add the time-delta to.\n        This column must be generated before the timedelta column.\n    unit: Time unit for the delta values. Options:\n        - \"D\": Days (default)\n        - \"h\": Hours\n        - \"m\": Minutes\n        - \"s\": Seconds"
+      },
+      "ToolConfig": {
+        "properties": {
+          "tool_alias": {
+            "type": "string",
+            "title": "Tool Alias"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "allow_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Tools"
+          },
+          "max_tool_call_turns": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Tool Call Turns",
+            "default": 5
+          },
+          "timeout_sec": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Sec"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "tool_alias",
+          "providers"
+        ],
+        "title": "ToolConfig",
+        "description": "Configuration for permitting MCP tools on an LLM column.\n\nToolConfig defines which tools are available for use during LLM generation.\nIt references one or more MCP providers by name and can optionally restrict\nwhich tools from those providers are permitted.\n\nAttributes:\n    tool_alias (str): User-defined alias to reference this tool configuration in column configs.\n    providers (list[str]): Names of the MCP providers to use for tool calls. Tools can be\n        drawn from multiple providers.\n    allow_tools (list[str] | None): Optional allowlist of tool names that restricts which\n        tools are permitted. If None, all tools from the specified providers are allowed.\n        Defaults to None.\n    max_tool_call_turns (int): Maximum number of tool-calling turns permitted in a single\n        generation. A turn is one iteration where the LLM requests tool calls. With parallel\n        tool calling, a single turn may execute multiple tools simultaneously. Defaults to 5.\n    timeout_sec (float | None): Timeout in seconds for MCP tool calls. Defaults to None (no timeout).\n\nExamples:\n    >>> ToolConfig(\n    ...     tool_alias=\"search-tools\",\n    ...     providers=[\"doc-search-mcp\", \"web-search-mcp\"],\n    ...     allow_tools=[\"search_docs\", \"list_docs\"],\n    ...     max_tool_call_turns=10,\n    ...     timeout_sec=30.0,\n    ... )"
+      },
+      "TraceType": {
+        "type": "string",
+        "enum": [
+          "none",
+          "last_message",
+          "all_messages"
+        ],
+        "title": "TraceType",
+        "description": "Specifies the type of reasoning trace to capture for LLM columns.\n\nTraces capture the conversation history during LLM generation, which is\nuseful for debugging, analysis, and understanding model behavior.\n\nAttributes:\n    NONE: No trace is captured. This is the default.\n    LAST_MESSAGE: Only the final assistant message is captured.\n    ALL_MESSAGES: The full conversation history (system/user/assistant/tool)\n        is captured."
+      },
       "TrainingEstimateRequest": {
         "properties": {
           "model_size": {
@@ -2583,6 +5150,341 @@
         ],
         "title": "TrainingEstimateResponse"
       },
+      "TrainingJobRequest": {
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm",
+            "description": "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd)"
+          },
+          "model_name_or_path": {
+            "type": "string",
+            "title": "Model Name Or Path",
+            "description": "HuggingFace model ID or local path"
+          },
+          "data_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Path",
+            "description": "Path to training data (resolved from parent if chaining)"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir",
+            "description": "Output directory"
+          },
+          "learning_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Rate",
+            "description": "Learning rate"
+          },
+          "num_train_epochs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Train Epochs",
+            "description": "Number of training epochs"
+          },
+          "per_device_train_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Device Train Batch Size",
+            "description": "Batch size per GPU"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length",
+            "description": "Maximum sequence length"
+          },
+          "bf16": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bf16",
+            "description": "Use bfloat16 mixed precision"
+          },
+          "gradient_checkpointing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Checkpointing",
+            "description": "Enable gradient checkpointing"
+          },
+          "gradient_accumulation_steps": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradient Accumulation Steps"
+          },
+          "load_in_4bit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load In 4Bit",
+            "description": "Use QLoRA 4-bit quantization"
+          },
+          "use_peft": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Peft",
+            "description": "Enable LoRA via PEFT"
+          },
+          "lora_r": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora R",
+            "description": "LoRA rank"
+          },
+          "lora_alpha": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Alpha",
+            "description": "LoRA alpha"
+          },
+          "lora_dropout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lora Dropout",
+            "description": "LoRA dropout rate"
+          },
+          "unfreeze_rank_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unfreeze Rank Ratio",
+            "description": "OSFT: fraction of weights trainable (default 0.2)"
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "description": "Parent SDG job ID for chaining (SDG -> Training)",
+            "default": ""
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "algorithm",
+          "model_name_or_path"
+        ],
+        "title": "TrainingJobRequest"
+      },
+      "UUIDSamplerParams": {
+        "properties": {
+          "prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefix",
+            "description": "String prepended to the front of the UUID."
+          },
+          "short_form": {
+            "type": "boolean",
+            "title": "Short Form",
+            "description": "If true, all UUIDs sampled will be truncated at 8 characters.",
+            "default": false
+          },
+          "uppercase": {
+            "type": "boolean",
+            "title": "Uppercase",
+            "description": "If true, all letters in the UUID will be capitalized.",
+            "default": false
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "uuid",
+            "title": "Sampler Type",
+            "default": "uuid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UUIDSamplerParams",
+        "description": "Parameters for generating UUID (Universally Unique Identifier) values.\n\nGenerates UUID4 (random) identifiers with optional formatting options. UUIDs are useful\nfor creating unique identifiers for records, entities, or transactions.\n\nAttributes:\n    prefix: Optional string to prepend to each UUID. Useful for creating namespaced or\n        typed identifiers (e.g., \"user-\", \"order-\", \"txn-\").\n    short_form: If True, truncates UUIDs to 8 characters (first segment only). Default is False\n        for full 32-character UUIDs (excluding hyphens).\n    uppercase: If True, converts all hexadecimal letters to uppercase. Default is False for\n        lowercase UUIDs."
+      },
+      "UniformDistribution": {
+        "properties": {
+          "distribution_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributionType"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "uniform"
+          },
+          "params": {
+            "$ref": "#/components/schemas/UniformDistributionParams"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "params"
+        ],
+        "title": "UniformDistribution",
+        "description": "Uniform distribution for sampling inference parameters.\n\nSamples values uniformly between low and high bounds. Useful for exploring\na continuous range of values for temperature or top_p.\n\nAttributes:\n    distribution_type: Type of distribution (\"uniform\").\n    params: Distribution parameters (low, high)."
+      },
+      "UniformDistributionParams": {
+        "properties": {
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "low",
+          "high"
+        ],
+        "title": "UniformDistributionParams",
+        "description": "Parameters for uniform distribution sampling.\n\nAttributes:\n    low: Lower bound (inclusive).\n    high: Upper bound (exclusive)."
+      },
+      "UniformSamplerParams": {
+        "properties": {
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "Lower bound of the uniform distribution, inclusive."
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "Upper bound of the uniform distribution."
+          },
+          "decimal_places": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimal Places",
+            "description": "Number of decimal places to round the sampled values to."
+          },
+          "sampler_type": {
+            "type": "string",
+            "const": "uniform",
+            "title": "Sampler Type",
+            "default": "uniform"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "low",
+          "high"
+        ],
+        "title": "UniformSamplerParams",
+        "description": "Parameters for sampling from a continuous Uniform distribution.\n\nSamples continuous values uniformly from a specified range, where every value in the range\nhas equal probability of being sampled. This is useful when all values within a range are\nequally likely, such as random percentages, proportions, or unbiased measurements.\n\nAttributes:\n    low (required): Lower bound of the uniform distribution (inclusive). Can be any real number.\n    high (required): Upper bound of the uniform distribution. Must be greater than `low`.\n    decimal_places: Optional number of decimal places to round sampled values to. If None,\n        values are not rounded and may have many decimal places."
+      },
       "VRAMEstimateItem": {
         "properties": {
           "model_size": {
@@ -2614,6 +5516,93 @@
           "vram_per_gpu_gb"
         ],
         "title": "VRAMEstimateItem"
+      },
+      "ValidationColumnConfig": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "drop": {
+            "type": "boolean",
+            "title": "Drop",
+            "default": false
+          },
+          "column_type": {
+            "type": "string",
+            "const": "validation",
+            "title": "Column Type",
+            "default": "validation"
+          },
+          "skip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkipConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propagate_skip": {
+            "type": "boolean",
+            "title": "Propagate Skip",
+            "description": "If True (default), this column auto-skips when any of its required_columns was skipped. Independent of skip \u2014 a column with no SkipConfig still propagates upstream skips. Set to False for null-tolerant columns.",
+            "default": true
+          },
+          "target_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Columns",
+            "description": "List of column names to validate"
+          },
+          "validator_type": {
+            "$ref": "#/components/schemas/ValidatorType",
+            "description": "Validation method: 'code', 'local_callable', or 'remote'"
+          },
+          "validator_params": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CodeValidatorParams"
+              },
+              {
+                "$ref": "#/components/schemas/LocalCallableValidatorParams"
+              },
+              {
+                "$ref": "#/components/schemas/RemoteValidatorParams"
+              }
+            ],
+            "title": "Validator Params",
+            "description": "Validator-specific parameters (e.g., CodeValidatorParams)",
+            "discriminator": {
+              "propertyName": "validator_type",
+              "mapping": {
+                "code": "#/components/schemas/CodeValidatorParams",
+                "local_callable": "#/components/schemas/LocalCallableValidatorParams",
+                "remote": "#/components/schemas/RemoteValidatorParams"
+              }
+            }
+          },
+          "batch_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "description": "Number of records to process in each batch",
+            "default": 10
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "target_columns",
+          "validator_type",
+          "validator_params"
+        ],
+        "title": "ValidationColumnConfig",
+        "description": "Configuration for validation columns that validate existing columns.\n\nValidation columns execute validation logic against specified target columns and return\nstructured results indicating pass/fail status with validation details. Supports multiple\nvalidation strategies: code execution (Python/SQL), local callable functions (library only),\nand remote HTTP endpoints.\n\nAttributes:\n    target_columns (required): List of column names to validate. These columns are passed to the\n        validator for validation. All target columns must exist in the dataset\n        before validation runs.\n    validator_type (required): The type of validator to use. Options:\n        - \"code\": Execute code (Python or SQL) for validation. The code receives a\n          DataFrame with target columns and must return a DataFrame with validation results.\n        - \"local_callable\": Call a local Python function with the data. Only supported\n          when running DataDesigner locally.\n        - \"remote\": Send data to a remote HTTP endpoint for validation.\n    validator_params (required): Parameters specific to the validator type. Type varies by validator:\n        - CodeValidatorParams: Specifies code language (python or SQL dialect like\n          \"sql:postgres\", \"sql:mysql\").\n        - LocalCallableValidatorParams: Provides validation function (Callable[[pd.DataFrame],\n          pd.DataFrame]) and optional output schema for validation results.\n        - RemoteValidatorParams: Configures endpoint URL, HTTP timeout, retry behavior\n          (max_retries, retry_backoff), and parallel request limits (max_parallel_requests).\n    batch_size: Number of records to process in each validation batch. Defaults to 10.\n        Larger batches are more efficient but use more memory. Adjust based on validator\n        complexity and available resources.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
       },
       "ValidationError": {
         "properties": {
@@ -2654,6 +5643,65 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValidatorType": {
+        "type": "string",
+        "enum": [
+          "code",
+          "local_callable",
+          "remote"
+        ],
+        "title": "ValidatorType"
+      },
+      "VideoContext": {
+        "properties": {
+          "modality": {
+            "type": "string",
+            "const": "video",
+            "title": "Modality",
+            "default": "video"
+          },
+          "column_name": {
+            "type": "string",
+            "title": "Column Name"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModalityDataType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "video_format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "column_name"
+        ],
+        "title": "VideoContext",
+        "description": "Configuration for providing video context to multimodal models.\n\nVideo context values are URL or base64 media values. Local paths may be\npassed through only in explicit URL mode so colocated model endpoints can\nread them directly. ``video_format`` is consulted only for base64 sources."
+      },
+      "VideoFormat": {
+        "type": "string",
+        "enum": [
+          "mp4",
+          "mov",
+          "webm"
+        ],
+        "title": "VideoFormat",
+        "description": "Supported video formats for video context."
       },
       "WatchJobRequest": {
         "properties": {

@@ -6,11 +6,13 @@ points in open-book settings.
 
 ## How This Works
 
-You will **create a brand new training config** based on the user's
-requirements. The reference template at
-`skills/training/knowledge-ingestion/osft/training-config-template.json` shows the config
-structure — study it to understand the format, but create a fresh config
-tailored to the user's compute setup, model choice, and data.
+You will gather requirements and call `create_training_job` with the
+appropriate parameters. The tool validates all fields and rejects
+missing required params (e.g. `unfreeze_rank_ratio` for OSFT).
+
+Load `templates/training/knowledge-ingestion.yaml` via `get_recipe`
+to see sensible defaults for hyperparameters. Use it as a reference
+— adapt values based on the user's model size, dataset, and compute.
 
 Every parameter is adjustable:
 - Model selection based on available compute
@@ -33,30 +35,27 @@ Ask the user:
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.
 
-## Building the Config
+## Tool Parameters
+
+Call `create_training_job` with these parameters:
 
 ```json
 {
-  "type": "training",
-  "config": {
-    "algorithm": "osft",
-    "model_name_or_path": "<model>",
-    "data_path": "<resolved from parent SDG job or specified directly>",
-    "num_train_epochs": 5,
-    "learning_rate": 2e-05,
-    "effective_batch_size": 32,
-    "max_length": 11000,
-    "unfreeze_rank_ratio": 0.2,
-    "warmup_steps": 25,
-    "save_samples": 0,
-    "accelerate_full_state_at_epoch": false,
-    "checkpoint_at_epoch": true,
-    "nproc_per_node": 1,
-    "data_output_dir": "data-output",
-    "bf16": true,
-    "max_tokens_per_gpu": 15000,
-    "output_dir": ""
-  },
+  "algorithm": "osft",
+  "model_name_or_path": "<model>",
+  "num_train_epochs": 5,
+  "learning_rate": 2e-05,
+  "effective_batch_size": 32,
+  "max_length": 11000,
+  "unfreeze_rank_ratio": 0.2,
+  "warmup_steps": 25,
+  "save_samples": 0,
+  "accelerate_full_state_at_epoch": false,
+  "checkpoint_at_epoch": true,
+  "nproc_per_node": 1,
+  "data_output_dir": "data-output",
+  "bf16": true,
+  "max_tokens_per_gpu": 15000,
   "parent_job_id": "<SDG_JOB_ID>"
 }
 ```
