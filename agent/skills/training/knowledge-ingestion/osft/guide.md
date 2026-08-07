@@ -10,6 +10,10 @@ You will gather requirements and call `create_training_job` with the
 appropriate parameters. The tool validates all fields and rejects
 missing required params (e.g. `unfreeze_rank_ratio` for OSFT).
 
+Load `templates/training/knowledge-ingestion.yaml` via `get_recipe`
+to see sensible defaults for hyperparameters. Use it as a reference
+— adapt values based on the user's model size, dataset, and compute.
+
 Every parameter is adjustable:
 - Model selection based on available compute
 - Learning rate and epochs based on dataset size

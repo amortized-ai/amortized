@@ -8,6 +8,10 @@ or RAG-deployed knowledge models.
 You will gather requirements from the user and call `create_sdg_job`
 with the appropriate parameters. The tool validates all fields.
 
+Load `templates/sdg/knowledge-ingestion.yaml` via `get_recipe` to see
+sensible defaults for columns, prompts, and model configs. Use it as
+a reference — adapt the values to the user's domain, don't copy blindly.
+
 **Document analysis workflow:** Use `get_document_chunks(doc_id)` to
 get the document's chunks with token counts and headings. Use
 `get_document_content` if you need the full text for prompt writing.

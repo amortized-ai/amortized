@@ -9,6 +9,11 @@ You will gather requirements and call `create_sdg_job` with the
 appropriate parameters. The classification pipeline generates labeled
 examples where each sample has input text and a classification label.
 
+There is no classification template yet — use the knowledge-ingestion
+template via `get_recipe("templates/sdg/knowledge-ingestion")` as a
+structural reference for how columns, model_configs, and processors
+are organized.
+
 ## Requirement Gathering
 
 Ask the user these questions (one at a time, with numbered options):
