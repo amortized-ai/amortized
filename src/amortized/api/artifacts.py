@@ -99,7 +99,7 @@ async def get_artifact_content(
         from fastapi.responses import JSONResponse
 
         try:
-            table = pq.read_table(io.BytesIO(body))  # type: ignore[no-untyped-call]
+            table = pq.read_table(io.BytesIO(body))
             records = table.to_pylist()
         except Exception as exc:
             logger.warning("Failed to parse parquet artifact %s: %s", path, exc)

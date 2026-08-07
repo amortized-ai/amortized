@@ -288,7 +288,7 @@ async def get_dataset_samples(
         if path.endswith(".parquet"):
             import pyarrow.parquet as pq
 
-            table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
+            table = pq.read_table(io.BytesIO(data))
             records: list[dict[str, Any]] = table.slice(0, limit).to_pylist()
         else:
             lines = data.decode("utf-8").strip().split("\n")
