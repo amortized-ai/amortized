@@ -181,6 +181,8 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
+const _firedJobEvents = new Set<string>()
+
 /**
  * Chat hook. Designed to be mounted inside a keyed component so that
  * React handles conversation switching via unmount/remount — no
@@ -617,24 +619,28 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-  const firedJobEvents = useRef(new Set<string>())
-  const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "cancelled"])
+  const FOLLOW_UP_STATUSES = new Set(["running", "succeeded", "failed", "cancelled"])
 
   const handleJobStatusChange = useCallback(
     async (jobId: string, jobType: string, status: string) => {
-      if (!TERMINAL_JOB_STATUSES.has(status)) return
+      if (!FOLLOW_UP_STATUSES.has(status)) return
 
       const eventKey = `${jobId}:${status}`
-      if (firedJobEvents.current.has(eventKey)) return
-      firedJobEvents.current.add(eventKey)
+      if (_firedJobEvents.has(eventKey)) return
+      _firedJobEvents.add(eventKey)
 
       const convId = currentConversationId ?? useChatStore.getState().currentConversationId
       if (!convId) return
 
       const shortId = jobId.slice(0, 8)
-      const prompt = status === "succeeded"
-        ? `[System event: The ${jobType} job ${shortId} just succeeded. You MUST call the present_options tool with 2-3 next step options for the user (e.g. preview the generated data, start training, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
-        : `[System event: The ${jobType} job ${shortId} just ${status}. You MUST call the present_options tool with 2-3 options (e.g. view job logs, retry, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
+      let prompt: string
+      if (status === "running") {
+        prompt = `[System event: The ${jobType} job ${shortId} is now running. You MUST call the present_options tool with 2-3 options (e.g. view job on Jobs page, set up training while waiting, continue chatting). Keep your text response to one sentence. Do NOT repeat the job details table.]`
+      } else if (status === "succeeded") {
+        prompt = `[System event: The ${jobType} job ${shortId} just succeeded. You MUST call the present_options tool with 2-3 next step options for the user (e.g. preview the generated data, start training, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
+      } else {
+        prompt = `[System event: The ${jobType} job ${shortId} just ${status}. You MUST call the present_options tool with 2-3 options (e.g. view job logs, retry, view job details). Keep your text response to one sentence. Do NOT repeat the job details table.]`
+      }
 
       const assistantId = generateId()
       try {
