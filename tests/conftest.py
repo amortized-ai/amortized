@@ -45,7 +45,10 @@ async def _reset_db() -> None:
             env=_ALEMBIC_ENV,
         )
     except OSError:
-        pass
+        warnings.warn(
+            "Could not connect to test database — TRUNCATE skipped, tests may lack isolation",
+            stacklevel=1,
+        )
 
     yield
 
