@@ -12,7 +12,7 @@ const mockUseSystemHealth = vi.mocked(useSystemHealth)
 
 describe("SystemStatus", () => {
   it("renders backend status badge", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "ok" })
+    mockUseSystemHealth.mockReturnValue({ backend: "ok", mlflow: "ok" })
 
     render(<SystemStatus />)
 
@@ -21,7 +21,7 @@ describe("SystemStatus", () => {
   })
 
   it("shows green badge when backend is ok", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "ok" })
+    mockUseSystemHealth.mockReturnValue({ backend: "ok", mlflow: "ok" })
 
     render(<SystemStatus />)
 
@@ -31,7 +31,7 @@ describe("SystemStatus", () => {
   })
 
   it("shows red badge for error status", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "error" })
+    mockUseSystemHealth.mockReturnValue({ backend: "error", mlflow: "ok" })
 
     render(<SystemStatus />)
 
@@ -41,18 +41,28 @@ describe("SystemStatus", () => {
   })
 
   it("shows loading state with Checking text", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "loading" })
+    mockUseSystemHealth.mockReturnValue({ backend: "loading", mlflow: "ok" })
 
     render(<SystemStatus />)
 
     expect(screen.getByText(/Checking…/)).toBeInTheDocument()
   })
 
-  it("displays Backend Connection label", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "ok" })
+  it("displays Backend label", () => {
+    mockUseSystemHealth.mockReturnValue({ backend: "ok", mlflow: "ok" })
 
     render(<SystemStatus />)
 
-    expect(screen.getByText("Backend Connection")).toBeInTheDocument()
+    expect(screen.getByText("Backend")).toBeInTheDocument()
+  })
+
+  it("renders mlflow status badge", () => {
+    mockUseSystemHealth.mockReturnValue({ backend: "ok", mlflow: "error" })
+
+    render(<SystemStatus />)
+
+    const badge = screen.getByTestId("status-mlflow")
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveTextContent("Unavailable")
   })
 })
