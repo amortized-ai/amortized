@@ -181,7 +181,24 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
-const _firedJobEvents = new Set<string>()
+const _JOB_EVENTS_KEY = "amortized:firedJobEvents"
+function _hasJobEventFired(key: string): boolean {
+  try {
+    const raw = localStorage.getItem(_JOB_EVENTS_KEY)
+    return raw ? (JSON.parse(raw) as string[]).includes(key) : false
+  } catch { return false }
+}
+function _markJobEventFired(key: string): void {
+  try {
+    const raw = localStorage.getItem(_JOB_EVENTS_KEY)
+    const events: string[] = raw ? JSON.parse(raw) : []
+    if (!events.includes(key)) {
+      events.push(key)
+      if (events.length > 50) events.splice(0, events.length - 50)
+      localStorage.setItem(_JOB_EVENTS_KEY, JSON.stringify(events))
+    }
+  } catch { /* ignore */ }
+}
 
 function _jobFollowUpOptions(jobType: string, status: string, _jobId: string) {
   const isTraining = jobType.toLowerCase().includes("training")
@@ -661,8 +678,8 @@ export function useChat() {
       if (!FOLLOW_UP_STATUSES.has(status)) return
 
       const eventKey = `${jobId}:${status}`
-      if (_firedJobEvents.has(eventKey)) return
-      _firedJobEvents.add(eventKey)
+      if (_hasJobEventFired(eventKey)) return
+      _markJobEventFired(eventKey)
 
       const convId = currentConversationId ?? useChatStore.getState().currentConversationId
       if (!convId) return
