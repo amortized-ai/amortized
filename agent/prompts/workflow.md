@@ -71,14 +71,32 @@ Read the skill guide for prompt engineering guidance.
 ### Step 5 — Confirm
 
 
-Show a summary table:
+Show a summary table. For **SDG jobs:**
 
 | Setting        | Value                |
 |----------------|----------------------|
-| Type           | SDG / Training       |
+| Type           | SDG                  |
 | Documents      | (document names)     |
-| Model          | (selected model)     |
+| Teacher Model  | (selected model)     |
 | Samples        | (count)              |
+
+For **training jobs**, always show all key hyperparameters:
+
+| Setting              | Value                |
+|----------------------|----------------------|
+| Type                 | Training             |
+| Algorithm            | (osft / lora_sft)    |
+| Model                | (selected model)     |
+| Dataset              | (parent job ID)      |
+| Epochs               | (count)              |
+| Learning Rate        | (value)              |
+| Effective Batch Size | (value)              |
+| Max Seq Length       | (value)              |
+| Unfreeze Rank Ratio  | (value, OSFT only)   |
+| GPUs                 | (nproc_per_node)     |
+
+Do NOT hide parameters behind defaults. The user should see every
+value that affects training before confirming.
 
 Then ask:
 > Ready to go? (yes / change something)

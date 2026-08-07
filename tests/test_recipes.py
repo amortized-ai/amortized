@@ -131,18 +131,21 @@ class TestApplyOverrides:
         assert result["config"]["b"] == 2
 
 
+TEST_DATABASE_URL = os.environ.get(
+    "AMORTIZED_TEST_DATABASE_URL",
+    "postgresql://amortized:amortized@localhost:5432/amortized_test",
+)
+
+
 @pytest.fixture(autouse=True)
 def _use_temp_db(tmp_path: Path) -> None:
     import amortized.config as config_mod
-    import amortized.db as db_mod
     import amortized.db.connection as db_conn_mod
 
-    db_path = str(tmp_path) + "/test.db"
-    os.environ["AMORTIZED_DB_PATH"] = db_path
+    os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
-    db_mod.settings = new_settings
     db_conn_mod.settings = new_settings
 
 

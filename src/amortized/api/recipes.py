@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-import aiosqlite
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
@@ -123,7 +123,7 @@ recipe_jobs_router = APIRouter(tags=["recipes"])
 async def submit_recipe_job(
     request: RecipeJobRequest,
     http_request: Request,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     try:
         recipe = load_recipe(request.recipe)
@@ -146,6 +146,10 @@ async def submit_recipe_job(
     config = flatten_recipe_to_config(recipe)
 
     errors = _validate_recipe_config(job_type, config)
+    if job_type == JobType.training:
+        from amortized.api.jobs import _validate_training_data
+
+        errors.extend(await _validate_training_data(config, request.parent_job_id, db))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 

@@ -24,7 +24,10 @@ class ApiError extends Error {
   declare body: unknown
 
   constructor(status: number, statusText: string, body: unknown) {
-    super(`API error: ${status} ${statusText}`)
+    const friendly = typeof body === "string" && body.length > 0 && body.length < 200
+      ? body
+      : `API error: ${status} ${statusText}`
+    super(friendly)
     this.name = "ApiError"
     this.status = status
     this.statusText = statusText
@@ -44,6 +47,14 @@ function getAuthHeaders(): Record<string, string> {
   return {}
 }
 
+function friendlyServiceError(path: string, status: number): string | null {
+  if (status !== 502 && status !== 503) return null
+  if (path.startsWith("/api/")) return "Cannot reach the backend server. Make sure it's running."
+  if (path.startsWith("/mlflow/")) return "Cannot reach MLflow. Check the MLflow tracking server."
+  if (path.startsWith("/agent/")) return "Cannot reach the agent service. Make sure OpenCode is running."
+  return null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET"
   const requestId = crypto.randomUUID()
@@ -59,10 +70,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["Content-Type"] = "application/json"
   }
 
-  const response = await fetch(`${getBaseUrl()}${path}`, {
-    ...init,
-    headers,
-  })
+  let response: Response
+  try {
+    response = await fetch(`${getBaseUrl()}${path}`, {
+      ...init,
+      headers,
+    })
+  } catch {
+    const friendly = friendlyServiceError(path, 502)
+    throw new ApiError(0, "Network Error", friendly ?? "Network request failed. Check your connection.")
+  }
 
   const duration = Math.round(performance.now() - start)
 
@@ -73,6 +90,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body = JSON.parse(raw)
     } catch { /* ignore parse errors */ }
     logger.error("request failed", { method, path, status: response.status, duration, requestId })
+    const friendly = friendlyServiceError(path, response.status)
+    if (friendly) {
+      throw new ApiError(response.status, response.statusText, friendly)
+    }
     throw new ApiError(response.status, response.statusText, body)
   }
 
@@ -195,7 +216,8 @@ async function getOrCreateSession(conversationId: string): Promise<string> {
     body: JSON.stringify({}),
   })
   if (!resp.ok) {
-    throw new ApiError(resp.status, resp.statusText, null)
+    const friendly = friendlyServiceError("/agent/", resp.status)
+    throw new ApiError(resp.status, resp.statusText, friendly)
   }
   const data = await resp.json()
   const sessionId = data.id as string
@@ -292,6 +314,12 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
     break
   }
   useChatStore.getState().clearSessionId(conversationId)
+  if (lastError instanceof ApiError && (lastError.status === 502 || lastError.status === 503)) {
+    throw new ApiError(lastError.status, lastError.statusText, "Cannot reach Morty. Make sure the agent service is running.")
+  }
+  if (lastError instanceof TypeError || (lastError instanceof Error && lastError.message.includes("fetch"))) {
+    throw new ApiError(0, "Network Error", "Cannot reach Morty. Make sure the agent service is running.")
+  }
   throw lastError!
 }
 

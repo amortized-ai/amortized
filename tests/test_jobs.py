@@ -4,6 +4,7 @@ import os
 
 import httpx
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.main import app
 
@@ -13,8 +14,7 @@ def _use_temp_db(tmp_path: object) -> None:
     import amortized.config as config_mod
     import amortized.db.connection as db_conn_mod
 
-    db_path = str(tmp_path) + "/test.db"
-    os.environ["AMORTIZED_DB_PATH"] = db_path
+    os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
@@ -119,6 +119,60 @@ class TestCreateJob:
             json={"algorithm": "sft"},
         )
         assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_sdg_missing_columns(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs/sdg", json={})
+        assert response.status_code == 422
+        assert "columns" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_empty_columns(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs/sdg", json={"columns": []})
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_sdg_column_missing_fields(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"columns": [{"name": "q"}]},
+        )
+        assert response.status_code == 422
+        assert "column_type" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_unknown_column_type(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"columns": [{"column_type": "llm_text", "name": "q"}]},
+        )
+        assert response.status_code == 422
+        assert "llm_text" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_sdg_valid_config(self, client: httpx.AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "columns": [
+                    {
+                        "column_type": "sampler",
+                        "name": "difficulty",
+                        "sampler_type": "category",
+                        "params": {"values": ["Easy", "Hard"]},
+                    },
+                    {
+                        "column_type": "llm-text",
+                        "name": "question",
+                        "model_alias": "text",
+                        "system_prompt": "Generate a question.",
+                        "prompt": "Difficulty: {{ difficulty }}",
+                    },
+                ],
+                "model_configs": [{"alias": "text", "model": "gpt-4o", "provider": "gateway"}],
+            },
+        )
+        assert response.status_code == 201
 
 
 class TestListJobs:

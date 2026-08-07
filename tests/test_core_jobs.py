@@ -1,7 +1,11 @@
 """Tests for core/jobs.py — no HTTP server required."""
 
-import aiosqlite
+import os
+import subprocess
+
+import asyncpg
 import pytest
+from conftest import TEST_DATABASE_URL
 
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -11,21 +15,21 @@ from amortized.core.jobs import (
     get_job,
     list_jobs,
 )
-from amortized.db.connection import _SCHEMA_PATH
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
 
 
 @pytest.fixture
-async def repo(tmp_path):
-    db_path = tmp_path / "test.db"
-    db = await aiosqlite.connect(str(db_path))
-    db.row_factory = aiosqlite.Row
-    await db.executescript(_SCHEMA_PATH.read_text())
-    await db.commit()
-    repo = Repository(db)
-    yield repo
-    await db.close()
+async def repo():
+    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
+    await conn.execute("DROP TABLE IF EXISTS alembic_version")
+    await conn.execute("DROP TABLE IF EXISTS jobs")
+    await conn.close()
+    subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
+    conn = await asyncpg.connect(TEST_DATABASE_URL)
+    yield Repository(conn)
+    await conn.close()
 
 
 class TestCreateJob:

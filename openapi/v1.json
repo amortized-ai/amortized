@@ -2660,6 +2660,11 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Gpu"
+          },
+          "db": {
+            "type": "string",
+            "title": "Db",
+            "default": "ok"
           }
         },
         "type": "object",

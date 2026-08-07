@@ -9,7 +9,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
-    db_path: Path = Path("./data/amortized.db")
+    database_url: str = Field(
+        "postgresql://amortized:amortized@localhost:5432/amortized",
+        description="PostgreSQL connection string",
+    )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
 

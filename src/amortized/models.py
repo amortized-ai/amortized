@@ -104,6 +104,7 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: str
     gpu: dict[str, Any] = Field(default_factory=dict)
+    db: str = "ok"
 
 
 class GatewayModel(BaseModel):

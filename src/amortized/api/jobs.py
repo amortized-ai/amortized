@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-import aiosqlite
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -126,6 +126,46 @@ def _simplify_sdg_errors(
 
 
 # ---------------------------------------------------------------------------
+# Training data validation
+# ---------------------------------------------------------------------------
+
+
+async def _validate_training_data(
+    config: dict[str, Any],
+    parent_job_id: str,
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Validate that training data is available (via parent job or data_path)."""
+    errors: list[str] = []
+    data_path = config.get("data_path", "")
+
+    if not parent_job_id and not data_path:
+        errors.append(
+            "training jobs require either parent_job_id (to chain from an"
+            " SDG job) or data_path (direct path to training data)"
+        )
+        return errors
+
+    if parent_job_id and not data_path:
+        repo = Repository(db)
+        parent = await repo.get_job(parent_job_id)
+        if parent is None:
+            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
+        elif parent.get("status") != "succeeded":
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has status"
+                f" '{parent.get('status')}' (must be 'succeeded')"
+            )
+        elif not parent.get("mlflow_run_id"):
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has no MLflow"
+                " artifacts — the dataset may not have been uploaded"
+            )
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # Job creation endpoints (one per job type)
 # ---------------------------------------------------------------------------
 
@@ -134,7 +174,7 @@ def _simplify_sdg_errors(
 async def create_sdg_job(
     request: SDGJobRequest,
     http_request: Request,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     """Create a synthetic data generation job using Data Designer."""
     config = request.model_dump(exclude_none=True)
@@ -165,11 +205,15 @@ async def create_sdg_job(
 async def create_training_job(
     request: TrainingJobRequest,
     http_request: Request,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     """Create a model training job."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
+
+    errors = await _validate_training_data(config, parent_job_id, db)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
@@ -196,7 +240,7 @@ async def create_training_job(
 async def get_jobs(
     status: JobStatus | None = None,
     type: JobType | None = None,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> list[Job]:
     repo = Repository(db)
     rows = await core_list_jobs(repo, status=status, job_type=type)
@@ -206,7 +250,7 @@ async def get_jobs(
 @router.get("/{job_id}", response_model=Job, operation_id="get_job")
 async def get_job_detail(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
     row = await core_get_job(repo, job_id)
@@ -218,7 +262,7 @@ async def get_job_detail(
 @router.delete("/{job_id}", response_model=Job, operation_id="cancel_job")
 async def cancel_job(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> Job:
     repo = Repository(db)
     try:
@@ -234,7 +278,7 @@ async def cancel_job(
 async def get_job_logs(
     job_id: str,
     tail: int = 100,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
     repo = Repository(db)
     row = await core_get_job(repo, job_id)
@@ -268,7 +312,7 @@ async def get_job_logs(
 @router.get("/{job_id}/artifacts", operation_id="get_job_artifacts")
 async def get_job_artifacts(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
     """Return MLflow artifact URI for a completed job."""
     repo = Repository(db)
@@ -295,7 +339,7 @@ async def get_job_artifacts(
 @router.post("/{job_id}/delete", status_code=204, operation_id="delete_job")
 async def delete_job(
     job_id: str,
-    db: aiosqlite.Connection = Depends(_get_db),
+    db: asyncpg.Connection = Depends(_get_db),
 ) -> None:
     repo = Repository(db)
     try:
