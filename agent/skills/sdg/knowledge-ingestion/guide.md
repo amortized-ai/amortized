@@ -96,8 +96,8 @@ prompts and system prompt for the user's domain.
 
 ### Submission
 
-Submit SDG jobs via `create_sdg_job` (not `create_job`). The tool
-accepts typed parameters directly — no wrapper object needed:
+Submit SDG jobs via `create_sdg_job`. The tool accepts typed
+parameters directly — no wrapper object needed:
 
 ### document_ids
 
