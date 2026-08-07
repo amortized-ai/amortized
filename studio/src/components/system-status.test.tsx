@@ -41,7 +41,7 @@ describe("SystemStatus", () => {
   })
 
   it("shows loading state with Checking text", () => {
-    mockUseSystemHealth.mockReturnValue({ backend: "loading", mlflow: "ok" })
+    mockUseSystemHealth.mockReturnValue({ backend: "loading", mlflow: "loading" })
 
     render(<SystemStatus />)
 
