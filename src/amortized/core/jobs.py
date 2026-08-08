@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from amortized.backends import BackendHandle
+from amortized.config import settings as _settings
 from amortized.core.compute import get_backend
 from amortized.models import JobStatus, JobType
 
@@ -45,6 +46,7 @@ async def create_job(
         recipe=recipe,
         parent_job_id=parent_job_id,
         user_id=user_id,
+        k8s_namespace=_settings.compute_namespace,
     )
 
     logger.info("Created %s job %s", job_type.value, job_id)
@@ -60,8 +62,11 @@ async def list_jobs(
     *,
     status: JobStatus | None = None,
     job_type: JobType | None = None,
+    k8s_namespace: str = "",
 ) -> list[dict[str, Any]]:
-    return await repo.list_jobs(status=status, job_type=job_type)
+    return await repo.list_jobs(
+        status=status, job_type=job_type, k8s_namespace=k8s_namespace,
+    )
 
 
 async def cancel_job(repo: Repository, job_id: str) -> dict[str, Any]:

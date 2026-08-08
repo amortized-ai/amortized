@@ -31,11 +31,12 @@ class Repository:
         recipe: str = "",
         parent_job_id: str = "",
         user_id: str = "",
+        k8s_namespace: str = "",
     ) -> dict[str, Any]:
         await self.conn.execute(
             """INSERT INTO jobs
-               (id, type, status, config, recipe, parent_job_id, user_id, created_at)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8)""",
+               (id, type, status, config, recipe, parent_job_id, user_id, created_at, k8s_namespace)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
@@ -44,6 +45,7 @@ class Repository:
             parent_job_id,
             user_id,
             _parse_ts(created_at),
+            k8s_namespace,
         )
         result = await self.get_job(job_id)
         assert result is not None
@@ -60,6 +62,7 @@ class Repository:
         *,
         status: JobStatus | None = None,
         job_type: JobType | None = None,
+        k8s_namespace: str = "",
     ) -> list[dict[str, Any]]:
         query = "SELECT * FROM jobs"
         params: list[Any] = []
@@ -73,6 +76,10 @@ class Repository:
         if job_type is not None:
             conditions.append(f"type = ${idx}")
             params.append(job_type.value)
+            idx += 1
+        if k8s_namespace:
+            conditions.append(f"k8s_namespace = ${idx}")
+            params.append(k8s_namespace)
             idx += 1
 
         if conditions:
@@ -129,21 +136,31 @@ class Repository:
         )
         return await self.get_job(job_id)
 
-    async def pick_pending_job(self) -> dict[str, Any] | None:
+    async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
+        if k8s_namespace:
+            query = """UPDATE jobs SET status = $1
+                       WHERE id = (
+                           SELECT id FROM jobs
+                           WHERE status = $2 AND k8s_namespace = $3
+                           ORDER BY created_at ASC
+                           LIMIT 1
+                           FOR UPDATE SKIP LOCKED
+                       )
+                       RETURNING *"""
+            params = (JobStatus.provisioning.value, JobStatus.queued.value, k8s_namespace)
+        else:
+            query = """UPDATE jobs SET status = $1
+                       WHERE id = (
+                           SELECT id FROM jobs
+                           WHERE status = $2
+                           ORDER BY created_at ASC
+                           LIMIT 1
+                           FOR UPDATE SKIP LOCKED
+                       )
+                       RETURNING *"""
+            params = (JobStatus.provisioning.value, JobStatus.queued.value)
         async with self.conn.transaction():
-            row = await self.conn.fetchrow(
-                """UPDATE jobs SET status = $1
-                   WHERE id = (
-                       SELECT id FROM jobs
-                       WHERE status = $2
-                       ORDER BY created_at ASC
-                       LIMIT 1
-                       FOR UPDATE SKIP LOCKED
-                   )
-                   RETURNING *""",
-                JobStatus.provisioning.value,
-                JobStatus.queued.value,
-            )
+            row = await self.conn.fetchrow(query, *params)
         if row is None:
             return None
         return _row_to_job(row)
