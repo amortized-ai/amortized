@@ -431,7 +431,9 @@ async def worker_loop(poll_interval: float = 2.0) -> None:
         try:
             job = await _pick_pending_job()
             if job is not None:
+                logger.info("Picked job %s (type=%s)", job["id"], job["type"])
                 await _run_job(job)
+                logger.info("Finished processing job %s", job["id"])
             else:
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:
