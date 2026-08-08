@@ -33,6 +33,10 @@ RUN pip install --no-cache-dir --break-system-packages "trl>=0.18.0" "xformers>=
 # Install modern unsloth with --no-deps (its pyproject caps transformers<5 but code works)
 RUN pip install --no-cache-dir --no-deps --break-system-packages "unsloth>=2026.7" "unsloth_zoo>=2026.7"
 
+# Qwen3.5 attention kernels: flash-linear-attention + causal-conv1d
+RUN pip install --no-cache-dir --no-build-isolation --break-system-packages \
+    "flash-linear-attention[cuda]" "causal-conv1d>=1.4.0"
+
 # Ensure transformers 5.x for Qwen3.5 support
 RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers>=5.0"
 
