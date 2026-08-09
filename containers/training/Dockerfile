@@ -59,7 +59,7 @@ print(f'trl {trl.__version__}'); \
 print(f'torch {torch.__version__}'); \
 " && python3 -c "import unsloth; print(f'unsloth {unsloth.__version__}')" || echo "unsloth import check deferred to GPU runtime"
 
-FROM docker.io/nvidia/cuda:13.0.1-runtime-ubuntu24.04
+FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
 ENV DEBIAN_FRONTEND=noninteractive
