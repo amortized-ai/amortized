@@ -33,18 +33,22 @@ RUN pip install --no-cache-dir --break-system-packages "trl>=0.18.0" "xformers>=
 # Install modern unsloth with --no-deps (its pyproject caps transformers<5 but code works)
 RUN pip install --no-cache-dir --no-deps --break-system-packages "unsloth>=2026.7" "unsloth_zoo>=2026.7"
 
-# Qwen3.5 attention kernels: flash-linear-attention + causal-conv1d
-RUN pip install --no-cache-dir --no-build-isolation --break-system-packages \
-    "flash-linear-attention[cuda]" "causal-conv1d>=1.4.0"
+# Qwen3.5 attention kernels: flash-linear-attention (pure triton, no CUDA ext)
+RUN pip install --no-cache-dir --break-system-packages "flash-linear-attention[cuda]"
 
 # Ensure transformers 5.x for Qwen3.5 support
 RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers>=5.0"
 
-# vLLM (for GRPO online RL)
+# vLLM (for GRPO online RL) — may change torch version
 RUN pip install --no-cache-dir --break-system-packages --ignore-installed "vllm>=0.19.0"
 
 # S3/MinIO support for reading datasets and writing artifacts
 RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
+
+# CUDA extensions MUST be built from source AFTER vllm (which changes torch)
+# --no-binary forces source compilation against the final torch ABI
+RUN pip install --no-cache-dir --no-build-isolation --no-binary causal-conv1d --force-reinstall --break-system-packages "causal-conv1d>=1.4.0"
+RUN pip install --no-cache-dir --no-build-isolation --no-binary flash-attn --force-reinstall --break-system-packages "flash-attn>=2.7.0"
 
 # Verify key versions
 RUN python3 -c "\
