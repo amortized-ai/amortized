@@ -45,10 +45,11 @@ RUN pip install --no-cache-dir --break-system-packages --ignore-installed "vllm>
 # S3/MinIO support for reading datasets and writing artifacts
 RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
 
-# CUDA extensions MUST be built from source AFTER vllm (which changes torch)
-# --no-binary forces source compilation against the final torch ABI
-RUN pip install --no-cache-dir --no-build-isolation --no-binary causal-conv1d --force-reinstall --break-system-packages "causal-conv1d>=1.4.0"
-RUN pip install --no-cache-dir --no-build-isolation --no-binary flash-attn --force-reinstall --break-system-packages "flash-attn>=2.7.0"
+# CUDA extensions MUST be built from source AFTER vllm (which upgrades torch)
+# --no-deps prevents overwriting torch with a CPU-only build
+# --no-binary forces source compilation against the final torch+CUDA ABI
+RUN pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal-conv1d,flash-attn \
+    --force-reinstall --break-system-packages "causal-conv1d>=1.4.0" "flash-attn>=2.7.0"
 
 # Verify key versions
 RUN python3 -c "\
