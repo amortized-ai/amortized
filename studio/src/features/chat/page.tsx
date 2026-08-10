@@ -115,10 +115,6 @@ export default function ChatPage() {
     }
   }, [activeProviders, chatModelSelection, setChatModelSelection])
 
-  if (_hasHydrated && !currentConversationId && conversations.length > 0) {
-    useChatStore.getState().setCurrentConversationId(conversations[0]!.id)
-  }
-
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
 

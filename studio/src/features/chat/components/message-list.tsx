@@ -41,8 +41,6 @@ export function MessageList({
       const conv = s.conversations.find((c) => c.id === convId)
       if (conv) return conv.messages.length > 0 ? conv.messages : EMPTY
     }
-    const fallback = s.conversations.find((c) => c.messages.length > 0)
-    if (fallback) return fallback.messages
     return EMPTY
   })
   const storeMessages = useMemo(() => toChat(rawStoreMessages), [rawStoreMessages])

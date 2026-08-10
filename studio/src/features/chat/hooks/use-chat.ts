@@ -286,6 +286,19 @@ export function useChat() {
           return
         }
 
+        const existingSessionId = useChatStore.getState().getSessionId(convId)
+        if (existingSessionId) {
+          try {
+            const probe = await fetch(`/agent/session/${existingSessionId}/message`)
+            if (probe.ok) {
+              logger.info("session alive, skipping retry", { convId })
+              recoveryCompleted = true
+              cleanupPlaceholder()
+              return
+            }
+          } catch { /* session dead, safe to retry */ }
+        }
+
         logger.info("auto-retrying last user message after refresh", { convId })
         _activeRequests.add(convId)
         try {
@@ -348,6 +361,7 @@ export function useChat() {
       const last = conv.messages[conv.messages.length - 1]
       if (last?.role === "assistant" && last.content) {
         recoveryCompleted = true
+        clearTimeout(safetyTimeout)
         setMessages(restoreMessages(getConversationMessages, convId))
         setChatState("done")
         unsub()
@@ -557,6 +571,11 @@ export function useChat() {
         }
       }
 
+      const nextMessages = [...messagesRef.current, userMessage, assistantMessage]
+      messagesRef.current = nextMessages
+      setMessages(nextMessages)
+      setChatState("streaming")
+
       addMessage(convId, {
         id: userMessage.id,
         role: "user",
@@ -569,9 +588,6 @@ export function useChat() {
         content: "",
         timestamp: assistantMessage.timestamp,
       })
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage])
-      setChatState("streaming")
       _activeRequests.add(convId)
 
       try {
