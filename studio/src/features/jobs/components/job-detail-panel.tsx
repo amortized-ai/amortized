@@ -28,7 +28,6 @@ import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
 import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics } from "../api/use-jobs"
-import { LineageTab } from "./lineage-tab"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
@@ -172,7 +171,6 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
           <div className="px-6 pt-3 shrink-0">
             <TabsList className="w-full">
               <TabsTrigger value="overview" className="flex-1 transition-all duration-200">Overview</TabsTrigger>
-              <TabsTrigger value="lineage" className="flex-1 transition-all duration-200">Lineage</TabsTrigger>
               <TabsTrigger value="logs" className="flex-1 transition-all duration-200">Logs</TabsTrigger>
               {job.type === "training" && <TabsTrigger value="metrics" className="flex-1 transition-all duration-200">Metrics</TabsTrigger>}
               <TabsTrigger value="config" className="flex-1 transition-all duration-200">Config</TabsTrigger>
@@ -184,10 +182,6 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               Non-logs tabs use overflow-y-auto for their own scrolling. */}
           <TabsContent value="overview" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
             <OverviewTab job={job} onClose={() => onOpenChange(false)} />
-          </TabsContent>
-
-          <TabsContent value="lineage" className="mt-0 flex-1 min-h-0 px-0 py-0">
-            <LineageTab jobId={job.id} />
           </TabsContent>
 
           <TabsContent value="logs" className="mt-0 flex-1 min-h-0 flex flex-col px-6 py-4">

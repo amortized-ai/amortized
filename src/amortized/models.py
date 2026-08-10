@@ -207,6 +207,16 @@ class LineageResponse(BaseModel):
     target_id: str
 
 
+class LineageChainSummary(BaseModel):
+    chain_id: str
+    name: str
+    job_count: int
+    latest_status: str
+    created_at: str
+    updated_at: str
+    lineage: LineageResponse
+
+
 class ConfigResponse(BaseModel):
     version: str = "1.0.0"
     default_compute_backend: str = ""

@@ -326,3 +326,13 @@ export interface LineageResponse {
   root_id: string
   target_id: string
 }
+
+export interface LineageChainSummary {
+  chain_id: string
+  name: string
+  job_count: number
+  latest_status: JobStatus
+  created_at: string
+  updated_at: string
+  lineage: LineageResponse
+}

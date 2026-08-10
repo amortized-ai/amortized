@@ -8,9 +8,9 @@ import pytest
 from conftest import TEST_DATABASE_URL
 
 from amortized.core.jobs import create_job
-from amortized.core.lineage import get_job_lineage
+from amortized.core.lineage import get_job_lineage, list_lineage_chains
 from amortized.db.repository import Repository
-from amortized.models import JobType
+from amortized.models import JobStatus, JobType
 
 
 @pytest.fixture
@@ -252,3 +252,205 @@ class TestGetChildrenByParentId:
     async def test_returns_empty_when_no_children(self, repo: Repository) -> None:
         children = await repo.get_children_by_parent_id("nonexistent")
         assert children == []
+
+
+class TestListLineageChains:
+    @pytest.mark.asyncio
+    async def test_empty_when_no_jobs(self, repo: Repository) -> None:
+        chains = await list_lineage_chains(repo)
+        assert chains == []
+
+    @pytest.mark.asyncio
+    async def test_excludes_single_orphan_jobs(self, repo: Repository) -> None:
+        await create_job(repo, job_type=JobType.sdg, config={"topic": "solo"})
+        chains = await list_lineage_chains(repo)
+        assert chains == []
+
+    @pytest.mark.asyncio
+    async def test_returns_chain_with_two_jobs(self, repo: Repository) -> None:
+        parent = await create_job(repo, job_type=JobType.sdg, config={"topic": "chained"})
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "test-model",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=parent["id"],
+        )
+
+        chains = await list_lineage_chains(repo)
+        assert len(chains) == 1
+        assert chains[0].chain_id == parent["id"]
+        assert chains[0].job_count == 2
+        assert len(chains[0].lineage.nodes) == 2
+        assert len(chains[0].lineage.edges) == 1
+
+    @pytest.mark.asyncio
+    async def test_chain_name_from_recipe(self, repo: Repository) -> None:
+        parent = await create_job(repo, job_type=JobType.sdg, config={}, recipe="customer-support")
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=parent["id"],
+        )
+
+        chains = await list_lineage_chains(repo)
+        assert chains[0].name == "customer-support"
+
+    @pytest.mark.asyncio
+    async def test_chain_name_fallback_to_type_and_id(self, repo: Repository) -> None:
+        parent = await create_job(repo, job_type=JobType.sdg, config={"topic": "t"})
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=parent["id"],
+        )
+
+        chains = await list_lineage_chains(repo)
+        assert chains[0].name == f"sdg {parent['id'][:8]}"
+
+    @pytest.mark.asyncio
+    async def test_filter_by_type(self, repo: Repository) -> None:
+        p1 = await create_job(repo, job_type=JobType.sdg, config={})
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=p1["id"],
+        )
+
+        p2 = await create_job(repo, job_type=JobType.upload, config={})
+        await create_job(
+            repo,
+            job_type=JobType.sdg,
+            config={"topic": "t"},
+            parent_job_id=p2["id"],
+        )
+
+        chains = await list_lineage_chains(repo, job_type="training")
+        assert len(chains) == 1
+        assert chains[0].chain_id == p1["id"]
+
+    @pytest.mark.asyncio
+    async def test_filter_by_status(self, repo: Repository) -> None:
+        p = await create_job(repo, job_type=JobType.sdg, config={})
+        child = await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=p["id"],
+        )
+        await repo.update_job(child["id"], status=JobStatus.succeeded.value)
+
+        chains_succeeded = await list_lineage_chains(repo, status="succeeded")
+        assert len(chains_succeeded) == 1
+
+        chains_failed = await list_lineage_chains(repo, status="failed")
+        assert len(chains_failed) == 0
+
+    @pytest.mark.asyncio
+    async def test_sorted_newest_first(self, repo: Repository) -> None:
+        import asyncio
+
+        p1 = await create_job(repo, job_type=JobType.sdg, config={})
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=p1["id"],
+        )
+
+        await asyncio.sleep(0.01)
+
+        p2 = await create_job(repo, job_type=JobType.upload, config={})
+        await create_job(
+            repo,
+            job_type=JobType.sdg,
+            config={"topic": "t"},
+            parent_job_id=p2["id"],
+        )
+
+        chains = await list_lineage_chains(repo)
+        assert len(chains) == 2
+        assert chains[0].chain_id == p2["id"]
+        assert chains[1].chain_id == p1["id"]
+
+    @pytest.mark.asyncio
+    async def test_multiple_independent_chains(self, repo: Repository) -> None:
+        p1 = await create_job(repo, job_type=JobType.sdg, config={})
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=p1["id"],
+        )
+
+        p2 = await create_job(repo, job_type=JobType.upload, config={})
+        await create_job(
+            repo,
+            job_type=JobType.sdg,
+            config={},
+            parent_job_id=p2["id"],
+        )
+
+        # orphan — should NOT appear
+        await create_job(repo, job_type=JobType.sdg, config={})
+
+        chains = await list_lineage_chains(repo)
+        assert len(chains) == 2
+
+    @pytest.mark.asyncio
+    async def test_three_job_chain(self, repo: Repository) -> None:
+        upload = await create_job(
+            repo, job_type=JobType.upload, config={"original_filename": "doc.pdf"}
+        )
+        sdg = await create_job(
+            repo,
+            job_type=JobType.sdg,
+            config={"topic": "support"},
+            parent_job_id=upload["id"],
+        )
+        await create_job(
+            repo,
+            job_type=JobType.training,
+            config={
+                "algorithm": "sft",
+                "model_name_or_path": "m",
+                "data_path": "d.jsonl",
+            },
+            parent_job_id=sdg["id"],
+        )
+
+        chains = await list_lineage_chains(repo)
+        assert len(chains) == 1
+        assert chains[0].chain_id == upload["id"]
+        assert chains[0].job_count == 3
+        assert len(chains[0].lineage.edges) == 2
