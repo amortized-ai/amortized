@@ -165,6 +165,13 @@ class Repository:
             return None
         return _row_to_job(row)
 
+    async def get_children_by_parent_id(self, parent_job_id: str) -> list[dict[str, Any]]:
+        rows = await self.conn.fetch(
+            "SELECT * FROM jobs WHERE parent_job_id = $1",
+            parent_job_id,
+        )
+        return [_row_to_job(row) for row in rows]
+
     async def delete_job(self, job_id: str) -> bool:
         result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"

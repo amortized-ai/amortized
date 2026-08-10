@@ -166,6 +166,11 @@ export function deleteJob(id: string): Promise<void> {
   return post<void>(`/api/v1/jobs/${id}/delete`)
 }
 
+export function getJobLineage(id: string): Promise<import("@/types/api").LineageResponse> {
+  logger.debug("getJobLineage", { id })
+  return get<import("@/types/api").LineageResponse>(`/api/v1/jobs/${id}/lineage`)
+}
+
 export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
   logger.debug("getJobLogs", { id, tail })
   const resp = await get<JobLogsResponse>(`/api/v1/jobs/${id}/logs?tail=${tail}`)

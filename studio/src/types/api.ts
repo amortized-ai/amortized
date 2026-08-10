@@ -297,3 +297,32 @@ export interface PaginatedResponse<T> {
   page: number
   per_page: number
 }
+
+// --- Lineage ---
+
+export type LineageNodeType = "sdg" | "training" | "upload" | "document" | "eval"
+
+export interface LineageNode {
+  id: string
+  type: LineageNodeType
+  status: JobStatus
+  recipe: string
+  mlflow_run_id: string
+  mlflow_experiment: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  meta: Record<string, unknown>
+}
+
+export interface LineageEdge {
+  source: string
+  target: string
+}
+
+export interface LineageResponse {
+  nodes: LineageNode[]
+  edges: LineageEdge[]
+  root_id: string
+  target_id: string
+}

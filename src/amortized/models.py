@@ -182,6 +182,31 @@ class DocumentSummary(_DocumentBase):
     content_available: bool = Field(True, description="Whether the parsed content artifact exists")
 
 
+class LineageNode(BaseModel):
+    id: str
+    type: JobType
+    status: JobStatus
+    recipe: str = ""
+    mlflow_run_id: str = ""
+    mlflow_experiment: str = ""
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class LineageEdge(BaseModel):
+    source: str
+    target: str
+
+
+class LineageResponse(BaseModel):
+    nodes: list[LineageNode]
+    edges: list[LineageEdge]
+    root_id: str
+    target_id: str
+
+
 class ConfigResponse(BaseModel):
     version: str = "1.0.0"
     default_compute_backend: str = ""

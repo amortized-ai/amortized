@@ -65,7 +65,9 @@ async def list_jobs(
     k8s_namespace: str = "",
 ) -> list[dict[str, Any]]:
     return await repo.list_jobs(
-        status=status, job_type=job_type, k8s_namespace=k8s_namespace,
+        status=status,
+        job_type=job_type,
+        k8s_namespace=k8s_namespace,
     )
 
 
