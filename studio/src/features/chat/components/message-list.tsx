@@ -8,7 +8,6 @@ interface MessageListProps {
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
-  onJobStatusChange?: (jobId: string, jobType: string, status: string) => void
 }
 
 export function MessageList({
@@ -16,7 +15,6 @@ export function MessageList({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
-  onJobStatusChange,
 }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -44,7 +42,6 @@ export function MessageList({
               onOptionSelect={onOptionSelect}
               onConfirmAction={onConfirmAction}
               onRejectAction={onRejectAction}
-              onJobStatusChange={onJobStatusChange}
             />
           ))}
           <div ref={endRef} />

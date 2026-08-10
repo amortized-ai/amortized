@@ -109,6 +109,7 @@ const UI_TOOLS = new Set([
   "validate_sdg_job",
   "validate_training_job",
   "validate_recipe_job",
+  "create_job",
 ])
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
@@ -165,7 +166,7 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job"
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job"
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -181,77 +182,6 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
-const _JOB_EVENTS_KEY = "amortized:firedJobEvents"
-function _hasJobEventFired(key: string): boolean {
-  try {
-    const raw = localStorage.getItem(_JOB_EVENTS_KEY)
-    return raw ? (JSON.parse(raw) as string[]).includes(key) : false
-  } catch { return false }
-}
-function _markJobEventFired(key: string): void {
-  try {
-    const raw = localStorage.getItem(_JOB_EVENTS_KEY)
-    const events: string[] = raw ? JSON.parse(raw) : []
-    if (!events.includes(key)) {
-      events.push(key)
-      if (events.length > 50) events.splice(0, events.length - 50)
-      localStorage.setItem(_JOB_EVENTS_KEY, JSON.stringify(events))
-    }
-  } catch { /* ignore */ }
-}
-
-const _FOLLOW_UP_STATUSES = new Set(["running", "succeeded", "failed", "cancelled"])
-
-function _jobFollowUpText(jobType: string, status: string): string {
-  const label = jobType.toLowerCase().includes("training") ? "training" : "SDG"
-  switch (status) {
-    case "running":
-      return `Your ${label} job is now running.`
-    case "succeeded":
-      return `Your ${label} job completed successfully!`
-    case "failed":
-      return `Your ${label} job failed.`
-    case "cancelled":
-      return `Your ${label} job was cancelled.`
-    default:
-      return `Your ${label} job status changed to ${status}.`
-  }
-}
-
-function _jobFollowUpOptions(jobType: string, status: string, _jobId: string) {
-  const isTraining = jobType.toLowerCase().includes("training")
-  if (status === "running") {
-    return isTraining
-      ? [
-          { title: "View on Jobs page", description: "Check progress and logs" },
-          { title: "Check training metrics", description: "See loss curves and training progress" },
-          { title: "Continue chatting", description: "Ask me anything else" },
-        ]
-      : [
-          { title: "View on Jobs page", description: "Check progress and logs" },
-          { title: "Set up training while waiting", description: "Configure the next step now" },
-          { title: "Continue chatting", description: "Ask me anything else" },
-        ]
-  }
-  if (status === "succeeded") {
-    return isTraining
-      ? [
-          { title: "View model", description: "See the trained model in the registry" },
-          { title: "Train with different settings", description: "Try different hyperparameters or data" },
-          { title: "Start a new task", description: "Build another model or generate more data" },
-        ]
-      : [
-          { title: "Preview generated data", description: "Browse the dataset samples" },
-          { title: "Start training", description: "Fine-tune a model on this data" },
-          { title: "Generate more samples", description: "Create additional synthetic data" },
-        ]
-  }
-  return [
-    { title: "View logs", description: "Check what happened" },
-    { title: "Try again", description: "Retry with the same or different settings" },
-    { title: "Start fresh", description: "Begin a new workflow from scratch" },
-  ]
-}
 
 /**
  * Chat hook. Designed to be mounted inside a keyed component so that
@@ -689,7 +619,6 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-
   const handleJobStatusChange = useCallback(
     (jobId: string, jobType: string, status: string) => {
       if (!_FOLLOW_UP_STATUSES.has(status)) return
@@ -733,7 +662,6 @@ export function useChat() {
     messages,
     sendMessage,
     selectOption,
-    handleJobStatusChange,
     isStreaming,
     error,
     chatState,

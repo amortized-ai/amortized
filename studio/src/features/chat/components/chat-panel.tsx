@@ -19,7 +19,6 @@ export function ChatPanel() {
     messages,
     sendMessage,
     selectOption,
-    handleJobStatusChange,
     isStreaming,
     confirmAction,
     rejectAction,
@@ -66,7 +65,6 @@ export function ChatPanel() {
           onOptionSelect={handleOptionSelect}
           onConfirmAction={confirmAction}
           onRejectAction={rejectAction}
-          onJobStatusChange={handleJobStatusChange}
         />
         <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
       </SheetContent>

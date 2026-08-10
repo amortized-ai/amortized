@@ -4,12 +4,18 @@ import { cn } from "@/lib/utils"
 import { getJob } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
 
+interface FollowUpOption {
+  title: string
+  description: string
+  value: string
+}
+
 interface JobMonitorCardProps {
   jobId: string
   jobType?: string
   onDismiss?: () => void
   onComplete?: (status: string) => void
-  onStatusChange?: (status: string) => void
+  onStatusChange?: (status: JobStatus) => void
 }
 
 const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"]
@@ -21,7 +27,6 @@ function statusToProgress(status: JobStatus, elapsed: number): number {
     case "provisioning":
       return 20
     case "running":
-      // Ramp from 35 to 80 over ~5 minutes
       return Math.min(80, 35 + Math.floor(elapsed / 1000) * 0.15)
     case "succeeded":
       return 100
@@ -69,6 +74,28 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
+export function getFollowUpOptions(jobType: string, status: string, jobId: string): FollowUpOption[] {
+  const isTraining = jobType.toLowerCase().includes("training")
+  if (status === "succeeded") {
+    return isTraining
+      ? [
+          { title: "View model", description: "See the trained model in the registry", value: "__nav:/models" },
+          { title: "Train with different settings", description: "Try different hyperparameters", value: "Help me train with different settings" },
+          { title: "Start a new task", description: "Build another model or generate data", value: "I'd like to start a new task" },
+        ]
+      : [
+          { title: "Preview generated data", description: "Browse the dataset samples", value: "__nav:/datasets" },
+          { title: "Start training", description: "Fine-tune a model on this data", value: "Let's start training on this data" },
+          { title: "Generate more samples", description: "Create additional synthetic data", value: "Generate more synthetic data samples" },
+        ]
+  }
+  return [
+    { title: "View logs", description: "Check what happened", value: `__nav:/jobs?job=${jobId}` },
+    { title: "Try again", description: "Retry with the same or different settings", value: "Let's try that again" },
+    { title: "Start fresh", description: "Begin a new workflow from scratch", value: "Let's start a fresh workflow" },
+  ]
+}
+
 export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, onStatusChange }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
@@ -78,10 +105,10 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const completeFired = useRef(false)
   const lastReportedStatus = useRef<string>("queued")
-  const onStatusChangeRef = useRef(onStatusChange)
-  useEffect(() => { onStatusChangeRef.current = onStatusChange }, [onStatusChange])
   const onCompleteRef = useRef(onComplete)
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => { onStatusChangeRef.current = onStatusChange }, [onStatusChange])
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
@@ -114,7 +141,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
     }
   }, [jobId])
 
-  // Elapsed timer — uses job's server-side start time so it survives tab switches
   useEffect(() => {
     timerRef.current = setInterval(() => {
       if (jobStartRef.current) {
@@ -126,7 +152,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
     }
   }, [])
 
-  // Poll job status — initial poll + interval
   useEffect(() => {
     const id = setInterval(pollJob, 3000)
     pollRef.current = id
@@ -221,33 +246,15 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
         </p>
       )}
 
-      {/* Post-completion links */}
-      {status === "succeeded" && (
-        <div className="mt-3 flex items-center gap-3 text-xs">
-          <a
-            href={`/jobs?job=${encodeURIComponent(jobId)}`}
-            className="text-primary dark:text-primary hover:underline font-medium"
-          >
-            View Job →
-          </a>
-          <span className="text-muted-foreground/30">|</span>
-          {jobType === "TRAINING" ? (
-            <a
-              href="/models"
-              className="text-primary dark:text-primary hover:underline font-medium"
-            >
-              View Model →
-            </a>
-          ) : (
-            <a
-              href={`/datasets?job=${encodeURIComponent(jobId)}`}
-              className="text-primary dark:text-primary hover:underline font-medium"
-            >
-              View Dataset →
-            </a>
-          )}
-        </div>
-      )}
+      {/* Links */}
+      <div className="mt-3 flex items-center gap-3 text-xs">
+        <a
+          href={`/jobs?job=${encodeURIComponent(jobId)}`}
+          className="text-primary dark:text-primary hover:underline font-medium"
+        >
+          View Job →
+        </a>
+      </div>
     </div>
   )
 }

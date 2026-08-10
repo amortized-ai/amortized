@@ -31,7 +31,6 @@ function ChatContent() {
     messages,
     sendMessage,
     selectOption,
-    handleJobStatusChange,
     isStreaming,
     chatState,
     error,
@@ -69,7 +68,6 @@ function ChatContent() {
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
-        onJobStatusChange={handleJobStatusChange}
       />
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
