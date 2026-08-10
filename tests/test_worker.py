@@ -1,5 +1,6 @@
 """Tests for the background worker job execution lifecycle."""
 
+import logging
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -265,7 +266,7 @@ class TestCommandWrapping:
         result = _wrap_command(cmd, [], ["python3 -c 'upload()'"])
         assert result[0:2] == ["sh", "-c"]
         assert "thub" in result[2]
-        assert "{ python3 -c 'upload()' ; true; }" in result[2]
+        assert "python3 -c 'upload()'" in result[2]
 
     def test_pre_and_post(self) -> None:
         from amortized.worker import _wrap_command
@@ -291,12 +292,12 @@ class TestCommandWrapping:
         assert "data-designer create && upload.py" in shell_cmd
         assert shell_cmd.count("sh -c") == 0
 
-    def test_post_commands_dont_fail_job(self) -> None:
+    def test_post_commands_fail_fast(self) -> None:
         from amortized.worker import _wrap_command
 
         cmd = ["thub", "train"]
-        result = _wrap_command(cmd, [], ["false"])
-        assert "; true; }" in result[2]
+        result = _wrap_command(cmd, [], ["cmd1", "cmd2"])
+        assert "cmd1 && cmd2" in result[2]
 
 
 class TestUploadBuilder:
@@ -325,3 +326,177 @@ class TestUploadBuilder:
         config = {"filename": "test.pdf"}
         with pytest.raises(JobBuildError, match="mlflow_upload_run_id"):
             await build(job, config, {})
+
+
+class TestCreateMlflowRun:
+    @pytest.mark.asyncio
+    async def test_returns_run_id_on_success(self) -> None:
+        from amortized.worker import _create_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.ensure_experiment = AsyncMock(return_value="exp-1")
+        mock_client.create_run = AsyncMock(return_value="abc123def456abc123def456abc123de")
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            result = await _create_mlflow_run("test/exp", "job-123", "training")
+
+        assert result == "abc123def456abc123def456abc123de"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_tracking_uri(self) -> None:
+        from amortized.worker import _create_mlflow_run
+
+        with patch("amortized.worker.config_mod") as mock_config:
+            mock_config.settings.mlflow_tracking_uri = ""
+            result = await _create_mlflow_run("test/exp", "job-123", "training")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_network_error(self) -> None:
+        from amortized.worker import _create_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.ensure_experiment = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            result = await _create_mlflow_run("test/exp", "job-123", "training")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_value_error(self) -> None:
+        from amortized.worker import _create_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.ensure_experiment = AsyncMock(return_value="exp-1")
+        mock_client.create_run = AsyncMock(side_effect=ValueError("bad artifact URI format"))
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            result = await _create_mlflow_run("test/exp", "job-123", "training")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_propagates_programming_errors(self) -> None:
+        from amortized.worker import _create_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.ensure_experiment = AsyncMock(
+            side_effect=TypeError("unexpected keyword argument")
+        )
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            with pytest.raises(TypeError):
+                await _create_mlflow_run("test/exp", "job-123", "training")
+
+
+class TestFinishMlflowRun:
+    @pytest.mark.asyncio
+    async def test_logs_warning_when_not_critical(self, caplog: pytest.LogCaptureFixture) -> None:
+        from amortized.worker import _finish_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.finish_run = AsyncMock(side_effect=OSError("connection lost"))
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+            caplog.at_level(logging.WARNING, logger="amortized.worker"),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            await _finish_mlflow_run("run-abc")
+
+        assert "Failed to finish MLflow run" in caplog.text
+        assert caplog.records[-1].levelno == logging.WARNING
+
+    @pytest.mark.asyncio
+    async def test_logs_error_when_critical(self, caplog: pytest.LogCaptureFixture) -> None:
+        from amortized.worker import _finish_mlflow_run
+
+        mock_client = AsyncMock()
+        mock_client.finish_run = AsyncMock(side_effect=OSError("connection lost"))
+
+        with (
+            patch("amortized.worker.config_mod") as mock_config,
+            patch("amortized.core.mlflow_client.MLflowClient", return_value=mock_client),
+            caplog.at_level(logging.WARNING, logger="amortized.worker"),
+        ):
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            await _finish_mlflow_run("run-abc", critical=True)
+
+        assert "Failed to finish MLflow run" in caplog.text
+        assert caplog.records[-1].levelno == logging.ERROR
+
+    @pytest.mark.asyncio
+    async def test_noop_when_no_run_id(self) -> None:
+        from amortized.worker import _finish_mlflow_run
+
+        with patch("amortized.worker.config_mod") as mock_config:
+            mock_config.settings.mlflow_tracking_uri = "http://mlflow:5000"
+            await _finish_mlflow_run("")
+
+
+class TestExtractMlflowRunId:
+    @pytest.mark.asyncio
+    async def test_logs_warning_on_failure(self, caplog: pytest.LogCaptureFixture) -> None:
+        from amortized.backends import BackendHandle
+        from amortized.worker import _extract_mlflow_run_id
+
+        backend = AsyncMock()
+        backend.logs = AsyncMock(side_effect=OSError("no logs available"))
+        handle = BackendHandle(backend_name="test", job_id="j1")
+
+        with caplog.at_level(logging.WARNING, logger="amortized.worker"):
+            result = await _extract_mlflow_run_id(backend, handle)
+
+        assert result == ""
+        assert "Failed to extract MLflow run ID from logs" in caplog.text
+
+
+class TestPostCommandGuard:
+    @pytest.mark.asyncio
+    async def test_post_commands_stripped_when_mlflow_run_not_created(self) -> None:
+        """When _create_mlflow_run fails, post_commands from the builder should
+        not be passed to _wrap_command, preventing silent artifact upload failures."""
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "train"]
+        post_commands = ["mlflow artifacts log-artifacts -l /output -r $MLFLOW_RUN_ID -a model"]
+
+        mlflow_run_created = False
+        guarded = post_commands if mlflow_run_created else []
+        result = _wrap_command(cmd, [], guarded)
+
+        assert result == cmd
+
+    @pytest.mark.asyncio
+    async def test_post_commands_included_when_mlflow_run_created(self) -> None:
+        from amortized.worker import _wrap_command
+
+        cmd = ["thub", "train"]
+        post_commands = ["mlflow artifacts log-artifacts -l /output -r $MLFLOW_RUN_ID -a model"]
+
+        mlflow_run_created = True
+        guarded = post_commands if mlflow_run_created else []
+        result = _wrap_command(cmd, [], guarded)
+
+        assert "mlflow artifacts log-artifacts" in result[2]
