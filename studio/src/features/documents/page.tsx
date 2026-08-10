@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useSearchParams } from "react-router"
 import { SearchInput } from "@/components/search-input"
 import { useDocuments } from "./api/use-documents"
 import { DocumentTable } from "./components/document-table"
@@ -25,7 +26,23 @@ export default function DocumentsPage() {
   const [search, setSearch] = useState("")
   const [selectedDocument, setSelectedDocument] = useState<DocumentRecord | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
 
+  useEffect(() => {
+    const docParam = searchParams.get("doc")
+    if (!docParam || documents.length === 0) return
+    const match = documents.find(
+      (d) => d.document_id === docParam || d.mlflow_run_id === docParam,
+    )
+    if (match) {
+      setSelectedDocument(match)
+      setDetailOpen(true)
+    }
+    setSearchParams((prev) => {
+      prev.delete("doc")
+      return prev
+    }, { replace: true })
+  }, [searchParams, documents, setSearchParams])
 
   const filteredDocuments = useMemo(() => {
     if (!search.trim()) return documents

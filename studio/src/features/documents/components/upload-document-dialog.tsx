@@ -19,8 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Upload, Loader2, CheckCircle2 } from "lucide-react"
+import { Upload, Loader2, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
 import { toast } from "sonner"
+import { Link } from "react-router"
 import { useUploadDocument, useConvertDocumentUrl } from "../api/use-documents"
 import { useJob } from "@/features/jobs"
 import { getJob } from "@/lib/api-client"
@@ -44,6 +45,21 @@ const STATUS_LABELS: Record<string, string> = {
   queued: "Queued...",
   provisioning: "Provisioning...",
   running: "Processing document...",
+}
+
+function extractErrorMessage(err: unknown): { message: string; hint?: string } {
+  const raw = err instanceof Error ? err.message : String(err)
+
+  if (raw.includes("503") || raw.includes("service unavailable"))
+    return { message: "Document processing is not configured", hint: "The document processing service is not running. Check that the docling sidecar is enabled in your backend configuration." }
+  if (raw.includes("502") || raw.includes("bad gateway"))
+    return { message: "Could not reach the backend", hint: "The server returned a 502 error. This usually means the backend process crashed or is restarting." }
+  if (raw.includes("413") || raw.includes("too large"))
+    return { message: "File is too large", hint: "The file exceeds the maximum upload size. Try a smaller file or increase the server's upload limit." }
+  if (raw.includes("415") || raw.includes("unsupported"))
+    return { message: "Unsupported file format", hint: "This file type is not supported. Supported formats: PDF, DOCX, PPTX, HTML, TXT, Markdown, XLSX." }
+
+  return { message: raw || "Upload failed" }
 }
 
 export function UploadDocumentDialog() {
@@ -75,7 +91,7 @@ export function UploadDocumentDialog() {
   if (isSucceeded && !handled) {
     setHandled(true)
     void queryClient.invalidateQueries({ queryKey: ["documents"] })
-    setTimeout(() => setOpen(false), 2000)
+    setTimeout(() => setOpen(false), 1500)
   }
   if (isFailed && !handled) {
     setHandled(true)
@@ -145,7 +161,8 @@ export function UploadDocumentDialog() {
       {
         onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
-          setError(err instanceof Error ? err.message : "Upload failed")
+          const { message, hint } = extractErrorMessage(err)
+          setError(hint ? `${message}. ${hint}` : message)
         },
       },
     )
@@ -161,7 +178,8 @@ export function UploadDocumentDialog() {
       {
         onSuccess: (data) => setJobId(data.job_id),
         onError: (err) => {
-          setError(err instanceof Error ? err.message : "Conversion failed")
+          const { message, hint } = extractErrorMessage(err)
+          setError(hint ? `${message}. ${hint}` : message)
         },
       },
     )
@@ -196,6 +214,11 @@ export function UploadDocumentDialog() {
               {STATUS_LABELS[job?.status ?? ""] ?? "Processing..."}
             </p>
             <p className="text-xs text-muted-foreground">{jobFilename}</p>
+            {jobId && (
+              <Link to={`/jobs?job=${jobId}`} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">
+                View job details
+              </Link>
+            )}
           </div>
         ) : isSucceeded ? (
           <div className="flex flex-col items-center gap-3 py-6">
@@ -309,7 +332,18 @@ export function UploadDocumentDialog() {
         )}
 
         {error && (
-          <p className="text-sm text-destructive">{error}</p>
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <XCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0 space-y-1">
+              <p className="text-sm text-destructive">{error}</p>
+              {jobId && (
+                <Link to={`/jobs?job=${jobId}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">
+                  <AlertCircle className="h-3 w-3" />
+                  View job details
+                </Link>
+              )}
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>
