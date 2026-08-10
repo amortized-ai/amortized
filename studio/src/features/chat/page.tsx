@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useMemo } from "react"
+import { useCallback, useState, useEffect, useLayoutEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { useChat } from "./hooks/use-chat"
 import { useChatStore } from "@/stores/chat-store"
@@ -118,7 +118,7 @@ export default function ChatPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!_hasHydrated) return
     if (conversations.length === 0) {
       const now = new Date().toISOString()
@@ -238,7 +238,7 @@ export default function ChatPage() {
           </Button>
         </div>
         {currentConversationId ? (
-          <ChatContent key={currentConversationId} />
+          <ChatContent key={currentConversationId ?? "empty"} />
         ) : null}
       </div>
 

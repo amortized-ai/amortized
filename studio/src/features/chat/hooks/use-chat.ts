@@ -471,10 +471,15 @@ export function useChat() {
 
     const pollPending = async () => {
       if (chatStateRef.current === "streaming") return
+      if (_activeRequests.has(convId)) return
 
       try {
         const pending = await fetchPendingMessages(convId)
         if (pending.length === 0) return
+
+        const storedMsgs = useChatStore.getState().getConversationMessages(convId)
+        const lastStored = storedMsgs[storedMsgs.length - 1]
+        if (lastStored?.role === "assistant" && lastStored.content) return
 
         for (const response of pending) {
           const parsed = parseOpenCodeResponse(response)
@@ -575,6 +580,11 @@ export function useChat() {
         }
       }
 
+      const nextMessages = [...messagesRef.current, userMessage, assistantMessage]
+      messagesRef.current = nextMessages
+      setMessages(nextMessages)
+      setChatState("streaming")
+
       addMessage(convId, {
         id: userMessage.id,
         role: "user",
@@ -587,9 +597,6 @@ export function useChat() {
         content: "",
         timestamp: assistantMessage.timestamp,
       })
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage])
-      setChatState("streaming")
       _activeRequests.add(convId)
 
       try {
