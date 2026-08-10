@@ -71,7 +71,8 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
 
-    return yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
+    result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
+    return result
 
 
 IMAGE = "ghcr.io/amortized-ai/training:latest"

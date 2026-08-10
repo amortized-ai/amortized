@@ -137,6 +137,7 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
+        params: tuple[str, ...]
         if k8s_namespace:
             query = """UPDATE jobs SET status = $1
                        WHERE id = (
