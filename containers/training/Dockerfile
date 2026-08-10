@@ -1,76 +1,65 @@
 # Training container — universal (all algorithms, CUDA-enabled)
 # Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa
-FROM docker.io/nvidia/cuda:12.6.0-devel-ubuntu22.04 AS builder
+FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common gnupg2 curl \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3.11-dev python3.11-venv python3.11-distutils \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
-    && python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-dev python3-venv python3-pip \
         build-essential git ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Constraints from proven working env (rh-h100-04 grpo_test_env.md):
-# - transformers<5.0 keeps torch at 2.10+cu128
-# - huggingface-hub<1.0 avoids keras_nlp backend errors
-# - openpipe-art==0.5.17 (0.5.18 has megatron import bug)
-RUN echo 'transformers<5.0' > /tmp/constraints.txt \
-    && echo 'huggingface-hub<1.0' >> /tmp/constraints.txt \
-    && echo 'openpipe-art==0.5.17' >> /tmp/constraints.txt \
-    && echo 'apache-tvm-ffi<=0.1.9' >> /tmp/constraints.txt \
-    && echo 'nvidia-cutlass-dsl<=4.5.2' >> /tmp/constraints.txt \
-    && echo 'torch>=2.10.0,<2.11' >> /tmp/constraints.txt
-ENV PIP_CONSTRAINT=/tmp/constraints.txt
+# Install training-hub base + grpo + gepa (pulls torch, transformers, etc.)
+# Skip lora extra — it pulls unsloth which caps transformers<5
+# --ignore-installed needed to bypass distutils system packages
+RUN pip install --no-cache-dir --ignore-installed --break-system-packages \
+    "training-hub[grpo,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
 
-RUN python3.11 -m pip install --no-cache-dir --ignore-installed \
-    "training-hub[grpo,lora,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
-RUN python3.11 -m pip install --no-cache-dir --no-build-isolation --ignore-installed \
-    "training-hub[grpo,lora,gepa,cuda] @ git+https://github.com/amortized-ai/training_hub.git@main"
+# Install CUDA extensions (flash-attn, mamba-ssm, etc.) — torch is already installed above
+RUN pip install --no-cache-dir --no-build-isolation --break-system-packages \
+    "training-hub[grpo,gepa,cuda] @ git+https://github.com/amortized-ai/training_hub.git@main"
 
-# vLLM 0.19.0 (NOT 0.19.1 or 0.23+) — proven compatible with torch 2.10+cu128
-RUN python3.11 -m pip install --no-cache-dir --ignore-installed "vllm==0.19.0"
+# Reinstall training-hub cleanly (first install with --ignore-installed may be partial)
+RUN pip install --no-cache-dir --force-reinstall --no-deps --break-system-packages \
+    "training-hub[grpo,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
 
-# Fix numpy consistency (vLLM may leave numpy 2.x artifacts)
-RUN python3.11 -m pip install --no-cache-dir --force-reinstall "numpy<2"
+# Install lora deps manually — trl and xformers without unsloth's caps
+RUN pip install --no-cache-dir --break-system-packages "trl>=0.18.0" "xformers>=0.0.33.post1"
+
+# Install modern unsloth with --no-deps (its pyproject caps transformers<5 but code works)
+RUN pip install --no-cache-dir --no-deps --break-system-packages "unsloth>=2026.7" "unsloth_zoo>=2026.7"
+
+# Qwen3.5 attention kernels: flash-linear-attention (pure triton, no CUDA ext)
+RUN pip install --no-cache-dir --break-system-packages "flash-linear-attention[cuda]"
+
+# Ensure transformers 5.x for Qwen3.5 support
+RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers>=5.0"
+
+# vLLM (for GRPO online RL) — may change torch version
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed "vllm>=0.19.0"
 
 # S3/MinIO support for reading datasets and writing artifacts
-RUN python3.11 -m pip install --no-cache-dir s3fs fsspec mlflow boto3
+RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
 
-# Upgrade torch to cu129 build (official vLLM uses cu129; cu128 hangs on drivers 580+)
-# Extensions compiled with cu128 remain compatible via CUDA forward compat
-RUN python3.11 -m pip install --no-cache-dir --force-reinstall torch==2.10.0 --index-url https://download.pytorch.org/whl/cu129
+# CUDA extensions MUST be built from source AFTER vllm (which upgrades torch)
+# --no-deps prevents overwriting torch with a CPU-only build
+# --no-binary forces source compilation against the final torch+CUDA ABI
+RUN pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal-conv1d,flash-attn \
+    --force-reinstall --break-system-packages "causal-conv1d>=1.4.0" "flash-attn>=2.7.0"
 
-# Patch: apply training_hub PR#98 fixes:
-# 1. Import unsloth before art in subprocess (GRPOConfig pickle fix)
-# 2. Pass enforce_eager through to vLLM engine (torch.fx crash fix on newer drivers)
-RUN python3.11 -c "\
-import re; \
-path = '/usr/local/lib/python3.11/dist-packages/training_hub/algorithms/lora_grpo.py'; \
-code = open(path).read(); \
-code = code.replace( \
-    '        try:\n            import art', \
-    '        try:\n            try:\n                import unsloth\n            except ImportError:\n                pass\n            import art', \
-    1); \
-code = code.replace( \
-    'engine_kwargs = {\"gpu_memory_utilization\": gpu_memory_utilization}', \
-    'engine_kwargs = {\"gpu_memory_utilization\": gpu_memory_utilization}\n        if params.get(\"enforce_eager\"):\n            engine_kwargs[\"enforce_eager\"] = True'); \
-open(path, 'w').write(code); \
-print('Patched lora_grpo.py (PR#98: unsloth import + enforce_eager)')"
+# Verify key versions
+RUN python3 -c "\
+import transformers, trl, torch; \
+print(f'transformers {transformers.__version__}'); \
+print(f'trl {trl.__version__}'); \
+print(f'torch {torch.__version__}'); \
+" && python3 -c "import unsloth; print(f'unsloth {unsloth.__version__}')" || echo "unsloth import check deferred to GPU runtime"
 
-# Disable Ray's uv_runtime_env_hook (crashes on pyproject.toml/working_dir detection)
-RUN python3.11 -c "import re; path='/usr/local/lib/python3.11/dist-packages/ray/_private/runtime_env/uv_runtime_env_hook.py'; code=open(path).read(); code=re.sub(r'(def hook\([^)]*\)[^:]*:)\n', r'\1\n    return runtime_env  # disabled\n', code, count=1); open(path,'w').write(code); print('Patched Ray uv hook')"
-
-FROM docker.io/nvidia/cuda:12.6.0-runtime-ubuntu22.04
+FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -78,14 +67,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        software-properties-common gnupg2 curl gcc g++ \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3.11-venv python3.11-dev \
+        python3 python3-venv python3-dev gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
+COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
-CMD ["python3.11"]
+CMD ["python3"]
