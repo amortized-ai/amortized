@@ -242,8 +242,12 @@ async def get_jobs(
     type: JobType | None = None,
     db: asyncpg.Connection = Depends(_get_db),
 ) -> list[Job]:
+    from amortized.config import settings as _settings
+
     repo = Repository(db)
-    rows = await core_list_jobs(repo, status=status, job_type=type)
+    rows = await core_list_jobs(
+        repo, status=status, job_type=type, k8s_namespace=_settings.compute_namespace,
+    )
     return [_job_response(row) for row in rows]
 
 

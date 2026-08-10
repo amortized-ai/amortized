@@ -24,11 +24,15 @@ Every parameter is adjustable:
 
 Ask the user:
 
-1. **What model?** — Default: `Qwen/Qwen3-8B`. Explain tradeoffs:
-   - 0.6B–1.5B: fast inference, lower accuracy, good for prototyping
-   - 4B: balanced, single GPU fine-tuning possible
-   - 8B: best accuracy for knowledge tasks
-   The model choice affects all other hyperparameters — set them after.
+1. **What model?** — Default: `Qwen/Qwen3.5-4B`. Present ONLY these
+   exact HuggingFace model IDs (do NOT invent other sizes):
+   - `Qwen/Qwen3.5-0.8B` — fastest inference, good for prototyping
+   - `Qwen/Qwen3.5-2B` — small but capable
+   - `Qwen/Qwen3.5-4B` — balanced, recommended default
+   - `Qwen/Qwen3.5-9B` — best accuracy for knowledge tasks
+   Do NOT suggest models that don't exist (e.g. Qwen3.5-0.6B,
+   Qwen3.5-1.5B, Qwen3.5-8B — these are not real). The model choice
+   affects all other hyperparameters — set them after.
 2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
    user how many GPUs they have or offer GPU count options.
 3. **Training data** — Should come from a completed SDG job. Use
@@ -70,7 +74,7 @@ presenting the confirmation table.
 |-------|-----------|
 | `model_name_or_path` | User's chosen model |
 | `num_train_epochs` | 3–5 for <1000 samples, 2–3 for 1000–5000, 1–2 for 5000+. More data needs fewer epochs to avoid overfitting |
-| `learning_rate` | 2e-5 for 8B models, 5e-5 for 4B, 1e-4 for 0.6B–1.5B. Larger models need lower LR |
+| `learning_rate` | 2e-5 for 9B models, 5e-5 for 4B, 1e-4 for 0.8B–2B. Larger models need lower LR |
 | `effective_batch_size` | Always 32 (1 GPU × 32 per-GPU batch). **Always show in confirmation table.** |
 | `max_length` | Must fit the longest context + question + answer from SDG. For knowledge QA with 15-sentence chunks: ~11000. For classification: ~2048 |
 | `unfreeze_rank_ratio` | 0.2 is the OSFT default — fraction of weights trainable. **Always show in confirmation table** even when using the default. This is the key OSFT-specific parameter. |
@@ -81,7 +85,7 @@ presenting the confirmation table.
 
 When presenting the confirmation table, show WHY you chose each value:
 "5 epochs because the dataset is small (200 samples)" or "learning_rate
-2e-5 because Qwen3-8B is a large model".
+2e-5 because Qwen3.5-9B is a large model".
 
 ### Job Chaining
 

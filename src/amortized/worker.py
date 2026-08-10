@@ -102,7 +102,9 @@ async def _pick_pending_job() -> dict[str, Any] | None:
 
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
-        return await repo.pick_pending_job()
+        return await repo.pick_pending_job(
+            k8s_namespace=config_mod.settings.compute_namespace,
+        )
 
 
 async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
@@ -387,9 +389,10 @@ async def _run_job(job: dict[str, Any]) -> None:
 async def cleanup_orphaned_jobs() -> None:
     from amortized.db.connection import get_pool
 
+    ns = config_mod.settings.compute_namespace
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
-        running_jobs = await repo.list_jobs(status=JobStatus.running)
+        running_jobs = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
 
     now = datetime.now(UTC)
 
@@ -425,13 +428,16 @@ async def cleanup_orphaned_jobs() -> None:
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
-    logger.info("Worker started (poll interval: %.1fs)", poll_interval)
+    ns = config_mod.settings.compute_namespace
+    logger.info("Worker started (poll interval: %.1fs, namespace: %s)", poll_interval, ns)
 
     while True:
         try:
             job = await _pick_pending_job()
             if job is not None:
+                logger.info("Picked job %s (type=%s)", job["id"], job["type"])
                 await _run_job(job)
+                logger.info("Finished processing job %s", job["id"])
             else:
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:

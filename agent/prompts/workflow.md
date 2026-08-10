@@ -194,7 +194,7 @@ Do NOT skip the estimation step. The user needs to see how much GPU memory
 each model requires before choosing.
 
 1. Call `estimate_training_resources` for EACH candidate model size
-   (0.6B, 1.5B, 4B, 8B) with the default method (lora)
+   (0.8B, 2B, 4B, 9B) with the default method (lora)
 2. Call `show_vram_estimate` with ALL collected estimates — the frontend
    renders a comparison card showing VRAM for each size
 3. THEN call `present_options` with the model choices

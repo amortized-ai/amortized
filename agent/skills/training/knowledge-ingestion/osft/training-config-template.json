@@ -2,7 +2,7 @@
   "type": "training",
   "config": {
     "algorithm": "osft",
-    "model_name_or_path": "Qwen/Qwen3-8B",
+    "model_name_or_path": "Qwen/Qwen3.5-4B",
     "data_path": "",
     "num_train_epochs": 5,
     "learning_rate": 2e-05,
