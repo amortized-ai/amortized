@@ -114,7 +114,7 @@ def _enrich_with_artifacts(
                             "num_records": num_records,
                             "mlflow_run_id": mlflow_run_id,
                         },
-                        link="/datasets",
+                        link=f"/datasets/{mlflow_run_id}",
                     ),
                 )
             )
@@ -140,7 +140,7 @@ def _enrich_with_artifacts(
                             "name": registered_name or model_name,
                             "mlflow_run_id": mlflow_run_id,
                         },
-                        link="/models",
+                        link=f"/models/{registered_name or model_name}",
                     ),
                 )
             )

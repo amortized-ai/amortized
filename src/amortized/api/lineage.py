@@ -1,4 +1,4 @@
-"""Lineage listing endpoints."""
+"""Experiment listing endpoints."""
 
 import asyncpg
 from fastapi import APIRouter, Depends
@@ -8,7 +8,7 @@ from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import LineageChainSummary
 
-router = APIRouter(prefix="/api/v1/lineage", tags=["lineage"])
+router = APIRouter(prefix="/api/v1/experiments", tags=["experiments"])
 
 
 @router.get("", response_model=list[LineageChainSummary], operation_id="list_lineage_chains")

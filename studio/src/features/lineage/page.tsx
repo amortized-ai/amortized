@@ -200,8 +200,8 @@ export default function LineagePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Lineage"
-        description="End-to-end experiment tracking across your pipelines"
+        title="Experiments"
+        description="End-to-end experiment tracking — from data generation to trained models"
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

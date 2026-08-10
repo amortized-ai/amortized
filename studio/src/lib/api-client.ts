@@ -174,7 +174,7 @@ export function getJobLineage(id: string): Promise<import("@/types/api").Lineage
 
 export function getLineageChains(): Promise<LineageChainSummary[]> {
   logger.debug("getLineageChains")
-  return get<LineageChainSummary[]>("/api/v1/lineage")
+  return get<LineageChainSummary[]>("/api/v1/experiments")
 }
 
 export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {

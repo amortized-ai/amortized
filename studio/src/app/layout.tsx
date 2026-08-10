@@ -50,7 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Overview", path: "/overview", icon: Home },
   { label: "Chat", path: "/chat", icon: MessageSquare },
   { label: "Jobs", path: "/jobs", icon: Briefcase },
-  { label: "Lineage", path: "/lineage", icon: Workflow },
+  { label: "Experiments", path: "/experiments", icon: Workflow },
   { label: "Datasets", path: "/datasets", icon: Database },
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Models", path: "/models", icon: Box },
