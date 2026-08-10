@@ -266,7 +266,7 @@ class TestCommandWrapping:
         result = _wrap_command(cmd, [], ["python3 -c 'upload()'"])
         assert result[0:2] == ["sh", "-c"]
         assert "thub" in result[2]
-        assert "{ python3 -c 'upload()' ; true; }" in result[2]
+        assert "python3 -c 'upload()'" in result[2]
 
     def test_pre_and_post(self) -> None:
         from amortized.worker import _wrap_command
@@ -292,12 +292,12 @@ class TestCommandWrapping:
         assert "data-designer create && upload.py" in shell_cmd
         assert shell_cmd.count("sh -c") == 0
 
-    def test_post_commands_dont_fail_job(self) -> None:
+    def test_post_commands_fail_fast(self) -> None:
         from amortized.worker import _wrap_command
 
         cmd = ["thub", "train"]
-        result = _wrap_command(cmd, [], ["false"])
-        assert "; true; }" in result[2]
+        result = _wrap_command(cmd, [], ["cmd1", "cmd2"])
+        assert "cmd1 && cmd2" in result[2]
 
 
 class TestUploadBuilder:

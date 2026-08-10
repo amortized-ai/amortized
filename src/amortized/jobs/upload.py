@@ -51,7 +51,9 @@ async def build(
 
     image = f"{config_mod.settings.image_registry}/document:latest"
 
+    input_path = f"{input_dir}/{artifact_path}/{filename}"
     post_commands = [
+        f"mlflow artifacts log-artifact -l {shlex.quote(input_path)} -r $MLFLOW_RUN_ID -a source",
         "mlflow artifacts log-artifact -l /tmp/parsed_content.md -r $MLFLOW_RUN_ID",
         "mlflow artifacts log-artifacts -l /tmp/chunks -r $MLFLOW_RUN_ID -a chunks",
     ]

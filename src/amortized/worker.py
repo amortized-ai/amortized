@@ -57,7 +57,7 @@ def _wrap_command(
 ) -> list[str]:
     """Wrap a command with pre/post commands using shell chaining.
 
-    Pre-commands use && (fail fast). Post-commands use ; (best-effort).
+    Pre-commands and post-commands both use && (fail fast).
     """
     if not pre_commands and not post_commands:
         return command
@@ -67,8 +67,8 @@ def _wrap_command(
         main_cmd = shlex.join(command)
     pre_chain = " && ".join([*pre_commands, main_cmd])
     if post_commands:
-        post_chain = " ; ".join(post_commands)
-        return ["sh", "-c", f"{pre_chain} && {{ {post_chain} ; true; }}"]
+        post_chain = " && ".join(post_commands)
+        return ["sh", "-c", f"{pre_chain} && {post_chain}"]
     return ["sh", "-c", pre_chain]
 
 
@@ -275,6 +275,17 @@ async def _run_job(job: dict[str, Any]) -> None:
             mlflow_run_created = True
             spec_env["MLFLOW_RUN_ID"] = mlflow_run_id
             await _update_job(job_id, mlflow_run_id=mlflow_run_id)
+        elif job_type in (JobType.sdg.value, JobType.upload.value):
+            await _update_job(
+                job_id,
+                status=JobStatus.failed.value,
+                completed_at=datetime.now(UTC),
+                error=(
+                    "Cannot create MLflow run — artifact upload would fail."
+                    " Check MLflow connectivity and retry."
+                ),
+            )
+            return
 
     # --- Resolve parent artifacts ---
     config_files: dict[str, str] = {}
