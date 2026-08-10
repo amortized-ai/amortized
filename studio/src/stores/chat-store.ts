@@ -30,6 +30,7 @@ interface ChatStoreState {
   conversations: PersistedConversation[]
   sessionMap: Record<string, string>
   sessionStatus: Record<string, SessionStatus>
+  drafts: Record<string, string>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
   setPanelOpen: (open: boolean) => void
@@ -43,11 +44,14 @@ interface ChatStoreState {
   updateMessage: (conversationId: string, messageId: string, content: string) => void
   getConversationMessages: (conversationId: string) => PersistedMessage[]
   updateMessageFields: (conversationId: string, messageId: string, fields: Partial<PersistedMessage>) => void
+  removeMessage: (conversationId: string, messageId: string) => void
   setSessionId: (conversationId: string, sessionId: string) => void
   getSessionId: (conversationId: string) => string | undefined
   clearSessionId: (conversationId: string) => void
   setSessionStatus: (conversationId: string, status: SessionStatus) => void
   getSessionStatus: (conversationId: string) => SessionStatus
+  setDraft: (conversationId: string, text: string) => void
+  getDraft: (conversationId: string) => string
 }
 
 export const useChatStore = create<ChatStoreState>()(
@@ -59,6 +63,7 @@ export const useChatStore = create<ChatStoreState>()(
       conversations: [],
       sessionMap: {},
       sessionStatus: {},
+      drafts: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
       setPanelOpen: (open) => set({ panelOpen: open }),
@@ -71,10 +76,12 @@ export const useChatStore = create<ChatStoreState>()(
           const remaining = s.conversations.filter((c) => c.id !== id)
           const { [id]: _sid, ...restSessionMap } = s.sessionMap  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
             sessionStatus: restSessionStatus,
+            drafts: restDrafts,
             currentConversationId:
               s.currentConversationId === id
                 ? (remaining[0]?.id ?? null)
@@ -127,6 +134,14 @@ export const useChatStore = create<ChatStoreState>()(
               : c,
           ),
         })),
+      removeMessage: (conversationId, messageId) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId
+              ? { ...c, messages: c.messages.filter((m) => m.id !== messageId) }
+              : c,
+          ),
+        })),
       setSessionId: (conversationId, sessionId) =>
         set((s) => ({
           sessionMap: { ...s.sessionMap, [conversationId]: sessionId },
@@ -143,6 +158,13 @@ export const useChatStore = create<ChatStoreState>()(
         })),
       getSessionStatus: (conversationId) =>
         get().sessionStatus[conversationId] ?? "unknown",
+      setDraft: (conversationId, text) =>
+        set((s) => ({
+          drafts: text
+            ? { ...s.drafts, [conversationId]: text }
+            : Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k !== conversationId)),
+        })),
+      getDraft: (conversationId) => get().drafts[conversationId] ?? "",
     }),
     {
       name: "amortized-chat",
@@ -152,6 +174,7 @@ export const useChatStore = create<ChatStoreState>()(
         panelWidth: state.panelWidth,
         conversations: state.conversations,
         sessionMap: state.sessionMap,
+        drafts: state.drafts,
       }),
       onRehydrateStorage: () => () => {
         useChatStore.setState({ _hasHydrated: true })

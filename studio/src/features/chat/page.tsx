@@ -65,6 +65,7 @@ function ChatContent() {
       <PlanProgress plan={phasePlan} />
       <MessageList
         messages={messages}
+        isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
@@ -113,6 +114,10 @@ export default function ChatPage() {
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
   }, [activeProviders, chatModelSelection, setChatModelSelection])
+
+  if (_hasHydrated && !currentConversationId && conversations.length > 0) {
+    useChatStore.getState().setCurrentConversationId(conversations[0]!.id)
+  }
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
