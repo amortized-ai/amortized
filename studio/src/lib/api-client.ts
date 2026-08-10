@@ -9,6 +9,7 @@ import type {
   JobFilters,
   JobLogsResponse,
   LineageChainSummary,
+  LineageResponse,
   MlflowGatewayRoute,
   MlflowMetricHistoryEntry,
   MlflowModelVersionsResponse,
@@ -167,9 +168,9 @@ export function deleteJob(id: string): Promise<void> {
   return post<void>(`/api/v1/jobs/${id}/delete`)
 }
 
-export function getJobLineage(id: string): Promise<import("@/types/api").LineageResponse> {
+export function getJobLineage(id: string): Promise<LineageResponse> {
   logger.debug("getJobLineage", { id })
-  return get<import("@/types/api").LineageResponse>(`/api/v1/jobs/${id}/lineage`)
+  return get<LineageResponse>(`/api/v1/jobs/${id}/lineage`)
 }
 
 export function getLineageChains(): Promise<LineageChainSummary[]> {

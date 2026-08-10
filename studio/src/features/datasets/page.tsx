@@ -30,7 +30,7 @@ export default function DatasetsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => {
-    const runId = searchParams.get("run")
+    const runId = searchParams.get("run") || searchParams.get("dataset")
     const jobId = searchParams.get("job")
     if (datasets.length > 0 && (runId || jobId)) {
       const ds = runId

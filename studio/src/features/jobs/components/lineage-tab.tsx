@@ -7,68 +7,18 @@ import {
   BackgroundVariant,
   useReactFlow,
   ReactFlowProvider,
-  type Edge as FlowEdge,
 } from "@xyflow/react"
-import { Graph, layout } from "@dagrejs/dagre"
-import "@xyflow/react/dist/style.css"
 import { useJobLineage } from "../api/use-job-lineage"
-import { LineageNode, type LineageFlowNode } from "./lineage-node"
+import { nodeTypes, buildLayoutedGraph } from "../utils/layout-graph"
 import type { LineageResponse } from "@/types/api"
-
-const NODE_WIDTH = 220
-const NODE_HEIGHT = 130
-
-const nodeTypes = { lineage: LineageNode } as const
-
-function buildLayoutedGraph(data: LineageResponse) {
-  const g = new Graph({ directed: true })
-  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 100 })
-  g.setDefaultEdgeLabel(() => ({}))
-
-  for (const node of data.nodes) {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
-  }
-  for (const edge of data.edges) {
-    g.setEdge(edge.source, edge.target)
-  }
-
-  layout(g)
-
-  const nodes: LineageFlowNode[] = data.nodes.map((node) => {
-    const pos = g.node(node.id)
-    return {
-      id: node.id,
-      type: "lineage" as const,
-      position: {
-        x: (pos?.x ?? 0) - NODE_WIDTH / 2,
-        y: (pos?.y ?? 0) - NODE_HEIGHT / 2,
-      },
-      data: {
-        nodeType: node.type,
-        status: node.status,
-        recipe: node.recipe,
-        meta: node.meta,
-        isTarget: node.id === data.target_id,
-        link: node.link,
-      },
-    }
-  })
-
-  const edges: FlowEdge[] = data.edges.map((edge) => ({
-    id: `${edge.source}->${edge.target}`,
-    source: edge.source,
-    target: edge.target,
-    animated: false,
-    style: { stroke: "var(--color-border)", strokeWidth: 2 },
-  }))
-
-  return { nodes, edges }
-}
 
 function LineageFlow({ data }: { data: LineageResponse }) {
   const { fitView } = useReactFlow()
 
-  const { nodes, edges } = useMemo(() => buildLayoutedGraph(data), [data])
+  const { nodes, edges } = useMemo(
+    () => buildLayoutedGraph(data, { nodesep: 60, ranksep: 100 }),
+    [data],
+  )
 
   const onInit = useCallback(() => {
     setTimeout(() => fitView({ padding: 0.3, duration: 300 }), 50)

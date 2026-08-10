@@ -8,6 +8,7 @@ import {
   Database,
   Box,
   BookOpen,
+  ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { StatusBadge } from "./status-badge"
@@ -25,56 +26,85 @@ export interface LineageNodeData {
 
 export type LineageFlowNode = Node<LineageNodeData, "lineage">
 
-const NODE_TYPE_CONFIG: Record<
-  string,
-  { label: string; icon: typeof GraduationCap; accentClass: string }
-> = {
+interface NodeConfig {
+  label: string
+  icon: typeof GraduationCap
+  iconBg: string
+  iconColor: string
+  borderClass: string
+  subtitle?: string
+  hoverLabel?: string
+}
+
+const NODE_TYPE_CONFIG: Record<string, NodeConfig> = {
   training: {
     label: "Training",
     icon: GraduationCap,
-    accentClass: "border-l-rh-blue dark:border-l-rh-blue",
+    iconBg: "bg-[#e0f0ff] dark:bg-[#003366]/40",
+    iconColor: "text-[#0066cc] dark:text-[#4394e5]",
+    borderClass: "border-[#92c5f9]/60 dark:border-[#003366]/60",
+    hoverLabel: "View job",
   },
   sdg: {
     label: "Data Generation",
     icon: Sparkles,
-    accentClass: "border-l-rh-purple dark:border-l-rh-purple",
+    iconBg: "bg-[#ece6ff] dark:bg-[#1b0d33]/40",
+    iconColor: "text-[#5e40be] dark:text-[#876fd4]",
+    borderClass: "border-[#d0c5f4]/60 dark:border-[#21134d]/60",
+    hoverLabel: "View job",
   },
   upload: {
     label: "Upload",
     icon: Upload,
-    accentClass: "border-l-rh-green dark:border-l-rh-green",
+    iconBg: "bg-[#e9f7df] dark:bg-[#204d00]/30",
+    iconColor: "text-[#3d7317] dark:text-[#63993d]",
+    borderClass: "border-[#afdc8f]/60 dark:border-[#204d00]/60",
   },
   document: {
     label: "Document",
     icon: FileText,
-    accentClass: "border-l-rh-yellow dark:border-l-rh-yellow",
+    iconBg: "bg-[#fff4cc] dark:bg-[#54330b]/30",
+    iconColor: "text-[#96640f] dark:text-[#dca614]",
+    borderClass: "border-[#ffe072]/60 dark:border-[#73480b]/60",
   },
   eval: {
     label: "Eval",
     icon: FlaskConical,
-    accentClass: "border-l-rh-danger dark:border-l-rh-danger",
+    iconBg: "bg-red-50 dark:bg-red-950/30",
+    iconColor: "text-[#b1380b] dark:text-red-400",
+    borderClass: "border-red-200/60 dark:border-red-900/60",
   },
   dataset: {
     label: "Dataset",
     icon: Database,
-    accentClass: "border-l-emerald-500 dark:border-l-emerald-400",
+    iconBg: "bg-[#ece6ff] dark:bg-[#1b0d33]/40",
+    iconColor: "text-[#5e40be] dark:text-[#876fd4]",
+    borderClass: "border-[#d0c5f4]/60 dark:border-[#21134d]/60",
+    subtitle: "View dataset",
   },
   model: {
     label: "Trained Model",
     icon: Box,
-    accentClass: "border-l-sky-500 dark:border-l-sky-400",
+    iconBg: "bg-[#e0f0ff] dark:bg-[#003366]/40",
+    iconColor: "text-[#0066cc] dark:text-[#4394e5]",
+    borderClass: "border-[#92c5f9]/60 dark:border-[#003366]/60",
+    subtitle: "View model",
   },
   recipe: {
     label: "Recipe",
     icon: BookOpen,
-    accentClass: "border-l-amber-500 dark:border-l-amber-400",
+    iconBg: "bg-amber-50 dark:bg-amber-950/30",
+    iconColor: "text-amber-600 dark:text-amber-500",
+    borderClass: "border-amber-200/60 dark:border-amber-800/60",
   },
 }
 
-const FALLBACK_CONFIG = {
+const FALLBACK_CONFIG: NodeConfig = {
   label: "Job",
   icon: FlaskConical,
-  accentClass: "border-l-border",
+  iconBg: "bg-muted",
+  iconColor: "text-muted-foreground",
+  borderClass: "border-border",
 }
 
 function getMetaLines(
@@ -132,15 +162,14 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
   const Icon = config.icon
   const metaLines = getMetaLines(data.nodeType, data.meta)
   const isJob = JOB_TYPES.has(data.nodeType)
+  const isRunning = data.status === "running" || data.status === "provisioning"
 
   return (
     <div
       className={cn(
-        "w-[220px] rounded-lg border border-l-4 bg-card px-3 py-3 shadow-sm transition-shadow cursor-pointer",
-        config.accentClass,
-        data.isTarget
-          ? "ring-2 ring-[var(--rh-color-accent-base-on-light,#0066cc)] shadow-md dark:ring-[var(--rh-color-accent-base-on-dark,#92c5f9)]"
-          : "hover:shadow-md",
+        "group/node w-[220px] rounded-lg border bg-card px-4 py-3.5 shadow-sm transition-all duration-200 cursor-pointer",
+        config.borderClass,
+        "hover:ring-2 hover:ring-primary/20 hover:shadow-md",
       )}
     >
       <Handle
@@ -155,27 +184,41 @@ export function LineageNode({ data }: NodeProps<LineageFlowNode>) {
       />
 
       <div className="flex items-center gap-2">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted">
-          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors",
+          config.iconBg,
+          isRunning && "animate-pulse",
+        )}>
+          <Icon className={cn("h-3.5 w-3.5", config.iconColor)} />
         </div>
-        <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
           <span className="text-xs font-semibold leading-none">
             {config.label}
           </span>
           {isJob && data.status ? (
-            <StatusBadge status={data.status as JobStatus} />
+            <div className="flex flex-col gap-0.5">
+              <StatusBadge status={data.status as JobStatus} />
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">
+                View job <ArrowRight className="h-2.5 w-2.5" />
+              </span>
+            </div>
+          ) : config.subtitle ? (
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-primary">
+              {config.subtitle} <ArrowRight className="h-2.5 w-2.5" />
+            </span>
           ) : (
             <span className="text-[10px] text-muted-foreground">Artifact</span>
           )}
         </div>
+        <ArrowRight className="h-3 w-3 text-muted-foreground/30 shrink-0 group-hover/node:text-muted-foreground/60 transition-colors" />
       </div>
 
       {metaLines.length > 0 && (
-        <div className="mt-2 space-y-0.5 border-t border-border/50 pt-2">
+        <div className="mt-2.5 space-y-0.5 border-t border-border/50 pt-2">
           {metaLines.map((line, i) => (
             <p
               key={i}
-              className="truncate text-[11px] leading-tight text-muted-foreground"
+              className="truncate text-xs leading-tight text-muted-foreground"
             >
               {line}
             </p>
