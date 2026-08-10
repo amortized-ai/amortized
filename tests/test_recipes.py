@@ -151,15 +151,39 @@ def _use_temp_db(tmp_path: Path) -> None:
 
 class TestRecipeAPI:
     @pytest.fixture
-    async def client(self) -> httpx.AsyncClient:  # type: ignore[misc]
+    async def client(self, tmp_path: Path) -> httpx.AsyncClient:  # type: ignore[misc]
+        import amortized.config as config_mod
         from amortized.db import init_db
         from amortized.main import app
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as c:
-            await init_db()
-            yield c  # type: ignore[misc]
+        (tmp_path / "templates" / "training").mkdir(parents=True)
+        (tmp_path / "templates" / "sdg").mkdir(parents=True)
+        (tmp_path / "templates" / "training" / "test-recipe.yaml").write_text(
+            "type: training\n"
+            "description: Test training recipe\n"
+            "config:\n"
+            "  algorithm: osft\n"
+            "  model_name_or_path: Qwen/Qwen3-8B\n"
+            "  unfreeze_rank_ratio: 0.2\n"
+        )
+        (tmp_path / "templates" / "sdg" / "test-recipe.yaml").write_text(
+            "type: sdg\n"
+            "description: Test SDG recipe\n"
+            "config:\n"
+            "  num_records: 100\n"
+            "  columns: []\n"
+        )
+
+        old_dir = config_mod.settings.recipes_dir
+        config_mod.settings.recipes_dir = tmp_path
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as c:
+                await init_db()
+                yield c  # type: ignore[misc]
+        finally:
+            config_mod.settings.recipes_dir = old_dir
 
     @pytest.mark.asyncio
     async def test_list_recipes_endpoint(self, client: httpx.AsyncClient) -> None:
@@ -168,12 +192,12 @@ class TestRecipeAPI:
         data = resp.json()
         assert isinstance(data, list)
         names = {r["name"] for r in data}
-        assert "templates/training/knowledge-ingestion" in names
-        assert "templates/sdg/knowledge-ingestion" in names
+        assert "templates/training/test-recipe" in names
+        assert "templates/sdg/test-recipe" in names
 
     @pytest.mark.asyncio
     async def test_get_recipe_endpoint(self, client: httpx.AsyncClient) -> None:
-        resp = await client.get("/api/v1/recipes/templates/training/knowledge-ingestion")
+        resp = await client.get("/api/v1/recipes/templates/training/test-recipe")
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "training"
@@ -189,7 +213,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/training/knowledge-ingestion",
+                "recipe": "templates/training/test-recipe",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
@@ -207,7 +231,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/training/knowledge-ingestion",
+                "recipe": "templates/training/test-recipe",
                 "overrides": {
                     "config.model_name_or_path": "Qwen/Qwen2.5-1.5B-Instruct",
                     "config.data_path": "/data/train.jsonl",
@@ -224,7 +248,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/sdg/knowledge-ingestion",
+                "recipe": "templates/sdg/test-recipe",
                 "overrides": {
                     "config.num_records": 20,
                 },
@@ -242,7 +266,7 @@ class TestRecipeAPI:
         resp = await client.post(
             "/api/v1/jobs/recipe",
             json={
-                "recipe": "templates/sdg/knowledge-ingestion",
+                "recipe": "templates/sdg/test-recipe",
                 "overrides": {
                     "config.num_records": 50,
                 },

@@ -94,7 +94,7 @@ Key decisions for v1:
 - `src/` layout — all code under `src/amortized/`
 - FastAPI with pydantic-settings for config
 - All API endpoints under `/api/v1/`
-- SQLite for persistence (no ORM, raw aiosqlite)
+- PostgreSQL for persistence (asyncpg, Alembic migrations)
 - No comments unless the WHY is non-obvious
 - uv for Docker builds (not pip)
 
