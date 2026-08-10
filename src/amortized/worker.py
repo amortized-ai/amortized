@@ -428,7 +428,8 @@ async def cleanup_orphaned_jobs() -> None:
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
-    logger.info("Worker started (poll interval: %.1fs)", poll_interval)
+    ns = config_mod.settings.compute_namespace
+    logger.info("Worker started (poll interval: %.1fs, namespace: %s)", poll_interval, ns)
 
     while True:
         try:
