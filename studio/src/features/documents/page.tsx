@@ -30,20 +30,27 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     const docParam = searchParams.get("doc")
-    if (!docParam || documents.length === 0) return
+    if (!docParam) return
+    if (documents.length === 0) {
+      void refetch()
+      return
+    }
     const match = documents.find(
       (d) => d.document_id === docParam || d.mlflow_run_id === docParam,
     )
     if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
       setSelectedDocument(match)
       setDetailOpen(true)
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
+    } else {
+      void refetch()
     }
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      next.delete("doc")
-      return next
-    }, { replace: true })
-  }, [searchParams, documents, setSearchParams])
+  }, [searchParams, documents, setSearchParams, refetch])
 
   const filteredDocuments = useMemo(() => {
     if (!search.trim()) return documents
