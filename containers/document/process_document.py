@@ -3,8 +3,6 @@ import os
 import re
 import time
 
-import mlflow
-
 
 def main():
     config_path = os.environ.get("CONFIG_PATH", "/amortized/config.json")
@@ -20,6 +18,7 @@ def main():
 
     start = time.time()
     from docling.document_converter import DocumentConverter
+
     converter = DocumentConverter()
     result = converter.convert(input_path)
     content = result.document.export_to_markdown()
@@ -32,7 +31,7 @@ def main():
 
     chunks = []
     if content.strip():
-        from chonkie import SentenceChunker, TokenChunker, RecursiveChunker
+        from chonkie import RecursiveChunker, SentenceChunker, TokenChunker
 
         if chunker_type == "token":
             chunker = TokenChunker(
@@ -49,52 +48,33 @@ def main():
         chunks = [{"text": c.text, "token_count": c.token_count} for c in raw_chunks]
         print(f"Chunked into {len(chunks)} chunks using {chunker_type}")
 
-    mlflow.set_experiment("amortized/documents")
-    with mlflow.start_run(run_name=filename) as run:
-        run_id = run.info.run_id
+    content_path = "/tmp/parsed_content.md"
+    with open(content_path, "w") as f:
+        f.write(content)
 
-        mlflow.set_tags({
-            "job_type": "document",
-            "filename": filename,
-            "format": "md",
-            "processing_time": str(processing_time),
-            "content_length": str(len(content)),
-            "chunk_count": str(len(chunks)),
-        })
-
-        # Upload source file
-        mlflow.log_artifact(input_path, "source")
-
-        # Upload parsed content
-        content_path = "/tmp/parsed_content.md"
-        with open(content_path, "w") as f:
-            f.write(content)
-        mlflow.log_artifact(content_path, "")
-
-        # Upload chunks
-        if chunks:
-            os.makedirs("/tmp/chunks", exist_ok=True)
-            heading_re = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
-            metadata = []
-            for i, chunk in enumerate(chunks):
-                chunk_path = f"/tmp/chunks/chunk_{i:03d}.md"
-                with open(chunk_path, "w") as f:
-                    f.write(chunk["text"])
-                headings = [m.group(2).strip() for m in heading_re.finditer(chunk["text"])]
-                metadata.append({
+    if chunks:
+        os.makedirs("/tmp/chunks", exist_ok=True)
+        heading_re = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+        metadata = []
+        for i, chunk in enumerate(chunks):
+            chunk_path = f"/tmp/chunks/chunk_{i:03d}.md"
+            with open(chunk_path, "w") as f:
+                f.write(chunk["text"])
+            headings = [m.group(2).strip() for m in heading_re.finditer(chunk["text"])]
+            metadata.append(
+                {
                     "chunk_index": i,
                     "num_tokens": chunk["token_count"],
                     "headings": headings,
                     "page_numbers": [],
-                })
+                }
+            )
 
-            metadata_path = "/tmp/chunks/metadata.json"
-            with open(metadata_path, "w") as f:
-                json.dump(metadata, f, indent=2)
+        metadata_path = "/tmp/chunks/metadata.json"
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f, indent=2)
 
-            mlflow.log_artifacts("/tmp/chunks", "chunks")
-
-    print(f"AMORTIZED_MLFLOW_RUN_ID={run_id}")
+    print(f"Processing complete: {len(content)} chars, {len(chunks)} chunks")
 
 
 if __name__ == "__main__":

@@ -206,11 +206,11 @@ async def convert_document_url(
 async def list_documents() -> list[DocumentSummary]:
     client = MLflowClient(_tracking_uri())
     try:
-        experiment_id = await client.get_experiment("amortized/documents")
-        if experiment_id is None:
+        exp_ids = await client.list_experiment_ids()
+        if not exp_ids:
             return []
         runs = await client.search_runs(
-            experiment_ids=[experiment_id],
+            experiment_ids=exp_ids,
             filter_string="tags.job_type = 'document' AND attributes.status = 'FINISHED'",
             order_by=["start_time DESC"],
         )

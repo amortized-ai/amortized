@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 from typing import Any
 
 import amortized.config as config_mod
@@ -90,9 +91,15 @@ async def build(
     thub_subcommand = algorithm.replace("_", "-")
     cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
 
+    output_dir = config.get("output_dir", "/amortized/work/output")
+    post_cmd = (
+        f"mlflow artifacts log-artifacts -l {shlex.quote(output_dir)} -r $MLFLOW_RUN_ID -a model"
+    )
+
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
+        post_commands=[post_cmd],
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=IMAGE,
         resolved_config=dict(config),
