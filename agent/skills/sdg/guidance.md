@@ -9,11 +9,13 @@ for the requirement-gathering workflow and reference payload.
 |-----------|------|----------|
 | knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
 | classification | `skills/sdg/classification/` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
+| task-distillation | `skills/sdg/task-distillation/` | RFE assessors, code reviewers, compliance checkers, rubric-based scoring |
 
 ## How to Choose
 
 - **User has documents they want a model to answer questions about** -> `knowledge-ingestion`
 - **User wants to sort/label/categorize text** -> `classification`
+- **User wants to replicate a frontier model's scoring/assessment behavior** -> `task-distillation`
 
 ## Calling `create_sdg_job`
 
