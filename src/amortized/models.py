@@ -184,8 +184,8 @@ class DocumentSummary(_DocumentBase):
 
 class LineageNode(BaseModel):
     id: str
-    type: JobType
-    status: JobStatus
+    type: str
+    status: str = ""
     recipe: str = ""
     mlflow_run_id: str = ""
     mlflow_experiment: str = ""
@@ -193,6 +193,7 @@ class LineageNode(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     meta: dict[str, Any] = Field(default_factory=dict)
+    link: str = ""
 
 
 class LineageEdge(BaseModel):

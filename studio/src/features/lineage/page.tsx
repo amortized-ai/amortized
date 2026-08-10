@@ -72,6 +72,7 @@ function buildLayoutedGraph(data: LineageResponse) {
         recipe: node.recipe,
         meta: node.meta,
         isTarget: node.id === data.target_id,
+        link: node.link,
       },
     }
   })
@@ -99,7 +100,8 @@ function ChainGraph({ data }: { data: LineageResponse }) {
 
   const onNodeClick: NodeMouseHandler<LineageFlowNode> = useCallback(
     (_event, node) => {
-      void navigate(`/jobs?job=${node.id}`)
+      const link = node.data.link
+      if (link) void navigate(link)
     },
     [navigate],
   )

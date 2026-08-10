@@ -49,6 +49,7 @@ function buildLayoutedGraph(data: LineageResponse) {
         recipe: node.recipe,
         meta: node.meta,
         isTarget: node.id === data.target_id,
+        link: node.link,
       },
     }
   })

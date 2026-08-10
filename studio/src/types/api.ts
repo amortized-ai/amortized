@@ -300,19 +300,20 @@ export interface PaginatedResponse<T> {
 
 // --- Lineage ---
 
-export type LineageNodeType = "sdg" | "training" | "upload" | "document" | "eval"
+export type LineageNodeType = "sdg" | "training" | "upload" | "document" | "eval" | "dataset" | "model" | "recipe"
 
 export interface LineageNode {
   id: string
   type: LineageNodeType
-  status: JobStatus
+  status: string
   recipe: string
   mlflow_run_id: string
   mlflow_experiment: string
-  created_at: string
+  created_at: string | null
   started_at: string | null
   completed_at: string | null
   meta: Record<string, unknown>
+  link: string
 }
 
 export interface LineageEdge {

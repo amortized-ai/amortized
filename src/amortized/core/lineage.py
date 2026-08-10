@@ -44,9 +44,11 @@ def _extract_meta(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _job_to_node(job: dict[str, Any]) -> LineageNode:
+    job_type = job["type"]
+    link = f"/jobs?job={job['id']}"
     return LineageNode(
         id=job["id"],
-        type=job["type"],
+        type=job_type,
         status=job["status"],
         recipe=job.get("recipe", ""),
         mlflow_run_id=job.get("mlflow_run_id", ""),
@@ -55,7 +57,99 @@ def _job_to_node(job: dict[str, Any]) -> LineageNode:
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
         meta=_extract_meta(job),
+        link=link,
     )
+
+
+def _enrich_with_artifacts(
+    nodes_by_id: dict[str, LineageNode],
+    edges: list[LineageEdge],
+    jobs_by_id: dict[str, dict[str, Any]],
+) -> None:
+    """Add artifact nodes (datasets, models, recipes) between job nodes."""
+    new_nodes: list[tuple[str, LineageNode]] = []
+    new_edges: list[LineageEdge] = []
+    edges_to_remove: set[tuple[str, str]] = set()
+
+    for job_id, job in jobs_by_id.items():
+        job_type = job.get("type", "")
+        recipe_name = job.get("recipe", "")
+        mlflow_run_id = job.get("mlflow_run_id", "")
+        config = job.get("config", {})
+
+        if recipe_name:
+            recipe_node_id = f"recipe-{job_id}"
+            new_nodes.append(
+                (
+                    recipe_node_id,
+                    LineageNode(
+                        id=recipe_node_id,
+                        type="recipe",
+                        meta={"name": recipe_name, "job_type": job_type},
+                        link="/recipes",
+                    ),
+                )
+            )
+            parent_edges = [(e.source, e.target) for e in edges if e.target == job_id]
+            if parent_edges:
+                for src, tgt in parent_edges:
+                    edges_to_remove.add((src, tgt))
+                    new_edges.append(LineageEdge(source=src, target=recipe_node_id))
+                new_edges.append(LineageEdge(source=recipe_node_id, target=job_id))
+            else:
+                new_edges.append(LineageEdge(source=recipe_node_id, target=job_id))
+
+        if job_type == "sdg" and mlflow_run_id:
+            dataset_node_id = f"dataset-{job_id}"
+            topic = config.get("topic", "")
+            num_records = config.get("num_records", "")
+            new_nodes.append(
+                (
+                    dataset_node_id,
+                    LineageNode(
+                        id=dataset_node_id,
+                        type="dataset",
+                        meta={
+                            "name": topic or "Generated dataset",
+                            "num_records": num_records,
+                            "mlflow_run_id": mlflow_run_id,
+                        },
+                        link="/datasets",
+                    ),
+                )
+            )
+            child_edges = [(e.source, e.target) for e in edges if e.source == job_id]
+            for src, tgt in child_edges:
+                edges_to_remove.add((src, tgt))
+                new_edges.append(LineageEdge(source=dataset_node_id, target=tgt))
+            new_edges.append(LineageEdge(source=job_id, target=dataset_node_id))
+
+        if job_type == "training" and mlflow_run_id:
+            model_node_id = f"model-{job_id}"
+            model_name = config.get("model_name_or_path", "")
+            algo = config.get("algorithm", "")
+            model_id = model_name.rsplit("/", 1)[-1] if model_name else ""
+            registered_name = f"{model_id}-{algo}-{job_id[:8]}" if model_id and algo else ""
+            new_nodes.append(
+                (
+                    model_node_id,
+                    LineageNode(
+                        id=model_node_id,
+                        type="model",
+                        meta={
+                            "name": registered_name or model_name,
+                            "mlflow_run_id": mlflow_run_id,
+                        },
+                        link="/models",
+                    ),
+                )
+            )
+            new_edges.append(LineageEdge(source=job_id, target=model_node_id))
+
+    edges[:] = [e for e in edges if (e.source, e.target) not in edges_to_remove]
+    edges.extend(new_edges)
+    for nid, node in new_nodes:
+        nodes_by_id[nid] = node
 
 
 async def get_job_lineage(repo: Repository, job_id: str) -> LineageResponse | None:
@@ -91,6 +185,9 @@ async def get_job_lineage(repo: Repository, job_id: str) -> LineageResponse | No
                 nodes_by_id[child["id"]] = _job_to_node(child)
                 edges.append(LineageEdge(source=current_id, target=child["id"]))
                 queue.append(child["id"])
+
+    jobs_lookup = {jid: await repo.get_job(jid) or {} for jid in nodes_by_id}
+    _enrich_with_artifacts(nodes_by_id, edges, jobs_lookup)
 
     return LineageResponse(
         nodes=list(nodes_by_id.values()),
@@ -137,10 +234,13 @@ async def list_lineage_chains(
                 edges.append(LineageEdge(source=current_id, target=child_id))
                 queue.append(child_id)
 
-        if len(nodes_by_id) < 2:
+        chain_job_ids = set(nodes_by_id.keys())
+        _enrich_with_artifacts(nodes_by_id, edges, {k: jobs_by_id[k] for k in chain_job_ids})
+
+        if len(chain_job_ids) < 2:
             continue
 
-        chain_jobs = [jobs_by_id[nid] for nid in nodes_by_id]
+        chain_jobs = [jobs_by_id[nid] for nid in chain_job_ids]
 
         if job_type and not any(j.get("type") == job_type for j in chain_jobs):
             continue
