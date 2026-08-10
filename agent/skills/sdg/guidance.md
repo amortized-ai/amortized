@@ -9,7 +9,7 @@ for the requirement-gathering workflow and reference payload.
 |-----------|------|----------|
 | knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
 | classification | `skills/sdg/classification/` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
-| task-distillation | `skills/sdg/task-distillation/` | RFE assessors, code reviewers, compliance checkers, rubric-based scoring |
+| task-distillation | `skills/sdg/task-distillation/` | Specialized tasks not covered by other skills: RFE assessment, ticket bucketing, code review, compliance checking, routing, extraction |
 
 ## How to Choose
 
