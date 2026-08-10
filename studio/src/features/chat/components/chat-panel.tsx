@@ -21,6 +21,7 @@ function ChatPanelContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    thinkingSteps,
     confirmAction,
     rejectAction,
   } = useChat()
@@ -66,6 +67,7 @@ function ChatPanelContent() {
       />
       <MessageList
         messages={messages}
+        thinkingSteps={thinkingSteps}
         isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}

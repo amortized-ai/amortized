@@ -10,6 +10,7 @@ import { OptionCards } from "./option-cards"
 import { ModelPricingCard } from "./model-pricing-card"
 import { VRAMEstimateCard } from "./vram-estimate-card"
 import { JobMonitorCard, getFollowUpOptions } from "./job-monitor-card"
+import { ThinkingSteps } from "./thinking-steps"
 import { extractJobInfo } from "../utils/parse-tool-result"
 import type { JobStatus } from "@/types/api"
 
@@ -25,6 +26,7 @@ function stripToolXml(text: string): string {
 interface MessageBubbleProps {
   message: ChatMessage
   isLatest?: boolean
+  thinkingSteps?: string[]
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
@@ -33,6 +35,7 @@ interface MessageBubbleProps {
 export function MessageBubble({
   message,
   isLatest,
+  thinkingSteps,
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
@@ -156,10 +159,15 @@ export function MessageBubble({
         )}
       >
         {!isUser && !displayContent && (
-          <div className="flex items-center gap-1.5 py-1 px-1">
-            <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "0ms" }} />
-            <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "280ms" }} />
-            <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "560ms" }} />
+          <div>
+            <div className="flex items-center gap-1.5 py-1 px-1">
+              <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "0ms" }} />
+              <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "280ms" }} />
+              <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "560ms" }} />
+            </div>
+            {thinkingSteps && thinkingSteps.length > 0 && (
+              <ThinkingSteps steps={thinkingSteps} />
+            )}
           </div>
         )}
         {displayContent && (

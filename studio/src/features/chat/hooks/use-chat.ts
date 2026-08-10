@@ -192,6 +192,13 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
+const THINKING_STEPS = [
+  "Reading your request...",
+  "Looking up relevant guidance...",
+  "Analyzing your requirements...",
+  "Preparing response...",
+]
+
 const _activeRequests = new Set<string>()
 
 /**
@@ -228,6 +235,7 @@ export function useChat() {
   )
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+  const [thinkingSteps, setThinkingSteps] = useState<string[]>([])
 
   useEffect(() => {
     if (!mountedWhileStreaming || !currentConversationId) return
@@ -235,7 +243,21 @@ export function useChat() {
     const placeholderId = lastRestored!.id
     let cancelled = false
 
+    const thinkingStartTime = Date.now()
+    setThinkingSteps([THINKING_STEPS[0]!])
+    const thinkingTimerId = setInterval(() => {
+      const elapsed = (Date.now() - thinkingStartTime) / 1000
+      let step: string
+      if (elapsed < 2) step = THINKING_STEPS[0]!
+      else if (elapsed < 5) step = THINKING_STEPS[1]!
+      else if (elapsed < 10) step = THINKING_STEPS[2]!
+      else step = THINKING_STEPS[3]!
+      setThinkingSteps([step])
+    }, 500)
+
     function cleanupPlaceholder() {
+      clearInterval(thinkingTimerId)
+      setThinkingSteps([])
       _activeRequests.delete(convId)
       useChatStore.getState().removeMessage(convId, placeholderId)
       setMessages(restoreMessages(getConversationMessages, convId))
@@ -540,11 +562,24 @@ export function useChat() {
       })
       _activeRequests.add(convId)
 
+      const thinkingStartTime = Date.now()
+      setThinkingSteps([THINKING_STEPS[0]!])
+      const thinkingTimerId = setInterval(() => {
+        const elapsed = (Date.now() - thinkingStartTime) / 1000
+        let step: string
+        if (elapsed < 2) step = THINKING_STEPS[0]!
+        else if (elapsed < 5) step = THINKING_STEPS[1]!
+        else if (elapsed < 10) step = THINKING_STEPS[2]!
+        else step = THINKING_STEPS[3]!
+        setThinkingSteps([step])
+      }, 500)
+
       try {
         const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
         logger.info("sending to OpenCode", { conversationId: convId })
         const { chatModelSelection } = useSettingsStore.getState()
         const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+        clearInterval(thinkingTimerId)
         logger.info("OpenCode response received", {
           provider: response.info?.providerID,
           model: response.info?.modelID,
@@ -611,6 +646,7 @@ export function useChat() {
         })
 
         _activeRequests.delete(convId)
+        setThinkingSteps([])
         setChatState(proposedAction ? "action_pending" : "done")
         useChatStore.getState().setSessionStatus(convId, "connected")
 
@@ -627,7 +663,9 @@ export function useChat() {
           })
         }
       } catch (err) {
+        clearInterval(thinkingTimerId)
         _activeRequests.delete(convId)
+        setThinkingSteps([])
         logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
         setMessages((prev) => prev.filter((m) => m.id !== assistantId))
         useChatStore.getState().removeMessage(convId, assistantId)
@@ -777,6 +815,7 @@ export function useChat() {
     error,
     chatState,
     currentToolCall,
+    thinkingSteps,
     proposedAction: latestAction,
     confirmAction,
     rejectAction,

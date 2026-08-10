@@ -34,6 +34,7 @@ function ChatContent() {
     isStreaming,
     chatState,
     error,
+    thinkingSteps,
     confirmAction,
     rejectAction,
   } = useChat()
@@ -65,6 +66,7 @@ function ChatContent() {
       <PlanProgress plan={phasePlan} />
       <MessageList
         messages={messages}
+        thinkingSteps={thinkingSteps}
         isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
