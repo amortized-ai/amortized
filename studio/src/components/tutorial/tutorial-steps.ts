@@ -19,7 +19,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "sidebar-nav",
     title: "Navigation",
     description:
-      "Everything lives in these sections: Chat with Morty, monitor Jobs, browse Datasets and Models, configure Recipes, and manage Settings.",
+      "Everything lives in these sections: Chat with Morty, monitor Jobs, browse Datasets, Models, and Experiments, configure Recipes, and manage Settings.",
     placement: "right",
   },
   {
@@ -83,6 +83,15 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     title: "Browse Models",
     description:
       "View your fine-tuned models, track versions in MLflow, and check which models are ready to deploy.",
+    placement: "bottom",
+  },
+  {
+    id: "experiments",
+    route: "/experiments",
+    target: "experiments-header",
+    title: "Track Experiments",
+    description:
+      "See your end-to-end pipelines — from data generation through training to the final model. Click any experiment to explore the full lineage graph.",
     placement: "bottom",
   },
   {
