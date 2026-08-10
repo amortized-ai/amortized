@@ -23,6 +23,7 @@ const nodeTypes = { lineage: LineageNode } as const
 function buildLayoutedGraph(data: LineageResponse) {
   const g = new Graph({ directed: true })
   g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 100 })
+  g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of data.nodes) {
     g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
