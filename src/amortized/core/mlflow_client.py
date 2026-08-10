@@ -327,6 +327,33 @@ class MLflowClient:
             logger.info("Registered model version %s from run %s", name, run_id)
         return True
 
+    async def search_model_versions_by_run_ids(
+        self,
+        run_ids: list[str],
+    ) -> dict[str, str]:
+        """Map run IDs to their registered model names.
+
+        Returns {run_id: model_name} for runs that have a registered model version.
+        """
+        if not run_ids:
+            return {}
+        result: dict[str, str] = {}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            for run_id in run_ids:
+                try:
+                    resp = await client.get(
+                        self._url("/api/2.0/mlflow/model-versions/search"),
+                        params={"filter": f"run_id='{run_id}'", "max_results": 1},
+                    )
+                    if resp.is_error:
+                        continue
+                    versions = resp.json().get("model_versions", [])
+                    if versions:
+                        result[run_id] = versions[0]["name"]
+                except Exception:
+                    continue
+        return result
+
     async def list_gateway_endpoints(self) -> list[dict[str, Any]]:
         """Fetch raw MLflow AI Gateway endpoint dicts."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:

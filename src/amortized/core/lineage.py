@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from amortized.models import LineageChainSummary, LineageEdge, LineageNode, LineageResponse
 
 if TYPE_CHECKING:
     from amortized.db.repository import Repository
+
+logger = logging.getLogger("amortized.core.lineage")
 
 
 def _extract_meta(job: dict[str, Any]) -> dict[str, Any]:
@@ -65,6 +68,7 @@ def _enrich_with_artifacts(
     nodes_by_id: dict[str, LineageNode],
     edges: list[LineageEdge],
     jobs_by_id: dict[str, dict[str, Any]],
+    registered_model_names: dict[str, str] | None = None,
 ) -> None:
     """Add artifact nodes (datasets, models, recipes) between job nodes."""
     new_nodes: list[tuple[str, LineageNode]] = []
@@ -126,10 +130,14 @@ def _enrich_with_artifacts(
 
         if job_type == "training" and mlflow_run_id:
             model_node_id = f"model-{job_id}"
-            model_name = config.get("model_name_or_path", "")
-            algo = config.get("algorithm", "")
-            model_id = model_name.rsplit("/", 1)[-1] if model_name else ""
-            registered_name = f"{model_id}-{algo}-{job_id[:8]}" if model_id and algo else ""
+            resolved_name = (registered_model_names or {}).get(mlflow_run_id, "")
+            if not resolved_name:
+                model_name = config.get("model_name_or_path", "")
+                algo = config.get("algorithm", "")
+                model_id = model_name.rsplit("/", 1)[-1] if model_name else ""
+                resolved_name = (
+                    f"{model_id}-{algo}-{job_id[:8]}" if model_id and algo else model_name
+                )
             new_nodes.append(
                 (
                     model_node_id,
@@ -137,10 +145,10 @@ def _enrich_with_artifacts(
                         id=model_node_id,
                         type="model",
                         meta={
-                            "name": registered_name or model_name,
+                            "name": resolved_name,
                             "mlflow_run_id": mlflow_run_id,
                         },
-                        link=f"/models/{registered_name or model_name}",
+                        link=f"/models/{resolved_name}",
                     ),
                 )
             )
@@ -150,6 +158,34 @@ def _enrich_with_artifacts(
     edges.extend(new_edges)
     for nid, node in new_nodes:
         nodes_by_id[nid] = node
+
+
+async def _resolve_model_names(
+    jobs: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    """Look up actual registered model names from MLflow for training jobs."""
+    from amortized import config as config_mod
+
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return {}
+
+    run_ids = [
+        j["mlflow_run_id"]
+        for j in jobs.values()
+        if j.get("type") == "training" and j.get("mlflow_run_id")
+    ]
+    if not run_ids:
+        return {}
+
+    try:
+        from amortized.core.mlflow_client import MLflowClient
+
+        client = MLflowClient(tracking_uri)
+        return await client.search_model_versions_by_run_ids(run_ids)
+    except Exception:
+        logger.debug("Could not resolve model names from MLflow", exc_info=True)
+        return {}
 
 
 async def get_job_lineage(repo: Repository, job_id: str) -> LineageResponse | None:
@@ -187,7 +223,8 @@ async def get_job_lineage(repo: Repository, job_id: str) -> LineageResponse | No
                 queue.append(child["id"])
 
     jobs_lookup = {jid: await repo.get_job(jid) or {} for jid in nodes_by_id}
-    _enrich_with_artifacts(nodes_by_id, edges, jobs_lookup)
+    model_names = await _resolve_model_names(jobs_lookup)
+    _enrich_with_artifacts(nodes_by_id, edges, jobs_lookup, model_names)
 
     return LineageResponse(
         nodes=list(nodes_by_id.values()),
@@ -206,6 +243,7 @@ async def list_lineage_chains(
     all_jobs = await repo.list_jobs()
 
     jobs_by_id: dict[str, dict[str, Any]] = {j["id"]: j for j in all_jobs}
+    model_names = await _resolve_model_names(jobs_by_id)
     children_by_parent: dict[str, list[str]] = {}
     for j in all_jobs:
         pid = j.get("parent_job_id", "")
@@ -235,7 +273,10 @@ async def list_lineage_chains(
                 queue.append(child_id)
 
         chain_job_ids = set(nodes_by_id.keys())
-        _enrich_with_artifacts(nodes_by_id, edges, {k: jobs_by_id[k] for k in chain_job_ids})
+        chain_jobs_lookup = {k: jobs_by_id[k] for k in chain_job_ids}
+        _enrich_with_artifacts(
+            nodes_by_id, edges, chain_jobs_lookup, model_names,
+        )
 
         if len(chain_job_ids) < 2:
             continue

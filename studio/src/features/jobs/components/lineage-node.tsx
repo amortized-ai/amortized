@@ -88,7 +88,7 @@ const NODE_TYPE_CONFIG: Record<string, NodeConfig> = {
     iconBg: "bg-[#e0f0ff] dark:bg-[#003366]/40",
     iconColor: "text-[#0066cc] dark:text-[#4394e5]",
     borderClass: "border-[#92c5f9]/60 dark:border-[#003366]/60",
-    subtitle: "View training job",
+    subtitle: "View model",
   },
   recipe: {
     label: "Recipe",

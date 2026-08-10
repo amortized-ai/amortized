@@ -89,9 +89,9 @@ function ExperimentGraph({
             }
           }
         } else if (nodeType === "model") {
-          const sourceEdge = chain.lineage.edges.find((e) => e.target === node.id)
-          if (sourceEdge) {
-            void navigate(`/jobs?job=${encodeURIComponent(sourceEdge.source)}`)
+          const modelName = (node.data.meta as Record<string, unknown>)?.name
+          if (typeof modelName === "string" && modelName) {
+            void navigate(`/models/${encodeURIComponent(modelName)}`)
           }
         } else {
           const link = node.data.link
@@ -247,9 +247,9 @@ function ArtifactsTab({
               onClose()
               setTimeout(() => {
                 if (isModel) {
-                  const sourceEdge = chain.lineage.edges.find((e) => e.target === node.id)
-                  if (sourceEdge) {
-                    void navigate(`/jobs?job=${encodeURIComponent(sourceEdge.source)}`)
+                  const modelName = (node.meta as Record<string, unknown>)?.name
+                  if (typeof modelName === "string" && modelName) {
+                    void navigate(`/models/${encodeURIComponent(modelName)}`)
                   }
                 } else {
                   const runId = (node.meta as Record<string, unknown>)?.mlflow_run_id
