@@ -286,23 +286,6 @@ export function useChat() {
           return
         }
 
-        // Guard: if the agent session is still alive, skip the replay to avoid
-        // duplicating actions the agent may have already processed (e.g. job
-        // creation). This is a best-effort check — a true fix would require an
-        // idempotency key on each user message so the agent can deduplicate.
-        const existingSessionId = useChatStore.getState().getSessionId(convId)
-        if (existingSessionId) {
-          try {
-            const probe = await fetch(`/agent/session/${existingSessionId}/message`)
-            if (probe.ok) {
-              logger.info("agent session still alive, skipping auto-retry to avoid duplicates", { convId })
-              recoveryCompleted = true
-              cleanupPlaceholder()
-              return
-            }
-          } catch { /* session unreachable, safe to retry */ }
-        }
-
         logger.info("auto-retrying last user message after refresh", { convId })
         _activeRequests.add(convId)
         try {
@@ -365,7 +348,6 @@ export function useChat() {
       const last = conv.messages[conv.messages.length - 1]
       if (last?.role === "assistant" && last.content) {
         recoveryCompleted = true
-        clearTimeout(safetyTimeout)
         setMessages(restoreMessages(getConversationMessages, convId))
         setChatState("done")
         unsub()

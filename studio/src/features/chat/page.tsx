@@ -115,6 +115,10 @@ export default function ChatPage() {
     }
   }, [activeProviders, chatModelSelection, setChatModelSelection])
 
+  if (_hasHydrated && !currentConversationId && conversations.length > 0) {
+    useChatStore.getState().setCurrentConversationId(conversations[0]!.id)
+  }
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
 
@@ -237,9 +241,7 @@ export default function ChatPage() {
             New
           </Button>
         </div>
-        {currentConversationId ? (
-          <ChatContent key={currentConversationId} />
-        ) : null}
+        <ChatContent key={currentConversationId ?? "empty"} />
       </div>
 
       <DeleteConversationDialog
