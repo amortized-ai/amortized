@@ -300,6 +300,9 @@ export function useChat() {
         }
 
         logger.info("auto-retrying last user message after refresh", { convId })
+        if (warmupPromiseRef.current) {
+          await warmupPromiseRef.current
+        }
         _activeRequests.add(convId)
         try {
           const { chatModelSelection } = useSettingsStore.getState()
