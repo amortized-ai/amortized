@@ -8,10 +8,12 @@ for the requirement-gathering workflow and reference payload.
 | Sub-Skill | Path | Best For |
 |-----------|------|----------|
 | knowledge-ingestion/osft | `skills/training/knowledge-ingestion/osft/` | Knowledge ingestion, FAQ bots, doc-grounded QA, classification |
+| task-distillation/osft | `skills/training/task-distillation/osft/` | RFE assessors, code reviewers, rubric-based scoring |
 
 ## How to Choose
 
 - **Knowledge ingestion or classification** -> OSFT (default, recommended)
+- **Task distillation (scoring/assessment)** -> OSFT with task-distillation hyperparameters
 
 ## Calling `create_training_job`
 
