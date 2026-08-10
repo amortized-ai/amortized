@@ -39,8 +39,9 @@ export default function DocumentsPage() {
       setDetailOpen(true)
     }
     setSearchParams((prev) => {
-      prev.delete("doc")
-      return prev
+      const next = new URLSearchParams(prev)
+      next.delete("doc")
+      return next
     }, { replace: true })
   }, [searchParams, documents, setSearchParams])
 
