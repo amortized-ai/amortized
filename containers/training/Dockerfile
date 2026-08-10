@@ -48,7 +48,8 @@ RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
 # CUDA extensions MUST be built from source AFTER vllm (which upgrades torch)
 # --no-deps prevents overwriting torch with a CPU-only build
 # --no-binary forces source compilation against the final torch+CUDA ABI
-RUN pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal-conv1d,flash-attn \
+# MAX_JOBS=16 prevents "Too many open files" from ninja spawning 80 parallel nvcc processes
+RUN MAX_JOBS=16 pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal-conv1d,flash-attn \
     --force-reinstall --break-system-packages "causal-conv1d>=1.4.0" "flash-attn>=2.7.0"
 
 # Verify key versions
