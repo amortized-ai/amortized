@@ -70,8 +70,11 @@ Read the skill guide for prompt engineering guidance.
 - `parent_job_id` — chain from the SDG job
 - Hyperparameters from the training guide
 
-Briefly describe what you're about to submit (1-2 sentences), then
-call the validate tool immediately. The user confirms in the UI.
+Write ONE sentence describing what you're about to submit, then call
+the validate tool immediately. Do NOT generate a markdown table, a
+settings summary, a configuration recap, or ANY formatted preview of
+the config — the frontend renders a confirmation card with the config
+details automatically. The user confirms in the UI, not in chat.
 
 If the tool returns a validation error, do NOT show the raw error to
 the user. Instead:
@@ -172,12 +175,12 @@ each model requires before choosing.
 
 ## SDG Confirmation
 
-Before showing the SDG confirmation table, call `get_model_pricing`
-with the selected model name to show its pricing.
+Before calling `validate_sdg_job`, call `get_model_pricing` with the
+selected model name to show its pricing.
 
 ## Training Confirmation
 
-Before showing the training confirmation table, call
+Before calling `validate_training_job`, call
 `estimate_training_resources` with the final model size and method,
 then `show_vram_estimate` with the result to render the card.
 
