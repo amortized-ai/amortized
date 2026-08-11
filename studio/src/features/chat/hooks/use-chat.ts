@@ -619,41 +619,6 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-  const handleJobStatusChange = useCallback(
-    (jobId: string, jobType: string, status: string) => {
-      if (!_FOLLOW_UP_STATUSES.has(status)) return
-
-      const eventKey = `${jobId}:${status}`
-      if (_hasJobEventFired(eventKey)) return
-      _markJobEventFired(eventKey)
-
-      const convId = currentConversationId ?? useChatStore.getState().currentConversationId
-      if (!convId) return
-
-      const options = _jobFollowUpOptions(jobType, status, jobId)
-      const assistantId = generateId()
-      const followUp: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: _jobFollowUpText(jobType, status),
-        timestamp: new Date().toISOString(),
-        toolResults: [{ name: "present_options", result: JSON.stringify({ options }), collapsed: true }],
-        proposedAction: null,
-        optionCards: [],
-      }
-
-      setMessages((prev) => [...prev, followUp])
-      addMessage(convId, {
-        id: assistantId,
-        role: "assistant",
-        content: followUp.content,
-        timestamp: followUp.timestamp,
-        toolResults: followUp.toolResults,
-      })
-    },
-    [currentConversationId, addMessage],
-  )
-
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
