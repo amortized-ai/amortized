@@ -93,6 +93,15 @@ class Job(BaseModel):
     completed_at: str | None = None
 
 
+class ValidatedJobConfig(BaseModel):
+    valid: bool = True
+    job_type: JobType
+    config: dict[str, Any] = Field(default_factory=dict)
+    parent_job_id: str = ""
+    recipe: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RecipeSummary(BaseModel):
     name: str
     description: str = ""

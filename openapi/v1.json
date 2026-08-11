@@ -2,6 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Amortized",
+    "description": "Control plane for building task models",
     "version": "1.0.0"
   },
   "paths": {
@@ -72,6 +73,90 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/sdg/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate Sdg Job",
+        "description": "Validate an SDG job config without creating it.",
+        "operationId": "validate_sdg_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SDGJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/training/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate Training Job",
+        "description": "Validate a training job config without creating it.",
+        "operationId": "validate_training_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
                 }
               }
             }
@@ -551,6 +636,48 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/recipe/validate": {
+      "post": {
+        "tags": [
+          "recipes"
+        ],
+        "summary": "Validate Recipe Job",
+        "description": "Validate a recipe job config without creating it.",
+        "operationId": "validate_recipe_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
+                }
               }
             }
           },
@@ -5516,6 +5643,45 @@
           "vram_per_gpu_gb"
         ],
         "title": "VRAMEstimateItem"
+      },
+      "ValidatedJobConfig": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
+          },
+          "job_type": {
+            "$ref": "#/components/schemas/JobType"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config"
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "default": ""
+          },
+          "recipe": {
+            "type": "string",
+            "title": "Recipe",
+            "default": ""
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_type"
+        ],
+        "title": "ValidatedJobConfig"
       },
       "ValidationColumnConfig": {
         "properties": {

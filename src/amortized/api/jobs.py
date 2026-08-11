@@ -37,6 +37,7 @@ from amortized.models import (
     JobType,
     SDGJobRequest,
     TrainingJobRequest,
+    ValidatedJobConfig,
 )
 from amortized.worker import _resolve_mlflow_artifact_uri
 
@@ -232,6 +233,51 @@ async def create_training_job(
 
 
 # ---------------------------------------------------------------------------
+# Job validation endpoints (MCP-facing, no DB insert)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/sdg/validate",
+    response_model=ValidatedJobConfig,
+    operation_id="validate_sdg_job",
+)
+async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
+    """Validate an SDG job config without creating it."""
+    config = request.model_dump(exclude_none=True)
+    parent_job_id = config.pop("parent_job_id", "")
+    return ValidatedJobConfig(
+        job_type=JobType.sdg,
+        config=config,
+        parent_job_id=parent_job_id,
+    )
+
+
+@router.post(
+    "/training/validate",
+    response_model=ValidatedJobConfig,
+    operation_id="validate_training_job",
+)
+async def validate_training_job(
+    request: TrainingJobRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ValidatedJobConfig:
+    """Validate a training job config without creating it."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+
+    errors = await _validate_training_data(config, parent_job_id, db)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    return ValidatedJobConfig(
+        job_type=JobType.training,
+        config=config,
+        parent_job_id=parent_job_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Job CRUD
 # ---------------------------------------------------------------------------
 
@@ -246,7 +292,10 @@ async def get_jobs(
 
     repo = Repository(db)
     rows = await core_list_jobs(
-        repo, status=status, job_type=type, k8s_namespace=_settings.compute_namespace,
+        repo,
+        status=status,
+        job_type=type,
+        k8s_namespace=_settings.compute_namespace,
     )
     return [_job_response(row) for row in rows]
 
