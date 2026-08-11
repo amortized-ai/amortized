@@ -179,7 +179,9 @@ async def create_session() -> SessionResponse:
 
 
 async def _run_agent(
-    session_id: str, prompt: str, model: str | None = None,
+    session_id: str,
+    prompt: str,
+    model: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Run an agent query and return (response_parts, result_info)."""
     resolved_model = model or MODEL
@@ -303,10 +305,15 @@ async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]
     for part in response_parts:
         if part.get("type") != "tool" or part.get("state") != "completed":
             continue
-        raw = (part.get("tool") or "")
+        raw = part.get("tool") or ""
         tool_name = raw.replace("mcp_amortized__", "").replace("amortized_", "")
         if tool_name not in (
-            "create_sdg_job", "create_training_job", "submit_recipe_job",
+            "create_sdg_job",
+            "create_training_job",
+            "submit_recipe_job",
+            "validate_sdg_job",
+            "validate_training_job",
+            "validate_recipe_job",
         ):
             continue
         job_id = _extract_job_id_from_output(part.get("output"))
@@ -325,13 +332,9 @@ async def _auto_watch_jobs(session_id: str, response_parts: list[dict[str, Any]]
                     headers=headers,
                 )
                 if resp.status_code != 200:
-                    logger.warning(
-                        "watch_job failed: %s %s", resp.status_code, resp.text[:200]
-                    )
+                    logger.warning("watch_job failed: %s %s", resp.status_code, resp.text[:200])
         except Exception:
-            logger.warning(
-                "watch_job request failed for job %s", job_id, exc_info=True
-            )
+            logger.warning("watch_job request failed for job %s", job_id, exc_info=True)
 
 
 def _sanitize_error(error: str | None, max_len: int = 200) -> str:

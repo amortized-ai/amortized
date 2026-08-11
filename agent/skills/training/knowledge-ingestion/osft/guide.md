@@ -6,7 +6,7 @@ points in open-book settings.
 
 ## How This Works
 
-You will gather requirements and call `create_training_job` with the
+You will gather requirements and call `validate_training_job` with the
 appropriate parameters. The tool validates all fields and rejects
 missing required params (e.g. `unfreeze_rank_ratio` for OSFT).
 
@@ -41,7 +41,7 @@ Ask the user:
 
 ## Tool Parameters
 
-Call `create_training_job` with these parameters:
+Call `validate_training_job` with these parameters:
 
 ```json
 {

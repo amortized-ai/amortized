@@ -30,6 +30,11 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
         ),
         describe_all_responses=True,
         describe_full_response_schema=True,
+        exclude_operations=[
+            "create_sdg_job",
+            "create_training_job",
+            "submit_recipe_job",
+        ],
     )
     mcp.mount_http(app)
     return mcp

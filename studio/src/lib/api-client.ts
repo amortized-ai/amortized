@@ -198,6 +198,11 @@ export function submitRecipe(data: { recipe: string; overrides?: Record<string, 
   return post<Job>("/api/v1/jobs/recipe", data)
 }
 
+export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {
+  logger.info("createJob", { endpoint })
+  return post<Job>(endpoint, body)
+}
+
 // --- Agent Chat (OpenCode) ---
 
 import type { OpenCodeResponse } from "@/features/chat/types"
