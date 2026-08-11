@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
@@ -74,6 +74,7 @@ export function MessageBubble({
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
   const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>({})
   const [jobOptionSelected, setJobOptionSelected] = useState<Record<string, string>>({})
+  const followUpRef = useRef<HTMLDivElement>(null)
 
   const handleJobStatusChange = useCallback((jobId: string, status: JobStatus) => {
     setJobStatuses((prev) => ({ ...prev, [jobId]: status }))
@@ -84,6 +85,15 @@ export function MessageBubble({
     setJobOptionSelected((prev) => ({ ...prev, [jobId]: value }))
     onOptionSelect?.(value)
   }, [onOptionSelect])
+
+  const hasFollowUpOptions = jobSubmissions.some(
+    (job) => !dismissedJobs.has(job.id) && jobStatuses[job.id] && OPTION_STATUSES.has(jobStatuses[job.id]!),
+  )
+  useEffect(() => {
+    if (hasFollowUpOptions) {
+      followUpRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }
+  }, [hasFollowUpOptions])
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
@@ -228,7 +238,7 @@ export function MessageBubble({
                   />
                 </div>
                 {options.length > 0 && onOptionSelect && (
-                  <div className="mt-3">
+                  <div ref={followUpRef} className="mt-3">
                     <OptionCards
                       cards={options}
                       onSelect={(v) => handleJobOptionSelect(job.id, v)}
