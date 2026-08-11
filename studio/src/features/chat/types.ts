@@ -8,6 +8,11 @@ export interface ProposedAction {
   action: string
   description: string
   params: Record<string, unknown>
+  jobType?: "sdg" | "training"
+  endpoint?: string
+  config?: Record<string, unknown>
+  parentJobId?: string
+  recipe?: string
 }
 
 export interface ToolResult {

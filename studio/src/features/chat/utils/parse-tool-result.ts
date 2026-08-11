@@ -52,3 +52,35 @@ export function extractJobInfo(result: string): { jobId: string | null; jobType:
 
   return { jobId: null, jobType: "SDG" }
 }
+
+export interface ValidatedJobConfig {
+  valid: boolean
+  jobType: string
+  config: Record<string, unknown>
+  parentJobId: string
+  recipe: string
+  warnings: string[]
+}
+
+export function extractValidatedJobConfig(result: string): ValidatedJobConfig | null {
+  const parsed = unwrapToolResult(result)
+  if (!parsed || typeof parsed !== "object") return null
+  const obj = parsed as Record<string, unknown>
+  if (obj.valid === true && typeof obj.job_type === "string" && !obj.id) {
+    return {
+      valid: true,
+      jobType: obj.job_type as string,
+      config: (obj.config as Record<string, unknown>) ?? {},
+      parentJobId: (obj.parent_job_id as string) ?? "",
+      recipe: (obj.recipe as string) ?? "",
+      warnings: (obj.warnings as string[]) ?? [],
+    }
+  }
+  return null
+}
+
+export const VALIDATE_TO_CREATE_ENDPOINT: Record<string, string> = {
+  validate_sdg_job: "/api/v1/jobs/sdg",
+  validate_training_job: "/api/v1/jobs/training",
+  validate_recipe_job: "/api/v1/jobs/recipe",
+}

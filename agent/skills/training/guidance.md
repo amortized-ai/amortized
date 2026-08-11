@@ -14,4 +14,4 @@
 
 Read the guide to understand hyperparameters and how to build the
 training config. Use `parent_job_id` to chain from an SDG job.
-Submit via `create_training_job`.
+Submit via `validate_training_job`.

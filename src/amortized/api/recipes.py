@@ -23,7 +23,7 @@ from amortized.core.recipes import (
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Job, JobType, RecipeSummary, TrainingJobConfig
+from amortized.models import Job, JobType, RecipeSummary, TrainingJobConfig, ValidatedJobConfig
 
 logger = logging.getLogger("amortized.api.recipes")
 
@@ -168,3 +168,49 @@ async def submit_recipe_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Job(**row)
+
+
+@recipe_jobs_router.post(
+    "/api/v1/jobs/recipe/validate",
+    response_model=ValidatedJobConfig,
+    operation_id="validate_recipe_job",
+)
+async def validate_recipe_job(
+    request: RecipeJobRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ValidatedJobConfig:
+    """Validate a recipe job config without creating it."""
+    try:
+        recipe = load_recipe(request.recipe)
+    except RecipeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    recipe = apply_overrides(recipe, request.overrides)
+
+    recipe_type = recipe.get("type")
+    if not recipe_type:
+        raise HTTPException(status_code=422, detail="Recipe is missing 'type' field")
+
+    try:
+        job_type = JobType(recipe_type)
+    except ValueError:
+        raise HTTPException(  # noqa: B904
+            status_code=422, detail=f"Unknown job type in recipe: {recipe_type}"
+        )
+
+    config = flatten_recipe_to_config(recipe)
+
+    errors = _validate_recipe_config(job_type, config)
+    if job_type == JobType.training:
+        from amortized.api.jobs import _validate_training_data
+
+        errors.extend(await _validate_training_data(config, request.parent_job_id, db))
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    return ValidatedJobConfig(
+        job_type=job_type,
+        config=config,
+        recipe=request.recipe,
+        parent_job_id=request.parent_job_id,
+    )
