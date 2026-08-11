@@ -514,6 +514,7 @@ export function useChat() {
 
       let convId = currentConversationId ?? useChatStore.getState().currentConversationId
       let needsAutoTitle = false
+      let isNewConversation = false
       if (!convId) {
         convId = `conv-${Date.now()}`
         addConversation({
@@ -523,7 +524,7 @@ export function useChat() {
           updated_at: new Date().toISOString(),
           messages: [],
         })
-        setCurrentConversationId(convId)
+        isNewConversation = true
         needsAutoTitle = true
       } else {
         const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
@@ -647,6 +648,9 @@ export function useChat() {
         setChatState("error")
       }
 
+      if (isNewConversation) {
+        setCurrentConversationId(convId)
+      }
     },
     [
       chatState,

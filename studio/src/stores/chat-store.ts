@@ -180,6 +180,10 @@ export const useChatStore = create<ChatStoreState>()(
   ),
 )
 
-useChatStore.persist.onFinishHydration(() => {
+if (useChatStore.persist.hasHydrated()) {
   useChatStore.setState({ _hasHydrated: true })
-})
+} else {
+  useChatStore.persist.onFinishHydration(() => {
+    useChatStore.setState({ _hasHydrated: true })
+  })
+}
