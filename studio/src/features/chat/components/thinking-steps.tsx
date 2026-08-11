@@ -7,13 +7,13 @@ interface ThinkingStepsProps {
 export function ThinkingSteps({ steps }: ThinkingStepsProps) {
   const [visibleStep, setVisibleStep] = useState<string | null>(null)
   const [fading, setFading] = useState(false)
-  const prevLenRef = useRef(0)
+  const prevStepRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (steps.length === 0) return
     const latest = steps[steps.length - 1]!
-    if (steps.length === prevLenRef.current) return
-    prevLenRef.current = steps.length
+    if (latest === prevStepRef.current) return
+    prevStepRef.current = latest
 
     if (!visibleStep) {
       setVisibleStep(latest)
