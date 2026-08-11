@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { getLogger } from "@/lib/logger"
@@ -8,9 +8,11 @@ const logger = getLogger("use-chat")
 import type {
   ChatMessage,
   ChatState,
+  ProposedAction,
   ToolResult,
   OpenCodeResponse,
 } from "../types"
+import { extractValidatedJobConfig, VALIDATE_TO_CREATE_ENDPOINT } from "../utils/parse-tool-result"
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -104,6 +106,9 @@ const UI_TOOLS = new Set([
   "submit_recipe_job",
   "create_sdg_job",
   "create_training_job",
+  "validate_sdg_job",
+  "validate_training_job",
+  "validate_recipe_job",
 ])
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
@@ -418,6 +423,24 @@ export function useChat() {
           setCurrentToolCall(toolResults[toolResults.length - 1]!)
         }
 
+        let proposedAction: ProposedAction | null = null
+        const validationTool = toolResults.find((t) => t.name in VALIDATE_TO_CREATE_ENDPOINT)
+        if (validationTool) {
+          const validated = extractValidatedJobConfig(validationTool.result)
+          if (validated) {
+            proposedAction = {
+              action: `Create ${validated.jobType.toUpperCase()} Job`,
+              description: `Submit this ${validated.jobType} job?`,
+              params: validated.config,
+              jobType: validated.jobType as "sdg" | "training",
+              endpoint: VALIDATE_TO_CREATE_ENDPOINT[validationTool.name],
+              config: validated.config,
+              parentJobId: validated.parentJobId,
+              recipe: validated.recipe,
+            }
+          }
+        }
+
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === assistantId)
           if (idx === -1) return prev
@@ -426,6 +449,7 @@ export function useChat() {
             ...prev[idx]!,
             content: responseContent,
             toolResults,
+            proposedAction,
             phase: phase ?? undefined,
           }
           return updated
@@ -437,10 +461,11 @@ export function useChat() {
           content: responseContent,
           timestamp: new Date().toISOString(),
           toolResults,
+          proposedAction,
           phase: phase ?? undefined,
         })
 
-        setChatState("done")
+        setChatState(proposedAction ? "action_pending" : "done")
         useChatStore.getState().setSessionStatus(convId, "connected")
 
         if (!hadPriorSession && messagesRef.current.length > 1) {
@@ -487,10 +512,100 @@ export function useChat() {
     }
   }, [currentConversationId])
 
-  const confirmAction = useCallback(async () => {}, [])
-  const rejectAction = useCallback(async () => {}, [])
+  const confirmAction = useCallback(async () => {
+    const actionMsg = [...messagesRef.current].reverse().find((m) => m.proposedAction !== null)
+    if (!actionMsg?.proposedAction) return
+
+    const { endpoint, config, parentJobId, recipe, jobType } = actionMsg.proposedAction
+    if (!endpoint) return
+
+    let body: Record<string, unknown>
+    if (endpoint === "/api/v1/jobs/recipe") {
+      body = { recipe, overrides: {}, parent_job_id: parentJobId }
+    } else {
+      body = { ...config }
+      if (parentJobId) body.parent_job_id = parentJobId
+    }
+
+    setChatState("streaming")
+
+    try {
+      const job = await createJob(endpoint, body)
+
+      const jobToolResult: ToolResult = {
+        name: `create_${jobType}_job`,
+        result: JSON.stringify(job),
+        collapsed: true,
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === actionMsg.id
+            ? { ...m, proposedAction: null, toolResults: [...m.toolResults, jobToolResult] }
+            : m,
+        ),
+      )
+
+      if (currentConversationId) {
+        useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
+          proposedAction: null,
+          toolResults: [...actionMsg.toolResults, jobToolResult],
+        })
+
+        const sessionId = useChatStore.getState().getSessionId(currentConversationId)
+        if (sessionId) {
+          await fetch(`/agent/session/${sessionId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agent: "morty",
+              parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
+            }),
+          })
+        }
+      }
+
+      setChatState("done")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to submit job")
+      setChatState("error")
+    }
+  }, [currentConversationId])
+
+  const rejectAction = useCallback(async () => {
+    const actionMsg = [...messagesRef.current].reverse().find((m) => m.proposedAction !== null)
+    if (!actionMsg?.proposedAction) return
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === actionMsg.id ? { ...m, proposedAction: null } : m,
+      ),
+    )
+
+    if (currentConversationId) {
+      useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
+        proposedAction: null,
+      })
+
+      const sessionId = useChatStore.getState().getSessionId(currentConversationId)
+      if (sessionId) {
+        await fetch(`/agent/session/${sessionId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent: "morty",
+            parts: [{ type: "text", text: "Job submission was cancelled by the user. Ask what they'd like to change." }],
+          }),
+        })
+      }
+    }
+
+    setChatState("done")
+  }, [currentConversationId])
 
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
+
+  const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
 
   return {
     messages,
@@ -500,7 +615,7 @@ export function useChat() {
     error,
     chatState,
     currentToolCall,
-    proposedAction: null,
+    proposedAction: latestAction,
     confirmAction,
     rejectAction,
   }
