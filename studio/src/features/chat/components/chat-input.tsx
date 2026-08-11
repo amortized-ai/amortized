@@ -1,6 +1,7 @@
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Send } from "lucide-react"
+import { useChatStore } from "@/stores/chat-store"
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -8,17 +9,28 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
-  const [value, setValue] = useState("")
+  const convId = useChatStore((s) => s.currentConversationId)
+  const value = useChatStore((s) => s.drafts[s.currentConversationId ?? ""] ?? "")
+  const setValue = useCallback(
+    (text: string) => {
+      if (convId) useChatStore.getState().setDraft(convId, text)
+    },
+    [convId],
+  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    if (value) el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [value])
 
   function handleSubmit() {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
     onSend(trimmed)
     setValue("")
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto"
-    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

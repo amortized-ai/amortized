@@ -198,6 +198,7 @@ prompt: ## Build combined Morty prompt and sync skills to k8s
 
 deploy-shared: ## Deploy shared services (MLflow, MinIO, PostgreSQL) into amortized namespace
 	@echo "Deploying shared services..."
+	@$(KUBECTL) patch storageclass standard -p '{"allowVolumeExpansion": true}' 2>/dev/null || true
 	$(KUBECTL) apply -k k8s/overlays/shared
 	@echo "Waiting for MinIO to be ready..."
 	@$(KUBECTL) -n amortized rollout status deployment/minio --timeout=120s

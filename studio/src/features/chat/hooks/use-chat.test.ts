@@ -57,6 +57,8 @@ vi.mock("@/stores/chat-store", () => ({
         setSessionStatus: mockSetSessionStatus,
         getSessionStatus: vi.fn(() => "unknown"),
         getConversationMessages: mockGetConversationMessages,
+        updateMessageFields: vi.fn(),
+        removeMessage: vi.fn(),
       }),
     },
   ),
