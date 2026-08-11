@@ -3,12 +3,7 @@ import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getJob } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
-
-interface FollowUpOption {
-  title: string
-  description: string
-  value: string
-}
+import type { OptionCard } from "../types"
 
 interface JobMonitorCardProps {
   jobId: string
@@ -74,7 +69,7 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export function getFollowUpOptions(jobType: string, status: string, jobId: string): FollowUpOption[] {
+export function getFollowUpOptions(jobType: string, status: string, jobId: string): OptionCard[] {
   const isTraining = jobType.toLowerCase().includes("training")
   if (status === "succeeded") {
     return isTraining
