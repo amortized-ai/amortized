@@ -244,12 +244,15 @@ export function useChat() {
 
     if (!_activeRequests.has(convId)) {
       async function recoverResponse() {
-        for (let i = 0; i < 5; i++) {
+        let emptyPolls = 0
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
           if (cancelled) return
           try {
             const msgs = await fetchSessionMessages(convId)
             if (cancelled) return
             if (msgs.length > 0) {
+              emptyPolls = 0
               const parsed = parseOpenCodeResponse(msgs[msgs.length - 1]!)
               const session = extractSessionData(msgs, parsed.toolResults)
               const content = session.text || parsed.content
@@ -272,8 +275,14 @@ export function useChat() {
                 setChatState("done")
                 return
               }
+            } else {
+              emptyPolls++
+              if (emptyPolls >= 3) break
             }
-          } catch { /* keep polling */ }
+          } catch {
+            emptyPolls++
+            if (emptyPolls >= 3) break
+          }
           await new Promise((r) => setTimeout(r, 2000))
         }
 
@@ -293,7 +302,13 @@ export function useChat() {
         _activeRequests.add(convId)
         try {
           const { chatModelSelection } = useSettingsStore.getState()
-          const response = await sendOpenCodeMessage(convId, lastUserMsg.content, chatModelSelection)
+          const { summarizeConversation } = await import("@/lib/context-summarizer")
+          const allMsgs = useChatStore.getState().getConversationMessages(convId)
+          const summary = summarizeConversation(allMsgs)
+          const messageWithContext = summary
+            ? `${summary}\n\n${lastUserMsg.content}`
+            : lastUserMsg.content
+          const response = await sendOpenCodeMessage(convId, messageWithContext, chatModelSelection)
           if (cancelled) { _activeRequests.delete(convId); return }
           const parsed = parseOpenCodeResponse(response)
           const sessionMsgs = await fetchSessionMessages(convId)
@@ -384,39 +399,9 @@ export function useChat() {
         }
       } catch { /* session is stale or unreachable */ }
 
-      if (cancelled) return
-      useChatStore.getState().setSessionStatus(convId, "reconnecting")
-      useChatStore.getState().clearSessionId(convId)
-
-      try {
-        const createResp = await fetch("/agent/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        })
-        if (!createResp.ok) throw new Error("Failed to create session")
-        const { id: newSessionId } = await createResp.json()
-        useChatStore.getState().setSessionId(convId, newSessionId)
-
-        const { summarizeConversation } = await import("@/lib/context-summarizer")
-        const summary = summarizeConversation(msgs)
-        if (summary) {
-          await fetch(`/agent/session/${newSessionId}/message`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: summary }] }),
-          })
-        }
-        if (!cancelled) {
-          useChatStore.getState().setSessionStatus(convId, "restored")
-          logger.info("session warmup complete", { convId, newSessionId })
-        }
-      } catch (err) {
-        if (!cancelled) {
-          useChatStore.getState().clearSessionId(convId)
-          useChatStore.getState().setSessionStatus(convId, "unknown")
-          logger.warn("session warmup failed", { convId, error: err instanceof Error ? err.message : String(err) })
-        }
+      if (!cancelled) {
+        useChatStore.getState().clearSessionId(convId)
+        useChatStore.getState().setSessionStatus(convId, "unknown")
       }
     }
 
