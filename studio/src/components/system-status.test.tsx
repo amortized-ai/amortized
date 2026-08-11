@@ -53,6 +53,6 @@ describe("SystemStatus", () => {
 
     render(<SystemStatus />)
 
-    expect(screen.getByText("Backend Connection")).toBeInTheDocument()
+    expect(screen.getByText("Backend")).toBeInTheDocument()
   })
 })
