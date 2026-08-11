@@ -70,9 +70,13 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   const [submitting, setSubmitting] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setSubmitting(true)
-    onConfirm()
+    try {
+      await onConfirm()
+    } catch {
+      setSubmitting(false)
+    }
   }
 
   const summary = action.config ? extractConfigSummary(action.jobType, action.config) : []

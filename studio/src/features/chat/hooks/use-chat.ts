@@ -554,14 +554,21 @@ export function useChat() {
 
         const sessionId = useChatStore.getState().getSessionId(currentConversationId)
         if (sessionId) {
-          await fetch(`/agent/session/${sessionId}/message`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agent: "morty",
-              parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
-            }),
-          })
+          try {
+            const resp = await fetch(`/agent/session/${sessionId}/message`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agent: "morty",
+                parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
+              }),
+            })
+            if (!resp.ok) {
+              logger.warn("morty notification failed", { status: resp.status })
+            }
+          } catch (notifyErr) {
+            logger.warn("morty notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
+          }
         }
       }
 
@@ -589,14 +596,21 @@ export function useChat() {
 
       const sessionId = useChatStore.getState().getSessionId(currentConversationId)
       if (sessionId) {
-        await fetch(`/agent/session/${sessionId}/message`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            agent: "morty",
-            parts: [{ type: "text", text: "Job submission was cancelled by the user. Ask what they'd like to change." }],
-          }),
-        })
+        try {
+          const resp = await fetch(`/agent/session/${sessionId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              agent: "morty",
+              parts: [{ type: "text", text: "Job submission was cancelled by the user. Ask what they'd like to change." }],
+            }),
+          })
+          if (!resp.ok) {
+            logger.warn("morty rejection notification failed", { status: resp.status })
+          }
+        } catch (notifyErr) {
+          logger.warn("morty rejection notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
+        }
       }
     }
 
