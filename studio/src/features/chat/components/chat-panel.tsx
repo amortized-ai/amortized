@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react"
+import { useNavigate } from "react-router"
 import {
   Sheet,
   SheetContent,
@@ -14,6 +15,7 @@ import { PlanProgress } from "./plan-progress"
 import { derivePlan } from "../utils/derive-plan-steps"
 
 export function ChatPanel() {
+  const navigate = useNavigate()
   const { panelOpen, setPanelOpen } = useChatStore()
   const {
     messages,
@@ -35,6 +37,10 @@ export function ChatPanel() {
 
   const handleOptionSelect = useCallback(
     (value: string) => {
+      if (value.startsWith("__nav:")) {
+        navigate(value.slice(6))
+        return
+      }
       const lastAssistant = [...messages].reverse().find(
         (m) => m.role === "assistant",
       )
@@ -43,7 +49,7 @@ export function ChatPanel() {
       }
       void sendMessage(value)
     },
-    [sendMessage, selectOption, messages],
+    [sendMessage, selectOption, messages, navigate],
   )
 
   return (
