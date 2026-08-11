@@ -5,7 +5,7 @@ or RAG-deployed knowledge models.
 
 ## How This Works
 
-You will gather requirements from the user and call `create_sdg_job`
+You will gather requirements from the user and call `validate_sdg_job`
 with the appropriate parameters. The tool validates all fields.
 
 Load `templates/sdg/knowledge-ingestion.yaml` via `get_recipe` to see
@@ -93,7 +93,7 @@ they want to.
 
 ## Tool Parameters
 
-Pass these to `create_sdg_job`. The tool schema documents all fields;
+Pass these to `validate_sdg_job`. The tool schema documents all fields;
 below is guidance on choosing good values.
 
 ### document_ids

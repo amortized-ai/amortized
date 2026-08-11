@@ -1,7 +1,7 @@
 # SDG Skill Guidance
 
 Pick the sub-skill that best matches the user's task. Read its `guide.md`
-for deep expertise before calling `create_sdg_job`.
+for deep expertise before calling `validate_sdg_job`.
 
 ## Available Sub-Skills
 
@@ -19,7 +19,7 @@ for deep expertise before calling `create_sdg_job`.
 
 The sub-skill's `guide.md` will tell you:
 - What questions to ask the user
-- What parameters to pass to `create_sdg_job`
+- What parameters to pass to `validate_sdg_job`
 - How to write effective prompts for columns
 - Key tradeoffs and decisions
 

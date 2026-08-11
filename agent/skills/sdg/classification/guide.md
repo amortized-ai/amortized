@@ -5,7 +5,7 @@ analyzers, or content moderators.
 
 ## How This Works
 
-You will gather requirements and call `create_sdg_job` with the
+You will gather requirements and call `validate_sdg_job` with the
 appropriate parameters. The classification pipeline generates labeled
 examples where each sample has input text and a classification label.
 
@@ -44,7 +44,7 @@ Ask the user these questions (one at a time, with numbered options):
 
 ## Tool Parameters
 
-Call `create_sdg_job` with these parameters. Customize columns,
+Call `validate_sdg_job` with these parameters. Customize columns,
 prompts, and categories based on the user's specific task. Use the
 model name from `list_models` in `model_configs`.
 
