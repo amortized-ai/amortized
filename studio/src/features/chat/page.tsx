@@ -65,6 +65,7 @@ function ChatContent() {
       <PlanProgress plan={phasePlan} />
       <MessageList
         messages={messages}
+        isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}

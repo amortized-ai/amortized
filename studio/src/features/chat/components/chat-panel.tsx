@@ -14,9 +14,8 @@ import { ChatInput } from "./chat-input"
 import { PlanProgress } from "./plan-progress"
 import { derivePlan } from "../utils/derive-plan-steps"
 
-export function ChatPanel() {
+function ChatPanelContent() {
   const navigate = useNavigate()
-  const { panelOpen, setPanelOpen } = useChatStore()
   const {
     messages,
     sendMessage,
@@ -53,26 +52,37 @@ export function ChatPanel() {
   )
 
   return (
+    <>
+      <SheetHeader className="border-b p-4">
+        <SheetTitle>Chat</SheetTitle>
+      </SheetHeader>
+      <PlanProgress plan={phasePlan} />
+      <SessionStatusBanner
+        status={sessionStatus}
+        onDismiss={() => {
+          const id = useChatStore.getState().currentConversationId
+          if (id) useChatStore.getState().setSessionStatus(id, "connected")
+        }}
+      />
+      <MessageList
+        messages={messages}
+        isStreaming={isStreaming}
+        onOptionSelect={handleOptionSelect}
+        onConfirmAction={confirmAction}
+        onRejectAction={rejectAction}
+      />
+      <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
+    </>
+  )
+}
+
+export function ChatPanel() {
+  const { panelOpen, setPanelOpen, currentConversationId } = useChatStore()
+
+  return (
     <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
       <SheetContent side="right" className="flex w-[400px] flex-col p-0 sm:max-w-[400px]">
-        <SheetHeader className="border-b p-4">
-          <SheetTitle>Chat</SheetTitle>
-        </SheetHeader>
-        <PlanProgress plan={phasePlan} />
-        <SessionStatusBanner
-          status={sessionStatus}
-          onDismiss={() => {
-            const id = useChatStore.getState().currentConversationId
-            if (id) useChatStore.getState().setSessionStatus(id, "connected")
-          }}
-        />
-        <MessageList
-          messages={messages}
-          onOptionSelect={handleOptionSelect}
-          onConfirmAction={confirmAction}
-          onRejectAction={rejectAction}
-        />
-        <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
+        <ChatPanelContent key={currentConversationId ?? "empty"} />
       </SheetContent>
     </Sheet>
   )
