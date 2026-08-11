@@ -77,7 +77,6 @@ export function MessageBubble({
   const followUpRef = useRef<HTMLDivElement>(null)
 
   const handleJobStatusChange = useCallback((jobId: string, status: JobStatus) => {
-    console.log("[DEBUG] handleJobStatusChange", { jobId, status })
     setJobStatuses((prev) => ({ ...prev, [jobId]: status }))
     setJobOptionSelected((prev) => { const next = { ...prev }; delete next[jobId]; return next })
   }, [])
@@ -220,7 +219,7 @@ export function MessageBubble({
           </div>
         )}
 
-        {(console.log("[DEBUG] jobSubmissions", jobSubmissions, "jobStatuses", jobStatuses), jobSubmissions)
+        {jobSubmissions
           .filter((job) => !dismissedJobs.has(job.id))
           .map((job) => {
             const jobStatus = jobStatuses[job.id]
