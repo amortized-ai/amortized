@@ -234,7 +234,6 @@ export function useChat() {
     const convId = currentConversationId
     const placeholderId = lastRestored!.id
     let cancelled = false
-    let recoveryCompleted = false
 
     function cleanupPlaceholder() {
       _activeRequests.delete(convId)
@@ -244,74 +243,57 @@ export function useChat() {
     }
 
     if (!_activeRequests.has(convId)) {
-      async function recoverOrRetry() {
-        try {
-          const sessionMessages = await fetchSessionMessages(convId)
+      async function recoverResponse() {
+        for (let i = 0; i < 5; i++) {
           if (cancelled) return
-          if (sessionMessages.length > 0) {
-            const parsed = parseOpenCodeResponse(sessionMessages[sessionMessages.length - 1]!)
-            const session = extractSessionData(sessionMessages, parsed.toolResults)
-            const responseContent = session.text || parsed.content
-            if (responseContent) {
-              const toolResults = session.tools
-              let phase: string | null = null
-              const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
-              if (phaseTool?.result) {
-                try {
-                  const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-                  if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-                } catch { /* ignore */ }
+          try {
+            const msgs = await fetchSessionMessages(convId)
+            if (cancelled) return
+            if (msgs.length > 0) {
+              const parsed = parseOpenCodeResponse(msgs[msgs.length - 1]!)
+              const session = extractSessionData(msgs, parsed.toolResults)
+              const content = session.text || parsed.content
+              if (content) {
+                const toolResults = session.tools
+                let phase: string | null = null
+                const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
+                if (phaseTool?.result) {
+                  try {
+                    const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+                    if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+                  } catch { /* ignore */ }
+                }
+                useChatStore.getState().updateMessageFields(convId, placeholderId, {
+                  content,
+                  toolResults,
+                  phase: phase ?? undefined,
+                })
+                setMessages(restoreMessages(getConversationMessages, convId))
+                setChatState("done")
+                return
               }
-              useChatStore.getState().updateMessageFields(convId, placeholderId, {
-                content: responseContent,
-                toolResults,
-                phase: phase ?? undefined,
-              })
-              setMessages(restoreMessages(getConversationMessages, convId))
-              recoveryCompleted = true
-              setChatState("done")
-              return
             }
-          }
-        } catch {
-          logger.warn("session recovery failed", { convId })
+          } catch { /* keep polling */ }
+          await new Promise((r) => setTimeout(r, 2000))
         }
+
         if (cancelled) return
 
         const msgs = useChatStore.getState().getConversationMessages(convId)
         const lastUserMsg = [...msgs].reverse().find((m) => m.role === "user")
         if (!lastUserMsg) {
-          recoveryCompleted = true
           cleanupPlaceholder()
           return
         }
 
-        const existingSessionId = useChatStore.getState().getSessionId(convId)
-        if (existingSessionId) {
-          try {
-            const probe = await fetch(`/agent/session/${existingSessionId}/message`)
-            if (probe.ok) {
-              logger.info("session alive, skipping retry", { convId })
-              recoveryCompleted = true
-              cleanupPlaceholder()
-              return
-            }
-          } catch { /* session dead, safe to retry */ }
-        }
-
-        logger.info("auto-retrying last user message after refresh", { convId })
         if (warmupPromiseRef.current) {
           await warmupPromiseRef.current
         }
+
         _activeRequests.add(convId)
         try {
           const { chatModelSelection } = useSettingsStore.getState()
-          const response = await Promise.race([
-            sendOpenCodeMessage(convId, lastUserMsg.content, chatModelSelection),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("recovery retry timed out")), 30_000),
-            ),
-          ])
+          const response = await sendOpenCodeMessage(convId, lastUserMsg.content, chatModelSelection)
           if (cancelled) { _activeRequests.delete(convId); return }
           const parsed = parseOpenCodeResponse(response)
           const sessionMsgs = await fetchSessionMessages(convId)
@@ -336,41 +318,19 @@ export function useChat() {
           })
           setMessages(restoreMessages(getConversationMessages, convId))
           _activeRequests.delete(convId)
-          recoveryCompleted = true
           setChatState("done")
           useChatStore.getState().setSessionStatus(convId, "connected")
         } catch (err) {
           _activeRequests.delete(convId)
           if (cancelled) return
-          logger.error("auto-retry failed", { convId, error: err instanceof Error ? err.message : String(err) })
-          recoveryCompleted = true
+          logger.error("recovery retry failed", { convId, error: err instanceof Error ? err.message : String(err) })
           cleanupPlaceholder()
         }
       }
-      recoverOrRetry()
+      recoverResponse()
     }
 
-    const safetyTimeout = setTimeout(() => {
-      if (!recoveryCompleted && !cancelled) {
-        logger.warn("recovery safety timeout reached, cleaning up stuck placeholder", { convId })
-        recoveryCompleted = true
-        cleanupPlaceholder()
-      }
-    }, 45_000)
-
-    const unsub = useChatStore.subscribe((state) => {
-      const conv = state.conversations.find((c) => c.id === convId)
-      if (!conv) return
-      const last = conv.messages[conv.messages.length - 1]
-      if (last?.role === "assistant" && last.content) {
-        recoveryCompleted = true
-        clearTimeout(safetyTimeout)
-        setMessages(restoreMessages(getConversationMessages, convId))
-        setChatState("done")
-        unsub()
-      }
-    })
-    return () => { cancelled = true; clearTimeout(safetyTimeout); unsub() }
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recovery only needed on mount when streaming
   }, [])
 
@@ -554,7 +514,6 @@ export function useChat() {
 
       let convId = currentConversationId ?? useChatStore.getState().currentConversationId
       let needsAutoTitle = false
-      let isNewConversation = false
       if (!convId) {
         convId = `conv-${Date.now()}`
         addConversation({
@@ -564,7 +523,7 @@ export function useChat() {
           updated_at: new Date().toISOString(),
           messages: [],
         })
-        isNewConversation = true
+        setCurrentConversationId(convId)
         needsAutoTitle = true
       } else {
         const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
@@ -688,9 +647,6 @@ export function useChat() {
         setChatState("error")
       }
 
-      if (isNewConversation) {
-        setCurrentConversationId(convId)
-      }
     },
     [
       chatState,

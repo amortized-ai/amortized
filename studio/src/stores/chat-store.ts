@@ -176,9 +176,10 @@ export const useChatStore = create<ChatStoreState>()(
         sessionMap: state.sessionMap,
         drafts: state.drafts,
       }),
-      onRehydrateStorage: () => () => {
-        useChatStore.setState({ _hasHydrated: true })
-      },
     },
   ),
 )
+
+useChatStore.persist.onFinishHydration(() => {
+  useChatStore.setState({ _hasHydrated: true })
+})
