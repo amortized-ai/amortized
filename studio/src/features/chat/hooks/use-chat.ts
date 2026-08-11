@@ -519,9 +519,11 @@ export function useChat() {
         }
       }
 
-      const nextMessages = [...messagesRef.current, userMessage, assistantMessage]
-      messagesRef.current = nextMessages
-      setMessages(nextMessages)
+      setMessages((prev) => {
+        const next = [...prev, userMessage, assistantMessage]
+        messagesRef.current = next
+        return next
+      })
       setChatState("streaming")
 
       addMessage(convId, {
