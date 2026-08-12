@@ -31,6 +31,7 @@ interface ChatStoreState {
   sessionMap: Record<string, string>
   sessionStatus: Record<string, SessionStatus>
   notifiedJobs: Record<string, string[]>
+  jobInFlight: Record<string, boolean>
   drafts: Record<string, string>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
@@ -53,6 +54,8 @@ interface ChatStoreState {
   getSessionStatus: (conversationId: string) => SessionStatus
   addNotifiedJob: (conversationId: string, jobId: string) => void
   getNotifiedJobs: (conversationId: string) => string[]
+  setJobInFlight: (conversationId: string, inFlight: boolean) => void
+  getJobInFlight: (conversationId: string) => boolean
   setDraft: (conversationId: string, text: string) => void
   getDraft: (conversationId: string) => string
 }
@@ -67,6 +70,7 @@ export const useChatStore = create<ChatStoreState>()(
       sessionMap: {},
       sessionStatus: {},
       notifiedJobs: {},
+      jobInFlight: {},
       drafts: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
@@ -81,12 +85,14 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _sid, ...restSessionMap } = s.sessionMap  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
             sessionStatus: restSessionStatus,
             notifiedJobs: restNotifiedJobs,
+            jobInFlight: restJobInFlight,
             drafts: restDrafts,
             currentConversationId:
               s.currentConversationId === id
@@ -173,6 +179,14 @@ export const useChatStore = create<ChatStoreState>()(
         })),
       getNotifiedJobs: (conversationId) =>
         get().notifiedJobs[conversationId] ?? [],
+      setJobInFlight: (conversationId, inFlight) =>
+        set((s) => ({
+          jobInFlight: inFlight
+            ? { ...s.jobInFlight, [conversationId]: true }
+            : Object.fromEntries(Object.entries(s.jobInFlight).filter(([k]) => k !== conversationId)),
+        })),
+      getJobInFlight: (conversationId) =>
+        get().jobInFlight[conversationId] ?? false,
       setDraft: (conversationId, text) =>
         set((s) => ({
           drafts: text
@@ -190,6 +204,7 @@ export const useChatStore = create<ChatStoreState>()(
         conversations: state.conversations,
         sessionMap: state.sessionMap,
         notifiedJobs: state.notifiedJobs,
+        jobInFlight: state.jobInFlight,
         drafts: state.drafts,
       }),
     },
