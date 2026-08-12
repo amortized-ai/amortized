@@ -471,6 +471,7 @@ export function useChat() {
       if (chatState === "streaming" || _sendLock.held) return
       _sendLock.held = true
 
+      try {
       if (warmupPromiseRef.current) {
         await warmupPromiseRef.current
         warmupPromiseRef.current = null
@@ -636,12 +637,13 @@ export function useChat() {
         useChatStore.getState().removeMessage(convId, assistantId)
         setError(err instanceof Error ? err.message : "Unknown error")
         setChatState("error")
-      } finally {
-        _sendLock.held = false
       }
 
       if (isNewConversation) {
         setCurrentConversationId(convId)
+      }
+      } finally {
+        _sendLock.held = false
       }
     },
     [
@@ -850,13 +852,23 @@ export function useChat() {
           toolResults: session.tools,
         })
 
+        useChatStore.getState().addNotifiedJob(convId, jobId)
         setChatState("done")
         consecutiveFailures = 0
       } catch (err) {
-        setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === placeholderId)
+          if (idx === -1) return prev.filter((m) => m.id !== placeholderId)
+          const updated = [...prev]
+          updated[idx] = {
+            ...prev[idx]!,
+            content: "I wasn't able to suggest next steps. You can ask me what to do next.",
+          }
+          return updated
+        })
         setChatState("done")
         consecutiveFailures++
-        logger.warn("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
       } finally {
         _sendLock.held = false
       }
@@ -871,7 +883,6 @@ export function useChat() {
 
     const notified = useChatStore.getState().getNotifiedJobs(convId)
     if (notified.includes(jobId)) return
-    useChatStore.getState().addNotifiedJob(convId, jobId)
 
     jobNotifyQueueRef.current.push({ jobId, jobType, status, convId })
     await processJobNotifyQueue()
