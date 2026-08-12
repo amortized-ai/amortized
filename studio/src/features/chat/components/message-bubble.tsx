@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
@@ -11,10 +11,6 @@ import { ModelPricingCard } from "./model-pricing-card"
 import { VRAMEstimateCard } from "./vram-estimate-card"
 import { JobMonitorCard } from "./job-monitor-card"
 import { extractJobInfo } from "../utils/parse-tool-result"
-import { useChatStore } from "@/stores/chat-store"
-import { getLogger } from "@/lib/logger"
-
-const logger = getLogger("message-bubble")
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
@@ -30,6 +26,7 @@ interface MessageBubbleProps {
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
+  onJobComplete?: (jobId: string, jobType: string, status: string) => void
 }
 
 export function MessageBubble({
@@ -38,6 +35,7 @@ export function MessageBubble({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onJobComplete,
 }: MessageBubbleProps) {
   const isUser = message.role === "user"
 
@@ -74,30 +72,6 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
-  const notifiedJobs = useRef(new Set<string>())
-
-  const handleJobComplete = useCallback((jobId: string, jobType: string, status: string) => {
-    if (notifiedJobs.current.has(jobId)) return
-    notifiedJobs.current.add(jobId)
-
-    const convId = useChatStore.getState().currentConversationId
-    const sessionId = convId ? useChatStore.getState().getSessionId(convId) : null
-    if (!sessionId) return
-
-    fetch(`/agent/session/${sessionId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent: "morty",
-        parts: [{
-          type: "text",
-          text: `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
-        }],
-      }),
-    }).catch((err) => {
-      logger.warn("failed to notify agent of job completion", { jobId, error: err instanceof Error ? err.message : String(err) })
-    })
-  }, [])
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
@@ -231,7 +205,7 @@ export function MessageBubble({
                 jobId={job.id}
                 jobType={job.type}
                 onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
-                onComplete={handleJobComplete}
+                onComplete={onJobComplete}
               />
             </div>
           ))}

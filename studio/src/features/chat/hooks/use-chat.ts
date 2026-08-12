@@ -765,6 +765,51 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
+  const notifiedJobsRef = useRef(new Set<string>())
+
+  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
+    if (notifiedJobsRef.current.has(jobId)) return
+    notifiedJobsRef.current.add(jobId)
+
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (!convId) return
+    const sessionId = useChatStore.getState().getSessionId(convId)
+    if (!sessionId) return
+
+    try {
+      const response = await sendOpenCodeMessage(
+        convId,
+        `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+      )
+
+      const parsed = parseOpenCodeResponse(response)
+      const sessionMessages = await fetchSessionMessages(convId)
+      const session = extractSessionData(sessionMessages, parsed.toolResults)
+
+      const msgId = generateId()
+      const followUp: ChatMessage = {
+        id: msgId,
+        role: "assistant",
+        content: session.text || parsed.content,
+        timestamp: new Date().toISOString(),
+        toolResults: session.tools,
+        proposedAction: null,
+        optionCards: [],
+      }
+
+      setMessages((prev) => [...prev, followUp])
+      addMessage(convId, {
+        id: msgId,
+        role: "assistant",
+        content: followUp.content,
+        timestamp: followUp.timestamp,
+        toolResults: followUp.toolResults,
+      })
+    } catch (err) {
+      logger.warn("job completion notification failed", { jobId, error: err instanceof Error ? err.message : String(err) })
+    }
+  }, [currentConversationId, addMessage])
+
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
@@ -780,5 +825,6 @@ export function useChat() {
     proposedAction: latestAction,
     confirmAction,
     rejectAction,
+    notifyJobComplete,
   }
 }
