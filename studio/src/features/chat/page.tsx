@@ -36,6 +36,7 @@ function ChatContent() {
     error,
     confirmAction,
     rejectAction,
+    notifyJobComplete,
   } = useChat()
 
   const phasePlan = useMemo(
@@ -69,6 +70,7 @@ function ChatContent() {
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onJobComplete={notifyJobComplete}
       />
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
