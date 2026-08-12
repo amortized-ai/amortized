@@ -23,6 +23,7 @@ function SidebarChatContent() {
     isStreaming,
     confirmAction,
     rejectAction,
+    notifyJobComplete,
   } = useChat()
 
   const phasePlan = useMemo(() => derivePlan(messages), [messages])
@@ -52,6 +53,7 @@ function SidebarChatContent() {
         onOptionSelect={handleSend}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onJobComplete={notifyJobComplete}
       />
       <ChatInput onSend={handleSend} disabled={isStreaming} />
     </div>

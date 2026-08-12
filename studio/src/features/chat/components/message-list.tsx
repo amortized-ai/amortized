@@ -10,6 +10,7 @@ interface MessageListProps {
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
+  onJobComplete?: (jobId: string, jobType: string, status: string) => void
 }
 
 const EMPTY: PersistedMessage[] = []
@@ -34,6 +35,7 @@ export function MessageList({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onJobComplete,
 }: MessageListProps) {
   const rawStoreMessages = useChatStore((s) => {
     const convId = s.currentConversationId
@@ -71,6 +73,7 @@ export function MessageList({
               onOptionSelect={onOptionSelect}
               onConfirmAction={onConfirmAction}
               onRejectAction={onRejectAction}
+              onJobComplete={onJobComplete}
             />
           ))}
           <div ref={endRef} />

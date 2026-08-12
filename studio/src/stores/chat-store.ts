@@ -30,6 +30,7 @@ interface ChatStoreState {
   conversations: PersistedConversation[]
   sessionMap: Record<string, string>
   sessionStatus: Record<string, SessionStatus>
+  notifiedJobs: Record<string, string[]>
   drafts: Record<string, string>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
@@ -50,6 +51,8 @@ interface ChatStoreState {
   clearSessionId: (conversationId: string) => void
   setSessionStatus: (conversationId: string, status: SessionStatus) => void
   getSessionStatus: (conversationId: string) => SessionStatus
+  addNotifiedJob: (conversationId: string, jobId: string) => void
+  getNotifiedJobs: (conversationId: string) => string[]
   setDraft: (conversationId: string, text: string) => void
   getDraft: (conversationId: string) => string
 }
@@ -63,6 +66,7 @@ export const useChatStore = create<ChatStoreState>()(
       conversations: [],
       sessionMap: {},
       sessionStatus: {},
+      notifiedJobs: {},
       drafts: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
@@ -76,11 +80,13 @@ export const useChatStore = create<ChatStoreState>()(
           const remaining = s.conversations.filter((c) => c.id !== id)
           const { [id]: _sid, ...restSessionMap } = s.sessionMap  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
             sessionStatus: restSessionStatus,
+            notifiedJobs: restNotifiedJobs,
             drafts: restDrafts,
             currentConversationId:
               s.currentConversationId === id
@@ -158,6 +164,15 @@ export const useChatStore = create<ChatStoreState>()(
         })),
       getSessionStatus: (conversationId) =>
         get().sessionStatus[conversationId] ?? "unknown",
+      addNotifiedJob: (conversationId, jobId) =>
+        set((s) => ({
+          notifiedJobs: {
+            ...s.notifiedJobs,
+            [conversationId]: [...(s.notifiedJobs[conversationId] ?? []), jobId],
+          },
+        })),
+      getNotifiedJobs: (conversationId) =>
+        get().notifiedJobs[conversationId] ?? [],
       setDraft: (conversationId, text) =>
         set((s) => ({
           drafts: text
@@ -174,6 +189,7 @@ export const useChatStore = create<ChatStoreState>()(
         panelWidth: state.panelWidth,
         conversations: state.conversations,
         sessionMap: state.sessionMap,
+        notifiedJobs: state.notifiedJobs,
         drafts: state.drafts,
       }),
     },
