@@ -116,6 +116,13 @@ const UI_TOOLS = new Set([
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
 
+const JOB_CREATION_TOOLS = new Set([
+  "create_sdg_job",
+  "create_training_job",
+  "submit_recipe_job",
+  "create_job",
+])
+
 function normalizeToolName(raw: string): string {
   return raw.replace(/^(?:mcp_amortized__|amortized_)/, "")
 }
@@ -471,6 +478,10 @@ export function useChat() {
           phase: phase ?? undefined,
         })
 
+        if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
+          useChatStore.getState().setJobInFlight(convId, true)
+        }
+
         setChatState(proposedAction ? "action_pending" : "done")
         useChatStore.getState().setSessionStatus(convId, "connected")
 
@@ -659,6 +670,7 @@ export function useChat() {
       }
 
       const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
+      useChatStore.getState().setJobInFlight(convId, false)
       const sessionId = useChatStore.getState().getSessionId(convId)
       if (!sessionId) continue
 
@@ -742,7 +754,10 @@ export function useChat() {
     await processJobNotifyQueue()
   }, [currentConversationId, processJobNotifyQueue])
 
-  const isStreaming = chatState === "streaming" || chatState === "tool_call"
+  const jobInFlight = useChatStore(
+    (s) => s.jobInFlight[s.currentConversationId ?? ""] ?? false,
+  )
+  const isStreaming = chatState === "streaming" || chatState === "tool_call" || jobInFlight
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
 
