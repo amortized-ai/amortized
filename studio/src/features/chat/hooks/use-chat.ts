@@ -567,6 +567,7 @@ export function useChat() {
       )
 
       if (currentConversationId) {
+        useChatStore.getState().setJobInFlight(currentConversationId, true)
         useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
           proposedAction: null,
           toolResults: [...actionMsg.toolResults, jobToolResult],
