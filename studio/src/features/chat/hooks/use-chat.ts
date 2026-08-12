@@ -18,6 +18,8 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+const _sendLock = { held: false }
+
 function restoreMessages(
   getConversationMessages: (id: string) => import("@/stores/chat-store").PersistedMessage[],
   conversationId: string | null,
@@ -466,8 +468,10 @@ export function useChat() {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (chatState === "streaming") return
+      if (chatState === "streaming" || _sendLock.held) return
+      _sendLock.held = true
 
+      try {
       if (warmupPromiseRef.current) {
         await warmupPromiseRef.current
         warmupPromiseRef.current = null
@@ -638,6 +642,9 @@ export function useChat() {
       if (isNewConversation) {
         setCurrentConversationId(convId)
       }
+      } finally {
+        _sendLock.held = false
+      }
     },
     [
       chatState,
@@ -765,6 +772,122 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
+  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string }>>([])
+  const jobNotifyRunningRef = useRef(false)
+
+  const processJobNotifyQueue = useCallback(async () => {
+    if (jobNotifyRunningRef.current) return
+    jobNotifyRunningRef.current = true
+
+    const BLOCKED_STATES = new Set<ChatState>(["streaming", "tool_call", "action_pending"])
+    const MAX_WAIT_MS = 60_000
+    const MAX_FAILURES = 3
+    let consecutiveFailures = 0
+    let waitedMs = 0
+
+    while (jobNotifyQueueRef.current.length > 0) {
+      if (_sendLock.held || BLOCKED_STATES.has(chatStateRef.current)) {
+        if (waitedMs >= MAX_WAIT_MS) {
+          logger.warn("job notify queue timed out waiting for idle state")
+          jobNotifyQueueRef.current.length = 0
+          break
+        }
+        await new Promise((r) => setTimeout(r, 500))
+        waitedMs += 500
+        continue
+      }
+      waitedMs = 0
+
+      if (consecutiveFailures >= MAX_FAILURES) {
+        logger.warn("job notify queue circuit breaker tripped", { failures: consecutiveFailures })
+        jobNotifyQueueRef.current.length = 0
+        break
+      }
+
+      const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
+      const sessionId = useChatStore.getState().getSessionId(convId)
+      if (!sessionId) continue
+
+      const placeholderId = generateId()
+      const placeholder: ChatMessage = {
+        id: placeholderId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date().toISOString(),
+        toolResults: [],
+        proposedAction: null,
+        optionCards: [],
+      }
+      setMessages((prev) => [...prev, placeholder])
+      _sendLock.held = true
+      setChatState("streaming")
+
+      try {
+        const response = await sendOpenCodeMessage(
+          convId,
+          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+        )
+
+        const parsed = parseOpenCodeResponse(response)
+        const sessionMessages = await fetchSessionMessages(convId)
+        const session = extractSessionData(sessionMessages, parsed.toolResults)
+
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === placeholderId)
+          if (idx === -1) return prev
+          const updated = [...prev]
+          updated[idx] = {
+            ...prev[idx]!,
+            content: session.text || parsed.content,
+            toolResults: session.tools,
+          }
+          return updated
+        })
+
+        addMessage(convId, {
+          id: placeholderId,
+          role: "assistant",
+          content: session.text || parsed.content,
+          timestamp: new Date().toISOString(),
+          toolResults: session.tools,
+        })
+
+        useChatStore.getState().addNotifiedJob(convId, jobId)
+        setChatState("done")
+        consecutiveFailures = 0
+      } catch (err) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === placeholderId)
+          if (idx === -1) return prev.filter((m) => m.id !== placeholderId)
+          const updated = [...prev]
+          updated[idx] = {
+            ...prev[idx]!,
+            content: "I wasn't able to suggest next steps. You can ask me what to do next.",
+          }
+          return updated
+        })
+        setChatState("done")
+        consecutiveFailures++
+        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+      } finally {
+        _sendLock.held = false
+      }
+    }
+
+    jobNotifyRunningRef.current = false
+  }, [addMessage])
+
+  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (!convId) return
+
+    const notified = useChatStore.getState().getNotifiedJobs(convId)
+    if (notified.includes(jobId)) return
+
+    jobNotifyQueueRef.current.push({ jobId, jobType, status, convId })
+    await processJobNotifyQueue()
+  }, [currentConversationId, processJobNotifyQueue])
+
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
@@ -780,5 +903,6 @@ export function useChat() {
     proposedAction: latestAction,
     confirmAction,
     rejectAction,
+    notifyJobComplete,
   }
 }

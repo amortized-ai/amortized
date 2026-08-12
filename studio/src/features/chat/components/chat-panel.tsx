@@ -23,6 +23,7 @@ function ChatPanelContent() {
     isStreaming,
     confirmAction,
     rejectAction,
+    notifyJobComplete,
   } = useChat()
 
   const sessionStatus = useChatStore(s =>
@@ -70,6 +71,7 @@ function ChatPanelContent() {
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
         onRejectAction={rejectAction}
+        onJobComplete={notifyJobComplete}
       />
       <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
     </>

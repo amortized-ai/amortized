@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
@@ -9,14 +9,12 @@ import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
 import { ModelPricingCard } from "./model-pricing-card"
 import { VRAMEstimateCard } from "./vram-estimate-card"
-import { JobMonitorCard, getFollowUpOptions } from "./job-monitor-card"
+import { JobMonitorCard } from "./job-monitor-card"
 import { extractJobInfo } from "../utils/parse-tool-result"
-import type { JobStatus } from "@/types/api"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
 const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_sdg_job", "create_training_job", "create_job"])
-const OPTION_STATUSES = new Set<JobStatus>(["succeeded", "failed", "cancelled"])
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
@@ -28,6 +26,7 @@ interface MessageBubbleProps {
   onOptionSelect?: (value: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
+  onJobComplete?: (jobId: string, jobType: string, status: string) => void
 }
 
 export function MessageBubble({
@@ -36,6 +35,7 @@ export function MessageBubble({
   onOptionSelect,
   onConfirmAction,
   onRejectAction,
+  onJobComplete,
 }: MessageBubbleProps) {
   const isUser = message.role === "user"
 
@@ -72,18 +72,6 @@ export function MessageBubble({
   }, [isUser, message.toolResults])
 
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
-  const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>({})
-  const [jobOptionSelected, setJobOptionSelected] = useState<Record<string, string>>({})
-
-  const handleJobStatusChange = useCallback((jobId: string, status: JobStatus) => {
-    setJobStatuses((prev) => ({ ...prev, [jobId]: status }))
-    setJobOptionSelected((prev) => { const next = { ...prev }; delete next[jobId]; return next })
-  }, [])
-
-  const handleJobOptionSelect = useCallback((jobId: string, value: string) => {
-    setJobOptionSelected((prev) => ({ ...prev, [jobId]: value }))
-    onOptionSelect?.(value)
-  }, [onOptionSelect])
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
@@ -149,7 +137,8 @@ export function MessageBubble({
       )}
       <div
         className={cn(
-          "max-w-2xl rounded-2xl px-4 py-3 transition-colors duration-200",
+          "rounded-2xl px-4 py-3 transition-colors duration-200",
+          (parsedOptions.length > 0 || message.optionCards.length > 0 || jobSubmissions.length > 0) ? "max-w-3xl" : "max-w-2xl",
           isUser
             ? "bg-primary text-primary-foreground rounded-br-md hover:bg-primary/90"
             : "bg-muted/60 text-foreground border border-border/50 rounded-bl-md hover:bg-muted/80",
@@ -211,34 +200,16 @@ export function MessageBubble({
 
         {jobSubmissions
           .filter((job) => !dismissedJobs.has(job.id))
-          .map((job) => {
-            const jobStatus = jobStatuses[job.id]
-            const showOptions = jobStatus && OPTION_STATUSES.has(jobStatus)
-            const options = showOptions ? getFollowUpOptions(job.type, jobStatus, job.id) : []
-            const selected = jobOptionSelected[job.id]
-
-            return (
-              <div key={job.id}>
-                <div className="mt-3">
-                  <JobMonitorCard
-                    jobId={job.id}
-                    jobType={job.type}
-                    onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
-                    onStatusChange={(s) => handleJobStatusChange(job.id, s)}
-                  />
-                </div>
-                {options.length > 0 && onOptionSelect && (
-                  <div className="mt-3">
-                    <OptionCards
-                      cards={options}
-                      onSelect={(v) => handleJobOptionSelect(job.id, v)}
-                      selectedValue={selected}
-                    />
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          .map((job) => (
+            <div key={job.id} className="mt-3">
+              <JobMonitorCard
+                jobId={job.id}
+                jobType={job.type}
+                onDismiss={() => setDismissedJobs((s) => new Set([...s, job.id]))}
+                onComplete={onJobComplete}
+              />
+            </div>
+          ))}
 
         {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">

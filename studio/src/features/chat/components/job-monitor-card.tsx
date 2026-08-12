@@ -3,14 +3,12 @@ import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getJob } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
-import type { OptionCard } from "../types"
 
 interface JobMonitorCardProps {
   jobId: string
   jobType?: string
   onDismiss?: () => void
-  onComplete?: (status: string) => void
-  onStatusChange?: (status: JobStatus) => void
+  onComplete?: (jobId: string, jobType: string, status: string) => void
 }
 
 const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"]
@@ -69,29 +67,7 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export function getFollowUpOptions(jobType: string, status: string, jobId: string): OptionCard[] {
-  const isTraining = jobType.toLowerCase().includes("training")
-  if (status === "succeeded") {
-    return isTraining
-      ? [
-          { title: "View model", description: "See the trained model in the registry", value: "__nav:/models" },
-          { title: "Train with different settings", description: "Try different hyperparameters", value: "Help me train with different settings" },
-          { title: "Start a new task", description: "Build another model or generate data", value: "I'd like to start a new task" },
-        ]
-      : [
-          { title: "Preview generated data", description: "Browse the dataset samples", value: "__nav:/datasets" },
-          { title: "Start training", description: "Fine-tune a model on this data", value: "Let's start training on this data" },
-          { title: "Generate more samples", description: "Create additional synthetic data", value: "Generate more synthetic data samples" },
-        ]
-  }
-  return [
-    { title: "View logs", description: "Check what happened", value: `__nav:/jobs?job=${jobId}` },
-    { title: "Try again", description: "Retry with the same or different settings", value: "Let's try that again" },
-    { title: "Start fresh", description: "Begin a new workflow from scratch", value: "Let's start a fresh workflow" },
-  ]
-}
-
-export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, onStatusChange }: JobMonitorCardProps) {
+export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -99,11 +75,8 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const completeFired = useRef(false)
-  const lastReportedStatus = useRef<string>("queued")
   const onCompleteRef = useRef(onComplete)
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
-  const onStatusChangeRef = useRef(onStatusChange)
-  useEffect(() => { onStatusChangeRef.current = onStatusChange }, [onStatusChange])
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
@@ -119,22 +92,18 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
       } else if (!jobStartRef.current && job.created_at) {
         jobStartRef.current = new Date(job.created_at).getTime()
       }
-      if (job.status !== lastReportedStatus.current) {
-        lastReportedStatus.current = job.status
-        onStatusChangeRef.current?.(job.status)
-      }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
         if (!completeFired.current) {
           completeFired.current = true
-          onCompleteRef.current?.(job.status)
+          onCompleteRef.current?.(jobId, jobType, job.status)
         }
       }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId])
+  }, [jobId, jobType])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -241,7 +210,6 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete, 
         </p>
       )}
 
-      {/* Links */}
       <div className="mt-3 flex items-center gap-3 text-xs">
         <a
           href={`/jobs?job=${encodeURIComponent(jobId)}`}
