@@ -62,6 +62,10 @@ class TrainingJobConfig(BaseModel):
     unfreeze_rank_ratio: float | None = Field(
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )
+    topic: str = Field(
+        "",
+        description="1-5 word model topic for tracking (e.g. 'support ticket classification')",
+    )
 
     @model_validator(mode="after")
     def check_osft_requires_urr(self) -> "TrainingJobConfig":

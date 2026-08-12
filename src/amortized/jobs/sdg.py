@@ -185,3 +185,14 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
     topic = job_config.get("topic", "")
     if topic:
         await set_mlflow_run_tag(mlflow_run_id, "dataset_topic", topic)
+
+    try:
+        tracking_uri = config_mod.settings.mlflow_tracking_uri
+        if tracking_uri:
+            from amortized.core.mlflow_client import MLflowClient
+            client = MLflowClient(tracking_uri)
+            run = await client.get_run(mlflow_run_id)
+            run_name = run["info"].get("run_name", job["id"][:8])
+            await set_mlflow_run_tag(mlflow_run_id, "dataset_name", f"ds-{run_name}")
+    except Exception:
+        logger.debug("Failed to set dataset display name", exc_info=True)

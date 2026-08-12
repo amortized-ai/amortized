@@ -465,6 +465,10 @@ export function renameMlflowRegisteredModel(name: string, newName: string): Prom
   return post<void>("/mlflow/api/2.0/mlflow/registered-models/rename", { name, new_name: newName })
 }
 
+export function setMlflowRegisteredModelTag(name: string, key: string, value: string): Promise<void> {
+  return post<void>("/mlflow/api/2.0/mlflow/registered-models/set-tag", { name, key, value })
+}
+
 // --- MLflow: AI Gateway (v3 endpoints API) ---
 
 import type { MlflowGatewayEndpoint } from "@/types/api"

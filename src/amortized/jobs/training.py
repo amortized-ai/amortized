@@ -10,6 +10,7 @@ import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.mlflow_client import MLflowClient
 from amortized.jobs.base import JobBuildResult
+from amortized.jobs.common import set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.training")
 
@@ -36,6 +37,7 @@ _TRAINING_HUB_SKIP_KEYS = {
     "task_description",
     "method",
     "dataset_job_id",
+    "topic",
     "model_job_id",
 }
 
@@ -111,16 +113,51 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
     if not tracking_uri or not mlflow_run_id:
         return
 
-    model_id = job.get("config", {}).get("model_id", "unknown")
-    algorithm = job.get("config", {}).get("algorithm", "sft")
+    config = job.get("config", {})
+    base_model = config.get("model_name_or_path", config.get("model_id", "unknown"))
+    short_name = base_model.split("/")[-1]
+    algorithm = config.get("algorithm", "sft")
     job_id = job["id"]
-    model_name = f"{model_id}-{algorithm}-{job_id[:8]}"
+    model_name = f"{short_name}-{algorithm}-{job_id[:8]}"
 
     try:
         client = MLflowClient(tracking_uri)
-        description = f"Fine-tuned {model_id} via {algorithm} (job {job_id[:8]})"
+        description = f"Fine-tuned {base_model} via {algorithm} (job {job_id[:8]})"
         registered = await client.register_model(model_name, mlflow_run_id, description)
         if not registered:
             logger.warning("Job %s succeeded but model registration failed", job_id)
+            return
+
+        run = await client.get_run(mlflow_run_id)
+        run_name = run["info"].get("run_name", job_id[:8])
+        display_name = f"mdl-{run_name}"
+        await set_mlflow_run_tag(mlflow_run_id, "model_display_name", display_name)
+        await client.set_registered_model_tag(model_name, "model_display_name", display_name)
+
+        topic = config.get("topic", "")
+        if not topic:
+            parent_id = job.get("parent_job_id", "")
+            if parent_id:
+                from amortized.db.connection import get_pool
+                async with get_pool().acquire() as conn:
+                    parent = await conn.fetchrow(
+                        "SELECT mlflow_run_id FROM jobs WHERE id = $1", parent_id,
+                    )
+                if parent and parent["mlflow_run_id"]:
+                    try:
+                        parent_run = await client.get_run(parent["mlflow_run_id"])
+                        parent_tags = {
+                            t["key"]: t["value"]
+                            for t in parent_run["data"].get("tags", [])
+                        }
+                        topic = parent_tags.get("dataset_topic", "")
+                    except Exception:
+                        logger.debug(
+                            "Could not resolve topic from parent job %s",
+                            parent_id, exc_info=True,
+                        )
+        if topic:
+            await set_mlflow_run_tag(mlflow_run_id, "model_topic", topic)
+            await client.set_registered_model_tag(model_name, "model_topic", topic)
     except Exception:
         logger.warning("Failed to register model %s", model_name, exc_info=True)
