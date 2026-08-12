@@ -137,7 +137,8 @@ export function MessageBubble({
       )}
       <div
         className={cn(
-          "max-w-2xl rounded-2xl px-4 py-3 transition-colors duration-200",
+          "rounded-2xl px-4 py-3 transition-colors duration-200",
+          (parsedOptions.length > 0 || message.optionCards.length > 0 || jobSubmissions.length > 0) ? "max-w-3xl" : "max-w-2xl",
           isUser
             ? "bg-primary text-primary-foreground rounded-br-md hover:bg-primary/90"
             : "bg-muted/60 text-foreground border border-border/50 rounded-bl-md hover:bg-muted/80",
