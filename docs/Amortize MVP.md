@@ -1,0 +1,732 @@
+# Amortize MVP
+
+*Research MVP: task-based SLM builder — architecture and scope, as built.*
+
+**Status of this document**: describes the system as it exists in the repository today. Where the original MVP 0.1 scope has not been met, or has been met differently, that is recorded in [Known gaps](#9-known-gaps-vs-the-original-mvp-scope) rather than glossed over in the body.
+
+---
+
+## 1. What Amortized is
+
+Every AI agent has tasks that don't need a frontier model. Classification, extraction, routing, summarization — specific, repeatable, learnable. A small fine-tuned model does them faster and cheaper, on infrastructure you control.
+
+Amortized builds those models. The user describes a task in conversation; the platform generates training data from a teacher model, fine-tunes a small student model, and hands back a model registered in MLflow. The name is the thesis: amortization spreads a large upfront cost across many future uses. The upfront cost is the frontier model's capability; the uses are every future inference by the cheap task model.
+
+Architecturally, Amortized is a **thin orchestration layer**. It translates user intent into tool-native YAML, dispatches Kubernetes Jobs, and tracks their lifecycle. Everything else is delegated:
+
+| Concern | Owner |
+|---|---|
+| Artifacts, metrics, lineage, model registry | MLflow |
+| Artifact storage | S3 / MinIO |
+| Compute | Kubernetes |
+| Synthetic data generation | Data Designer |
+| Training algorithms | training-hub |
+| LLM provider routing and keys | MLflow AI Gateway |
+| Serving | Red Hat MaaS (out of scope) |
+
+What Amortized itself owns is small and deliberate: one `jobs` table, a config translator per job type, a dispatch-and-poll worker, a REST + MCP API, an agent, and a web UI.
+
+---
+
+## 2. MVP 0.1 scope
+
+**Goal**: build task-specific small language models to amortize the cost of running large models for simple tasks in agentic and generative applications.
+
+**Interface**: a conversational UI that makes SLM creation accessible to enterprise AI engineers without deep ML expertise.
+
+**The agent (Morty)** reaches the platform through MCP tools rather than shell or filesystem access. It is deployed on two runtimes that share one prompt and skill library — opencode, which serves chat today, and a Claude Agent SDK service, which receives job events (see §3). On connected clusters both use a frontier model via Vertex AI; the provider is deploy-time configuration, not a code change.
+
+**User input**: base model selection (Morty proposes, the user decides), a teacher-model endpoint for SDG, a task description, and source documents.
+
+**User flow**: the user describes the task → Morty gathers requirements one question at a time → a preview SDG run generates ~10 samples for inspection → a full SDG run generates the dataset → a training job chains off it → the model lands in the MLflow Model Registry.
+
+**User output**: a purpose-built SLM for the user's specific task, plus the dataset and metrics that produced it.
+
+**Success criteria** (unchanged from the original scope):
+
+- As a Red Hat customer, I can build a task-specific SLM through conversation without ML expertise.
+- As a Red Hat customer, I can reduce inference costs by replacing large model calls with tuned SLMs for repetitive tasks.
+- As a Red Hat customer, I can go from task description to a trained model in a single session.
+
+Explicitly **out of scope** for v1: model serving (Red Hat MaaS handles it), pipeline DAG orchestration, multi-tenancy beyond namespace separation, and custom MCP servers for tool-use tuning.
+
+---
+
+## 3. System map
+
+```mermaid
+graph TB
+    subgraph entry["Entry points"]
+        browser["Browser"]
+        cli["amortized CLI"]
+        ext["External MCP client"]
+    end
+
+    subgraph platform["Amortized platform"]
+        studio["Studio<br/>React SPA + nginx"]
+        server["Amortized Server<br/>FastAPI :8000"]
+        oc["opencode :4096<br/>serves chat"]
+        cc["claude-code :4096<br/>Claude Agent SDK<br/>receives job events"]
+        worker["Background worker<br/>in-process"]
+        db[("PostgreSQL<br/>jobs table")]
+    end
+
+    subgraph backends["Compute backends"]
+        k8s["Kubernetes"]
+        ssh["SSH"]
+        local["Local"]
+    end
+
+    subgraph containers["ML tool containers"]
+        dd["data-designer"]
+        train["training"]
+        doc["document"]
+    end
+
+    subgraph infra["Infrastructure services"]
+        mlflow["MLflow<br/>tracking + registry + gateway"]
+        s3[("S3 / MinIO")]
+    end
+
+    browser --> studio
+    cli --> server
+    ext --> server
+    studio -->|/api/| server
+    studio -->|/agent/| oc
+    studio -->|/mlflow/| mlflow
+    oc -->|MCP| server
+    cc -->|MCP| server
+    worker -.->|job events| cc
+    server --- worker
+    server --- db
+    worker --> k8s
+    worker --> ssh
+    worker --> local
+    k8s --> dd
+    k8s --> train
+    k8s --> doc
+    dd --> mlflow
+    train --> mlflow
+    doc --> mlflow
+    mlflow --> s3
+    dd -.->|teacher LLM calls| mlflow
+```
+
+Studio is the only UI users touch. It proxies three upstreams through nginx — the Amortized API, the agent, and MLflow's REST API — and calls all three directly from the browser. MLflow's own UI stays available for platform engineers but is not part of the product surface.
+
+**Morty runs in two places.** Both `opencode` and `claude-code` are deployed in every namespace, and both mount the same `morty-config` prompt and `morty-skills` ConfigMaps — they are two runtimes for one agent persona, not two agents. What differs is who talks to them: Studio's `/agent/` proxy is pointed at **opencode** in the base manifest and in all six user overlays, while the worker delivers job events to **claude-code**. So the runtime a user chats with is not the runtime that gets told a job finished. §9 records this as an unresolved migration.
+
+The worker runs **in-process** inside the FastAPI server as an asyncio task started by the lifespan handler, not as a separate deployment.
+
+---
+
+## 4. Job lifecycle and control plane
+
+This is the core of what Amortized actually is.
+
+### 4.1 Job types
+
+Three types have builders. Each maps to one container image and one command.
+
+| Type | Image | Command | Produces |
+|---|---|---|---|
+| `sdg` | `ghcr.io/amortized-ai/data-designer:latest` | `data-designer create /amortized/config.yaml --num-records N --artifact-path /amortized/work --no-tui` | Dataset → MLflow artifact `generated_data` |
+| `training` | `ghcr.io/amortized-ai/training:latest` | `thub <algo> --config /amortized/config.yaml` | Model → MLflow artifact `model` + Model Registry entry |
+| `upload` | `ghcr.io/amortized-ai/document:latest` | `python3 /app/process_document.py` | Parsed content + chunks → MLflow artifacts |
+
+`upload` is an internal type — it backs the Documents feature and is not something a user submits directly.
+
+Training algorithms are routed to training-hub subcommands by replacing underscores with hyphens: `sft`, `lora_sft`, `osft`, `dpo`, `grpo`, `lora_grpo`, `kto`, `gkd`, `gepa`. Three aliases collapse to `lora_sft`: `lora`, `qlora`, `qlora_sft`. Note that `gepa` is a **prompt optimizer**, not a weight-adaptation method — it rides the same job type because training-hub exposes it the same way.
+
+### 4.2 The jobs table
+
+One table, no ORM, raw SQL through a repository over asyncpg. Schema evolution via Alembic.
+
+```sql
+CREATE TABLE jobs (
+    id                TEXT PRIMARY KEY,    -- UUID
+    type              TEXT NOT NULL,       -- sdg | training | upload
+    status            TEXT NOT NULL DEFAULT 'queued',  -- see state machine below
+    config            JSONB NOT NULL DEFAULT '{}'::jsonb,  -- secrets stripped
+    recipe            TEXT DEFAULT '',     -- recipe name if submitted via recipe
+    user_id           TEXT DEFAULT '',     -- from X-Forwarded-User
+    k8s_job_name      TEXT DEFAULT '',
+    k8s_namespace     TEXT DEFAULT '',
+    mlflow_run_id     TEXT DEFAULT '',
+    mlflow_experiment TEXT DEFAULT '',
+    parent_job_id     TEXT DEFAULT '',     -- SDG -> Training chaining
+    error             TEXT DEFAULT '',
+    created_at        TIMESTAMPTZ NOT NULL,
+    started_at        TIMESTAMPTZ,
+    completed_at      TIMESTAMPTZ,
+    backend_handle    TEXT DEFAULT ''      -- serialized BackendHandle
+);
+```
+
+Indexed on `status`, `type`, `created_at`, `user_id`.
+
+This is the post-migration shape. Migration `0001` created everything as `TEXT`; `0002` converted `config` to `JSONB` and the three timestamps to `TIMESTAMPTZ`. Note that `src/amortized/db/schema.sql` still shows the `0001` types and is not what a migrated database looks like — Alembic is the source of truth.
+
+The table is the **operations** layer only — what was submitted and where it is. Params, metrics and artifacts live in MLflow; pod status and logs live in Kubernetes. `backend_handle` is the one piece of glue: a serialized pointer back into whichever backend owns the running process, so the server can re-adopt jobs after a restart.
+
+### 4.3 Status model
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: API creates job record
+    queued --> provisioning: worker claims job atomically
+    provisioning --> running: first poll sees container running
+    provisioning --> failed: build or submit failed
+    provisioning --> cancelled: user cancels during setup
+    running --> succeeded: exit code 0
+    running --> failed: non-zero exit code
+    running --> failed: orphaned on restart
+    running --> cancelled: user cancels, local backend
+    queued --> cancelled: user cancels
+    succeeded --> [*]
+    failed --> [*]
+    cancelled --> [*]
+```
+
+The `queued → provisioning` transition happens at **claim time, not submit time**. `pick_pending_job` is a single `UPDATE … WHERE status = 'queued' … FOR UPDATE SKIP LOCKED RETURNING *`, so the job flips to `provisioning` the moment the worker takes it — before the MLflow run is created, before parent artifacts are resolved, before the builder runs. Everything that can go wrong during setup is therefore a `provisioning → failed` transition: unknown backend, MLflow run creation failure, `JobBuildError`, or an exception from `submit`. The status write that follows a successful submit re-asserts `provisioning` while attaching `backend_handle`; it is not the first transition.
+
+The atomic claim is also what makes the design safe against multiple server replicas racing for the same job, even though only one runs today.
+
+Most transitions are written by the worker. The exception is cancellation: `cancel_job` writes `cancelled` to the database directly from the API handler, then asks the backend to kill the resource. See §4.8 for why that matters.
+
+### 4.4 The worker loop
+
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant W as Worker
+    participant ML as MLflow
+    participant B as Backend
+    participant C as Container
+
+    API->>DB: INSERT job (status=queued)
+    API-->>API: 201 Created
+
+    loop every 2s
+        W->>DB: pick_pending_job(namespace)
+    end
+    Note over W,DB: atomic claim sets status=provisioning
+
+    W->>ML: ensure_experiment + create_run
+    ML-->>W: mlflow_run_id
+    W->>DB: UPDATE mlflow_run_id, mlflow_experiment
+    W->>DB: read parent job, resolve artifacts
+    W->>W: builder.build → command, config files, env, resources
+    W->>DB: UPDATE config (resolved)
+    W->>B: submit(JobSpec)
+    B->>C: create ConfigMap + Secret + Job
+    B-->>W: BackendHandle
+    W->>DB: UPDATE backend_handle (status already provisioning)
+
+    loop every 2s
+        W->>B: status(handle)
+        B-->>W: running?
+    end
+    W->>DB: UPDATE status=running (first time only)
+
+    C->>ML: log metrics + artifacts
+    C-->>B: exit
+
+    W->>B: cleanup_secrets(handle) — SSH only
+    W->>ML: set tags, builder.on_success, finish run
+    W->>DB: UPDATE status=succeeded, completed_at
+    W->>API: emit_job_event → agent session
+```
+
+Two properties worth stating plainly, because they shape everything downstream:
+
+**Jobs run one at a time.** `worker_loop` awaits `_run_job` to completion before picking up the next job. A running training job blocks every other queued job in that namespace, including short SDG previews. This is not a queue with concurrency — it is a serial executor. It works because each developer namespace has a 1-GPU quota, but it is the first thing that will need to change under real load.
+
+**The MLflow run is created before dispatch, not discovered after.** The worker creates the run itself and injects `MLFLOW_RUN_ID` into the container environment. This is why the artifact-push post-commands can reference `$MLFLOW_RUN_ID` directly. For `sdg` and `upload` jobs, failure to create the run fails the job immediately — without a run there is nowhere to put the output. Training jobs tolerate it, falling back to scraping a run ID out of the container logs with a regex (`AMORTIZED_MLFLOW_RUN_ID=<hex32>`, or any `/runs/<hex32>` URL in the last 500 lines).
+
+### 4.5 Builders and command assembly
+
+Each job type is a module satisfying a two-method protocol:
+
+```python
+async def build(job, config, config_files) -> JobBuildResult
+async def on_success(job, mlflow_run_id) -> None
+```
+
+`JobBuildResult` carries the command, config files to mount, env vars, resource requests, image, the resolved config to persist, and — the interesting part — `pre_commands` and `post_commands`.
+
+The worker chains these into a single shell invocation with `&&`, so any failure short-circuits:
+
+```
+sh -c "<pre_1> && <pre_2> && <main command> && <post_1> && <post_2>"
+```
+
+This is how data gets in and artifacts get out without init containers or sidecars. A chained training job looks like:
+
+```sh
+mlflow artifacts download -r <parent_run> -a generated_data -d /amortized/work/data \
+  && thub osft --config /amortized/config.yaml \
+  && mlflow artifacts log-artifacts -l /amortized/work/output -r $MLFLOW_RUN_ID -a model
+```
+
+Post-commands are only appended when the worker successfully created the MLflow run, since they depend on `$MLFLOW_RUN_ID`.
+
+### 4.6 Config translation
+
+Config translation is per-builder, and each builder translates toward a different tool's dialect.
+
+**Training** maps the API's conventional field names onto training-hub's:
+
+| API field | training-hub field |
+|---|---|
+| `model_name_or_path` | `model_path` |
+| `num_train_epochs` | `num_epochs` |
+| `per_device_train_batch_size` | `micro_batch_size` |
+| `max_length` | `max_seq_len` |
+| `output_dir` | `ckpt_output_dir` |
+
+It then fills algorithm-specific defaults — `effective_batch_size` at 4× the micro batch, `max_seq_len` 2048, `max_tokens_per_gpu` 4096 and `learning_rate` 2e-5 for OSFT — and drops keys that are Amortized-internal rather than training-hub parameters.
+
+**SDG** takes the opposite approach: the API request *is* Data Designer's config. `SDGJobRequest` imports Data Designer's own Pydantic types (`ColumnConfigT`, `ModelConfig`, `ProcessorConfigT`, `ToolConfig`) and validates against them directly, so there is no schema to keep in sync. The builder strips a list of legacy keys, resolves document seeds, and wraps the whole thing under a `data_designer:` root key.
+
+Recipes are YAML templates in `templates/` supporting `extends:` inheritance with cycle detection and dot-notation overrides at submission time. A recipe's name is its path relative to the repository root, minus the extension — so the two that ship today are addressed as `templates/sdg/knowledge-ingestion` and `templates/training/knowledge-ingestion`, prefix included, which is how the agent's skill guides reference them.
+
+### 4.7 Job chaining
+
+`parent_job_id` links a training job to the SDG job that produced its data.
+
+```mermaid
+graph LR
+    sdg["SDG job<br/>parent_job_id: ''"] -->|mlflow_run_id| run1["MLflow run<br/>artifact: generated_data"]
+    run1 -->|s3| store[("S3")]
+    train["Training job<br/>parent_job_id: sdg-id"] -.->|worker looks up parent| sdg
+    train --> dl["pre_command:<br/>mlflow artifacts download"]
+    dl --> store
+    train --> run2["MLflow run<br/>artifact: model"]
+    run2 --> reg["Model Registry<br/>model_id-algo-jobid"]
+```
+
+Resolution is narrow by design: it fires only when the child is `training` and the parent is `sdg` or `upload`, and only when `data_path` is not already an explicit `s3://` URI. Everything else passes through untouched. There is no DAG engine — chaining is one hop, resolved at dispatch time.
+
+### 4.8 Cancellation, cleanup, and recovery
+
+**Cancellation** is handled by the API, not the worker. `cancel_job` rejects the request if the job already succeeded or failed, asks the backend to kill the resource when the job is running, and writes `cancelled` to the database itself.
+
+On the **local** backend this settles cleanly: the killed process reports a negative exit code, the worker's poll loop recognises it, and the job stays `cancelled`. On **Kubernetes** it does not. `KubernetesBackend.status` only ever returns exit code `0`, exit code `1`, or `running=False` with `exit_code=None` when the Job is gone. Once `cancel` deletes the Job, the worker's next poll takes the `None` branch, falls through to the generic failure path, and overwrites the `cancelled` status with `failed`. A cancelled Kubernetes job therefore ends up displayed as failed. This is a bug in the code, not a design choice — recorded in §9.
+
+**Secret cleanup** is backend-specific despite the shared call site. Only `SSHBackend` implements `cleanup_secrets` (removing podman secrets), and the worker guards the call on `handle.secret_names`, which the Kubernetes backend never populates. On Kubernetes, per-job Secrets and ConfigMaps are removed by `ownerReferences` garbage collection when the Job is deleted — either explicitly on cancel, or by `ttlSecondsAfterFinished` one hour after completion.
+
+On server restart, `cleanup_orphaned_jobs` re-reads every job still marked `running` in the namespace, deserializes its `backend_handle`, and asks the backend whether it is alive. Live jobs are re-adopted and continue polling; dead ones are marked failed with `"Orphaned job — process no longer running"`.
+
+---
+
+## 5. Artifact and data flow
+
+MLflow is the only artifact store. Amortized never writes to S3 directly.
+
+```mermaid
+graph TB
+    subgraph docs["Document ingestion — two runs"]
+        up["POST /documents/convert"]
+        runA["run A<br/>experiment: amortized/uploads<br/>artifact: raw source only"]
+        upjob["upload job<br/>document image"]
+        runB["run B — the document ID<br/>experiment: amortized/upload/&lt;id8&gt;<br/>source, parsed_content.md, chunks/<br/>tag: job_type=document"]
+    end
+
+    subgraph sdgf["SDG"]
+        sdgjob["sdg job<br/>data-designer"]
+        sdgrun["MLflow run<br/>experiment: amortized/sdg/&lt;id8&gt;"]
+        gen["artifact: generated_data<br/>tags: num_samples, teacher_model, dataset_topic"]
+    end
+
+    subgraph trainf["Training"]
+        trjob["training job<br/>thub"]
+        trrun["MLflow run<br/>experiment: amortized/training/&lt;id8&gt;"]
+        model["artifact: model<br/>metrics: loss, eval_loss"]
+        registry["Model Registry"]
+    end
+
+    s3[("S3 / MinIO")]
+
+    up -->|creates, uploads source| runA
+    up -->|queues| upjob
+    runA -.->|pre_command downloads source| upjob
+    upjob -->|post_commands| runB
+    runB -.->|document_ids| sdgjob
+    sdgjob --> gen
+    gen --> sdgrun
+    sdgrun -.->|parent_job_id| trjob
+    trjob --> model
+    model --> trrun
+    trrun --> registry
+    runA --> s3
+    runB --> s3
+    sdgrun --> s3
+    trrun --> s3
+```
+
+### 5.1 What each job type logs
+
+**SDG** writes its dataset to `/amortized/work/dataset/`, under `processors-files/<last processor name>` when processors are configured and `parquet-files/` otherwise, then pushes that directory as the `generated_data` artifact. On success the builder tags the run with `num_samples`, `teacher_model` (the first model config's model) and `dataset_topic`.
+
+**Training** pushes its output directory as the `model` artifact, then registers a model version named `{model_id}-{algorithm}-{job_id[:8]}` against the run. Metrics are logged by training-hub itself through its MLflow integration.
+
+**Upload** pushes three artifacts — the original source file, `parsed_content.md`, and a `chunks/` directory — to the run the *worker* created, not the one the API created. Chunks are numbered `chunk_000.md`, `chunk_001.md`, … alongside a `chunks/metadata.json`. Its `on_success` hook overwrites the `job_type` tag from `upload` to `document`, which is the tag the Documents page filters on.
+
+Every run gets `job_type` and `job_id` tags from the worker, which is what makes the Datasets and Documents pages queryable — they search MLflow runs by tag rather than reading any Amortized table. The Models page is different: it reads the Model Registry, populated by the training builder's `on_success` hook.
+
+### 5.2 Documents as SDG seed data
+
+The path from a PDF to training data runs entirely through MLflow:
+
+1. `POST /api/v1/documents/convert` creates an MLflow run — call it **run A** — under the `amortized/uploads` experiment, uploads the raw file to it as the `source` artifact, and queues an `upload` job carrying run A's ID in its config. It returns `202` with a job ID; processing is asynchronous.
+2. The worker picks up the job and, as it does for every job type, creates its **own** run — **run B** — under `amortized/upload/<job_id[:8]>`, injecting it as `MLFLOW_RUN_ID`.
+3. The job's pre-command downloads the source from run A; its post-commands log the source, `parsed_content.md` and `chunks/` to run B.
+4. An SDG request naming `document_ids` causes the builder to fetch every chunk from MLflow, write them as ConfigMap entries, copy them into `/tmp/chunks` in the container, and point Data Designer's `seed_config.source` at that directory with `seed_type: file_contents`.
+5. As a convenience, `{{ text }}` in any column prompt is rewritten to `{{ content }}`, which is the variable Data Designer binds for file-contents seeds.
+
+A document ID *is* an MLflow run ID — specifically **run B's**. Run A is a staging area for the raw upload and holds nothing else; the Documents page never shows it, because it filters on the `job_type=document` tag that only run B carries. There is no documents table.
+
+URL ingestion follows the same path with SSRF protection in front: only `http`/`https`, no cloud metadata endpoints, no `localhost`, no private or link-local addresses, and no `.local`/`.internal`/`.svc.cluster.local` hostnames. Uploads cap at 100 MB.
+
+---
+
+## 6. Agent and UX flow
+
+### 6.1 Morty
+
+This section describes the **claude-code** runtime — the FastAPI service in `agent/`, built on the Claude Agent SDK, listening on port 4096. It is the runtime the worker sends job events to. Note that Studio's chat proxy currently points at the **opencode** runtime instead (see §3); opencode loads the same Morty prompt and skill guides and connects to the same Amortized MCP server, but it is a different container with its own configuration file, its own pinned model, and a different tool-restriction mechanism — the `permission:` block in `identity.md`'s frontmatter, which denies everything except `read`, rather than the SDK's `allowed_tools` allowlist.
+
+```mermaid
+graph TB
+    subgraph morty["Morty service :4096"]
+        api["POST /session<br/>POST /session/:id/message<br/>POST /session/:id/event<br/>GET /session/:id/pending"]
+        sdk["Claude Agent SDK<br/>allowed_tools: mcp__*"]
+        prompt["System prompt<br/>identity + capabilities + workflow"]
+        skills["Skills, loaded on demand<br/>sdg/classification<br/>sdg/knowledge-ingestion<br/>training/knowledge-ingestion/osft"]
+    end
+
+    server["Amortized Server /mcp<br/>working"]
+    mlflowmcp["MLflow MCP :5002/sse<br/>configured, not deployed"]
+
+    api --> sdk
+    prompt --> sdk
+    skills --> sdk
+    sdk -->|HTTP MCP| server
+    sdk -.->|SSE MCP, dead| mlflowmcp
+```
+
+The agent has **no filesystem, shell, or code-execution tools** — `allowed_tools` is restricted to `mcp__*`. Everything it can do, it does through MCP. That constraint is the security model.
+
+Two MCP servers are configured, but only one exists. `MCP_MLFLOW_URL` defaults to `http://127.0.0.1:5002/sse` and the claude-code Deployment sets the same value — yet the pod runs a single container serving only uvicorn on 4096, and no manifest in the repository starts an MLflow MCP process on 5002. In practice Morty's entire tool surface is the Amortized MCP server. Anything the agent needs from MLflow it gets through Amortized's own endpoints (`list_datasets`, `get_dataset_samples`, `list_models`).
+
+The system prompt is assembled at build time by `make prompt`, concatenating `identity.md`, `capabilities.md` and `workflow.md` into a single `morty.md` that is mounted as a ConfigMap. Skill guides are stored flat in a ConfigMap with `__` as a path separator and rebuilt into a directory tree by an init container at pod start.
+
+### 6.2 The conversation contract
+
+The workflow prompt enforces a strict interaction shape: one question per message, options presented as cards, no assumptions about parameters the user hasn't chosen. The notable mechanism is that **Morty renders UI by calling tools**. `/api/v1/ui/*` endpoints are exposed as MCP tools whose responses simply echo their inputs — their real effect is that the Studio chat frontend intercepts the tool call and renders a component:
+
+| Tool | Rendered as |
+|---|---|
+| `present_options` | Clickable option cards |
+| `show_model_pricing` | Teacher-model pricing comparison |
+| `show_vram_estimate` | VRAM-per-method comparison |
+| `signal_phase` | Workflow progress bar |
+| `watch_job` | Registers the job for push notifications |
+
+The same interception handles job submission. Morty calls `validate_sdg_job` or `validate_training_job` — which validate and return the config **without creating anything** — and the frontend renders a confirmation card with Confirm and Cancel. Only on Confirm does Studio call `create_sdg_job` or `create_training_job`. The agent cannot submit a job on its own; a human is always in the loop.
+
+The prompt also mandates guardrails that would otherwise be easy to violate: never show a model the AI Gateway doesn't actually serve, always show VRAM estimates before asking the user to choose a model size or method, verify platform reachability via `get_config` and `list_models` before building a confirmation card, and never surface a raw validation error — reread it, ask a natural follow-up, rebuild.
+
+### 6.3 Job progress: the polling path and the dormant push path
+
+Two mechanisms exist for telling the user a job finished. **Only the polling one runs.**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as Studio
+    participant M as Morty
+    participant A as Amortized Server
+    participant W as Worker
+
+    U->>S: clicks Confirm
+    S->>A: POST /jobs/sdg (direct REST, not via agent)
+    A-->>S: job_id
+    S->>M: plain-text "Job confirmed. Job ID: ..."
+
+    rect rgb(230, 245, 230)
+        Note over S,A: what actually happens
+        loop every 3s
+            S->>A: GET /jobs/{id}
+            A-->>S: status
+        end
+        S-->>U: job-monitor card updates to succeeded
+    end
+
+    rect rgb(250, 235, 235)
+        Note over M,W: built, but never armed
+        M--xA: watch_job(job_id, session_id)
+        W--xM: POST /session/:id/event
+        M--xS: agent follow-up via /pending
+    end
+```
+
+The **push pipeline is fully implemented end to end** — `watch_job` registers a session against a job ID, the worker calls `emit_job_event` on every terminal transition, `POST /session/:id/event` wakes Morty for an unprompted turn, and Studio drains `/session/:id/pending`. Event delivery can even authenticate with a shared `X-Event-Secret` — though both the sending and receiving checks are conditional on `AGENT_EVENT_SECRET`, which nothing in `k8s/` or the Makefile sets, so as deployed the endpoint is unauthenticated. What is missing is the one call that arms the watch.
+
+Nothing registers a watch. Studio never calls `watch_job`. Morty's `_auto_watch_jobs` is supposed to, by scanning its own completed tool calls for a job-creating tool whose output carries an `id` — but it cannot fire, for three independent reasons. `create_sdg_job`, `create_training_job` and `submit_recipe_job` are excluded from the MCP surface, so the agent never calls them. The `validate_*` tools it does call return a `ValidatedJobConfig`, which has no `id` field. And the prefix-stripping that normalises tool names looks for `mcp_amortized__`, while the SDK emits `mcp__amortized__` — two underscores after `mcp` — so the name never matches the trigger list even when the tool does. The registry stays empty, and `emit_job_event` returns immediately every time.
+
+What the user actually sees comes from two Studio timers: the chat's job-monitor card polls `GET /jobs/{id}` every 3 seconds, and the chat hook drains `/pending` every 5 seconds. Completion is visible and reasonably prompt; it just arrives by polling, and Morty does not comment on it unless asked.
+
+The watch registry is also a plain in-memory dict cleared on terminal status, so even once armed it would not survive a server restart.
+
+### 6.4 Studio
+
+React 19 + Vite 8, TanStack Query and Table, Zustand for client state, React Router 7, Tailwind 4 with shadcn-style primitives.
+
+| Page | Data source |
+|---|---|
+| Overview | Datasets, Models and Jobs queries combined — summary cards, recent jobs, getting-started guide |
+| Chat | `/agent/` proxy → the opencode runtime (see §3) |
+| Jobs | Amortized API — `/api/v1/jobs`, logs, cancel, delete |
+| Datasets | Amortized API `/api/v1/datasets` (backed by MLflow run search) |
+| Documents | Amortized API `/api/v1/documents` |
+| Models | MLflow REST directly — `registered-models/search`, `model-versions/search` |
+| Recipes | Amortized API `/api/v1/recipes` + recipe builder form |
+| Settings | MLflow REST — `gateway/endpoints/list` |
+
+Studio calls MLflow's REST API directly from the browser through the nginx `/mlflow/` proxy, mixing API 2.0 and 3.0 endpoints. Anything MLflow already answers well — run search, metric history, registry operations — is not proxied through Amortized.
+
+### 6.5 API surface
+
+All endpoints live under `/api/v1/`. `fastapi-mcp` exposes the OpenAPI surface as MCP tools at `/mcp`, which is why routes carry an explicit `operation_id` — that string becomes the tool name Morty sees. (`POST /datasets/upload` is the one exception, and correspondingly has no tool name below.)
+
+Three operations are deliberately withheld: `create_sdg_job`, `create_training_job` and `submit_recipe_job` are listed in `exclude_operations`. That single line is what enforces the human-in-the-loop guarantee in §6.2 — the agent physically cannot call them, so a job can only be created by Studio after a user clicks Confirm.
+
+```
+Jobs        POST   /jobs/sdg                 create_sdg_job        (not exposed via MCP)
+            POST   /jobs/training            create_training_job   (not exposed via MCP)
+            POST   /jobs/sdg/validate        validate_sdg_job
+            POST   /jobs/training/validate   validate_training_job
+            GET    /jobs                     list_jobs
+            GET    /jobs/{id}                get_job
+            DELETE /jobs/{id}                cancel_job
+            POST   /jobs/{id}/delete         delete_job
+            GET    /jobs/{id}/logs           get_job_logs
+            GET    /jobs/{id}/artifacts      get_job_artifacts
+
+Recipes     GET    /recipes                  list_recipes
+            GET    /recipes/{name}           get_recipe
+            PUT    /recipes/{name}           save_recipe
+            DELETE /recipes/{name}           delete_recipe
+            POST   /jobs/recipe              submit_recipe_job     (not exposed via MCP)
+            POST   /jobs/recipe/validate     validate_recipe_job
+
+Datasets    GET    /datasets                 list_datasets
+            GET    /datasets/{id}            get_dataset
+            GET    /datasets/{id}/samples    get_dataset_samples
+            POST   /datasets/upload
+
+Documents   POST   /documents/convert        convert_document
+            POST   /documents/convert/url    convert_document_url
+            GET    /documents                list_documents
+            GET    /documents/{id}/content   get_document_content
+            GET    /documents/{id}/chunks    get_document_chunks
+            DELETE /documents/{id}           delete_document
+
+Artifacts   GET    /artifacts/{exp}/{run}          list_artifacts
+            GET    /artifacts/{exp}/{run}/{path}   get_artifact_content
+
+Costs       GET    /costs/models             get_model_pricing
+            POST   /costs/training/estimate  estimate_training_resources
+
+Models      GET    /models                   list_models
+
+UI          POST   /ui/present_options       present_options
+            POST   /ui/show_model_pricing    show_model_pricing
+            POST   /ui/show_vram_estimate    show_vram_estimate
+            POST   /ui/signal_phase          signal_phase
+            POST   /ui/watch_job             watch_job
+
+System      GET    /health                   health
+            GET    /config                   get_config
+```
+
+Auth is a single optional bearer token (`AMORTIZED_API_KEY`); when unset — the default — the API is open. `X-Forwarded-User` is read and stored as `user_id` for job ownership but is not enforced.
+
+The costs endpoints are worth a note: `get_model_pricing` searches a bundled 113 KB OpenRouter pricing snapshot, and `estimate_training_resources` does real VRAM arithmetic per method — full SFT, LoRA, QLoRA and OSFT each have their own memory model accounting for weights, gradients, optimizer state and activations. This is what feeds the comparison cards Morty must show before the user picks a model size.
+
+---
+
+## 7. Compute backends
+
+Three backends implement one protocol:
+
+```python
+submit(JobSpec)  -> BackendHandle
+status(handle)   -> BackendStatus
+cancel(handle)   -> None
+logs(handle)     -> AsyncIterator[str]
+```
+
+Capabilities (`GPU`, `LOG_STREAM`, `STOP`) are declared per backend, and `check_capabilities` exists to reject a job a backend cannot run — but the worker builds an empty required-capability set and guards the check on it being non-empty, so no job is ever rejected. The mechanism is present and inert.
+
+The same `JobSpec` — same command, same config files, same env — flows to all three backends. There is no per-backend branching in the builders.
+
+### Kubernetes
+
+The production path. Per job, the backend creates:
+
+- a **ConfigMap** holding every config file, mounted read-only at `/amortized`
+- a **Secret** holding every env var, injected key-by-key via `secretKeyRef`
+- a **Job** with `restartPolicy: Never`, `ttlSecondsAfterFinished`, and `ownerReferences` from the ConfigMap and Secret back to the Job
+
+Volumes: config (ConfigMap, read-only), work (a **hostPath** at `/var/local-path-provisioner/job-work/<job_id>` mounted at `/amortized/work`), and a 12 GiB memory-backed `emptyDir` at `/dev/shm` for PyTorch dataloader workers.
+
+Shared S3 credentials arrive through `envFrom` on a Secret named `amortized-s3`. The credentials are shared, but the Secret object is not — Kubernetes Secrets are namespace-scoped, so each user overlay stamps a copy into both the control-plane and the jobs namespace. A missing copy in the jobs namespace breaks every job at container start. GCP/Vertex credentials are mounted only if a `gcp-credentials` Secret already exists in the jobs namespace — the backend checks for it at submit time and adds the volume, env vars and `GOOGLE_APPLICATION_CREDENTIALS` if so. A `_sync_gcp_secret` helper that would copy the Secret across namespaces exists but has no callers, and nothing else creates `gcp-credentials` in a jobs namespace either — the Makefile only copies `opencode-gcp` and `opencode-llm` into the control-plane namespace. Getting the Secret into the jobs namespace is a manual step today. Caches are redirected into the work volume (`HF_HOME`, `TRANSFORMERS_CACHE`, `TORCHINDUCTOR_CACHE_DIR`) so model downloads survive within a job.
+
+GPU jobs get `nvidia.com/gpu` in both requests and limits, `nodeSelector: nvidia.com/gpu.present=true`, and `runtimeClassName: nvidia`. Containers drop all capabilities and disable privilege escalation.
+
+There are **no init containers** on job pods. Data movement is the pre-command chain described in §4.5.
+
+### SSH
+
+`podman`/`docker` on a remote GPU host, or bare-metal `nohup` with exported env. Same configs, written over the `asyncssh` exec channel as heredocs (`cat > file << 'AMORTIZED_EOF'`) instead of mounted from a ConfigMap. This is the one backend that populates `handle.secret_names`, and therefore the only one where `cleanup_secrets` fires.
+
+### Local
+
+`subprocess.Popen` on the server host, with container paths remapped to local ones and process tracking held in memory. Development only.
+
+---
+
+## 8. Deployment and operations
+
+### 8.1 Topology
+
+```mermaid
+graph TB
+    subgraph shared["namespace: amortized"]
+        mlflow["MLflow :5000<br/>+ AI Gateway<br/>metadata: SQLite on PVC"]
+        minio["MinIO :9000"]
+        pg[("PostgreSQL :5432<br/>Amortized jobs table only")]
+    end
+
+    subgraph user["namespace: amortized-&lt;user&gt;"]
+        srv["amortized-server :8000<br/>+ PVC"]
+        st["studio :8080<br/>nginx + SPA"]
+        oc["opencode :4096"]
+        cc["claude-code :4096<br/>Morty, job events only"]
+        sa["ServiceAccount<br/>+ Role"]
+    end
+
+    subgraph jobs["namespace: amortized-&lt;user&gt;-jobs"]
+        j["Per-job ConfigMap + Secret + Job<br/>ResourceQuota: 1 GPU"]
+    end
+
+    st --> srv
+    st -->|/agent/| oc
+    oc -->|MCP| srv
+    cc -->|MCP| srv
+    srv -.->|job events| cc
+    st --> mlflow
+    srv --> pg
+    srv --> mlflow
+    srv -->|creates| j
+    j --> mlflow
+    mlflow -->|artifacts| minio
+```
+
+Six developers each get a namespace pair — one for the control plane, one for jobs — with a 1-GPU `ResourceQuota`. MLflow, MinIO and PostgreSQL are shared in the `amortized` namespace. Kustomize composes this: a `base/` with all workloads, a `shared/` overlay for infrastructure, one overlay per developer, and a `rosa/` overlay that adds an OpenShift `Route` for Studio.
+
+RBAC is namespace-scoped: a `Role` granting create/get/list/watch/delete on Jobs and Deployments, create/get/list/delete on Services (no `watch`), get/list/watch on Pods and pod logs, and create/get/patch/delete on Secrets and ConfigMaps. No ClusterRole.
+
+### 8.2 Configuration
+
+Environment variables, `AMORTIZED_` prefix, via pydantic-settings:
+
+| Variable | Purpose |
+|---|---|
+| `AMORTIZED_DATABASE_URL` | PostgreSQL connection string |
+| `AMORTIZED_DATA_DIR` | Working directory for job output paths |
+| `AMORTIZED_COMPUTE_BACKEND` | `local` \| `ssh` \| `kubernetes` |
+| `AMORTIZED_DEFAULT_BACKEND` | Overrides `COMPUTE_BACKEND` when set; also settable from `~/.amortized/config.yaml` |
+| `AMORTIZED_HOST` / `AMORTIZED_PORT` | Server binding, defaults `0.0.0.0:8000` |
+| `AMORTIZED_COMPUTE_NAMESPACE` | Namespace jobs are dispatched into |
+| `AMORTIZED_IMAGE_REGISTRY` | Container registry for job images |
+| `AMORTIZED_IMAGE_PULL_POLICY` | `Always` in production |
+| `AMORTIZED_MLFLOW_TRACKING_URI` | Empty disables all MLflow integration |
+| `AMORTIZED_GATEWAY_URL` | MLflow AI Gateway base URL |
+| `AMORTIZED_AGENT_SERVER_URL` | Where the worker delivers job events |
+| `AMORTIZED_EXTERNAL_URL` | Externally reachable server URL |
+| `AMORTIZED_API_KEY` | Bearer token; empty means no auth |
+| `AMORTIZED_CORS_ORIGINS` | Comma-separated origins |
+| `AMORTIZED_FORWARD_ENV` | Env var names to forward into job containers |
+| `AMORTIZED_RECIPES_DIR` | Override the recipes directory |
+
+### 8.3 Operations
+
+```bash
+make up                    # cluster + GPU + images + deploy everything
+make deploy-shared         # MLflow, MinIO, PostgreSQL
+make migrate               # alembic upgrade head
+make deploy-<user>         # one developer environment
+make refresh-<user>        # rebuild images from current branch and redeploy
+make down-<user>           # tear down
+make prompt                # rebuild Morty's prompt + sync skills into k8s
+make status                # pods and access URLs
+```
+
+Access is via SSH port-forward to per-developer NodePorts; the mapping is in `README.md`.
+
+---
+
+## 9. Known gaps vs. the original MVP scope
+
+Recorded plainly. Everything above describes what exists; this section describes what the original scope named and the code does not deliver.
+
+**Evaluation is absent.** The original scope said Amortized would report results on an internal eval set. The eval job type was removed in #267. `JobType.eval` survives as an unreferenced enum member with no builder, and `"eval"` remains a valid workflow phase label in the chat UI, but no evaluation runs anywhere. This is the largest gap against the stated success criteria — a user cannot currently tell whether the student model matches the teacher.
+
+**Recipe coverage is 2 of 5.** The scope named routing, classification, extraction, summarization and Q&A as built-in recipes. `templates/` contains `sdg/knowledge-ingestion` and `training/knowledge-ingestion`. Morty's skill library is slightly broader — it has an SDG classification guide — but there is no template behind it.
+
+**GEPA is unreachable through the agent.** The original scope had the agent choosing between prompt optimization and weight adaptation. Prompt optimization exists: `gepa` is a supported training-hub algorithm, it is installed in the training image, and the Studio recipe builder offers it. But Morty's workflow prompt only presents `osft`, `lora`, `qlora` and `sft`. Nothing routes a user to it conversationally.
+
+**Two agent runtimes are deployed, wired to different consumers.** Both `opencode` and `claude-code` run in every namespace, and both mount the same `morty-config` and `morty-skills` ConfigMaps, so the prompt and skill guides are identical across them. The split is in the wiring: Studio's `/agent/` proxy points at `opencode` (the base manifest even carries a comment documenting the swap), while the worker delivers job events to `claude-code:4096`. A user therefore chats with one runtime while job-completion events go to the other — which is a second, independent reason the push-notification path below produces nothing visible. This looks like an incomplete migration and should be resolved to a single runtime.
+
+**Jobs execute serially.** The worker processes one job at a time per namespace. Acceptable at 1 GPU per developer; a hard blocker for shared or multi-GPU deployments.
+
+**Auth is effectively off.** AD-10 specified an OAuth proxy sidecar. There is no OAuth anywhere in `k8s/`. What exists is an optional bearer token, empty by default, plus an unenforced `X-Forwarded-User` header for attribution.
+
+**Custom tool signatures are untested.** The scope proposed tuning against custom tool signatures without custom MCP servers. `SDGJobRequest` accepts Data Designer's `tool_configs`, so the plumbing is there, but no recipe, skill guide or test exercises it.
+
+**Cancelling a running job on Kubernetes reports it as failed.** `cancel_job` writes `cancelled` and deletes the Job; the worker's next poll sees the Job is gone, cannot distinguish that from a crash, and overwrites the status with `failed`. The negative-exit-code path that would signal cancellation correctly only exists on the local backend. Fixing this means either teaching the Kubernetes backend to report a cancellation sentinel or having the worker check the current DB status before writing a terminal one.
+
+**Push notifications are built but never armed.** The whole pipeline works — watch registry, event emission, agent wake-up, pending queue — but nothing calls `watch_job`. Studio doesn't, and Morty's auto-registration scans for tool calls it can never make (the create operations are excluded from MCP) or outputs that never carry an `id` (the validate operations return `ValidatedJobConfig`). Studio's confirm handler calling `watch_job` would activate it, but the agent-side auto-registration needs its tool-name prefix bug fixed too. Until then the UI polls; see §6.3.
+
+**The MLflow MCP server is configured but not deployed.** Morty is wired to a second MCP server on `127.0.0.1:5002` that nothing serves. Either deploy it as a sidecar in the claude-code pod or drop the configuration.
+
+**The watch registry is in-memory.** Even once armed, job-completion notifications would be lost across a server restart. The job itself is re-adopted correctly; only the "tell Morty when it's done" link breaks.
+
+**Roughly half the CLI calls endpoints that no longer exist.** `amortized logs` and its `--follow` mode hit `/jobs/{id}/events`, `types` hits `/job-types`, `backends` hits `/compute`, `artifacts` hits `GET /artifacts` without the experiment/run path segments the real route requires, `upload` posts to `/artifacts/upload` and the artifact-ID resolver gets `/artifacts/{id}`, and the generic `submit` path posts to `POST /jobs` — none of which are routes on the server. What still works: `up`, `config`, `health`, `jobs`, `job`, `cancel`, `recipes`, `recipe`, `mcp`, and `submit` when it takes the recipe or training branch. The CLI has drifted behind the API split into per-type job endpoints and was not updated.
+
+**`db/schema.sql` no longer matches the database.** It reflects migration `0001`; `0002` changed `config` to JSONB and the timestamps to TIMESTAMPTZ. The file appears to be unused at runtime — Alembic owns schema creation — but it reads as authoritative and should be deleted or regenerated.
+
+**Model registration is best-effort.** If MLflow registration fails after a successful training run, the failure is logged as a warning and the job is still reported as succeeded. The artifact is in MLflow; the Model Registry entry may not be.
+
+**Some deployed configuration is vestigial.** `AMORTIZED_DOCLING_URL` is set in several kustomize overlays and `docling-serve` is pulled by `make pull-images`, but no `docling-serve` workload is deployed anywhere in `k8s/`, `docling_url` is not a field on `Settings`, and no code reads it — document parsing moved into the `upload` job's own container. `AMORTIZED_S3_BUCKET` is set in the base ConfigMap but is likewise not a `Settings` field and is silently discarded. Both should be removed.
+
+---
+
+## 10. Where to look next
+
+| For | Read |
+|---|---|
+| Decision rationale | [`docs/architecture/adr-001-control-plane.md`](architecture/adr-001-control-plane.md) — AD-9 (OpenCode) and AD-10 (OAuth proxy) have been superseded by the code; the rest still holds |
+| Exact API contract | [`openapi/v1.json`](../openapi/v1.json) — regenerated by a pre-commit hook when API files change |
+| Job lifecycle code | `src/amortized/worker.py`, `src/amortized/jobs/` |
+| Config translation | `src/amortized/jobs/training.py`, `src/amortized/jobs/sdg.py` |
+| Agent behaviour | `agent/prompts/workflow.md`, `agent/skills/` |
+| Deployment | `Makefile`, `k8s/overlays/` |
+| Setup | [`README.md`](../README.md), [`docs/kind-setup.md`](kind-setup.md) |
+
+The three other documents under `docs/architecture/` — `control-plane.md`, `architecture-detailed.md` and `architecture-high-level.md` — describe a design that diverged from the implementation. They carry staleness banners. Treat this document as the current description of the system.

@@ -1,3 +1,10 @@
+> [!WARNING]
+> **Superseded — this is a design proposal, not a description of the system.**
+>
+> Written during initial design. Several sections are still marked `Status: To discuss`, and the two `Status: Agreed` core sections describe architecture that was never implemented: **Kueue** for GPU quota and admission control, and the **K8s Watch API** for status updates. Neither exists in the codebase — `adr-001` subsequently decided against both (AD-3, AD-4) and the implementation followed the ADR. The SDG image is Data Designer, not `asynth`; there is no eval job type.
+>
+> Kept for the RHOAI-native reasoning and the reference-architecture comparison. For the system as built, see [`Amortize MVP.md`](../Amortize%20MVP.md).
+
 # Control Plane for Task Model Creation
 
 A control plane that orchestrates the end-to-end workflow for building task models — small, fine-tuned LLMs that replace expensive frontier model API calls for specific tasks (classification, extraction, routing, summarization).

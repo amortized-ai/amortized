@@ -1,3 +1,8 @@
+> [!WARNING]
+> **Superseded — partially stale.**
+>
+> The topology and nginx routing are correct. Three errors: the SDG/eval container is Data Designer, not `asynth`; there is no eval job type; persistence is PostgreSQL, not SQLite. For the system as built, see [`Amortize MVP.md`](../Amortize%20MVP.md).
+
 # Amortized — High-Level Architecture
 
 ```

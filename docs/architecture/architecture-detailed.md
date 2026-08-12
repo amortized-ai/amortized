@@ -1,3 +1,10 @@
+> [!WARNING]
+> **Superseded — describes a design that diverged from the implementation.**
+>
+> Known inaccuracies: `core/config_translator.py`, `core/judge_templates.py` and `core/redact.py` do not exist; the template library is 2 files, not the ~47 listed; persistence is PostgreSQL, not SQLite; the eval pipeline phase was removed; the SDG container is Data Designer, not `asynth`; several documented endpoints and `AMORTIZED_*` variables are not implemented.
+>
+> Still accurate: the compute-backend protocol, the per-job Kubernetes resource model, and the CLI command list. For the system as built, see [`Amortize MVP.md`](../Amortize%20MVP.md).
+
 # Amortized — Detailed Architecture
 
 ## System Overview

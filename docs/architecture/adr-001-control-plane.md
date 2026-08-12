@@ -1,8 +1,16 @@
 # ADR-001: Control Plane Architecture for Task Model Creation
 
-**Status**: Accepted
+**Status**: Accepted — AD-9 and AD-10 superseded by the implementation
 **Date**: 2026-06-28
 **Authors**: Shiv
+
+> [!NOTE]
+> These decisions still describe why the system is shaped the way it is, and AD-3 (no Kueue) and AD-4 (polling) held. Two have been overtaken:
+>
+> - **AD-9** — partially overtaken. A Claude Agent SDK runtime (`agent/server.py`) was added and receives job events, but OpenCode still ships, still carries the Morty prompt and skills, and is what Studio's chat proxy points at in every deployed overlay. Two runtimes now share one agent persona.
+> - **AD-10** — no OAuth proxy was deployed. Auth is an optional bearer token, disabled by default.
+>
+> For the system as built, see [`Amortize MVP.md`](../Amortize%20MVP.md).
 
 ## Context
 
