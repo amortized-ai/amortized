@@ -776,6 +776,19 @@ export function useChat() {
     const sessionId = useChatStore.getState().getSessionId(convId)
     if (!sessionId) return
 
+    const placeholderId = generateId()
+    const placeholder: ChatMessage = {
+      id: placeholderId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date().toISOString(),
+      toolResults: [],
+      proposedAction: null,
+      optionCards: [],
+    }
+    setMessages((prev) => [...prev, placeholder])
+    setChatState("streaming")
+
     try {
       const response = await sendOpenCodeMessage(
         convId,
@@ -786,26 +799,30 @@ export function useChat() {
       const sessionMessages = await fetchSessionMessages(convId)
       const session = extractSessionData(sessionMessages, parsed.toolResults)
 
-      const msgId = generateId()
-      const followUp: ChatMessage = {
-        id: msgId,
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === placeholderId)
+        if (idx === -1) return prev
+        const updated = [...prev]
+        updated[idx] = {
+          ...prev[idx]!,
+          content: session.text || parsed.content,
+          toolResults: session.tools,
+        }
+        return updated
+      })
+
+      addMessage(convId, {
+        id: placeholderId,
         role: "assistant",
         content: session.text || parsed.content,
         timestamp: new Date().toISOString(),
         toolResults: session.tools,
-        proposedAction: null,
-        optionCards: [],
-      }
-
-      setMessages((prev) => [...prev, followUp])
-      addMessage(convId, {
-        id: msgId,
-        role: "assistant",
-        content: followUp.content,
-        timestamp: followUp.timestamp,
-        toolResults: followUp.toolResults,
       })
+
+      setChatState("done")
     } catch (err) {
+      setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
+      setChatState("done")
       logger.warn("job completion notification failed", { jobId, error: err instanceof Error ? err.message : String(err) })
     }
   }, [currentConversationId, addMessage])
