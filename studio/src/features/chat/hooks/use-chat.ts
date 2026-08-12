@@ -18,6 +18,8 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+const notifiedJobs = new Set<string>()
+
 function restoreMessages(
   getConversationMessages: (id: string) => import("@/stores/chat-store").PersistedMessage[],
   conversationId: string | null,
@@ -765,67 +767,86 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-  const notifiedJobsRef = useRef(new Set<string>())
+  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string }>>([])
+  const jobNotifyRunningRef = useRef(false)
 
-  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
-    if (notifiedJobsRef.current.has(jobId)) return
-    notifiedJobsRef.current.add(jobId)
+  const processJobNotifyQueue = useCallback(async () => {
+    if (jobNotifyRunningRef.current) return
+    jobNotifyRunningRef.current = true
 
-    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
-    if (!convId) return
-    const sessionId = useChatStore.getState().getSessionId(convId)
-    if (!sessionId) return
+    while (jobNotifyQueueRef.current.length > 0) {
+      if (chatStateRef.current === "streaming" || chatStateRef.current === "tool_call") {
+        await new Promise((r) => setTimeout(r, 500))
+        continue
+      }
 
-    const placeholderId = generateId()
-    const placeholder: ChatMessage = {
-      id: placeholderId,
-      role: "assistant",
-      content: "",
-      timestamp: new Date().toISOString(),
-      toolResults: [],
-      proposedAction: null,
-      optionCards: [],
-    }
-    setMessages((prev) => [...prev, placeholder])
-    setChatState("streaming")
+      const { jobId, jobType, status } = jobNotifyQueueRef.current.shift()!
+      const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+      if (!convId) continue
+      const sessionId = useChatStore.getState().getSessionId(convId)
+      if (!sessionId) continue
 
-    try {
-      const response = await sendOpenCodeMessage(
-        convId,
-        `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
-      )
-
-      const parsed = parseOpenCodeResponse(response)
-      const sessionMessages = await fetchSessionMessages(convId)
-      const session = extractSessionData(sessionMessages, parsed.toolResults)
-
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.id === placeholderId)
-        if (idx === -1) return prev
-        const updated = [...prev]
-        updated[idx] = {
-          ...prev[idx]!,
-          content: session.text || parsed.content,
-          toolResults: session.tools,
-        }
-        return updated
-      })
-
-      addMessage(convId, {
+      const placeholderId = generateId()
+      const placeholder: ChatMessage = {
         id: placeholderId,
         role: "assistant",
-        content: session.text || parsed.content,
+        content: "",
         timestamp: new Date().toISOString(),
-        toolResults: session.tools,
-      })
+        toolResults: [],
+        proposedAction: null,
+        optionCards: [],
+      }
+      setMessages((prev) => [...prev, placeholder])
+      setChatState("streaming")
 
-      setChatState("done")
-    } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
-      setChatState("done")
-      logger.warn("job completion notification failed", { jobId, error: err instanceof Error ? err.message : String(err) })
+      try {
+        const response = await sendOpenCodeMessage(
+          convId,
+          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+        )
+
+        const parsed = parseOpenCodeResponse(response)
+        const sessionMessages = await fetchSessionMessages(convId)
+        const session = extractSessionData(sessionMessages, parsed.toolResults)
+
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === placeholderId)
+          if (idx === -1) return prev
+          const updated = [...prev]
+          updated[idx] = {
+            ...prev[idx]!,
+            content: session.text || parsed.content,
+            toolResults: session.tools,
+          }
+          return updated
+        })
+
+        addMessage(convId, {
+          id: placeholderId,
+          role: "assistant",
+          content: session.text || parsed.content,
+          timestamp: new Date().toISOString(),
+          toolResults: session.tools,
+        })
+
+        setChatState("done")
+      } catch (err) {
+        setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
+        setChatState("done")
+        logger.warn("job completion notification failed", { jobId, error: err instanceof Error ? err.message : String(err) })
+      }
     }
+
+    jobNotifyRunningRef.current = false
   }, [currentConversationId, addMessage])
+
+  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
+    if (notifiedJobs.has(jobId)) return
+    notifiedJobs.add(jobId)
+
+    jobNotifyQueueRef.current.push({ jobId, jobType, status })
+    await processJobNotifyQueue()
+  }, [processJobNotifyQueue])
 
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
