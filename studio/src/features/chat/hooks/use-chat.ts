@@ -260,11 +260,14 @@ export function useChat() {
         const { summarizeConversation } = await import("@/lib/context-summarizer")
         const summary = summarizeConversation(msgs)
         if (summary) {
-          await fetch(`/agent/session/${newSessionId}/message`, {
+          const replayResp = await fetch(`/agent/session/${newSessionId}/message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: summary }] }),
           })
+          if (!replayResp.ok) {
+            logger.warn("session context replay failed", { convId, status: replayResp.status })
+          }
         }
         if (!cancelled) {
           useChatStore.getState().setSessionStatus(convId, "restored")
@@ -595,6 +598,9 @@ export function useChat() {
 
       setChatState("done")
     } catch (err) {
+      if (currentConversationId) {
+        useChatStore.getState().setJobInFlight(currentConversationId, false)
+      }
       setError(err instanceof Error ? err.message : "Failed to submit job")
       setChatState("error")
     }
@@ -758,6 +764,16 @@ export function useChat() {
   const jobInFlight = useChatStore(
     (s) => s.jobInFlight[s.currentConversationId ?? ""] ?? false,
   )
+
+  useEffect(() => {
+    if (!jobInFlight || !currentConversationId) return
+    const timeout = setTimeout(() => {
+      logger.warn("jobInFlight auto-expired after timeout", { convId: currentConversationId })
+      useChatStore.getState().setJobInFlight(currentConversationId, false)
+    }, 30 * 60 * 1000)
+    return () => clearTimeout(timeout)
+  }, [jobInFlight, currentConversationId])
+
   const isStreaming = chatState === "streaming" || chatState === "tool_call" || jobInFlight
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null

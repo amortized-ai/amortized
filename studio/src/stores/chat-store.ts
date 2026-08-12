@@ -85,12 +85,14 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _sid, ...restSessionMap } = s.sessionMap  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
             sessionStatus: restSessionStatus,
             notifiedJobs: restNotifiedJobs,
+            jobInFlight: restJobInFlight,
             drafts: restDrafts,
             currentConversationId:
               s.currentConversationId === id
