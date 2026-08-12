@@ -18,7 +18,7 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-const notifiedJobs = new Set<string>()
+const _sendLock = { held: false }
 
 function restoreMessages(
   getConversationMessages: (id: string) => import("@/stores/chat-store").PersistedMessage[],
@@ -468,7 +468,8 @@ export function useChat() {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (chatState === "streaming") return
+      if (chatState === "streaming" || _sendLock.held) return
+      _sendLock.held = true
 
       if (warmupPromiseRef.current) {
         await warmupPromiseRef.current
@@ -635,6 +636,8 @@ export function useChat() {
         useChatStore.getState().removeMessage(convId, assistantId)
         setError(err instanceof Error ? err.message : "Unknown error")
         setChatState("error")
+      } finally {
+        _sendLock.held = false
       }
 
       if (isNewConversation) {
@@ -767,22 +770,39 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId])
 
-  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string }>>([])
+  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string }>>([])
   const jobNotifyRunningRef = useRef(false)
 
   const processJobNotifyQueue = useCallback(async () => {
     if (jobNotifyRunningRef.current) return
     jobNotifyRunningRef.current = true
 
+    const BLOCKED_STATES = new Set<ChatState>(["streaming", "tool_call", "action_pending"])
+    const MAX_WAIT_MS = 60_000
+    const MAX_FAILURES = 3
+    let consecutiveFailures = 0
+    let waitedMs = 0
+
     while (jobNotifyQueueRef.current.length > 0) {
-      if (chatStateRef.current === "streaming" || chatStateRef.current === "tool_call") {
+      if (_sendLock.held || BLOCKED_STATES.has(chatStateRef.current)) {
+        if (waitedMs >= MAX_WAIT_MS) {
+          logger.warn("job notify queue timed out waiting for idle state")
+          jobNotifyQueueRef.current.length = 0
+          break
+        }
         await new Promise((r) => setTimeout(r, 500))
+        waitedMs += 500
         continue
       }
+      waitedMs = 0
 
-      const { jobId, jobType, status } = jobNotifyQueueRef.current.shift()!
-      const convId = currentConversationId ?? useChatStore.getState().currentConversationId
-      if (!convId) continue
+      if (consecutiveFailures >= MAX_FAILURES) {
+        logger.warn("job notify queue circuit breaker tripped", { failures: consecutiveFailures })
+        jobNotifyQueueRef.current.length = 0
+        break
+      }
+
+      const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
       const sessionId = useChatStore.getState().getSessionId(convId)
       if (!sessionId) continue
 
@@ -797,6 +817,7 @@ export function useChat() {
         optionCards: [],
       }
       setMessages((prev) => [...prev, placeholder])
+      _sendLock.held = true
       setChatState("streaming")
 
       try {
@@ -830,23 +851,31 @@ export function useChat() {
         })
 
         setChatState("done")
+        consecutiveFailures = 0
       } catch (err) {
         setMessages((prev) => prev.filter((m) => m.id !== placeholderId))
         setChatState("done")
-        logger.warn("job completion notification failed", { jobId, error: err instanceof Error ? err.message : String(err) })
+        consecutiveFailures++
+        logger.warn("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+      } finally {
+        _sendLock.held = false
       }
     }
 
     jobNotifyRunningRef.current = false
-  }, [currentConversationId, addMessage])
+  }, [addMessage])
 
   const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
-    if (notifiedJobs.has(jobId)) return
-    notifiedJobs.add(jobId)
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (!convId) return
 
-    jobNotifyQueueRef.current.push({ jobId, jobType, status })
+    const notified = useChatStore.getState().getNotifiedJobs(convId)
+    if (notified.includes(jobId)) return
+    useChatStore.getState().addNotifiedJob(convId, jobId)
+
+    jobNotifyQueueRef.current.push({ jobId, jobType, status, convId })
     await processJobNotifyQueue()
-  }, [processJobNotifyQueue])
+  }, [currentConversationId, processJobNotifyQueue])
 
   const isStreaming = chatState === "streaming" || chatState === "tool_call"
 
