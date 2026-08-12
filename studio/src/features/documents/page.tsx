@@ -31,8 +31,13 @@ export default function DocumentsPage() {
   useEffect(() => {
     const docParam = searchParams.get("doc")
     if (!docParam) return
+    if (isLoading) return
     if (documents.length === 0) {
-      void refetch()
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
       return
     }
     const match = documents.find(
@@ -54,7 +59,7 @@ export default function DocumentsPage() {
         return next
       }, { replace: true })
     }
-  }, [searchParams, documents, setSearchParams, refetch])
+  }, [searchParams, documents, isLoading, setSearchParams])
 
   const filteredDocuments = useMemo(() => {
     if (!search.trim()) return documents
