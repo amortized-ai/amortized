@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
@@ -116,6 +116,13 @@ const UI_TOOLS = new Set([
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
 
+const JOB_CREATION_TOOLS = new Set([
+  "create_sdg_job",
+  "create_training_job",
+  "submit_recipe_job",
+  "create_job",
+])
+
 function normalizeToolName(raw: string): string {
   return raw.replace(/^(?:mcp_amortized__|amortized_)/, "")
 }
@@ -159,22 +166,12 @@ function extractSessionData(
     }
   }
 
-  let lastTextAssistantIdx = -1
-  for (let i = currentTurnMessages.length - 1; i >= 0; i--) {
-    const info = (currentTurnMessages[i] as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
-    if (info?.role !== "assistant") continue
-    const hasText = currentTurnMessages[i]!.parts.some((p) => p.type === "text" && p.text)
-    if (hasText) { lastTextAssistantIdx = i; break }
-  }
-
-  for (let i = 0; i < currentTurnMessages.length; i++) {
-    const msg = currentTurnMessages[i]!
+  for (const msg of currentTurnMessages) {
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
 
-    const isLastWithText = i === lastTextAssistantIdx
     for (const part of msg.parts) {
-      if (part.type === "text" && part.text && isLastWithText) {
+      if (part.type === "text" && part.text) {
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
@@ -194,7 +191,6 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
-const _activeRequests = new Set<string>()
 
 /**
  * Chat hook. Designed to be mounted inside a keyed component so that
@@ -211,169 +207,15 @@ export function useChat() {
     getConversationMessages,
   } = useChatStore()
 
-  const initialMessages = useMemo(
-    () => {
-      const s = useChatStore.getState()
-      return restoreMessages(s.getConversationMessages, s.currentConversationId)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
-    [],
-  )
-  const lastRestored = initialMessages[initialMessages.length - 1]
-  const mountedWhileStreaming =
-    lastRestored?.role === "assistant" && !lastRestored.content
-  const convIdAtMount = useChatStore.getState().currentConversationId
-  const hasActiveRequest = convIdAtMount ? _activeRequests.has(convIdAtMount) : false
-
-  const [chatState, setChatState] = useState<ChatState>(
-    mountedWhileStreaming || hasActiveRequest ? "streaming" : "idle",
-  )
+  const [chatState, setChatState] = useState<ChatState>("idle")
   const [error, setError] = useState<string | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
 
-  useEffect(() => {
-    if (!mountedWhileStreaming || !currentConversationId) return
-    const convId = currentConversationId
-    const placeholderId = lastRestored!.id
-    let cancelled = false
-
-    function cleanupPlaceholder() {
-      _activeRequests.delete(convId)
-      useChatStore.getState().removeMessage(convId, placeholderId)
-      setMessages(restoreMessages(getConversationMessages, convId))
-      setChatState("idle")
-    }
-
-    if (!_activeRequests.has(convId)) {
-      async function recoverResponse() {
-        let emptyPolls = 0
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          if (cancelled) return
-          try {
-            const msgs = await fetchSessionMessages(convId)
-            if (cancelled) return
-            if (msgs.length > 0) {
-              emptyPolls = 0
-              const parsed = parseOpenCodeResponse(msgs[msgs.length - 1]!)
-              const session = extractSessionData(msgs, parsed.toolResults)
-              const content = session.text || parsed.content
-              if (content) {
-                const toolResults = session.tools
-                let phase: string | null = null
-                const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
-                if (phaseTool?.result) {
-                  try {
-                    const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-                    if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-                  } catch { /* ignore */ }
-                }
-                useChatStore.getState().updateMessageFields(convId, placeholderId, {
-                  content,
-                  toolResults,
-                  phase: phase ?? undefined,
-                })
-                setMessages(restoreMessages(getConversationMessages, convId))
-                setChatState("done")
-                return
-              }
-            } else {
-              emptyPolls++
-              if (emptyPolls >= 3) break
-            }
-          } catch {
-            emptyPolls++
-            if (emptyPolls >= 3) break
-          }
-          await new Promise((r) => setTimeout(r, 2000))
-        }
-
-        if (cancelled) return
-
-        const msgs = useChatStore.getState().getConversationMessages(convId)
-        const lastUserMsg = [...msgs].reverse().find((m) => m.role === "user")
-        if (!lastUserMsg) {
-          cleanupPlaceholder()
-          return
-        }
-
-        if (warmupPromiseRef.current) {
-          await warmupPromiseRef.current
-        }
-
-        _activeRequests.add(convId)
-        try {
-          const { chatModelSelection } = useSettingsStore.getState()
-          const { summarizeConversation } = await import("@/lib/context-summarizer")
-          const allMsgs = useChatStore.getState().getConversationMessages(convId)
-          const summary = summarizeConversation(allMsgs)
-          const messageWithContext = summary
-            ? `${summary}\n\n${lastUserMsg.content}`
-            : lastUserMsg.content
-          const response = await sendOpenCodeMessage(convId, messageWithContext, chatModelSelection)
-          if (cancelled) { _activeRequests.delete(convId); return }
-          const parsed = parseOpenCodeResponse(response)
-          const sessionMsgs = await fetchSessionMessages(convId)
-          const session = extractSessionData(
-            sessionMsgs.length > 0 ? sessionMsgs : [response],
-            parsed.toolResults,
-          )
-          const toolResults = session.tools
-          let phase: string | null = null
-          const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
-          if (phaseTool?.result) {
-            try {
-              const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-              if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-            } catch { /* ignore */ }
-          }
-          const responseContent = session.text || parsed.content
-          useChatStore.getState().updateMessageFields(convId, placeholderId, {
-            content: responseContent,
-            toolResults,
-            phase: phase ?? undefined,
-          })
-          setMessages(restoreMessages(getConversationMessages, convId))
-          _activeRequests.delete(convId)
-          setChatState("done")
-          useChatStore.getState().setSessionStatus(convId, "connected")
-        } catch (err) {
-          _activeRequests.delete(convId)
-          if (cancelled) return
-          logger.error("recovery retry failed", { convId, error: err instanceof Error ? err.message : String(err) })
-          cleanupPlaceholder()
-        }
-      }
-      recoverResponse()
-    }
-
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- recovery only needed on mount when streaming
-  }, [])
-
-  useEffect(() => {
-    if (messages.length > 0) return
-    if (!currentConversationId) return
-    const stored = getConversationMessages(currentConversationId)
-    if (stored.length > 0) {
-      setMessages(restoreMessages(getConversationMessages, currentConversationId))
-    }
-  }, [messages.length, currentConversationId, getConversationMessages])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    return restoreMessages(getConversationMessages, currentConversationId)
+  })
 
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
-
-  useEffect(() => {
-    if (!currentConversationId) return
-    const convId = currentConversationId
-    const unsub = useChatStore.subscribe((state) => {
-      const conv = state.conversations.find((c) => c.id === convId)
-      if (conv && conv.messages.length > 0 && messagesRef.current.length === 0) {
-        setMessages(restoreMessages(state.getConversationMessages, convId))
-      }
-    })
-    return () => unsub()
-  }, [currentConversationId])
 
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
@@ -401,9 +243,42 @@ export function useChat() {
         }
       } catch { /* session is stale or unreachable */ }
 
-      if (!cancelled) {
-        useChatStore.getState().clearSessionId(convId)
-        useChatStore.getState().setSessionStatus(convId, "unknown")
+      if (cancelled) return
+      useChatStore.getState().setSessionStatus(convId, "reconnecting")
+      useChatStore.getState().clearSessionId(convId)
+
+      try {
+        const createResp = await fetch("/agent/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        })
+        if (!createResp.ok) throw new Error("Failed to create session")
+        const { id: newSessionId } = await createResp.json()
+        useChatStore.getState().setSessionId(convId, newSessionId)
+
+        const { summarizeConversation } = await import("@/lib/context-summarizer")
+        const summary = summarizeConversation(msgs)
+        if (summary) {
+          const replayResp = await fetch(`/agent/session/${newSessionId}/message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: summary }] }),
+          })
+          if (!replayResp.ok) {
+            logger.warn("session context replay failed", { convId, status: replayResp.status })
+          }
+        }
+        if (!cancelled) {
+          useChatStore.getState().setSessionStatus(convId, "restored")
+          logger.info("session warmup complete", { convId, newSessionId })
+        }
+      } catch (err) {
+        if (!cancelled) {
+          useChatStore.getState().clearSessionId(convId)
+          useChatStore.getState().setSessionStatus(convId, "unknown")
+          logger.warn("session warmup failed", { convId, error: err instanceof Error ? err.message : String(err) })
+        }
       }
     }
 
@@ -523,26 +398,15 @@ export function useChat() {
         }
       }
 
-      setMessages((prev) => {
-        const next = [...prev, userMessage, assistantMessage]
-        messagesRef.current = next
-        return next
-      })
-      setChatState("streaming")
-
       addMessage(convId, {
         id: userMessage.id,
         role: "user",
         content: userMessage.content,
         timestamp: userMessage.timestamp,
       })
-      addMessage(convId, {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: assistantMessage.timestamp,
-      })
-      _activeRequests.add(convId)
+
+      setMessages((prev) => [...prev, userMessage, assistantMessage])
+      setChatState("streaming")
 
       try {
         const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
@@ -607,14 +471,20 @@ export function useChat() {
           return updated
         })
 
-        useChatStore.getState().updateMessageFields(convId, assistantId, {
+        addMessage(convId, {
+          id: assistantId,
+          role: "assistant",
           content: responseContent,
+          timestamp: new Date().toISOString(),
           toolResults,
           proposedAction,
           phase: phase ?? undefined,
         })
 
-        _activeRequests.delete(convId)
+        if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
+          useChatStore.getState().setJobInFlight(convId, true)
+        }
+
         setChatState(proposedAction ? "action_pending" : "done")
         useChatStore.getState().setSessionStatus(convId, "connected")
 
@@ -631,10 +501,8 @@ export function useChat() {
           })
         }
       } catch (err) {
-        _activeRequests.delete(convId)
         logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
         setMessages((prev) => prev.filter((m) => m.id !== assistantId))
-        useChatStore.getState().removeMessage(convId, assistantId)
         setError(err instanceof Error ? err.message : "Unknown error")
         setChatState("error")
       }
@@ -702,6 +570,7 @@ export function useChat() {
       )
 
       if (currentConversationId) {
+        useChatStore.getState().setJobInFlight(currentConversationId, true)
         useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
           proposedAction: null,
           toolResults: [...actionMsg.toolResults, jobToolResult],
@@ -729,6 +598,9 @@ export function useChat() {
 
       setChatState("done")
     } catch (err) {
+      if (currentConversationId) {
+        useChatStore.getState().setJobInFlight(currentConversationId, false)
+      }
       setError(err instanceof Error ? err.message : "Failed to submit job")
       setChatState("error")
     }
@@ -805,6 +677,7 @@ export function useChat() {
       }
 
       const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
+      useChatStore.getState().setJobInFlight(convId, false)
       const sessionId = useChatStore.getState().getSessionId(convId)
       if (!sessionId) continue
 
@@ -888,7 +761,20 @@ export function useChat() {
     await processJobNotifyQueue()
   }, [currentConversationId, processJobNotifyQueue])
 
-  const isStreaming = chatState === "streaming" || chatState === "tool_call"
+  const jobInFlight = useChatStore(
+    (s) => s.jobInFlight[s.currentConversationId ?? ""] ?? false,
+  )
+
+  useEffect(() => {
+    if (!jobInFlight || !currentConversationId) return
+    const timeout = setTimeout(() => {
+      logger.warn("jobInFlight auto-expired after timeout", { convId: currentConversationId })
+      useChatStore.getState().setJobInFlight(currentConversationId, false)
+    }, 30 * 60 * 1000)
+    return () => clearTimeout(timeout)
+  }, [jobInFlight, currentConversationId])
+
+  const isStreaming = chatState === "streaming" || chatState === "tool_call" || jobInFlight
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
 
