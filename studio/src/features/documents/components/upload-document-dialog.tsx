@@ -128,15 +128,15 @@ export function UploadDocumentDialog() {
           const j = await getJob(trackingJobId)
           if (j.status === "succeeded") {
             clearInterval(interval)
-            toast.success(`${name} processed`, { id: "doc-upload" })
+            toast.success(`${name} processed`, { id: "doc-upload", duration: 4000 })
             void queryClient.invalidateQueries({ queryKey: ["documents"] })
           } else if (j.status === "failed") {
             clearInterval(interval)
-            toast.error(`${name} failed`, { id: "doc-upload" })
+            toast.error(`${name} failed`, { id: "doc-upload", duration: 4000 })
           }
         } catch {
           clearInterval(interval)
-          toast.error(`${name} - lost connection`, { id: "doc-upload" })
+          toast.error(`${name} - lost connection`, { id: "doc-upload", duration: 4000 })
         }
       }, 3000)
     }
