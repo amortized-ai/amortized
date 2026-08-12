@@ -60,7 +60,8 @@ Call `validate_training_job` with these parameters:
   "data_output_dir": "data-output",
   "bf16": true,
   "max_tokens_per_gpu": 15000,
-  "parent_job_id": "<SDG_JOB_ID>"
+  "parent_job_id": "<SDG_JOB_ID>",
+  "topic": "<1-5 word topic>"
 }
 ```
 
@@ -82,6 +83,7 @@ presenting the confirmation table.
 | `max_tokens_per_gpu` | 15000 for H100 (80GB), 8000 for A100 (40GB), 4000 for consumer GPUs. Reduce if OOM |
 | `warmup_steps` | ~1% of total steps. total_steps = (num_samples / effective_batch_size) × num_epochs |
 | `bf16` | true for Ampere+ GPUs (A100, H100). Use fp16 for older GPUs |
+| `topic` | **Required.** 1–5 word description of what the model does (e.g. "support ticket classification"). Used for tracking in the Models page. Infer from the dataset/task if not explicitly stated. |
 
 When presenting the confirmation table, show WHY you chose each value:
 "5 epochs because the dataset is small (200 samples)" or "learning_rate

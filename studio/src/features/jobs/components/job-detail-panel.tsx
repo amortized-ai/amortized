@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, FileText } from "lucide-react"
+import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, GraduationCap } from "lucide-react"
 import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
@@ -32,11 +32,6 @@ import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
 function formatJobError(raw: string): { summary: string; isTruncated: boolean } {
-  const lower = raw.toLowerCase()
-  if (lower.includes("experiment") && lower.includes("does not match"))
-    return { summary: "MLflow experiment mismatch — the document was converted successfully, but results couldn't be saved. This is a backend configuration issue.", isTruncated: false }
-  if (/exit.*code 1|code 1.*error/i.test(raw) && raw.length < 80)
-    return { summary: "The job process crashed. Check the Logs tab for the full error traceback.", isTruncated: false }
   if (raw.length > 200) {
     return { summary: raw.slice(0, 200) + "…", isTruncated: true }
   }
@@ -88,20 +83,20 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
         ) : (<>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-          <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0">
             <DialogTitle asChild>
               <EditableTitle
                 value={getName(job.id) || (job.metadata?.name as string) || job.id}
-                className="text-base font-semibold truncate"
+                className="text-base font-semibold"
                 onSave={(newName) => setName(job.id, newName)}
               />
             </DialogTitle>
-            <div className="flex items-center gap-3 ml-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <JobTypeBadge type={job.type} />
               <StatusBadge status={job.status} />
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0 ml-4">
+          <div className="flex items-center gap-2 shrink-0">
             {job.mlflow_run_id && (
               <Button variant="outline" size="sm" asChild>
                 <a
@@ -219,7 +214,7 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
           type="button"
           onClick={() => {
             onClose()
-            navigate(`/datasets?run=${encodeURIComponent(job.mlflow_run_id!)}`)
+            setTimeout(() => navigate(`/datasets?run=${encodeURIComponent(job.mlflow_run_id!)}`), 200)
           }}
           className="group flex w-full items-center gap-3 rounded-xl border bg-card p-3.5 mb-4 text-left transition-all duration-200 hover:border-[#d0c5f4] hover:shadow-sm cursor-pointer dark:hover:border-[#21134d]"
         >
@@ -233,21 +228,21 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
           <ArrowRight className="h-4 w-4 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
       )}
-      {job.type === "upload" && job.status === "succeeded" && job.mlflow_run_id && (
+      {job.type === "training" && job.status === "succeeded" && job.mlflow_run_id && (
         <button
           type="button"
           onClick={() => {
             onClose()
-            navigate(`/documents?doc=${encodeURIComponent(job.mlflow_run_id!)}`)
+            setTimeout(() => navigate(`/models?run=${encodeURIComponent(job.mlflow_run_id!)}`), 200)
           }}
-          className="group flex w-full items-center gap-3 rounded-xl border bg-card p-3.5 mb-4 text-left transition-all duration-200 hover:border-[#9ad8d8] hover:shadow-sm cursor-pointer dark:hover:border-[#004d4d]"
+          className="group flex w-full items-center gap-3 rounded-xl border bg-card p-3.5 mb-4 text-left transition-all duration-200 hover:border-[#e0f0ff] hover:shadow-sm cursor-pointer dark:hover:border-[#003366]"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#daf2f2] text-[#147878] transition-colors duration-200 group-hover:bg-[#9ad8d8] dark:bg-[#003333]/40 dark:text-[#37a3a3]">
-            <FileText className="h-4 w-4" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#e0f0ff] text-[#0066cc] transition-colors duration-200 group-hover:bg-[#c5dfff] dark:bg-[#003366]/40 dark:text-[#4394e5]">
+            <GraduationCap className="h-4 w-4" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold">View Document</p>
-            <p className="text-xs text-muted-foreground">Browse the parsed document and chunks</p>
+            <p className="text-sm font-semibold">View Trained Model</p>
+            <p className="text-xs text-muted-foreground">See model details, metrics, and config</p>
           </div>
           <ArrowRight className="h-4 w-4 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
@@ -341,28 +336,6 @@ function FailureDiagnosis({ job }: { job: Job }) {
       hints.push({
         label: 'No MLflow connection',
         detail: 'Training jobs log metrics to MLflow. Ensure MLflow is running and the tracking URI is configured.'
-      })
-    }
-  }
-
-  if (job.type === 'upload') {
-    if (error.includes('experiment') && error.includes('match')) {
-      hints.push({
-        label: 'MLflow experiment mismatch',
-        detail: 'The document processor tried to log to an MLflow experiment that doesn\'t match the run. This is usually a backend configuration issue — check that the MLFLOW_EXPERIMENT_NAME environment variable matches the experiment used during upload.',
-      })
-    }
-    if (!job.mlflow_run_id) {
-      hints.push({
-        label: 'No MLflow connection',
-        detail: 'Document processing needs MLflow to store parsed content and chunks. Ensure MLflow is running and the tracking URI is configured.',
-        link: { to: '/settings', text: 'Check Settings' }
-      })
-    }
-    if (isFast && hints.length === 0) {
-      hints.push({
-        label: 'Job failed quickly',
-        detail: 'The document processing job exited almost immediately. This usually means a configuration error — check the Logs tab for the full traceback.',
       })
     }
   }

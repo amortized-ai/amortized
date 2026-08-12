@@ -1,5 +1,4 @@
 import { type ColumnDef } from "@tanstack/react-table"
-import { Badge } from "@/components/ui/badge"
 import { Box } from "lucide-react"
 import { useMemo } from "react"
 import { useNavigate } from "react-router"
@@ -7,6 +6,9 @@ import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
 import { formatDate } from "@/lib/utils"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
+import { EditableTitle } from "@/components/editable-title"
+import { setMlflowRegisteredModelTag } from "@/lib/api-client"
+import { useQueryClient } from "@tanstack/react-query"
 import type { ModelRecord } from "@/types/api"
 
 interface ModelTableProps {
@@ -18,9 +20,41 @@ interface ModelTableProps {
 
 function ModelName({ model }: { model: ModelRecord }) {
   const customName = useEntityNamesStore((s) => s.names[model.name])
+  const displayName =
+    model.tags?.model_display_name || customName || model.name
   return (
-    <span className="font-medium text-sm">{customName || model.name}</span>
+    <span className="font-medium text-sm" title={model.name}>{displayName}</span>
   )
+}
+
+function TopicCell({ model }: { model: ModelRecord }) {
+  const queryClient = useQueryClient()
+  const topic = model.tags?.model_topic ?? ""
+
+  return (
+    <div className="min-w-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <EditableTitle
+        value={topic || "Add topic..."}
+        className={`text-sm ${!topic ? "text-muted-foreground/50 italic" : ""}`}
+        onSave={async (newTopic) => {
+          await setMlflowRegisteredModelTag(model.name, "model_topic", newTopic)
+          queryClient.invalidateQueries({ queryKey: ["mlflow", "models"] })
+        }}
+      />
+    </div>
+  )
+}
+
+function BaseModelCell({ model }: { model: ModelRecord }) {
+  const parts = model.name.split("-")
+  if (parts.length >= 2) {
+    const algo = parts[parts.length - 2]
+    const baseCandidate = parts.slice(0, -2).join("-")
+    if (baseCandidate && algo) {
+      return <span className="text-sm text-muted-foreground">{baseCandidate}</span>
+    }
+  }
+  return <span className="text-sm text-muted-foreground">--</span>
 }
 
 const columns: ColumnDef<ModelRecord, unknown>[] = [
@@ -30,24 +64,14 @@ const columns: ColumnDef<ModelRecord, unknown>[] = [
     cell: ({ row }) => <ModelName model={row.original} />,
   },
   {
-    accessorKey: "version",
-    header: "Version",
-    cell: ({ getValue }) => (
-      <span className="text-sm text-muted-foreground">v{getValue() as string}</span>
-    ),
+    id: "topic",
+    header: "Topic",
+    cell: ({ row }) => <TopicCell model={row.original} />,
   },
   {
-    accessorFn: (row) => row.aliases.join(", ") || "—",
-    id: "aliases",
-    header: "Aliases",
-    cell: ({ getValue }) => {
-      const v = getValue() as string
-      return v !== "—" ? (
-        <Badge variant="outline" className="font-mono text-xs">{v}</Badge>
-      ) : (
-        <span className="text-sm text-muted-foreground">—</span>
-      )
-    },
+    id: "base_model",
+    header: "Base Model",
+    cell: ({ row }) => <BaseModelCell model={row.original} />,
   },
   {
     accessorFn: (row) => row.created_at,

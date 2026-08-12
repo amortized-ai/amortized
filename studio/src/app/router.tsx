@@ -9,7 +9,6 @@ import JobsPage from "@/features/jobs/page"
 import DatasetsPage from "@/features/datasets/page"
 import { DatasetDetailPage } from "@/features/datasets/components/dataset-detail"
 import ModelsPage from "@/features/models/page"
-import { ModelDetailPage } from "@/features/models/components/model-detail-page"
 import DocumentsPage from "@/features/documents/page"
 import SettingsPage from "@/features/settings/page"
 
@@ -37,7 +36,6 @@ export function AppRouter() {
         <Route path="datasets/:id" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DatasetDetailPage /></ErrorBoundary>} />
         <Route path="documents" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DocumentsPage /></ErrorBoundary>} />
         <Route path="models" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><ModelsPage /></ErrorBoundary>} />
-        <Route path="models/:id" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><ModelDetailPage /></ErrorBoundary>} />
         <Route
           path="recipes"
           element={
