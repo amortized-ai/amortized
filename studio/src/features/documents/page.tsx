@@ -48,7 +48,11 @@ export default function DocumentsPage() {
         return next
       }, { replace: true })
     } else {
-      void refetch()
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
     }
   }, [searchParams, documents, setSearchParams, refetch])
 

@@ -49,14 +49,15 @@ const STATUS_LABELS: Record<string, string> = {
 
 function extractErrorMessage(err: unknown): { message: string; hint?: string } {
   const raw = err instanceof Error ? err.message : String(err)
+  const lower = raw.toLowerCase()
 
-  if (raw.includes("503") || raw.includes("service unavailable"))
+  if (lower.includes("503") || lower.includes("service unavailable"))
     return { message: "Document processing is not configured", hint: "The document processing service is not running. Check that the docling sidecar is enabled in your backend configuration." }
-  if (raw.includes("502") || raw.includes("bad gateway"))
+  if (lower.includes("502") || lower.includes("bad gateway"))
     return { message: "Could not reach the backend", hint: "The server returned a 502 error. This usually means the backend process crashed or is restarting." }
-  if (raw.includes("413") || raw.includes("too large"))
+  if (lower.includes("413") || lower.includes("too large"))
     return { message: "File is too large", hint: "The file exceeds the maximum upload size. Try a smaller file or increase the server's upload limit." }
-  if (raw.includes("415") || raw.includes("unsupported"))
+  if (lower.includes("415") || lower.includes("unsupported"))
     return { message: "Unsupported file format", hint: "This file type is not supported. Supported formats: PDF, DOCX, PPTX, HTML, TXT, Markdown, XLSX." }
 
   return { message: raw || "Upload failed" }
@@ -96,7 +97,6 @@ export function UploadDocumentDialog() {
   if (isFailed && !handled) {
     setHandled(true)
     setError(job?.error ?? "Document processing failed")
-    setJobId(null)
   }
 
   function reset() {

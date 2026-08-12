@@ -219,7 +219,7 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
           type="button"
           onClick={() => {
             onClose()
-            setTimeout(() => navigate(`/datasets?run=${encodeURIComponent(job.mlflow_run_id!)}`), 200)
+            navigate(`/datasets?run=${encodeURIComponent(job.mlflow_run_id!)}`)
           }}
           className="group flex w-full items-center gap-3 rounded-xl border bg-card p-3.5 mb-4 text-left transition-all duration-200 hover:border-[#d0c5f4] hover:shadow-sm cursor-pointer dark:hover:border-[#21134d]"
         >
@@ -238,7 +238,7 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
           type="button"
           onClick={() => {
             onClose()
-            setTimeout(() => navigate(`/documents?doc=${encodeURIComponent(job.mlflow_run_id!)}`), 200)
+            navigate(`/documents?doc=${encodeURIComponent(job.mlflow_run_id!)}`)
           }}
           className="group flex w-full items-center gap-3 rounded-xl border bg-card p-3.5 mb-4 text-left transition-all duration-200 hover:border-[#9ad8d8] hover:shadow-sm cursor-pointer dark:hover:border-[#004d4d]"
         >
