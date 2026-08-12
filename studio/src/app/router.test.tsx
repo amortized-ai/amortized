@@ -10,7 +10,6 @@ import JobsPage from "@/features/jobs/page"
 import DatasetsPage from "@/features/datasets/page"
 import { DatasetDetailPage } from "@/features/datasets/components/dataset-detail"
 import ModelsPage from "@/features/models/page"
-import { ModelDetailPage } from "@/features/models/components/model-detail-page"
 import SettingsPage from "@/features/settings/page"
 
 vi.mock("@/features/settings/api/use-settings", () => ({
@@ -54,7 +53,6 @@ function renderRoute(initialRoute: string) {
               <Route path="datasets" element={<DatasetsPage />} />
               <Route path="datasets/:id" element={<DatasetDetailPage />} />
               <Route path="models" element={<ModelsPage />} />
-              <Route path="models/:id" element={<ModelDetailPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Routes>
@@ -100,8 +98,8 @@ describe("Router", () => {
     expect(screen.getByText("Dataset not found.")).toBeInTheDocument()
   })
 
-  it("renders the model detail page at /models/:id", () => {
-    renderRoute("/models/model-123")
-    expect(screen.getByText("Model not found.")).toBeInTheDocument()
+  it("renders the models page at /models with query params", () => {
+    renderRoute("/models?run=test-run-id")
+    expect(screen.getByRole("heading", { name: "Models" })).toBeInTheDocument()
   })
 })

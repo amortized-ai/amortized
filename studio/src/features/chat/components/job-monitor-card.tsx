@@ -70,6 +70,7 @@ function formatElapsed(ms: number): string {
 export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }: JobMonitorCardProps) {
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
+  const [mlflowRunId, setMlflowRunId] = useState<string>("")
   const [elapsed, setElapsed] = useState(0)
   const jobStartRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -87,6 +88,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       const job = await getJob(jobId)
       setStatus(job.status)
       if (job.error) setError(job.error)
+      if (job.mlflow_run_id) setMlflowRunId(job.mlflow_run_id)
       if (job.started_at) {
         jobStartRef.current = new Date(job.started_at).getTime()
       } else if (!jobStartRef.current && job.created_at) {
@@ -210,14 +212,32 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         </p>
       )}
 
-      <div className="mt-3 flex items-center gap-3 text-xs">
-        <a
-          href={`/jobs?job=${encodeURIComponent(jobId)}`}
-          className="text-primary dark:text-primary hover:underline font-medium"
-        >
-          View Job →
-        </a>
-      </div>
+      {status === "succeeded" && (
+        <div className="mt-3 flex items-center gap-3 text-xs">
+          <a
+            href={`/jobs?job=${encodeURIComponent(jobId)}`}
+            className="text-primary dark:text-primary hover:underline font-medium"
+          >
+            View Job →
+          </a>
+          <span className="text-muted-foreground/30">|</span>
+          {jobType === "TRAINING" ? (
+            <a
+              href={mlflowRunId ? `/models?run=${encodeURIComponent(mlflowRunId)}` : "/models"}
+              className="text-primary dark:text-primary hover:underline font-medium"
+            >
+              View Model →
+            </a>
+          ) : (
+            <a
+              href={`/datasets?job=${encodeURIComponent(jobId)}`}
+              className="text-primary dark:text-primary hover:underline font-medium"
+            >
+              View Dataset →
+            </a>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -327,6 +327,16 @@ class MLflowClient:
             logger.info("Registered model version %s from run %s", name, run_id)
         return True
 
+    async def set_registered_model_tag(
+        self, name: str, key: str, value: str
+    ) -> None:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/registered-models/set-tag"),
+                json={"name": name, "key": key, "value": value},
+            )
+            resp.raise_for_status()
+
     async def list_gateway_endpoints(self) -> list[dict[str, Any]]:
         """Fetch raw MLflow AI Gateway endpoint dicts."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:

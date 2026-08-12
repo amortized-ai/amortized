@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react"
-import { useNavigate } from "react-router"
+import { useState, useMemo, useEffect } from "react"
+import { useNavigate, useSearchParams } from "react-router"
 import { useModels } from "./api/use-models"
 import { ModelTable } from "./components/model-table"
+import { ModelDetailPanel } from "./components/model-detail-panel"
 import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -17,18 +18,43 @@ import { Button } from "@/components/ui/button"
 import { Box, ArrowRight, GraduationCap, Layers, Rocket } from "lucide-react"
 import { Link } from "react-router"
 import { SearchInput } from "@/components/search-input"
+import type { ModelRecord } from "@/types/api"
 
 export default function ModelsPage() {
   const { data: models = [], isLoading, isError, error, refetch } = useModels()
   const [page, setPage] = useState(0)
   const [search, setSearch] = useState("")
+  const [selectedModel, setSelectedModel] = useState<ModelRecord | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const runId = searchParams.get("run")
+    const name = searchParams.get("name")
+    if (models.length > 0 && (runId || name)) {
+      const found = runId
+        ? models.find((m) => m.run_id === runId)
+        : models.find((m) => m.name === name)
+      if (found) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
+        setSelectedModel(found)
+        setDetailOpen(true)
+        setSearchParams({}, { replace: true })
+      }
+    }
+  }, [searchParams, models, setSearchParams])
 
   const filteredModels = useMemo(() => {
     if (!search.trim()) return models
     const q = search.toLowerCase()
     return models.filter((m) => m.name.toLowerCase().includes(q))
   }, [models, search])
+
+  function handleSelectModel(model: ModelRecord) {
+    setSelectedModel(model)
+    setDetailOpen(true)
+  }
 
   if (isError) {
     return <ErrorState message={error?.message} onRetry={() => void refetch()} />
@@ -87,7 +113,7 @@ export default function ModelsPage() {
           models={filteredModels}
           page={page}
           onPageChange={setPage}
-          onSelectModel={(model) => void navigate(`/models/${encodeURIComponent(model.name)}`)}
+          onSelectModel={handleSelectModel}
         />
       ) : (
         <Empty className="border mt-4">
@@ -101,6 +127,12 @@ export default function ModelsPage() {
           </EmptyContent>
         </Empty>
       )}
+
+      <ModelDetailPanel
+        model={selectedModel}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   )
 }
