@@ -29,12 +29,14 @@ from amortized.core.jobs import (
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
 )
+from amortized.core.lineage import get_job_lineage
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
     Job,
     JobStatus,
     JobType,
+    LineageResponse,
     SDGJobRequest,
     TrainingJobRequest,
     ValidatedJobConfig,
@@ -298,6 +300,22 @@ async def get_jobs(
         k8s_namespace=_settings.compute_namespace,
     )
     return [_job_response(row) for row in rows]
+
+
+@router.get(
+    "/{job_id}/lineage",
+    response_model=LineageResponse,
+    operation_id="get_job_lineage",
+)
+async def get_job_lineage_endpoint(
+    job_id: str,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> LineageResponse:
+    repo = Repository(db)
+    result = await get_job_lineage(repo, job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return result
 
 
 @router.get("/{job_id}", response_model=Job, operation_id="get_job")

@@ -18,6 +18,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   documents: "Documents",
   models: "Models",
   recipes: "Recipes",
+  experiments: "Experiments",
   settings: "Settings",
 }
 

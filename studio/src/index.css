@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@rhds/tokens/css/global.css";
 @import "@rhds/tokens/css/color-palette.css";
+@import "@xyflow/react/dist/style.css";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));

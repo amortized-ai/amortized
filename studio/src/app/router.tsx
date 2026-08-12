@@ -15,6 +15,7 @@ import SettingsPage from "@/features/settings/page"
 
 const OverviewPage = lazy(() => import("@/features/overview/page"))
 const RecipesPage = lazy(() => import("@/features/recipes/page"))
+const ExperimentsPage = lazy(() => import("@/features/lineage/page"))
 
 export function AppRouter() {
   return (
@@ -33,6 +34,16 @@ export function AppRouter() {
         />
         <Route path="chat" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><ChatPage /></ErrorBoundary>} />
         <Route path="jobs" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><JobsPage /></ErrorBoundary>} />
+        <Route
+          path="experiments"
+          element={
+            <ErrorBoundary FallbackComponent={RouteErrorFallback}>
+              <Suspense fallback={<div className="p-4"><TableSkeleton columns={3} /></div>}>
+                <ExperimentsPage />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
         <Route path="datasets" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DatasetsPage /></ErrorBoundary>} />
         <Route path="datasets/:id" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DatasetDetailPage /></ErrorBoundary>} />
         <Route path="documents" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DocumentsPage /></ErrorBoundary>} />

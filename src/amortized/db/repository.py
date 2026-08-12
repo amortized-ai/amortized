@@ -137,6 +137,7 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
+        params: tuple[str, ...]
         if k8s_namespace:
             query = """UPDATE jobs SET status = $1
                        WHERE id = (
@@ -164,6 +165,13 @@ class Repository:
         if row is None:
             return None
         return _row_to_job(row)
+
+    async def get_children_by_parent_id(self, parent_job_id: str) -> list[dict[str, Any]]:
+        rows = await self.conn.fetch(
+            "SELECT * FROM jobs WHERE parent_job_id = $1",
+            parent_job_id,
+        )
+        return [_row_to_job(row) for row in rows]
 
     async def delete_job(self, job_id: str) -> bool:
         result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
