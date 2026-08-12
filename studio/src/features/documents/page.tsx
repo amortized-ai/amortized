@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { useSearchParams } from "react-router"
 import { SearchInput } from "@/components/search-input"
 import { useDocuments } from "./api/use-documents"
 import { DocumentTable } from "./components/document-table"
@@ -25,7 +26,40 @@ export default function DocumentsPage() {
   const [search, setSearch] = useState("")
   const [selectedDocument, setSelectedDocument] = useState<DocumentRecord | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
 
+  useEffect(() => {
+    const docParam = searchParams.get("doc")
+    if (!docParam) return
+    if (isLoading) return
+    if (documents.length === 0) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
+      return
+    }
+    const match = documents.find(
+      (d) => d.document_id === docParam || d.mlflow_run_id === docParam,
+    )
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
+      setSelectedDocument(match)
+      setDetailOpen(true)
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
+    } else {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("doc")
+        return next
+      }, { replace: true })
+    }
+  }, [searchParams, documents, isLoading, setSearchParams])
 
   const filteredDocuments = useMemo(() => {
     if (!search.trim()) return documents

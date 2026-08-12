@@ -61,6 +61,7 @@ describe("JobTypeBadge", () => {
   const types: { type: JobType; label: string }[] = [
     { type: "training", label: "Training" },
     { type: "sdg", label: "SDG" },
+    { type: "upload", label: "Document" },
   ]
 
   types.forEach(({ type, label }) => {
