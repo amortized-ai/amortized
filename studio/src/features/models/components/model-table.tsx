@@ -69,6 +69,13 @@ const columns: ColumnDef<ModelRecord, unknown>[] = [
     cell: ({ row }) => <TopicCell model={row.original} />,
   },
   {
+    id: "source",
+    header: "Source",
+    cell: () => (
+      <span className="text-sm text-muted-foreground">Training</span>
+    ),
+  },
+  {
     id: "base_model",
     header: "Base Model",
     cell: ({ row }) => <BaseModelCell model={row.original} />,
