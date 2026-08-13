@@ -64,6 +64,20 @@ export function DatasetTable({
         },
       },
       {
+        accessorFn: (row) =>
+          row.tags?.source === "upload" ? "Upload" : "SDG",
+        id: "source",
+        header: "Source",
+        size: 90,
+        minSize: 70,
+        maxSize: 130,
+        cell: ({ getValue }) => (
+          <span className="text-sm text-muted-foreground">
+            {getValue() as string}
+          </span>
+        ),
+      },
+      {
         accessorFn: (row) => row.tags["num_samples"] ?? null,
         id: "samples",
         header: "Samples",
