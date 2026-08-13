@@ -103,24 +103,28 @@ async def upload_dataset(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    try:
-        run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="Cannot connect to MLflow") from None
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="MLflow request timed out") from None
-    except httpx.TransportError:
-        raise HTTPException(status_code=502, detail="MLflow communication error") from None
-
     repo = Repository(db)
     row = await create_job(
         repo,
         job_type=JobType.upload,
-        config={"source": "upload", "original_filename": name},
+        config={"source": "dataset", "original_filename": name},
     )
+    job_id = row["id"]
+
+    try:
+        run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.TransportError) as exc:
+        error_msg = f"MLflow error: {exc}"
+        await repo.update_job(
+            job_id,
+            status="failed",
+            completed_at=datetime.now(UTC),
+            error=error_msg,
+        )
+        raise HTTPException(status_code=502, detail=error_msg) from None
 
     updated = await repo.update_job(
-        row["id"],
+        job_id,
         status="succeeded",
         mlflow_run_id=run_id,
         mlflow_experiment=experiment_id,
