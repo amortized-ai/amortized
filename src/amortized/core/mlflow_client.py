@@ -118,7 +118,6 @@ class MLflowClient:
     async def create_run(
         self,
         experiment_id: str,
-        name: str,
         tags: dict[str, str] | None = None,
     ) -> str:
         """Create a run in an experiment. Returns the run ID."""
@@ -129,7 +128,6 @@ class MLflowClient:
                 self._url("/api/2.0/mlflow/runs/create"),
                 json={
                     "experiment_id": experiment_id,
-                    "run_name": name,
                     "start_time": now_ms,
                     "tags": tag_list,
                 },
