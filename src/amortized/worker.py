@@ -268,8 +268,9 @@ async def _run_job(job: dict[str, Any]) -> None:
     # --- Create MLflow run before dispatch ---
     mlflow_run_id = ""
     mlflow_run_created = False
+    mlflow_tag_type = "document" if job_type == JobType.upload.value else job_type
     if config_mod.settings.mlflow_tracking_uri:
-        run_id = await _create_mlflow_run(mlflow_experiment, job_id, job_type)
+        run_id = await _create_mlflow_run(mlflow_experiment, job_id, mlflow_tag_type)
         if run_id:
             mlflow_run_id = run_id
             mlflow_run_created = True
