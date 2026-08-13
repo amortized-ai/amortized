@@ -200,13 +200,13 @@ async def list_datasets(
         return []
     sdg_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.job_type = 'sdg'",
+        filter_string="tags.job_type = 'sdg' AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.job_type = 'upload'",
+        filter_string="tags.job_type = 'upload' AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )
