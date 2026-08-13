@@ -36,6 +36,7 @@ logger = logging.getLogger("amortized.api.documents")
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 _MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+_ALLOWED_EXTENSIONS = (".pdf", ".docx", ".pptx", ".html", ".txt", ".md", ".xlsx")
 
 _BLOCKED_HOSTNAMES = frozenset(
     {
@@ -104,6 +105,13 @@ async def convert_document(
     db: asyncpg.Connection = Depends(_get_db),
 ) -> DocumentUploadAccepted:
     filename = _sanitize_filename(file.filename or f"upload-{uuid.uuid4().hex[:8]}")
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
+        )
+
     file_bytes = await file.read()
 
     if len(file_bytes) == 0:
@@ -123,7 +131,7 @@ async def convert_document(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
     await client.upload_artifact(run_id, f"source/{filename}", file_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
@@ -153,7 +161,14 @@ async def convert_document_url(
     _validate_url(request.url)
     opts = request.options
 
-    filename = _sanitize_filename(request.url.rsplit("/", 1)[-1] or "document")
+    path = urlparse(request.url).path
+    filename = _sanitize_filename(path.rsplit("/", 1)[-1] or "document")
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_EXTENSIONS)}",
+        )
 
     source_bytes: bytes | None = None
     try:
@@ -181,7 +196,7 @@ async def convert_document_url(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
     await client.upload_artifact(run_id, f"source/{filename}", source_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
