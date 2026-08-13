@@ -24,9 +24,13 @@ class ApiError extends Error {
   declare body: unknown
 
   constructor(status: number, statusText: string, body: unknown) {
-    const friendly = typeof body === "string" && body.length > 0 && body.length < 200
-      ? body
-      : `API error: ${status} ${statusText}`
+    let detail: string | undefined
+    if (typeof body === "object" && body !== null && "detail" in body) {
+      detail = String((body as Record<string, unknown>).detail)
+    } else if (typeof body === "string" && body.length > 0 && body.length < 200 && !body.includes("<html")) {
+      detail = body
+    }
+    const friendly = detail ?? `API error: ${status} ${statusText}`
     super(friendly)
     this.name = "ApiError"
     this.status = status
