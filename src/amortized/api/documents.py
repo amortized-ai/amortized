@@ -123,7 +123,7 @@ async def convert_document(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
     await client.upload_artifact(run_id, f"source/{filename}", file_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
@@ -181,7 +181,7 @@ async def convert_document_url(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "upload"})
+    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
     await client.upload_artifact(run_id, f"source/{filename}", source_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
