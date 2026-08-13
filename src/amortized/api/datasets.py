@@ -38,11 +38,6 @@ def _sanitize_filename(name: str) -> str:
     return name or f"upload-{uuid.uuid4().hex[:8]}"
 
 
-def _topic_from_filename(filename: str) -> str:
-    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
-    return " ".join(stem.replace("_", " ").replace("-", " ").split())
-
-
 async def _store_dataset_in_mlflow(
     filename: str,
     file_bytes: bytes,
@@ -52,21 +47,16 @@ async def _store_dataset_in_mlflow(
     if not uri:
         raise HTTPException(status_code=503, detail="MLflow tracking URI not configured")
 
-    tags: dict[str, str] = {
-        "job_type": "upload",
-        "dataset_name": filename,
-        "source": "upload",
-    }
-    topic = _topic_from_filename(filename)
-    if topic:
-        tags["dataset_topic"] = topic
-
     mlflow = MLflowClient(uri, timeout=60.0)
     experiment_id = await mlflow.ensure_experiment("amortized/datasets")
     run_id = await mlflow.create_run(
         experiment_id,
         name=filename,
-        tags=tags,
+        tags={
+            "job_type": "upload",
+            "dataset_name": filename,
+            "source": "upload",
+        },
     )
 
     try:
