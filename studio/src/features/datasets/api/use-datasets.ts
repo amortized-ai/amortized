@@ -77,11 +77,14 @@ export function useUploadDataset() {
 
   return useMutation({
     mutationFn: (file: File) => uploadDataset(file),
-    onSuccess: () => {
-      toast.success("Dataset uploaded successfully")
+    onMutate: (file) => {
+      toast.loading(`Uploading ${file.name}...`, { id: "dataset-upload" })
     },
-    onError: (err) => {
-      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+    onSuccess: (_data, file) => {
+      toast.success(`${file.name} uploaded`, { id: "dataset-upload", duration: 4000 })
+    },
+    onError: (err, file) => {
+      toast.error(`${file.name} failed: ${err instanceof Error ? err.message : "Unknown error"}`, { id: "dataset-upload", duration: 4000 })
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
