@@ -169,6 +169,8 @@ async def build(
 
 
 async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
+    await set_mlflow_run_tag(mlflow_run_id, "source", "sdg")
+
     job_config = job.get("config", {})
     if isinstance(job_config, str):
         job_config = json.loads(job_config)
@@ -190,6 +192,7 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         tracking_uri = config_mod.settings.mlflow_tracking_uri
         if tracking_uri:
             from amortized.core.mlflow_client import MLflowClient
+
             client = MLflowClient(tracking_uri)
             run = await client.get_run(mlflow_run_id)
             run_name = run["info"].get("run_name", job["id"][:8])
