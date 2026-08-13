@@ -161,7 +161,8 @@ async def convert_document_url(
     _validate_url(request.url)
     opts = request.options
 
-    filename = _sanitize_filename(request.url.rsplit("/", 1)[-1] or "document")
+    path = urlparse(request.url).path
+    filename = _sanitize_filename(path.rsplit("/", 1)[-1] or "document")
     suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if suffix not in _ALLOWED_EXTENSIONS:
         raise HTTPException(

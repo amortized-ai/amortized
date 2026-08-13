@@ -382,7 +382,7 @@ async def _run_job(job: dict[str, Any]) -> None:
             if not mlflow_run_id:
                 mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             if mlflow_run_id:
-                await set_mlflow_run_tag(mlflow_run_id, "job_type", job_type)
+                await set_mlflow_run_tag(mlflow_run_id, "job_type", mlflow_tag_type)
                 await set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
                 await builder.on_success(job, mlflow_run_id)
                 await _finish_mlflow_run(mlflow_run_id, critical=True)
