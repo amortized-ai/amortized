@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react"
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -14,6 +14,7 @@ import { ChatInput } from "./chat-input"
 import { MessageList } from "./message-list"
 import { MessageBubble } from "./message-bubble"
 import type { ChatMessage, PhasePlan } from "../types"
+import { useChatStore } from "@/stores/chat-store"
 
 describe("OptionCards", () => {
   const cards = [
@@ -110,7 +111,7 @@ describe("ActionCard", () => {
     render(
       <ActionCard action={action} onConfirm={vi.fn()} onReject={onReject} />,
     )
-    fireEvent.click(screen.getByText("Reject"))
+    fireEvent.click(screen.getByText("Cancel"))
     expect(onReject).toHaveBeenCalledOnce()
   })
 })
@@ -146,6 +147,10 @@ describe("PlanProgress", () => {
 })
 
 describe("ChatInput", () => {
+  beforeEach(() => {
+    useChatStore.setState({ currentConversationId: "test-conv", conversations: [], drafts: {} })
+  })
+
   it("calls onSend with trimmed value on Enter", () => {
     const onSend = vi.fn()
     render(<ChatInput onSend={onSend} />)
