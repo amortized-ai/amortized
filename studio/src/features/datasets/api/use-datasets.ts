@@ -8,6 +8,7 @@ import {
   listDatasets,
   deleteDataset,
   uploadDataset,
+  getJob,
 } from "@/lib/api-client"
 import type { DatasetRecord, DatasetSample, MlflowRun } from "@/types/api"
 
@@ -77,14 +78,32 @@ export function useUploadDataset() {
 
   return useMutation({
     mutationFn: (file: File) => uploadDataset(file),
-    onSuccess: () => {
-      toast.success("Dataset uploaded successfully")
+    onMutate: (file) => {
+      toast.loading(`Uploading ${file.name}...`, { id: "dataset-upload" })
     },
-    onError: (err) => {
-      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+    onSuccess: (job, file) => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+      const interval = setInterval(async () => {
+        try {
+          const j = await getJob(job.id)
+          if (j.status === "succeeded") {
+            clearInterval(interval)
+            toast.success(`${file.name} uploaded`, { id: "dataset-upload", duration: 4000 })
+            void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
+            void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+          } else if (j.status === "failed" || j.status === "cancelled") {
+            clearInterval(interval)
+            toast.error(`${file.name} failed: ${j.error ?? "Unknown error"}`, { id: "dataset-upload", duration: 4000 })
+            void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+          }
+        } catch {
+          clearInterval(interval)
+          toast.error(`${file.name} - lost connection`, { id: "dataset-upload", duration: 4000 })
+        }
+      }, 2000)
     },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
+    onError: (err, file) => {
+      toast.error(`${file.name} failed: ${err instanceof Error ? err.message : "Unknown error"}`, { id: "dataset-upload", duration: 4000 })
     },
   })
 }

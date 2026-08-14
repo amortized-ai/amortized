@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -26,6 +27,9 @@ logger = logging.getLogger("amortized.api.datasets")
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
 
+_upload_tasks: set[asyncio.Task[None]] = set()
+_upload_semaphore = asyncio.Semaphore(3)
+
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
 _MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
 
@@ -41,6 +45,19 @@ def _sanitize_filename(name: str) -> str:
 def _topic_from_filename(filename: str) -> str:
     stem = filename.rsplit(".", 1)[0] if "." in filename else filename
     return " ".join(stem.replace("_", " ").replace("-", " ").split())
+
+
+def _count_samples(filename: str, file_bytes: bytes) -> int | None:
+    try:
+        if filename.endswith(".jsonl"):
+            return sum(1 for line in file_bytes.split(b"\n") if line.strip())
+        if filename.endswith(".parquet"):
+            import pyarrow.parquet as pq
+
+            return pq.read_metadata(io.BytesIO(file_bytes)).num_rows
+    except Exception:
+        logger.warning("Could not count samples in %s", filename)
+    return None
 
 
 async def _store_dataset_in_mlflow(
@@ -60,6 +77,9 @@ async def _store_dataset_in_mlflow(
     topic = _topic_from_filename(filename)
     if topic:
         tags["dataset_topic"] = topic
+    sample_count = _count_samples(filename, file_bytes)
+    if sample_count is not None:
+        tags["num_samples"] = str(sample_count)
 
     mlflow = MLflowClient(uri, timeout=60.0)
     experiment_id = await mlflow.ensure_experiment("amortized/datasets")
@@ -79,7 +99,57 @@ async def _store_dataset_in_mlflow(
     return run_id, experiment_id
 
 
-@router.post("/upload", response_model=Job)
+def _sanitize_upload_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        return "Cannot connect to MLflow"
+    if isinstance(exc, httpx.TimeoutException):
+        return "MLflow request timed out"
+    if isinstance(exc, httpx.TransportError):
+        return "MLflow communication error"
+    return str(exc)
+
+
+async def _process_dataset_upload(
+    job_id: str,
+    filename: str,
+    file_bytes: bytes,
+) -> None:
+    from amortized.db.connection import get_pool
+
+    async with _upload_semaphore:
+        try:
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id, status="running", started_at=datetime.now(UTC),
+                )
+
+            run_id, experiment_id = await _store_dataset_in_mlflow(
+                filename, file_bytes,
+            )
+
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id,
+                    status="succeeded",
+                    mlflow_run_id=run_id,
+                    mlflow_experiment=experiment_id,
+                    completed_at=datetime.now(UTC),
+                )
+        except Exception as exc:
+            logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+            try:
+                async with get_pool().acquire() as conn:
+                    await Repository(conn).update_job(
+                        job_id,
+                        status="failed",
+                        completed_at=datetime.now(UTC),
+                        error=_sanitize_upload_error(exc),
+                    )
+            except Exception:
+                logger.exception("Failed to mark job %s as failed", job_id)
+
+
+@router.post("/upload", response_model=Job, status_code=202)
 async def upload_dataset(
     file: UploadFile,
     db: asyncpg.Connection = Depends(_get_db),
@@ -103,33 +173,17 @@ async def upload_dataset(
             detail=f"File too large ({len(file_bytes)} bytes, max {_MAX_UPLOAD_BYTES})",
         )
 
-    try:
-        run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
-    except httpx.ConnectError:
-        raise HTTPException(status_code=502, detail="Cannot connect to MLflow") from None
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="MLflow request timed out") from None
-    except httpx.TransportError:
-        raise HTTPException(status_code=502, detail="MLflow communication error") from None
-
     repo = Repository(db)
     row = await create_job(
         repo,
         job_type=JobType.upload,
         config={"source": "upload", "original_filename": name},
     )
+    task = asyncio.create_task(_process_dataset_upload(row["id"], name, file_bytes))
+    _upload_tasks.add(task)
+    task.add_done_callback(_upload_tasks.discard)
 
-    updated = await repo.update_job(
-        row["id"],
-        status="succeeded",
-        mlflow_run_id=run_id,
-        mlflow_experiment=experiment_id,
-        completed_at=datetime.now(UTC),
-    )
-    if updated is None:
-        raise HTTPException(status_code=500, detail="Failed to update job record")
-
-    return updated
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +260,7 @@ async def list_datasets(
     )
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.job_type = 'upload' AND attributes.status = 'FINISHED'",
+        filter_string="tags.source = 'upload' AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )

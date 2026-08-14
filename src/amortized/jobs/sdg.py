@@ -122,7 +122,7 @@ async def build(
 
     num_records = config.pop("num_records", 100)
     mode = config.pop("mode", "create")
-    config.pop("topic", None)
+    topic = config.pop("topic", None)
 
     dd_config = {"data_designer": config}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
@@ -156,6 +156,8 @@ async def build(
     resolved_config["num_records"] = records
     if mode != "create":
         resolved_config["mode"] = mode
+    if topic:
+        resolved_config["topic"] = topic
 
     return JobBuildResult(
         command=cmd,
