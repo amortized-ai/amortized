@@ -137,11 +137,14 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
+        # Exclude dataset uploads — they are processed by the API layer, not the worker
+        dataset_filter = """AND NOT (type = 'upload' AND config @> '{"source": "upload"}')"""
         if k8s_namespace:
-            query = """UPDATE jobs SET status = $1
+            query = f"""UPDATE jobs SET status = $1
                        WHERE id = (
                            SELECT id FROM jobs
                            WHERE status = $2 AND k8s_namespace = $3
+                           {dataset_filter}
                            ORDER BY created_at ASC
                            LIMIT 1
                            FOR UPDATE SKIP LOCKED
@@ -149,10 +152,11 @@ class Repository:
                        RETURNING *"""
             params = (JobStatus.provisioning.value, JobStatus.queued.value, k8s_namespace)
         else:
-            query = """UPDATE jobs SET status = $1
+            query = f"""UPDATE jobs SET status = $1
                        WHERE id = (
                            SELECT id FROM jobs
                            WHERE status = $2
+                           {dataset_filter}
                            ORDER BY created_at ASC
                            LIMIT 1
                            FOR UPDATE SKIP LOCKED

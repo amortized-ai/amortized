@@ -80,23 +80,20 @@ class TestUrlFilenameExtraction:
 
 
 class TestWorkerTagMapping:
-    def test_upload_job_type_maps_to_document(self) -> None:
+    def test_upload_job_type_unchanged(self) -> None:
         from amortized.models import JobType
 
         job_type = JobType.upload.value
-        mlflow_tag_type = "document" if job_type == JobType.upload.value else job_type
-        assert mlflow_tag_type == "document"
+        assert job_type == "upload"
 
     def test_sdg_job_type_unchanged(self) -> None:
         from amortized.models import JobType
 
         job_type = JobType.sdg.value
-        mlflow_tag_type = "document" if job_type == JobType.upload.value else job_type
-        assert mlflow_tag_type == "sdg"
+        assert job_type == "sdg"
 
     def test_training_job_type_unchanged(self) -> None:
         from amortized.models import JobType
 
         job_type = JobType.training.value
-        mlflow_tag_type = "document" if job_type == JobType.upload.value else job_type
-        assert mlflow_tag_type == "training"
+        assert job_type == "training"

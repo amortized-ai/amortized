@@ -70,7 +70,8 @@ async def build(
 
 
 async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
-    await set_mlflow_run_tag(mlflow_run_id, "job_type", "document")
+    await set_mlflow_run_tag(mlflow_run_id, "job_type", "upload")
+    await set_mlflow_run_tag(mlflow_run_id, "source", "document")
 
     job_config = job.get("config", {})
     if isinstance(job_config, str):

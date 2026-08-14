@@ -267,7 +267,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     # --- Create MLflow run before dispatch ---
     mlflow_run_id = ""
     mlflow_run_created = False
-    mlflow_tag_type = "document" if job_type == JobType.upload.value else job_type
+    mlflow_tag_type = job_type
     if config_mod.settings.mlflow_tracking_uri:
         run_id = await _create_mlflow_run(mlflow_experiment, job_id, mlflow_tag_type)
         if run_id:
@@ -383,7 +383,10 @@ async def _run_job(job: dict[str, Any]) -> None:
             if mlflow_run_id:
                 await set_mlflow_run_tag(mlflow_run_id, "job_type", mlflow_tag_type)
                 await set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
-                await builder.on_success(job, mlflow_run_id)
+                from amortized.db.connection import get_pool as _get_pool
+                async with _get_pool().acquire() as conn:
+                    fresh_job = await Repository(conn).get_job(job_id)
+                await builder.on_success(fresh_job or job, mlflow_run_id)
                 await _finish_mlflow_run(mlflow_run_id, critical=True)
 
             await _update_job(

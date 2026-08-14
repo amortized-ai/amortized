@@ -131,7 +131,8 @@ async def convert_document(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
+    tags = {"job_type": "upload", "source": "document"}
+    run_id = await client.create_run(experiment_id, name=filename, tags=tags)
     await client.upload_artifact(run_id, f"source/{filename}", file_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
@@ -196,7 +197,8 @@ async def convert_document_url(
 
     client = MLflowClient(_tracking_uri())
     experiment_id = await client.ensure_experiment("amortized/uploads")
-    run_id = await client.create_run(experiment_id, name=filename, tags={"job_type": "document"})
+    tags = {"job_type": "upload", "source": "document"}
+    run_id = await client.create_run(experiment_id, name=filename, tags=tags)
     await client.upload_artifact(run_id, f"source/{filename}", source_bytes)
 
     config_dict["mlflow_upload_run_id"] = run_id
@@ -226,7 +228,7 @@ async def list_documents() -> list[DocumentSummary]:
             return []
         runs = await client.search_runs(
             experiment_ids=exp_ids,
-            filter_string="tags.job_type = 'document' AND attributes.status = 'FINISHED'",
+            filter_string="tags.source = 'document' AND attributes.status = 'FINISHED'",
             order_by=["start_time DESC"],
         )
     except httpx.ConnectError:

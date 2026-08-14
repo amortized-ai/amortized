@@ -119,18 +119,22 @@ class MLflowClient:
         self,
         experiment_id: str,
         tags: dict[str, str] | None = None,
+        name: str = "",
     ) -> str:
         """Create a run in an experiment. Returns the run ID."""
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         tag_list = [{"key": k, "value": v} for k, v in (tags or {}).items()]
+        body: dict[str, Any] = {
+            "experiment_id": experiment_id,
+            "start_time": now_ms,
+            "tags": tag_list,
+        }
+        if name:
+            body["run_name"] = name
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/runs/create"),
-                json={
-                    "experiment_id": experiment_id,
-                    "start_time": now_ms,
-                    "tags": tag_list,
-                },
+                json=body,
             )
             resp.raise_for_status()
             run_info = resp.json()["run"]["info"]
