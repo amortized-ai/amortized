@@ -294,7 +294,7 @@ describe("MessageBubble — structured option cards", () => {
     expect(cards[1]).toHaveTextContent("70/30 split")
 
     fireEvent.click(cards[0]!)
-    expect(onSelect).toHaveBeenCalledWith("80/20 split")
+    expect(onSelect).toHaveBeenCalledWith("80/20 split", "1")
   })
 
   it("does not render option cards for user messages", () => {

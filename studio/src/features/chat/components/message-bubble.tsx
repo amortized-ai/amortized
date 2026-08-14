@@ -23,7 +23,7 @@ function stripToolXml(text: string): string {
 interface MessageBubbleProps {
   message: ChatMessage
   isLatest?: boolean
-  onOptionSelect?: (value: string) => void
+  onOptionSelect?: (value: string, messageId?: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
   onJobComplete?: (jobId: string, jobType: string, status: string) => void
@@ -192,7 +192,7 @@ export function MessageBubble({
           <div className="mt-3">
             <OptionCards
               cards={message.optionCards}
-              onSelect={onOptionSelect}
+              onSelect={(v) => onOptionSelect(v, message.id)}
               selectedValue={message.selectedOptionValue}
             />
           </div>
@@ -213,7 +213,7 @@ export function MessageBubble({
 
         {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">
-            <OptionCards cards={parsedOptions} onSelect={onOptionSelect} selectedValue={message.selectedOptionValue} />
+            <OptionCards cards={parsedOptions} onSelect={(v) => onOptionSelect(v, message.id)} selectedValue={message.selectedOptionValue} />
           </div>
         )}
       </div>
