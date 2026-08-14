@@ -10,7 +10,7 @@ from typing import Any
 import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.jobs.base import JobBuildError, JobBuildResult
-from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
+from amortized.jobs.common import count_mlflow_samples, fetch_document_chunks, set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.sdg")
 
@@ -175,10 +175,8 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
     if isinstance(job_config, str):
         job_config = json.loads(job_config)
 
-    nr = job_config.get("num_records", "")
-    if nr:
-        mode = job_config.get("mode", "create")
-        actual = min(int(nr), 10) if mode == "preview" else int(nr)
+    actual = await count_mlflow_samples(mlflow_run_id)
+    if actual is not None:
         await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(actual))
 
     mc = job_config.get("model_configs", [])
