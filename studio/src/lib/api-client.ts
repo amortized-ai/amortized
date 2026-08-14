@@ -52,6 +52,7 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 function friendlyServiceError(path: string, status: number): string | null {
+  if (status === 413) return "File too large. Maximum upload size is 500 MB."
   if (status !== 502 && status !== 503) return null
   if (path.startsWith("/api/")) return "Cannot reach the backend server. Make sure it's running."
   if (path.startsWith("/mlflow/")) return "Cannot reach MLflow. Check the MLflow tracking server."

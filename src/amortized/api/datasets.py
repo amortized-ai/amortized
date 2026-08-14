@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -25,6 +26,8 @@ from amortized.models import Job, JobType
 logger = logging.getLogger("amortized.api.datasets")
 
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
+
+_upload_tasks: set[asyncio.Task[None]] = set()
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
 _MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
@@ -79,7 +82,39 @@ async def _store_dataset_in_mlflow(
     return run_id, experiment_id
 
 
-@router.post("/upload", response_model=Job)
+async def _process_dataset_upload(
+    job_id: str,
+    filename: str,
+    file_bytes: bytes,
+) -> None:
+    from amortized.db.connection import get_pool
+
+    try:
+        run_id, experiment_id = await _store_dataset_in_mlflow(
+            filename, file_bytes,
+        )
+    except Exception as exc:
+        logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+        async with get_pool().acquire() as conn:
+            await Repository(conn).update_job(
+                job_id,
+                status="failed",
+                completed_at=datetime.now(UTC),
+                error=str(exc),
+            )
+        return
+
+    async with get_pool().acquire() as conn:
+        await Repository(conn).update_job(
+            job_id,
+            status="succeeded",
+            mlflow_run_id=run_id,
+            mlflow_experiment=experiment_id,
+            completed_at=datetime.now(UTC),
+        )
+
+
+@router.post("/upload", response_model=Job, status_code=202)
 async def upload_dataset(
     file: UploadFile,
     db: asyncpg.Connection = Depends(_get_db),
@@ -109,31 +144,12 @@ async def upload_dataset(
         job_type=JobType.upload,
         config={"source": "dataset", "original_filename": name},
     )
-    job_id = row["id"]
 
-    try:
-        run_id, experiment_id = await _store_dataset_in_mlflow(name, file_bytes)
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.TransportError) as exc:
-        error_msg = f"MLflow error: {exc}"
-        await repo.update_job(
-            job_id,
-            status="failed",
-            completed_at=datetime.now(UTC),
-            error=error_msg,
-        )
-        raise HTTPException(status_code=502, detail=error_msg) from None
+    task = asyncio.create_task(_process_dataset_upload(row["id"], name, file_bytes))
+    _upload_tasks.add(task)
+    task.add_done_callback(_upload_tasks.discard)
 
-    updated = await repo.update_job(
-        job_id,
-        status="succeeded",
-        mlflow_run_id=run_id,
-        mlflow_experiment=experiment_id,
-        completed_at=datetime.now(UTC),
-    )
-    if updated is None:
-        raise HTTPException(status_code=500, detail="Failed to update job record")
-
-    return updated
+    return row
 
 
 # ---------------------------------------------------------------------------
