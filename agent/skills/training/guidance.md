@@ -10,8 +10,33 @@
 
 - **Knowledge ingestion** → OSFT (default, recommended)
 
-## After Loading the Sub-Skill
+## Student Model Selection
 
-Read the guide to understand hyperparameters and how to build the
-training config. Use `parent_job_id` to chain from an SDG job.
-Submit via `validate_training_job`.
+You MUST show VRAM estimates before presenting model options. The user
+needs to see GPU memory requirements before choosing.
+
+1. Estimate training resources for EACH candidate model size with the
+   default method (lora)
+2. Show a VRAM comparison card with ALL collected estimates
+3. THEN present model options
+
+## Training Method Selection
+
+You MUST show VRAM estimates before presenting method options.
+
+1. Estimate training resources with the selected model size for EACH
+   method (lora, qlora, osft, sft)
+2. Show a VRAM comparison card with ALL collected estimates
+3. THEN present method options
+
+## Training Confirmation
+
+Before submitting, estimate training resources with the final model
+size and method, then show the VRAM card so the user sees what they
+are committing to.
+
+## Job Chaining
+
+Set `parent_job_id` to the SDG job ID. The worker resolves the SDG
+output from MLflow and sets `data_path` automatically. No manual
+data path configuration needed.
