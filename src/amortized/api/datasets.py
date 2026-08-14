@@ -144,6 +144,7 @@ async def upload_dataset(
         job_type=JobType.upload,
         config={"source": "dataset", "original_filename": name},
     )
+    row = await repo.update_job(row["id"], status="running") or row
 
     task = asyncio.create_task(_process_dataset_upload(row["id"], name, file_bytes))
     _upload_tasks.add(task)
