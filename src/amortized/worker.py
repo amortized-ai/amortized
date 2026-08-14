@@ -162,7 +162,6 @@ async def _create_mlflow_run(
         experiment_id = await client.ensure_experiment(experiment_name)
         return await client.create_run(
             experiment_id,
-            name=f"{job_type}-{job_id[:8]}",
             tags={"job_type": job_type, "job_id": job_id},
         )
     except (httpx.HTTPStatusError, httpx.RequestError, OSError, ValueError):
