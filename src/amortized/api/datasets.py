@@ -53,8 +53,7 @@ def _count_samples(filename: str, file_bytes: bytes) -> int | None:
         if filename.endswith(".parquet"):
             import pyarrow.parquet as pq
 
-            table = pq.read_table(io.BytesIO(file_bytes))
-            return table.num_rows
+            return pq.read_metadata(io.BytesIO(file_bytes)).num_rows
     except Exception:
         logger.warning("Could not count samples in %s", filename)
     return None
@@ -99,6 +98,16 @@ async def _store_dataset_in_mlflow(
     return run_id, experiment_id
 
 
+def _sanitize_upload_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.ConnectError):
+        return "Cannot connect to MLflow"
+    if isinstance(exc, httpx.TimeoutException):
+        return "MLflow request timed out"
+    if isinstance(exc, httpx.TransportError):
+        return "MLflow communication error"
+    return str(exc)
+
+
 async def _process_dataset_upload(
     job_id: str,
     filename: str,
@@ -106,32 +115,36 @@ async def _process_dataset_upload(
 ) -> None:
     from amortized.db.connection import get_pool
 
-    async with get_pool().acquire() as conn:
-        await Repository(conn).update_job(job_id, status="running")
-
     try:
+        async with get_pool().acquire() as conn:
+            await Repository(conn).update_job(
+                job_id, status="running", started_at=datetime.now(UTC),
+            )
+
         run_id, experiment_id = await _store_dataset_in_mlflow(
             filename, file_bytes,
         )
-    except Exception as exc:
-        logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+
         async with get_pool().acquire() as conn:
             await Repository(conn).update_job(
                 job_id,
-                status="failed",
+                status="succeeded",
+                mlflow_run_id=run_id,
+                mlflow_experiment=experiment_id,
                 completed_at=datetime.now(UTC),
-                error=str(exc),
             )
-        return
-
-    async with get_pool().acquire() as conn:
-        await Repository(conn).update_job(
-            job_id,
-            status="succeeded",
-            mlflow_run_id=run_id,
-            mlflow_experiment=experiment_id,
-            completed_at=datetime.now(UTC),
-        )
+    except Exception as exc:
+        logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+        try:
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id,
+                    status="failed",
+                    completed_at=datetime.now(UTC),
+                    error=_sanitize_upload_error(exc),
+                )
+        except Exception:
+            logger.exception("Failed to mark job %s as failed", job_id)
 
 
 @router.post("/upload", response_model=Job, status_code=202)

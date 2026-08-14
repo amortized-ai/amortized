@@ -91,7 +91,7 @@ export function useUploadDataset() {
             toast.success(`${file.name} uploaded`, { id: "dataset-upload", duration: 4000 })
             void queryClient.invalidateQueries({ queryKey: ["mlflow", "datasets"] })
             void queryClient.invalidateQueries({ queryKey: ["jobs"] })
-          } else if (j.status === "failed") {
+          } else if (j.status === "failed" || j.status === "cancelled") {
             clearInterval(interval)
             toast.error(`${file.name} failed: ${j.error ?? "Unknown error"}`, { id: "dataset-upload", duration: 4000 })
             void queryClient.invalidateQueries({ queryKey: ["jobs"] })
