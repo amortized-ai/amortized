@@ -177,9 +177,7 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
 
     nr = job_config.get("num_records", "")
     if nr:
-        mode = job_config.get("mode", "create")
-        actual = min(int(nr), 10) if mode == "preview" else int(nr)
-        await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(actual))
+        await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(nr))
 
     mc = job_config.get("model_configs", [])
     if mc and isinstance(mc, list):
