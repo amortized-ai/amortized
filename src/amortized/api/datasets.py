@@ -72,7 +72,7 @@ async def _store_dataset_in_mlflow(
     tags: dict[str, str] = {
         "job_type": "upload",
         "dataset_name": filename,
-        "source": "dataset",
+        "source": "upload",
     }
     topic = _topic_from_filename(filename)
     if topic:
@@ -162,7 +162,7 @@ async def upload_dataset(
     row = await create_job(
         repo,
         job_type=JobType.upload,
-        config={"source": "dataset", "original_filename": name},
+        config={"source": "upload", "original_filename": name},
     )
     task = asyncio.create_task(_process_dataset_upload(row["id"], name, file_bytes))
     _upload_tasks.add(task)
@@ -245,7 +245,7 @@ async def list_datasets(
     )
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.source = 'dataset' AND attributes.status = 'FINISHED'",
+        filter_string="tags.source = 'upload' AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )

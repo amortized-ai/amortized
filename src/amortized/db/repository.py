@@ -138,7 +138,7 @@ class Repository:
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
         # Exclude dataset uploads — they are processed by the API layer, not the worker
-        dataset_filter = """AND NOT (type = 'upload' AND config @> '{"source": "dataset"}')"""
+        dataset_filter = """AND NOT (type = 'upload' AND config @> '{"source": "upload"}')"""
         if k8s_namespace:
             query = f"""UPDATE jobs SET status = $1
                        WHERE id = (
