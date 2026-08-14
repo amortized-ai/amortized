@@ -154,7 +154,7 @@ async def build(
     count_cmd = (
         f"SAMPLE_COUNT=$(find {shlex.quote(upload_dir)} -name '*.jsonl'"
         f" -exec cat {{}} + | wc -l || echo 0);"
-        f" mlflow runs set-tag $MLFLOW_RUN_ID num_samples $SAMPLE_COUNT"
+        f' python3 -c "import mlflow; mlflow.set_tag(\'num_samples\', \'$SAMPLE_COUNT\')"'
     )
 
     resolved_config = dict(config)
