@@ -242,12 +242,6 @@ function OverviewTab({ dataset, onClose }: { dataset: DatasetRecord; onClose: ()
             </span>
           }
         />
-        <MetadataRow
-          label="Experiment ID"
-          value={
-            <span className="font-mono text-xs">{dataset.experiment_id}</span>
-          }
-        />
         {dataset.run_name && (
           <MetadataRow label="Run Name" value={dataset.run_name} />
         )}
