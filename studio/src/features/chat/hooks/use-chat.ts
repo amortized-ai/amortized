@@ -678,8 +678,6 @@ export function useChat() {
 
       const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
       useChatStore.getState().setJobInFlight(convId, false)
-      const sessionId = useChatStore.getState().getSessionId(convId)
-      if (!sessionId) continue
 
       const placeholderId = generateId()
       const placeholder: ChatMessage = {

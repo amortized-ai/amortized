@@ -7,7 +7,7 @@ import { ChatWelcome } from "./chat-welcome"
 interface MessageListProps {
   messages: ChatMessage[]
   isStreaming?: boolean
-  onOptionSelect?: (value: string) => void
+  onOptionSelect?: (value: string, messageId?: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
   onJobComplete?: (jobId: string, jobType: string, status: string) => void
