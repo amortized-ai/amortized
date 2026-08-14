@@ -36,20 +36,17 @@ function ChatPanelContent() {
   )
 
   const handleOptionSelect = useCallback(
-    (value: string) => {
+    (value: string, messageId?: string) => {
       if (value.startsWith("__nav:")) {
         navigate(value.slice(6))
         return
       }
-      const lastAssistant = [...messages].reverse().find(
-        (m) => m.role === "assistant",
-      )
-      if (lastAssistant) {
-        selectOption(lastAssistant.id, value)
+      if (messageId) {
+        selectOption(messageId, value)
       }
       void sendMessage(value)
     },
-    [sendMessage, selectOption, messages, navigate],
+    [sendMessage, selectOption, navigate],
   )
 
   return (
