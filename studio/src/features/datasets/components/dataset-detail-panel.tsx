@@ -27,7 +27,6 @@ import {
   ExternalLink,
   ArrowRight,
   Database,
-  Thermometer,
   Bot,
   Calendar,
   Hash,
@@ -183,7 +182,6 @@ function OverviewTab({ dataset, onClose }: { dataset: DatasetRecord; onClose: ()
   const [copied, setCopied] = useState(false)
   const sampleCount = dataset.tags["num_samples"] ?? null
   const model = dataset.tags["teacher_model"] ?? dataset.params["model"] ?? null
-  const temperature = dataset.params["temperature"] ?? null
   const jobId = dataset.tags["job_id"] ?? null
 
   function handleCopyId() {
@@ -195,7 +193,7 @@ function OverviewTab({ dataset, onClose }: { dataset: DatasetRecord; onClose: ()
   return (
     <div className="space-y-6">
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <StatCard
           icon={<Database className="h-4 w-4" />}
           label="Samples"
@@ -208,12 +206,6 @@ function OverviewTab({ dataset, onClose }: { dataset: DatasetRecord; onClose: ()
           value={model ?? "--"}
           color="purple"
           truncate
-        />
-        <StatCard
-          icon={<Thermometer className="h-4 w-4" />}
-          label="Temperature"
-          value={temperature ?? "--"}
-          color="orange"
         />
         <StatCard
           icon={<Calendar className="h-4 w-4" />}
