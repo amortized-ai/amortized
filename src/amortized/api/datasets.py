@@ -46,6 +46,20 @@ def _topic_from_filename(filename: str) -> str:
     return " ".join(stem.replace("_", " ").replace("-", " ").split())
 
 
+def _count_samples(filename: str, file_bytes: bytes) -> int | None:
+    try:
+        if filename.endswith(".jsonl"):
+            return sum(1 for line in file_bytes.split(b"\n") if line.strip())
+        if filename.endswith(".parquet"):
+            import pyarrow.parquet as pq
+
+            table = pq.read_table(io.BytesIO(file_bytes))
+            return table.num_rows
+    except Exception:
+        logger.warning("Could not count samples in %s", filename)
+    return None
+
+
 async def _store_dataset_in_mlflow(
     filename: str,
     file_bytes: bytes,
@@ -63,6 +77,9 @@ async def _store_dataset_in_mlflow(
     topic = _topic_from_filename(filename)
     if topic:
         tags["dataset_topic"] = topic
+    sample_count = _count_samples(filename, file_bytes)
+    if sample_count is not None:
+        tags["num_samples"] = str(sample_count)
 
     mlflow = MLflowClient(uri, timeout=60.0)
     experiment_id = await mlflow.ensure_experiment("amortized/datasets")
