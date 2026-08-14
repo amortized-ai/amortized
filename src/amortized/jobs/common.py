@@ -33,6 +33,9 @@ async def set_mlflow_run_tag(mlflow_run_id: str, key: str, value: str) -> None:
         )
 
 
+_MAX_COUNT_DOWNLOAD = 50 * 1024 * 1024  # 50 MB
+
+
 async def count_mlflow_samples(mlflow_run_id: str) -> int | None:
     """Count rows in the generated_data artifact (JSONL or Parquet)."""
     tracking_uri = config_mod.settings.mlflow_tracking_uri
@@ -46,6 +49,10 @@ async def count_mlflow_samples(mlflow_run_id: str) -> int | None:
         jsonl = next((a for a in artifacts if a.get("path", "").endswith(".jsonl")), None)
         target = parquet or jsonl
         if not target:
+            return None
+
+        file_size = target.get("file_size", 0)
+        if file_size and file_size > _MAX_COUNT_DOWNLOAD:
             return None
 
         data = await client.get_artifact(mlflow_run_id, target["path"])

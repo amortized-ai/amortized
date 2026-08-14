@@ -28,6 +28,7 @@ logger = logging.getLogger("amortized.api.datasets")
 router = APIRouter(prefix="/api/v1/datasets", tags=["datasets"])
 
 _upload_tasks: set[asyncio.Task[None]] = set()
+_upload_semaphore = asyncio.Semaphore(3)
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
 _MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
@@ -115,36 +116,37 @@ async def _process_dataset_upload(
 ) -> None:
     from amortized.db.connection import get_pool
 
-    try:
-        async with get_pool().acquire() as conn:
-            await Repository(conn).update_job(
-                job_id, status="running", started_at=datetime.now(UTC),
-            )
-
-        run_id, experiment_id = await _store_dataset_in_mlflow(
-            filename, file_bytes,
-        )
-
-        async with get_pool().acquire() as conn:
-            await Repository(conn).update_job(
-                job_id,
-                status="succeeded",
-                mlflow_run_id=run_id,
-                mlflow_experiment=experiment_id,
-                completed_at=datetime.now(UTC),
-            )
-    except Exception as exc:
-        logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+    async with _upload_semaphore:
         try:
             async with get_pool().acquire() as conn:
                 await Repository(conn).update_job(
-                    job_id,
-                    status="failed",
-                    completed_at=datetime.now(UTC),
-                    error=_sanitize_upload_error(exc),
+                    job_id, status="running", started_at=datetime.now(UTC),
                 )
-        except Exception:
-            logger.exception("Failed to mark job %s as failed", job_id)
+
+            run_id, experiment_id = await _store_dataset_in_mlflow(
+                filename, file_bytes,
+            )
+
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id,
+                    status="succeeded",
+                    mlflow_run_id=run_id,
+                    mlflow_experiment=experiment_id,
+                    completed_at=datetime.now(UTC),
+                )
+        except Exception as exc:
+            logger.warning("Dataset upload failed for job %s: %s", job_id, exc)
+            try:
+                async with get_pool().acquire() as conn:
+                    await Repository(conn).update_job(
+                        job_id,
+                        status="failed",
+                        completed_at=datetime.now(UTC),
+                        error=_sanitize_upload_error(exc),
+                    )
+            except Exception:
+                logger.exception("Failed to mark job %s as failed", job_id)
 
 
 @router.post("/upload", response_model=Job, status_code=202)
