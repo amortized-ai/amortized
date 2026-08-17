@@ -75,23 +75,6 @@ patches:
 
   - target:
       kind: Deployment
-      name: claude-code
-    patch: |
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: claude-code
-      spec:
-        template:
-          spec:
-            containers:
-              - name: claude-code
-                env:
-                  - name: MCP_AMORTIZED_URL
-                    value: "http://amortized-server.amortized-mathale.svc.cluster.local:8000/mcp"
-
-  - target:
-      kind: Deployment
       name: amortized-studio
     patch: |
       apiVersion: apps/v1

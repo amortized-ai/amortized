@@ -31,9 +31,8 @@ spec:
               value: "amortized-server.amortized.svc.cluster.local"
             - name: BACKEND_PORT
               value: "8000"
-            # Agent backend — switch by changing AGENT_HOST:
-            #   opencode:    AGENT_HOST=opencode.amortized.svc.cluster.local
-            #   claude-code: AGENT_HOST=claude-code.amortized.svc.cluster.local
+            # Agent backend
+            #   opencode: AGENT_HOST=opencode.amortized.svc.cluster.local
             - name: AGENT_HOST
               value: "opencode.amortized.svc.cluster.local"
             - name: AGENT_PORT

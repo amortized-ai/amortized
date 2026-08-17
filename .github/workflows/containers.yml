@@ -58,30 +58,6 @@ jobs:
             ghcr.io/amortized-ai/amortized:latest
             ghcr.io/amortized-ai/amortized:${{ github.sha }}
 
-  # Claude Code agent wrapper — lightweight Python image
-  build-agent:
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: docker/build-push-action@v5
-        with:
-          context: agent
-          file: agent/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/amortized-ai/claude-code-agent:latest
-            ghcr.io/amortized-ai/claude-code-agent:${{ github.sha }}
-
   # Studio frontend — nginx-based static build
   build-studio:
     runs-on: ubuntu-latest
