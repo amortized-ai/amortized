@@ -25,24 +25,8 @@ from amortized.jobs.common import (
     set_mlflow_run_tag,
 )
 from amortized.models import JobStatus, JobType
-from amortized.watch import emit_job_event
 
 logger = logging.getLogger("amortized.worker")
-
-_background_tasks: set[asyncio.Task[None]] = set()
-
-
-def _fire_event(job_id: str, status: str, job: dict[str, Any]) -> None:
-    task = asyncio.create_task(_safe_emit(job_id, status, job))
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
-async def _safe_emit(job_id: str, status: str, job: dict[str, Any]) -> None:
-    try:
-        await emit_job_event(job_id, status, job)
-    except Exception:
-        logger.warning("Failed to emit job event for %s", job_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +349,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             if not transitioned_to_running:
                 await _update_job(job_id, status=JobStatus.running.value)
                 transitioned_to_running = True
-                _fire_event(job_id, "running", job)
             await asyncio.sleep(poll_interval)
 
         completed_at = datetime.now(UTC)
@@ -384,6 +367,7 @@ async def _run_job(job: dict[str, Any]) -> None:
                 await set_mlflow_run_tag(mlflow_run_id, "job_type", mlflow_tag_type)
                 await set_mlflow_run_tag(mlflow_run_id, "job_id", job_id)
                 from amortized.db.connection import get_pool as _get_pool
+
                 async with _get_pool().acquire() as conn:
                     fresh_job = await Repository(conn).get_job(job_id)
                 await builder.on_success(fresh_job or job, mlflow_run_id)
@@ -396,7 +380,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 mlflow_run_id=mlflow_run_id,
             )
             logger.info("Job %s succeeded", job_id)
-            _fire_event(job_id, "succeeded", job)
         elif status.exit_code is not None and status.exit_code < 0:
             await _finish_mlflow_run(mlflow_run_id, "FAILED")
             await _update_job(
@@ -406,11 +389,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error="Job was cancelled",
             )
             logger.info("Job %s was cancelled", job_id)
-            _fire_event(
-                job_id,
-                "cancelled",
-                {**job, "error": "Job was cancelled"},
-            )
         else:
             await _finish_mlflow_run(mlflow_run_id, "FAILED")
             error_msg = status.error or (
@@ -424,7 +402,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error=error_msg,
             )
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
-            _fire_event(job_id, "failed", {**job, "error": error_msg})
 
     except Exception as exc:
         await _finish_mlflow_run(mlflow_run_id, "FAILED")
@@ -451,7 +428,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             backend_handle=fallback_handle,
         )
         logger.exception("Job %s failed with exception", job_id)
-        _fire_event(job_id, "failed", {**job, "error": error_text})
 
 
 # ---------------------------------------------------------------------------

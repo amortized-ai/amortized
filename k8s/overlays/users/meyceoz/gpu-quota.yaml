@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: gpu-quota
-  namespace: amortized-meyceoz-jobs
-spec:
-  hard:
-    requests.nvidia.com/gpu: "1"
-    limits.nvidia.com/gpu: "1"
