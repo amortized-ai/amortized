@@ -273,13 +273,12 @@ deploy-user: prompt ## Deploy a user's environment (USER=<name>)
 	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/gpu-quota.yaml
 	$(KUBECTL) apply -f k8s/overlays/users/$(USER)/rbac-jobs.yaml
 	@# Restart all deployments so pods pick up new configs / images
-	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio deployment/opencode deployment/claude-code
+	@$(KUBECTL) -n amortized-$(USER) rollout restart deployment/amortized-server deployment/amortized-studio deployment/opencode
 	@# Wait for rollouts
 	@echo "Waiting for $(USER) deployments..."
 	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/amortized-server --timeout=120s
 	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/amortized-studio --timeout=120s
 	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/opencode --timeout=120s
-	@$(KUBECTL) -n amortized-$(USER) rollout status deployment/claude-code --timeout=120s
 	@echo "$(USER) environment deployed."
 
 # ──────────────────────────────────────────────
