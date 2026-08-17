@@ -26,7 +26,7 @@ The name comes from finance — amortization spreads a large upfront cost across
 amortized/
 ├── src/amortized/       # Python backend (FastAPI)
 ├── studio/              # React frontend (Vite)
-├── agent/               # Morty chat agent
+├── agent/               # Agent prompts and skills
 ├── containers/          # Training container Dockerfiles
 ├── templates/           # YAML templates for SDG/training
 ├── k8s/                 # Kubernetes manifests (kustomize)
