@@ -44,6 +44,7 @@ MCP_AMORTIZED_URL = os.environ.get(
     "MCP_AMORTIZED_URL",
     "http://amortized-server.amortized.svc.cluster.local:8000/mcp",
 )
+MCP_MLFLOW_URL = os.environ.get("MCP_MLFLOW_URL", "http://127.0.0.1:5002/sse")
 WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/app/workspace")
 
 MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6")
@@ -197,6 +198,10 @@ async def _run_agent(
             "amortized": {
                 "type": "http",
                 "url": MCP_AMORTIZED_URL,
+            },
+            "mlflow": {
+                "type": "sse",
+                "url": MCP_MLFLOW_URL,
             },
         },
     )
