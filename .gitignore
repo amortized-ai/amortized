@@ -1,3 +1,4 @@
+.DS_Store
 .env
 .env.*
 .venv/
@@ -14,7 +15,6 @@ runtime/data/
 runtime/outputs/
 *.egg-info/
 tsconfig.tsbuildinfo
-.venv/
 eval/score.py
 factory.md
 .factory/
@@ -22,18 +22,13 @@ server/~/
 server/datasets/
 uv.lock
 runtime/
-2026-06-02-amortized-design.md
-CONTEXT.md
 
 agent/prompts/_combined/
 k8s/base/morty-prompt.md
 k8s/base/morty-skills/
 .playwright-mcp/
 studio-*.png
-.claude/*
-!.claude/commands/
-.claude/commands/*
-!.claude/commands/deploy.md
+.claude/
 .refactory/
 
 # Studio

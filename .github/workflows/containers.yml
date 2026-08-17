@@ -82,10 +82,9 @@ jobs:
             ghcr.io/amortized-ai/studio:latest
             ghcr.io/amortized-ai/studio:${{ github.sha }}
 
-  # CUDA training image — uses the single ghcr.io/amortized-ai/training:latest image.
-  # Too large for GitHub runners (~12GB). Build on a self-hosted GPU runner,
-  # or manually on the GPU node:
-  #   ssh rh-h100-06 "cd ~/amortized && podman build -f containers/training/Dockerfile -t ghcr.io/amortized-ai/training:latest . && podman push ghcr.io/amortized-ai/training:latest"
+  # CUDA training image — too large for GitHub runners (~12GB).
+  # Build on a self-hosted GPU runner or manually:
+  #   podman build -f containers/training/Dockerfile -t ghcr.io/amortized-ai/training:latest . && podman push ghcr.io/amortized-ai/training:latest
   #
   # To enable CI builds, add a self-hosted runner with the 'gpu' label:
   #   https://docs.github.com/en/actions/hosting-your-own-runners
