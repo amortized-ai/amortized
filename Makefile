@@ -46,7 +46,7 @@ K8S_SKILLS   := k8s/base/morty-skills
 
 prompt: ## Build combined Morty prompt and sync skills to k8s
 	@mkdir -p $(COMBINED_DIR)
-	@cat $(PROMPT_DIR)/identity.md $(PROMPT_DIR)/capabilities.md $(PROMPT_DIR)/workflow.md > $(COMBINED_DIR)/morty.md
+	@cat $(PROMPT_DIR)/identity.md $(PROMPT_DIR)/workflow.md > $(COMBINED_DIR)/morty.md
 	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
 	@rm -rf $(K8S_SKILLS)
 	@cp -r $(SKILLS_DIR) $(K8S_SKILLS)
