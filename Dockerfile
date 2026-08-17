@@ -1,6 +1,5 @@
 FROM python:3.12-slim
-ADD https://astral.sh/uv/install.sh /tmp/uv-install.sh
-RUN sh /tmp/uv-install.sh && mv /root/.local/bin/uv /usr/local/bin/uv && rm /tmp/uv-install.sh
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml alembic.ini .
