@@ -472,12 +472,12 @@ PHASE 3: Eval (chained via parent_job_id)
 │  │  :8000          │  │  :8080         │  │  :8001         │                 │
 │  │  + PVC (SQLite) │  │                │  │                │                 │
 │  └────────────────┘  └────────────────┘  └────────────────┘                 │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                 │
-│  │  claude-code    │  │  ServiceAccount │  │  ConfigMap     │                 │
-│  │  Deployment     │  │  + ClusterRole  │  │  (env vars)    │                 │
-│  │                 │  │  (RBAC for job  │  │                │                 │
-│  │                 │  │   management)   │  │                │                 │
-│  └────────────────┘  └────────────────┘  └────────────────┘                 │
+│  ┌────────────────┐  ┌────────────────┐                                     │
+│  │  ServiceAccount │  │  ConfigMap     │                                     │
+│  │  + ClusterRole  │  │  (env vars)    │                                     │
+│  │  (RBAC for job  │  │                │                                     │
+│  │   management)   │  │                │                                     │
+│  └────────────────┘  └────────────────┘                                     │
 │                                                                              │
 │  namespace: amortized-<user>-jobs (per-developer)                            │
 │  ┌───────────────────────────────────────────────────────────────┐           │

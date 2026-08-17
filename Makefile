@@ -56,5 +56,5 @@ prompt: ## Build combined Morty prompt and sync skills to k8s
 # Deploy (single-user dev)
 # ──────────────────────────────────────────────
 
-deploy-dev: prompt ## Deploy single-user dev environment (requires kubectl)
+deploy-dev: ## Deploy single-user dev environment (requires kubectl)
 	kubectl apply -k k8s/overlays/dev

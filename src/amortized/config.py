@@ -31,8 +31,6 @@ class Settings(BaseSettings):
 
     external_url: str = Field("", description="Externally reachable server URL")
     gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")
-    agent_server_url: str = Field("", description="Agent server URL for job event delivery")
-
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"
     )
