@@ -10,6 +10,16 @@ Every AI agent has tasks that don't need a frontier model. Classification, extra
 
 The name comes from finance — amortization spreads a large upfront cost across many future uses. Here, the "cost" is the frontier model's capability, and the "uses" are every future inference by the cheaper task model.
 
+## Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Node.js 18+ and npm
+- A Kubernetes cluster (for deployment)
+- PostgreSQL
+- MLflow (for artifact tracking)
+- S3-compatible storage (e.g., MinIO)
+
 ## Repository layout
 
 ```
@@ -18,96 +28,117 @@ amortized/
 ├── studio/              # React frontend (Vite)
 ├── agent/               # Morty chat agent
 ├── containers/          # Training container Dockerfiles
-├── k8s/                 # Kubernetes manifests (kustomize)
 ├── templates/           # YAML templates for SDG/training
-└── Makefile             # Build, deploy, cluster management
+├── k8s/                 # Kubernetes manifests (kustomize)
+├── docs/                # Architecture docs and ADRs
+└── Makefile             # Build targets
 ```
 
-## Development
+## Getting started
+
+### Backend
+
+```bash
+# Install dependencies
+uv pip install -e '.[dev]'
+
+# Configure compute backend
+amortized config
+
+# Copy and edit environment variables
+cp .env.example .env
+
+# Start the server
+amortized up
+```
+
+The server starts on `http://localhost:8000`. API docs at `http://localhost:8000/docs`.
+
+### Studio (frontend)
+
+```bash
+cd studio
+npm install
+npm run dev
+```
+
+The dev server starts on `http://localhost:5173`.
+
+### Linting and testing
 
 ```bash
 # Backend
-uv pip install -e '.[dev]'
-amortized up              # start server on :8000
+ruff check src/ tests/
+ruff format src/ tests/
+mypy src/
+pytest tests/ -x -q
 
-# Studio (frontend)
+# Frontend
 cd studio
-npm install
-npm run dev               # start dev server on :5173
-
-# Lint / test
-ruff check src/ tests/    # backend lint
-mypy src/                 # backend type check
-pytest tests/ -x -q       # backend tests
-cd studio && npm test     # frontend tests
+npm run lint
+npm run typecheck
+npm test
 ```
 
-## Deployment
+## Kubernetes deployment
 
-Amortized runs on a kind cluster with GPU passthrough. Each developer gets an isolated namespace with their own server, studio, OpenCode, and Claude Code deployments. Shared services (MLflow, MinIO) run in the `amortized` namespace.
+Amortized ships with kustomize overlays for Kubernetes deployment.
 
-### Developer environments
+### Development (single-user)
 
-| Developer | Namespace | Studio | Server | GPU Quota |
-|-----------|-----------|--------|--------|-----------|
-| meyceoz   | amortized-meyceoz  | 31100 | 31101 | 1 |
-| ssudalai  | amortized-ssudalai | 31110 | 31111 | 1 |
-| mathale   | amortized-mathale  | 31120 | 31121 | 1 |
-| nmalepat  | amortized-nmalepat | 31130 | 31131 | 1 |
-| esivaram  | amortized-esivaram | 31140 | 31141 | 1 |
-| asaluja   | amortized-asaluja  | 31150 | 31151 | 1 |
-| *(shared)* | amortized         | —     | MLflow: 31082 | — |
-
-### Quick start
+Deploys the server, studio, MLflow, MinIO, and PostgreSQL:
 
 ```bash
-# Clone the repo
-git clone git@github.com:amortized-ai/amortized.git
-cd amortized
-
-# Build images and deploy your environment
-make build-server build-studio load-server load-studio
-make deploy-<username>
-
-# Rebuild images from your current branch and redeploy
-make refresh-<username>
-
-# Tear down your environment
-make down-<username>
-
-# Check status
-make status
+kubectl apply -k k8s/overlays/dev
 ```
 
-### Access
+Or use the Makefile shortcut:
 
 ```bash
-ssh -L 31082:localhost:31082 \
-    -L 31100:localhost:31100 -L 31101:localhost:31101 \
-    -L 31110:localhost:31110 -L 31111:localhost:31111 \
-    -L 31120:localhost:31120 -L 31121:localhost:31121 \
-    -L 31130:localhost:31130 -L 31131:localhost:31131 \
-    -L 31140:localhost:31140 -L 31141:localhost:31141 \
-    <user>@<gpu-host>
+make deploy-dev
 ```
 
-Then open your studio at `http://localhost:<your-studio-port>` (see table above for port assignments).
-
-### Testing a PR branch
+### OpenShift / ROSA
 
 ```bash
-# Check out the branch and redeploy
-git checkout feat/my-branch
-make refresh-<username>
+kubectl apply -k k8s/overlays/rosa
 ```
 
-### Adding a new developer
+### Building container images
 
-1. Create a new overlay directory under `k8s/overlays/users/<username>/` (copy from an existing user and update the namespace, ports, and user references)
-2. Pick unused NodePorts (next available: studio=31150, server=31151)
-3. Add the port mappings to `k8s/kind/kind-config.yaml`
-4. Add the username to `USERS` in `Makefile`
-5. Run `make deploy-<newuser>`
+```bash
+make build            # Build server + studio images
+make build-server     # Build server image only
+make build-studio     # Build studio image only
+```
+
+## Configuration
+
+All configuration is via environment variables with the `AMORTIZED_` prefix. See [`.env.example`](.env.example) for the full list.
+
+Key settings:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AMORTIZED_DATABASE_URL` | PostgreSQL connection string | `postgresql://amortized:amortized@localhost:5432/amortized` |
+| `AMORTIZED_COMPUTE_BACKEND` | Compute backend (`local`, `ssh`, `kubernetes`) | `local` |
+| `AMORTIZED_MLFLOW_TRACKING_URI` | MLflow tracking server URL | (empty = disabled) |
+| `AMORTIZED_S3_BUCKET` | S3 bucket for artifacts | (empty) |
+| `AMORTIZED_IMAGE_REGISTRY` | Container image registry for jobs | `ghcr.io/amortized-ai` |
+
+## Architecture
+
+Amortized is a thin orchestration layer. It translates user intent into tool-native YAML configs, dispatches K8s Jobs, and tracks job lifecycle. Everything else is delegated: MLflow for artifacts/lineage, S3 for storage, K8s for compute, TRL/asynth/vLLM for ML logic.
+
+Two job types:
+- **Training** — Fine-tunes models using TRL or training-hub
+- **SDG** — Generates synthetic training data using Data Designer
+
+See [`docs/architecture/`](docs/architecture/) for detailed architecture docs and ADRs.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
