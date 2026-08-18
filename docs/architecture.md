@@ -43,8 +43,6 @@ graph TB
         db[("PostgreSQL<br/>jobs table")]
     end
 
-    agent["Morty<br/>Claude Agent SDK<br/>(agent/)"]
-
     subgraph backends["Compute backends"]
         k8s["Kubernetes"]
         ssh["SSH"]
@@ -66,10 +64,7 @@ graph TB
     cli --> server
     ext --> server
     studio -->|/api/| server
-    studio -->|/agent/| agent
     studio -->|/mlflow/| mlflow
-    agent -->|MCP| server
-    worker -.->|job events| agent
     server --- worker
     server --- db
     worker --> k8s
@@ -209,7 +204,6 @@ sequenceDiagram
     W->>B: cleanup_secrets(handle) — SSH only
     W->>ML: set tags, builder.on_success, finish run
     W->>DB: UPDATE status=succeeded, completed_at
-    W->>API: emit_job_event → agent session
 ```
 
 Two properties worth stating plainly, because they shape everything downstream:
@@ -345,7 +339,7 @@ graph TB
 
 **Training** pushes its output directory as the `model` artifact, then registers a model version named `{model_id}-{algorithm}-{job_id[:8]}` against the run. Metrics are logged by training-hub itself through its MLflow integration.
 
-**Upload** pushes three artifacts — the original source file, `parsed_content.md`, and a `chunks/` directory — to the run the *worker* created, not the one the API created. Chunks are numbered `chunk_000.md`, `chunk_001.md`, … alongside a `chunks/metadata.json`. Its `on_success` hook overwrites the `job_type` tag from `upload` to `document`, which is the tag the Documents page filters on.
+**Upload** pushes three artifacts — the original source file, `parsed_content.md`, and a `chunks/` directory — to the run the *worker* created, not the one the API created. Chunks are numbered `chunk_000.md`, `chunk_001.md`, … alongside a `chunks/metadata.json`. Its `on_success` hook sets `job_type=upload` and `source=document`, which is the tag combination the Documents page filters on.
 
 Every run gets `job_type` and `job_id` tags from the worker, which is what makes the Datasets and Documents pages queryable — they search MLflow runs by tag rather than reading any Amortized table. The Models page is different: it reads the Model Registry, populated by the training builder's `on_success` hook.
 
@@ -369,32 +363,14 @@ URL ingestion follows the same path with SSRF protection in front: only `http`/`
 
 ### 5.1 Morty
 
-This section describes the Morty service — the FastAPI service in `agent/`, built on the Claude Agent SDK, listening on port 4096. Studio proxies chat requests to it, and the worker delivers job-completion events to it.
+Morty is defined by its prompts and skills in `agent/`, not by a deployed service — the agent runtime was removed from the k8s manifests. What remains is the prompt and skill library:
 
-```mermaid
-graph TB
-    subgraph morty["Morty service :4096"]
-        api["POST /session<br/>POST /session/:id/message<br/>POST /session/:id/event<br/>GET /session/:id/pending"]
-        sdk["Claude Agent SDK<br/>allowed_tools: mcp__*"]
-        prompt["System prompt<br/>identity + capabilities + workflow"]
-        skills["Skills, loaded on demand<br/>sdg/classification<br/>sdg/knowledge-ingestion<br/>training/knowledge-ingestion/osft"]
-    end
+- **Prompts** (`agent/prompts/`): `identity.md` (persona, guardrails), `capabilities.md` (MCP tool catalog), `workflow.md` (structured conversation flow, cost rules)
+- **Skills** (`agent/skills/`): on-demand guides for SDG (classification, knowledge-ingestion) and training (knowledge-ingestion/osft)
 
-    server["Amortized Server /mcp<br/>working"]
-    mlflowmcp["MLflow MCP :5002/sse<br/>configured, not deployed"]
+`make prompt` concatenates the three prompt files into a single `morty.md`. The skill guides ship alongside it. Any MCP-capable agent runtime can load these and connect to the Amortized server's `/mcp` endpoint to operate the platform.
 
-    api --> sdk
-    prompt --> sdk
-    skills --> sdk
-    sdk -->|HTTP MCP| server
-    sdk -.->|SSE MCP, dead| mlflowmcp
-```
-
-The agent has **no filesystem, shell, or code-execution tools** — `allowed_tools` is restricted to `mcp__*`. Everything it can do, it does through MCP. That constraint is the security model.
-
-Two MCP servers are configured in the agent code, but only one is deployed. `MCP_MLFLOW_URL` defaults to `http://127.0.0.1:5002/sse`, yet nothing serves an MLflow MCP process on that port. In practice Morty's entire tool surface is the Amortized MCP server. Anything the agent needs from MLflow it gets through Amortized's own endpoints (`list_datasets`, `get_dataset_samples`, `list_models`).
-
-The system prompt is assembled at build time by `make prompt`, concatenating `identity.md`, `capabilities.md` and `workflow.md` into a single `morty.md` that is mounted as a ConfigMap. Skill guides are stored flat in a ConfigMap with `__` as a path separator and rebuilt into a directory tree by an init container at pod start.
+The prompt enforces that Morty has **no filesystem, shell, or code-execution tools** — only MCP tools. That constraint is the security model.
 
 ### 5.2 The conversation contract
 
@@ -406,53 +382,14 @@ The workflow prompt enforces a strict interaction shape: one question per messag
 | `show_model_pricing` | Teacher-model pricing comparison |
 | `show_vram_estimate` | VRAM-per-method comparison |
 | `signal_phase` | Workflow progress bar |
-| `watch_job` | Registers the job for push notifications |
 
 The same interception handles job submission. Morty calls `validate_sdg_job` or `validate_training_job` — which validate and return the config **without creating anything** — and the frontend renders a confirmation card with Confirm and Cancel. Only on Confirm does Studio call `create_sdg_job` or `create_training_job`. The agent cannot submit a job on its own; a human is always in the loop.
 
 The prompt also mandates guardrails that would otherwise be easy to violate: never show a model the AI Gateway doesn't actually serve, always show VRAM estimates before asking the user to choose a model size or method, verify platform reachability via `get_config` and `list_models` before building a confirmation card, and never surface a raw validation error — reread it, ask a natural follow-up, rebuild.
 
-### 5.3 Job progress: the polling path and the dormant push path
+### 5.3 Job progress
 
-Two mechanisms exist for telling the user a job finished. **Only the polling one runs.**
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant S as Studio
-    participant M as Morty
-    participant A as Amortized Server
-    participant W as Worker
-
-    U->>S: clicks Confirm
-    S->>A: POST /jobs/sdg (direct REST, not via agent)
-    A-->>S: job_id
-    S->>M: plain-text "Job confirmed. Job ID: ..."
-
-    rect rgb(230, 245, 230)
-        Note over S,A: what actually happens
-        loop every 3s
-            S->>A: GET /jobs/{id}
-            A-->>S: status
-        end
-        S-->>U: job-monitor card updates to succeeded
-    end
-
-    rect rgb(250, 235, 235)
-        Note over M,W: built, but never armed
-        M--xA: watch_job(job_id, session_id)
-        W--xM: POST /session/:id/event
-        M--xS: agent follow-up via /pending
-    end
-```
-
-The **push pipeline is fully implemented end to end** — `watch_job` registers a session against a job ID, the worker calls `emit_job_event` on every terminal transition, `POST /session/:id/event` wakes Morty for an unprompted turn, and Studio drains `/session/:id/pending`. Event delivery can even authenticate with a shared `X-Event-Secret` — though both the sending and receiving checks are conditional on `AGENT_EVENT_SECRET`, which nothing in `k8s/` or the Makefile sets, so as deployed the endpoint is unauthenticated. What is missing is the one call that arms the watch.
-
-Nothing registers a watch. Studio never calls `watch_job`. Morty's `_auto_watch_jobs` is supposed to, by scanning its own completed tool calls for a job-creating tool whose output carries an `id` — but it cannot fire, for three independent reasons. `create_sdg_job`, `create_training_job` and `submit_recipe_job` are excluded from the MCP surface, so the agent never calls them. The `validate_*` tools it does call return a `ValidatedJobConfig`, which has no `id` field. And the prefix-stripping that normalises tool names looks for `mcp_amortized__`, while the SDK emits `mcp__amortized__` — two underscores after `mcp` — so the name never matches the trigger list even when the tool does. The registry stays empty, and `emit_job_event` returns immediately every time.
-
-What the user actually sees comes from two Studio timers: the chat's job-monitor card polls `GET /jobs/{id}` every 3 seconds, and the chat hook drains `/pending` every 5 seconds. Completion is visible and reasonably prompt; it just arrives by polling, and Morty does not comment on it unless asked.
-
-The watch registry is also a plain in-memory dict cleared on terminal status, so even once armed it would not survive a server restart.
+Studio polls for job status. The chat's job-monitor card calls `GET /jobs/{id}` every 3 seconds and updates in place when the status changes.
 
 ### 5.4 Studio
 
@@ -520,7 +457,6 @@ UI          POST   /ui/present_options       present_options
             POST   /ui/show_model_pricing    show_model_pricing
             POST   /ui/show_vram_estimate    show_vram_estimate
             POST   /ui/signal_phase          signal_phase
-            POST   /ui/watch_job             watch_job
 
 System      GET    /health                   health
             GET    /config                   get_config
@@ -621,7 +557,6 @@ Environment variables, `AMORTIZED_` prefix, via pydantic-settings:
 | `AMORTIZED_IMAGE_PULL_POLICY` | `Always` in production |
 | `AMORTIZED_MLFLOW_TRACKING_URI` | Empty disables all MLflow integration |
 | `AMORTIZED_GATEWAY_URL` | MLflow AI Gateway base URL |
-| `AMORTIZED_AGENT_SERVER_URL` | Where the worker delivers job events |
 | `AMORTIZED_EXTERNAL_URL` | Externally reachable server URL |
 | `AMORTIZED_API_KEY` | Bearer token; empty means no auth |
 | `AMORTIZED_CORS_ORIGINS` | Comma-separated origins |
