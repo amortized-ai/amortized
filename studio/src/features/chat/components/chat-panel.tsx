@@ -21,6 +21,7 @@ function ChatPanelContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    thinkingStep,
     confirmAction,
     rejectAction,
     notifyJobComplete,
@@ -64,6 +65,7 @@ function ChatPanelContent() {
       />
       <MessageList
         messages={messages}
+        thinkingStep={thinkingStep}
         isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
