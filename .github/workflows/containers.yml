@@ -4,6 +4,7 @@ on:
   push:
     branches: [dev, main]
     paths: ['containers/**', 'agent/**', 'src/**', 'studio/**', 'Dockerfile', 'pyproject.toml', 'templates/**', 'examples/**']
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
@@ -25,14 +26,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@v5
         with:
           context: .
           file: containers/${{ matrix.image }}/Dockerfile
           push: true
-          tags: |
-            ghcr.io/amortized-ai/${{ matrix.image }}:latest
-            ghcr.io/amortized-ai/${{ matrix.image }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   # Amortized control plane server
   build-amortized:
@@ -49,14 +59,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/amortized
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
           push: true
-          tags: |
-            ghcr.io/amortized-ai/amortized:latest
-            ghcr.io/amortized-ai/amortized:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   # Studio frontend — nginx-based static build
   build-studio:
@@ -73,14 +92,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/studio
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@v5
         with:
           context: studio
           file: studio/Dockerfile.kind
           push: true
-          tags: |
-            ghcr.io/amortized-ai/studio:latest
-            ghcr.io/amortized-ai/studio:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   # CUDA training image — too large for GitHub runners (~12GB).
   # Build on a self-hosted GPU runner or manually:
