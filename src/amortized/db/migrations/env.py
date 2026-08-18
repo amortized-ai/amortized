@@ -39,7 +39,7 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     try:
-        loop = asyncio.get_running_loop()
+        loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
 
