@@ -134,7 +134,7 @@ Two job types:
 - **Training** — Fine-tunes models using TRL or training-hub
 - **SDG** — Generates synthetic training data using Data Designer
 
-See [`docs/architecture/`](docs/architecture/) for detailed architecture docs and ADRs.
+See [`docs/architecture.md`](docs/architecture.md) for the full system description.
 
 ## Contributing
 
