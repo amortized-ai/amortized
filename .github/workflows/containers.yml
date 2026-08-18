@@ -74,16 +74,97 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # CUDA training image — too large for GitHub runners (~12GB).
-  # Build on a self-hosted GPU runner or manually:
-  #   podman build -f containers/training/Dockerfile -t ghcr.io/amortized-ai/training:latest . && podman push ghcr.io/amortized-ai/training:latest
-  #
-  # To enable CI builds, add a self-hosted runner with the 'gpu' label:
-  #   https://docs.github.com/en/actions/hosting-your-own-runners
-  #
-  # build-cuda:
-  #   runs-on: [self-hosted, gpu]
-  #   strategy:
-  #     matrix:
-  #       image: [training]
-  #   ...
+  # Data Designer — SDG job container (NVIDIA Data Designer + upload script)
+  build-data-designer:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/data-designer
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: containers/data-designer
+          file: containers/data-designer/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Document processor — docling-serve + chunking
+  build-document:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/document
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: containers/document
+          file: containers/document/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Re-tag training image — too large for GitHub runners (~18GB).
+  # Pulls the existing :latest and pushes version tags.
+  retag-training:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-tag training image
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          MINOR=${VERSION%.*}
+          docker pull ghcr.io/amortized-ai/training:latest
+          docker tag ghcr.io/amortized-ai/training:latest ghcr.io/amortized-ai/training:${VERSION}
+          docker tag ghcr.io/amortized-ai/training:latest ghcr.io/amortized-ai/training:${MINOR}
+          docker push ghcr.io/amortized-ai/training:${VERSION}
+          docker push ghcr.io/amortized-ai/training:${MINOR}
+
+  # To build the training image from source, use a self-hosted GPU runner or manually:
+  #   docker build -f containers/training/Dockerfile -t ghcr.io/amortized-ai/training:latest .
+  #   docker push ghcr.io/amortized-ai/training:latest
