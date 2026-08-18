@@ -1,4 +1,4 @@
-# Amortize MVP
+# Amortized Architecture
 
 *Research MVP: task-based SLM builder — architecture and scope, as built.*
 

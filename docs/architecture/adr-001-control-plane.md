@@ -10,7 +10,7 @@
 > - **AD-9** — partially overtaken. A Claude Agent SDK runtime (`agent/server.py`) was added and receives job events, but OpenCode still ships, still carries the Morty prompt and skills, and is what Studio's chat proxy points at in every deployed overlay. Two runtimes now share one agent persona.
 > - **AD-10** — no OAuth proxy was deployed. Auth is an optional bearer token, disabled by default.
 >
-> For the system as built, see [`Amortize MVP.md`](../Amortize%20MVP.md).
+> For the system as built, see [`architecture.md`](../architecture.md).
 
 ## Context
 
