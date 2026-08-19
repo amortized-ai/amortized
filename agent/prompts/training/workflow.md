@@ -38,11 +38,10 @@ guidance.
 
 ## Student Model Selection
 
-You MUST show VRAM estimates before presenting model options. The user
-needs to see GPU memory requirements before choosing.
+Read `skills/training/supported_models.json` for the list of candidate
+models. You MUST show VRAM estimates before presenting model options.
 
-1. Estimate training resources for EACH candidate model size with the
-   default method (lora)
+1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
 3. THEN present model options
 

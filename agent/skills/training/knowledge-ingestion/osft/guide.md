@@ -24,15 +24,11 @@ Every parameter is adjustable:
 
 Ask the user:
 
-1. **What model?** — Default: `Qwen/Qwen3.5-4B`. Present ONLY these
-   exact HuggingFace model IDs (do NOT invent other sizes):
-   - `Qwen/Qwen3.5-0.8B` — fastest inference, good for prototyping
-   - `Qwen/Qwen3.5-2B` — small but capable
-   - `Qwen/Qwen3.5-4B` — balanced, recommended default
-   - `Qwen/Qwen3.5-9B` — best accuracy for knowledge tasks
-   Do NOT suggest models that don't exist (e.g. Qwen3.5-0.6B,
-   Qwen3.5-1.5B, Qwen3.5-8B — these are not real). The model choice
-   affects all other hyperparameters — set them after.
+1. **What model?** — Read `skills/training/supported_models.json` for
+   the list of supported models with HuggingFace IDs, sizes, and
+   descriptions. Present ONLY models from that file — do NOT invent
+   other sizes or IDs. The model choice affects all other
+   hyperparameters — set them after.
 2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
    user how many GPUs they have or offer GPU count options.
 3. **Training data** — Should come from a completed SDG job. Use
