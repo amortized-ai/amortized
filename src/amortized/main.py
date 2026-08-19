@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import artifacts, costs, datasets, documents, jobs, recipes, ui
+from amortized.api import agent, artifacts, costs, datasets, documents, jobs, recipes, ui
 from amortized.api import models as models_api
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
