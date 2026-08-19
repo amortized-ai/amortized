@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
 
+    agent_upstream_url: str = Field(
+        "http://opencode:4096", description="OpenCode upstream URL for agent session proxy"
+    )
     external_url: str = Field("", description="Externally reachable server URL")
     gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")
     default_backend: str = Field(

@@ -234,6 +234,7 @@ app.include_router(documents.router)
 app.include_router(artifacts.router)
 app.include_router(models_api.router)
 app.include_router(ui.router)
+app.include_router(agent.router, prefix="/agent")
 try:
     create_mcp_server(app)
 except Exception:
