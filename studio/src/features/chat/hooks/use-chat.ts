@@ -73,7 +73,7 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
   let rawText = ""
   const toolResults: ToolResult[] = []
 
-  for (const part of response.parts ?? []) {
+  for (const part of response.parts) {
     if (part.type === "text") {
       rawText += part.text ?? ""
     } else if (part.type === "tool") {
@@ -153,7 +153,7 @@ function extractSessionData(
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
 
-    for (const part of msg.parts ?? []) {
+    for (const part of msg.parts) {
       if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
         if (ALL_TURN_TOOLS.has(name)) {
@@ -170,7 +170,7 @@ function extractSessionData(
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
 
-    for (const part of msg.parts ?? []) {
+    for (const part of msg.parts) {
       if (part.type === "text" && part.text) {
         textParts.push(part.text)
       } else if (part.type === "tool") {
