@@ -484,9 +484,9 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
             if delegation:
                 target, context = delegation
                 if target in _prompts:
-                    # Create fresh subagent session
+                    # Create fresh subagent session with full context
                     sub_prompt = _prompts[target]
-                    handoff_msg = f"[CONTEXT FROM ORCHESTRATOR]\n{context}"
+                    handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
                     sub_parts, sub_info, sub_sdk_id = await _run_agent(
                         session_id,
                         handoff_msg,
