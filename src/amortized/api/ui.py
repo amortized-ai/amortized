@@ -123,3 +123,49 @@ class SignalPhaseResponse(BaseModel):
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
     return SignalPhaseResponse(phase=body.phase, step=body.step)
+
+
+class DelegateRequest(BaseModel):
+    target: str = Field(..., description="Workflow agent to delegate to: 'sdg' or 'training'")
+    context: str = Field(
+        ...,
+        description="Summary of user intent and any relevant artifact IDs to pass to the workflow agent",
+    )
+
+
+class DelegateResponse(BaseModel):
+    status: str = Field("ok")
+    target: str
+
+
+@router.post(
+    "/delegate_to_subagent",
+    response_model=DelegateResponse,
+    operation_id="delegate_to_subagent",
+    summary="Delegate the conversation to a specialized workflow agent for SDG or training",
+)
+async def delegate_to_subagent(body: DelegateRequest) -> DelegateResponse:
+    return DelegateResponse(target=body.target)
+
+
+class SubagentCompletionRequest(BaseModel):
+    summary: str = Field(
+        ...,
+        description="Summary of completed work: job ID, type, key parameters",
+    )
+
+
+class SubagentCompletionResponse(BaseModel):
+    status: str = Field("ok")
+
+
+@router.post(
+    "/signal_subagent_completion",
+    response_model=SubagentCompletionResponse,
+    operation_id="signal_subagent_completion",
+    summary="Signal that the workflow agent has completed its task and hand control back to the orchestrator",
+)
+async def signal_subagent_completion(
+    body: SubagentCompletionRequest,
+) -> SubagentCompletionResponse:
+    return SubagentCompletionResponse()

@@ -37,6 +37,8 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 MORTY_PROMPT_PATH = Path(os.environ.get("MORTY_PROMPT_PATH", "/app/morty.md"))
+SDG_PROMPT_PATH = Path(os.environ.get("SDG_PROMPT_PATH", "/app/morty-sdg.md"))
+TRAINING_PROMPT_PATH = Path(os.environ.get("TRAINING_PROMPT_PATH", "/app/morty-training.md"))
 CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", "/data"))
 SESSION_MAP_PATH = CONFIG_DIR / "session_map.json"
 
@@ -65,9 +67,11 @@ def _detect_provider_id() -> str:
 PROVIDER_ID = _detect_provider_id()
 logger = logging.getLogger(__name__)
 
-_session_map: dict[str, str] = {}
+_orchestrator_sessions: dict[str, str] = {}
+_active_subagents: dict[str, str] = {}
+_subagent_targets: dict[str, str] = {}
 _map_lock = asyncio.Lock()
-_morty_prompt: str = ""
+_prompts: dict[str, str] = {}
 
 _pending_messages: dict[str, list[dict[str, Any]]] = defaultdict(list)
 _pending_lock = asyncio.Lock()
@@ -94,19 +98,32 @@ def _strip_frontmatter(text: str) -> str:
     return text[end + 3 :].lstrip("\n")
 
 
-def _load_morty_prompt() -> str:
-    if MORTY_PROMPT_PATH.is_dir():
+def _load_prompt(path: Path) -> str:
+    if path.is_dir():
         parts = []
-        for f in sorted(MORTY_PROMPT_PATH.glob("*.md")):
+        for f in sorted(path.glob("*.md")):
             parts.append(f.read_text())
         if not parts:
-            raise RuntimeError(f"No .md files found in {MORTY_PROMPT_PATH}")
+            raise RuntimeError(f"No .md files found in {path}")
         raw = "\n".join(parts)
-    elif MORTY_PROMPT_PATH.exists():
-        raw = MORTY_PROMPT_PATH.read_text()
+    elif path.exists():
+        raw = path.read_text()
     else:
-        raise RuntimeError(f"Morty prompt not found at {MORTY_PROMPT_PATH}")
+        raise RuntimeError(f"Prompt not found at {path}")
     return _strip_frontmatter(raw)
+
+
+def _load_all_prompts() -> dict[str, str]:
+    prompts = {"orchestrator": _load_prompt(MORTY_PROMPT_PATH)}
+    if SDG_PROMPT_PATH.exists():
+        prompts["sdg"] = _load_prompt(SDG_PROMPT_PATH)
+    else:
+        logger.warning("SDG prompt not found at %s, delegation disabled", SDG_PROMPT_PATH)
+    if TRAINING_PROMPT_PATH.exists():
+        prompts["training"] = _load_prompt(TRAINING_PROMPT_PATH)
+    else:
+        logger.warning("Training prompt not found at %s, delegation disabled", TRAINING_PROMPT_PATH)
+    return prompts
 
 
 app = FastAPI(title="Claude Code Agent (OpenCode-compatible)")
@@ -120,7 +137,7 @@ async def _sweep_pending() -> None:
     while True:
         await asyncio.sleep(PENDING_SWEEP_INTERVAL)
         async with _pending_lock:
-            stale = [sid for sid in _pending_messages if sid not in _session_map]
+            stale = [sid for sid in _pending_messages if sid not in _orchestrator_sessions]
             for sid in stale:
                 del _pending_messages[sid]
             if stale:
@@ -129,11 +146,14 @@ async def _sweep_pending() -> None:
 
 @app.on_event("startup")
 async def _startup() -> None:
-    global _morty_prompt
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if SESSION_MAP_PATH.exists():
-        _session_map.update(json.loads(SESSION_MAP_PATH.read_text()))
-    _morty_prompt = _load_morty_prompt()
+        saved = json.loads(SESSION_MAP_PATH.read_text())
+        if saved.get("_version") == 2:
+            _orchestrator_sessions.update(saved.get("orchestrator_sessions", {}))
+        else:
+            _orchestrator_sessions.update(saved)
+    _prompts.update(_load_all_prompts())
     task = asyncio.create_task(_sweep_pending())
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
@@ -182,13 +202,15 @@ async def _run_agent(
     session_id: str,
     prompt: str,
     model: str | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Run an agent query and return (response_parts, result_info)."""
+    system_prompt: str | None = None,
+    sdk_session_id: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str | None]:
+    """Run an agent query and return (response_parts, result_info, new_sdk_session_id)."""
     resolved_model = model or MODEL
-    sdk_session_id = _session_map.get(session_id)
+    resolved_prompt = system_prompt or _prompts["orchestrator"]
 
     options = ClaudeAgentOptions(
-        system_prompt=_morty_prompt,
+        system_prompt=resolved_prompt,
         allowed_tools=["mcp__*"],
         permission_mode="acceptEdits",
         setting_sources=[],
@@ -260,9 +282,6 @@ async def _run_agent(
                 "sessionID": session_id,
             }
 
-    if new_sdk_session_id:
-        await _persist_session(session_id, new_sdk_session_id)
-
     if not result_info:
         result_info = {
             "providerID": PROVIDER_ID,
@@ -274,7 +293,7 @@ async def _run_agent(
             "sessionID": session_id,
         }
 
-    return response_parts, result_info
+    return response_parts, result_info, new_sdk_session_id
 
 
 def _extract_job_id_from_output(output: Any) -> str | None:
@@ -375,6 +394,34 @@ def _build_event_prompt(event: JobEvent) -> str:
     return f"[SYSTEM EVENT] {job_label} status changed to {event.status}."
 
 
+def _detect_delegation(response_parts: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """Scan response for a delegate_to_subagent tool call. Returns (target, context) or None."""
+    for part in response_parts:
+        if part.get("type") != "tool" or part.get("state") != "completed":
+            continue
+        tool_name = (
+            (part.get("tool") or "").replace("mcp_amortized__", "").replace("amortized_", "")
+        )
+        if tool_name == "delegate_to_subagent":
+            inp = part.get("input", {})
+            return inp.get("target", ""), inp.get("context", "")
+    return None
+
+
+def _detect_completion(response_parts: list[dict[str, Any]]) -> str | None:
+    """Scan response for a signal_subagent_completion tool call. Returns summary or None."""
+    for part in response_parts:
+        if part.get("type") != "tool" or part.get("state") != "completed":
+            continue
+        tool_name = (
+            (part.get("tool") or "").replace("mcp_amortized__", "").replace("amortized_", "")
+        )
+        if tool_name == "signal_subagent_completion":
+            inp = part.get("input", {})
+            return inp.get("summary", "")
+    return None
+
+
 @app.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     user_text = ""
@@ -392,7 +439,72 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     lock = await _get_session_lock(session_id)
     async with lock:
-        response_parts, result_info = await _run_agent(session_id, user_text, model)
+        active_sub = _active_subagents.get(session_id)
+
+        if active_sub:
+            # Route to active subagent
+            sub_prompt = _prompts.get(_subagent_targets.get(session_id, ""), "")
+            response_parts, result_info, new_sdk_id = await _run_agent(
+                session_id, user_text, model, system_prompt=sub_prompt, sdk_session_id=active_sub
+            )
+            if new_sdk_id:
+                _active_subagents[session_id] = new_sdk_id
+
+            # Check if subagent is signaling completion
+            summary = _detect_completion(response_parts)
+            if summary:
+                _active_subagents.pop(session_id, None)
+                _subagent_targets.pop(session_id, None)
+                # Send summary to orchestrator and get its response
+                orch_sdk_id = _orchestrator_sessions.get(session_id)
+                resume_prompt = (
+                    f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+                    "Present contextual next steps to the user via present_options."
+                )
+                orch_parts, orch_info, new_orch_id = await _run_agent(
+                    session_id,
+                    resume_prompt,
+                    model,
+                    sdk_session_id=orch_sdk_id,
+                )
+                if new_orch_id:
+                    _orchestrator_sessions[session_id] = new_orch_id
+                    await _persist_session_state()
+                # Append orchestrator response to subagent's final response
+                response_parts.extend(orch_parts)
+                result_info = orch_info
+        else:
+            # Route to orchestrator
+            orch_sdk_id = _orchestrator_sessions.get(session_id)
+            response_parts, result_info, new_sdk_id = await _run_agent(
+                session_id, user_text, model, sdk_session_id=orch_sdk_id
+            )
+            if new_sdk_id:
+                _orchestrator_sessions[session_id] = new_sdk_id
+                await _persist_session_state()
+
+            # Check if orchestrator is delegating
+            delegation = _detect_delegation(response_parts)
+            if delegation:
+                target, context = delegation
+                if target in _prompts:
+                    # Create fresh subagent session
+                    sub_prompt = _prompts[target]
+                    handoff_msg = f"[CONTEXT FROM ORCHESTRATOR]\n{context}"
+                    sub_parts, sub_info, sub_sdk_id = await _run_agent(
+                        session_id,
+                        handoff_msg,
+                        model,
+                        system_prompt=sub_prompt,
+                    )
+                    if sub_sdk_id:
+                        _active_subagents[session_id] = sub_sdk_id
+                        _subagent_targets[session_id] = target
+                    # Replace orchestrator response with subagent's first response
+                    response_parts = sub_parts
+                    result_info = sub_info
+                else:
+                    logger.warning("Unknown delegation target: %s", target)
 
     task = asyncio.create_task(_auto_watch_jobs(session_id, response_parts))
     _background_tasks.add(task)
@@ -409,7 +521,7 @@ async def receive_event(session_id: str, body: JobEvent, request: Request) -> di
         if provided != expected_secret:
             raise HTTPException(status_code=403, detail="invalid event secret")
 
-    if session_id not in _session_map:
+    if session_id not in _orchestrator_sessions:
         raise HTTPException(status_code=404, detail="unknown session")
 
     now = time.monotonic()
@@ -421,7 +533,23 @@ async def receive_event(session_id: str, body: JobEvent, request: Request) -> di
 
     lock = await _get_session_lock(session_id)
     async with lock:
-        response_parts, result_info = await _run_agent(session_id, prompt)
+        # Route event to active session (subagent or orchestrator)
+        active_sub = _active_subagents.get(session_id)
+        if active_sub:
+            sub_prompt = _prompts.get(_subagent_targets.get(session_id, ""), "")
+            response_parts, result_info, new_sdk_id = await _run_agent(
+                session_id, prompt, system_prompt=sub_prompt, sdk_session_id=active_sub
+            )
+            if new_sdk_id:
+                _active_subagents[session_id] = new_sdk_id
+        else:
+            orch_sdk_id = _orchestrator_sessions.get(session_id)
+            response_parts, result_info, new_sdk_id = await _run_agent(
+                session_id, prompt, sdk_session_id=orch_sdk_id
+            )
+            if new_sdk_id:
+                _orchestrator_sessions[session_id] = new_sdk_id
+                await _persist_session_state()
 
     _last_event_time[session_id] = time.monotonic()
 
@@ -438,18 +566,19 @@ async def receive_event(session_id: str, body: JobEvent, request: Request) -> di
 
 @app.get("/session/{session_id}/pending")
 async def get_pending(session_id: str) -> dict[str, Any]:
-    if session_id not in _session_map:
+    if session_id not in _orchestrator_sessions:
         raise HTTPException(status_code=404, detail="unknown session")
     async with _pending_lock:
         messages = _pending_messages.pop(session_id, [])
     return {"messages": messages}
 
 
-async def _persist_session(external_id: str, sdk_session_id: str) -> None:
+async def _persist_session_state() -> None:
     async with _map_lock:
-        if _session_map.get(external_id) == sdk_session_id:
-            return
-        _session_map[external_id] = sdk_session_id
+        state = {
+            "_version": 2,
+            "orchestrator_sessions": dict(_orchestrator_sessions),
+        }
         tmp = SESSION_MAP_PATH.with_suffix(".json.tmp")
-        await asyncio.to_thread(tmp.write_text, json.dumps(_session_map))
+        await asyncio.to_thread(tmp.write_text, json.dumps(state))
         await asyncio.to_thread(tmp.replace, SESSION_MAP_PATH)
