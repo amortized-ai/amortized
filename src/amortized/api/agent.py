@@ -134,6 +134,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
         if active_sub:
             target = _subagent_targets.get(session_id, "")
+            logger.info("Routing to subagent: session=%s target=%s", session_id, target)
             result = await _proxy_send_message(
                 active_sub, user_text, agent=target, model=body.model
             )
@@ -167,13 +168,16 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         delegation = _detect_delegation(parts)
         if delegation:
             target, context = delegation
+            logger.info("Delegation detected: target=%s session=%s", target, session_id)
             sub_id = await _proxy_create_session()
+            logger.info("Subagent session created: %s for %s", sub_id, session_id)
             handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
             sub_result = await _proxy_send_message(
                 sub_id, handoff_msg, agent=target, model=body.model
             )
             _active_subagents[session_id] = sub_id
             _subagent_targets[session_id] = target
+            logger.info("Subagent active: %s → %s (%s)", session_id, sub_id, target)
             return sub_result
 
         return result
