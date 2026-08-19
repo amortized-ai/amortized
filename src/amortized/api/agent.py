@@ -123,11 +123,23 @@ async def create_session() -> dict[str, Any]:
 
 
 @router.get("/session/{session_id}/message")
-async def warmup_session(session_id: str) -> dict[str, Any]:
-    """Studio calls GET as a session warmup/health check."""
-    if session_id in _orchestrator_sessions:
+async def get_session_messages(session_id: str) -> Any:
+    """Proxy GET to the active OpenCode session to fetch message history."""
+    active_sub = _active_subagents.get(session_id)
+    target_id = active_sub or _orchestrator_sessions.get(session_id)
+    if not target_id:
+        raise HTTPException(status_code=404, detail="unknown session")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{_opencode_url()}/session/{target_id}/message")
+            if resp.status_code == 404:
+                return {"info": {}, "parts": []}
+            resp.raise_for_status()
+            if not resp.content:
+                return {"info": {}, "parts": []}
+            return resp.json()
+    except Exception:
         return {"info": {}, "parts": []}
-    raise HTTPException(status_code=404, detail="unknown session")
 
 
 @router.post("/session/{session_id}/message")
