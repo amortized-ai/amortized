@@ -151,6 +151,11 @@ no parameter lists, no summaries. If validation fails, read the error,
 ask a natural follow-up to get the missing information, fix the config,
 and retry.
 
+**CRITICAL: Do NOT call `present_options` after submitting a job.**
+The UI renders a job monitor card automatically. Wait for the
+`[SYSTEM EVENT]` notification when the job finishes. Only then
+present next steps.
+
 ### Phase 4 — Signal Completion
 
 After the job is successfully submitted, call
