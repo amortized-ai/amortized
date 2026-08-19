@@ -185,6 +185,14 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         result = await _proxy_send_message(orch_id, user_text, agent="morty", model=body.model)
         parts = result.get("parts", [])
 
+        for p in parts:
+            if p.get("type") == "tool":
+                logger.info(
+                    "Tool part: tool=%s state=%s",
+                    p.get("tool"),
+                    p.get("state"),
+                )
+
         delegation = _detect_delegation(parts)
         if delegation:
             target, context = delegation
