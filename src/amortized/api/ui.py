@@ -9,9 +9,12 @@ router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
 
 
 class OptionItem(BaseModel):
-    title: str = Field(..., description="Short option label")
+    title: str = Field(..., description="Short label (1-3 words)")
     description: str = Field("", description="Brief explanation of this option")
-    value: str = Field(..., description="Value sent back when user selects this option")
+    value: str = Field(
+        ...,
+        description="Natural language sentence sent as the user's message when clicked (e.g. 'No, just classify by category' not 'no_urgency')",
+    )
 
 
 class PresentOptionsRequest(BaseModel):
@@ -20,7 +23,10 @@ class PresentOptionsRequest(BaseModel):
     )
     question: str = Field("", description="The question being asked")
     options: list[OptionItem] = Field(
-        ..., description="Options to present to the user", min_length=1
+        ...,
+        description="Options to present as clickable cards. Maximum 4 options, prefer 3.",
+        min_length=1,
+        max_length=4,
     )
 
 
@@ -35,7 +41,7 @@ class PresentOptionsResponse(BaseModel):
     "/present_options",
     response_model=PresentOptionsResponse,
     operation_id="present_options",
-    summary="Present structured options to the user as clickable cards in the chat UI",
+    summary="Render clickable option cards in the chat UI. Use whenever presenting options or choices to the user. Call once per message, then stop and wait. Do NOT write numbered lists — use this tool instead.",
 )
 async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse:
     return PresentOptionsResponse(
