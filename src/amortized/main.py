@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import artifacts, costs, datasets, documents, jobs, recipes, ui
+from amortized.api import agent, artifacts, costs, datasets, documents, jobs, recipes, ui
 from amortized.api import models as models_api
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
@@ -234,6 +234,7 @@ app.include_router(documents.router)
 app.include_router(artifacts.router)
 app.include_router(models_api.router)
 app.include_router(ui.router)
+app.include_router(agent.router, prefix="/agent")
 try:
     create_mcp_server(app)
 except Exception:
