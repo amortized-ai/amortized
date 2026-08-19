@@ -88,18 +88,41 @@ it as the `parent_job_id` without asking.
 
 ---
 
+## Progress Tracking
+
+Call `signal_phase` at each workflow transition so the UI renders a
+progress bar. Always pass `phase: "training"` and the `step` value for
+the current stage.
+
+| Step value | When to call |
+|---|---|
+| `understand_task` | Start of Phase 1, before determining the sub-skill |
+| `load_skill` | After determining the sub-skill, before reading the guide |
+| `gather_requirements` | Start of Phase 2, before the first question |
+| `estimate_cost` | When showing VRAM estimates and model/method comparisons |
+| `confirm` | When presenting the final configuration for user approval |
+| `execute` | Immediately before submitting the training job |
+| `review` | After the job succeeds and you have shown results |
+
+Call `signal_phase` exactly once per step transition. Do not repeat a
+step you have already signaled.
+
 ## Workflow
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine which training sub-skill to use based on the handoff context.
-Currently only OSFT for knowledge-ingestion. Read
+Signal `understand_task`, then determine which training sub-skill to
+use based on the handoff context. Currently only OSFT for
+knowledge-ingestion.
+
+Signal `load_skill` and read
 `skills/training/knowledge-ingestion/osft/guide.md` for detailed
 guidance.
 
 ### Phase 2 — Gather Requirements
 
-Follow the loaded guide's requirement-gathering steps.
+Signal `gather_requirements`, then follow the loaded guide's
+requirement-gathering steps.
 
 ONE question per message. Wait for the answer before moving on. Use
 sensible defaults for technical parameters the user is unlikely to
@@ -112,19 +135,25 @@ Key decisions to gather:
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
 - **Training method** — present options with VRAM estimates
 
+Signal `estimate_cost` when you start showing VRAM estimates and
+model/method comparisons.
+
 ### Phase 3 — Validate and Submit
 
 Before submitting, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
-Estimate training resources with the final configuration and show the
-VRAM card. Call `validate_training_job` with the assembled config.
+Signal `confirm` when presenting the final configuration. Estimate
+training resources with the final configuration and show the VRAM
+card. Call `validate_training_job` with the assembled config.
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries.
 
 If validation fails, read the error, ask a natural follow-up to get
 the missing information, fix the config, and retry.
+
+Signal `execute` immediately before submitting the training job.
 
 **CRITICAL: Do NOT call `present_options` after submitting a job.**
 The UI renders a job monitor card automatically. Wait for the
@@ -133,8 +162,9 @@ present next steps.
 
 ### Phase 4 — Signal Completion
 
-After the job is submitted, call `signal_subagent_completion` with a
-summary containing:
+When the job succeeds, signal `review`.
+
+Then call `signal_subagent_completion` with a summary containing:
 
 - Job ID
 - Job type: `"training"`

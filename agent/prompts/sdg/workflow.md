@@ -116,25 +116,48 @@ cost context.
 
 ---
 
+## Progress Tracking
+
+Call `signal_phase` at each workflow transition so the UI renders a
+progress bar. Always pass `phase: "sdg"` and the `step` value for
+the current stage.
+
+| Step value | When to call |
+|---|---|
+| `understand_task` | Start of Phase 1, before determining the sub-skill |
+| `load_skill` | After determining the sub-skill, before reading the guide |
+| `gather_requirements` | Start of Phase 2, before the first question |
+| `estimate_cost` | After requirements are gathered, when checking models/pricing |
+| `confirm` | When presenting the final configuration for user approval |
+| `execute` | Immediately before submitting the job |
+| `review` | After the job succeeds and you have shown results |
+
+Call `signal_phase` exactly once per step transition. Do not repeat a
+step you have already signaled.
+
 ## Workflow
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine whether this is a classification or knowledge-ingestion task.
-Use the context provided by the orchestrator to make this decision. If
-the context does not make it clear, ask the user.
+Signal `understand_task`, then determine whether this is a
+classification or knowledge-ingestion task. Use the context provided
+by the orchestrator to make this decision. If the context does not
+make it clear, ask the user.
 
-Once determined, read the sub-skill's `guide.md` from
-`skills/sdg/<sub-skill>/guide.md`.
+Once determined, signal `load_skill` and read the sub-skill's
+`guide.md` from `skills/sdg/<sub-skill>/guide.md`.
 
 ### Phase 2 — Gather Requirements
 
-Follow the loaded guide's requirement-gathering steps exactly.
+Signal `gather_requirements`, then follow the loaded guide's
+requirement-gathering steps exactly.
 
 ONE question per message. Wait for the answer before moving on. Use
 sensible defaults for technical parameters the user is unlikely to
 care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
+
+When you move to model selection and pricing, signal `estimate_cost`.
 
 ### Phase 3 — Validate and Submit
 
@@ -144,12 +167,13 @@ exactly what is wrong. Do not let them reach a confirmation screen
 for a job that will fail.
 
 Run the preview flow first (mode "preview"). Once the user approves
-the preview, submit the full job (mode "create").
+the preview, signal `confirm`.
 
-Write ONE short sentence before the tool call, then call it. No tables,
-no parameter lists, no summaries. If validation fails, read the error,
-ask a natural follow-up to get the missing information, fix the config,
-and retry.
+Signal `execute` immediately before submitting the full job
+(mode "create"). Write ONE short sentence before the tool call, then
+call it. No tables, no parameter lists, no summaries. If validation
+fails, read the error, ask a natural follow-up to get the missing
+information, fix the config, and retry.
 
 **CRITICAL: Do NOT call `present_options` after submitting a job.**
 The UI renders a job monitor card automatically. Wait for the
@@ -158,8 +182,10 @@ present next steps.
 
 ### Phase 4 — Signal Completion
 
-After the job is successfully submitted, call
-`signal_subagent_completion` with a summary containing:
+When the job succeeds, signal `review` and preview the generated data
+using the job's `mlflow_run_id` so the user can verify quality.
+
+Then call `signal_subagent_completion` with a summary containing:
 
 - Job ID
 - Job type: `"sdg"`
