@@ -399,10 +399,8 @@ def _detect_delegation(response_parts: list[dict[str, Any]]) -> tuple[str, str] 
     for part in response_parts:
         if part.get("type") != "tool" or part.get("state") != "completed":
             continue
-        tool_name = (
-            (part.get("tool") or "").replace("mcp_amortized__", "").replace("amortized_", "")
-        )
-        if tool_name == "delegate_to_subagent":
+        raw_name = part.get("tool") or ""
+        if raw_name.endswith("delegate_to_subagent"):
             inp = part.get("input", {})
             return inp.get("target", ""), inp.get("context", "")
     return None
@@ -413,10 +411,8 @@ def _detect_completion(response_parts: list[dict[str, Any]]) -> str | None:
     for part in response_parts:
         if part.get("type") != "tool" or part.get("state") != "completed":
             continue
-        tool_name = (
-            (part.get("tool") or "").replace("mcp_amortized__", "").replace("amortized_", "")
-        )
-        if tool_name == "signal_subagent_completion":
+        raw_name = part.get("tool") or ""
+        if raw_name.endswith("signal_subagent_completion"):
             inp = part.get("input", {})
             return inp.get("summary", "")
     return None
