@@ -22,7 +22,7 @@ server {
     }
 
     location ~ ^/mlflow/api/2\.0/gateway/(.*)$ {
-        set $mlflow_gw_upstream http://${MLFLOW_HOST}:5001;
+        set $mlflow_gw_upstream http://${MLFLOW_HOST}:${MLFLOW_PORT};
         proxy_pass $mlflow_gw_upstream/api/2.0/gateway/$1$is_args$args;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
