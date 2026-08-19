@@ -126,7 +126,7 @@ async def create_session() -> dict[str, Any]:
 async def warmup_session(session_id: str) -> dict[str, Any]:
     """Studio calls GET as a session warmup/health check."""
     if session_id in _orchestrator_sessions:
-        return {"status": "ok"}
+        return {"info": {}, "parts": []}
     raise HTTPException(status_code=404, detail="unknown session")
 
 
