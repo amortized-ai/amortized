@@ -354,7 +354,10 @@ export async function fetchSessionMessages(
       logger.warn("fetchSessionMessages failed", { sessionId, status: resp.status })
       return []
     }
-    return await resp.json()
+    const data = await resp.json()
+    if (Array.isArray(data)) return data
+    if (data && typeof data === "object" && "parts" in data) return [data]
+    return []
   } catch (err) {
     logger.warn("fetchSessionMessages error", { sessionId, error: err instanceof Error ? err.message : String(err) })
     return []
