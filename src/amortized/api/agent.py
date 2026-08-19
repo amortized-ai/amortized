@@ -122,6 +122,14 @@ async def create_session() -> dict[str, Any]:
     return {"id": session_id}
 
 
+@router.get("/session/{session_id}/message")
+async def warmup_session(session_id: str) -> dict[str, Any]:
+    """Studio calls GET as a session warmup/health check."""
+    if session_id in _orchestrator_sessions:
+        return {"status": "ok"}
+    raise HTTPException(status_code=404, detail="unknown session")
+
+
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     user_text = _extract_user_text(body)
@@ -200,6 +208,11 @@ async def get_pending(session_id: str) -> dict[str, Any]:
             return resp.json()
     except Exception:
         return {"messages": []}
+
+
+@router.post("/title")
+async def generate_title() -> dict[str, Any]:
+    return {"title": ""}
 
 
 @router.get("/health")
