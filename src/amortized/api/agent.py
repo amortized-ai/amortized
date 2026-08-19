@@ -185,12 +185,17 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     target_id = active_sub or _orchestrator_sessions.get(session_id)
     if not target_id:
         raise HTTPException(status_code=404, detail="unknown session")
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{_opencode_url()}/session/{target_id}/pending")
-        if resp.status_code == 404:
-            return {"messages": []}
-        resp.raise_for_status()
-        return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{_opencode_url()}/session/{target_id}/pending")
+            if resp.status_code == 404:
+                return {"messages": []}
+            resp.raise_for_status()
+            if not resp.content:
+                return {"messages": []}
+            return resp.json()
+    except Exception:
+        return {"messages": []}
 
 
 @router.get("/health")
