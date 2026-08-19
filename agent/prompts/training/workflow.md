@@ -96,14 +96,17 @@ Key decisions to gather:
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
 - **Training method** — present options with VRAM estimates
 
-### Phase 3 — Validate and Submit
+### Phase 3 — Validate and Confirm
 
-Before submitting, silently verify the platform can execute the job.
+Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
 Estimate training resources with the final configuration and show the
 VRAM card. Call `validate_training_job` with the assembled config.
+The UI renders a confirmation card — the user clicks confirm to
+submit the job.
+
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries.
 

@@ -176,10 +176,7 @@ async def _validate_training_data(
     status_code=201,
     response_model=Job,
     operation_id="create_sdg_job",
-    summary=(
-        "Create and submit an SDG job. Use validate_sdg_job first to check the "
-        "config. Returns the created job with its ID for monitoring."
-    ),
+    summary="Create and submit an SDG job. Called by the frontend on user confirmation.",
 )
 async def create_sdg_job(
     request: SDGJobRequest,
@@ -211,10 +208,7 @@ async def create_sdg_job(
     status_code=201,
     response_model=Job,
     operation_id="create_training_job",
-    summary=(
-        "Create and submit a training job. Use validate_training_job first to "
-        "check the config. Set parent_job_id to chain from a completed SDG job."
-    ),
+    summary="Create and submit a training job. Called by the frontend on user confirmation.",
 )
 async def create_training_job(
     request: TrainingJobRequest,
@@ -255,9 +249,9 @@ async def create_training_job(
     response_model=ValidatedJobConfig,
     operation_id="validate_sdg_job",
     summary=(
-        "Validate an SDG job config without creating it. Call this before "
-        "create_sdg_job to catch errors early. Use mode 'preview' for a ~10 "
-        "sample test run, then 'create' for the full run."
+        "Validate an SDG job config and present it for user confirmation. "
+        "The UI renders a confirmation card — the user clicks confirm to submit. "
+        "Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run."
     ),
 )
 async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
@@ -275,9 +269,9 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     response_model=ValidatedJobConfig,
     operation_id="validate_training_job",
     summary=(
-        "Validate a training job config without creating it. Call this before "
-        "create_training_job. Checks that parent_job_id (if set) references a "
-        "succeeded SDG job with MLflow artifacts."
+        "Validate a training job config and present it for user confirmation. "
+        "The UI renders a confirmation card — the user clicks confirm to submit. "
+        "Set parent_job_id to chain from a completed SDG job."
     ),
 )
 async def validate_training_job(
