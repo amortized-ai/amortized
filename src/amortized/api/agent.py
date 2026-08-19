@@ -171,7 +171,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
                         "Present contextual next steps to the user via present_options."
                     )
                     orch_result = await _proxy_send_message(
-                        orch_id, resume_prompt, model=body.model
+                        orch_id, resume_prompt, agent="morty", model=body.model
                     )
                     parts.extend(orch_result.get("parts", []))
                     result["info"] = orch_result.get("info", result.get("info", {}))
@@ -182,7 +182,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         if not orch_id:
             raise HTTPException(status_code=404, detail="unknown session")
 
-        result = await _proxy_send_message(orch_id, user_text, model=body.model)
+        result = await _proxy_send_message(orch_id, user_text, agent="morty", model=body.model)
         parts = result.get("parts", [])
 
         delegation = _detect_delegation(parts)
