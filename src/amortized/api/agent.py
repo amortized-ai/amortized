@@ -85,24 +85,48 @@ async def _proxy_send_message(
         return resp.json()
 
 
+def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
+    """Extract tool input from a response part, handling varying formats."""
+    inp = part.get("input")
+    if isinstance(inp, dict):
+        return inp
+    state = part.get("state")
+    if isinstance(state, dict):
+        state_input = state.get("input")
+        if isinstance(state_input, dict):
+            return state_input
+    return {}
+
+
+def _is_completed_tool(part: dict[str, Any]) -> bool:
+    if part.get("type") != "tool":
+        return False
+    state = part.get("state")
+    if isinstance(state, str):
+        return state == "completed"
+    if isinstance(state, dict):
+        return state.get("status") == "completed"
+    return True
+
+
 def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
     for part in parts:
-        if part.get("type") != "tool" or part.get("state", {}).get("status") != "completed":
+        if not _is_completed_tool(part):
             continue
-        tool = part.get("tool", "")
+        tool = part.get("tool") or part.get("toolName") or ""
         if tool.endswith("delegate_to_subagent"):
-            inp = part.get("state", {}).get("input", {})
+            inp = _get_tool_input(part)
             return inp.get("target", ""), inp.get("context", "")
     return None
 
 
 def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
     for part in parts:
-        if part.get("type") != "tool" or part.get("state", {}).get("status") != "completed":
+        if not _is_completed_tool(part):
             continue
-        tool = part.get("tool", "")
+        tool = part.get("tool") or part.get("toolName") or ""
         if tool.endswith("signal_subagent_completion"):
-            inp = part.get("state", {}).get("input", {})
+            inp = _get_tool_input(part)
             return inp.get("summary", "")
     return None
 
