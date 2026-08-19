@@ -98,23 +98,16 @@ def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _is_completed_tool(part: dict[str, Any]) -> bool:
-    if part.get("type") != "tool":
-        return False
-    state = part.get("state")
-    if isinstance(state, str):
-        return state == "completed"
-    if isinstance(state, dict):
-        return state.get("status") == "completed"
-    return True
+def _tool_name(part: dict[str, Any]) -> str:
+    raw = part.get("tool") or part.get("toolName") or ""
+    return raw.split("__")[-1] if "__" in raw else raw
 
 
 def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
     for part in parts:
-        if not _is_completed_tool(part):
+        if part.get("type") != "tool":
             continue
-        tool = part.get("tool") or part.get("toolName") or ""
-        if tool.endswith("delegate_to_subagent"):
+        if _tool_name(part) == "delegate_to_subagent":
             inp = _get_tool_input(part)
             return inp.get("target", ""), inp.get("context", "")
     return None
@@ -122,10 +115,9 @@ def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
 
 def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
     for part in parts:
-        if not _is_completed_tool(part):
+        if part.get("type") != "tool":
             continue
-        tool = part.get("tool") or part.get("toolName") or ""
-        if tool.endswith("signal_subagent_completion"):
+        if _tool_name(part) == "signal_subagent_completion":
             inp = _get_tool_input(part)
             return inp.get("summary", "")
     return None
