@@ -30,6 +30,21 @@ _subagent_targets: dict[str, str] = {}
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_locks_lock = asyncio.Lock()
 
+_pending_delegations: dict[str, tuple[str, str]] = {}
+_pending_completions: dict[str, str] = {}
+
+
+def queue_delegation(target: str, context: str) -> None:
+    """Called by the MCP delegate_to_subagent endpoint."""
+    _pending_delegations["latest"] = (target, context)
+    logger.info("Delegation queued: target=%s", target)
+
+
+def queue_completion(summary: str) -> None:
+    """Called by the MCP signal_subagent_completion endpoint."""
+    _pending_completions["latest"] = summary
+    logger.info("Completion queued")
+
 
 def _opencode_url() -> str:
     return settings.agent_upstream_url.rstrip("/")
@@ -85,44 +100,6 @@ async def _proxy_send_message(
         return resp.json()
 
 
-def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
-    """Extract tool input from a response part, handling varying formats."""
-    inp = part.get("input")
-    if isinstance(inp, dict):
-        return inp
-    state = part.get("state")
-    if isinstance(state, dict):
-        state_input = state.get("input")
-        if isinstance(state_input, dict):
-            return state_input
-    return {}
-
-
-def _tool_name(part: dict[str, Any]) -> str:
-    raw = part.get("tool") or part.get("toolName") or ""
-    return raw.split("__")[-1] if "__" in raw else raw
-
-
-def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
-    for part in parts:
-        if part.get("type") != "tool":
-            continue
-        if _tool_name(part) == "delegate_to_subagent":
-            inp = _get_tool_input(part)
-            return inp.get("target", ""), inp.get("context", "")
-    return None
-
-
-def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
-    for part in parts:
-        if part.get("type") != "tool":
-            continue
-        if _tool_name(part) == "signal_subagent_completion":
-            inp = _get_tool_input(part)
-            return inp.get("summary", "")
-    return None
-
-
 def _extract_user_text(body: MessageRequest) -> str:
     for part in body.parts:
         if part.type == "text" and part.text:
@@ -171,24 +148,26 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         if active_sub:
             target = _subagent_targets.get(session_id, "")
             logger.info("Routing to subagent: session=%s target=%s", session_id, target)
+            _pending_completions.pop("latest", None)
             result = await _proxy_send_message(
                 active_sub, user_text, agent=target, model=body.model
             )
-            parts = result.get("parts", [])
 
-            summary = _detect_completion(parts)
-            if summary:
+            completion = _pending_completions.pop("latest", None)
+            if completion:
+                logger.info("Subagent completion signal received: session=%s", session_id)
                 _active_subagents.pop(session_id, None)
                 _subagent_targets.pop(session_id, None)
                 orch_id = _orchestrator_sessions.get(session_id)
                 if orch_id:
                     resume_prompt = (
-                        f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+                        f"[SUBAGENT COMPLETED]\n{completion}\n\n"
                         "Present contextual next steps to the user via present_options."
                     )
                     orch_result = await _proxy_send_message(
                         orch_id, resume_prompt, agent="morty", model=body.model
                     )
+                    parts = result.get("parts", [])
                     parts.extend(orch_result.get("parts", []))
                     result["info"] = orch_result.get("info", result.get("info", {}))
 
@@ -198,21 +177,14 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         if not orch_id:
             raise HTTPException(status_code=404, detail="unknown session")
 
+        _pending_delegations.pop("latest", None)
         result = await _proxy_send_message(orch_id, user_text, agent="morty", model=body.model)
-        parts = result.get("parts", [])
 
-        logger.info("Response parts (%d): %s", len(parts), [p.get("type") for p in parts])
-        for p in parts:
-            logger.info(
-                "Part: %s", {k: v for k, v in p.items() if k != "text" or len(str(v)) < 200}
-            )
-
-        delegation = _detect_delegation(parts)
+        delegation = _pending_delegations.pop("latest", None)
         if delegation:
             target, context = delegation
             logger.info("Delegation detected: target=%s session=%s", target, session_id)
             sub_id = await _proxy_create_session()
-            logger.info("Subagent session created: %s for %s", sub_id, session_id)
             handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
             sub_result = await _proxy_send_message(
                 sub_id, handoff_msg, agent=target, model=body.model
