@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claude-code
+  namespace: amortized
+  labels:
+    app: amortized
+    component: claude-code
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: claude-code
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: claude-code
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: build-skills-tree
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              cd /flat
+              for f in *; do
+                dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
+                name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
+                mkdir -p "$dir"
+                cp "$f" "$dir/$name"
+              done
+          volumeMounts:
+            - name: morty-skills
+              mountPath: /flat
+              readOnly: true
+            - name: skills-tree
+              mountPath: /skills
+      containers:
+        - name: claude-code
+          image: ghcr.io/amortized-ai/claude-code-agent:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 4096
+          env:
+            - name: CLAUDE_CODE_USE_VERTEX
+              value: "1"
+            - name: ANTHROPIC_VERTEX_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-llm
+                  key: google-cloud-project
+            - name: CLOUD_ML_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-llm
+                  key: vertex-location
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /app/gcp/credentials.json
+            - name: ANTHROPIC_MODEL
+              value: "claude-opus-4-8"
+            - name: MCP_AMORTIZED_URL
+              value: "http://amortized-server.amortized.svc.cluster.local:8000/mcp"
+            - name: MCP_MLFLOW_URL
+              value: "http://127.0.0.1:5002/sse"
+            - name: MORTY_PROMPT_PATH
+              value: "/app/morty"
+            - name: SDG_PROMPT_PATH
+              value: "/app/morty-sdg.md"
+            - name: TRAINING_PROMPT_PATH
+              value: "/app/morty-training.md"
+          volumeMounts:
+            - name: morty-prompt
+              mountPath: /app/morty/identity.md
+              subPath: morty-identity.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/morty/workflow.md
+              subPath: morty-workflow.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/morty-sdg.md
+              subPath: morty-sdg-workflow.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/morty-training.md
+              subPath: morty-training-workflow.md
+              readOnly: true
+            - name: skills-tree
+              mountPath: /app/workspace/skills
+              readOnly: true
+            - name: gcp-credentials
+              mountPath: /app/gcp
+              readOnly: true
+            - name: session-data
+              mountPath: /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: morty-prompt
+          configMap:
+            name: morty-config
+        - name: morty-skills
+          configMap:
+            name: morty-skills
+        - name: skills-tree
+          emptyDir: {}
+        - name: gcp-credentials
+          secret:
+            secretName: opencode-gcp
+        - name: session-data
+          emptyDir: {}
