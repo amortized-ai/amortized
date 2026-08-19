@@ -30,12 +30,21 @@ logger = logging.getLogger("amortized.api.recipes")
 router = APIRouter(prefix="/api/v1/recipes", tags=["recipes"])
 
 
-@router.get("", response_model=list[RecipeSummary], operation_id="list_recipes")
+@router.get(
+    "",
+    response_model=list[RecipeSummary],
+    operation_id="list_recipes",
+    summary="List available training recipes with their descriptions and configs.",
+)
 async def get_recipes() -> list[dict[str, Any]]:
     return list_recipes()
 
 
-@router.get("/{name:path}", operation_id="get_recipe")
+@router.get(
+    "/{name:path}",
+    operation_id="get_recipe",
+    summary="Get a recipe's full config by name (e.g. 'models/qwen-1.5b-lora').",
+)
 async def get_recipe(name: str) -> dict[str, Any]:
     try:
         return load_recipe(name)
@@ -49,7 +58,11 @@ class SaveRecipeRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict, description="Recipe configuration")
 
 
-@router.put("/{name:path}", operation_id="save_recipe")
+@router.put(
+    "/{name:path}",
+    operation_id="save_recipe",
+    summary="Save or update a recipe. Custom recipes go under templates/custom/.",
+)
 async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     import yaml as _yaml
 
@@ -81,7 +94,12 @@ async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
     return {"name": name, **recipe_data}
 
 
-@router.delete("/{name:path}", status_code=204, operation_id="delete_recipe")
+@router.delete(
+    "/{name:path}",
+    status_code=204,
+    operation_id="delete_recipe",
+    summary="Delete a custom recipe. Built-in recipes cannot be deleted.",
+)
 async def delete_recipe(name: str) -> None:
     try:
         core_delete_recipe(name)
@@ -119,6 +137,10 @@ recipe_jobs_router = APIRouter(tags=["recipes"])
     status_code=201,
     response_model=None,
     operation_id="submit_recipe_job",
+    summary=(
+        "Submit a job from a recipe with optional dot-notation overrides. "
+        "Validates the config and creates the job in one step."
+    ),
 )
 async def submit_recipe_job(
     request: RecipeJobRequest,
@@ -174,6 +196,7 @@ async def submit_recipe_job(
     "/api/v1/jobs/recipe/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_recipe_job",
+    summary="Validate a recipe job config without creating it.",
 )
 async def validate_recipe_job(
     request: RecipeJobRequest,
