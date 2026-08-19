@@ -13,7 +13,10 @@ class OptionItem(BaseModel):
     description: str = Field("", description="Brief explanation of this option")
     value: str = Field(
         ...,
-        description="Natural language sentence sent as the user's message when clicked (e.g. 'No, just classify by category' not 'no_urgency')",
+        description=(
+            "Natural language sentence sent as the user's message when clicked "
+            "(e.g. 'No, just classify by category' not 'no_urgency')"
+        ),
     )
 
 
@@ -41,7 +44,12 @@ class PresentOptionsResponse(BaseModel):
     "/present_options",
     response_model=PresentOptionsResponse,
     operation_id="present_options",
-    summary="Render clickable option cards in the chat UI. Use whenever presenting options or choices to the user. Call once per message, then stop and wait. Do NOT write numbered lists — use this tool instead.",
+    summary=(
+        "Render clickable option cards in the chat UI. EVERY message that asks a question "
+        "or offers choices MUST use this tool — do NOT write numbered lists. Call once per "
+        "message, then STOP and wait for the user to respond. Do NOT call this tool after "
+        "submitting a job — the UI renders a job monitor card automatically."
+    ),
 )
 async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse:
     return PresentOptionsResponse(
@@ -75,7 +83,10 @@ class ShowModelPricingResponse(BaseModel):
     "/show_model_pricing",
     response_model=ShowModelPricingResponse,
     operation_id="show_model_pricing",
-    summary="Display a model pricing comparison card in the chat UI",
+    summary=(
+        "Display a model pricing comparison card in the chat UI. "
+        "Use when presenting teacher model options so the user can compare costs."
+    ),
 )
 async def show_model_pricing(body: ShowModelPricingRequest) -> ShowModelPricingResponse:
     return ShowModelPricingResponse(models=body.models, rendered=True)
@@ -103,7 +114,11 @@ class ShowVRAMEstimateResponse(BaseModel):
     "/show_vram_estimate",
     response_model=ShowVRAMEstimateResponse,
     operation_id="show_vram_estimate",
-    summary="Display a VRAM estimate comparison card in the chat UI",
+    summary=(
+        "Display a VRAM estimate comparison card in the chat UI. "
+        "Use before presenting model or training method options so the user "
+        "can see GPU memory requirements."
+    ),
 )
 async def show_vram_estimate(body: ShowVRAMEstimateRequest) -> ShowVRAMEstimateResponse:
     return ShowVRAMEstimateResponse(estimates=body.estimates, rendered=True)
@@ -125,7 +140,12 @@ class SignalPhaseResponse(BaseModel):
     "/signal_phase",
     response_model=SignalPhaseResponse,
     operation_id="signal_phase",
-    summary="Signal the current workflow phase and step to the chat UI",
+    summary=(
+        "Signal the current workflow phase and step to update the UI progress bar. "
+        "Call once at each step transition in order: understand_task → load_skill → "
+        "gather_requirements → estimate_cost → confirm → execute → review. "
+        "Do not repeat a step already signaled."
+    ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
     return SignalPhaseResponse(phase=body.phase, step=body.step)
@@ -160,7 +180,10 @@ async def delegate_to_subagent(body: DelegateRequest) -> DelegateResponse:
 class SubagentCompletionRequest(BaseModel):
     summary: str = Field(
         ...,
-        description="Summary of completed work: job ID, type, key parameters",
+        description=(
+            "Summary of completed work including: job ID, job type (sdg/training), "
+            "key parameters (model, method, sample count, parent job ID if chained)"
+        ),
     )
 
 
