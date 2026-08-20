@@ -30,20 +30,42 @@ _subagent_targets: dict[str, str] = {}
 _session_locks: dict[str, asyncio.Lock] = {}
 _session_locks_lock = asyncio.Lock()
 
+# Per-session signal queues — keyed by external session_id, not "latest"
 _pending_delegations: dict[str, tuple[str, str]] = {}
 _pending_completions: dict[str, str] = {}
 
+_http_client: httpx.AsyncClient | None = None
 
-def queue_delegation(target: str, context: str) -> None:
+
+def _get_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=OPENCODE_TIMEOUT)
+    return _http_client
+
+
+def queue_delegation(target: str, context: str, session_id: str) -> None:
     """Called by the MCP delegate_to_subagent endpoint."""
-    _pending_delegations["latest"] = (target, context)
-    logger.info("Delegation queued: target=%s", target)
+    _pending_delegations[session_id] = (target, context)
+    logger.info("Delegation queued: target=%s session=%s", target, session_id)
 
 
-def queue_completion(summary: str) -> None:
+def queue_completion(summary: str, session_id: str) -> None:
     """Called by the MCP signal_subagent_completion endpoint."""
-    _pending_completions["latest"] = summary
-    logger.info("Completion queued")
+    _pending_completions[session_id] = summary
+    logger.info("Completion queued: session=%s", session_id)
+
+
+def _resolve_session_id_for_mcp() -> str | None:
+    """Resolve the external session_id for the currently active MCP call.
+
+    When an MCP tool fires during _proxy_send_message, we need to know
+    which external session triggered it. We track this via _active_mcp_session.
+    """
+    return _active_mcp_session
+
+
+_active_mcp_session: str | None = None
 
 
 def _opencode_url() -> str:
@@ -74,10 +96,10 @@ class MessageRequest(BaseModel):
 
 
 async def _proxy_create_session() -> str:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{_opencode_url()}/session")
-        resp.raise_for_status()
-        return resp.json()["id"]
+    client = _get_client()
+    resp = await client.post(f"{_opencode_url()}/session", timeout=10.0)
+    resp.raise_for_status()
+    return resp.json()["id"]
 
 
 async def _proxy_send_message(
@@ -91,13 +113,13 @@ async def _proxy_send_message(
         payload["agent"] = agent
     if model:
         payload["model"] = model.model_dump(exclude_none=True)
-    async with httpx.AsyncClient(timeout=OPENCODE_TIMEOUT) as client:
-        resp = await client.post(
-            f"{_opencode_url()}/session/{session_id}/message",
-            json=payload,
-        )
-        resp.raise_for_status()
-        return resp.json()
+    client = _get_client()
+    resp = await client.post(
+        f"{_opencode_url()}/session/{session_id}/message",
+        json=payload,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -123,20 +145,26 @@ async def get_session_messages(session_id: str) -> Any:
     if not target_id:
         raise HTTPException(status_code=404, detail="unknown session")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{_opencode_url()}/session/{target_id}/message")
-            if resp.status_code == 404:
-                return {"info": {}, "parts": []}
-            resp.raise_for_status()
-            if not resp.content:
-                return {"info": {}, "parts": []}
-            return resp.json()
-    except Exception:
+        client = _get_client()
+        resp = await client.get(f"{_opencode_url()}/session/{target_id}/message", timeout=10.0)
+        if resp.status_code == 404:
+            return {"info": {}, "parts": []}
+        resp.raise_for_status()
+        if not resp.content:
+            return {"info": {}, "parts": []}
+        return resp.json()
+    except httpx.HTTPStatusError:
+        logger.exception("Upstream error fetching messages for session %s", session_id)
+        return {"info": {}, "parts": []}
+    except httpx.HTTPError:
+        logger.warning("Upstream unreachable fetching messages for session %s", session_id)
         return {"info": {}, "parts": []}
 
 
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
+    global _active_mcp_session
+
     user_text = _extract_user_text(body)
     if not user_text:
         raise HTTPException(status_code=400, detail="no text part in message")
@@ -148,12 +176,21 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         if active_sub:
             target = _subagent_targets.get(session_id, "")
             logger.info("Routing to subagent: session=%s target=%s", session_id, target)
-            _pending_completions.pop("latest", None)
-            result = await _proxy_send_message(
-                active_sub, user_text, agent=target, model=body.model
-            )
+            _pending_completions.pop(session_id, None)
+            _active_mcp_session = session_id
+            try:
+                result = await _proxy_send_message(
+                    active_sub, user_text, agent=target, model=body.model
+                )
+            except Exception:
+                logger.exception("Subagent message failed, tearing down: session=%s", session_id)
+                _active_subagents.pop(session_id, None)
+                _subagent_targets.pop(session_id, None)
+                raise
+            finally:
+                _active_mcp_session = None
 
-            completion = _pending_completions.pop("latest", None)
+            completion = _pending_completions.pop(session_id, None)
             if completion:
                 logger.info("Subagent completion signal received: session=%s", session_id)
                 _active_subagents.pop(session_id, None)
@@ -167,8 +204,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
                     orch_result = await _proxy_send_message(
                         orch_id, resume_prompt, agent="morty", model=body.model
                     )
-                    parts = result.get("parts", [])
-                    parts.extend(orch_result.get("parts", []))
+                    result.setdefault("parts", []).extend(orch_result.get("parts", []))
                     result["info"] = orch_result.get("info", result.get("info", {}))
 
             return result
@@ -177,10 +213,14 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         if not orch_id:
             raise HTTPException(status_code=404, detail="unknown session")
 
-        _pending_delegations.pop("latest", None)
-        result = await _proxy_send_message(orch_id, user_text, agent="morty", model=body.model)
+        _pending_delegations.pop(session_id, None)
+        _active_mcp_session = session_id
+        try:
+            result = await _proxy_send_message(orch_id, user_text, agent="morty", model=body.model)
+        finally:
+            _active_mcp_session = None
 
-        delegation = _pending_delegations.pop("latest", None)
+        delegation = _pending_delegations.pop(session_id, None)
         if delegation:
             target, context = delegation
             logger.info("Delegation detected: target=%s session=%s", target, session_id)
@@ -204,15 +244,19 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     if not target_id:
         raise HTTPException(status_code=404, detail="unknown session")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{_opencode_url()}/session/{target_id}/pending")
-            if resp.status_code == 404:
-                return {"messages": []}
-            resp.raise_for_status()
-            if not resp.content:
-                return {"messages": []}
-            return resp.json()
-    except Exception:
+        client = _get_client()
+        resp = await client.get(f"{_opencode_url()}/session/{target_id}/pending", timeout=10.0)
+        if resp.status_code == 404:
+            return {"messages": []}
+        resp.raise_for_status()
+        if not resp.content:
+            return {"messages": []}
+        return resp.json()
+    except httpx.HTTPStatusError:
+        logger.exception("Upstream error fetching pending for session %s", session_id)
+        return {"messages": []}
+    except httpx.HTTPError:
+        logger.warning("Upstream unreachable fetching pending for session %s", session_id)
         return {"messages": []}
 
 
@@ -224,9 +268,9 @@ async def generate_title() -> dict[str, Any]:
 @router.get("/health")
 async def agent_health() -> dict[str, Any]:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{_opencode_url()}/api/health")
-            upstream = resp.json() if resp.status_code == 200 else {"healthy": False}
+        client = _get_client()
+        resp = await client.get(f"{_opencode_url()}/api/health", timeout=5.0)
+        upstream = resp.json() if resp.status_code == 200 else {"healthy": False}
     except Exception:
         upstream = {"healthy": False}
     return {"healthy": upstream.get("healthy", False), "proxy": True}
