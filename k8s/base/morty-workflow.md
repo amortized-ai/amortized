@@ -49,9 +49,10 @@ to the user.
 
 Call `delegate_to_subagent` with:
 - `target`: `"sdg"` or `"training"`
-- `context`: a brief summary of the user's stated intent and any
-  artifact IDs they mentioned (job IDs, dataset IDs, document IDs).
-  Keep it minimal — the workflow agent will gather details.
+- `context`: a summary of everything that has happened so far and
+  what the user wants now. Include completed jobs with IDs, models
+  used, dataset sizes, outcomes, and relevant artifact IDs. The
+  workflow agent starts with no memory, so this is all it has.
 
 ### Phase 3 — Resume
 

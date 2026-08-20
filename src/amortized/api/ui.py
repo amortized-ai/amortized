@@ -172,7 +172,15 @@ class DelegateRequest(BaseModel):
     target: str = Field(..., description="Workflow agent to delegate to: 'sdg' or 'training'")
     context: str = Field(
         ...,
-        description="Summary of user intent and any relevant artifact IDs to pass to the workflow agent",
+        description=(
+            "Full context for the workflow agent. Include: "
+            "(1) conversation history summary — what has been done so far "
+            "(completed jobs with IDs, models used, dataset sizes, outcomes), "
+            "(2) current user intent — what the user wants to do now, "
+            "(3) relevant artifact IDs (job IDs, dataset IDs, document IDs). "
+            "The workflow agent starts with no memory of prior conversation, "
+            "so this context is all it has."
+        ),
     )
 
 
