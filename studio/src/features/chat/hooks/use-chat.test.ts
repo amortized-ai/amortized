@@ -39,6 +39,7 @@ const mockStoreValue = {
   addMessage: mockAddMessage,
   updateMessage: mockUpdateMessage,
   getConversationMessages: mockGetConversationMessages,
+  jobInFlight: {},
   _hasHydrated: true,
 }
 
@@ -46,7 +47,8 @@ const mockSetSessionStatus = vi.fn()
 
 vi.mock("@/stores/chat-store", () => ({
   useChatStore: Object.assign(
-    () => mockStoreValue,
+    (selector?: (s: typeof mockStoreValue) => unknown) =>
+      selector ? selector(mockStoreValue) : mockStoreValue,
     {
       getState: () => ({
         currentConversationId: null,
