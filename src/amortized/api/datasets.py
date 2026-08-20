@@ -54,7 +54,7 @@ def _count_samples(filename: str, file_bytes: bytes) -> int | None:
         if filename.endswith(".parquet"):
             import pyarrow.parquet as pq
 
-            return int(pq.read_metadata(io.BytesIO(file_bytes)).num_rows)
+            return int(pq.read_metadata(io.BytesIO(file_bytes)).num_rows)  # type: ignore[no-untyped-call]
     except Exception:
         logger.warning("Could not count samples in %s", filename)
     return None
