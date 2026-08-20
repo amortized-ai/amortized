@@ -21,9 +21,21 @@ server {
         proxy_send_timeout 300s;
     }
 
-    location ~ ^/mlflow/api/2\.0/gateway/(.*)$ {
-        set $mlflow_gw_upstream http://${MLFLOW_HOST}:5001;
-        proxy_pass $mlflow_gw_upstream/api/2.0/gateway/$1$is_args$args;
+    location ~ ^/gateway/(.*)$ {
+        set $mlflow_gw_upstream http://${MLFLOW_HOST}:${MLFLOW_PORT};
+        proxy_pass $mlflow_gw_upstream/gateway/$1$is_args$args;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location ~ ^/ajax-api/(.*)$ {
+        set $mlflow_ajax_upstream http://${MLFLOW_HOST}:${MLFLOW_PORT};
+        proxy_pass $mlflow_ajax_upstream/ajax-api/$1$is_args$args;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
