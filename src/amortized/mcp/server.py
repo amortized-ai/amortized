@@ -33,7 +33,6 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
         exclude_operations=[
             "create_sdg_job",
             "create_training_job",
-            "submit_recipe_job",
         ],
     )
     mcp.mount_http(app)

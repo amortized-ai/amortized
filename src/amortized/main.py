@@ -227,7 +227,6 @@ async def validation_exception_handler(
 
 app.include_router(jobs.router)
 app.include_router(recipes.router)
-app.include_router(recipes.recipe_jobs_router)
 app.include_router(costs.router)
 app.include_router(datasets.router)
 app.include_router(documents.router)
