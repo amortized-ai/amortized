@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opencode-config
+  namespace: amortized
+  labels:
+    app: amortized
+    component: opencode
+data:
+  .opencode.json: |
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "model": "google-vertex-anthropic/claude-opus-4-6@default",
+      "mcp": {
+        "amortized": {
+          "type": "remote",
+          "url": "http://amortized-server.amortized.svc.cluster.local:8000/mcp",
+          "enabled": true
+        }
+      },
+      "agent": {
+        "build": { "disable": true },
+        "plan": { "disable": true }
+      }
+    }
