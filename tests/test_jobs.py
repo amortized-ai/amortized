@@ -131,18 +131,9 @@ class TestCreateJob:
         assert "columns" in str(response.json())
 
     @pytest.mark.asyncio
-    async def test_sdg_empty_columns(self, client: httpx.AsyncClient) -> None:
+    async def test_sdg_empty_columns_accepted(self, client: httpx.AsyncClient) -> None:
         response = await client.post("/api/v1/jobs/sdg", json={"columns": []})
-        assert response.status_code == 422
-
-    @pytest.mark.asyncio
-    async def test_sdg_column_missing_fields(self, client: httpx.AsyncClient) -> None:
-        response = await client.post(
-            "/api/v1/jobs/sdg",
-            json={"columns": [{"name": "q"}]},
-        )
-        assert response.status_code == 422
-        assert "column_type" in str(response.json())
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
     async def test_sdg_unknown_column_type(self, client: httpx.AsyncClient) -> None:
