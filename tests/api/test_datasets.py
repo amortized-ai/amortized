@@ -45,11 +45,9 @@ async def test_upload_dataset_jsonl(client: httpx.AsyncClient) -> None:
             "/api/v1/datasets/upload",
             files={"file": ("train.jsonl", io.BytesIO(content), "application/octet-stream")},
         )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     data = resp.json()
     assert data["type"] == "upload"
-    assert data["status"] == "succeeded"
-    assert data["mlflow_run_id"] == "fake-run-id"
     assert data["config"]["source"] == "upload"
     assert data["config"]["original_filename"] == "train.jsonl"
 

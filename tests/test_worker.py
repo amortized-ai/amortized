@@ -2,7 +2,7 @@
 
 import logging
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
 import httpx
@@ -35,6 +35,10 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         from amortized.db import init_db
 
         await init_db()
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute("TRUNCATE jobs")
         reset()
         register_backend(LocalBackend())
         yield c  # type: ignore[misc]
@@ -219,8 +223,11 @@ class TestResolveParentArtifacts:
         mock_repo = AsyncMock()
         mock_repo.get_job = AsyncMock(return_value=parent_job)
 
+        mock_pool = MagicMock()
+        mock_pool.acquire.return_value = AsyncMock()
+
         with (
-            patch("amortized.db.connection.get_pool", return_value=AsyncMock()),
+            patch("amortized.db.connection.get_pool", return_value=mock_pool),
             patch("amortized.db.repository.Repository", return_value=mock_repo),
             patch("amortized.jobs.common.config_mod") as mock_config,
         ):

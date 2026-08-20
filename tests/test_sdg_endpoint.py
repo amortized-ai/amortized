@@ -12,14 +12,18 @@ import pytest
 
 from amortized.main import app
 
+TEST_DATABASE_URL = os.environ.get(
+    "AMORTIZED_TEST_DATABASE_URL",
+    "postgresql://amortized:amortized@localhost:5432/amortized_test",
+)
+
 
 @pytest.fixture(autouse=True)
 def _use_temp_db(tmp_path: object) -> None:
     import amortized.config as config_mod
     import amortized.db.connection as db_conn_mod
 
-    db_path = str(tmp_path) + "/test.db"
-    os.environ["AMORTIZED_DB_PATH"] = db_path
+    os.environ["AMORTIZED_DATABASE_URL"] = TEST_DATABASE_URL
     os.environ["AMORTIZED_DATA_DIR"] = str(tmp_path)
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
@@ -57,23 +61,16 @@ VALID_SAMPLER_COLUMN = {
 def _get_detail(response: httpx.Response) -> list[dict[str, str]]:
     """Extract detail list, handling both response formats.
 
-    The error handler may wrap HTTPException detail into:
-      {"code": "http_422", "message": "<stringified list>", "details": []}
+    The validation exception handler returns:
+      {"code": "validation_error", "message": "...", "details": [{"field": ..., "error": ...}]}
     or the raw FastAPI format:
       {"detail": [{"field": ..., "error": ...}]}
     """
     body = response.json()
+    if "details" in body and isinstance(body["details"], list):
+        return body["details"]
     if "detail" in body and isinstance(body["detail"], list):
         return body["detail"]
-    if "message" in body and isinstance(body["message"], str):
-        import ast
-
-        try:
-            parsed = ast.literal_eval(body["message"])
-            if isinstance(parsed, list):
-                return parsed
-        except (ValueError, SyntaxError):
-            pass
     return []
 
 

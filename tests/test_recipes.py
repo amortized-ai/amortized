@@ -1,6 +1,7 @@
 """Tests for the recipe system — core logic and API endpoints."""
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -147,6 +148,10 @@ def _use_temp_db(tmp_path: Path) -> None:
     new_settings = config_mod.Settings()
     config_mod.settings = new_settings
     db_conn_mod.settings = new_settings
+
+    # Ensure the jobs table exists by running alembic migrations
+    env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
+    subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
 
 
 class TestRecipeAPI:

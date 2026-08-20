@@ -62,7 +62,21 @@ class TestAlembicMigrations:
         env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
         subprocess.run(["alembic", "upgrade", "head"], capture_output=True, env=env, check=True)
         result = subprocess.run(["alembic", "current"], capture_output=True, text=True, env=env)
-        assert "0001" in result.stdout
+        # Dynamically find the latest migration revision
+        versions_dir = os.path.join(
+            os.path.dirname(__file__),
+            os.pardir,
+            "src",
+            "amortized",
+            "db",
+            "migrations",
+            "versions",
+        )
+        revisions = sorted(
+            f for f in os.listdir(versions_dir) if f.endswith(".py") and not f.startswith("_")
+        )
+        latest_rev = revisions[-1].split("_")[0]  # e.g. "0002" from "0002_proper_pg_types.py"
+        assert latest_rev in result.stdout
 
     def test_upgrade_is_idempotent(self) -> None:
         env = {**os.environ, "AMORTIZED_DATABASE_URL": TEST_DATABASE_URL}
