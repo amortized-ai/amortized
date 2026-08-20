@@ -10,3 +10,23 @@ resources:
   - server-service.yaml
   - studio-deployment.yaml
   - studio-service.yaml
+  - opencode-configmap.yaml
+  - opencode-deployment.yaml
+  - opencode-service.yaml
+
+configMapGenerator:
+  - name: morty-config
+    namespace: amortized
+    files:
+      - morty.md=morty-prompt.md
+    options:
+      disableNameSuffixHash: true
+  - name: morty-skills
+    namespace: amortized
+    files:
+      - sdg__classification__guide.md=morty-skills/sdg/classification/guide.md
+      - sdg__knowledge-ingestion__guide.md=morty-skills/sdg/knowledge-ingestion/guide.md
+      - training__knowledge-ingestion__osft__guide.md=morty-skills/training/knowledge-ingestion/osft/guide.md
+      - training__knowledge-ingestion__osft__training-config-template.json=morty-skills/training/knowledge-ingestion/osft/training-config-template.json
+    options:
+      disableNameSuffixHash: true
