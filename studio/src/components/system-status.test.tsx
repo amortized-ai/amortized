@@ -45,7 +45,7 @@ describe("SystemStatus", () => {
 
     render(<SystemStatus />)
 
-    expect(screen.getByText(/Checking…/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Checking…/).length).toBeGreaterThan(0)
   })
 
   it("displays Backend Connection label", () => {

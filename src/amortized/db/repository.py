@@ -150,7 +150,9 @@ class Repository:
                            FOR UPDATE SKIP LOCKED
                        )
                        RETURNING *"""
-            params: tuple[str, ...] = (JobStatus.provisioning.value, JobStatus.queued.value, k8s_namespace)
+            params: tuple[str, ...] = (
+                JobStatus.provisioning.value, JobStatus.queued.value, k8s_namespace,
+            )
         else:
             query = f"""UPDATE jobs SET status = $1
                        WHERE id = (
