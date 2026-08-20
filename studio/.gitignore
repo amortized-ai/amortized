@@ -4,3 +4,4 @@ dist/
 .playwright-mcp/
 .factory/
 research/screenshots/
+next-env.d.ts
