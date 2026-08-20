@@ -196,11 +196,9 @@ class DelegateResponse(BaseModel):
     summary="Delegate the conversation to a specialized workflow agent for SDG or training",
 )
 async def delegate_to_subagent(body: DelegateRequest) -> DelegateResponse:
-    from amortized.api.agent import _resolve_session_id_for_mcp, queue_delegation
+    from amortized.api.agent import queue_delegation
 
-    sid = _resolve_session_id_for_mcp()
-    if sid:
-        queue_delegation(body.target, body.context, session_id=sid)
+    queue_delegation(body.target, body.context)
     return DelegateResponse(target=body.target)
 
 
@@ -227,9 +225,7 @@ class SubagentCompletionResponse(BaseModel):
 async def signal_subagent_completion(
     body: SubagentCompletionRequest,
 ) -> SubagentCompletionResponse:
-    from amortized.api.agent import _resolve_session_id_for_mcp, queue_completion
+    from amortized.api.agent import queue_completion
 
-    sid = _resolve_session_id_for_mcp()
-    if sid:
-        queue_completion(body.summary, session_id=sid)
+    queue_completion(body.summary)
     return SubagentCompletionResponse()

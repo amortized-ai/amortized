@@ -136,7 +136,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card \u2014 the user clicks confirm to submit. Set parent_job_id to chain from a completed SDG job.",
+        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Set parent_job_id to chain from a completed SDG job.",
         "description": "Validate a training job config without creating it.",
         "operationId": "validate_training_job",
         "requestBody": {
@@ -1505,7 +1505,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Signal the current workflow phase and step to update the UI progress bar. Call once at each step transition in order: understand_task \u2192 load_skill \u2192 gather_requirements \u2192 estimate_cost \u2192 confirm \u2192 execute \u2192 review. Do not repeat a step already signaled.",
+        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG or training workflow. Set phase to 'sdg' or 'training' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
         "operationId": "signal_phase",
         "requestBody": {
           "content": {
@@ -1652,7 +1652,6 @@
           "agent"
         ],
         "summary": "Get Session Messages",
-        "description": "Proxy GET to the active OpenCode session to fetch message history.",
         "operationId": "get_session_messages_agent_session__session_id__message_get",
         "parameters": [
           {
@@ -2477,7 +2476,7 @@
           "context": {
             "type": "string",
             "title": "Context",
-            "description": "Summary of user intent and any relevant artifact IDs to pass to the workflow agent"
+            "description": "Full context for the workflow agent. Include: (1) conversation history summary \u2014 what has been done so far (completed jobs with IDs, models used, dataset sizes, outcomes), (2) current user intent \u2014 what the user wants to do now, (3) relevant artifact IDs (job IDs, dataset IDs, document IDs). The workflow agent starts with no memory of prior conversation, so this context is all it has."
           }
         },
         "type": "object",
@@ -5313,12 +5312,12 @@
           "phase": {
             "type": "string",
             "title": "Phase",
-            "description": "Current workflow phase: 'sdg', 'training', or 'eval'"
+            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows"
           },
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Current step within the phase (e.g. 'gather_requirements', 'confirm')",
+            "description": "Current step within the phase. Signal transitions in order: understand_task (identified what the user wants to build), load_skill (read the relevant skill guide), gather_requirements (asking user for parameters \u2014 signal on first ask), estimate_cost (checking models, pricing, or VRAM estimates), confirm (presenting the job validation/confirmation card), execute (job has been submitted), review (checking job results or presenting next steps). Signal the step you are currently at. Do not repeat a step already signaled.",
             "default": ""
           }
         },

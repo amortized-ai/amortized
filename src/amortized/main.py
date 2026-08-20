@@ -106,6 +106,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
     _load_backends()
     await cleanup_orphaned_jobs()
+    await agent.startup()
     logger.info("Amortized runtime started")
 
     worker_task = asyncio.create_task(worker_loop())
@@ -115,6 +116,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
+    await agent.shutdown()
     await close_db()
     logger.info("Amortized runtime shutting down")
 
