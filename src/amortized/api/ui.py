@@ -182,6 +182,19 @@ class DelegateRequest(BaseModel):
             "so this context is all it has."
         ),
     )
+    resume: bool = Field(
+        False,
+        description=(
+            "If true, resume the previous workflow agent session for this "
+            "target instead of creating a new one. The resumed agent keeps "
+            "its full conversation history and can pick up where it left off. "
+            "Set to true when the user wants to adjust, retry, or iterate on "
+            "a job that was just completed or failed (e.g. 'resubmit with "
+            "more samples', 'try a lower learning rate', 'use a different "
+            "model'). Set to false (default) when the user wants a "
+            "fundamentally new job (new task, new dataset, different skill)."
+        ),
+    )
 
 
 class DelegateResponse(BaseModel):
@@ -198,7 +211,7 @@ class DelegateResponse(BaseModel):
 async def delegate_to_subagent(body: DelegateRequest) -> DelegateResponse:
     from amortized.api.agent import queue_delegation
 
-    queue_delegation(body.target, body.context)
+    queue_delegation(body.target, body.context, resume=body.resume)
     return DelegateResponse(target=body.target)
 
 

@@ -71,6 +71,17 @@ it as the `parent_job_id` without asking.
 
 ---
 
+## Resumed Sessions
+
+If your first message starts with `[RESUMED]`, you are being brought
+back after a prior completion. You have full conversation history from
+the previous run — the user wants to adjust, retry, or iterate on the
+same job. Pick up where you left off: skip requirement gathering for
+parameters already confirmed and focus on what the user wants to change.
+Do NOT restart from Phase 1.
+
+---
+
 ## Workflow
 
 ### Phase 1 — Route to Sub-Skill

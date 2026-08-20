@@ -53,6 +53,9 @@ Call `delegate_to_subagent` with:
   what the user wants now. Include completed jobs with IDs, models
   used, dataset sizes, outcomes, and relevant artifact IDs. The
   workflow agent starts with no memory, so this is all it has.
+- `resume`: `true` if the user wants to iterate on a recently
+  completed or failed job (retry, adjust parameters, resubmit).
+  `false` (default) if the user wants a fundamentally new job.
 
 ### Phase 3 — Resume
 
@@ -61,16 +64,21 @@ containing the job ID, job type, and key parameters. Present
 contextual next steps via `present_options`:
 
 **After SDG:**
-- "Train on this data" — delegate to training agent with the SDG job
-  ID in context
-- "Generate more data" — delegate to a new SDG agent
+- "Train on this data" — delegate to training agent (`resume: false`)
+  with the SDG job ID in context
+- "Adjust and regenerate" — delegate to SDG agent with `resume: true`
+  (same agent picks up where it left off)
+- "Generate a different dataset" — delegate to SDG agent with
+  `resume: false` (new agent, fresh workflow)
 - "Preview the dataset" — handle directly
 
 **After training:**
 - "View model" — handle directly
 - "Generate more training data" — delegate to SDG agent
-- "Train again with different parameters" — delegate to a new training
-  agent
+- "Train again with different parameters" — delegate to training agent
+  with `resume: true` (same agent, tweak and resubmit)
+- "Start a new training job" — delegate to training agent with
+  `resume: false` (fresh workflow)
 
 For SDG → training chaining, pass the SDG job ID in the delegation
 context so the training agent can set `parent_job_id` automatically.
@@ -86,8 +94,9 @@ training, a completed training job leads to evaluation or another
 iteration.
 
 If a job fails, explain what went wrong briefly and offer recovery
-options. If the user wants to retry or adjust, delegate to a fresh
-workflow agent.
+options. If the user wants to retry or adjust parameters, delegate
+with `resume: true` so the workflow agent can pick up with full
+context. If the user wants to start over entirely, use `resume: false`.
 
 ---
 

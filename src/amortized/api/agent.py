@@ -41,8 +41,9 @@ class SessionState:
     subagent_id: str | None = None
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    pending_delegation: tuple[str, str] | None = None
+    pending_delegation: tuple[str, str, bool] | None = None
     pending_completion: str | None = None
+    completed_subagents: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -76,12 +77,12 @@ def _client() -> httpx.AsyncClient:
 # ---------------------------------------------------------------------------
 
 
-def queue_delegation(target: str, context: str) -> None:
+def queue_delegation(target: str, context: str, *, resume: bool = False) -> None:
     sid = _current_session.get()
     if not sid or sid not in _sessions:
         return
-    _sessions[sid].pending_delegation = (target, context)
-    logger.info("Delegation queued: target=%s session=%s", target, sid)
+    _sessions[sid].pending_delegation = (target, context, resume)
+    logger.info("Delegation queued: target=%s resume=%s session=%s", target, resume, sid)
 
 
 def queue_completion(summary: str) -> None:
@@ -242,6 +243,8 @@ async def _handle_subagent_message(
         completion = state.pending_completion
         state.pending_completion = None
         logger.info("Subagent completion signal received: session=%s", session_id)
+        if state.subagent_target and state.subagent_id:
+            state.completed_subagents[state.subagent_target] = state.subagent_id
         state.subagent_id = None
         state.subagent_target = None
 
@@ -274,16 +277,30 @@ async def _handle_orchestrator_message(
         _current_session.set(None)
 
     if state.pending_delegation:
-        target, context = state.pending_delegation
+        target, context, resume = state.pending_delegation
         state.pending_delegation = None
-        logger.info("Delegation detected: target=%s session=%s", target, session_id)
 
-        sub_id = await _proxy_create_session()
-        handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-        sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
-        state.subagent_id = sub_id
+        stashed_id = state.completed_subagents.pop(target, None) if resume else None
+
+        if stashed_id:
+            logger.info(
+                "Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id
+            )
+            handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+            sub_result = await _proxy_send_message(
+                stashed_id, handoff_msg, agent=target, model=body.model
+            )
+            state.subagent_id = stashed_id
+        else:
+            logger.info("New subagent: target=%s session=%s", target, session_id)
+            sub_id = await _proxy_create_session()
+            handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+            sub_result = await _proxy_send_message(
+                sub_id, handoff_msg, agent=target, model=body.model
+            )
+            state.subagent_id = sub_id
+
         state.subagent_target = target
-        logger.info("Subagent active: %s → %s (%s)", session_id, sub_id, target)
         return sub_result
 
     return result
