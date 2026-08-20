@@ -125,9 +125,26 @@ async def show_vram_estimate(body: ShowVRAMEstimateRequest) -> ShowVRAMEstimateR
 
 
 class SignalPhaseRequest(BaseModel):
-    phase: str = Field(..., description="Current workflow phase: 'sdg', 'training', or 'eval'")
+    phase: str = Field(
+        ...,
+        description=(
+            "Current workflow phase: 'sdg' for data generation workflows, "
+            "'training' for model training workflows"
+        ),
+    )
     step: str = Field(
-        "", description="Current step within the phase (e.g. 'gather_requirements', 'confirm')"
+        "",
+        description=(
+            "Current step within the phase. Signal transitions in order: "
+            "understand_task (identified what the user wants to build), "
+            "load_skill (read the relevant skill guide), "
+            "gather_requirements (asking user for parameters — signal on first ask), "
+            "estimate_cost (checking models, pricing, or VRAM estimates), "
+            "confirm (presenting the job validation/confirmation card), "
+            "execute (job has been submitted), "
+            "review (checking job results or presenting next steps). "
+            "Signal the step you are currently at. Do not repeat a step already signaled."
+        ),
     )
 
 
@@ -141,10 +158,10 @@ class SignalPhaseResponse(BaseModel):
     response_model=SignalPhaseResponse,
     operation_id="signal_phase",
     summary=(
-        "Signal the current workflow phase and step to update the UI progress bar. "
-        "Call once at each step transition in order: understand_task → load_skill → "
-        "gather_requirements → estimate_cost → confirm → execute → review. "
-        "Do not repeat a step already signaled."
+        "Update the UI progress bar. You MUST call this once on every response "
+        "during an SDG or training workflow. Set phase to 'sdg' or 'training' "
+        "based on the current workflow. Call once per response at the current "
+        "step — do not batch or skip."
     ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
