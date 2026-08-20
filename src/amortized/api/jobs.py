@@ -270,7 +270,9 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     operation_id="validate_training_job",
     summary=(
         "Validate a training job config and present it for user confirmation. "
-        "The UI renders a confirmation card — the user clicks confirm to submit. "
+        "The UI renders a confirmation card with ALL parameters — do NOT output "
+        "a markdown table, parameter list, or config summary before or after this "
+        "tool call. Write ONE short sentence, then call this tool. "
         "Set parent_job_id to chain from a completed SDG job."
     ),
 )
