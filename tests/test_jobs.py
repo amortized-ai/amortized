@@ -29,6 +29,10 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         from amortized.db import init_db
 
         await init_db()
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute("TRUNCATE jobs")
         yield c  # type: ignore[misc]
 
 

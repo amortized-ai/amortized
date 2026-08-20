@@ -6,7 +6,7 @@ STUDIO_DIR    ?= $(REPO_ROOT)/studio
 SERVER_IMAGE  ?= ghcr.io/amortized-ai/amortized:latest
 STUDIO_IMAGE  ?= ghcr.io/amortized-ai/studio:latest
 
-.PHONY: help build build-server build-studio prompt deploy-dev
+.PHONY: help build build-server build-studio prompt deploy-dev lint typecheck test
 
 # ──────────────────────────────────────────────
 # Help
@@ -58,3 +58,16 @@ prompt: ## Build combined Morty prompt and sync skills to k8s
 
 deploy-dev: prompt ## Deploy single-user dev environment (requires kubectl)
 	kubectl apply -k k8s/overlays/dev
+
+# ──────────────────────────────────────────────
+# Quality
+# ──────────────────────────────────────────────
+
+lint: ## Run linter (ruff)
+	ruff check src/ tests/
+
+typecheck: ## Run type checker (mypy)
+	mypy src/
+
+test: ## Run test suite (pytest)
+	pytest tests/
