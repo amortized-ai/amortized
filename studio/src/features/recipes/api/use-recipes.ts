@@ -1,59 +1,64 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
-import { getRecipes, getRecipe, submitRecipe, saveRecipe, deleteRecipe } from "@/lib/api-client"
-import type { Recipe, Job } from "@/types/api"
+import { getJobs, createTrainingJob, createSdgJob, getConfigSchemas, getStarterTemplates } from "@/lib/api-client"
+import type { Job, JobType } from "@/types/api"
 
-export function useRecipes() {
-  return useQuery<Recipe[]>({
-    queryKey: ["recipes"],
-    queryFn: getRecipes,
+export type JsonSchema = Record<string, unknown>
+
+export function useConfigSchemas() {
+  return useQuery<Record<string, JsonSchema>>({
+    queryKey: ["config-schemas"],
+    queryFn: () => getConfigSchemas() as Promise<Record<string, JsonSchema>>,
+    staleTime: Infinity,
   })
 }
 
-export function useRecipe(name: string | null) {
-  return useQuery<Recipe>({
-    queryKey: ["recipes", name],
-    queryFn: () => getRecipe(name!),
-    enabled: !!name,
+export interface StarterTemplate {
+  name: string
+  type: string
+  use_case: string
+  description: string
+  config: Record<string, unknown>
+}
+
+export function useStarterTemplates() {
+  return useQuery<StarterTemplate[]>({
+    queryKey: ["starter-templates"],
+    queryFn: () => getStarterTemplates() as unknown as Promise<StarterTemplate[]>,
+    staleTime: Infinity,
   })
 }
 
-export function useSaveRecipe() {
-  const queryClient = useQueryClient()
-
-  return useMutation<Recipe, Error, { name: string; type: string; description: string; config: Record<string, unknown> }>({
-    mutationFn: ({ name, ...body }) => saveRecipe(name, body),
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["recipes"] })
+export function useJobRecipes() {
+  return useQuery<Job[]>({
+    queryKey: ["job-recipes"],
+    queryFn: async () => {
+      const jobs = await getJobs()
+      return jobs.filter(
+        (j) =>
+          (j.type === "sdg" || j.type === "training") &&
+          j.status === "succeeded" &&
+          Object.keys(j.config ?? {}).length > 0 &&
+          (j.config as Record<string, unknown>)?.mode !== "preview",
+      )
     },
   })
 }
 
-export function useExecuteRecipe() {
+export function useCreateJobFromConfig() {
   const queryClient = useQueryClient()
 
-  return useMutation<Job, Error, { recipe: string; overrides?: Record<string, unknown> }>({
-    mutationFn: (data) => submitRecipe(data),
+  return useMutation<
+    Job,
+    Error,
+    { type: JobType; config: Record<string, unknown> }
+  >({
+    mutationFn: ({ type, config }) => {
+      if (type === "training") return createTrainingJob(config)
+      return createSdgJob(config)
+    },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })
-    },
-  })
-}
-
-
-export function useDeleteRecipe() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (name: string) => deleteRecipe(name),
-    onSuccess: () => {
-      toast.success("Recipe deleted successfully")
-    },
-    onError: (err) => {
-      toast.error(`Failed to delete recipe: ${err instanceof Error ? err.message : "Unknown error"}`)
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["recipes"] })
+      void queryClient.invalidateQueries({ queryKey: ["job-recipes"] })
     },
   })
 }

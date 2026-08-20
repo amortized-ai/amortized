@@ -16,6 +16,7 @@ from amortized.core.recipes import (
     flatten_recipe_to_config,
     get_recipes_dir,
     list_recipes,
+    list_starter_templates,
     load_recipe,
 )
 from amortized.core.recipes import (
@@ -33,6 +34,11 @@ router = APIRouter(prefix="/api/v1/recipes", tags=["recipes"])
 @router.get("", response_model=list[RecipeSummary], operation_id="list_recipes")
 async def get_recipes() -> list[dict[str, Any]]:
     return list_recipes()
+
+
+@router.get("/starter-templates", operation_id="list_starter_templates")
+async def get_starter_templates() -> list[dict[str, Any]]:
+    return list_starter_templates()
 
 
 @router.get("/{name:path}", operation_id="get_recipe")

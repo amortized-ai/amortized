@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "name": "Knowledge Ingestion OSFT",
+    "description": "Fine-tune a model on document QA data using OSFT. Pair with the Knowledge Ingestion SDG template."
+  },
+  "algorithm": "osft",
+  "model_name_or_path": "Qwen/Qwen3.5-4B",
+  "num_train_epochs": 5,
+  "learning_rate": 2e-05,
+  "effective_batch_size": 32,
+  "max_length": 11000,
+  "unfreeze_rank_ratio": 0.2,
+  "warmup_steps": 25,
+  "save_samples": 0,
+  "accelerate_full_state_at_epoch": false,
+  "checkpoint_at_epoch": true,
+  "nproc_per_node": 1,
+  "data_output_dir": "data-output",
+  "bf16": true,
+  "max_tokens_per_gpu": 15000,
+  "parent_job_id": "<SDG_JOB_ID>"
+}

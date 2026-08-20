@@ -208,6 +208,26 @@ export function createJob(endpoint: string, body: Record<string, unknown>): Prom
   return post<Job>(endpoint, body)
 }
 
+// --- Direct job creation (for recipe re-execution) ---
+
+export function getStarterTemplates(): Promise<Record<string, unknown>[]> {
+  return get<Record<string, unknown>[]>("/api/v1/recipes/starter-templates")
+}
+
+export function getConfigSchemas(): Promise<Record<string, unknown>> {
+  return get<Record<string, unknown>>("/api/v1/schemas")
+}
+
+export function createTrainingJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createTrainingJob")
+  return post<Job>("/api/v1/jobs/training", config)
+}
+
+export function createSdgJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createSdgJob")
+  return post<Job>("/api/v1/jobs/sdg", config)
+}
+
 // --- Agent Chat (OpenCode) ---
 
 import type { OpenCodeResponse } from "@/features/chat/types"
