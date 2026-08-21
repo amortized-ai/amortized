@@ -60,7 +60,10 @@ Call `delegate_to_subagent` with:
 ### Phase 3 — Resume
 
 When a workflow agent signals completion, you receive a summary
-containing the job ID, job type, and key parameters. Present
+containing the job ID, job type, and key parameters. If the summary
+includes the user's next intent (e.g. "User selected: Train a model"),
+act on it immediately — delegate to the appropriate agent instead of
+re-presenting options the user already answered. Otherwise, present
 contextual next steps via `present_options`:
 
 **After SDG:**

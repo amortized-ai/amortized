@@ -352,10 +352,7 @@ async def _handle_subagent_message(
         state.subagent_id = None
         state.subagent_target = None
 
-        resume_prompt = (
-            f"[SUBAGENT COMPLETED]\n{summary}\n\n"
-            "Present contextual next steps to the user via present_options."
-        )
+        resume_prompt = f"[SUBAGENT COMPLETED]\n{summary}"
         orch_result = await _proxy_send_message(
             state.orchestrator_id, resume_prompt, agent="morty", model=body.model
         )
