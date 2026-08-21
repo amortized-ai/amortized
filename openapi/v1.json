@@ -459,13 +459,14 @@
         }
       }
     },
-    "/api/v1/recipes": {
+    "/api/v1/recipes/starter-templates": {
       "get": {
         "tags": [
           "recipes"
         ],
-        "summary": "Get Recipes",
-        "operationId": "list_recipes",
+        "summary": "List curated starter templates",
+        "description": "Returns researcher-tested reference configs for SDG and training jobs. Each template includes a complete, ready-to-submit config that can be adapted to the user's domain. Use these as starting points instead of building configs from scratch.",
+        "operationId": "list_starter_templates",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -473,220 +474,11 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/RecipeSummary"
+                    "additionalProperties": true,
+                    "type": "object"
                   },
                   "type": "array",
-                  "title": "Response List Recipes"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/recipes/{name}": {
-      "get": {
-        "tags": [
-          "recipes"
-        ],
-        "summary": "Get Recipe",
-        "operationId": "get_recipe",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Recipe"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "recipes"
-        ],
-        "summary": "Save Recipe",
-        "operationId": "save_recipe",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveRecipeRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Save Recipe"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "recipes"
-        ],
-        "summary": "Delete Recipe",
-        "operationId": "delete_recipe",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/jobs/recipe": {
-      "post": {
-        "tags": [
-          "recipes"
-        ],
-        "summary": "Submit Recipe Job",
-        "operationId": "submit_recipe_job",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecipeJobRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/jobs/recipe/validate": {
-      "post": {
-        "tags": [
-          "recipes"
-        ],
-        "summary": "Validate Recipe Job",
-        "description": "Validate a recipe job config without creating it.",
-        "operationId": "validate_recipe_job",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecipeJobRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidatedJobConfig"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "title": "Response List Starter Templates"
                 }
               }
             }
@@ -1371,6 +1163,29 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/schemas": {
+      "get": {
+        "tags": [
+          "schemas"
+        ],
+        "summary": "Get Schemas",
+        "operationId": "get_schemas_api_v1_schemas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Schemas Api V1 Schemas Get"
                 }
               }
             }
@@ -4127,60 +3942,6 @@
         ],
         "title": "PresentOptionsResponse"
       },
-      "RecipeJobRequest": {
-        "properties": {
-          "recipe": {
-            "type": "string",
-            "title": "Recipe",
-            "description": "Recipe name (e.g. 'models/qwen-1.5b-lora')"
-          },
-          "overrides": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Overrides",
-            "description": "Dot-notation overrides"
-          },
-          "parent_job_id": {
-            "type": "string",
-            "title": "Parent Job Id",
-            "description": "Parent job ID for chaining (SDG -> Training)",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "required": [
-          "recipe"
-        ],
-        "title": "RecipeJobRequest"
-      },
-      "RecipeSummary": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description",
-            "default": ""
-          },
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "default": ""
-          },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "title": "RecipeSummary"
-      },
       "RemoteValidatorParams": {
         "properties": {
           "validator_type": {
@@ -4609,32 +4370,6 @@
           "uuid"
         ],
         "title": "SamplerType"
-      },
-      "SaveRecipeRequest": {
-        "properties": {
-          "type": {
-            "type": "string",
-            "title": "Type",
-            "description": "Recipe type: training, sdg"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description",
-            "description": "Recipe description",
-            "default": ""
-          },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config",
-            "description": "Recipe configuration"
-          }
-        },
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "title": "SaveRecipeRequest"
       },
       "ScalarInequalityConstraint": {
         "properties": {

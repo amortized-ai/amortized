@@ -1,216 +1,27 @@
-"""Recipe browsing and job submission from recipes."""
+"""Starter template browsing from agent/skills reference payloads."""
 
 import logging
 from typing import Any
 
-import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter
 
-from amortized.core.jobs import InvalidJobStateError
-from amortized.core.jobs import create_job as core_create_job
-from amortized.core.recipes import (
-    ProtectedRecipeError,
-    RecipeNotFoundError,
-    apply_overrides,
-    flatten_recipe_to_config,
-    get_recipes_dir,
-    list_recipes,
-    load_recipe,
-)
-from amortized.core.recipes import (
-    delete_recipe as core_delete_recipe,
-)
-from amortized.db import get_db as _get_db
-from amortized.db.repository import Repository
-from amortized.models import Job, JobType, RecipeSummary, TrainingJobConfig, ValidatedJobConfig
+from amortized.core.recipes import list_starter_templates
 
 logger = logging.getLogger("amortized.api.recipes")
 
 router = APIRouter(prefix="/api/v1/recipes", tags=["recipes"])
 
 
-@router.get("", response_model=list[RecipeSummary], operation_id="list_recipes")
-async def get_recipes() -> list[dict[str, Any]]:
-    return list_recipes()
-
-
-@router.get("/{name:path}", operation_id="get_recipe")
-async def get_recipe(name: str) -> dict[str, Any]:
-    try:
-        return load_recipe(name)
-    except RecipeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class SaveRecipeRequest(BaseModel):
-    type: str = Field(..., description="Recipe type: training, sdg")
-    description: str = Field("", description="Recipe description")
-    config: dict[str, Any] = Field(default_factory=dict, description="Recipe configuration")
-
-
-@router.put("/{name:path}", operation_id="save_recipe")
-async def save_recipe(name: str, body: SaveRecipeRequest) -> dict[str, Any]:
-    import yaml as _yaml
-
-    if ".." in name.split("/"):
-        raise HTTPException(status_code=400, detail="Invalid recipe name")
-
-    base_dir = get_recipes_dir()
-    path = base_dir / f"{name}.yaml"
-
-    resolved = path.resolve()
-    if not resolved.is_relative_to(base_dir.resolve()):
-        raise HTTPException(status_code=400, detail="Invalid recipe name")
-
-    if not path.is_file() and not name.startswith("templates/"):
-        name = f"templates/custom/{name}"
-        path = base_dir / f"{name}.yaml"
-        if not path.resolve().is_relative_to(base_dir.resolve()):
-            raise HTTPException(status_code=400, detail="Invalid recipe name")
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    recipe_data: dict[str, Any] = {
-        "type": body.type,
-        "description": body.description,
-        "config": body.config,
-    }
-    path.write_text(_yaml.dump(recipe_data, default_flow_style=False, sort_keys=False))
-    logger.info("Saved recipe %s to %s", name, path)
-    return {"name": name, **recipe_data}
-
-
-@router.delete("/{name:path}", status_code=204, operation_id="delete_recipe")
-async def delete_recipe(name: str) -> None:
-    try:
-        core_delete_recipe(name)
-    except RecipeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ProtectedRecipeError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def _validate_recipe_config(
-    job_type: JobType,
-    config: dict[str, Any],
-) -> list[str]:
-    if job_type == JobType.training:
-        try:
-            TrainingJobConfig(**config)
-        except ValidationError as exc:
-            return [f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in exc.errors()]
-    return []
-
-
-class RecipeJobRequest(BaseModel):
-    recipe: str = Field(..., description="Recipe name (e.g. 'models/qwen-1.5b-lora')")
-    overrides: dict[str, Any] = Field(default_factory=dict, description="Dot-notation overrides")
-    parent_job_id: str = Field("", description="Parent job ID for chaining (SDG -> Training)")
-
-
-recipe_jobs_router = APIRouter(tags=["recipes"])
-
-
-@recipe_jobs_router.post(
-    "/api/v1/jobs/recipe",
-    status_code=201,
-    response_model=None,
-    operation_id="submit_recipe_job",
+@router.get(
+    "/starter-templates",
+    operation_id="list_starter_templates",
+    summary="List curated starter templates",
+    description=(
+        "Returns researcher-tested reference configs for SDG and training jobs. "
+        "Each template includes a complete, ready-to-submit config that can be "
+        "adapted to the user's domain. Use these as starting points instead of "
+        "building configs from scratch."
+    ),
 )
-async def submit_recipe_job(
-    request: RecipeJobRequest,
-    http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
-) -> Job:
-    try:
-        recipe = load_recipe(request.recipe)
-    except RecipeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    recipe = apply_overrides(recipe, request.overrides)
-
-    recipe_type = recipe.get("type")
-    if not recipe_type:
-        raise HTTPException(status_code=422, detail="Recipe is missing 'type' field")
-
-    try:
-        job_type = JobType(recipe_type)
-    except ValueError:
-        raise HTTPException(  # noqa: B904
-            status_code=422, detail=f"Unknown job type in recipe: {recipe_type}"
-        )
-
-    config = flatten_recipe_to_config(recipe)
-
-    errors = _validate_recipe_config(job_type, config)
-    if job_type == JobType.training:
-        from amortized.api.jobs import _validate_training_data
-
-        errors.extend(await _validate_training_data(config, request.parent_job_id, db))
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    user_id = http_request.headers.get("X-Forwarded-User", "")
-
-    repo = Repository(db)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=job_type,
-            config=config,
-            recipe=request.recipe,
-            parent_job_id=request.parent_job_id,
-            user_id=user_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Job(**row)
-
-
-@recipe_jobs_router.post(
-    "/api/v1/jobs/recipe/validate",
-    response_model=ValidatedJobConfig,
-    operation_id="validate_recipe_job",
-)
-async def validate_recipe_job(
-    request: RecipeJobRequest,
-    db: asyncpg.Connection = Depends(_get_db),
-) -> ValidatedJobConfig:
-    """Validate a recipe job config without creating it."""
-    try:
-        recipe = load_recipe(request.recipe)
-    except RecipeNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    recipe = apply_overrides(recipe, request.overrides)
-
-    recipe_type = recipe.get("type")
-    if not recipe_type:
-        raise HTTPException(status_code=422, detail="Recipe is missing 'type' field")
-
-    try:
-        job_type = JobType(recipe_type)
-    except ValueError:
-        raise HTTPException(  # noqa: B904
-            status_code=422, detail=f"Unknown job type in recipe: {recipe_type}"
-        )
-
-    config = flatten_recipe_to_config(recipe)
-
-    errors = _validate_recipe_config(job_type, config)
-    if job_type == JobType.training:
-        from amortized.api.jobs import _validate_training_data
-
-        errors.extend(await _validate_training_data(config, request.parent_job_id, db))
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    return ValidatedJobConfig(
-        job_type=job_type,
-        config=config,
-        recipe=request.recipe,
-        parent_job_id=request.parent_job_id,
-    )
+async def get_starter_templates() -> list[dict[str, Any]]:
+    return list_starter_templates()

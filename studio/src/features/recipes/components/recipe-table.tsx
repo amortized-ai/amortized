@@ -7,8 +7,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { BookOpen, Info, Copy, Check } from "lucide-react"
+import { useState } from "react"
 import { EmptyState } from "@/components/empty-state"
 import {
   Pagination,
@@ -17,27 +17,28 @@ import {
   PaginationPrevious,
   PaginationNext,
 } from "@/components/ui/pagination"
-import { formatRecipeName, formatRecipeType, recipeTypeClassName, getEffectiveType } from "../lib/format"
-import type { Recipe } from "@/types/api"
+import {
+  formatRecipeType,
+  recipeTypeClassName,
+} from "../lib/format"
+import type { RecipeEntry } from "../lib/format"
+import { formatDate } from "@/lib/utils"
+import type { Job } from "@/types/api"
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 20
 
 interface RecipeTableProps {
-  recipes: Recipe[]
+  recipes: RecipeEntry[]
   page: number
   onPageChange: (page: number) => void
-  onSelectRecipe: (recipe: Recipe) => void
-  onCreateNew?: () => void
-  onDeleteRecipe?: (recipe: Recipe) => void
+  onSelectJob: (job: Job, name: string) => void
 }
 
 export function RecipeTable({
   recipes,
   page,
   onPageChange,
-  onSelectRecipe,
-  onCreateNew,
-  onDeleteRecipe,
+  onSelectJob,
 }: RecipeTableProps) {
   const totalPages = Math.max(1, Math.ceil(recipes.length / PAGE_SIZE))
   const start = page * PAGE_SIZE
@@ -48,78 +49,59 @@ export function RecipeTable({
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[25%]">Name</TableHead>
-            <TableHead className="w-[15%]">Type</TableHead>
-            <TableHead className="w-[45%]">Description</TableHead>
-            <TableHead className="w-[10%]">Version</TableHead>
-            {onDeleteRecipe && <TableHead className="w-[5%]" />}
+            <TableHead className="w-[45%]">Recipe</TableHead>
+            <TableHead className="w-[12%]">Type</TableHead>
+            <TableHead className="w-[15%]">ID</TableHead>
+            <TableHead className="w-[28%]">Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {pageItems.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={onDeleteRecipe ? 5 : 4} className="p-0">
+              <TableCell colSpan={4} className="p-0">
                 <EmptyState
                   icon={BookOpen}
                   title="No recipes yet"
-                  description="Create a recipe to configure training or SDG jobs."
-                  actionLabel="Create Recipe"
-                  onAction={onCreateNew}
+                  description="Run an SDG or training job to see its config here as a reusable recipe."
                 />
               </TableCell>
             </TableRow>
           ) : (
-            pageItems.map((recipe) => (
+            pageItems.map((entry) => (
               <TableRow
-                key={recipe.name}
+                key={entry.job.id}
                 className="cursor-pointer"
-                onClick={() => onSelectRecipe(recipe)}
+                onClick={() => onSelectJob(entry.job, entry.name)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault()
-                    onSelectRecipe(recipe)
+                    onSelectJob(entry.job, entry.name)
                   }
                 }}
-                data-testid={`recipe-row-${recipe.name}`}
               >
-                <TableCell className="font-medium">{formatRecipeName(recipe.name)}</TableCell>
-                <TableCell className="overflow-hidden">
-                  {(() => {
-                    const effectiveType = getEffectiveType(recipe)
-                    return effectiveType ? (
-                      <Badge className={recipeTypeClassName(effectiveType)}>
-                        {formatRecipeType(effectiveType)}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )
-                  })()}
+                <TableCell>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className="font-medium text-sm truncate">{entry.name}</p>
+                    {entry.version && (
+                      <span className="shrink-0 text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
+                        {entry.version}
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground truncate">
-                  {recipe.description || "—"}
+                <TableCell>
+                  <Badge className={recipeTypeClassName(entry.job.type)}>
+                    {formatRecipeType(entry.job.type)}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <CopyableId id={entry.job.id} />
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {recipe.version}
+                  {formatDate(entry.job.created_at, { includeTime: true })}
                 </TableCell>
-                {onDeleteRecipe && (
-                  <TableCell>
-                    {recipe.name.startsWith("templates/custom/") && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 opacity-50 hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDeleteRecipe(recipe)
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </TableCell>
-                )}
               </TableRow>
             ))
           )}
@@ -151,6 +133,38 @@ export function RecipeTable({
           </PaginationContent>
         </Pagination>
       )}
+    </div>
+  )
+}
+
+function CopyableId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false)
+  const short = id.length > 8 ? `${id.slice(0, 8)}…` : id
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    void navigator.clipboard.writeText(id)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={handleCopy}
+        className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+        title={id}
+      >
+        {short}
+        {copied ? (
+          <Check className="h-3 w-3 text-emerald-500" />
+        ) : (
+          <Copy className="h-3 w-3" />
+        )}
+      </button>
+      <span title={`Earliest job with this config: ${id}`}>
+        <Info className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+      </span>
     </div>
   )
 }
