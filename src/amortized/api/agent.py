@@ -144,26 +144,34 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
-async def _fetch_latest_parts(opencode_session_id: str) -> list[dict[str, Any]]:
-    """GET session messages and return the latest assistant message's parts.
+async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str, Any]]:
+    """GET session messages and return parts from all assistant messages.
 
     The POST response only has step-start/step-finish — tool call details
-    only appear in the GET messages endpoint.
+    only appear in the GET messages endpoint. OpenCode may generate multiple
+    assistant messages per user message (multi-step tool loops), so we
+    collect parts from all of them.
     """
     try:
         resp = await _client().get(
             f"{_opencode_url()}/session/{opencode_session_id}/message",
             timeout=10.0,
         )
-        if resp.status_code != 200 or not resp.content or not resp.content.strip():
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code != 200 or "application/json" not in content_type:
             return []
         messages = resp.json()
         if not isinstance(messages, list):
             return []
-        for msg in reversed(messages):
+        all_parts: list[dict[str, Any]] = []
+        last_user_idx = -1
+        for i, msg in enumerate(messages):
+            if msg.get("info", {}).get("role") == "user":
+                last_user_idx = i
+        for msg in messages[last_user_idx + 1 :]:
             if msg.get("info", {}).get("role") == "assistant":
-                return msg.get("parts", [])
-        return []
+                all_parts.extend(msg.get("parts", []))
+        return all_parts
     except Exception:
         logger.warning("Failed to fetch session messages for %s", opencode_session_id)
         return []
@@ -189,6 +197,9 @@ async def _proxy_get(
         if resp.status_code == 404:
             return empty
         resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            return empty
         if not resp.content or not resp.content.strip():
             return empty
         return resp.json()
@@ -324,7 +335,7 @@ async def _handle_subagent_message(
         logger.exception("Subagent message failed: session=%s", session_id)
         raise
 
-    latest_parts = await _fetch_latest_parts(state.subagent_id)  # type: ignore[arg-type]
+    latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
     summary = _detect_completion(latest_parts)
 
     if summary:
@@ -358,7 +369,7 @@ async def _handle_orchestrator_message(
         state.orchestrator_id, user_text, agent="morty", model=body.model
     )
 
-    latest_parts = await _fetch_latest_parts(state.orchestrator_id)
+    latest_parts = await _fetch_all_assistant_parts(state.orchestrator_id)
     delegation = _detect_delegation(latest_parts)
 
     if delegation:
