@@ -34,6 +34,7 @@ function ChatContent() {
     isStreaming,
     chatState,
     error,
+    thinkingStep,
     confirmAction,
     rejectAction,
     notifyJobComplete,
@@ -63,6 +64,7 @@ function ChatContent() {
       <PlanProgress plan={phasePlan} />
       <MessageList
         messages={messages}
+        thinkingStep={thinkingStep}
         isStreaming={isStreaming}
         onOptionSelect={handleOptionSelect}
         onConfirmAction={confirmAction}
