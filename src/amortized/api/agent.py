@@ -136,7 +136,7 @@ def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
             continue
         if _tool_name(part) == "signal_subagent_completion":
             inp = _get_tool_input(part)
-            return str(inp.get("summary", ""))
+            return str(inp.get("summary", "")) or "Task completed."
     return None
 
 

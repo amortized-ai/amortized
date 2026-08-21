@@ -144,7 +144,7 @@ _AUTH_SKIP_PATHS = {"/api/v1/health", "/agent/health", "/docs", "/openapi.json",
 async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
     if not _settings.api_key:
         return await call_next(request)
-    if request.url.path in _AUTH_SKIP_PATHS:
+    if request.url.path in _AUTH_SKIP_PATHS or request.url.path.startswith("/agent/"):
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
