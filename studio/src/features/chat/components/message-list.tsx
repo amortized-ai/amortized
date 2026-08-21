@@ -6,6 +6,7 @@ import { ChatWelcome } from "./chat-welcome"
 
 interface MessageListProps {
   messages: ChatMessage[]
+  thinkingStep?: string | null
   isStreaming?: boolean
   onOptionSelect?: (value: string, messageId?: string) => void
   onConfirmAction?: () => void
@@ -31,6 +32,7 @@ function toChat(msgs: PersistedMessage[]): ChatMessage[] {
 
 export function MessageList({
   messages,
+  thinkingStep,
   isStreaming,
   onOptionSelect,
   onConfirmAction,
@@ -57,7 +59,7 @@ export function MessageList({
       endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
     }, 300)
     return () => clearTimeout(t)
-  }, [displayMessages.length, lastContent])
+  }, [displayMessages.length, lastContent, thinkingStep])
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
@@ -70,6 +72,7 @@ export function MessageList({
               key={message.id}
               message={message}
               isLatest={i === displayMessages.length - 1}
+              thinkingStep={i === displayMessages.length - 1 ? thinkingStep : undefined}
               onOptionSelect={onOptionSelect}
               onConfirmAction={onConfirmAction}
               onRejectAction={onRejectAction}

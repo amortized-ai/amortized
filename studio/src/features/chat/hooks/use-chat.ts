@@ -192,6 +192,48 @@ function extractSessionData(
 }
 
 
+function startThinkingTimer(
+  convId: string,
+  setStep: (s: string | null) => void,
+): () => void {
+  const start = Date.now()
+  let acting = false
+  let pollDone = false
+
+  setStep("Thinking...")
+
+  const timerId = setInterval(() => {
+    const elapsed = (Date.now() - start) / 1000
+    if (elapsed > 15) {
+      setStep("Still working...")
+    } else if (acting) {
+      setStep("Acting...")
+    }
+  }, 1000)
+
+  const pollId = setInterval(async () => {
+    if (pollDone || acting) return
+    try {
+      const msgs = await fetchSessionMessages(convId)
+      if (pollDone) return
+      for (const msg of msgs) {
+        if (msg.parts?.some((p: { type: string }) => p.type === "tool")) {
+          acting = true
+          setStep("Acting...")
+          break
+        }
+      }
+    } catch { /* ignore */ }
+  }, 3000)
+
+  return () => {
+    pollDone = true
+    clearInterval(timerId)
+    clearInterval(pollId)
+    setStep(null)
+  }
+}
+
 /**
  * Chat hook. Designed to be mounted inside a keyed component so that
  * React handles conversation switching via unmount/remount — no
@@ -209,6 +251,8 @@ export function useChat() {
 
   const [chatState, setChatState] = useState<ChatState>("idle")
   const [error, setError] = useState<string | null>(null)
+  const [thinkingStep, setThinkingStep] = useState<string | null>(null)
+  const stopThinkingRef = useRef<(() => void) | null>(null)
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     return restoreMessages(getConversationMessages, currentConversationId)
@@ -408,11 +452,15 @@ export function useChat() {
       setMessages((prev) => [...prev, userMessage, assistantMessage])
       setChatState("streaming")
 
+      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep)
+
       try {
         const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
         logger.info("sending to OpenCode", { conversationId: convId })
         const { chatModelSelection } = useSettingsStore.getState()
         const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+        stopThinkingRef.current?.()
+        stopThinkingRef.current = null
         logger.info("OpenCode response received", {
           provider: response.info?.providerID,
           model: response.info?.modelID,
@@ -501,6 +549,8 @@ export function useChat() {
           })
         }
       } catch (err) {
+        stopThinkingRef.current?.()
+        stopThinkingRef.current = null
         logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
         setMessages((prev) => prev.filter((m) => m.id !== assistantId))
         setError(err instanceof Error ? err.message : "Unknown error")
@@ -784,6 +834,7 @@ export function useChat() {
     error,
     chatState,
     currentToolCall,
+    thinkingStep,
     proposedAction: latestAction,
     confirmAction,
     rejectAction,
