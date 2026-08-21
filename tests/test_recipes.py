@@ -68,7 +68,9 @@ class TestListStarterTemplates:
         assert osft["type"] == "training"
         assert osft["use_case"] == "knowledge-ingestion-osft"
 
-    def test_empty_when_no_skills_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_empty_when_no_skills_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import amortized.config as config_mod
 
         monkeypatch.setattr(config_mod.settings, "recipes_dir", tmp_path)
