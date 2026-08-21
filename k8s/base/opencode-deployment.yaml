@@ -23,6 +23,12 @@ spec:
       initContainers:
         - name: build-skills-tree
           image: busybox:1.37
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command: ["sh", "-c"]
           args:
             - |

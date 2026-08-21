@@ -120,13 +120,20 @@ def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+_VALID_TARGETS = {"sdg", "training"}
+
+
 def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str, bool] | None:
     for part in parts:
         if part.get("type") != "tool":
             continue
         if _tool_name(part) == "delegate_to_subagent":
             inp = _get_tool_input(part)
-            return (inp.get("target", ""), inp.get("context", ""), inp.get("resume", False))
+            target = inp.get("target", "")
+            if target not in _VALID_TARGETS:
+                logger.warning("Ignoring delegation to unknown target: %r", target)
+                return None
+            return (target, inp.get("context", ""), inp.get("resume", False))
     return None
 
 
