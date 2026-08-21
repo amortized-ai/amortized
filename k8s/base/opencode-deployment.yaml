@@ -26,8 +26,10 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               cd /flat
               for f in *; do
+                [ "$f" = "*" ] && continue
                 dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
                 name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
                 mkdir -p "$dir"

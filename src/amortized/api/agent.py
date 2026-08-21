@@ -8,10 +8,11 @@ subagent sessions.
 from __future__ import annotations
 
 import asyncio
-import contextvars
+import contextlib
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -25,10 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["agent"])
 
 OPENCODE_TIMEOUT = 300.0
-
-_current_session: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "_current_session", default=None
-)
+SESSION_TTL_HOURS = 4
 
 # ---------------------------------------------------------------------------
 # Session state
@@ -41,9 +39,8 @@ class SessionState:
     subagent_id: str | None = None
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    pending_delegation: tuple[str, str, bool] | None = None
-    pending_completion: str | None = None
     completed_subagents: dict[str, str] = field(default_factory=dict)
+    last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 _sessions: dict[str, SessionState] = {}
@@ -53,15 +50,22 @@ _sessions: dict[str, SessionState] = {}
 # ---------------------------------------------------------------------------
 
 _http_client: httpx.AsyncClient | None = None
+_cleanup_task: asyncio.Task[None] | None = None
 
 
 async def startup() -> None:
-    global _http_client
+    global _http_client, _cleanup_task
     _http_client = httpx.AsyncClient(timeout=OPENCODE_TIMEOUT)
+    _cleanup_task = asyncio.create_task(_session_cleanup_loop())
 
 
 async def shutdown() -> None:
-    global _http_client
+    global _http_client, _cleanup_task
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _cleanup_task
+        _cleanup_task = None
     if _http_client:
         await _http_client.aclose()
         _http_client = None
@@ -73,24 +77,71 @@ def _client() -> httpx.AsyncClient:
 
 
 # ---------------------------------------------------------------------------
-# Signal queues (called from MCP endpoints in ui.py)
+# Session cleanup
 # ---------------------------------------------------------------------------
 
 
-def queue_delegation(target: str, context: str, *, resume: bool = False) -> None:
-    sid = _current_session.get()
-    if not sid or sid not in _sessions:
-        return
-    _sessions[sid].pending_delegation = (target, context, resume)
-    logger.info("Delegation queued: target=%s resume=%s session=%s", target, resume, sid)
+async def _session_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(600)
+        cutoff = datetime.now(UTC) - timedelta(hours=SESSION_TTL_HOURS)
+        expired = [sid for sid, s in _sessions.items() if s.last_activity < cutoff]
+        for sid in expired:
+            del _sessions[sid]
+        if expired:
+            logger.info("Evicted %d expired agent sessions", len(expired))
 
 
-def queue_completion(summary: str) -> None:
-    sid = _current_session.get()
-    if not sid or sid not in _sessions:
-        return
-    _sessions[sid].pending_completion = summary
-    logger.info("Completion queued: session=%s", sid)
+# ---------------------------------------------------------------------------
+# Response scanning — detect delegation/completion from tool parts
+# ---------------------------------------------------------------------------
+
+INTERNAL_TOOLS = {"delegate_to_subagent", "signal_subagent_completion"}
+
+
+def _tool_name(part: dict[str, Any]) -> str:
+    raw = part.get("tool") or part.get("toolName") or ""
+    if "__" in raw:
+        return raw.split("__")[-1]
+    if raw.startswith("amortized_"):
+        return raw[len("amortized_") :]
+    return raw
+
+
+def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
+    inp = part.get("input")
+    if isinstance(inp, dict):
+        return inp
+    state = part.get("state")
+    if isinstance(state, dict):
+        state_input = state.get("input")
+        if isinstance(state_input, dict):
+            return state_input
+    return {}
+
+
+def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str, bool] | None:
+    for part in parts:
+        if part.get("type") != "tool":
+            continue
+        if _tool_name(part) == "delegate_to_subagent":
+            inp = _get_tool_input(part)
+            return (inp.get("target", ""), inp.get("context", ""), inp.get("resume", False))
+    return None
+
+
+def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
+    for part in parts:
+        if part.get("type") != "tool":
+            continue
+        if _tool_name(part) == "signal_subagent_completion":
+            inp = _get_tool_input(part)
+            return str(inp.get("summary", ""))
+    return None
+
+
+def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +211,8 @@ class MessagePart(BaseModel):
 
 
 class MessageModel(BaseModel):
-    providerID: str | None = None
-    modelID: str | None = None
+    providerID: str | None = None  # noqa: N815
+    modelID: str | None = None  # noqa: N815
 
 
 class MessageRequest(BaseModel):
@@ -185,7 +236,14 @@ def _extract_user_text(body: MessageRequest) -> str:
 @router.post("/session")
 async def create_session() -> dict[str, Any]:
     session_id = str(uuid.uuid4())
-    opencode_id = await _proxy_create_session()
+    try:
+        opencode_id = await _proxy_create_session()
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="Cannot connect to agent service") from None
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Agent service timed out") from None
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Agent service error: {exc}") from None
     _sessions[session_id] = SessionState(orchestrator_id=opencode_id)
     return {"id": session_id}
 
@@ -209,6 +267,8 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     if not state:
         raise HTTPException(status_code=404, detail="unknown session")
 
+    state.last_activity = datetime.now(UTC)
+
     async with state.lock:
         if state.subagent_id:
             return await _handle_subagent_message(state, session_id, user_text, body)
@@ -222,8 +282,6 @@ async def _handle_subagent_message(
     body: MessageRequest,
 ) -> dict[str, Any]:
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
-    state.pending_completion = None
-    _current_session.set(session_id)
     try:
         result = await _proxy_send_message(
             state.subagent_id,  # type: ignore[arg-type]
@@ -231,17 +289,20 @@ async def _handle_subagent_message(
             agent=state.subagent_target,
             model=body.model,
         )
-    except Exception:
-        logger.exception("Subagent message failed, tearing down: session=%s", session_id)
-        state.subagent_id = None
-        state.subagent_target = None
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            logger.warning("Subagent session gone, tearing down: session=%s", session_id)
+            state.subagent_id = None
+            state.subagent_target = None
         raise
-    finally:
-        _current_session.set(None)
+    except Exception:
+        logger.exception("Subagent message failed: session=%s", session_id)
+        raise
 
-    if state.pending_completion:
-        completion = state.pending_completion
-        state.pending_completion = None
+    parts = result.get("parts", [])
+    summary = _detect_completion(parts)
+
+    if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
         if state.subagent_target and state.subagent_id:
             state.completed_subagents[state.subagent_target] = state.subagent_id
@@ -249,13 +310,14 @@ async def _handle_subagent_message(
         state.subagent_target = None
 
         resume_prompt = (
-            f"[SUBAGENT COMPLETED]\n{completion}\n\n"
+            f"[SUBAGENT COMPLETED]\n{summary}\n\n"
             "Present contextual next steps to the user via present_options."
         )
         orch_result = await _proxy_send_message(
             state.orchestrator_id, resume_prompt, agent="morty", model=body.model
         )
-        result.setdefault("parts", []).extend(orch_result.get("parts", []))
+        merged_parts = _strip_internal_tools(parts) + orch_result.get("parts", [])
+        result["parts"] = merged_parts
         result["info"] = orch_result.get("info", result.get("info", {}))
 
     return result
@@ -267,18 +329,15 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    state.pending_delegation = None
-    _current_session.set(session_id)
-    try:
-        result = await _proxy_send_message(
-            state.orchestrator_id, user_text, agent="morty", model=body.model
-        )
-    finally:
-        _current_session.set(None)
+    result = await _proxy_send_message(
+        state.orchestrator_id, user_text, agent="morty", model=body.model
+    )
 
-    if state.pending_delegation:
-        target, context, resume = state.pending_delegation
-        state.pending_delegation = None
+    parts = result.get("parts", [])
+    delegation = _detect_delegation(parts)
+
+    if delegation:
+        target, context, resume = delegation
 
         stashed_id = state.completed_subagents.pop(target, None) if resume else None
 

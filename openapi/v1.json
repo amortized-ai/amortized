@@ -2470,6 +2470,10 @@
         "properties": {
           "target": {
             "type": "string",
+            "enum": [
+              "sdg",
+              "training"
+            ],
             "title": "Target",
             "description": "Workflow agent to delegate to: 'sdg' or 'training'"
           },
@@ -2477,6 +2481,12 @@
             "type": "string",
             "title": "Context",
             "description": "Full context for the workflow agent. Include: (1) conversation history summary \u2014 what has been done so far (completed jobs with IDs, models used, dataset sizes, outcomes), (2) current user intent \u2014 what the user wants to do now, (3) relevant artifact IDs (job IDs, dataset IDs, document IDs). The workflow agent starts with no memory of prior conversation, so this context is all it has."
+          },
+          "resume": {
+            "type": "boolean",
+            "title": "Resume",
+            "description": "If true, resume the previous workflow agent session for this target instead of creating a new one. The resumed agent keeps its full conversation history and can pick up where it left off. Set to true when the user wants to adjust, retry, or iterate on a job that was just completed or failed (e.g. 'resubmit with more samples', 'try a lower learning rate', 'use a different model'). Set to false (default) when the user wants a fundamentally new job (new task, new dataset, different skill).",
+            "default": false
           }
         },
         "type": "object",

@@ -137,7 +137,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_AUTH_SKIP_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"}
+_AUTH_SKIP_PATHS = {"/api/v1/health", "/agent/health", "/docs", "/openapi.json", "/redoc"}
 
 
 @app.middleware("http")
