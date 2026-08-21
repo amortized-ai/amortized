@@ -211,8 +211,8 @@ function startThinkingTimer(
     }
   }, 1000)
 
-  const pollId = setTimeout(async () => {
-    if (pollDone) return
+  const pollId = setInterval(async () => {
+    if (pollDone || acting) return
     try {
       const msgs = await fetchSessionMessages(convId)
       if (pollDone) return
@@ -229,7 +229,7 @@ function startThinkingTimer(
   return () => {
     pollDone = true
     clearInterval(timerId)
-    clearTimeout(pollId)
+    clearInterval(pollId)
     setStep(null)
   }
 }
