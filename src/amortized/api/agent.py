@@ -144,6 +144,31 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
+async def _fetch_latest_parts(opencode_session_id: str) -> list[dict[str, Any]]:
+    """GET session messages and return the latest assistant message's parts.
+
+    The POST response only has step-start/step-finish — tool call details
+    only appear in the GET messages endpoint.
+    """
+    try:
+        resp = await _client().get(
+            f"{_opencode_url()}/session/{opencode_session_id}/message",
+            timeout=10.0,
+        )
+        if resp.status_code != 200 or not resp.content or not resp.content.strip():
+            return []
+        messages = resp.json()
+        if not isinstance(messages, list):
+            return []
+        for msg in reversed(messages):
+            if msg.get("info", {}).get("role") == "assistant":
+                return msg.get("parts", [])
+        return []
+    except Exception:
+        logger.warning("Failed to fetch session messages for %s", opencode_session_id)
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Upstream helpers
 # ---------------------------------------------------------------------------
@@ -299,8 +324,8 @@ async def _handle_subagent_message(
         logger.exception("Subagent message failed: session=%s", session_id)
         raise
 
-    parts = result.get("parts", [])
-    summary = _detect_completion(parts)
+    latest_parts = await _fetch_latest_parts(state.subagent_id)  # type: ignore[arg-type]
+    summary = _detect_completion(latest_parts)
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
@@ -316,8 +341,8 @@ async def _handle_subagent_message(
         orch_result = await _proxy_send_message(
             state.orchestrator_id, resume_prompt, agent="morty", model=body.model
         )
-        merged_parts = _strip_internal_tools(parts) + orch_result.get("parts", [])
-        result["parts"] = merged_parts
+        response_parts = _strip_internal_tools(result.get("parts", []))
+        result["parts"] = response_parts + orch_result.get("parts", [])
         result["info"] = orch_result.get("info", result.get("info", {}))
 
     return result
@@ -333,21 +358,8 @@ async def _handle_orchestrator_message(
         state.orchestrator_id, user_text, agent="morty", model=body.model
     )
 
-    parts = result.get("parts", [])
-    tool_parts = [p for p in parts if p.get("type") == "tool"]
-    if tool_parts:
-        logger.info(
-            "Orchestrator tool parts: session=%s tools=%s",
-            session_id,
-            [
-                (p.get("tool") or p.get("toolName"), list((_get_tool_input(p) or {}).keys()))
-                for p in tool_parts
-            ],
-        )
-    else:
-        part_types = [p.get("type") for p in parts]
-        logger.info("Orchestrator response part types: session=%s types=%s", session_id, part_types)
-    delegation = _detect_delegation(parts)
+    latest_parts = await _fetch_latest_parts(state.orchestrator_id)
+    delegation = _detect_delegation(latest_parts)
 
     if delegation:
         target, context, resume = delegation
