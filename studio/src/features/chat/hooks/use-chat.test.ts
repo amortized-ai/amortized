@@ -21,7 +21,7 @@ vi.mock("@/lib/api-client", () => ({
   generateChatTitle: vi.fn(async (msg: string) => msg.slice(0, 40)),
 }))
 
-const mockGetConversationMessages = vi.fn(() => [])
+const mockGetConversationMessages = vi.fn((): { id: string; role: string; content: string; timestamp: string }[] => [])
 const mockSetCurrentConversationId = vi.fn()
 const mockAddConversation = vi.fn()
 const mockDeleteConversation = vi.fn()
@@ -29,7 +29,11 @@ const mockUpdateConversationTitle = vi.fn()
 const mockAddMessage = vi.fn()
 const mockUpdateMessage = vi.fn()
 
-const mockStoreValue = {
+const mockStoreValue: {
+  currentConversationId: string | null
+  conversations: { id: string; messages: { id: string; role: string; content: string; timestamp: string }[] }[]
+  [key: string]: unknown
+} = {
   currentConversationId: null,
   setCurrentConversationId: mockSetCurrentConversationId,
   conversations: [],

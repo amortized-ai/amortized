@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
@@ -19,6 +19,14 @@ function generateId(): string {
 }
 
 const _sendLock = { held: false }
+
+// Navigate-away recovery protocol (see #348, #401):
+// 1. Persist empty assistant placeholder to store BEFORE the fetch
+// 2. Track conversation in _activeRequests so remount detects in-flight request
+// 3. On success: updateMessageFields (not addMessage) to fill placeholder in-place
+// 4. On error: removeMessage to clean up, delete from _activeRequests
+// 5. On remount: mountedWhileStreaming detects placeholder, polls session, retries if dead
+// If you change addMessage/updateMessageFields ordering in sendMessage, the recovery breaks.
 const _activeRequests = new Set<string>()
 
 function restoreMessages(
@@ -208,13 +216,10 @@ export function useChat() {
     getConversationMessages,
   } = useChatStore()
 
-  const initialMessages = useMemo(
-    () => {
-      const s = useChatStore.getState()
-      return restoreMessages(s.getConversationMessages, s.currentConversationId)
-    },
-    [],
-  )
+  const [initialMessages] = useState(() => {
+    const s = useChatStore.getState()
+    return restoreMessages(s.getConversationMessages, s.currentConversationId)
+  })
   const lastRestored = initialMessages[initialMessages.length - 1]
   const mountedWhileStreaming =
     lastRestored?.role === "assistant" && !lastRestored.content
@@ -302,9 +307,11 @@ export function useChat() {
           const { summarizeConversation } = await import("@/lib/context-summarizer")
           const allMsgs = useChatStore.getState().getConversationMessages(convId)
           const summary = summarizeConversation(allMsgs)
+          const recoveryNote = "[System: This is a session recovery — the user's previous session was lost. " +
+            "Do not create jobs or take actions. Just provide an informational response.]"
           const messageWithContext = summary
-            ? `${summary}\n\n${lastUserMsg.content}`
-            : lastUserMsg.content
+            ? `${recoveryNote}\n\n${summary}\n\n${lastUserMsg.content}`
+            : `${recoveryNote}\n\n${lastUserMsg.content}`
           const response = await sendOpenCodeMessage(convId, messageWithContext, chatModelSelection)
           if (cancelled) { _activeRequests.delete(convId); return }
           const parsed = parseOpenCodeResponse(response)
@@ -855,9 +862,21 @@ export function useChat() {
         proposedAction: null,
         optionCards: [],
       }
-      setMessages((prev) => [...prev, placeholder])
+      setMessages((prev) => {
+        const next = [...prev, placeholder]
+        messagesRef.current = next
+        return next
+      })
       _sendLock.held = true
       setChatState("streaming")
+
+      addMessage(convId, {
+        id: placeholderId,
+        role: "assistant",
+        content: "",
+        timestamp: placeholder.timestamp,
+      })
+      _activeRequests.add(convId)
 
       try {
         const response = await sendOpenCodeMessage(
@@ -881,27 +900,27 @@ export function useChat() {
           return updated
         })
 
-        addMessage(convId, {
-          id: placeholderId,
-          role: "assistant",
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
-          timestamp: new Date().toISOString(),
           toolResults: session.tools,
         })
 
+        _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
         setChatState("done")
         consecutiveFailures = 0
       } catch (err) {
+        _activeRequests.delete(convId)
+        const fallbackContent = "I wasn't able to suggest next steps. You can ask me what to do next."
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === placeholderId)
           if (idx === -1) return prev.filter((m) => m.id !== placeholderId)
           const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
-            content: "I wasn't able to suggest next steps. You can ask me what to do next.",
-          }
+          updated[idx] = { ...prev[idx]!, content: fallbackContent }
           return updated
+        })
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
+          content: fallbackContent,
         })
         setChatState("done")
         consecutiveFailures++
