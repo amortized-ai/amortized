@@ -14,8 +14,10 @@ When the user describes what they want to build, identify the **sub-skill**:
 Go DIRECTLY to the sub-skill's guide — do NOT ask "what do you want to
 start with?" if the intent is clear.
 
-**First message:** ONE short sentence acknowledging their goal, then
-immediately ask the FIRST question from the loaded sub-skill guide.
+**First message:** Jump straight to the FIRST question from the loaded
+sub-skill guide. Do NOT acknowledge, narrate, or announce what you are
+loading. The user asked you to build something — ask what you need to
+know, nothing else.
 
 ### Step 2 — Gather Requirements
 
