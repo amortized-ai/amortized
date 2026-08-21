@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY pyproject.toml alembic.ini .
 COPY src/ src/
-COPY templates/ templates/
+COPY agent/skills/ agent/skills/
 COPY openrouter_costs.json .
 
 RUN uv pip install --system --no-cache .

@@ -1,0 +1,122 @@
+{
+  "_meta": {
+    "name": "Task Distillation",
+    "description": "Distill a frontier model's task behavior into a smaller model using synthetic input-output pairs."
+  },
+  "num_records": 2000,
+  "topic": "RFE quality assessment",
+  "columns": [
+    {
+      "column_type": "sampler",
+      "name": "domain",
+      "sampler_type": "category",
+      "params": {
+        "values": [
+          "Cloud Infrastructure - Kubernetes, OpenShift, containerization, cluster management",
+          "AI/ML Platform - Model training, inference, MLOps, GPU orchestration",
+          "Developer Tools - IDEs, CI/CD, source control, debugging, observability"
+        ],
+        "weights": [
+          0.34,
+          0.33,
+          0.33
+        ]
+      }
+    },
+    {
+      "column_type": "sampler",
+      "name": "quality_profile",
+      "sampler_type": "category",
+      "params": {
+        "values": [
+          "High quality - An input that should score well across most criteria",
+          "Medium quality - An input with significant weaknesses in 1-2 criteria",
+          "Low quality - An input with multiple serious issues across criteria"
+        ],
+        "weights": [
+          0.35,
+          0.35,
+          0.3
+        ]
+      }
+    },
+    {
+      "column_type": "sampler",
+      "name": "input_structure",
+      "sampler_type": "category",
+      "params": {
+        "values": [
+          "Formal - Well-organized with clear headers and substantive content in each section",
+          "Terse - Brief format, may be missing key sections, gets to the point quickly",
+          "Detailed - Extensive format with many sections, may be verbose"
+        ],
+        "weights": [
+          0.34,
+          0.33,
+          0.33
+        ]
+      }
+    },
+    {
+      "column_type": "sampler",
+      "name": "calibration_example",
+      "sampler_type": "category",
+      "params": {
+        "values": [
+          "--- Example Input ---\n[A real high-quality RFE from user data]\n\n--- Assessment ---\n[User's scored assessment: PASS with prose feedback]",
+          "--- Example Input ---\n[A real medium-quality RFE]\n\n--- Assessment ---\n[User's scored assessment: FAIL with numbered fixes]",
+          "--- Example Input ---\n[A real low-quality RFE]\n\n--- Assessment ---\n[User's scored assessment: FAIL with critical issues]"
+        ]
+      }
+    },
+    {
+      "column_type": "llm-text",
+      "name": "generated_input",
+      "model_alias": "text",
+      "system_prompt": "You are a product manager writing RFE (Request for Enhancement) submissions for enterprise software.",
+      "prompt": "Create an RFE with these characteristics:\n\nDomain: {{ domain }}\nQuality: {{ quality_profile }}\nStructure: {{ input_structure }}\n\nUse these examples for style and format reference:\n\n--- Example 1 ---\n[Real RFE from user data]\n\n--- Example 2 ---\n[Another real RFE at a different quality level]\n\n--- Example 3 ---\n[A third real RFE]\n\n---\n\nWrite a new, different RFE. Output ONLY the RFE text."
+    },
+    {
+      "column_type": "llm-text",
+      "name": "assessment",
+      "model_alias": "text",
+      "system_prompt": "[THE SCORING RUBRIC: 5 criteria with 0/1/2 anchors, calibration examples per criterion, pass/fail logic (>= 7 and no zeros), output format (table then verdict then feedback), feedback style (prose for PASS, numbered fixes for FAIL)]",
+      "prompt": "For calibration, here is a scored example:\n\n{{ calibration_example }}\n\n---\n\nScore the following RFE. Your table MUST include all 5 criteria: Customer Problem, Right-sized, Technical Feasibility, Acceptance Criteria, Business Value. If it passes (7+ with no zeros), write Feedback as flowing prose.\n\n{{ generated_input }}"
+    }
+  ],
+  "model_configs": [
+    {
+      "alias": "text",
+      "model": "<from-list_models>",
+      "provider": "gateway",
+      "skip_health_check": true,
+      "inference_parameters": {
+        "temperature": 0.7,
+        "max_tokens": 32768,
+        "max_parallel_requests": 32
+      }
+    }
+  ],
+  "processors": [
+    {
+      "processor_type": "schema_transform",
+      "name": "sft_format",
+      "template": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SCORING RUBRIC: identical to assessment column system_prompt]"
+          },
+          {
+            "role": "user",
+            "content": "{{ generated_input }}"
+          },
+          {
+            "role": "assistant",
+            "content": "{{ assessment }}"
+          }
+        ]
+      }
+    }
+  ]
+}

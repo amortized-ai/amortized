@@ -15,7 +15,6 @@ import type {
   MlflowRun,
   MlflowRunsSearchResponse,
   PaginationParams,
-  Recipe,
 } from "@/types/api"
 
 class ApiError extends Error {
@@ -120,13 +119,6 @@ function post<T>(path: string, body?: unknown): Promise<T> {
   })
 }
 
-function put<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "PUT",
-    body: body != null ? JSON.stringify(body) : undefined,
-  })
-}
-
 function del<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, {
     method: "DELETE",
@@ -179,33 +171,29 @@ export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
 
 // --- Recipes ---
 
-export function getRecipes(): Promise<Recipe[]> {
-  logger.debug("getRecipes")
-  return get<Recipe[]>("/api/v1/recipes")
-}
-
-export function getRecipe(name: string): Promise<Recipe> {
-  logger.debug("getRecipe", { name })
-  return get<Recipe>(`/api/v1/recipes/${name}`)
-}
-
-export function saveRecipe(name: string, data: { type: string; description: string; config: Record<string, unknown> }): Promise<Recipe> {
-  logger.info("saveRecipe", { name })
-  return put<Recipe>(`/api/v1/recipes/${name}`, data)
-}
-
-export function deleteRecipe(name: string): Promise<void> {
-  return del<void>(`/api/v1/recipes/${encodeURIComponent(name)}`)
-}
-
-export function submitRecipe(data: { recipe: string; overrides?: Record<string, unknown> }): Promise<Job> {
-  logger.info("submitRecipe", { recipe: data.recipe })
-  return post<Job>("/api/v1/jobs/recipe", data)
-}
-
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {
   logger.info("createJob", { endpoint })
   return post<Job>(endpoint, body)
+}
+
+// --- Direct job creation (for recipe re-execution) ---
+
+export function getStarterTemplates(): Promise<Record<string, unknown>[]> {
+  return get<Record<string, unknown>[]>("/api/v1/recipes/starter-templates")
+}
+
+export function getConfigSchemas(): Promise<Record<string, unknown>> {
+  return get<Record<string, unknown>>("/api/v1/schemas")
+}
+
+export function createTrainingJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createTrainingJob")
+  return post<Job>("/api/v1/jobs/training", config)
+}
+
+export function createSdgJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createSdgJob")
+  return post<Job>("/api/v1/jobs/sdg", config)
 }
 
 // --- Agent Chat (OpenCode) ---
