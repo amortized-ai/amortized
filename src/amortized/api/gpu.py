@@ -9,12 +9,25 @@ import asyncpg
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from amortized.core.compute import get_all_backends
 from amortized.db import get_db
 from amortized.db.repository import Repository
 
 logger = logging.getLogger("amortized.api.gpu")
 
 router = APIRouter(prefix="/api/v1/gpu", tags=["gpu"])
+
+GPU_MEMORY_GIB: dict[str, int] = {
+    "a100": 80,
+    "a10g": 24,
+    "t4": 16,
+    "l4": 24,
+    "h100": 80,
+    "v100": 32,
+    "a30": 24,
+    "a40": 48,
+}
+DEFAULT_GPU_MEMORY_GIB = 16
 
 
 class GpuJobAllocation(BaseModel):
@@ -36,30 +49,13 @@ class GpuAllocationResponse(BaseModel):
     jobs: list[GpuJobAllocation] = Field(default_factory=list)
 
 
-def _detect_gpu_info() -> dict[str, Any]:
-    """Detect GPU availability on the server."""
-    import shutil
-
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            return {
-                "available": True,
-                "count": torch.cuda.device_count(),
-                "devices": [
-                    torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
-                ],
-            }
-    except ImportError:
-        pass
-
-    nvidia_smi = shutil.which("nvidia-smi")
-    return {
-        "available": nvidia_smi is not None,
-        "count": 0,
-        "devices": [],
-    }
+def _estimate_memory_gib(gpu_type: str | None, gpu_count: int) -> float:
+    """Estimate total GPU memory from type and count."""
+    if gpu_type:
+        mem = GPU_MEMORY_GIB.get(gpu_type.lower().strip(), DEFAULT_GPU_MEMORY_GIB)
+    else:
+        mem = DEFAULT_GPU_MEMORY_GIB
+    return float(mem * gpu_count)
 
 
 async def _get_running_gpu_jobs(repo: Repository) -> list[dict[str, Any]]:
@@ -104,17 +100,6 @@ def _extract_gpu_info_from_job(job: dict[str, Any]) -> tuple[int, str | None]:
 async def get_gpu_allocation(
     conn: asyncpg.Connection = Depends(get_db),
 ) -> GpuAllocationResponse:
-    gpu_info = _detect_gpu_info()
-
-    if not gpu_info["available"]:
-        return GpuAllocationResponse(
-            available=False,
-            reason="No GPU detected on this server",
-        )
-
-    total_gpus: int = gpu_info.get("count", 0) or 0
-    gpu_devices: list[str] = gpu_info.get("devices", [])
-
     repo = Repository(conn)
     try:
         active_jobs = await _get_running_gpu_jobs(repo)
@@ -134,6 +119,7 @@ async def get_gpu_allocation(
         if gpus_requested <= 0:
             continue
 
+        memory_gib = _estimate_memory_gib(gpu_type, gpus_requested)
         job_name = job.get("config", {}).get("topic", "") or job.get("id", "")[:12]
         gpu_jobs.append(
             GpuJobAllocation(
@@ -142,17 +128,26 @@ async def get_gpu_allocation(
                 status=job["status"],
                 gpus_requested=gpus_requested,
                 gpu_type=gpu_type,
+                memory_requested_gib=memory_gib,
             )
         )
         allocated_gpus += gpus_requested
+        total_memory += memory_gib
+
+    has_gpu_capable_backend = any(name != "local" for name in get_all_backends())
+
+    if not gpu_jobs and not has_gpu_capable_backend:
+        return GpuAllocationResponse(
+            available=False,
+            reason="No GPU-capable compute backend configured",
+        )
 
     gpu_jobs.sort(key=lambda j: j.gpus_requested, reverse=True)
 
     return GpuAllocationResponse(
         available=True,
-        total_gpus=total_gpus,
+        total_gpus=allocated_gpus,
         allocated_gpus=allocated_gpus,
         total_memory_requested_gib=total_memory,
-        gpu_devices=gpu_devices,
         jobs=gpu_jobs,
     )
