@@ -20,6 +20,15 @@ function generateId(): string {
 
 const _sendLock = { held: false }
 
+// Navigate-away recovery protocol (see #348, #401):
+// 1. Persist empty assistant placeholder to store BEFORE the fetch
+// 2. Track conversation in _activeRequests so remount detects in-flight request
+// 3. On success: updateMessageFields (not addMessage) to fill placeholder in-place
+// 4. On error: removeMessage to clean up, delete from _activeRequests
+// 5. On remount: mountedWhileStreaming detects placeholder, polls session, retries if dead
+// If you change addMessage/updateMessageFields ordering in sendMessage, the recovery breaks.
+const _activeRequests = new Set<string>()
+
 function restoreMessages(
   getConversationMessages: (id: string) => import("@/stores/chat-store").PersistedMessage[],
   conversationId: string | null,
@@ -207,15 +216,167 @@ export function useChat() {
     getConversationMessages,
   } = useChatStore()
 
-  const [chatState, setChatState] = useState<ChatState>("idle")
-  const [error, setError] = useState<string | null>(null)
-
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    return restoreMessages(getConversationMessages, currentConversationId)
+  const [initialMessages] = useState(() => {
+    const s = useChatStore.getState()
+    return restoreMessages(s.getConversationMessages, s.currentConversationId)
   })
+  const lastRestored = initialMessages[initialMessages.length - 1]
+  const mountedWhileStreaming =
+    lastRestored?.role === "assistant" && !lastRestored.content
+  const convIdAtMount = useChatStore.getState().currentConversationId
+  const hasActiveRequest = convIdAtMount ? _activeRequests.has(convIdAtMount) : false
+
+  const [chatState, setChatState] = useState<ChatState>(
+    mountedWhileStreaming || hasActiveRequest ? "streaming" : "idle",
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
+
+  useEffect(() => {
+    if (!mountedWhileStreaming || !currentConversationId) return
+    const convId = currentConversationId
+    const placeholderId = lastRestored!.id
+    let cancelled = false
+
+    function cleanupPlaceholder() {
+      _activeRequests.delete(convId)
+      useChatStore.getState().removeMessage(convId, placeholderId)
+      setMessages(restoreMessages(getConversationMessages, convId))
+      setChatState("idle")
+    }
+
+    if (!_activeRequests.has(convId)) {
+      async function recoverResponse() {
+        let emptyPolls = 0
+        while (true) {
+          if (cancelled) return
+          try {
+            const msgs = await fetchSessionMessages(convId)
+            if (cancelled) return
+            if (msgs.length > 0) {
+              emptyPolls = 0
+              const parsed = parseOpenCodeResponse(msgs[msgs.length - 1]!)
+              const session = extractSessionData(msgs, parsed.toolResults)
+              const content = session.text || parsed.content
+              if (content) {
+                const toolResults = session.tools
+                let phase: string | null = null
+                const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
+                if (phaseTool?.result) {
+                  try {
+                    const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+                    if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+                  } catch { /* ignore */ }
+                }
+                useChatStore.getState().updateMessageFields(convId, placeholderId, {
+                  content,
+                  toolResults,
+                  phase: phase ?? undefined,
+                })
+                setMessages(restoreMessages(getConversationMessages, convId))
+                setChatState("done")
+                return
+              }
+            } else {
+              emptyPolls++
+              if (emptyPolls >= 3) break
+            }
+          } catch {
+            emptyPolls++
+            if (emptyPolls >= 3) break
+          }
+          await new Promise((r) => setTimeout(r, 2000))
+        }
+
+        if (cancelled) return
+
+        const storedMsgs = useChatStore.getState().getConversationMessages(convId)
+        const lastUserMsg = [...storedMsgs].reverse().find((m) => m.role === "user")
+        if (!lastUserMsg) {
+          cleanupPlaceholder()
+          return
+        }
+
+        if (warmupPromiseRef.current) {
+          await warmupPromiseRef.current
+        }
+
+        _activeRequests.add(convId)
+        try {
+          const { chatModelSelection } = useSettingsStore.getState()
+          const { summarizeConversation } = await import("@/lib/context-summarizer")
+          const allMsgs = useChatStore.getState().getConversationMessages(convId)
+          const summary = summarizeConversation(allMsgs)
+          const recoveryNote = "[System: This is a session recovery — the user's previous session was lost. " +
+            "Do not create jobs or take actions. Just provide an informational response.]"
+          const messageWithContext = summary
+            ? `${recoveryNote}\n\n${summary}\n\n${lastUserMsg.content}`
+            : `${recoveryNote}\n\n${lastUserMsg.content}`
+          const response = await sendOpenCodeMessage(convId, messageWithContext, chatModelSelection)
+          if (cancelled) { _activeRequests.delete(convId); return }
+          const parsed = parseOpenCodeResponse(response)
+          const sessionMsgs = await fetchSessionMessages(convId)
+          const session = extractSessionData(
+            sessionMsgs.length > 0 ? sessionMsgs : [response],
+            parsed.toolResults,
+          )
+          const toolResults = session.tools
+          let phase: string | null = null
+          const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
+          if (phaseTool?.result) {
+            try {
+              const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+              if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
+            } catch { /* ignore */ }
+          }
+          const responseContent = session.text || parsed.content
+          useChatStore.getState().updateMessageFields(convId, placeholderId, {
+            content: responseContent,
+            toolResults,
+            phase: phase ?? undefined,
+          })
+          setMessages(restoreMessages(getConversationMessages, convId))
+          _activeRequests.delete(convId)
+          setChatState("done")
+          useChatStore.getState().setSessionStatus(convId, "connected")
+        } catch (err) {
+          _activeRequests.delete(convId)
+          if (cancelled) return
+          logger.error("recovery retry failed", { convId, error: err instanceof Error ? err.message : String(err) })
+          cleanupPlaceholder()
+        }
+      }
+      recoverResponse()
+    }
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recovery only needed on mount when streaming
+  }, [])
+
+  useEffect(() => {
+    if (messages.length > 0) return
+    if (!currentConversationId) return
+    const stored = getConversationMessages(currentConversationId)
+    if (stored.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded sync from store on hydration
+      setMessages(restoreMessages(getConversationMessages, currentConversationId))
+    }
+  }, [messages.length, currentConversationId, getConversationMessages])
 
   const messagesRef = useRef(messages)
   useEffect(() => { messagesRef.current = messages }, [messages])
+
+  useEffect(() => {
+    if (!currentConversationId) return
+    const convId = currentConversationId
+    const unsub = useChatStore.subscribe((state) => {
+      const conv = state.conversations.find((c) => c.id === convId)
+      if (conv && conv.messages.length > 0 && messagesRef.current.length === 0) {
+        setMessages(restoreMessages(state.getConversationMessages, convId))
+      }
+    })
+    return () => unsub()
+  }, [currentConversationId])
 
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
@@ -282,7 +443,7 @@ export function useChat() {
       }
     }
 
-    warmupPromiseRef.current = warmup()
+    warmupPromiseRef.current = warmup() // eslint-disable-line react-hooks/immutability -- recovery effect awaits this
     return () => { cancelled = true }
   }, [currentConversationId])
 
@@ -398,15 +559,26 @@ export function useChat() {
         }
       }
 
+      setMessages((prev) => {
+        const next = [...prev, userMessage, assistantMessage]
+        messagesRef.current = next
+        return next
+      })
+      setChatState("streaming")
+
       addMessage(convId, {
         id: userMessage.id,
         role: "user",
         content: userMessage.content,
         timestamp: userMessage.timestamp,
       })
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage])
-      setChatState("streaming")
+      addMessage(convId, {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: assistantMessage.timestamp,
+      })
+      _activeRequests.add(convId)
 
       try {
         const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
@@ -471,15 +643,14 @@ export function useChat() {
           return updated
         })
 
-        addMessage(convId, {
-          id: assistantId,
-          role: "assistant",
+        useChatStore.getState().updateMessageFields(convId, assistantId, {
           content: responseContent,
-          timestamp: new Date().toISOString(),
           toolResults,
           proposedAction,
           phase: phase ?? undefined,
         })
+
+        _activeRequests.delete(convId)
 
         if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
           useChatStore.getState().setJobInFlight(convId, true)
@@ -501,8 +672,10 @@ export function useChat() {
           })
         }
       } catch (err) {
+        _activeRequests.delete(convId)
         logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
         setMessages((prev) => prev.filter((m) => m.id !== assistantId))
+        useChatStore.getState().removeMessage(convId, assistantId)
         setError(err instanceof Error ? err.message : "Unknown error")
         setChatState("error")
       }
@@ -689,9 +862,21 @@ export function useChat() {
         proposedAction: null,
         optionCards: [],
       }
-      setMessages((prev) => [...prev, placeholder])
+      setMessages((prev) => {
+        const next = [...prev, placeholder]
+        messagesRef.current = next
+        return next
+      })
       _sendLock.held = true
       setChatState("streaming")
+
+      addMessage(convId, {
+        id: placeholderId,
+        role: "assistant",
+        content: "",
+        timestamp: placeholder.timestamp,
+      })
+      _activeRequests.add(convId)
 
       try {
         const response = await sendOpenCodeMessage(
@@ -715,27 +900,27 @@ export function useChat() {
           return updated
         })
 
-        addMessage(convId, {
-          id: placeholderId,
-          role: "assistant",
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
-          timestamp: new Date().toISOString(),
           toolResults: session.tools,
         })
 
+        _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
         setChatState("done")
         consecutiveFailures = 0
       } catch (err) {
+        _activeRequests.delete(convId)
+        const fallbackContent = "I wasn't able to suggest next steps. You can ask me what to do next."
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === placeholderId)
           if (idx === -1) return prev.filter((m) => m.id !== placeholderId)
           const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
-            content: "I wasn't able to suggest next steps. You can ask me what to do next.",
-          }
+          updated[idx] = { ...prev[idx]!, content: fallbackContent }
           return updated
+        })
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
+          content: fallbackContent,
         })
         setChatState("done")
         consecutiveFailures++

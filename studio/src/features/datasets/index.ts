@@ -1,6 +1,5 @@
 export { default as DatasetsPage } from "./page"
 export { useDatasets, useDataset } from "./api/use-datasets"
-export { DatasetDetailPage } from "./components/dataset-detail"
 export { DatasetOverviewTab } from "./components/dataset-overview-tab"
 export { DatasetLineage } from "./components/dataset-lineage"
 export { DatasetTable } from "./components/dataset-table"
