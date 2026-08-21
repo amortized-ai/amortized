@@ -75,6 +75,7 @@ export function useCancelJob() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+      void queryClient.invalidateQueries({ queryKey: ["gpu"] })
     },
   })
 }
@@ -94,6 +95,7 @@ export function useDeleteJob() {
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+      void queryClient.invalidateQueries({ queryKey: ["gpu"] })
     },
   })
 }

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { SectionCards } from "./components/section-cards"
 import { RecentJobs } from "./components/recent-jobs"
+import { GpuUtilizationCard } from "@/features/jobs/components/gpu-utilization-card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Server, Layers, Zap, Settings, Sparkles, Compass } from "lucide-react"
@@ -378,6 +379,14 @@ export default function OverviewPage() {
         {hasData && (
           <>
             <SectionCards />
+            <div className="px-4 lg:px-6">
+              <div
+                className="animate-message-in"
+                style={{ animationDelay: "1100ms" }}
+              >
+                <GpuUtilizationCard />
+              </div>
+            </div>
             <div className="px-4 lg:px-6">
               <RecentJobs />
             </div>

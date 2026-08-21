@@ -1542,6 +1542,27 @@
         }
       }
     },
+    "/api/v1/gpu/allocation": {
+      "get": {
+        "tags": [
+          "gpu"
+        ],
+        "summary": "Get current GPU allocation across active training jobs.",
+        "operationId": "get_gpu_allocation",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuAllocationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "summary": "Health",
@@ -2718,6 +2739,110 @@
           "models"
         ],
         "title": "GetModelPricingResponse"
+      },
+      "GpuAllocationResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Set when available=False"
+          },
+          "total_gpus": {
+            "type": "integer",
+            "title": "Total Gpus",
+            "default": 0
+          },
+          "allocated_gpus": {
+            "type": "integer",
+            "title": "Allocated Gpus",
+            "default": 0
+          },
+          "total_memory_requested_gib": {
+            "type": "number",
+            "title": "Total Memory Requested Gib",
+            "default": 0.0
+          },
+          "gpu_devices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gpu Devices"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/GpuJobAllocation"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "GpuAllocationResponse"
+      },
+      "GpuJobAllocation": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "gpus_requested": {
+            "type": "integer",
+            "title": "Gpus Requested"
+          },
+          "gpu_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Type"
+          },
+          "memory_requested_gib": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Requested Gib"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "job_name",
+          "status",
+          "gpus_requested"
+        ],
+        "title": "GpuJobAllocation"
       },
       "HTTPValidationError": {
         "properties": {

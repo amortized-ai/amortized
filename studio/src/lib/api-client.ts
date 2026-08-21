@@ -387,6 +387,31 @@ export async function generateChatTitle(message: string): Promise<string> {
   return data.title || message.slice(0, 40)
 }
 
+// --- GPU ---
+
+export interface GpuJobAllocation {
+  job_id: string
+  job_name: string
+  status: string
+  gpus_requested: number
+  gpu_type: string | null
+  memory_requested_gib: number | null
+}
+
+export interface GpuAllocationResponse {
+  available: boolean
+  reason: string | null
+  total_gpus: number
+  allocated_gpus: number
+  total_memory_requested_gib: number
+  gpu_devices: string[]
+  jobs: GpuJobAllocation[]
+}
+
+export function getGpuAllocation(): Promise<GpuAllocationResponse> {
+  return get<GpuAllocationResponse>("/api/v1/gpu/allocation")
+}
+
 // --- System ---
 
 export function getHealth(): Promise<HealthResponse> {

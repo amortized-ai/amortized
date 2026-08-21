@@ -364,7 +364,17 @@
   animation: tutorial-ring-breathe 3s ease-in-out infinite;
 }
 
+@keyframes gpu-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .animate-gpu-pulse,
+  .animate-\[gpu-pulse_2s_ease-in-out_infinite\] {
+    animation: none;
+    opacity: 1;
+  }
   .animate-message-in,
   .animate-welcome {
     animation: none;
