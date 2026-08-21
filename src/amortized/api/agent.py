@@ -354,8 +354,9 @@ async def _handle_subagent_message(
 
         resume_prompt = (
             f"[SUBAGENT COMPLETED]\n{summary}\n\n"
-            "Follow Phase 3 — if the user already expressed intent, "
-            "delegate immediately. Otherwise, present next steps via present_options."
+            "REQUIRED: You MUST either delegate_to_subagent (if the user "
+            "already expressed intent) or call present_options with next "
+            "steps. Do NOT respond with only text."
         )
         orch_result = await _handle_orchestrator_message(state, session_id, resume_prompt, body)
         response_parts = _strip_internal_tools(result.get("parts", []))
