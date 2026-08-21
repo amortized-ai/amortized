@@ -164,10 +164,10 @@ async def _proxy_get(
         if resp.status_code == 404:
             return empty
         resp.raise_for_status()
-        if not resp.content:
+        if not resp.content or not resp.content.strip():
             return empty
         return resp.json()
-    except httpx.HTTPStatusError:
+    except (httpx.HTTPStatusError, ValueError):
         logger.exception("Upstream error on GET %s: session=%s", path, session_id)
         return empty
     except httpx.HTTPError:
@@ -334,6 +334,19 @@ async def _handle_orchestrator_message(
     )
 
     parts = result.get("parts", [])
+    tool_parts = [p for p in parts if p.get("type") == "tool"]
+    if tool_parts:
+        logger.info(
+            "Orchestrator tool parts: session=%s tools=%s",
+            session_id,
+            [
+                (p.get("tool") or p.get("toolName"), list((_get_tool_input(p) or {}).keys()))
+                for p in tool_parts
+            ],
+        )
+    else:
+        part_types = [p.get("type") for p in parts]
+        logger.info("Orchestrator response part types: session=%s types=%s", session_id, part_types)
     delegation = _detect_delegation(parts)
 
     if delegation:
