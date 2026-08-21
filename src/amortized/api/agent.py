@@ -358,12 +358,57 @@ async def _handle_subagent_message(
             "already expressed intent) or call present_options with next "
             "steps. Do NOT respond with only text."
         )
-        orch_result = await _handle_orchestrator_message(state, session_id, resume_prompt, body)
+        morty_result = await _orchestrator_turn(state, resume_prompt, body)
+        delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
+        resume_result = await _maybe_delegate(
+            state, session_id, delegation, resume_prompt, morty_result, body
+        )
         response_parts = _strip_internal_tools(result.get("parts", []))
-        result["parts"] = response_parts + orch_result.get("parts", [])
-        result["info"] = orch_result.get("info", result.get("info", {}))
+        result["parts"] = response_parts + resume_result.get("parts", [])
+        result["info"] = resume_result.get("info", result.get("info", {}))
 
     return result
+
+
+async def _orchestrator_turn(
+    state: SessionState,
+    text: str,
+    body: MessageRequest,
+) -> dict[str, Any]:
+    return await _proxy_send_message(state.orchestrator_id, text, agent="morty", model=body.model)
+
+
+async def _maybe_delegate(
+    state: SessionState,
+    session_id: str,
+    delegation: tuple[str, str, bool] | None,
+    user_text: str,
+    morty_result: dict[str, Any],
+    body: MessageRequest,
+) -> dict[str, Any]:
+    if not delegation:
+        return morty_result
+
+    target, context, resume = delegation
+
+    stashed_id = state.completed_subagents.pop(target, None) if resume else None
+
+    if stashed_id:
+        logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
+        handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        sub_result = await _proxy_send_message(
+            stashed_id, handoff_msg, agent=target, model=body.model
+        )
+        state.subagent_id = stashed_id
+    else:
+        logger.info("New subagent: target=%s session=%s", target, session_id)
+        sub_id = await _proxy_create_session()
+        handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
+        state.subagent_id = sub_id
+
+    state.subagent_target = target
+    return sub_result
 
 
 async def _handle_orchestrator_message(
@@ -372,40 +417,9 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    result = await _proxy_send_message(
-        state.orchestrator_id, user_text, agent="morty", model=body.model
-    )
-
-    latest_parts = await _fetch_all_assistant_parts(state.orchestrator_id)
-    delegation = _detect_delegation(latest_parts)
-
-    if delegation:
-        target, context, resume = delegation
-
-        stashed_id = state.completed_subagents.pop(target, None) if resume else None
-
-        if stashed_id:
-            logger.info(
-                "Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id
-            )
-            handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-            sub_result = await _proxy_send_message(
-                stashed_id, handoff_msg, agent=target, model=body.model
-            )
-            state.subagent_id = stashed_id
-        else:
-            logger.info("New subagent: target=%s session=%s", target, session_id)
-            sub_id = await _proxy_create_session()
-            handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-            sub_result = await _proxy_send_message(
-                sub_id, handoff_msg, agent=target, model=body.model
-            )
-            state.subagent_id = sub_id
-
-        state.subagent_target = target
-        return sub_result
-
-    return result
+    morty_result = await _orchestrator_turn(state, user_text, body)
+    delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
+    return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 
 
 @router.get("/session/{session_id}/pending")
