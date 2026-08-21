@@ -357,50 +357,10 @@ async def _handle_subagent_message(
             "Follow Phase 3 — if the user already expressed intent, "
             "delegate immediately. Otherwise, present next steps via present_options."
         )
-        orch_result = await _proxy_send_message(
-            state.orchestrator_id, resume_prompt, agent="morty", model=body.model
-        )
-
-        orch_parts = await _fetch_all_assistant_parts(state.orchestrator_id)
-        delegation = _detect_delegation(orch_parts)
-
-        if delegation:
-            target, context, resume = delegation
-            stashed_id = state.completed_subagents.pop(target, None) if resume else None
-
-            if stashed_id:
-                logger.info(
-                    "Post-completion delegation (resume): target=%s session=%s → %s",
-                    target,
-                    session_id,
-                    stashed_id,
-                )
-                handoff_msg = f"[RESUMED]\n{context}"
-                sub_result = await _proxy_send_message(
-                    stashed_id, handoff_msg, agent=target, model=body.model
-                )
-                state.subagent_id = stashed_id
-            else:
-                logger.info(
-                    "Post-completion delegation (new): target=%s session=%s",
-                    target,
-                    session_id,
-                )
-                sub_id = await _proxy_create_session()
-                handoff_msg = f"[CONTEXT]\n{context}"
-                sub_result = await _proxy_send_message(
-                    sub_id, handoff_msg, agent=target, model=body.model
-                )
-                state.subagent_id = sub_id
-
-            state.subagent_target = target
-            response_parts = _strip_internal_tools(result.get("parts", []))
-            result["parts"] = response_parts + sub_result.get("parts", [])
-            result["info"] = sub_result.get("info", result.get("info", {}))
-        else:
-            response_parts = _strip_internal_tools(result.get("parts", []))
-            result["parts"] = response_parts + orch_result.get("parts", [])
-            result["info"] = orch_result.get("info", result.get("info", {}))
+        orch_result = await _handle_orchestrator_message(state, session_id, resume_prompt, body)
+        response_parts = _strip_internal_tools(result.get("parts", []))
+        result["parts"] = response_parts + orch_result.get("parts", [])
+        result["info"] = orch_result.get("info", result.get("info", {}))
 
     return result
 
