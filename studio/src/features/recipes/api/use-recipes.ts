@@ -32,15 +32,17 @@ export function useJobRecipes() {
   return useQuery<Job[]>({
     queryKey: ["job-recipes"],
     queryFn: async () => {
-      const jobs = await getJobs()
-      return jobs.filter(
+      const [sdg, training] = await Promise.all([
+        getJobs({ status: "succeeded", type: "sdg" }),
+        getJobs({ status: "succeeded", type: "training" }),
+      ])
+      return [...sdg, ...training].filter(
         (j) =>
-          (j.type === "sdg" || j.type === "training") &&
-          j.status === "succeeded" &&
           Object.keys(j.config ?? {}).length > 0 &&
           (j.config as Record<string, unknown>)?.mode !== "preview",
       )
     },
+    staleTime: 30_000,
   })
 }
 

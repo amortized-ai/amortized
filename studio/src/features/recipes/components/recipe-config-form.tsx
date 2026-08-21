@@ -484,7 +484,11 @@ function NestedObjectField({
   return (
     <div className="space-y-2 rounded-md border-l-2 border-border/50 pl-3">
       <p className="text-xs font-medium text-muted-foreground">{formatLabel(label)}</p>
-      <ObjectFields obj={value} onFieldChange={(k, v) => onChange({ ...value, [k]: v })} />
+      <ObjectFields
+        obj={value}
+        onFieldChange={(k, v) => onChange({ ...value, [k]: v })}
+        onBatchChange={(updates) => onChange({ ...value, ...updates })}
+      />
     </div>
   )
 }
@@ -492,10 +496,12 @@ function NestedObjectField({
 function ObjectFields({
   obj,
   onFieldChange,
+  onBatchChange,
   schema,
 }: {
   obj: Record<string, unknown>
   onFieldChange: (key: string, value: unknown) => void
+  onBatchChange?: (updates: Record<string, unknown>) => void
   schema?: JsonSchema | null
 }) {
   const paired = findPairedArrays(obj)
@@ -511,8 +517,12 @@ function ObjectFields({
           arr1={obj[key1] as unknown[]}
           arr2={obj[key2] as unknown[]}
           onChange={(a1, a2) => {
-            onFieldChange(key1, a1)
-            onFieldChange(key2, a2)
+            if (onBatchChange) {
+              onBatchChange({ [key1]: a1, [key2]: a2 })
+            } else {
+              onFieldChange(key1, a1)
+              onFieldChange(key2, a2)
+            }
           }}
         />
         {otherKeys.map((key) => (

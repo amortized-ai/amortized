@@ -68,8 +68,22 @@ export interface RecipeEntry {
   version: string
 }
 
+function sortDeep(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(sortDeep)
+  if (obj && typeof obj === "object") {
+    const record = obj as Record<string, unknown>
+    return Object.keys(record)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, k) => {
+        acc[k] = sortDeep(record[k])
+        return acc
+      }, {})
+  }
+  return obj
+}
+
 function configFingerprint(config: Record<string, unknown>): string {
-  return JSON.stringify(config, Object.keys(config).sort())
+  return JSON.stringify(sortDeep(config))
 }
 
 function deriveBaseName(
