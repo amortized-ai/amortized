@@ -352,7 +352,11 @@ async def _handle_subagent_message(
         state.subagent_id = None
         state.subagent_target = None
 
-        resume_prompt = f"[SUBAGENT COMPLETED]\n{summary}"
+        resume_prompt = (
+            f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+            "Follow Phase 3 — if the user already expressed intent, "
+            "delegate immediately. Otherwise, present next steps via present_options."
+        )
         orch_result = await _proxy_send_message(
             state.orchestrator_id, resume_prompt, agent="morty", model=body.model
         )
