@@ -169,6 +169,26 @@ export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
   return resp.logs
 }
 
+// --- GPU Allocation ---
+
+export interface GpuJobAllocation {
+  job_id: string
+  job_name: string
+  gpus: number
+  gpu_type: string | null
+  status: "queued" | "provisioning" | "running"
+}
+
+export interface GpuAllocationData {
+  total_gpus: number
+  jobs: GpuJobAllocation[]
+  available: boolean
+}
+
+export function getGpuAllocation(): Promise<GpuAllocationData> {
+  return get<GpuAllocationData>("/api/v1/jobs/gpu-allocation")
+}
+
 // --- Recipes ---
 
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {

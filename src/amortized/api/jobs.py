@@ -1,12 +1,13 @@
 """Job management endpoints."""
 
+import json
 import logging
 from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
@@ -275,6 +276,79 @@ async def validate_training_job(
         config=config,
         parent_job_id=parent_job_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# GPU allocation
+# ---------------------------------------------------------------------------
+
+
+class GpuJobAllocation(BaseModel):
+    job_id: str
+    job_name: str
+    gpus: int
+    gpu_type: str | None
+    status: str
+
+
+class GpuAllocationResponse(BaseModel):
+    total_gpus: int
+    jobs: list[GpuJobAllocation]
+    available: bool = True
+
+
+@router.get(
+    "/gpu-allocation",
+    response_model=GpuAllocationResponse,
+    operation_id="get_gpu_allocation",
+)
+async def get_gpu_allocation(
+    db: asyncpg.Connection = Depends(_get_db),
+) -> GpuAllocationResponse:
+    """Return GPU allocation across active training jobs."""
+    try:
+        rows = await db.fetch(
+            """SELECT id, type, status, config
+               FROM jobs
+               WHERE type = $1
+                 AND status = ANY($2)
+               ORDER BY created_at DESC""",
+            "training",
+            ["queued", "provisioning", "running"],
+        )
+    except Exception:
+        logger.exception("Failed to query GPU allocation")
+        return GpuAllocationResponse(total_gpus=0, jobs=[], available=False)
+
+    allocations: list[GpuJobAllocation] = []
+    for row in rows:
+        config_raw = row["config"]
+        config: dict[str, Any] = (
+            json.loads(config_raw) if isinstance(config_raw, str) else config_raw
+        )
+        compute = config.get("compute", {})
+        gpus = compute.get("gpus", 1) if isinstance(compute, dict) else 1
+        gpu_type = compute.get("gpu_type") if isinstance(compute, dict) else None
+
+        name = (
+            config.get("topic")
+            or config.get("recipe")
+            or row["id"][:12]
+        )
+
+        allocations.append(
+            GpuJobAllocation(
+                job_id=row["id"],
+                job_name=str(name),
+                gpus=int(gpus) if gpus else 1,
+                gpu_type=gpu_type,
+                status=row["status"],
+            )
+        )
+
+    allocations.sort(key=lambda a: a.gpus, reverse=True)
+    total = sum(a.gpus for a in allocations)
+    return GpuAllocationResponse(total_gpus=total, jobs=allocations, available=True)
 
 
 # ---------------------------------------------------------------------------

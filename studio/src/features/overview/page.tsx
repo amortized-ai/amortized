@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { SectionCards } from "./components/section-cards"
+import { GpuAllocationCard } from "./components/gpu-allocation-card"
 import { RecentJobs } from "./components/recent-jobs"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -378,6 +379,9 @@ export default function OverviewPage() {
         {hasData && (
           <>
             <SectionCards />
+            <div className="px-4 lg:px-6">
+              <GpuAllocationCard />
+            </div>
             <div className="px-4 lg:px-6">
               <RecentJobs />
             </div>
