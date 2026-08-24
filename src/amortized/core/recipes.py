@@ -34,10 +34,12 @@ def list_starter_templates() -> list[dict[str, Any]]:
         for path in sorted(skills_dir.rglob("reference-payload.json")):
             rel = path.relative_to(skills_dir)
             use_case = "-".join(rel.parent.parts)
+            if not use_case:
+                continue
 
             try:
                 config = json.loads(path.read_text())
-            except Exception:
+            except (json.JSONDecodeError, OSError):
                 logger.warning("Skipping invalid template: %s", path)
                 continue
 
