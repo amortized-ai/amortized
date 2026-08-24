@@ -120,11 +120,14 @@ async def _process_dataset_upload(
         try:
             async with get_pool().acquire() as conn:
                 await Repository(conn).update_job(
-                    job_id, status="running", started_at=datetime.now(UTC),
+                    job_id,
+                    status="running",
+                    started_at=datetime.now(UTC),
                 )
 
             run_id, experiment_id = await _store_dataset_in_mlflow(
-                filename, file_bytes,
+                filename,
+                file_bytes,
             )
 
             async with get_pool().acquire() as conn:
@@ -313,7 +316,10 @@ async def get_dataset(run_id: str) -> dict[str, Any]:
 @router.get(
     "/{run_id}/samples",
     operation_id="get_dataset_samples",
-    summary="Preview rows from a dataset (parquet or JSONL).",
+    summary=(
+        "Preview sample rows from a dataset. Use after SDG job succeeds to "
+        "verify data quality before training. Pass the job's mlflow_run_id as run_id."
+    ),
 )
 async def get_dataset_samples(
     run_id: str,

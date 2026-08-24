@@ -311,7 +311,10 @@ async def get_document_content(document_id: str) -> DocumentResult:
     "/{document_id}/chunks",
     response_model=DocumentChunks,
     operation_id="get_document_chunks",
-    summary="Get chunks for a document.",
+    summary=(
+        "Get chunks for a document. Each chunk includes text, token count, "
+        "and source headings/pages. Use chunks as SDG input for knowledge-ingestion tasks."
+    ),
 )
 async def get_document_chunks(document_id: str) -> DocumentChunks:
     client = MLflowClient(_tracking_uri())
@@ -350,6 +353,7 @@ async def get_document_chunks(document_id: str) -> DocumentChunks:
     "/{document_id}",
     status_code=204,
     operation_id="delete_document",
+    summary="Delete a document and its MLflow run.",
 )
 async def delete_document(
     document_id: str,

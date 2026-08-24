@@ -321,7 +321,11 @@ class TrainingEstimateResponse(BaseModel):
     "/training/estimate",
     response_model=TrainingEstimateResponse,
     operation_id="estimate_training_resources",
-    summary="Estimate GPU memory requirements for training a model by size.",
+    summary=(
+        "Estimate GPU VRAM requirements for training. Supports model sizes: "
+        "0.5B, 1B, 3B, 8B, 13B, 32B, 70B, 120B. Methods: sft, lora, qlora, osft. "
+        "Call for each candidate size/method to build a comparison card."
+    ),
 )
 async def estimate_training_resources(
     body: TrainingEstimateRequest,

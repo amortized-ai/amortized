@@ -26,6 +26,10 @@ runtime/
 
 agent/prompts/_combined/
 k8s/base/morty-prompt.md
+k8s/base/morty-identity.md
+k8s/base/morty-workflow.md
+k8s/base/morty-sdg-workflow.md
+k8s/base/morty-training-workflow.md
 k8s/base/morty-skills/
 .playwright-mcp/
 studio-*.png

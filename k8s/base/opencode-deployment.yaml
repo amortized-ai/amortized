@@ -23,11 +23,19 @@ spec:
       initContainers:
         - name: build-skills-tree
           image: busybox:1.37
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command: ["sh", "-c"]
           args:
             - |
+              set -e
               cd /flat
               for f in *; do
+                [ "$f" = "*" ] && continue
                 dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
                 name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
                 mkdir -p "$dir"
@@ -71,6 +79,14 @@ spec:
             - name: morty-prompt
               mountPath: /app/workspace/.opencode/agents/morty.md
               subPath: morty.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/workspace/.opencode/agents/sdg.md
+              subPath: morty-sdg-workflow.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/workspace/.opencode/agents/training.md
+              subPath: morty-training-workflow.md
               readOnly: true
             - name: skills-tree
               mountPath: /app/workspace/skills

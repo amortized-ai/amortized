@@ -11,7 +11,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Create Sdg Job",
+        "summary": "Create and submit an SDG job. Called by the frontend on user confirmation.",
         "description": "Create a synthetic data generation job using Data Designer.",
         "operationId": "create_sdg_job",
         "requestBody": {
@@ -53,7 +53,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Create Training Job",
+        "summary": "Create and submit a training job. Called by the frontend on user confirmation.",
         "description": "Create a model training job.",
         "operationId": "create_training_job",
         "requestBody": {
@@ -95,8 +95,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate Sdg Job",
-        "description": "Validate an SDG job config without creating it.",
+        "summary": "Validate an SDG job config and present it for user confirmation. The UI renders a confirmation card \u2014 the user clicks confirm to submit. Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run.",
         "operationId": "validate_sdg_job",
         "requestBody": {
           "content": {
@@ -137,7 +136,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate Training Job",
+        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Set parent_job_id to chain from a completed SDG job.",
         "description": "Validate a training job config without creating it.",
         "operationId": "validate_training_job",
         "requestBody": {
@@ -179,7 +178,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Get Jobs",
+        "summary": "List all jobs, optionally filtered by status or type (sdg, training).",
         "operationId": "list_jobs",
         "parameters": [
           {
@@ -248,7 +247,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Get Job Detail",
+        "summary": "Get full job details including status, config, timestamps, and MLflow run ID. Use to check job status or inspect configuration.",
         "operationId": "get_job",
         "parameters": [
           {
@@ -288,7 +287,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Cancel Job",
+        "summary": "Cancel a running job. Only works on jobs with status 'pending' or 'running'.",
         "operationId": "cancel_job",
         "parameters": [
           {
@@ -330,7 +329,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Get Job Logs",
+        "summary": "Get container logs for a job. Use to diagnose failed jobs. Returns the last N lines (default 100).",
         "operationId": "get_job_logs",
         "parameters": [
           {
@@ -384,7 +383,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Get Job Artifacts",
+        "summary": "Get the MLflow artifact URI for a completed job. Use to locate training outputs or SDG datasets in the artifact store.",
         "description": "Return MLflow artifact URI for a completed job.",
         "operationId": "get_job_artifacts",
         "parameters": [
@@ -429,7 +428,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Delete Job",
+        "summary": "Permanently delete a job record. Only works on cancelled or failed jobs.",
         "operationId": "delete_job",
         "parameters": [
           {
@@ -535,7 +534,7 @@
         "tags": [
           "costs"
         ],
-        "summary": "Estimate GPU memory requirements for training a model by size.",
+        "summary": "Estimate GPU VRAM requirements for training. Supports model sizes: 0.5B, 1B, 3B, 8B, 13B, 32B, 70B, 120B. Methods: sft, lora, qlora, osft. Call for each candidate size/method to build a comparison card.",
         "operationId": "estimate_training_resources",
         "requestBody": {
           "content": {
@@ -712,7 +711,7 @@
         "tags": [
           "datasets"
         ],
-        "summary": "Preview rows from a dataset (parquet or JSONL).",
+        "summary": "Preview sample rows from a dataset. Use after SDG job succeeds to verify data quality before training. Pass the job's mlflow_run_id as run_id.",
         "operationId": "get_dataset_samples",
         "parameters": [
           {
@@ -956,7 +955,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Get chunks for a document.",
+        "summary": "Get chunks for a document. Each chunk includes text, token count, and source headings/pages. Use chunks as SDG input for knowledge-ingestion tasks.",
         "operationId": "get_document_chunks",
         "parameters": [
           {
@@ -998,7 +997,7 @@
         "tags": [
           "documents"
         ],
-        "summary": "Delete Document",
+        "summary": "Delete a document and its MLflow run.",
         "operationId": "delete_document",
         "parameters": [
           {
@@ -1198,7 +1197,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Present structured options to the user as clickable cards in the chat UI",
+        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically.",
         "operationId": "present_options",
         "requestBody": {
           "content": {
@@ -1239,7 +1238,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Display a model pricing comparison card in the chat UI",
+        "summary": "Display a model pricing comparison card in the chat UI. Use when presenting teacher model options so the user can compare costs.",
         "operationId": "show_model_pricing",
         "requestBody": {
           "content": {
@@ -1280,7 +1279,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Display a VRAM estimate comparison card in the chat UI",
+        "summary": "Display a VRAM estimate comparison card in the chat UI. Use before presenting model or training method options so the user can see GPU memory requirements.",
         "operationId": "show_vram_estimate",
         "requestBody": {
           "content": {
@@ -1321,7 +1320,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Signal the current workflow phase and step to the chat UI",
+        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG or training workflow. Set phase to 'sdg' or 'training' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
         "operationId": "signal_phase",
         "requestBody": {
           "content": {
@@ -1350,6 +1349,295 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/delegate_to_subagent": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Delegate the conversation to a specialized workflow agent for SDG or training",
+        "operationId": "delegate_to_subagent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DelegateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DelegateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/signal_subagent_completion": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Signal that the workflow agent has completed its task and hand control back to the orchestrator",
+        "operationId": "signal_subagent_completion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubagentCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubagentCompletionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Create Session",
+        "operationId": "create_session_agent_session_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Session Agent Session Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session/{session_id}/message": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get Session Messages",
+        "operationId": "get_session_messages_agent_session__session_id__message_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Session Messages Agent Session  Session Id  Message Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Send Message",
+        "operationId": "send_message_agent_session__session_id__message_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Send Message Agent Session  Session Id  Message Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session/{session_id}/pending": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get Pending",
+        "operationId": "get_pending_agent_session__session_id__pending_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Pending Agent Session  Session Id  Pending Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/title": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Generate Title",
+        "operationId": "generate_title_agent_title_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Generate Title Agent Title Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/health": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Health",
+        "operationId": "agent_health_agent_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Agent Health Agent Health Get"
                 }
               }
             }
@@ -1992,6 +2280,54 @@
         ],
         "title": "DatetimeSamplerParams",
         "description": "Parameters for uniform datetime sampling within a specified range.\n\nSamples datetime values uniformly between a start and end date with a specified granularity.\nThe sampling unit determines the smallest possible time interval between consecutive samples.\n\nAttributes:\n    start (required): Earliest possible datetime for the sampling range (inclusive). Must be a valid\n        datetime string parseable by pandas.to_datetime().\n    end (required): Exclusive upper bound for the sampling range. Must be a valid\n        datetime string parseable by pandas.to_datetime().\n    unit: Time unit for sampling granularity. Options:\n        - \"Y\": Years\n        - \"M\": Months\n        - \"D\": Days (default)\n        - \"h\": Hours\n        - \"m\": Minutes\n        - \"s\": Seconds"
+      },
+      "DelegateRequest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "sdg",
+              "training"
+            ],
+            "title": "Target",
+            "description": "Workflow agent to delegate to: 'sdg' or 'training'"
+          },
+          "context": {
+            "type": "string",
+            "title": "Context",
+            "description": "Full context for the workflow agent. Include: (1) conversation history summary \u2014 what has been done so far (completed jobs with IDs, models used, dataset sizes, outcomes), (2) current user intent \u2014 what the user wants to do now, (3) relevant artifact IDs (job IDs, dataset IDs, document IDs). The workflow agent starts with no memory of prior conversation, so this context is all it has."
+          },
+          "resume": {
+            "type": "boolean",
+            "title": "Resume",
+            "description": "If true, resume the previous workflow agent session for this target instead of creating a new one. The resumed agent keeps its full conversation history and can pick up where it left off. Set to true when the user wants to adjust, retry, or iterate on a job that was just completed or failed (e.g. 'resubmit with more samples', 'try a lower learning rate', 'use a different model'). Set to false (default) when the user wants a fundamentally new job (new task, new dataset, different skill).",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "context"
+        ],
+        "title": "DelegateRequest"
+      },
+      "DelegateResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "DelegateResponse"
       },
       "DistributionType": {
         "type": "string",
@@ -3495,6 +3831,95 @@
         "title": "ManualDistributionParams",
         "description": "Parameters for manual distribution sampling.\n\nAttributes:\n    values: List of possible values to sample from.\n    weights: Optional list of weights for each value. If not provided, all values have equal probability."
       },
+      "MessageModel": {
+        "properties": {
+          "providerID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Providerid"
+          },
+          "modelID": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelid"
+          }
+        },
+        "type": "object",
+        "title": "MessageModel"
+      },
+      "MessagePart": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "MessagePart"
+      },
+      "MessageRequest": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/MessagePart"
+            },
+            "type": "array",
+            "title": "Parts"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "parts"
+        ],
+        "title": "MessageRequest"
+      },
       "ModalityDataType": {
         "type": "string",
         "enum": [
@@ -3651,7 +4076,7 @@
           "title": {
             "type": "string",
             "title": "Title",
-            "description": "Short option label"
+            "description": "Short label (1-3 words)"
           },
           "description": {
             "type": "string",
@@ -3662,7 +4087,7 @@
           "value": {
             "type": "string",
             "title": "Value",
-            "description": "Value sent back when user selects this option"
+            "description": "Natural language sentence sent as the user's message when clicked (e.g. 'No, just classify by category' not 'no_urgency')"
           }
         },
         "type": "object",
@@ -3898,9 +4323,10 @@
               "$ref": "#/components/schemas/OptionItem"
             },
             "type": "array",
+            "maxItems": 4,
             "minItems": 1,
             "title": "Options",
-            "description": "Options to present to the user"
+            "description": "Options to present as clickable cards. Maximum 4 options, prefer 3."
           }
         },
         "type": "object",
@@ -4631,12 +5057,12 @@
           "phase": {
             "type": "string",
             "title": "Phase",
-            "description": "Current workflow phase: 'sdg', 'training', or 'eval'"
+            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows"
           },
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Current step within the phase (e.g. 'gather_requirements', 'confirm')",
+            "description": "Current step within the phase. Signal transitions in order: understand_task (identified what the user wants to build), load_skill (read the relevant skill guide), gather_requirements (asking user for parameters \u2014 signal on first ask), estimate_cost (checking models, pricing, or VRAM estimates), confirm (presenting the job validation/confirmation card), execute (job has been submitted), review (checking job results or presenting next steps). Signal the step you are currently at. Do not repeat a step already signaled.",
             "default": ""
           }
         },
@@ -4700,6 +5126,31 @@
         ],
         "title": "SkipConfig",
         "description": "Expression gate for conditional column generation.\n\nAttach to a ``SingleColumnConfig`` via ``skip=SkipConfig(...)`` to gate\ngeneration on a Jinja2 expression.  Controls *when* to skip; propagation\nof upstream skips is controlled separately by ``propagate_skip`` on\n``SingleColumnConfig``.\n\nAttributes:\n    when: Jinja2 expression (including ``{{ }}`` delimiters); when truthy,\n        skip generation for this row.\n    value: Value to write for skipped cells.  Defaults to ``None``\n        (becomes ``NaN``/``pd.NA`` in the DataFrame)."
+      },
+      "SubagentCompletionRequest": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "description": "Summary of completed work including: job ID, job type (sdg/training), key parameters (model, method, sample count, parent job ID if chained)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary"
+        ],
+        "title": "SubagentCompletionRequest"
+      },
+      "SubagentCompletionResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          }
+        },
+        "type": "object",
+        "title": "SubagentCompletionResponse"
       },
       "SubcategorySamplerParams": {
         "properties": {

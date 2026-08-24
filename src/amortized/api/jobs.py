@@ -171,7 +171,13 @@ async def _validate_training_data(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/sdg", status_code=201, response_model=Job, operation_id="create_sdg_job")
+@router.post(
+    "/sdg",
+    status_code=201,
+    response_model=Job,
+    operation_id="create_sdg_job",
+    summary="Create and submit an SDG job. Called by the frontend on user confirmation.",
+)
 async def create_sdg_job(
     request: SDGJobRequest,
     http_request: Request,
@@ -202,6 +208,7 @@ async def create_sdg_job(
     status_code=201,
     response_model=Job,
     operation_id="create_training_job",
+    summary="Create and submit a training job. Called by the frontend on user confirmation.",
 )
 async def create_training_job(
     request: TrainingJobRequest,
@@ -241,9 +248,13 @@ async def create_training_job(
     "/sdg/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_sdg_job",
+    summary=(
+        "Validate an SDG job config and present it for user confirmation. "
+        "The UI renders a confirmation card — the user clicks confirm to submit. "
+        "Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run."
+    ),
 )
 async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
-    """Validate an SDG job config without creating it."""
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
     return ValidatedJobConfig(
@@ -257,6 +268,13 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     "/training/validate",
     response_model=ValidatedJobConfig,
     operation_id="validate_training_job",
+    summary=(
+        "Validate a training job config and present it for user confirmation. "
+        "The UI renders a confirmation card with ALL parameters — do NOT output "
+        "a markdown table, parameter list, or config summary before or after this "
+        "tool call. Write ONE short sentence, then call this tool. "
+        "Set parent_job_id to chain from a completed SDG job."
+    ),
 )
 async def validate_training_job(
     request: TrainingJobRequest,
@@ -282,7 +300,12 @@ async def validate_training_job(
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[Job], operation_id="list_jobs")
+@router.get(
+    "",
+    response_model=list[Job],
+    operation_id="list_jobs",
+    summary="List all jobs, optionally filtered by status or type (sdg, training).",
+)
 async def get_jobs(
     status: JobStatus | None = None,
     type: JobType | None = None,
@@ -300,7 +323,15 @@ async def get_jobs(
     return [_job_response(row) for row in rows]
 
 
-@router.get("/{job_id}", response_model=Job, operation_id="get_job")
+@router.get(
+    "/{job_id}",
+    response_model=Job,
+    operation_id="get_job",
+    summary=(
+        "Get full job details including status, config, timestamps, and MLflow "
+        "run ID. Use to check job status or inspect configuration."
+    ),
+)
 async def get_job_detail(
     job_id: str,
     db: asyncpg.Connection = Depends(_get_db),
@@ -312,7 +343,12 @@ async def get_job_detail(
     return _job_response(row)
 
 
-@router.delete("/{job_id}", response_model=Job, operation_id="cancel_job")
+@router.delete(
+    "/{job_id}",
+    response_model=Job,
+    operation_id="cancel_job",
+    summary="Cancel a running job. Only works on jobs with status 'pending' or 'running'.",
+)
 async def cancel_job(
     job_id: str,
     db: asyncpg.Connection = Depends(_get_db),
@@ -327,7 +363,14 @@ async def cancel_job(
     return _job_response(row)
 
 
-@router.get("/{job_id}/logs", operation_id="get_job_logs")
+@router.get(
+    "/{job_id}/logs",
+    operation_id="get_job_logs",
+    summary=(
+        "Get container logs for a job. Use to diagnose failed jobs. "
+        "Returns the last N lines (default 100)."
+    ),
+)
 async def get_job_logs(
     job_id: str,
     tail: int = 100,
@@ -362,7 +405,14 @@ async def get_job_logs(
     return {"job_id": job_id, "logs": lines}
 
 
-@router.get("/{job_id}/artifacts", operation_id="get_job_artifacts")
+@router.get(
+    "/{job_id}/artifacts",
+    operation_id="get_job_artifacts",
+    summary=(
+        "Get the MLflow artifact URI for a completed job. Use to locate "
+        "training outputs or SDG datasets in the artifact store."
+    ),
+)
 async def get_job_artifacts(
     job_id: str,
     db: asyncpg.Connection = Depends(_get_db),
@@ -389,7 +439,12 @@ async def get_job_artifacts(
     }
 
 
-@router.post("/{job_id}/delete", status_code=204, operation_id="delete_job")
+@router.post(
+    "/{job_id}/delete",
+    status_code=204,
+    operation_id="delete_job",
+    summary="Permanently delete a job record. Only works on cancelled or failed jobs.",
+)
 async def delete_job(
     job_id: str,
     db: asyncpg.Connection = Depends(_get_db),
