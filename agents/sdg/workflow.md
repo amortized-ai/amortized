@@ -58,7 +58,7 @@ requirement-gathering steps, tool parameters, and prompt engineering rules.
 ONLY show models returned by the gateway. If no models are returned,
 **stop the workflow** and tell the user to go to Settings → AI Gateway.
 
-1. Discover available models from the gateway via `list_models`
+1. Call `list_models` — do NOT announce or narrate this call
 2. Look up pricing for EVERY model — try the most specific name part
    first, broaden if no results
 3. Show a pricing comparison card with all collected pricing data

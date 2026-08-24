@@ -96,10 +96,13 @@ Call `present_options` with step="sdg-samples" and these options:
 
 ### Step 5 — Teacher model
 
-Call `list_models` to discover available models from the AI Gateway.
-Call `present_options` with step="sdg-teacher-model" and each model as an option.
-ALWAYS add as the last option:
-- title: "Configure a model", description: "Set up an AI Gateway endpoint in Settings", value: "Configure a model — Set up an AI Gateway endpoint in Settings"
+1. Call `list_models` to get available models — do NOT announce this call
+2. Call `get_model_pricing` for each model name to look up costs
+3. Call `show_model_pricing` with all collected pricing data
+4. Call `present_options` with step="sdg-teacher-model", including
+   per-token pricing in each option's description
+5. ALWAYS add as the last option:
+   - title: "Configure a model", description: "Set up an AI Gateway endpoint in Settings", value: "Configure a model — Set up an AI Gateway endpoint in Settings"
 
 ## After SDG — Training
 
