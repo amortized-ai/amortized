@@ -282,11 +282,20 @@ export function useChat() {
     const placeholderId = lastRestored!.id
     let cancelled = false
 
-    function cleanupPlaceholder() {
+    function cleanupPlaceholder(interrupted = false) {
       _activeRequests.delete(convId)
-      useChatStore.getState().removeMessage(convId, placeholderId)
-      setMessages(restoreMessages(getConversationMessages, convId))
-      setChatState("idle")
+      if (interrupted) {
+        const interruptedContent = "Response was interrupted. Send a new message to continue."
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
+          content: interruptedContent,
+        })
+        setMessages(restoreMessages(getConversationMessages, convId))
+        setChatState("done")
+      } else {
+        useChatStore.getState().removeMessage(convId, placeholderId)
+        setMessages(restoreMessages(getConversationMessages, convId))
+        setChatState("idle")
+      }
     }
 
     if (!_activeRequests.has(convId)) {
@@ -337,7 +346,7 @@ export function useChat() {
         const storedMsgs = useChatStore.getState().getConversationMessages(convId)
         const lastUserMsg = [...storedMsgs].reverse().find((m) => m.role === "user")
         if (!lastUserMsg) {
-          cleanupPlaceholder()
+          cleanupPlaceholder(true)
           return
         }
 
@@ -387,7 +396,7 @@ export function useChat() {
           _activeRequests.delete(convId)
           if (cancelled) return
           logger.error("recovery retry failed", { convId, error: err instanceof Error ? err.message : String(err) })
-          cleanupPlaceholder()
+          cleanupPlaceholder(true)
         }
       }
       recoverResponse()

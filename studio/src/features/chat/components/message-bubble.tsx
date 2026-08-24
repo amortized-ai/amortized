@@ -154,7 +154,7 @@ export function MessageBubble({
               <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "280ms" }} />
               <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "560ms" }} />
             </div>
-            <ThinkingSteps step={thinkingStep ?? null} />
+            <ThinkingSteps step={thinkingStep ?? "Thinking..."} />
           </div>
         )}
         {displayContent && (
