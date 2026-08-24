@@ -13,7 +13,7 @@ data:
   AMORTIZED_COMPUTE_NAMESPACE: "amortized-jobs"
   AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"
   AMORTIZED_EXTERNAL_URL: "http://amortized-server.amortized.svc.cluster.local:8000"
-  AMORTIZED_AGENT_SERVER_URL: ""
+  AMORTIZED_AGENT_SERVER_URL: "http://amortized-server.amortized.svc.cluster.local:8000"
   # Platform engineer: set these to your MLflow and S3 endpoints
   AMORTIZED_MLFLOW_TRACKING_URI: ""
   AMORTIZED_GATEWAY_URL: ""

@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import artifacts, costs, datasets, documents, jobs, recipes, schemas, ui
+from amortized.api import agent, artifacts, costs, datasets, documents, jobs, recipes, schemas, ui
 from amortized.api import models as models_api
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
@@ -106,6 +106,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
     _load_backends()
     await cleanup_orphaned_jobs()
+    await agent.startup()
     logger.info("Amortized runtime started")
 
     worker_task = asyncio.create_task(worker_loop())
@@ -115,6 +116,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     worker_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
+    await agent.shutdown()
     await close_db()
     logger.info("Amortized runtime shutting down")
 
@@ -135,14 +137,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_AUTH_SKIP_PATHS = {"/api/v1/health", "/docs", "/openapi.json", "/redoc"}
+_AUTH_SKIP_PATHS = {"/api/v1/health", "/agent/health", "/docs", "/openapi.json", "/redoc"}
 
 
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
     if not _settings.api_key:
         return await call_next(request)
-    if request.url.path in _AUTH_SKIP_PATHS:
+    if request.url.path in _AUTH_SKIP_PATHS or request.url.path.startswith("/agent/"):
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
@@ -234,6 +236,7 @@ app.include_router(artifacts.router)
 app.include_router(models_api.router)
 app.include_router(schemas.router)
 app.include_router(ui.router)
+app.include_router(agent.router, prefix="/agent")
 try:
     create_mcp_server(app)
 except Exception:

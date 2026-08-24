@@ -1,0 +1,23 @@
+[
+  {
+    "id": "Qwen/Qwen3.5-0.8B",
+    "size": "0.8B",
+    "description": "Fastest inference, good for prototyping"
+  },
+  {
+    "id": "Qwen/Qwen3.5-2B",
+    "size": "2B",
+    "description": "Small but capable"
+  },
+  {
+    "id": "Qwen/Qwen3.5-4B",
+    "size": "4B",
+    "default": true,
+    "description": "Balanced, recommended default"
+  },
+  {
+    "id": "Qwen/Qwen3.5-9B",
+    "size": "9B",
+    "description": "Best accuracy for knowledge tasks"
+  }
+]
