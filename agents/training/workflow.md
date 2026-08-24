@@ -136,6 +136,11 @@ the missing information, fix the config, and retry.
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 Only then present next steps.
 
+After job submission, say NOTHING. The UI blocks user input while the
+job runs and shows a live monitor card. Do NOT say "I'll let you know",
+"feel free to ask", or any post-submission message. Your next message
+should only come after the `[SYSTEM EVENT]` notification.
+
 ### Phase 4 — Signal Completion
 
 Call `signal_subagent_completion` to hand control back to the

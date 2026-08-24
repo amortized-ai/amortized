@@ -365,8 +365,7 @@ async def _handle_subagent_message(
         resume_result = await _maybe_delegate(
             state, session_id, delegation, resume_prompt, morty_result, body
         )
-        response_parts = _strip_internal_tools(result.get("parts", []))
-        result["parts"] = response_parts + resume_result.get("parts", [])
+        result["parts"] = resume_result.get("parts", [])
         result["info"] = resume_result.get("info", result.get("info", {}))
 
     return result

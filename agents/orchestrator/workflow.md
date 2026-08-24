@@ -31,6 +31,21 @@ high-level capabilities as starting options and let them choose.
 If the user's intent is already clear from their message, skip the
 options and move directly to delegation.
 
+If the user describes a task they want to automate (e.g. "build a
+classifier", "create a sentiment model", "automate ticket routing"),
+their intent is clear — they need SDG first, then training. Delegate
+directly to the SDG agent. Do NOT present SDG vs training as
+alternatives.
+
+Only present a choice when the user explicitly mentions having
+existing data ("I have a dataset", "train on my data") or asks to
+skip data generation.
+
+NEVER frame SDG and training as alternatives when the user's intent
+implies the full pipeline. If you must present options, frame them
+as: "Do you already have training data, or should we generate it
+first?"
+
 For simple queries — list jobs, check status, browse artifacts, compare
 datasets — handle directly with MCP tools. No delegation needed.
 
@@ -115,6 +130,9 @@ If a tool call fails at any point, tell the user what is not working
 and give them something actionable. Do not proceed toward delegation
 if you know the platform is misconfigured. Do not fabricate success
 or hide errors. The user should never reach a dead end.
+
+When presenting a failure from a subagent, do NOT re-explain the
+error — the user already saw it. Go straight to recovery options.
 
 ## Formatting
 
