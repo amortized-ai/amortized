@@ -221,7 +221,8 @@ async def _proxy_get(
 async def _proxy_create_session() -> str:
     resp = await _client().post(f"{_opencode_url()}/session", timeout=10.0)
     resp.raise_for_status()
-    return resp.json()["id"]
+    data: dict[str, Any] = resp.json()
+    return str(data["id"])
 
 
 async def _proxy_send_message(
@@ -240,7 +241,8 @@ async def _proxy_send_message(
         json=payload,
     )
     resp.raise_for_status()
-    return resp.json()
+    result: dict[str, Any] = resp.json()
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +430,8 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     if not state:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
-    return await _proxy_get(target_id, "pending", {"messages": []}, session_id)
+    result: dict[str, Any] = await _proxy_get(target_id, "pending", {"messages": []}, session_id)
+    return result
 
 
 @router.post("/title")
