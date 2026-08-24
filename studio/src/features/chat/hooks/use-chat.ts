@@ -204,12 +204,18 @@ function extractSessionData(
 function startThinkingTimer(
   convId: string,
   setStep: (s: string | null) => void,
+  startTime?: number,
 ): () => void {
-  const start = Date.now()
+  const start = startTime ?? Date.now()
   let acting = false
   let pollDone = false
 
-  setStep("Thinking...")
+  const elapsed = (Date.now() - start) / 1000
+  if (elapsed > 15) {
+    setStep("Still working...")
+  } else {
+    setStep("Thinking...")
+  }
 
   const timerId = setInterval(() => {
     const elapsed = (Date.now() - start) / 1000
@@ -282,7 +288,15 @@ export function useChat() {
     const placeholderId = lastRestored!.id
     let cancelled = false
 
+    stopThinkingRef.current = startThinkingTimer(
+      convId,
+      setThinkingStep,
+      lastRestored!.streamStartedAt,
+    )
+
     function cleanupPlaceholder(interrupted = false) {
+      stopThinkingRef.current?.()
+      stopThinkingRef.current = null
       _activeRequests.delete(convId)
       if (interrupted) {
         const interruptedContent = "Response was interrupted. Send a new message to continue."
@@ -402,7 +416,11 @@ export function useChat() {
       recoverResponse()
     }
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      stopThinkingRef.current?.()
+      stopThinkingRef.current = null
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recovery only needed on mount when streaming
   }, [])
 
@@ -625,15 +643,17 @@ export function useChat() {
         content: userMessage.content,
         timestamp: userMessage.timestamp,
       })
+      const streamStart = Date.now()
       addMessage(convId, {
         id: assistantId,
         role: "assistant",
         content: "",
         timestamp: assistantMessage.timestamp,
+        streamStartedAt: streamStart,
       })
       _activeRequests.add(convId)
 
-      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep)
+      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep, streamStart)
 
       try {
         const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
