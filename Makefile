@@ -38,19 +38,23 @@ build-studio: ## Build studio image
 # Prompt
 # ──────────────────────────────────────────────
 
-PROMPT_DIR   := agent/prompts
-COMBINED_DIR := $(PROMPT_DIR)/_combined
-
-SKILLS_DIR   := agent/skills
+AGENTS_DIR   := agents
 K8S_SKILLS   := k8s/base/morty-skills
 
-prompt: ## Build combined Morty prompt and sync skills to k8s
-	@mkdir -p $(COMBINED_DIR)
-	@cat $(PROMPT_DIR)/identity.md $(PROMPT_DIR)/capabilities.md $(PROMPT_DIR)/workflow.md > $(COMBINED_DIR)/morty.md
-	@cp $(COMBINED_DIR)/morty.md k8s/base/morty-prompt.md
+prompt: ## Generate k8s configs from agents directory
+	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
+	@cp $(AGENTS_DIR)/orchestrator/identity.md k8s/base/morty-identity.md
+	@cp $(AGENTS_DIR)/orchestrator/workflow.md k8s/base/morty-workflow.md
+	@cp $(AGENTS_DIR)/sdg/workflow.md k8s/base/morty-sdg-workflow.md
+	@cp $(AGENTS_DIR)/training/workflow.md k8s/base/morty-training-workflow.md
 	@rm -rf $(K8S_SKILLS)
-	@cp -r $(SKILLS_DIR) $(K8S_SKILLS)
-	@echo "Generated $(COMBINED_DIR)/morty.md and synced skills to $(K8S_SKILLS)"
+	@for agent in sdg training; do \
+		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
+			mkdir -p $(K8S_SKILLS)/$$agent; \
+			cp -r $(AGENTS_DIR)/$$agent/skills/* $(K8S_SKILLS)/$$agent/; \
+		fi; \
+	done
+	@echo "Generated k8s configs from $(AGENTS_DIR)/"
 
 # ──────────────────────────────────────────────
 # Deploy (single-user dev)

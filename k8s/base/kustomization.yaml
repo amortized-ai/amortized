@@ -19,6 +19,10 @@ configMapGenerator:
     namespace: amortized
     files:
       - morty.md=morty-prompt.md
+      - morty-identity.md=morty-identity.md
+      - morty-workflow.md=morty-workflow.md
+      - morty-sdg-workflow.md=morty-sdg-workflow.md
+      - morty-training-workflow.md=morty-training-workflow.md
     options:
       disableNameSuffixHash: true
   - name: morty-skills
@@ -32,5 +36,7 @@ configMapGenerator:
       - training__guidance.md=morty-skills/training/guidance.md
       - training__knowledge-ingestion__osft__guide.md=morty-skills/training/knowledge-ingestion/osft/guide.md
       - training__knowledge-ingestion__osft__reference-payload.json=morty-skills/training/knowledge-ingestion/osft/reference-payload.json
+      - training__knowledge-ingestion__osft__training-config-template.json=morty-skills/training/knowledge-ingestion/osft/training-config-template.json
+      - training__supported_models.json=morty-skills/training/supported_models.json
     options:
       disableNameSuffixHash: true
