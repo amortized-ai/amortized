@@ -15,7 +15,7 @@ def skills_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     monkeypatch.setattr(config_mod.settings, "recipes_dir", tmp_path)
 
-    sdg_ki = tmp_path / "agent" / "skills" / "sdg" / "knowledge-ingestion"
+    sdg_ki = tmp_path / "agents" / "sdg" / "skills" / "knowledge-ingestion"
     sdg_ki.mkdir(parents=True)
     (sdg_ki / "reference-payload.json").write_text(
         json.dumps(
@@ -27,7 +27,7 @@ def skills_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         )
     )
 
-    training_ki = tmp_path / "agent" / "skills" / "training" / "knowledge-ingestion" / "osft"
+    training_ki = tmp_path / "agents" / "training" / "skills" / "knowledge-ingestion" / "osft"
     training_ki.mkdir(parents=True)
     (training_ki / "reference-payload.json").write_text(
         json.dumps(
@@ -77,14 +77,14 @@ class TestListStarterTemplates:
         assert list_starter_templates() == []
 
     def test_skips_invalid_json(self, skills_dir: Path) -> None:
-        bad = skills_dir / "agent" / "skills" / "sdg" / "broken"
+        bad = skills_dir / "agents" / "sdg" / "skills" / "broken"
         bad.mkdir(parents=True)
         (bad / "reference-payload.json").write_text("not json")
         templates = list_starter_templates()
         assert len(templates) == 2
 
     def test_falls_back_to_use_case_when_no_meta(self, skills_dir: Path) -> None:
-        no_meta = skills_dir / "agent" / "skills" / "sdg" / "classification"
+        no_meta = skills_dir / "agents" / "sdg" / "skills" / "classification"
         no_meta.mkdir(parents=True)
         (no_meta / "reference-payload.json").write_text(json.dumps({"num_records": 100}))
         templates = list_starter_templates()

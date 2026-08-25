@@ -1,4 +1,4 @@
-"""Starter template browsing from agent/skills reference payloads."""
+"""Starter template browsing from agents/*/skills reference payloads."""
 
 import logging
 from typing import Any

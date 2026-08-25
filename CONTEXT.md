@@ -126,7 +126,7 @@ Every finding was independently verified by an agent that read the exact file an
 | A3 | **Tool permissions overly broad** — `allowed_tools=["mcp__*"]` grants access to every tool on every MCP server, including `save_recipe` which can overwrite template files. | `agent/server.py:151` |
 | A4 | **Anti-resubmission guard too rigid** — "NEVER call `submit_recipe_job` more than once per conversation." If a job fails due to config error, user cannot retry in same conversation. | `workflow.md:72` |
 | A5 | **No prompt injection defenses** — no instructions to refuse system prompt extraction or instruction override. `task_description` flows into teacher model prompts via SDG config (indirect injection path). | Agent prompts |
-| A6 | **3 placeholder skill guides** — extraction (7 lines), summarization (5 lines), QLoRA (10 lines) mean the agent has no real expertise for 3 of its advertised capabilities. | `agent/skills/sdg/extraction/`, `summarization/`, `training/qlora/` |
+| A6 | **3 placeholder skill guides** — extraction (7 lines), summarization (5 lines), QLoRA (10 lines) mean the agent has no real expertise for 3 of its advertised capabilities. | `agents/sdg/skills/extraction/`, `summarization/`, `agents/training/skills/qlora/` |
 | A7 | **Session management unbounded** — sessions stored in plain dict persisted to JSON. No expiry, no cleanup, no max count. | `agent/server.py:59-61` |
 | A8 | **No timeout on `query()` call** — can hang indefinitely. Nginx has 300s proxy timeout but FastAPI handler has none. No concurrency control on same-session messages. | `agent/server.py:132` |
 | A9 | **Missing `/agent/title` endpoint** — frontend calls it for chat title generation; agent server doesn't implement it. Always falls back to message truncation. | `api-client.ts:307-316` vs `agent/server.py` |
@@ -556,8 +556,8 @@ Integration tests, contract tests, property-based tests, concurrency tests, fuzz
 | X18 | **Fragile parent-traversal path computation duplicated** — `Path(__file__).resolve().parent.parent.parent.parent` in two files. | `recipes.py:16`, `judge_templates.py:13` |
 | X19 | **Log retrieval pattern duplicated** — same stdout/stderr reading pattern in local and SSH backends. | `local.py:131-143`, `ssh.py:290-310` |
 | X20 | **`"/generated_data/generated_data.jsonl"` hardcoded 3 times** — must update all three if asynth output path changes. | `worker.py:341,365-366,503` |
-| X21 | **Hardcoded developer paths in config template** — `/workspace/home/lab/esivaram/...` and `/mnt/nvme3n1/esivaram/...`. | `agent/skills/training/osft/training-config-template.json` |
-| X22 | **Training skill guide references wrong recipe name** — `templates/training/models/qwen2.5-1.5b-lora` but actual file is `qwen-1.5b-lora.yaml`. | `agent/skills/training/lora-sft/guide.md:54` |
+| X21 | **Hardcoded developer paths in config template** — `/workspace/home/lab/esivaram/...` and `/mnt/nvme3n1/esivaram/...`. | `agents/training/skills/knowledge-ingestion/osft/training-config-template.json` |
+| X22 | **Training skill guide references wrong recipe name** — `templates/training/models/qwen2.5-1.5b-lora` but actual file is `qwen-1.5b-lora.yaml`. | `agents/training/skills/` |
 
 ### Frontend Duplication
 
