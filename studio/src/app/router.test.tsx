@@ -8,7 +8,6 @@ import OverviewPage from "@/features/overview/page"
 import ChatPage from "@/features/chat/page"
 import JobsPage from "@/features/jobs/page"
 import DatasetsPage from "@/features/datasets/page"
-import { DatasetDetailPage } from "@/features/datasets/components/dataset-detail"
 import ModelsPage from "@/features/models/page"
 import SettingsPage from "@/features/settings/page"
 
@@ -26,7 +25,7 @@ vi.mock("@/features/jobs/api/use-jobs", async (importOriginal) => ({
 vi.mock("@/features/datasets/api/use-datasets", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/datasets/api/use-datasets")>()),
   useDatasets: () => ({ data: [], isLoading: false }),
-  useDataset: () => ({ data: null, isLoading: false }),
+
 }))
 
 vi.mock("@/features/models/api/use-models", async (importOriginal) => ({
@@ -51,7 +50,6 @@ function renderRoute(initialRoute: string) {
               <Route path="chat" element={<ChatPage />} />
               <Route path="jobs" element={<JobsPage />} />
               <Route path="datasets" element={<DatasetsPage />} />
-              <Route path="datasets/:id" element={<DatasetDetailPage />} />
               <Route path="models" element={<ModelsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
@@ -91,11 +89,6 @@ describe("Router", () => {
   it("renders the settings page at /settings", () => {
     renderRoute("/settings")
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument()
-  })
-
-  it("renders the dataset detail page at /datasets/:id", () => {
-    renderRoute("/datasets/ds-123")
-    expect(screen.getByText("Dataset not found.")).toBeInTheDocument()
   })
 
   it("renders the models page at /models with query params", () => {
