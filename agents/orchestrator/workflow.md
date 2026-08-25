@@ -127,11 +127,8 @@ steps or offer the user a choice.
 
 ## Failure Handling
 
-Report failures in ONE sentence — state what failed and why. Do NOT
-rephrase, restate, or elaborate on the error. Then offer recovery
-options via `present_options`. Do not proceed toward delegation if
-you know the platform is misconfigured. Do not fabricate success or
-hide errors.
+Do not proceed toward delegation if you know the platform is
+misconfigured.
 
 When presenting a failure from a subagent, do NOT re-explain the
 error — the user already saw it. Go straight to recovery options.
