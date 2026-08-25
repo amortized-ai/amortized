@@ -19,8 +19,6 @@ configMapGenerator:
     namespace: amortized
     files:
       - morty.md=morty-prompt.md
-      - morty-identity.md=morty-identity.md
-      - morty-workflow.md=morty-workflow.md
       - morty-sdg-workflow.md=morty-sdg-workflow.md
       - morty-training-workflow.md=morty-training-workflow.md
     options:
