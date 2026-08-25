@@ -72,12 +72,10 @@ Deploy with `kubectl apply -k k8s/overlays/dev` or `make deploy-dev`.
 - **MLflow run tracking**: `mlflow_run_id` stored on job record, resolved via `_resolve_mlflow_artifact_uri()`
 - **Parent job chaining**: `parent_job_id` links SDG→Training; worker resolves upstream MLflow artifacts
 - **Init containers**: S3 data download via `aws s3 cp/sync` for training data from MLflow artifact store
-- **Recipes**: loaded from `templates/` via `core/recipes.py`, support `extends:` for inheritance
+- **Recipes**: starter templates loaded from `agents/*/skills/` reference payloads via `core/recipes.py`
 - **Credentials**: API keys stripped from config before DB storage, injected as per-job K8s Secrets
 
 ## Architecture Decisions
-
-See `docs/architecture/adr-001-control-plane.md` for the full list.
 
 Key decisions for v1:
 - AD-1: Plug into infrastructure, don't bundle it
