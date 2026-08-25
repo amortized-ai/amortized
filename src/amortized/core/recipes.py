@@ -39,7 +39,7 @@ def list_starter_templates() -> list[dict[str, Any]]:
 
             try:
                 config = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 logger.warning("Skipping invalid template: %s", path)
                 continue
 
