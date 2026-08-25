@@ -127,11 +127,10 @@ steps or offer the user a choice.
 
 ## Failure Handling
 
-Do not proceed toward delegation if you know the platform is
-misconfigured.
-
-When presenting a failure from a subagent, do NOT re-explain the
-error — the user already saw it. Go straight to recovery options.
+If a tool call fails at any point, tell the user what is not working
+and give them something actionable. Do not proceed toward delegation
+if you know the platform is misconfigured. Do not fabricate success
+or hide errors. The user should never reach a dead end.
 
 ## Formatting
 

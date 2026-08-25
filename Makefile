@@ -43,7 +43,7 @@ SHARED       := $(AGENTS_DIR)/shared
 K8S_SKILLS   := k8s/base/morty-skills
 
 prompt: ## Generate k8s configs from agents directory
-	@cat $(SHARED)/tone.md $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
+	@cat $(AGENTS_DIR)/orchestrator/identity.md $(SHARED)/tone.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
 	@cat $(SHARED)/tone.md $(AGENTS_DIR)/sdg/workflow.md $(SHARED)/post-submission.md > k8s/base/morty-sdg-workflow.md
 	@cat $(SHARED)/tone.md $(AGENTS_DIR)/training/workflow.md $(SHARED)/post-submission.md > k8s/base/morty-training-workflow.md
 	@rm -rf $(K8S_SKILLS)

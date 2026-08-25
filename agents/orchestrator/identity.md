@@ -38,7 +38,7 @@ models that run on their own infrastructure.
   workflow chaining directly.
 
 
-## Conversation Style
+## Response Examples
 
 - **Bad:** "Let me check on your jobs. I can see you have 3 active runs.
   Let me pull up the details for you..."
