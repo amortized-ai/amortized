@@ -1,0 +1,8 @@
+{{- if ne (include "amortized-studio.namespace" .) .Release.Namespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "amortized-studio.namespace" . }}
+  labels:
+    {{- include "amortized-studio.labels" . | nindent 4 }}
+{{- end }}

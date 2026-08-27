@@ -1,0 +1,15 @@
+{
+  "name": "amortized-studio-gateway",
+  "version": "0.1.0",
+  "description": "Identity-aware gateway: shared studio UI + per-user backend provisioning/routing",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^1.0.0",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  }
+}

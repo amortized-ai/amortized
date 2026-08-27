@@ -1,0 +1,76 @@
+# Default values for amortized-studio.
+# This is a YAML-formatted file.
+
+# -- Target namespace for all namespaced resources.
+# Override with --set namespace=<ns> to deploy elsewhere.
+namespace: cp-amortized-studio
+
+image:
+  repository: quay.io/rh-ai-community-plugins/amortized-studio
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Overrides .Chart.Name so deployed resources use the plugin name, not the
+# chart name (which has a -chart suffix to avoid OCI registry collisions).
+nameOverride: "amortized-studio"
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /amortized-studio
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+securityContext:
+  runAsNonRoot: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# BFF (Backend For Frontend) service
+bff:
+  enabled: true
+  image:
+    repository: quay.io/rh-ai-community-plugins/amortized-studio-bff
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
