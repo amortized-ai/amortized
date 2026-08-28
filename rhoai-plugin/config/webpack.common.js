@@ -1,4 +1,5 @@
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 const { ModuleFederationPlugin } = require('webpack').container;
 const path = require('path');
 const { name, version, 'module-federation': moduleFederation } = require('../package.json');
@@ -52,6 +53,11 @@ module.exports = {
     },
   },
   plugins: [
+    // Studio embed URL, injected at build time (BuildConfig env STUDIO_URL).
+    // Empty string falls back to window.__AMORTIZED_STUDIO_URL__ then a default.
+    new webpack.DefinePlugin({
+      __STUDIO_URL__: JSON.stringify(process.env.STUDIO_URL || ''),
+    }),
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, '../src/index.html'),
     }),

@@ -90,8 +90,14 @@ function ensureUserStack(user) {
   let entry = stacks.get(ns);
   if (!entry) {
     entry = { state: 'provisioning', error: null };
-    entry.promise = provision(ns, user)
-      .then(() => { entry.state = 'ready'; })
+    // Fast path: if the backend is already healthy (e.g. after a gateway
+    // restart, or a returning user), mark ready without re-provisioning.
+    // Otherwise provision the full stack.
+    entry.promise = serverAvailable(ns)
+      .then((healthy) => {
+        if (healthy) { entry.state = 'ready'; return; }
+        return provision(ns, user).then(() => { entry.state = 'ready'; });
+      })
       .catch((err) => {
         entry.state = 'error';
         entry.error = String(err.message || err);

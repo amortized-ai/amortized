@@ -9,7 +9,8 @@
 
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { ensureUserStack, getState } = require('./provision');
+const { ensureUserStack, getState, markForRetry } = require('./provision');
+const { renderSplash } = require('./splash');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const STUDIO_STATIC_UPSTREAM = process.env.STUDIO_STATIC_UPSTREAM || 'http://amortized-studio-static:8080';
@@ -32,11 +33,20 @@ function currentUser(req) {
 
 app.get('/gateway/healthz', (_req, res) => res.json({ ok: true }));
 
-// Status/bootstrap endpoint the SPA (or a splash) can poll.
+// Status/bootstrap endpoint the splash polls.
 app.get('/gateway/ready', (req, res) => {
   const user = currentUser(req);
   if (!user) return res.status(401).json({ error: 'no authenticated user' });
   const state = ensureUserStack(user); // idempotent: kicks off provisioning
+  res.json({ user, ...state });
+});
+
+// Clear a failed provisioning attempt and try again.
+app.post('/gateway/retry', (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  markForRetry(user);
+  const state = ensureUserStack(user);
   res.json({ user, ...state });
 });
 
@@ -77,6 +87,22 @@ if (MLFLOW_UPSTREAM) {
 } else {
   app.use('/mlflow', (_req, res) => res.status(503).json({ status: 'unconfigured', detail: 'Shared MLflow not configured yet.' }));
 }
+
+// --- Provisioning splash for the initial navigation -------------------------
+// For HTML navigations (not assets/api), show a splash until the user's backend
+// is ready; the splash polls /gateway/ready and reloads into the SPA.
+const isAsset = (p) => /\.[a-z0-9]+$/i.test(p);
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  if (isBackendPath(req.path) || req.path.startsWith('/mlflow') || req.path.startsWith('/gateway')) return next();
+  if (isAsset(req.path) || !req.accepts('html')) return next();
+  const user = currentUser(req);
+  if (!user) return next();
+  const state = ensureUserStack(user);
+  if (state.state === 'ready') return next();
+  res.set('Cache-Control', 'no-store');
+  return res.status(200).send(renderSplash(state));
+});
 
 // --- Shared studio SPA (static, catch-all) ----------------------------------
 app.use(createProxyMiddleware({ target: STUDIO_STATIC_UPSTREAM, changeOrigin: true }));

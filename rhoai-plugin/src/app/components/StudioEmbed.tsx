@@ -19,13 +19,17 @@ declare global {
     __AMORTIZED_STUDIO_URL__?: string;
   }
 }
+// Injected at build time via webpack DefinePlugin (BuildConfig env STUDIO_URL).
+declare const __STUDIO_URL__: string;
 
 const DEFAULT_STUDIO_URL =
   'https://amortized-studio-meyceoz-amortized.apps.rosa.h0p8o2c2b7w3r1y.fjws.p3.openshiftapps.com/';
 
 const StudioEmbed: React.FC = () => {
   const studioUrl =
-    (typeof window !== 'undefined' && window.__AMORTIZED_STUDIO_URL__) || DEFAULT_STUDIO_URL;
+    (typeof __STUDIO_URL__ !== 'undefined' && __STUDIO_URL__) ||
+    (typeof window !== 'undefined' && window.__AMORTIZED_STUDIO_URL__) ||
+    DEFAULT_STUDIO_URL;
 
   return (
     <iframe
