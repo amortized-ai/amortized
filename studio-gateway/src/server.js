@@ -19,6 +19,11 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 // into the image and served directly by the gateway.
 const STUDIO_DIST = process.env.STUDIO_DIST || path.join(__dirname, '..', 'studio-dist');
 const MLFLOW_UPSTREAM = process.env.MLFLOW_UPSTREAM || '';
+// The plugin's federated bundle (remoteEntry + chunks) is served by the plugin
+// frontend; the gateway proxies /federated/* to it so a SINGLE service (this
+// gateway) backs the whole plugin — the dashboard proxies the plugin's paths to
+// the entry's service, so everything (remoteEntry, studio, api) must live here.
+const PLUGIN_UPSTREAM = process.env.PLUGIN_UPSTREAM || 'http://amortized-studio.cp-amortized-studio.svc.cluster.local:8080';
 
 const app = express();
 
@@ -34,6 +39,22 @@ app.use((req, _res, next) => {
   }
   next();
 });
+
+// Request logging (observe how the dashboard proxies to us); skip health noise.
+app.use((req, _res, next) => {
+  if (req.url !== '/gateway/healthz') console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+// --- Plugin federated bundle (remoteEntry + chunks) -------------------------
+// Served for all users (no per-user identity/readiness); proxied to the plugin
+// frontend with the /federated prefix stripped.
+app.use(createProxyMiddleware({
+  pathFilter: ['/federated/**'],
+  target: PLUGIN_UPSTREAM,
+  changeOrigin: true,
+  pathRewrite: { '^/federated': '' },
+}));
 
 // --- Identity ---------------------------------------------------------------
 // Resolve the acting user once per request (proxy header or TokenReview) and
