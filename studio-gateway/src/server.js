@@ -54,6 +54,13 @@ app.use(createProxyMiddleware({
   target: PLUGIN_UPSTREAM,
   changeOrigin: true,
   pathRewrite: { '^/federated': '' },
+  on: {
+    // Never let the dashboard/browser cache a stale federated bundle.
+    proxyRes: (proxyRes) => {
+      proxyRes.headers['cache-control'] = 'no-store, must-revalidate';
+      proxyRes.headers['pragma'] = 'no-cache';
+    },
+  },
 }));
 
 // --- Identity ---------------------------------------------------------------
