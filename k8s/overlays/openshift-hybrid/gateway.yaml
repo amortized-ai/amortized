@@ -173,6 +173,26 @@ spec:
       port: 8443
       targetPort: public
 ---
+# Plain-HTTP service for the RHOAI dashboard proxy to target (authorize:true;
+# the dashboard enforces OpenShift auth and forwards the user token, which the
+# gateway resolves via TokenReview — no oauth-proxy on this path).
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-gateway-http
+  labels:
+    app: amortized
+    component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
 # Public entrypoint for the whole hybrid studio.
 apiVersion: route.openshift.io/v1
 kind: Route

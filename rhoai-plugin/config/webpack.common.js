@@ -53,10 +53,10 @@ module.exports = {
     },
   },
   plugins: [
-    // Studio embed URL, injected at build time (BuildConfig env STUDIO_URL).
-    // Empty string falls back to window.__AMORTIZED_STUDIO_URL__ then a default.
+    // Same-origin studio embed path, injected at build time (BuildConfig env
+    // STUDIO_EMBED_PATH). Empty string falls back to a default in the component.
     new webpack.DefinePlugin({
-      __STUDIO_URL__: JSON.stringify(process.env.STUDIO_URL || ''),
+      __STUDIO_EMBED_PATH__: JSON.stringify(process.env.STUDIO_EMBED_PATH || ''),
     }),
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, '../src/index.html'),
