@@ -8,7 +8,7 @@ namespace: cp-amortized-studio
 image:
   repository: quay.io/rh-ai-community-plugins/amortized-studio
   tag: ""
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 # Overrides .Chart.Name so deployed resources use the plugin name, not the
 # chart name (which has a -chart suffix to avoid OCI registry collisions).
@@ -61,7 +61,7 @@ bff:
   image:
     repository: quay.io/rh-ai-community-plugins/amortized-studio-bff
     tag: ""
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicaCount: 1
   service:
     type: ClusterIP
