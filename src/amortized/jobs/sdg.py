@@ -113,9 +113,24 @@ async def build(
                 " IDs are valid and MLflow is reachable."
             )
 
+    # Some agent SDG skills still hardcode the legacy `gateway` provider (the absent
+    # bundled MLflow AI Gateway). Remap any provider not backed by a dropped-in key to
+    # the primary enabled one, so config.yaml references a provider that the
+    # model_providers.yaml written below actually defines.
+    provider_defs = enabled_provider_defs()
+    enabled_names = [d["name"] for d in provider_defs]
     for mc in config.get("model_configs", []):
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
+        provider = mc.get("provider")
+        if enabled_names and provider not in enabled_names:
+            logger.warning(
+                "Job %s: SDG model_config provider %r is not enabled; remapping to %r",
+                job_id,
+                provider,
+                enabled_names[0],
+            )
+            mc["provider"] = enabled_names[0]
 
     for col in config.get("columns", []):
         if "model_config_alias" in col:
@@ -134,7 +149,6 @@ async def build(
     # dropped-in keys and point DATA_DESIGNER_HOME at it. api_key stays the env-var
     # name; the key itself is forwarded into the pod (settings.forward_env).
     pre_commands: list[str] = []
-    provider_defs = enabled_provider_defs()
     if provider_defs:
         dd_home = "/amortized/work/.data-designer"
         config_files["model_providers.yaml"] = yaml.dump(
