@@ -19,7 +19,9 @@ const stacks = new Map();
 function nsForUser(user) {
   const local = String(user).split('@')[0];
   const slug = local.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'anon';
-  return `amortized-u-${slug}`;
+  // `amz-` (not `amortized-u-`) so this integrated per-user stack does not collide
+  // with pre-existing `amortized-u-*` backends. Keep in sync with manifests.js slug.
+  return `amz-${slug}`;
 }
 
 async function applyManifest(obj) {

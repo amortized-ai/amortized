@@ -19,6 +19,16 @@ const S3 = {
   FSSPEC_S3_SECRET: process.env.S3_SECRET_ACCESS_KEY || 'minioadmin',
 };
 
+// --- Enterprise MLflow (kubernetes-namespaced auth) + per-user OpenShell Morty ---
+const fs = require('fs');
+const MLFLOW_TOKEN_FILE = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+const MLFLOW_CA_BUNDLE = '/etc/mlflow-ca/service-ca.crt';
+// Set on the gateway to wire per-user OpenShell Morty: the dir where the gateway
+// mounts the openshell-client-tls PEMs, and the OpenShell gateway Service IP (for
+// the per-user sandbox hostAlias). Empty = no Morty wiring (plain default).
+const OPENSHELL_MTLS_DIR = process.env.OPENSHELL_MTLS_DIR || '';
+const OPENSHELL_GATEWAY_IP = process.env.OPENSHELL_GATEWAY_IP || '';
+
 const labels = { app: 'amortized', 'app.kubernetes.io/managed-by': 'studio-gateway' };
 
 /**
@@ -27,6 +37,17 @@ const labels = { app: 'amortized', 'app.kubernetes.io/managed-by': 'studio-gatew
  * @param {string} user  the authenticated username (for annotations)
  */
 function userStackManifests(ns, user) {
+  const slug = ns.replace(/^amz-/, '');
+  const mortyHost = `default--morty-${slug}--opencode.openshell.localhost`;
+  const mlflowEnabled = !!MLFLOW_TRACKING_URI;
+  const mortyEnabled = !!(OPENSHELL_MTLS_DIR && OPENSHELL_GATEWAY_IP);
+  const mtlsSecret = mortyEnabled
+    ? {
+        'tls.crt': fs.readFileSync(`${OPENSHELL_MTLS_DIR}/tls.crt`).toString('base64'),
+        'tls.key': fs.readFileSync(`${OPENSHELL_MTLS_DIR}/tls.key`).toString('base64'),
+        'ca.crt': fs.readFileSync(`${OPENSHELL_MTLS_DIR}/ca.crt`).toString('base64'),
+      }
+    : null;
   return [
     {
       apiVersion: 'v1',
@@ -57,6 +78,23 @@ function userStackManifests(ns, user) {
         AMORTIZED_EXTERNAL_URL: 'http://amortized-server:8000',
         AMORTIZED_AGENT_SERVER_URL: 'http://amortized-server:8000',
         AMORTIZED_MLFLOW_TRACKING_URI: MLFLOW_TRACKING_URI,
+        // Enterprise MLflow (kubernetes-namespaced): workspace == this namespace.
+        ...(mlflowEnabled
+          ? {
+              AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE: MLFLOW_TOKEN_FILE,
+              AMORTIZED_MLFLOW_WORKSPACE: ns,
+              AMORTIZED_MLFLOW_CA_BUNDLE: MLFLOW_CA_BUNDLE,
+            }
+          : {}),
+        // Per-user OpenShell Morty via the gateway (mTLS + Host routing).
+        ...(mortyEnabled
+          ? {
+              AMORTIZED_AGENT_UPSTREAM_URL: `https://${mortyHost}:8080`,
+              AMORTIZED_AGENT_UPSTREAM_CLIENT_CERT: '/etc/openshell-mtls/tls.crt',
+              AMORTIZED_AGENT_UPSTREAM_CLIENT_KEY: '/etc/openshell-mtls/tls.key',
+              AMORTIZED_AGENT_UPSTREAM_CA_BUNDLE: '/etc/openshell-mtls/ca.crt',
+            }
+          : {}),
         AMORTIZED_GATEWAY_URL: '',
         AMORTIZED_S3_BUCKET: process.env.S3_BUCKET || 'amortized',
       },
@@ -93,6 +131,35 @@ function userStackManifests(ns, user) {
       roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role', name: 'amortized-job-manager' },
       subjects: [{ kind: 'ServiceAccount', name: 'amortized-server', namespace: ns }],
     },
+    // MLflow SSAR access: read+write in this workspace (== namespace).
+    ...(mlflowEnabled
+      ? [
+          {
+            apiVersion: 'rbac.authorization.k8s.io/v1',
+            kind: 'RoleBinding',
+            metadata: { name: 'amortized-mlflow-view', namespace: ns, labels },
+            roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'mlflow-operator-mlflow-view' },
+            subjects: [{ kind: 'ServiceAccount', name: 'amortized-server', namespace: ns }],
+          },
+          {
+            apiVersion: 'rbac.authorization.k8s.io/v1',
+            kind: 'RoleBinding',
+            metadata: { name: 'amortized-mlflow-edit', namespace: ns, labels },
+            roleRef: { apiGroup: 'rbac.authorization.k8s.io', kind: 'ClusterRole', name: 'mlflow-operator-mlflow-edit' },
+            subjects: [{ kind: 'ServiceAccount', name: 'amortized-server', namespace: ns }],
+          },
+        ]
+      : []),
+    // Per-user OpenShell gateway client cert (mTLS), stamped from the gateway's copy.
+    ...(mortyEnabled
+      ? [{
+          apiVersion: 'v1',
+          kind: 'Secret',
+          metadata: { name: 'openshell-client-tls', namespace: ns, labels },
+          type: 'Opaque',
+          data: mtlsSecret,
+        }]
+      : []),
     // Postgres (OpenShift-native SCL image; runs under restricted-v2).
     {
       apiVersion: 'apps/v1',
@@ -172,12 +239,23 @@ function userStackManifests(ns, user) {
               image: SERVER_IMAGE,
               ports: [{ name: 'http', containerPort: 8000 }],
               envFrom: [{ configMapRef: { name: 'amortized-config' } }, { secretRef: { name: 'amortized-s3' } }],
-              volumeMounts: [{ name: 'data', mountPath: '/data' }],
+              volumeMounts: [
+                { name: 'data', mountPath: '/data' },
+                ...(mlflowEnabled ? [{ name: 'mlflow-ca', mountPath: '/etc/mlflow-ca', readOnly: true }] : []),
+                ...(mortyEnabled ? [{ name: 'openshell-mtls', mountPath: '/etc/openshell-mtls', readOnly: true }] : []),
+              ],
               securityContext: initSec(),
               readinessProbe: { httpGet: { path: '/api/v1/health', port: 'http' }, initialDelaySeconds: 10, periodSeconds: 10 },
               livenessProbe: { httpGet: { path: '/api/v1/health', port: 'http' }, initialDelaySeconds: 15, periodSeconds: 10 },
             }],
-            volumes: [{ name: 'data', persistentVolumeClaim: { claimName: 'amortized-server-data' } }],
+            volumes: [
+              { name: 'data', persistentVolumeClaim: { claimName: 'amortized-server-data' } },
+              ...(mlflowEnabled
+                ? [{ name: 'mlflow-ca', configMap: { name: 'openshift-service-ca.crt', items: [{ key: 'service-ca.crt', path: 'service-ca.crt' }] } }]
+                : []),
+              ...(mortyEnabled ? [{ name: 'openshell-mtls', secret: { secretName: 'openshell-client-tls' } }] : []),
+            ],
+            ...(mortyEnabled ? { hostAliases: [{ ip: OPENSHELL_GATEWAY_IP, hostnames: [mortyHost] }] } : {}),
           },
         },
       },
