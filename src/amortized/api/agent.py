@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import ssl
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,26 @@ SESSION_TTL_HOURS = 4
 # ---------------------------------------------------------------------------
 
 
+# How many finished turns to retain per session for result polling.
+MAX_TURNS_TRACKED = 8
+
+
+@dataclass
+class TurnState:
+    """A single message turn, run in the background so the HTTP POST returns fast.
+
+    The blocking work (orchestrator + optional subagent turn) can exceed proxy
+    timeouts; running it detached and polling the result via GET keeps every HTTP
+    request short. ``result`` mirrors the shape the POST used to return.
+    """
+
+    active: bool = True
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    error_status: int | None = None
+    task: asyncio.Task[None] | None = None
+
+
 @dataclass
 class SessionState:
     orchestrator_id: str
@@ -41,6 +62,8 @@ class SessionState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     completed_subagents: dict[str, str] = field(default_factory=dict)
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
+    turns: dict[str, TurnState] = field(default_factory=dict)
+    turn_order: list[str] = field(default_factory=list)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -53,9 +76,41 @@ _http_client: httpx.AsyncClient | None = None
 _cleanup_task: asyncio.Task[None] | None = None
 
 
+def _upstream_client_kwargs() -> dict[str, Any]:
+    """TLS/mTLS options for the agent upstream.
+
+    The default in-cluster opencode Service is plain HTTP and needs none of these.
+    An OpenShell-sandboxed opencode is only reachable via the gateway, which requires
+    a client certificate (mTLS) plus CA verification of the gateway's server cert.
+
+    When a client cert is configured we build a single SSLContext holding both the CA
+    trust and the client cert. httpx does not reliably present a client cert when
+    ``cert`` and a ``verify`` CA path are passed separately (the server then aborts the
+    TLS 1.3 handshake with CERTIFICATE_REQUIRED).
+    """
+    cert = settings.agent_upstream_client_cert
+    key = settings.agent_upstream_client_key
+    if not (cert and key):
+        if settings.agent_upstream_insecure_tls:
+            return {"verify": False}
+        if settings.agent_upstream_ca_bundle:
+            return {"verify": settings.agent_upstream_ca_bundle}
+        return {}
+    if settings.agent_upstream_insecure_tls:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    elif settings.agent_upstream_ca_bundle:
+        ctx = ssl.create_default_context(cafile=settings.agent_upstream_ca_bundle)
+    else:
+        ctx = ssl.create_default_context()
+    ctx.load_cert_chain(cert, key)
+    return {"verify": ctx}
+
+
 async def startup() -> None:
     global _http_client, _cleanup_task
-    _http_client = httpx.AsyncClient(timeout=OPENCODE_TIMEOUT)
+    _http_client = httpx.AsyncClient(timeout=OPENCODE_TIMEOUT, **_upstream_client_kwargs())
     _cleanup_task = asyncio.create_task(_session_cleanup_loop())
 
 
@@ -304,6 +359,13 @@ async def get_session_messages(session_id: str) -> Any:
 
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
+    """Accept a message and run the turn in the background.
+
+    Returns immediately with a ``turn_id``; the caller polls
+    ``GET /session/{id}/turn/{turn_id}`` for the result. A turn can run for many
+    seconds (orchestrator + subagent), which would otherwise exceed intermediate
+    proxy timeouts (e.g. the dashboard embed) and 504.
+    """
     user_text = _extract_user_text(body)
     if not user_text:
         raise HTTPException(status_code=400, detail="no text part in message")
@@ -314,10 +376,66 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
 
     state.last_activity = datetime.now(UTC)
 
-    async with state.lock:
-        if state.subagent_id:
-            return await _handle_subagent_message(state, session_id, user_text, body)
-        return await _handle_orchestrator_message(state, session_id, user_text, body)
+    turn_id = str(uuid.uuid4())
+    turn = TurnState()
+    state.turns[turn_id] = turn
+    state.turn_order.append(turn_id)
+    while len(state.turn_order) > MAX_TURNS_TRACKED:
+        state.turns.pop(state.turn_order.pop(0), None)
+    turn.task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
+    return {"turn_id": turn_id, "status": "processing"}
+
+
+async def _run_turn(
+    state: SessionState,
+    session_id: str,
+    turn_id: str,
+    user_text: str,
+    body: MessageRequest,
+) -> None:
+    turn = state.turns.get(turn_id)
+    try:
+        async with state.lock:
+            if state.subagent_id:
+                result = await _handle_subagent_message(state, session_id, user_text, body)
+            else:
+                result = await _handle_orchestrator_message(state, session_id, user_text, body)
+        if turn:
+            turn.result = result
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Agent turn upstream error: session=%s turn=%s", session_id, turn_id)
+        if turn:
+            turn.error_status = exc.response.status_code
+            turn.error = str(exc)
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        logger.warning("Agent turn upstream unreachable: session=%s turn=%s", session_id, turn_id)
+        if turn:
+            turn.error_status = 502
+            turn.error = str(exc)
+    except Exception as exc:
+        logger.exception("Agent turn failed: session=%s turn=%s", session_id, turn_id)
+        if turn:
+            turn.error = str(exc) or exc.__class__.__name__
+    finally:
+        if turn:
+            turn.active = False
+        state.last_activity = datetime.now(UTC)
+
+
+@router.get("/session/{session_id}/turn/{turn_id}")
+async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
+    state = _sessions.get(session_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="unknown session")
+    turn = state.turns.get(turn_id)
+    if not turn:
+        raise HTTPException(status_code=404, detail="unknown turn")
+    return {
+        "active": turn.active,
+        "result": turn.result,
+        "error": turn.error,
+        "error_status": turn.error_status,
+    }
 
 
 async def _handle_subagent_message(

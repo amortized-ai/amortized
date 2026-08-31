@@ -245,6 +245,49 @@ export function resetOpenCodeSession(): void {
 }
 
 const MAX_RETRIES = 2
+const TURN_POLL_INTERVAL_MS = 1500
+const TURN_POLL_TIMEOUT_MS = 290_000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+interface TurnOutcome {
+  ok: boolean
+  result?: OpenCodeResponse
+  status?: number
+}
+
+/**
+ * Poll a background agent turn to completion. The POST that starts a turn returns
+ * immediately with a turn_id (so no single request is long enough to hit an
+ * intermediate proxy timeout / 504); the result arrives via short GETs here.
+ */
+async function pollTurn(sessionId: string, turnId: string): Promise<TurnOutcome> {
+  const deadline = Date.now() + TURN_POLL_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    let resp: Response
+    try {
+      resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/turn/${turnId}`)
+    } catch {
+      await sleep(TURN_POLL_INTERVAL_MS)
+      continue
+    }
+    if (resp.status === 404) return { ok: false, status: 404 }
+    if (!resp.ok) {
+      await sleep(TURN_POLL_INTERVAL_MS)
+      continue
+    }
+    const data = await resp.json()
+    if (data?.active) {
+      await sleep(TURN_POLL_INTERVAL_MS)
+      continue
+    }
+    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500 }
+    return { ok: true, result: data.result as OpenCodeResponse }
+  }
+  return { ok: false, status: 504 }
+}
 
 export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string): Promise<OpenCodeResponse> {
   if (!conversationId) {
@@ -277,12 +320,25 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       sessionId = await getOrCreateSession(conversationId)
       continue
     }
+    let status: number
     if (resp.ok) {
-      return resp.json()
+      const data = await resp.json()
+      // Backward-compatible: a synchronous server returns the full result directly.
+      if (!data || typeof data.turn_id !== "string") {
+        return data as OpenCodeResponse
+      }
+      const outcome = await pollTurn(sessionId, data.turn_id)
+      if (outcome.ok) {
+        return outcome.result as OpenCodeResponse
+      }
+      status = outcome.status ?? 500
+      lastError = new ApiError(status, "Agent turn failed", null)
+    } else {
+      status = resp.status
+      lastError = new ApiError(status, resp.statusText, null)
     }
-    lastError = new ApiError(resp.status, resp.statusText, null)
-    if ((resp.status === 404 || resp.status === 500) && attempt < MAX_RETRIES) {
-      logger.warn("session error, creating new session with context replay", { conversationId, sessionId, status: resp.status })
+    if ((status === 404 || status === 500) && attempt < MAX_RETRIES) {
+      logger.warn("session error, creating new session with context replay", { conversationId, sessionId, status })
       useChatStore.getState().clearSessionId(conversationId)
       useChatStore.getState().setSessionStatus(conversationId, "reconnecting")
       sessionId = await getOrCreateSession(conversationId)
@@ -307,9 +363,9 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       }
       continue
     }
-    if (resp.status === 502 && attempt < MAX_RETRIES) {
+    if (status === 502 && attempt < MAX_RETRIES) {
       logger.warn("transient error, resetting session", {
-        sessionId, status: resp.status, attempt: attempt + 1,
+        sessionId, status, attempt: attempt + 1,
       })
       useChatStore.getState().clearSessionId(conversationId)
       sessionId = await getOrCreateSession(conversationId)

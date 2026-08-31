@@ -9,6 +9,7 @@ from typing import Any
 
 import amortized.config as config_mod
 from amortized.backends import Resources
+from amortized.core.model_catalog import enabled_provider_defs
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
@@ -127,6 +128,24 @@ async def build(
     dd_config = {"data_designer": config}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
+    # Direct-provider stopgap for the absent MLflow AI Gateway: the job image's
+    # builtin default provider is `gateway` (a bundled MLflow gateway that does not
+    # exist here), so write a model_providers.yaml with the providers enabled by
+    # dropped-in keys and point DATA_DESIGNER_HOME at it. api_key stays the env-var
+    # name; the key itself is forwarded into the pod (settings.forward_env).
+    pre_commands: list[str] = []
+    provider_defs = enabled_provider_defs()
+    if provider_defs:
+        dd_home = "/amortized/work/.data-designer"
+        config_files["model_providers.yaml"] = yaml.dump(
+            {"providers": provider_defs}, default_flow_style=False, sort_keys=False
+        )
+        env["DATA_DESIGNER_HOME"] = dd_home
+        pre_commands.append(
+            f"mkdir -p {dd_home}"
+            f" && cp /amortized/model_providers.yaml {dd_home}/model_providers.yaml"
+        )
+
     records = min(num_records, 10) if mode == "preview" else num_records
     dd_cmd = (
         "data-designer create /amortized/config.yaml"
@@ -163,6 +182,7 @@ async def build(
         command=cmd,
         config_files=config_files,
         env=env,
+        pre_commands=pre_commands,
         post_commands=[post_cmd],
         resources=Resources(gpus=0),
         image=IMAGE,

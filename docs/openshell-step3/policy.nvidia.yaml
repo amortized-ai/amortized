@@ -1,0 +1,32 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /lib64, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /opt, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+network_policies:
+  morty_egress:
+    name: morty-egress
+    endpoints:
+      # --- Vertex / Google auth (proven on the VM) ---
+      - {host: aiplatform.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      - {host: oauth2.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      - {host: accounts.google.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      - {host: sts.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      - {host: www.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      - {host: iam.googleapis.com, port: 443, protocol: rest, enforcement: enforce, access: read-write}
+      # --- opencode model catalog + npm (read-only) ---
+      - {host: models.opencode.ai, port: 443, protocol: rest, enforcement: enforce, access: read-only}
+      - {host: models.dev, port: 443, protocol: rest, enforcement: enforce, access: read-only}
+      - {host: registry.npmjs.org, port: 443, protocol: rest, enforcement: enforce, access: read-only}
+      # --- amortized MCP endpoint (in-cluster) — Step 3c ---
+      # UNVERIFIED: plaintext http on :8000 (not 443) through OpenShell's egress proxy, which
+      # does TLS termination. This is the plan's "MCP egress" open question. If opencode cannot
+      # reach the MCP endpoint, revisit protocol/port handling here. Adjust the ns if amortized
+      # runs elsewhere than `amortized`.
+      - {host: amortized-server.amortized.svc.cluster.local, port: 8000, protocol: rest, enforcement: enforce, access: read-write}
+    binaries:
+      - {path: /usr/lib/node_modules/opencode-ai/bin/opencode.exe}
+      - {path: /usr/bin/node}
+      - {path: /usr/bin/curl}
