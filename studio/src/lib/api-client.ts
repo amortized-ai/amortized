@@ -38,8 +38,14 @@ class ApiError extends Error {
   }
 }
 
-function getBaseUrl(): string {
-  return import.meta.env.VITE_API_URL ?? ""
+// Base for all backend calls (/api, /agent, /mlflow, /mcp).
+// Priority: explicit VITE_API_URL override → the SPA base path (import.meta.env.
+// BASE_URL, set from Vite `base`) → same-origin root. When embedded under a
+// dashboard subpath, this makes calls resolve to e.g. /amortized-studio-embed/api.
+export function getBaseUrl(): string {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  const base = import.meta.env.BASE_URL || "/"
+  return base === "/" ? "" : base.replace(/\/+$/, "")
 }
 
 function getAuthHeaders(): Record<string, string> {

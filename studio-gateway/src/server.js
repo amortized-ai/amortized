@@ -8,28 +8,50 @@
 //   - serves the shared studio SPA (static) for everything else
 
 const express = require('express');
+const path = require('path');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const { ensureUserStack, getState, markForRetry } = require('./provision');
 const { renderSplash } = require('./splash');
+const { resolveUser, identityDebug } = require('./auth');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
-const STUDIO_STATIC_UPSTREAM = process.env.STUDIO_STATIC_UPSTREAM || 'http://amortized-studio-static:8080';
+// Studio SPA static files (built with base path = EMBED_BASE_PATH) are baked
+// into the image and served directly by the gateway.
+const STUDIO_DIST = process.env.STUDIO_DIST || path.join(__dirname, '..', 'studio-dist');
 const MLFLOW_UPSTREAM = process.env.MLFLOW_UPSTREAM || '';
-// Dev/testing override: assume this user when no oauth-proxy header is present.
-const DEV_USER = process.env.DEV_USER || '';
 
 const app = express();
 
+// --- Embed base-path handling -----------------------------------------------
+// When served through the RHOAI dashboard proxy, requests may arrive under a
+// base prefix (e.g. /amortized-studio-embed/...). Strip it if present so all
+// downstream routing works at the root. Tolerant of either behavior (dashboard
+// preserving or rewriting the prefix).
+const EMBED_BASE = (process.env.EMBED_BASE_PATH || '').replace(/\/+$/, '');
+app.use((req, _res, next) => {
+  if (EMBED_BASE && (req.url === EMBED_BASE || req.url.startsWith(`${EMBED_BASE}/`))) {
+    req.url = req.url.slice(EMBED_BASE.length) || '/';
+  }
+  next();
+});
+
 // --- Identity ---------------------------------------------------------------
+// Resolve the acting user once per request (proxy header or TokenReview) and
+// stash it; downstream handlers read it synchronously.
+app.use((req, _res, next) => {
+  resolveUser(req)
+    .then((u) => { req.amortizedUser = u || ''; next(); })
+    .catch(() => { req.amortizedUser = ''; next(); });
+});
+
 function currentUser(req) {
-  return (
-    req.headers['x-forwarded-preferred-username'] ||
-    req.headers['x-forwarded-user'] ||
-    req.headers['x-forwarded-email'] ||
-    DEV_USER ||
-    ''
-  );
+  return req.amortizedUser || '';
 }
+
+// Debug: what identity did the gateway see/resolve for this request?
+app.get('/gateway/whoami', (req, res) => {
+  res.json({ user: currentUser(req) || null, ...identityDebug(req) });
+});
 
 app.get('/gateway/healthz', (_req, res) => res.json({ ok: true }));
 
@@ -105,10 +127,19 @@ app.use((req, res, next) => {
 });
 
 // --- Shared studio SPA (static, catch-all) ----------------------------------
-app.use(createProxyMiddleware({ target: STUDIO_STATIC_UPSTREAM, changeOrigin: true }));
+// Assets are served directly; unmatched navigations fall back to index.html
+// for client-side routing.
+app.use(express.static(STUDIO_DIST, { index: false }));
+app.get('*', (req, res, next) => {
+  if (isBackendPath(req.path) || req.path.startsWith('/mlflow') || req.path.startsWith('/gateway')) {
+    return next();
+  }
+  res.sendFile(path.join(STUDIO_DIST, 'index.html'));
+});
 
 app.listen(PORT, () => {
   console.log(`studio-gateway listening on :${PORT}`);
-  console.log(`  static  -> ${STUDIO_STATIC_UPSTREAM}`);
+  console.log(`  static  -> ${STUDIO_DIST}`);
+  console.log(`  base    -> ${EMBED_BASE || '(root)'}`);
   console.log(`  mlflow  -> ${MLFLOW_UPSTREAM || '(unconfigured)'}`);
 });
