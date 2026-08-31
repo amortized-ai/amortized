@@ -1,25 +1,32 @@
 import React from 'react';
+import {
+  Button,
+  EmptyState,
+  EmptyStateBody,
+  EmptyStateActions,
+  EmptyStateFooter,
+} from '@patternfly/react-core';
 
 /**
- * Full-bleed embed of the Amortized Studio SPA.
+ * Launcher for the Amortized Studio SPA.
  *
- * The studio is a complete, self-contained app (Vite/React) served behind its
- * own nginx on OpenShift. Rather than re-implement its UI as native PatternFly
- * federated modules, this plugin embeds the running studio the same way the
- * apache-superset / mlflowEmbedded community plugins embed their apps.
+ * Studio runs behind OpenShift oauth-proxy. The OpenShift OAuth server sets
+ * `X-Frame-Options: DENY`, so the sign-in redirect cannot render inside the
+ * dashboard iframe (cross-origin). We therefore open the studio top-level in a
+ * new tab, where the OAuth/SSO flow works normally.
  *
- * Resolution order for the studio URL:
- *   1. window.__AMORTIZED_STUDIO_URL__  — injected at runtime by the plugin's
- *      nginx (config.js) or, later, resolved per-project by the plugin BFF
- *      (on-demand deployment, the superset "Instance Management" pattern).
- *   2. STUDIO_URL build-time default    — the shared experimental deployment.
+ * (A future same-origin embed — serving studio through the dashboard proxy with
+ * `authorize: true`, like the mlflowEmbedded plugin — would restore an inline
+ * iframe, but requires the studio SPA to support a base path.)
+ *
+ * URL resolution: build-time __STUDIO_URL__ (BuildConfig env STUDIO_URL) →
+ * window.__AMORTIZED_STUDIO_URL__ → default.
  */
 declare global {
   interface Window {
     __AMORTIZED_STUDIO_URL__?: string;
   }
 }
-// Injected at build time via webpack DefinePlugin (BuildConfig env STUDIO_URL).
 declare const __STUDIO_URL__: string;
 
 const DEFAULT_STUDIO_URL =
@@ -32,12 +39,27 @@ const StudioEmbed: React.FC = () => {
     DEFAULT_STUDIO_URL;
 
   return (
-    <iframe
-      title="Amortized Studio"
-      src={studioUrl}
-      style={{ flex: 1, width: '100%', height: '100%', border: 0 }}
-      allow="clipboard-read; clipboard-write"
-    />
+    <EmptyState titleText="Amortized Studio" headingLevel="h1">
+      <EmptyStateBody>
+        Build task-specific fine-tuned models — datasets, training jobs, models,
+        and the Morty assistant. Studio opens in a new tab so you can sign in
+        securely with your OpenShift account. Your workspace is provisioned on
+        first launch and isolated to you.
+      </EmptyStateBody>
+      <EmptyStateFooter>
+        <EmptyStateActions>
+          <Button
+            variant="primary"
+            component="a"
+            href={studioUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Launch Amortized Studio
+          </Button>
+        </EmptyStateActions>
+      </EmptyStateFooter>
+    </EmptyState>
   );
 };
 
