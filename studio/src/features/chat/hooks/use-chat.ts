@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl } from "@/lib/api-client"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { getLogger } from "@/lib/logger"
@@ -280,7 +280,7 @@ export function useChat() {
 
     async function warmup() {
       try {
-        const resp = await fetch(`/agent/session/${sessionId}/message`)
+        const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`)
         if (resp.ok) {
           if (!cancelled) useChatStore.getState().setSessionStatus(convId, "connected")
           return
@@ -292,7 +292,7 @@ export function useChat() {
       useChatStore.getState().clearSessionId(convId)
 
       try {
-        const createResp = await fetch("/agent/session", {
+        const createResp = await fetch(`${getBaseUrl()}/agent/session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
@@ -304,7 +304,7 @@ export function useChat() {
         const { summarizeConversation } = await import("@/lib/context-summarizer")
         const summary = summarizeConversation(msgs)
         if (summary) {
-          const replayResp = await fetch(`/agent/session/${newSessionId}/message`, {
+          const replayResp = await fetch(`${getBaseUrl()}/agent/session/${newSessionId}/message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ agent: "morty", parts: [{ type: "text", text: summary }] }),
@@ -629,7 +629,7 @@ export function useChat() {
         const sessionId = useChatStore.getState().getSessionId(currentConversationId)
         if (sessionId) {
           try {
-            const resp = await fetch(`/agent/session/${sessionId}/message`, {
+            const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -674,7 +674,7 @@ export function useChat() {
       const sessionId = useChatStore.getState().getSessionId(currentConversationId)
       if (sessionId) {
         try {
-          const resp = await fetch(`/agent/session/${sessionId}/message`, {
+          const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

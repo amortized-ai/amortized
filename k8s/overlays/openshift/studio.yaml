@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amortized-studio
+  labels:
+    app: amortized
+    component: studio
+  annotations:
+    # SA-as-OAuthClient: OpenShift derives the allowed redirect URI from the
+    # named Route, so oauth-proxy's /oauth/callback is auto-authorized.
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"amortized-studio"}}'
+---
+# oauth-proxy needs to validate tokens (TokenReview) and check access (SAR).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amortized-studio-auth-delegator
+  labels:
+    app: amortized
+    component: studio
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio
+    namespace: meyceoz-amortized
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio
+  labels:
+    app: amortized
+    component: studio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: studio
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: studio
+    spec:
+      serviceAccountName: amortized-studio
+      containers:
+        # ── OpenShift OAuth proxy: authenticates the user via the cluster's
+        #    OpenShift OAuth, then forwards to the studio nginx on localhost.
+        - name: oauth-proxy
+          image: quay.io/openshift/origin-oauth-proxy:latest
+          ports:
+            - name: public
+              containerPort: 8443
+          args:
+            - --provider=openshift
+            - --https-address=:8443
+            - --http-address=
+            - --openshift-service-account=amortized-studio
+            - --upstream=http://localhost:8080
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --email-domain=*
+            - --skip-provider-button
+            # Allow the session cookie to ride inside the RHOAI dashboard iframe
+            # (studio is a different origin from the dashboard).
+            - --cookie-samesite=none
+            - --cookie-secure=true
+          volumeMounts:
+            - name: proxy-tls
+              mountPath: /etc/tls/private
+            - name: proxy-cookie
+              mountPath: /etc/proxy/secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+        # ── Studio SPA (nginx). Only reachable through the proxy.
+        - name: studio
+          image: ghcr.io/amortized-ai/studio:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BACKEND_HOST
+              value: "amortized-server"
+            - name: BACKEND_PORT
+              value: "8000"
+            - name: AGENT_HOST
+              value: ""
+            - name: AGENT_PORT
+              value: "4096"
+            # MLflow is deployed in a later phase; nginx tolerates an
+            # unresolved upstream here (resolved per-request, 502 until present).
+            - name: MLFLOW_HOST
+              value: "mlflow"
+            - name: MLFLOW_PORT
+              value: "5000"
+            # OpenShift cluster DNS service IP (openshift-dns/dns-default).
+            - name: DNS_RESOLVER
+              value: "172.30.0.10"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: proxy-tls
+          secret:
+            secretName: amortized-studio-tls
+        - name: proxy-cookie
+          secret:
+            secretName: amortized-studio-oauth
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio
+  labels:
+    app: amortized
+    component: studio
+  annotations:
+    # Issues a TLS serving cert into the amortized-studio-tls secret.
+    service.beta.openshift.io/serving-cert-secret-name: amortized-studio-tls
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: studio
+  ports:
+    - name: public
+      port: 8443
+      targetPort: public
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: amortized-studio
+  labels:
+    app: amortized
+    component: studio
+spec:
+  to:
+    kind: Service
+    name: amortized-studio
+  port:
+    targetPort: public
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect

@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Hybrid studio (shared UI + per-user backends) — shared tier.
+# Deploys the shared studio SPA and the identity-aware gateway. Per-user
+# backend stacks (server + Postgres + compute namespace) are provisioned on
+# demand by the gateway (see studio-gateway/src/manifests.js), not here.
+namespace: meyceoz-amortized
+
+resources:
+  - studio-static.yaml
+  - gateway.yaml

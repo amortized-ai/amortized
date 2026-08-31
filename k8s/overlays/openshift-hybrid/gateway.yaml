@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amortized-studio-gateway
+  labels:
+    app: amortized
+    component: gateway
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"amortized-studio"}}'
+---
+# oauth-proxy token validation (TokenReview / SAR).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amortized-studio-gateway-auth-delegator
+  labels: { app: amortized, component: gateway }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: meyceoz-amortized
+---
+# Provisioning permissions: the gateway creates and manages per-user backend
+# stacks (operator-like scope).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: amortized-studio-gateway-provisioner
+  labels: { app: amortized, component: gateway }
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "resourcequotas", "configmaps", "secrets", "serviceaccounts", "services", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  # Must hold pods/pods-log itself in order to grant them in the per-user Role.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    # escalate/bind let the gateway create the per-user job-manager Role/binding
+    # (which grants pod/job perms) without holding every grantee perm itself.
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete", "escalate", "bind"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amortized-studio-gateway-provisioner
+  labels: { app: amortized, component: gateway }
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: amortized-studio-gateway-provisioner
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: meyceoz-amortized
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio-gateway
+  labels:
+    app: amortized
+    component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: gateway
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: gateway
+    spec:
+      serviceAccountName: amortized-studio-gateway
+      containers:
+        # OpenShift OAuth in front of the gateway; passes the authenticated
+        # user to the gateway via X-Forwarded-User so it can route per-user.
+        - name: oauth-proxy
+          image: quay.io/openshift/origin-oauth-proxy:latest
+          ports:
+            - name: public
+              containerPort: 8443
+          args:
+            - --provider=openshift
+            - --https-address=:8443
+            - --http-address=
+            - --openshift-service-account=amortized-studio-gateway
+            - --upstream=http://localhost:8080
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --email-domain=*
+            - --skip-provider-button
+            - --pass-user-headers=true
+            - --cookie-samesite=none
+            - --cookie-secure=true
+          volumeMounts:
+            - name: proxy-tls
+              mountPath: /etc/tls/private
+            - name: proxy-cookie
+              mountPath: /etc/proxy/secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+        - name: gateway
+          image: image-registry.openshift-image-registry.svc:5000/meyceoz-amortized/studio-gateway:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: STUDIO_STATIC_UPSTREAM
+              value: "http://amortized-studio-static:8080"
+            # Shared MLflow upstream — set once the RHOAI-native MLflow is ready.
+            - name: MLFLOW_UPSTREAM
+              value: ""
+            - name: AMORTIZED_SERVER_IMAGE
+              value: "ghcr.io/amortized-ai/amortized:latest"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /gateway/healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /gateway/healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: proxy-tls
+          secret:
+            secretName: amortized-studio-gateway-tls
+        - name: proxy-cookie
+          secret:
+            secretName: amortized-studio-gateway-oauth
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-gateway
+  labels:
+    app: amortized
+    component: gateway
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: amortized-studio-gateway-tls
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: gateway
+  ports:
+    - name: public
+      port: 8443
+      targetPort: public
+---
+# Plain-HTTP service for the RHOAI dashboard proxy to target (authorize:true;
+# the dashboard enforces OpenShift auth and forwards the user token, which the
+# gateway resolves via TokenReview — no oauth-proxy on this path).
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-gateway-http
+  labels:
+    app: amortized
+    component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Public entrypoint for the whole hybrid studio.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: amortized-studio
+  labels:
+    app: amortized
+    component: gateway
+spec:
+  to:
+    kind: Service
+    name: amortized-studio-gateway
+  port:
+    targetPort: public
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect

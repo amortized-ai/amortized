@@ -1,0 +1,78 @@
+# Shared studio SPA (static). One deployment serves the UI to all users; the
+# gateway peels off /api, /agent, /mlflow before they reach here, so the nginx
+# proxy blocks below are never exercised (kept valid only so nginx starts).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio-static
+  labels:
+    app: amortized
+    component: studio-static
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: studio-static
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: studio-static
+    spec:
+      containers:
+        - name: studio
+          image: ghcr.io/amortized-ai/studio:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Unused at runtime (gateway intercepts these paths) but must be
+            # present + valid so the nginx template renders and starts.
+            - name: BACKEND_HOST
+              value: "amortized-server"
+            - name: BACKEND_PORT
+              value: "8000"
+            - name: AGENT_HOST
+              value: ""
+            - name: AGENT_PORT
+              value: "4096"
+            - name: MLFLOW_HOST
+              value: "mlflow"
+            - name: MLFLOW_PORT
+              value: "5000"
+            - name: DNS_RESOLVER
+              value: "172.30.0.10"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-static
+  labels:
+    app: amortized
+    component: studio-static
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: studio-static
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

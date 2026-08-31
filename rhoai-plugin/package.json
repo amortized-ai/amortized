@@ -1,0 +1,85 @@
+{
+  "name": "amortized-studio",
+  "version": "0.4.2",
+  "description": "A reference implementation and scaffold plugin for the RHOAI Dashboard",
+  "private": true,
+  "_comment_name": "[PLUGIN-SPECIFIC] package name — change to {your-plugin}",
+  "_comment_mf": "[PLUGIN-SPECIFIC] module-federation.name — camelCase, must match webpack and plugin.yaml",
+  "module-federation": {
+    "name": "amortizedStudio",
+    "remoteEntry": "remoteEntry.js",
+    "authorize": false,
+    "tls": false,
+    "proxy": [
+      {
+        "path": "/amortized-studio",
+        "pathRewrite": "/amortized-studio"
+      }
+    ],
+    "_comment_proxy": "[PLUGIN-SPECIFIC] proxy path must match route prefix in extensions.ts",
+    "local": {
+      "host": "localhost",
+      "port": 9500
+    },
+    "_comment_port": "[PLUGIN-SPECIFIC] dev port — any unused port works",
+    "service": {
+      "name": "odh-dashboard",
+      "port": 8443
+    }
+  },
+  "scripts": {
+    "build": "webpack --config config/webpack.prod.js",
+    "build:dev": "webpack --config config/webpack.dev.js",
+    "start:dev": "webpack serve --config config/webpack.dev.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test-unit": "jest",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run lint && npm test",
+    "lint": "npm run lint:ts && npm run lint:md",
+    "lint:ts": "eslint --ext .ts,.tsx src/",
+    "lint:md": "markdownlint-cli2 '**/*.md'",
+    "rename-plugin": "node scripts/rename-plugin.js",
+    "sync-chart-version": "node scripts/sync-chart-version.js",
+    "version": "npm run sync-chart-version && git add chart/Chart.yaml bff/package.json plugin.yaml README.md docs/development/BUILD_AND_PUSH.md docs/deployment/OPENSHIFT_DEPLOY.md"
+  },
+  "dependencies": {
+    "@openshift/dynamic-plugin-sdk": "^5",
+    "@patternfly/react-core": "^6",
+    "@patternfly/react-icons": "^6",
+    "@patternfly/react-table": "^6",
+    "lodash-es": "^4.18.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-router-dom": "^7"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "@types/lodash-es": "^4.17.12",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/react-router-dom": "^5",
+    "@typescript-eslint/eslint-plugin": "^7",
+    "@typescript-eslint/parser": "^7",
+    "css-loader": "^7",
+    "eslint": "^8",
+    "html-webpack-plugin": "^5",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "jsdom": "^29.1.1",
+    "markdownlint-cli2": "^0.23.0",
+    "mini-css-extract-plugin": "^2",
+    "style-loader": "^4",
+    "ts-jest": "^29.4.11",
+    "ts-loader": "^9",
+    "tsconfig-paths-webpack-plugin": "^4",
+    "typescript": "^5",
+    "webpack": "^5",
+    "webpack-cli": "^5",
+    "webpack-dev-server": "^5"
+  }
+}

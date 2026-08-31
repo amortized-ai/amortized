@@ -1,0 +1,32 @@
+# Built from the amortized repo ROOT (needs both studio/ and studio-gateway/):
+#   oc start-build studio-gateway --from-dir=. (repo root)
+# All base images are UBI (registry.access.redhat.com) to avoid Docker Hub
+# rate limits on the cluster.
+
+# 1) Build the studio SPA with the embed base path.
+FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS studio-builder
+WORKDIR /studio
+COPY --chown=default:root studio/package.json studio/package-lock.json ./
+RUN npm ci
+COPY --chown=default:root studio/ ./
+ARG VITE_BASE_PATH=/amortized-studio-embed
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
+RUN npm run build
+
+# 2) Install gateway dependencies.
+FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS gw-builder
+WORKDIR /app
+COPY --chown=default:root studio-gateway/package.json ./
+RUN npm install --omit=dev
+COPY --chown=default:root studio-gateway/src ./src
+
+# 3) Runtime: gateway + baked studio dist.
+FROM registry.access.redhat.com/ubi9/nodejs-22-minimal:latest
+WORKDIR /opt/app-root/src
+COPY --from=gw-builder --chown=1001:0 /app/node_modules ./node_modules
+COPY --from=gw-builder --chown=1001:0 /app/src ./src
+COPY --from=gw-builder --chown=1001:0 /app/package.json ./package.json
+COPY --from=studio-builder --chown=1001:0 /studio/dist ./studio-dist
+USER 1001:0
+EXPOSE 8080
+CMD ["node", "src/server.js"]
