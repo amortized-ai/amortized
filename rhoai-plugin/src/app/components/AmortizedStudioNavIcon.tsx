@@ -20,7 +20,7 @@ const AmortizedStudioNavIcon: React.FC = () => (
       fontWeight="bold"
       fontFamily="Arial, sans-serif"
     >
-      HW
+      AS
     </text>
   </svg>
 );

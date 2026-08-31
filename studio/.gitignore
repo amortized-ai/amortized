@@ -5,3 +5,6 @@ dist/
 .factory/
 research/screenshots/
 next-env.d.ts
+
+# Stale Next.js cruft (this is a Vite app)
+.next

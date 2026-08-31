@@ -20,11 +20,11 @@ describe('AmortizedStudioNavIcon (AmortizedStudioNavIcon) Component', () => {
     expect(svg).toHaveAttribute('aria-hidden', 'true');
   });
 
-  it('should render the HW text', () => {
+  it('should render the AS text', () => {
     const { container } = render(<AmortizedStudioNavIcon />);
     const textElement = container.querySelector('text');
     expect(textElement).toBeInTheDocument();
-    expect(textElement?.textContent).toBe('HW');
+    expect(textElement?.textContent).toBe('AS');
   });
 
   it('should render the rectangle background with purple fill', () => {
