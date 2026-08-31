@@ -2,8 +2,12 @@
 // stack is being created (~60-90s on first visit). Polls /gateway/ready and
 // reloads into the studio SPA once the backend is healthy.
 
-function renderSplash(state) {
+function renderSplash(state, basePath = '') {
   const isError = state && state.state === 'error';
+  // Poll/retry endpoints must include the embed prefix so requests from inside
+  // the dashboard iframe route back through the dashboard proxy to the gateway.
+  const readyUrl = `${basePath}/gateway/ready`;
+  const retryUrl = `${basePath}/gateway/retry`;
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';
@@ -55,6 +59,8 @@ function renderSplash(state) {
     <button class="hidden" id="retry" onclick="retry()">Retry</button>
   </div>
 <script>
+  var READY_URL = ${JSON.stringify(readyUrl)};
+  var RETRY_URL = ${JSON.stringify(retryUrl)};
   var POLL_MS = 2500;
   function show(el, on){ document.getElementById(el).classList.toggle('hidden', !on); }
   function toError(msg){
@@ -65,7 +71,7 @@ function renderSplash(state) {
     show('retry', true);
   }
   function poll(){
-    fetch('/gateway/ready', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+    fetch(READY_URL, { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(s){
         if (s.state === 'ready') { window.location.reload(); return; }
@@ -79,7 +85,7 @@ function renderSplash(state) {
     document.getElementById('spinner').classList.remove('hidden');
     document.getElementById('title').textContent = 'Preparing your Amortized Studio…';
     document.getElementById('detail').textContent = 'Retrying…';
-    fetch('/gateway/retry', { method: 'POST', cache: 'no-store' }).then(function(){ setTimeout(poll, POLL_MS); });
+    fetch(RETRY_URL, { method: 'POST', cache: 'no-store' }).then(function(){ setTimeout(poll, POLL_MS); });
   }
   ${isError ? 'toError(' + JSON.stringify(state.error || '') + ');' : 'setTimeout(poll, POLL_MS);'}
 </script>

@@ -151,7 +151,7 @@ app.use((req, res, next) => {
   const state = ensureUserStack(user);
   if (state.state === 'ready') return next();
   res.set('Cache-Control', 'no-store');
-  return res.status(200).send(renderSplash(state));
+  return res.status(200).send(renderSplash(state, EMBED_BASE));
 });
 
 // --- Shared studio SPA (static, catch-all) ----------------------------------
