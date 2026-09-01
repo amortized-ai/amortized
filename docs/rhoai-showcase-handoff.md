@@ -5,6 +5,41 @@ For a fresh session to fix the remaining pieces. Companion to
 `amortized-showcase-proveout`. Cluster: **pawshift**, user backend ns **`amz-esivaram`**,
 sandboxes in ns **`openshell`**, shared tier in ns **`amortized-showcase`**.
 
+## >>> NEXT SESSION — START HERE. GOAL: PMs run Amortized Studio on THEIR RHOAI cluster (turnkey) ASAP.
+
+**Mission:** enable Mustafa (`meyceoz`) + Xingyu to stand up Amortized Studio on a fresh RHOAI cluster with a **healthy operator** (not relying on pawshift's dead dashboard-operator). Two workstreams, both required: **7a (install + reconcile-safe plugin registration)** and **meta#3 (automated per-user provisioning)**. *(MLflow artifact-storage OOM = §5 is owned by another dev — out of scope here.)*
+**Definition of done:** a documented, repeatable path (scripted/manifested where possible; a clean manual runbook otherwise) that on a healthy-operator cluster: (1) installs the plugin + registers it so it **survives operator reconcile**, and (2) a per-user SSO login auto-provisions a fully-working Studio (backend + MLflow workspace + Morty). No step may depend on the operator being down.
+
+### Task 1 (7a.1 — the registration blocker; DO THIS FIRST)
+We proved (healthy RHOAI 3.3.1, `lab-cluster2`) that the RHODS-doc `oc set env MODULE_FEDERATION_CONFIG=<literal>` override is **NOT** clean: the `dashboard` controller owns that env via SSA and re-asserts `valueFrom`, so a literal `value:` collides (invalid) → Dashboard `Ready=False (Error)`. Editing the `federation-config` CM also reverts. Details: §7a, §10-A.
+**Find the REAL reconcile-safe registration by reading the actual code (not the doc one-liner):**
+- `github.com/rh-ai-community-plugins/community-plugins-admin` — its **BFF/Helm** registration path. Does it SSA-force-apply (take env-field ownership)? strip `valueFrom` and set `value:` cleanly? How does it bootstrap ITSELF without breaking the reconcile? (docs/architecture `PLUGIN_SYSTEM.md`, `BFF_PATTERN.md`; the code.)
+- `github.com/rh-ai-community-plugins/charter` — `docs/plugin-spec.md` (the supported `plugin.yaml` contract; Mustafa's plugin already conforms — `rhoai-plugin/plugin.yaml`).
+- `github.com/opendatahub-io/odh-dashboard` — does the controller support a **community/labeled-CM MERGE** hook in federation-config generation (esp. newer 3.4.x, matching pawshift)? Look at the modular-arch onboarding docs + the federation-config controller code.
+**Deliverable:** the correct way to register `amortizedStudio` (embedded nav) that survives a healthy operator → **validate on `lab-cluster2`** (healthy 3.3.1; esivaram provides oc login; full backup + restore — see the tested procedure/gotchas below) → then apply on pawshift + document for the PMs' cluster.
+**Fallback if no clean embedded-nav path exists:** `OdhApplication` tile (supported-ish — verify the modular dashboard renders tiles); a launcher tile that opens Studio is acceptable for turnkey.
+
+### Task 2 (meta#3 — automate per-user provisioning; details in §3)
+Fold ALL the currently-manual per-user wiring into the gateway provisioner (`studio-gateway/src/manifests.js` + `provision.js`) so a fresh `amz-<user>` login provisions FULLY with zero manual steps:
+- Add: `default`-SA MLflow RoleBindings; teacher-model keys (provider-agnostic — a shared secret the gateway stamps per-ns) + `AMORTIZED_FORWARD_ENV`.
+- **Automate the Morty sandbox**: templated `Sandbox` CR + **secret-mounted ADC** (not ephemeral `/workspace/adc.json`) + **FQDN egress policy** (`amortized-server.amz-<user>.svc.cluster.local` — short `.svc` → 403, opencode silently loses MCP tools) + `service expose`. Parameterize model creds (Vertex ADC vs Anthropic key).
+- Replace hardcoded cluster values with **discovery**: `OPENSHELL_GATEWAY_IP` (look up `svc/openshell` ClusterIP), DNS resolver, MLflow ClusterRole names, MLflow CA, `workspace==ns`. Full list: §3.
+
+### Already working — do NOT redo
+App fixes deployed + verified (server `f933958`, gateway `174d33b4`): stateless MCP, SDG gateway→provider remap, async agent (no 504), MLflow-UI base path. 3 tester backends (`amz-esivaram`/`amz-xingliu`/`amz-meyceoz`) SDG-verified. Commits on `rhoai-integration` (worktree `~/workspace/amortized-pr419`) → **PR #420** (stacked on Mustafa's #419).
+
+### Small user-facing bugs to also fix for the PMs (§9 — quick, same base-path class)
+- Morty option-card "view dataset/job/model" 404 in embed: `job-monitor-card.tsx` uses absolute `href="/jobs…"` → use React Router `navigate`.
+- "View in MLflow" opens unscoped/blank: `mlflowUiHref` omits `?workspace=<ns>` → append it.
+
+### Resources / access / gotchas
+- **This doc** (§1-§10) is the backlog + hand-patches ledger (§10). Memory: `amortized-showcase-proveout`. Packaging: `docs/rhoai-showcase-packaging.md` (§B2/§C/§D).
+- Clusters: **pawshift** (`api.h0p8o2c2b7w3r1y…`; operator OOMKilled — our hand-patches survive there but WON'T on a healthy cluster, see §10-A) + **lab-cluster2** (`api.lab-cluster2.qrj7…`; healthy RHOAI 3.3.1 — use for reconcile-safety tests). oc tokens expire (~hours); esivaram re-logs.
+- openshell CLI: `oc -n openshell port-forward svc/openshell 8080` + `~/.config/openshell/gateways/cluster/mtls`; `exec` needs `-n <name>`; `download` restricted to `/sandbox` (ADC source = local `~/.config/gcloud/application_default_credentials.json`, lightwell-devel). morty:aipcc digest + sandbox recipe: bottom of this doc.
+- **lab-cluster2 dashboard test (safe, reversible):** back up `rhods-dashboard` Deployment env + `federation-config` CM → mutate → force reconcile via `oc annotate dashboard default-dashboard …` → observe → restore by `oc patch` the env entry back to `valueFrom: configMapKeyRef(federation-config/module-federation-config.json)` (container[0]/env[0]) → force reconcile → confirm `Dashboard Ready=True`.
+
+---
+
 ## 2026-09-01 UPDATE — most gaps CLOSED (see the original handoff below for history)
 
 Fixed + deployed + verified this session (branch `rhoai-integration` = PR #419;
@@ -20,37 +55,100 @@ live in `amz-esivaram` + the shared tier). Browser-verified by esivaram (SDG e2e
   base on the anchor, NOT the workspace header, which the gateway does inject).
 - **gap #4 — embed 504**: async agent (turn_id + poll) deployed.
 
-## KNOWN GAPS & CAVEATS — mind these for testing (do NOT block the first tester round)
+## ISSUE / TODO BACKLOG (curated — for a future session to fix properly)
 
-1. **[SECURITY TODO] `/mlflow` UI proxy header hardening.** The gateway holds a
-   *cluster-wide* MLflow SA and isolates each user only by injecting
-   `X-MLFLOW-WORKSPACE=nsForUser(user)` from the SSO identity (`setHeader`, which
-   overwrites). TODO: explicitly *strip* any client-supplied `X-MLFLOW-WORKSPACE` /
-   `Authorization` on `/mlflow` before injecting (defense-in-depth). SSO-gated today so
-   not exploitable, but close before wider exposure. (Also in packaging §D.)
-2. **[meta#3, TOP packaging gap] Per-user Morty sandbox is manual + fragile.** ADC lives
-   on ephemeral `/workspace/adc.json` (lost on pod restart); create/egress/expose are
-   hand-done. Must become a templated Sandbox CR + mounted-Secret ADC in the gateway
-   provisioner. Until then a Morty pod restart silently loses auth.
-3. **Backend/naming mismatch.** Backends: `amz-esivaram`, `amz-xingliu`. Morty sandboxes:
-   esivaram / meyceoz / xingyu. `amz-xingliu` ≠ `morty-xingyu` — confirm who's who.
-   Mustafa (`meyceoz`) has a sandbox but NO backend yet (auto-provisions on first login,
-   gets server `:showcase`=f933958).
-4. **Testers need the new server image.** `amz-xingliu` runs the `:showcase` tag on a
-   stale pod → restart it to pull `f933958`. New provisions get it automatically.
-5. **[§D5] Stale browser cache after a gateway redeploy.** SPA `index.html` has no
-   `Cache-Control` → hard-refresh (Cmd+Shift+R) after any gateway rebuild or you load an
-   old/broken bundle. TODO: `Cache-Control: no-cache` on the SPA HTML.
-6. **gap #3 — training UNTESTED.** Unblocked on data (an SDG dataset exists) but needs a
-   GPU; SDG→training chaining + `report_to: mlflow` unverified e2e.
-7. **`get_turn` MCP exclude** committed (`aab485a`) but not yet on the running server
-   (cosmetic; deploys with the next server build).
-8. **Direct-provider stopgap.** Teacher models come from a dropped-in `OPENAI_API_KEY`
-   (no MLflow AI Gateway); a funded key is required for a real SDG run.
-9. **Standalone Studio route** white-pages at `/` (built with base `/amortized-studio-embed`);
-   needs a `/`→`/amortized-studio-embed/` redirect. The embed path itself is fine.
-10. **mlflow-postgres durability.** The enterprise MLflow's backend postgres is `emptyDir`
-    → needs a PVC before any durable showcase.
+> Living backlog, grouped by area. Each item: what's wrong, root cause, where, proper fix.
+> Nothing here blocks the current chat+SDG tester round unless flagged. Append new issues
+> under the right section. **Tester setups `amz-esivaram` / `amz-xingliu` / `amz-meyceoz`
+> are all wired + SDG-verified as of 2026-09-01.**
+
+### 1. Ad-hoc stopgaps to REMOVE (band-aids over stale baked images / the missing model gateway)
+Added to make the showcase work; delete once the root causes (§2, §4) are fixed.
+**Sequencing: fix the baked images/gateway FIRST, then remove these — else chat→SDG breaks.**
+- **SDG provider remap** `gateway→<enabled>` — `src/amortized/jobs/sdg.py` (commit `a4d538f`). Rewrites any model_config `provider` not backed by a key to the primary enabled one. Papers over the baked skill's hardcoded `provider: "gateway"`.
+- **`model_providers.yaml` injection + `DATA_DESIGNER_HOME`** — `src/amortized/jobs/sdg.py` (commit `7588b15`). Papers over the job image's baked `gateway` default provider.
+- **`list_models` direct-provider fallback** + `src/amortized/core/model_catalog.py` — `src/amortized/api/models.py` (commit `7588b15`). Papers over the absent MLflow AI Gateway → make first-class or replace with a real gateway (§4).
+
+### 2. Morty image / skill rebuild (root cause of most of §1 + the gpt-5 bug)
+The **running morty image's baked skills are stale** (old copy; differ from the repo's #397 revamp). From inside a sandbox, `/workspace/skills/sdg/knowledge-ingestion/reference-payload.json` hardcodes:
+- `provider: "gateway"` → should take `provider` from `list_models` (fixing this removes §1's remap).
+- `temperature: 0.7` → **breaks gpt-5** (reasoning models reject non-default temperature: *"Unsupported value: 'temperature' does not support 0.7 … only default (1)"*; confirmed on failed jobs `df6c23f4`/`f11fba54`). Don't hardcode temperature, or make it model-aware. (esivaram declined a server-side shim — fix at the skill.)
+- Proper fix: decide the canonical skill source + **rebuild the morty image** (ties to §3), then recreate sandboxes.
+
+### 3. meta#3 — turnkey per-user provisioning (BIGGEST piece; must generalize to any OpenShift/RHOAI cluster)
+Gateway provisioner (`studio-gateway/src/manifests.js` + `provision.js`) creates the backend but not the full wiring, and hardcodes cluster values.
+- **Missing from the provisioner (currently hand-done per user):**
+  - `default`-SA MLflow RoleBindings (`amortized-job-mlflow-{view,edit}`) — job-pod MLflow auth.
+  - Teacher-model keys: `amortized-llm-keys` secret + `OPENAI_API_KEY` secretKeyRef env + `AMORTIZED_FORWARD_ENV`. Make **provider-agnostic** (list of key env names).
+  - The **Morty sandbox itself** — 100% manual (openshell CLI). Automate as a templated `Sandbox` CR the gateway applies.
+- **Morty creds delivery:** replace the ephemeral `/workspace/adc.json` upload with a **mounted Secret** (restart-safe). Parameterize provider: Vertex-Anthropic (ADC + project/location) vs direct **Anthropic key** vs other. Current default model = `google-vertex-anthropic/claude-opus-4-8`.
+- **Hardcoded cluster values to generalize:**
+  - `OPENSHELL_GATEWAY_IP=172.30.119.72` (shared-tier → hostAlias) → **discover** `svc/openshell` ClusterIP (or use DNS).
+  - `DNS_RESOLVER=172.30.0.10` → discover cluster DNS IP.
+  - Morty landlock egress host MUST be the **FQDN** `amortized-server.amz-<user>.svc.cluster.local` — short `.svc` → **403** and opencode silently loses its MCP tools.
+  - MLflow ClusterRole names `mlflow-operator-mlflow-{view,edit}` (RHOAI-specific); MLflow CA `openshift-service-ca.crt` (OpenShift-specific); `workspace==namespace` assumes `--enable-workspaces`.
+  - internal-registry image refs; DB creds `amortized/amortized` (generate a secret); GPU quota (`nvidia.com/gpu`, 1/user); storage class (cluster default).
+  - `EMBED_BASE_PATH=/amortized-studio-embed` must match the dashboard federation entry (paired constant).
+
+### 4. Model-provider story (decide the proper approach; removes §1's "fallback" framing)
+No MLflow AI Gateway on this cluster. Decide: stand up a gateway alternative (e.g. a LiteLLM proxy) vs. make the direct-provider path first-class. Affects `list_models`, the job provider config, and teacher-key delivery (§3).
+
+### 5. Training
+- **Artifact-upload OOM (root-caused).** The RHOAI operator-managed, cluster-wide MLflow (`MLflow` CR, 3Gi limit, `--serve-artifacts` proxy) is **OOMKilled** uploading the ~1.6GB `model.safetensors` (osft full model, Qwen3.5-0.8B). Same MinIO backend as KIND (`minio.amortized.svc:9000`); KIND worked only because its MLflow had no memory cap. **All artifact traffic goes through MLflow (AD-3; #344 removed the S3 bypass) — do NOT reintroduce direct-S3.** Options: (a) raise the operator MLflow memory via its CR (platform/cluster-admin; won't scale to 4B/9B); (b) [explore] `max_shard_size` so each proxied file stays under the cap (app-side, scales).
+- Full training e2e still unverified (GPU available on the cluster).
+
+### 6. Gateway polish (small, batch into one gateway rebuild)
+- `studio-gateway/src/manifests.js:36` stale JSDoc example `amortized-u-meyceoz` → `amz-meyceoz`.
+- **[SECURITY]** `/mlflow` proxy: strip any client-supplied `X-MLFLOW-WORKSPACE`/`Authorization` before injecting (defense-in-depth; SSO-gated today).
+- `Cache-Control: no-cache` on the SPA `index.html` (avoids stale-bundle-after-redeploy; §D-5).
+- Standalone route `/` → `/amortized-studio-embed/` redirect (white-page fix).
+
+### 7. Install & ownership boundary — what AMORTIZED sets up vs. true external prereqs
+Reframed (esivaram, 2026-09-01): standing up the amortized stack on a RHOAI cluster is **amortized's responsibility** — the starter-kit code/setup today, a future **`amortized controller`/operator** long-term — NOT a prereq. Only genuinely external platform infra are prereqs.
+
+**7a. Amortized install responsibilities (starter kit today → candidate `amortized controller` jobs):**
+- **Community dashboard plugin install.** Build + deploy the plugin + `studio-gateway` (shared tier) AND **register it in the dashboard**. Registration is the hard part: **the `federation-config` takeover is UNSUPPORTED** — `module-federation-config.json` is generated by the dashboard-operator from a compiled-in Go registry; our hand-patch (`amortizedStudio` → `amortized-studio-gateway-http`) survives only because that operator is OOMKilled. Real paths (ranked, packaging §C research): (1) custom dashboard-operator build with `amortizedStudio` in the registry (reconcile-safe but invasive on a shared cluster); (2) hand-edit + keep operator from reconciling (current; fragile); (3) OdhApplication tile (supported-ish; a tile, not embedded nav); (4) upstream RFE for a labeled-CM merge extension. **[#1 generalization blocker.]** Currently written as manual [DONE] steps in packaging §B2 — needs to become first-class kit/controller install. **Tested 2026-09-01 (healthy RHOAI 3.3.1, lab-cluster2):** the RHODS-community-doc `oc set env MODULE_FEDERATION_CONFIG=<literal>` override is NOT clean — it collides with the controller's SSA `valueFrom` ownership and errors the Dashboard reconcile (see §10-A). So this is still a real blocker; the path is the **rh-ai-community-plugins framework** (`community-plugins-admin` + `charter`, which Mustafa's `plugin.yaml` already targets) — next step is to validate that tool's *actual* registration mechanism (not the doc's one-liner) on the target RHOAI version.
+- **OpenShell for sandboxed Morty.** Install the OpenShell gateway + agent-sandbox (privileged SCC, mTLS certs). It exists to sandbox Morty (an amortized feature), so roll it up as an amortized-controller install job — not a bare prereq.
+- **Per-user provisioning** — the gateway provisioner (meta#3, §3): backend + MLflow RBAC + teacher keys + Morty sandbox.
+- The shared tier itself (gateway/plugin images, oauth-proxy, cross-ns RBAC, secrets).
+
+**7b. True external prerequisites (platform must already provide; amortized does NOT own — see Q1/Q2 MLflow boundary):**
+- RHOAI dashboard + MLflow operator (+ `--enable-workspaces`) + a **durable** cluster MLflow (backend DB + artifact store).
+- MinIO/S3 (or the MLflow's artifact backend).
+- cluster-admin for cross-ns RBAC / CRD installs.
+
+> **`amortized controller` (future):** an operator whose job is to install/reconcile all of 7a (plugin registration, OpenShell, per-user provisioning) — the clean long-term home for these responsibilities, so a fresh RHOAI cluster gets amortized turnkey.
+
+### 8. Housekeeping / status caveats
+- `get_turn` MCP exclude (`aab485a`) committed but not yet in the deployed server image (rides the next server build; cosmetic).
+- PR **#420** (stacked on #419) — needs review/merge coordination with Mustafa's #419.
+- **`mlflow-postgres` durability — NOT amortized's concern (flag to the MLflow owner).** The cluster MLflow's backend/metadata store is `postgresql://mlflow-postgres.amortized.svc:5432/mlflow` — a **hand-rolled** postgres in ns `amortized` (no ownerRefs/labels, created 2026-08-27; not controller-managed) on **`emptyDir`**. A pod restart loses ALL run/experiment metadata (MinIO artifacts survive but get orphaned). Per AD-1 (plug into infra, don't own it), amortized should **assume a durable MLflow is provided**; the emptyDir is a setup shortcut by whoever stood up the enterprise MLflow (xingyu) → flag to them, don't fix in amortized. (Recorded here only as a known showcase-env risk; see §7 prereqs.)
+- **Stale `amortized-u-*` backends coexist with `amz-*`.** `amortized-u-{meyceoz,xingliu}` (meyceoz's original PR #419 dev backends, ~4d old) still exist alongside the new `amz-*`. The dashboard federation routes to OUR gateway (`amortized-studio-gateway-http`@`amortized-showcase` → `amz-<user>`), so testers' NEW data lands in `amz-<user>`; but the MLflow workspace dropdown (gateway SA has cluster-wide MLflow access) also shows the old `amortized-u-*`, causing confusion (Mustafa picked `amortized-u-meyceoz`). Fixing §9's `?workspace=` auto-scoping sidesteps it; also consider deleting the stale `amortized-u-*` backends. (esivaram has no `amortized-u-esivaram`, so he didn't see the extra option.)
+
+### 9. Studio (frontend) — embed base-path navigation bugs
+- **Morty option-card "view" actions 404 in the embed** (reported 2026-09-01, xingliu + meyceoz). Clicking Morty's **"view dataset"** (after SDG finishes), **"view job"** (on job start), or **"view model"** navigates to the RHOAI dashboard's "We can't find that page" — and can render the whole dashboard *inside* the Studio iframe ("rhoai inside rhoai"). Root cause: `studio/src/features/chat/components/job-monitor-card.tsx` uses **raw absolute anchors** — `href="/jobs?job=…"` (L218), `href={mlflowRunId ? "/models?run=…" : "/models"}` (L226), `href="/datasets?job=…"` (L233) — which bypass the SPA router basename (`/amortized-studio-embed`), so the browser does a full-page nav to the dashboard origin instead of SPA-routing. (Other chat navs use React Router `navigate()` and work.) **Fix:** use React Router (`Link`/`useNavigate`) for these SPA-internal routes (or base-prefix them). Same class as the gap #2 MLflow-link fix (`mlflowUiHref`). Embed-only — standalone (base `/`) is unaffected. Small, high-visibility (breaks a core demo interaction).
+- **"View in MLflow" opens a blank/unscoped MLflow home** (reported 2026-09-01, Mustafa; esivaram hit it too). The enterprise MLflow UI (`--enable-workspaces`) needs a `?workspace=<ns>` param to scope; `mlflowUiHref` (`studio/src/lib/api-client.ts`) builds `/mlflow/#<hash>` **without** it, so MLflow opens with **no workspace selected → blank home** until the user manually picks their workspace from the dropdown. Fix: append `?workspace=<user-workspace>` to the URL. The studio must know its workspace (== the backend's `AMORTIZED_MLFLOW_WORKSPACE` == namespace) — expose it (e.g. an `/api` config field) and append it. Must agree with the gateway's injected `X-MLFLOW-WORKSPACE` on the `/mlflow` proxy. (Pairs with the `mlflowUiHref` base-path fix already shipped in gap #2.)
+
+### 10. Hand-patches ledger (out-of-band cluster changes NOT in committed manifests)
+Best-effort consolidation from our records + this session — **not guaranteed exhaustive**; a definitive audit = diff the live cluster vs the manifests. Everything here must be reproduced by the kit / `amortized controller` (§7a) or it won't survive a fresh (or healthy-operator) cluster.
+
+**A. Operator-owned resources we patched → THESE REVERT ON A HEALTHY CLUSTER (dangerous):**
+- **`federation-config` CM `amortizedStudio` entry** (plugin registration). Owned by the dashboard controller (SSA; regenerates the CM from a built-in registry AND owns the Deployment's `MODULE_FEDERATION_CONFIG` env, bound `valueFrom: configMapKeyRef`). Currently survives on pawshift only because the dashboard-operator is OOMKilled. **CORRECTION (tested 2026-09-01 on a healthy RHOAI 3.3.1, lab-cluster2): the RHODS-doc `oc set env … MODULE_FEDERATION_CONFIG=<literal>` override does NOT cleanly work** — the controller re-asserts `valueFrom`, colliding with the literal `value:` (`value`+`valueFrom` is invalid) → the controller's apply is rejected and the Dashboard goes `Ready=False (Error)`. So the env-override is NOT a clean reconcile-safe fix (at least on 3.3.1). Real path = the rh-ai-community-plugins framework (community-plugins-admin + charter; Mustafa's plugin.yaml targets it) — but its *actual* registration mechanism must be validated (the doc's one-liner is insufficient); still likely needs proper SSA field-ownership or a controller merge-hook / newer dashboard version.
+- **`rhods-dashboard` HTTPRoute `timeouts.request/backendRequest=300s`** (the 504 workaround). Owned by `Dashboard/default-dashboard` (opendatahub-operator). **Likely OBSOLETE** now (the async-agent fix removed long single requests) → reverting on a healthy cluster should be fine; verify async fully covers it before relying on that.
+
+**B. One-time cluster setup (not operator-owned, but not in committed manifests → kit must reproduce):**
+- `amortized-studio-gateway-oauth` cookie secret (out-of-band).
+- `openshell-client-tls` secret copied from ns `openshell` into the shared tier + each per-user ns.
+- Cross-ns image-puller RBAC (`system:image-puller` → `system:serviceaccounts` on `amortized-showcase`).
+- Gateway SA cluster-wide `mlflow-operator-mlflow-{view,edit}` bindings (for the `/mlflow` UI proxy).
+- `amortized-studio` Route (ns `amortized-showcase`, reencrypt TLS).
+- In-cluster image builds (BuildConfigs `amortized`/`studio-gateway`/`amortized-studio-plugin`) + `oc set image` deploys (server `f933958`, gateway `174d33b4`) — internal-registry images, not a published kit registry.
+
+**C. Per-user manual wiring (also in §3 meta#3 — recorded, not yet in the provisioner):**
+- `amz-<user>`: `amortized-llm-keys` secret + `OPENAI_API_KEY` env + `AMORTIZED_FORWARD_ENV` + `default`-SA MLflow RoleBindings.
+- Morty sandboxes (openshell CLI: create + ADC upload + `service expose` + FQDN egress policy).
+
+**Recorded today across:** packaging §C (cluster-side) / §B2 / §D; this backlog §3/§7; memory `amortized-showcase-proveout`. **TODO:** converge all of A/B/C into kit install manifests + the `amortized controller` so none are manual, and run a live-vs-manifests diff to catch anything this ledger missed.
 
 ---
 
