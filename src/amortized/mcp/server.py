@@ -82,6 +82,7 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
             "send_message_agent_session__session_id__message_post",
             "get_session_messages_agent_session__session_id__message_get",
             "get_pending_agent_session__session_id__pending_get",
+            "get_turn_agent_session__session_id__turn__turn_id__get",
             "generate_title_agent_title_post",
             "agent_health_agent_health_get",
         ],
