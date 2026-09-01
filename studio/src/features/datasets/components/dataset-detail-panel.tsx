@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EditableTitle } from "@/components/editable-title"
-import { setMlflowRunTag } from "@/lib/api-client"
+import { mlflowUiHref, setMlflowRunTag } from "@/lib/api-client"
 import {
   Collapsible,
   CollapsibleContent,
@@ -79,7 +79,7 @@ export function DatasetDetailPanel({
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" asChild>
               <a
-                href={`/mlflow/#/experiments/${dataset.experiment_id}/runs/${dataset.run_id}`}
+                href={mlflowUiHref(`/experiments/${dataset.experiment_id}/runs/${dataset.run_id}`)}
                 target="_blank"
                 rel="noopener noreferrer"
               >

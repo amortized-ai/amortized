@@ -48,6 +48,13 @@ export function getBaseUrl(): string {
   return base === "/" ? "" : base.replace(/\/+$/, "")
 }
 
+// Href for the embedded MLflow UI, which the gateway serves under the SPA base
+// (same as the /mlflow API calls above). Anchors must carry the base so they
+// resolve under the dashboard embed prefix; standalone (base "/") is unchanged.
+export function mlflowUiHref(hashPath: string): string {
+  return `${getBaseUrl()}/mlflow/#${hashPath}`
+}
+
 function getAuthHeaders(): Record<string, string> {
   const { apiKey } = useSettingsStore.getState()
   if (apiKey) {

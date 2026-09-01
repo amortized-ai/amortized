@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { useModelRunData, useModelJobs } from "../api/use-models"
 import { formatDate, cn } from "@/lib/utils"
+import { mlflowUiHref } from "@/lib/api-client"
 import { EditableTitle } from "@/components/editable-title"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
 import { useNavigate } from "react-router"
@@ -145,9 +146,11 @@ export function ModelDetail({ name, versions, onBack, onDelete }: ModelDetailPro
           {latest.run_id && (
             <Button variant="outline" size="sm" asChild>
               <a
-                href={runData?.run.info.experiment_id
-                  ? `/mlflow/#/experiments/${runData.run.info.experiment_id}/runs/${latest.run_id}`
-                  : `/mlflow/#/runs/${latest.run_id}`}
+                href={mlflowUiHref(
+                  runData?.run.info.experiment_id
+                    ? `/experiments/${runData.run.info.experiment_id}/runs/${latest.run_id}`
+                    : `/runs/${latest.run_id}`
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
               >
