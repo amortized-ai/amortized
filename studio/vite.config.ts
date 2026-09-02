@@ -25,10 +25,9 @@ export default defineConfig({
         ...(proxy ? {} : { rewrite: (p: string) => p.replace(/^\/mlflow/, "") }),
       },
       "/agent": {
-        target: proxy ?? "http://localhost:4096",
+        target: proxy ?? "http://localhost:8000",
         changeOrigin: true,
         timeout: 120000,
-        ...(proxy ? {} : { rewrite: (p: string) => p.replace(/^\/agent/, "") }),
       },
     },
   },
