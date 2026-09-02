@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { EditableTitle } from "@/components/editable-title"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
+import { mlflowUiHref } from "@/lib/api-client"
 import {
   Collapsible,
   CollapsibleContent,
@@ -100,7 +101,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             {job.mlflow_run_id && (
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={`/mlflow/#/runs/${job.mlflow_run_id}`}
+                  href={mlflowUiHref(`/runs/${job.mlflow_run_id}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

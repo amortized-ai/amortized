@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-server
+  labels:
+    app: amortized
+    component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: server
+    spec:
+      serviceAccountName: amortized-server
+      # Route the agent proxy's Host header to Morty's opencode via the OpenShell gateway:
+      # map the exposed sandbox hostname to the gateway ClusterIP (SNI matches *.openshell.localhost).
+      # NOTE: gateway ClusterIP is cluster-specific; templatize for packaging.
+      hostAliases:
+        - ip: "172.30.119.72"
+          hostnames:
+            - default--morty-aipcc--opencode.openshell.localhost
+      initContainers:
+        - name: wait-for-db
+          image: quay.io/sclorg/postgresql-16-c9s:latest
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h postgres -p 5432 -U amortized; do echo waiting for db; sleep 2; done"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+        - name: migrate
+          image: image-registry.openshift-image-registry.svc:5000/amortized-showcase/amortized:showcase
+          imagePullPolicy: Always
+          command:
+            - sh
+            - -c
+            - "cd /app && alembic upgrade head"
+          envFrom:
+            - configMapRef:
+                name: amortized-config
+            - secretRef:
+                name: amortized-s3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: server
+          image: image-registry.openshift-image-registry.svc:5000/amortized-showcase/amortized:showcase
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: amortized-config
+            - secretRef:
+                name: amortized-s3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: mlflow-ca
+              mountPath: /etc/mlflow-ca
+              readOnly: true
+            - name: openshell-mtls
+              mountPath: /etc/openshell-mtls
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: amortized-server-data
+        # Auto-injected by the OpenShift service-ca operator in every namespace;
+        # verifies the enterprise MLflow service-serving certificate.
+        - name: mlflow-ca
+          configMap:
+            name: openshift-service-ca.crt
+            items:
+              - key: service-ca.crt
+                path: service-ca.crt
+        # OpenShell gateway client cert (mTLS). Copied from ns openshell (out-of-band,
+        # not in git). See docs/rhoai-showcase-packaging.md.
+        - name: openshell-mtls
+          secret:
+            secretName: openshell-client-tls

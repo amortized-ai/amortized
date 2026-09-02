@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { useUIStore } from "@/stores/ui-store"
 import { cn } from "@/lib/utils"
+import { mlflowUiHref } from "@/lib/api-client"
 import { TUTORIAL_STEPS } from "./tutorial-steps"
 
 interface TargetRect {
@@ -480,7 +481,7 @@ export function TutorialOverlay() {
                 MLflow
               </a>
               <a
-                href="/mlflow/#/gateway"
+                href={mlflowUiHref("/gateway")}
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
                 <Zap className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Configure AI Gateway

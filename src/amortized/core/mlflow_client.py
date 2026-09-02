@@ -8,7 +8,65 @@ from typing import Any
 
 import httpx
 
+from amortized import config as config_mod
+
 logger = logging.getLogger("amortized.core.mlflow_client")
+
+# RHOAI enterprise MLflow (kubernetes-auth) authorizes via SelfSubjectAccessReview
+# on a bearer token and scopes requests to a workspace via this header.
+_WORKSPACE_HEADER = "X-MLFLOW-WORKSPACE"
+_K8S_NAMESPACE_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+
+def _read_file(path: str) -> str | None:
+    try:
+        with open(path) as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+class _MLflowAuth:
+    """Per-request auth headers + TLS verification resolved from settings.
+
+    Mirrors the RHOAI MLflow ``kubernetes-namespaced`` client: a K8s bearer
+    token plus an ``X-MLFLOW-WORKSPACE`` header. The token is re-read on every
+    request so rotation of a projected service-account token is picked up.
+    Empty ``mlflow_tracking_token_file`` disables auth (self-hosted MLflow).
+    """
+
+    def __init__(self, token_file: str, workspace: str, verify: bool | str) -> None:
+        self._token_file = token_file
+        self._workspace = workspace
+        self.verify = verify
+
+    @classmethod
+    def from_settings(cls) -> _MLflowAuth:
+        settings = config_mod.settings
+        if settings.mlflow_tracking_insecure_tls:
+            verify: bool | str = False
+        elif settings.mlflow_ca_bundle:
+            verify = settings.mlflow_ca_bundle
+        else:
+            verify = True
+        workspace = settings.mlflow_workspace
+        if settings.mlflow_tracking_token_file and not workspace:
+            workspace = _read_file(_K8S_NAMESPACE_PATH) or ""
+        return cls(settings.mlflow_tracking_token_file, workspace, verify)
+
+    def headers(self) -> dict[str, str]:
+        if not self._token_file:
+            return {}
+        token = _read_file(self._token_file)
+        if not token:
+            raise RuntimeError(
+                f"MLflow bearer auth is configured but token file {self._token_file!r} "
+                "is empty or unreadable"
+            )
+        headers = {"Authorization": f"Bearer {token}"}
+        if self._workspace:
+            headers[_WORKSPACE_HEADER] = self._workspace
+        return headers
 
 
 class MLflowClient:
@@ -18,13 +76,19 @@ class MLflowClient:
         self._base = tracking_uri.rstrip("/")
         self._timeout = timeout
         self._artifact_prefix_cache: dict[str, str] = {}
+        self._auth = _MLflowAuth.from_settings()
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            timeout=self._timeout, verify=self._auth.verify, headers=self._auth.headers()
+        )
 
     def _url(self, path: str) -> str:
         return f"{self._base}{path}"
 
     async def list_experiment_ids(self, max_results: int = 200) -> list[str]:
         """Return all experiment IDs."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/experiments/search"),
                 json={"max_results": max_results},
@@ -34,7 +98,7 @@ class MLflowClient:
 
     async def get_experiment(self, name: str) -> str | None:
         """Get an experiment ID by name. Returns None if it doesn't exist."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url("/api/2.0/mlflow/experiments/get-by-name"),
                 params={"experiment_name": name},
@@ -50,7 +114,7 @@ class MLflowClient:
 
     async def ensure_experiment(self, name: str) -> str:
         """Get or create an experiment by name. Returns the experiment ID."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url("/api/2.0/mlflow/experiments/get-by-name"),
                 params={"experiment_name": name},
@@ -131,7 +195,7 @@ class MLflowClient:
         }
         if name:
             body["run_name"] = name
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/runs/create"),
                 json=body,
@@ -156,7 +220,7 @@ class MLflowClient:
         """Upload an artifact to a run."""
         prefix = await self._resolve_artifact_prefix(run_id)
         full_path = f"{prefix}/{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.put(
                 self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
                 content=content,
@@ -170,7 +234,7 @@ class MLflowClient:
         payload: dict[str, Any] = {"run_id": run_id, "status": status}
         if status == "FINISHED":
             payload["end_time"] = now_ms
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/runs/update"),
                 json=payload,
@@ -186,7 +250,7 @@ class MLflowClient:
 
     async def get_run(self, run_id: str) -> dict[str, Any]:
         """Fetch a run by ID. Returns the full run dict."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url("/api/2.0/mlflow/runs/get"),
                 params={"run_id": run_id},
@@ -203,7 +267,7 @@ class MLflowClient:
         max_results: int = 100,
     ) -> list[dict[str, Any]]:
         """Search runs across experiments."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             payload: dict[str, Any] = {
                 "experiment_ids": experiment_ids,
                 "max_results": max_results,
@@ -222,7 +286,7 @@ class MLflowClient:
 
     async def delete_run(self, run_id: str) -> None:
         """Delete a run. Silently ignores 404."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/runs/delete"),
                 json={"run_id": run_id},
@@ -232,7 +296,7 @@ class MLflowClient:
 
     async def set_tag(self, run_id: str, key: str, value: str) -> None:
         """Set a tag on a run."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/runs/set-tag"),
                 json={"run_id": run_id, "key": key, "value": value},
@@ -241,7 +305,7 @@ class MLflowClient:
 
     async def list_artifacts(self, run_id: str, path: str = "") -> list[dict[str, Any]]:
         """List artifacts under *path* for a run. Returns empty list on 404."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             params: dict[str, str] = {"run_id": run_id}
             if path:
                 params["path"] = path
@@ -259,7 +323,7 @@ class MLflowClient:
         try:
             prefix = await self._resolve_artifact_prefix(run_id)
             full_path = f"{prefix}/{path}"
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with self._client() as client:
                 resp = await client.head(
                     self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
                 )
@@ -271,7 +335,7 @@ class MLflowClient:
         """Download an artifact's raw bytes."""
         prefix = await self._resolve_artifact_prefix(run_id)
         full_path = f"{prefix}/{path}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
             )
@@ -304,7 +368,7 @@ class MLflowClient:
         description: str = "",
     ) -> bool:
         """Register a model version from a run. Returns True on success."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/registered-models/create"),
                 json={"name": name},
@@ -329,10 +393,8 @@ class MLflowClient:
             logger.info("Registered model version %s from run %s", name, run_id)
         return True
 
-    async def set_registered_model_tag(
-        self, name: str, key: str, value: str
-    ) -> None:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+    async def set_registered_model_tag(self, name: str, key: str, value: str) -> None:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("/api/2.0/mlflow/registered-models/set-tag"),
                 json={"name": name, "key": key, "value": value},
@@ -341,7 +403,7 @@ class MLflowClient:
 
     async def list_gateway_endpoints(self) -> list[dict[str, Any]]:
         """Fetch raw MLflow AI Gateway endpoint dicts."""
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url("/api/3.0/mlflow/gateway/endpoints/list"),
             )

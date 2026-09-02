@@ -56,4 +56,4 @@ export function parseModelSelection(encoded: string): { providerID: string; mode
   return { providerID: encoded.slice(0, idx), modelID: encoded.slice(idx + SEPARATOR.length) }
 }
 
-export const DEFAULT_CHAT_MODEL_SELECTION = encodeModelSelection("google-vertex-anthropic", "claude-opus-4-6@default")
+export const DEFAULT_CHAT_MODEL_SELECTION = encodeModelSelection("google-vertex-anthropic", "claude-opus-4-8@default")

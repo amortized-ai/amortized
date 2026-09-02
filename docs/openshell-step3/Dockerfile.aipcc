@@ -1,0 +1,22 @@
+FROM quay.io/aipcc/agentic-ci/openshell:0.3.27
+USER 0
+
+# aipcc base has no node — add it (mirrors RHOAI Containerfile.openshell)
+RUN dnf install -y --nodocs nodejs npm && dnf clean all
+ARG OPENCODE_VERSION=1.17.1
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} && opencode --version
+
+# Morty persona baked under /workspace (WORKDIR + forced cwd/HOME at runtime).
+# This base has no /sandbox and no fixed sandbox user, so we make /workspace
+# group-0 writable for OpenShift's random runtime UID (gid 0).
+RUN mkdir -p /workspace/.opencode/agents /workspace/skills
+COPY morty.md    /workspace/.opencode/agents/morty.md
+COPY sdg.md      /workspace/.opencode/agents/sdg.md
+COPY training.md /workspace/.opencode/agents/training.md
+COPY skills/     /workspace/skills/
+COPY opencode.json /workspace/opencode.json
+RUN chown -R 1001:0 /workspace && chmod -R g+rwX /workspace
+
+USER 1001
+WORKDIR /workspace
+ENV AGENT_NAME=opencode HOME=/workspace

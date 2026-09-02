@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Amortized on RHOAI showcase overlay.
+# Single-namespace deployment (server + jobs + postgres all in amortized-showcase),
+# reusing the cluster-central RHOAI enterprise MLflow and shared MinIO.
+# Mirrors the OpenShift-proven shapes (sclorg postgres, alembic migrate init).
+namespace: amortized-showcase
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - configmap.yaml
+  - s3-secret.yaml
+  - postgres.yaml
+  - server-pvc.yaml
+  - server-deployment.yaml
+  - server-service.yaml

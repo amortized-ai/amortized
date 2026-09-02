@@ -1,0 +1,18 @@
+FROM ghcr.io/nvidia/openshell-community/sandboxes/base:latest
+USER root
+RUN npm install -g opencode-ai
+# Morty persona. Baked under /sandbox (survives sandbox create — verified on the VM).
+# cwd for `opencode serve` is /sandbox, so opencode discovers agents from
+# /sandbox/.opencode/agents and reads skills at skills/ (mirrors the k8s deploy workdir).
+# Build context files are produced by `make prompt` in the amortized repo:
+#   morty.md    <- k8s/base/morty-prompt.md        (identity.md + workflow.md concatenated)
+#   sdg.md      <- k8s/base/morty-sdg-workflow.md
+#   training.md <- k8s/base/morty-training-workflow.md
+#   skills/     <- k8s/base/morty-skills/{sdg,training}
+COPY morty.md    /sandbox/.opencode/agents/morty.md
+COPY sdg.md      /sandbox/.opencode/agents/sdg.md
+COPY training.md /sandbox/.opencode/agents/training.md
+COPY skills/     /sandbox/skills/
+COPY opencode.json /sandbox/opencode.json
+RUN chown -R sandbox:sandbox /sandbox/.opencode /sandbox/skills /sandbox/opencode.json
+USER sandbox

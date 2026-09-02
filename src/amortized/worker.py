@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 import amortized.config as config_mod
+from amortized._mlflow_job_sitecustomize import SITECUSTOMIZE_SOURCE
 from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.jobs import deserialize_handle
@@ -54,6 +55,60 @@ def _wrap_command(
         post_chain = " && ".join(post_commands)
         return ["sh", "-c", f"{pre_chain} && {post_chain}"]
     return ["sh", "-c", pre_chain]
+
+
+# Where the job's config ConfigMap is mounted, and where the pod's own projected
+# service-account token lives — the client env below points MLflow at both.
+_JOB_CONFIG_DIR = "/amortized"
+_JOB_SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+
+def _read_local_file(path: str) -> str:
+    try:
+        with open(path) as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _inject_job_mlflow_auth(spec_env: dict[str, str], config_files: dict[str, str]) -> str | None:
+    """Wire the RHOAI enterprise MLflow auth into a dispatched job.
+
+    Job pods log to MLflow with a vanilla ``mlflow`` client (the CLI in pre/post
+    commands and TRL auto-logging), which the enterprise MLflow rejects without a
+    bearer token, an ``X-MLFLOW-WORKSPACE`` header, and trust of the service CA.
+    Bearer + workspace come from a ``sitecustomize.py`` header provider shipped in
+    the config dir; TLS trust and the token path use core MLflow env vars.
+
+    Only active when the server itself uses bearer auth (``mlflow_tracking_token_file``
+    set) — i.e. the enterprise MLflow. Returns a ``PYTHONPATH`` pre-command to
+    prepend so Python auto-imports the shipped ``sitecustomize.py``.
+    """
+    settings = config_mod.settings
+    if not settings.mlflow_tracking_token_file:
+        return None
+
+    spec_env["AMORTIZED_MLFLOW_WORKSPACE_AUTH"] = "1"
+    spec_env["AMORTIZED_MLFLOW_TOKEN_FILE"] = _JOB_SA_TOKEN
+    workspace = settings.mlflow_workspace or settings.compute_namespace
+    if workspace:
+        spec_env["MLFLOW_WORKSPACE"] = workspace
+
+    if settings.mlflow_tracking_insecure_tls:
+        spec_env["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
+    elif settings.mlflow_ca_bundle:
+        ca = _read_local_file(settings.mlflow_ca_bundle)
+        if ca:
+            config_files["service-ca.crt"] = ca
+            spec_env["MLFLOW_TRACKING_SERVER_CERT_PATH"] = f"{_JOB_CONFIG_DIR}/service-ca.crt"
+        else:
+            logger.warning(
+                "MLflow CA bundle %s is unreadable; job MLflow TLS will fail",
+                settings.mlflow_ca_bundle,
+            )
+
+    config_files["sitecustomize.py"] = SITECUSTOMIZE_SOURCE
+    return f"export PYTHONPATH={_JOB_CONFIG_DIR}${{PYTHONPATH:+:$PYTHONPATH}}"
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +328,7 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     # --- Resolve parent artifacts ---
     config_files: dict[str, str] = {}
+    mlflow_auth_pre_command = _inject_job_mlflow_auth(spec_env, config_files)
     config, parent_pre_commands = await _resolve_parent_artifacts(job, config)
 
     # --- Job-type-specific build ---
@@ -301,8 +357,12 @@ async def _run_job(job: dict[str, Any]) -> None:
     # Merge builder env into spec_env
     spec_env.update(result.env)
 
-    # Merge parent artifact pre_commands with builder pre_commands
+    # Merge parent artifact pre_commands with builder pre_commands. The
+    # PYTHONPATH export must run first so the shipped sitecustomize.py (MLflow
+    # auth) is active for the parent-artifact downloads too.
     all_pre_commands = parent_pre_commands + result.pre_commands
+    if mlflow_auth_pre_command:
+        all_pre_commands = [mlflow_auth_pre_command, *all_pre_commands]
 
     # Persist resolved config
     await _update_job(job_id, config=result.resolved_config)
