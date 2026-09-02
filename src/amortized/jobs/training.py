@@ -74,6 +74,10 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
 
+    # Keep each safetensors shard under 500MB so the MLflow --serve-artifacts
+    # proxy (3Gi memory cap) doesn't OOM on large model uploads.
+    thub_config.setdefault("max_shard_size", "500MB")
+
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result
 
@@ -95,14 +99,36 @@ async def build(
     cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
 
     output_dir = config.get("output_dir", "/amortized/work/output")
-    post_cmd = (
+    max_shard = config.get("max_shard_size", "500MB")
+    config_files["reshard.py"] = "\n".join([
+        "import glob, os",
+        f"output_dir = '{output_dir}'",
+        "hf_dirs = sorted(glob.glob(os.path.join(output_dir, 'hf_format', '*')), key=os.path.getmtime)",
+        "model_dir = hf_dirs[-1] if hf_dirs else output_dir",
+        f"max_shard_size = '{max_shard}'",
+        "print(f'Re-sharding model in {model_dir} with max_shard_size={max_shard_size}')",
+        "from transformers import AutoModelForCausalLM",
+        "m = AutoModelForCausalLM.from_pretrained(model_dir)",
+        "m.save_pretrained(model_dir, max_shard_size=max_shard_size)",
+        "orig = os.path.join(model_dir, 'model.safetensors')",
+        "if os.path.exists(orig) and len([f for f in os.listdir(model_dir) if f.startswith('model-') and f.endswith('.safetensors')]) > 0:",
+        "    os.remove(orig)",
+        "    print(f'Removed original {orig}')",
+        "print('Re-sharding complete')",
+        "for f in sorted(os.listdir(model_dir)):",
+        "    size = os.path.getsize(os.path.join(model_dir, f))",
+        "    if size > 1024:",
+        "        print(f'  {f}: {size / 1024 / 1024:.1f} MB')",
+    ])
+    reshard_cmd = "python3 /amortized/reshard.py"
+    upload_cmd = (
         f"mlflow artifacts log-artifacts -l {shlex.quote(output_dir)} -r $MLFLOW_RUN_ID -a model"
     )
 
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
-        post_commands=[post_cmd],
+        post_commands=[reshard_cmd, upload_cmd],
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=IMAGE,
         resolved_config=dict(config),
