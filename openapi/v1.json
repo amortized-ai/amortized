@@ -1153,7 +1153,7 @@
         "tags": [
           "models"
         ],
-        "summary": "List available models from the MLflow AI Gateway.",
+        "summary": "List available models (MLflow AI Gateway, or direct providers via dropped-in keys).",
         "operationId": "list_models",
         "responses": {
           "200": {
@@ -1507,6 +1507,7 @@
           "agent"
         ],
         "summary": "Send Message",
+        "description": "Accept a message and run the turn in the background.\n\nReturns immediately with a ``turn_id``; the caller polls\n``GET /session/{id}/turn/{turn_id}`` for the result. A turn can run for many\nseconds (orchestrator + subagent), which would otherwise exceed intermediate\nproxy timeouts (e.g. the dashboard embed) and 504.",
         "operationId": "send_message_agent_session__session_id__message_post",
         "parameters": [
           {
@@ -1538,6 +1539,59 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Send Message Agent Session  Session Id  Message Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session/{session_id}/turn/{turn_id}": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Get Turn",
+        "operationId": "get_turn_agent_session__session_id__turn__turn_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "turn_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Turn Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Turn Agent Session  Session Id  Turn  Turn Id  Get"
                 }
               }
             }
