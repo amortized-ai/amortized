@@ -34,8 +34,13 @@ SESSION_TTL_HOURS = 4
 # ---------------------------------------------------------------------------
 
 
-# How many finished turns to retain per session for result polling.
+# Retention for finished turns awaiting a client poll. A finished result is kept
+# until the client has polled it (consumed) — never evicted merely because newer
+# turns arrived — with a TTL so an abandoned client's result eventually clears, and
+# a hard ceiling to bound memory against a client that never polls.
 MAX_TURNS_TRACKED = 8
+UNPOLLED_TURN_TTL = timedelta(minutes=10)
+MAX_TURNS_HARD = 64
 
 
 @dataclass
@@ -51,6 +56,8 @@ class TurnState:
     result: dict[str, Any] | None = None
     error: str | None = None
     error_status: int | None = None
+    consumed: bool = False
+    finished_at: datetime | None = None
     task: asyncio.Task[None] | None = None
 
 
@@ -365,24 +372,52 @@ async def get_session_messages(session_id: str) -> Any:
 
 
 def _evict_finished_turns(state: SessionState) -> None:
-    """Drop the oldest FINISHED turns beyond the retention cap.
+    """Bound per-session turn tracking without dropping a result the client hasn't read.
 
-    Active turns are never evicted: dropping one would discard its background result
-    (the client would poll until 404). In-flight tasks are separately anchored in
-    ``_background_tasks`` so they are not garbage-collected either.
+    A finished turn is evicted only once the client has polled it (``consumed``) or
+    its result has gone stale (older than ``UNPOLLED_TURN_TTL``) — so a finished
+    result is never discarded merely because newer turns arrived. Active turns are
+    never evicted (their background result would be lost; the task is also anchored
+    in ``_background_tasks``). ``MAX_TURNS_HARD`` is a last-resort ceiling that drops
+    the oldest finished turns regardless, bounding memory against a client that never
+    polls.
     """
+    now = datetime.now(UTC)
+
+    # Soft cap: evict oldest finished turns that are safe to drop — already polled
+    # (consumed) or stale past the TTL. Never drop active or fresh-unpolled results.
     over = len(state.turn_order) - MAX_TURNS_TRACKED
-    if over <= 0:
-        return
-    keep: list[str] = []
-    for tid in state.turn_order:
-        turn = state.turns.get(tid)
-        if over > 0 and (turn is None or not turn.active):
-            state.turns.pop(tid, None)
-            over -= 1
-        else:
-            keep.append(tid)
-    state.turn_order = keep
+    if over > 0:
+        keep: list[str] = []
+        for tid in state.turn_order:
+            turn = state.turns.get(tid)
+            safe = turn is None or (
+                not turn.active
+                and (
+                    turn.consumed
+                    or (turn.finished_at is not None and now - turn.finished_at > UNPOLLED_TURN_TTL)
+                )
+            )
+            if over > 0 and safe:
+                state.turns.pop(tid, None)
+                over -= 1
+            else:
+                keep.append(tid)
+        state.turn_order = keep
+
+    # Hard ceiling: bound memory even if results are still unpolled + fresh (a client
+    # that never polls). Drop oldest finished turns regardless of consumed/TTL.
+    over_hard = len(state.turn_order) - MAX_TURNS_HARD
+    if over_hard > 0:
+        keep_hard: list[str] = []
+        for tid in state.turn_order:
+            turn = state.turns.get(tid)
+            if over_hard > 0 and (turn is None or not turn.active):
+                state.turns.pop(tid, None)
+                over_hard -= 1
+            else:
+                keep_hard.append(tid)
+        state.turn_order = keep_hard
 
 
 @router.post("/session/{session_id}/message")
@@ -449,6 +484,7 @@ async def _run_turn(
     finally:
         if turn:
             turn.active = False
+            turn.finished_at = datetime.now(UTC)
         state.last_activity = datetime.now(UTC)
 
 
@@ -460,6 +496,8 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     turn = state.turns.get(turn_id)
     if not turn:
         raise HTTPException(status_code=404, detail="unknown turn")
+    if not turn.active:
+        turn.consumed = True  # client has the final result; safe to evict later
     return {
         "active": turn.active,
         "result": turn.result,
