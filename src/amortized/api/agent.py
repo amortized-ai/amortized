@@ -68,6 +68,10 @@ class SessionState:
 
 _sessions: dict[str, SessionState] = {}
 
+# Strong references to in-flight turn tasks so they are not garbage-collected before
+# completion (asyncio holds only weak references to tasks); each removes itself on done.
+_background_tasks: set[asyncio.Task[None]] = set()
+
 # ---------------------------------------------------------------------------
 # Shared HTTP client
 # ---------------------------------------------------------------------------
@@ -121,6 +125,9 @@ async def shutdown() -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await _cleanup_task
         _cleanup_task = None
+    for task in list(_background_tasks):
+        task.cancel()
+    _background_tasks.clear()
     if _http_client:
         await _http_client.aclose()
         _http_client = None
@@ -357,6 +364,27 @@ async def get_session_messages(session_id: str) -> Any:
     return await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
 
 
+def _evict_finished_turns(state: SessionState) -> None:
+    """Drop the oldest FINISHED turns beyond the retention cap.
+
+    Active turns are never evicted: dropping one would discard its background result
+    (the client would poll until 404). In-flight tasks are separately anchored in
+    ``_background_tasks`` so they are not garbage-collected either.
+    """
+    over = len(state.turn_order) - MAX_TURNS_TRACKED
+    if over <= 0:
+        return
+    keep: list[str] = []
+    for tid in state.turn_order:
+        turn = state.turns.get(tid)
+        if over > 0 and (turn is None or not turn.active):
+            state.turns.pop(tid, None)
+            over -= 1
+        else:
+            keep.append(tid)
+    state.turn_order = keep
+
+
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     """Accept a message and run the turn in the background.
@@ -380,9 +408,11 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     turn = TurnState()
     state.turns[turn_id] = turn
     state.turn_order.append(turn_id)
-    while len(state.turn_order) > MAX_TURNS_TRACKED:
-        state.turns.pop(state.turn_order.pop(0), None)
-    turn.task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
+    _evict_finished_turns(state)
+    task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
+    turn.task = task
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"turn_id": turn_id, "status": "processing"}
 
 

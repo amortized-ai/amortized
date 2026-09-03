@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shlex
 from typing import Any
 
@@ -131,8 +132,7 @@ async def build(
     # Direct-provider stopgap for the absent MLflow AI Gateway: the job image's
     # builtin default provider is `gateway` (a bundled MLflow gateway that does not
     # exist here), so write a model_providers.yaml with the providers enabled by
-    # dropped-in keys and point DATA_DESIGNER_HOME at it. api_key stays the env-var
-    # name; the key itself is forwarded into the pod (settings.forward_env).
+    # dropped-in keys and point DATA_DESIGNER_HOME at it.
     pre_commands: list[str] = []
     provider_defs = enabled_provider_defs()
     if provider_defs:
@@ -141,6 +141,14 @@ async def build(
             {"providers": provider_defs}, default_flow_style=False, sort_keys=False
         )
         env["DATA_DESIGNER_HOME"] = dd_home
+        # Deliver each enabled provider's key into the job (injected as a per-job
+        # Secret via spec.env) so the direct-provider path does not depend on the
+        # operator also listing the key in forward_env. api_key is an env-var name
+        # for builtin providers; literal keys are already inlined in the yaml above.
+        for pdef in provider_defs:
+            key_name = pdef.get("api_key", "")
+            if key_name.isupper() and "_" in key_name and key_name in os.environ:
+                env[key_name] = os.environ[key_name]
         pre_commands.append(
             f"mkdir -p {dd_home}"
             f" && cp /amortized/model_providers.yaml {dd_home}/model_providers.yaml"

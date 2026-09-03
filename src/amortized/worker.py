@@ -72,19 +72,37 @@ def _read_local_file(path: str) -> str:
 
 
 def _inject_job_mlflow_auth(spec_env: dict[str, str], config_files: dict[str, str]) -> str | None:
-    """Wire the RHOAI enterprise MLflow auth into a dispatched job.
+    """Wire MLflow TLS trust and (for the RHOAI enterprise MLflow) bearer auth into a job.
 
     Job pods log to MLflow with a vanilla ``mlflow`` client (the CLI in pre/post
-    commands and TRL auto-logging), which the enterprise MLflow rejects without a
-    bearer token, an ``X-MLFLOW-WORKSPACE`` header, and trust of the service CA.
-    Bearer + workspace come from a ``sitecustomize.py`` header provider shipped in
-    the config dir; TLS trust and the token path use core MLflow env vars.
+    commands and TRL auto-logging). TLS trust (a private CA, or insecure-skip) applies
+    whenever a tracking URI is configured — including a self-hosted MLflow over HTTPS
+    with no bearer auth. The enterprise MLflow additionally rejects requests without a
+    bearer token and an ``X-MLFLOW-WORKSPACE`` header; those come from a
+    ``sitecustomize.py`` header provider and are wired only when the server uses bearer
+    auth (``mlflow_tracking_token_file`` set).
 
-    Only active when the server itself uses bearer auth (``mlflow_tracking_token_file``
-    set) — i.e. the enterprise MLflow. Returns a ``PYTHONPATH`` pre-command to
-    prepend so Python auto-imports the shipped ``sitecustomize.py``.
+    Returns a ``PYTHONPATH`` pre-command to prepend so Python auto-imports the shipped
+    ``sitecustomize.py`` (only when bearer auth is active), else ``None``.
     """
     settings = config_mod.settings
+
+    # TLS trust applies whenever the job talks to MLflow, regardless of bearer auth.
+    if settings.mlflow_tracking_uri:
+        if settings.mlflow_tracking_insecure_tls:
+            spec_env["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
+        elif settings.mlflow_ca_bundle:
+            ca = _read_local_file(settings.mlflow_ca_bundle)
+            if ca:
+                config_files["service-ca.crt"] = ca
+                spec_env["MLFLOW_TRACKING_SERVER_CERT_PATH"] = f"{_JOB_CONFIG_DIR}/service-ca.crt"
+            else:
+                logger.warning(
+                    "MLflow CA bundle %s is unreadable; job MLflow TLS will fail",
+                    settings.mlflow_ca_bundle,
+                )
+
+    # Bearer + workspace auth (RHOAI enterprise MLflow) only when a token file is set.
     if not settings.mlflow_tracking_token_file:
         return None
 
@@ -93,19 +111,6 @@ def _inject_job_mlflow_auth(spec_env: dict[str, str], config_files: dict[str, st
     workspace = settings.mlflow_workspace or settings.compute_namespace
     if workspace:
         spec_env["MLFLOW_WORKSPACE"] = workspace
-
-    if settings.mlflow_tracking_insecure_tls:
-        spec_env["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
-    elif settings.mlflow_ca_bundle:
-        ca = _read_local_file(settings.mlflow_ca_bundle)
-        if ca:
-            config_files["service-ca.crt"] = ca
-            spec_env["MLFLOW_TRACKING_SERVER_CERT_PATH"] = f"{_JOB_CONFIG_DIR}/service-ca.crt"
-        else:
-            logger.warning(
-                "MLflow CA bundle %s is unreadable; job MLflow TLS will fail",
-                settings.mlflow_ca_bundle,
-            )
 
     config_files["sitecustomize.py"] = SITECUSTOMIZE_SOURCE
     return f"export PYTHONPATH={_JOB_CONFIG_DIR}${{PYTHONPATH:+:$PYTHONPATH}}"

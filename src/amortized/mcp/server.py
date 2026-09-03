@@ -7,8 +7,9 @@ External AI agents connect via the MCP HTTP transport at /mcp.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request, Response
 from fastapi_mcp import FastApiMCP
@@ -112,4 +113,22 @@ def _mount_http_stateless(mcp: FastApiMCP, app: FastAPI, mount_path: str = "/mcp
         return response
 
     mcp._http_transport = transport
+    app.state.mcp_transport = transport
     logger.info("MCP HTTP server (stateless) listening at %s", mount_path)
+
+
+async def shutdown_mcp_transport(transport: Any) -> None:
+    """Cancel the stateless MCP transport's background manager task on app shutdown.
+
+    ``_ensure_session_manager_started`` launches a task that blocks forever inside
+    ``StreamableHTTPSessionManager.run()``; nothing else cancels it. Cancelling exits
+    that context manager cleanly. No-op if the transport never started a session
+    manager (no MCP request was served).
+    """
+    if transport is None:
+        return
+    task = getattr(transport, "_manager_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task

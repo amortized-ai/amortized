@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -67,6 +67,18 @@ class Settings(BaseSettings):
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"
     )
+
+    @model_validator(mode="after")
+    def _require_https_for_bearer(self) -> "Settings":
+        """Refuse to send a bearer token over cleartext HTTP (CWE-319)."""
+        uri = self.mlflow_tracking_uri
+        if self.mlflow_tracking_token_file and uri and not uri.startswith("https://"):
+            raise ValueError(
+                "mlflow_tracking_token_file is set (MLflow bearer auth) but "
+                "mlflow_tracking_uri is not https:// — refusing to send the token in "
+                "cleartext. Use an https:// MLflow URI, or unset the token file."
+            )
+        return self
 
     @property
     def resolved_default_backend(self) -> str:

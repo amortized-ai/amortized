@@ -26,11 +26,11 @@ _PROVIDER_FIELDS = ("name", "endpoint", "provider_type", "api_key")
 
 def _key_available(api_key: str | None) -> bool:
     """A provider is usable if its api_key is a literal value, or an env-var name
-    (UPPER_SNAKE) that is set on the server."""
+    (UPPER_SNAKE) set to a non-empty value on the server."""
     if not api_key:
         return False
     if api_key.isupper() and "_" in api_key:
-        return os.environ.get(api_key) is not None
+        return bool(os.environ.get(api_key))
     return True
 
 
