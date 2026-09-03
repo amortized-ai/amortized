@@ -84,6 +84,18 @@ http://{{ include "amortized.minioFqdn" . }}:9000
 {{- end -}}
 {{- end -}}
 
+{{/*
+Secret holding SDG teacher-model provider keys, loaded into the server env.
+Empty output when no teacher keys are configured (falsy in `if`/`with`).
+*/}}
+{{- define "amortized.teacherKeysSecret" -}}
+{{- if .Values.teacherKeys.existingSecret -}}
+{{- .Values.teacherKeys.existingSecret -}}
+{{- else if .Values.teacherKeys.values -}}
+{{- .Values.teacherKeys.secretName -}}
+{{- end -}}
+{{- end -}}
+
 {{/* Render an image reference from an images.<component> block. */}}
 {{- define "amortized.image" -}}
 {{- printf "%s:%s" .repository (.tag | toString) -}}

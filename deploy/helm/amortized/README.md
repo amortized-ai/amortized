@@ -93,6 +93,26 @@ See `values.yaml` for the full list.
   Secret) or point `model.openai.existingSecret` at an existing Secret that holds
   `OPENAI_API_KEY`, and set `model.opencodeModel` to an OpenAI-compatible model.
 
+## SDG teacher model
+
+`model.*` selects **Morty's** own chat model. The **SDG teacher** (the model that
+generates synthetic data in dispatched SDG jobs) is configured separately via
+`teacherKeys`, so the two can differ (e.g. Morty on Vertex, teacher on OpenAI).
+
+The keys in `teacherKeys` are loaded into the amortized-server env — so
+`list_models` surfaces the provider and SDG jobs get a `model_providers.yaml` — and
+the `teacherKeys.forward` names are forwarded into SDG job pods.
+
+```bash
+# reference an existing secret holding OPENAI_API_KEY
+helm install amortized deploy/helm/amortized \
+  --set teacherKeys.existingSecret=amortized-llm-keys
+```
+
+For one OpenAI key to power both Morty and the teacher, point `model.openai` and
+`teacherKeys` at the same secret. **Requires** a server image with direct-provider
+support (amortized #427+); on an older image the teacher path is inert.
+
 ## OpenShift SCC note (bundled data stores)
 
 The bundled data-store images (PostgreSQL, MinIO, MLflow) run as **root**

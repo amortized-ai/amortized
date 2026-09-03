@@ -106,6 +106,25 @@ model:
     llmSecret: opencode-llm
     credentialsSecret: opencode-gcp
 
+# SDG teacher-model provider keys (data-designer direct providers). The referenced
+# keys are loaded into the amortized-server env (so list_models discovers the
+# provider and SDG jobs get a model_providers.yaml) and the `forward` names are
+# passed into SDG job pods. Independent of model.* (which selects Morty's own chat
+# model) — e.g. Morty on Vertex with an OpenAI teacher. Empty => no teacher keys.
+#
+# NOTE: needs a server image with direct-provider support (amortized #427+). For one
+# OpenAI key to power both Morty and the teacher, point model.openai and teacherKeys
+# at the same secret.
+teacherKeys:
+  # Reference an existing Secret whose keys are provider env-var names (recommended).
+  existingSecret: ""        # e.g. amortized-llm-keys (holds OPENAI_API_KEY)
+  # Or provide keys inline (templated into a Secret named secretName).
+  values: {}                # e.g. { OPENAI_API_KEY: "sk-..." }
+  secretName: amortized-teacher-keys
+  # Env-var names forwarded into SDG job pods (data-designer resolves them at runtime).
+  forward:
+    - OPENAI_API_KEY
+
 # Data stores. bundled=true deploys PostgreSQL + MinIO + MLflow in-namespace.
 # bundled=false skips them and wires the app to the external endpoints below.
 dataStores:

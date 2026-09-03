@@ -60,6 +60,10 @@ spec:
                 name: amortized-config
             - secretRef:
                 name: amortized-s3
+            {{- with (include "amortized.teacherKeysSecret" .) }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data

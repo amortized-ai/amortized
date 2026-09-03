@@ -17,6 +17,9 @@ data:
   AMORTIZED_MLFLOW_TRACKING_URI: {{ include "amortized.mlflowTrackingUri" . | quote }}
   AMORTIZED_GATEWAY_URL: {{ include "amortized.gatewayUrl" . | quote }}
   AMORTIZED_S3_BUCKET: {{ .Values.s3.bucket | quote }}
+  {{- if include "amortized.teacherKeysSecret" . }}
+  AMORTIZED_FORWARD_ENV: {{ .Values.teacherKeys.forward | toJson | quote }}
+  {{- end }}
   {{- with .Values.server.doclingUrl }}
   AMORTIZED_DOCLING_URL: {{ . | quote }}
   {{- end }}
