@@ -20,7 +20,7 @@ spec:
         component: opencode
     spec:
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       initContainers:
         - name: build-skills-tree
           image: {{ .Values.opencode.skillsInitImage }}

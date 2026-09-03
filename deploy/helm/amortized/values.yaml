@@ -15,6 +15,17 @@ global:
   # Empty string => use the cluster default StorageClass.
   storageClass: ""
 
+# Pod-level runAsNonRoot for the application pods (server, studio, opencode).
+# true (default) is correct for OpenShift: the restricted SCC injects a non-root
+# uid, so even root-based images (the server's postgres wait-for-db init, the
+# opencode image) run non-root and are admitted. On a vanilla cluster (e.g. kind)
+# there is no SCC to inject a uid, so those root images are rejected under
+# runAsNonRoot=true ("container has runAsNonRoot and image will run as root") —
+# set this to false there (see values-kind.yaml). Bundled data stores always run
+# as root regardless.
+security:
+  runAsNonRoot: true
+
 # Container images for the application components.
 images:
   server:
@@ -76,7 +87,7 @@ model:
   provider: vertex
   # Model string written into the OpenCode config (opencode.json). Keep the base
   # default for Vertex; set an OpenAI-compatible model string when provider=openai.
-  opencodeModel: "google-vertex-anthropic/claude-opus-4-6@default"
+  opencodeModel: "google-vertex-anthropic/claude-opus-4-8@default"
   openai:
     # API key stored in a Secret as OPENAI_API_KEY (used when existingSecret is empty).
     apiKey: ""

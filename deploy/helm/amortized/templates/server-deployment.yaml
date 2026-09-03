@@ -22,7 +22,7 @@ spec:
     spec:
       serviceAccountName: amortized-server
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       {{- if .Values.dataStores.bundled }}
       initContainers:
         - name: wait-for-db

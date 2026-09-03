@@ -21,7 +21,7 @@ spec:
         component: studio
     spec:
       securityContext:
-        runAsNonRoot: true
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       containers:
         - name: studio
           image: {{ include "amortized.image" .Values.images.studio }}

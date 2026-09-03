@@ -25,11 +25,14 @@ and are intentionally not included here.
 
 ## Quick start
 
-Bundled data stores (dev / self-contained):
+Bundled data stores (dev / self-contained, e.g. kind):
 
 ```bash
-helm install amortized deploy/helm/amortized
+helm install amortized deploy/helm/amortized -f deploy/helm/amortized/values-kind.yaml
 ```
+
+(`values-kind.yaml` relaxes `runAsNonRoot` for vanilla clusters — see the SCC note
+below. On OpenShift, drop that flag and use external data stores.)
 
 External data stores (production brings its own MLflow / S3 / PostgreSQL):
 
@@ -67,7 +70,8 @@ helm install amortized deploy/helm/amortized \
 | `studio.route.enabled` | `false` | create an OpenShift Route for Studio |
 | `dataStores.bundled` | `true` | deploy PostgreSQL + MinIO + MLflow in-namespace |
 | `model.provider` | `vertex` | `vertex` or `openai` |
-| `model.opencodeModel` | `google-vertex-anthropic/claude-opus-4-6@default` | model string in `opencode.json` |
+| `model.opencodeModel` | `google-vertex-anthropic/claude-opus-4-8@default` | model string in `opencode.json` |
+| `security.runAsNonRoot` | `true` | app pods runAsNonRoot; set `false` on vanilla/kind (see `values-kind.yaml`) |
 | `mlflow.trackingUri` / `mlflow.gatewayUrl` | `""` | external MLflow (when not bundled) |
 | `s3.bucket` / `s3.endpoint` / `s3.accessKey` / `s3.secretKey` | see values | object storage |
 | `database.url` | `""` | external PostgreSQL (when not bundled) |
@@ -101,8 +105,16 @@ On OpenShift either:
 - grant an SCC that permits running as root (e.g. `anyuid`) to the namespace's
   default ServiceAccount.
 
-The application pods (server, studio, opencode) keep the base's non-root
-`securityContext` and are compatible with `restricted-v2`.
+The application pods (server, studio, opencode) run with pod-level
+`runAsNonRoot` (value `security.runAsNonRoot`, default `true`). On OpenShift the
+SCC injects a non-root uid, so even the root-based images (the server's
+`wait-for-db` init uses the postgres image; the opencode image runs as root) are
+admitted under `restricted-v2`.
+
+On a **vanilla cluster with no SCC (e.g. kind)** those root images are rejected
+under `runAsNonRoot: true` (`container has runAsNonRoot and image will run as
+root`). Set `security.runAsNonRoot=false` (or install with `-f values-kind.yaml`)
+so they run as root there.
 
 ## Morty persona & skills
 
