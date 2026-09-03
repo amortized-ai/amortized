@@ -1,0 +1,68 @@
+{{- $mlflowHost := ternary (include "amortized.mlflowFqdn" .) .Values.studio.mlflowHost .Values.dataStores.bundled -}}
+{{- $mlflowPort := ternary "5000" (.Values.studio.mlflowPort | toString) .Values.dataStores.bundled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: studio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: studio
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: studio
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: studio
+          image: {{ include "amortized.image" .Values.images.studio }}
+          {{- with .Values.images.studio.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BACKEND_HOST
+              value: {{ include "amortized.serverFqdn" . | quote }}
+            - name: BACKEND_PORT
+              value: "8000"
+            - name: AGENT_HOST
+              value: {{ .Values.studio.agentHost | quote }}
+            - name: AGENT_PORT
+              value: {{ .Values.studio.agentPort | quote }}
+            - name: MLFLOW_HOST
+              value: {{ $mlflowHost | quote }}
+            - name: MLFLOW_PORT
+              value: {{ $mlflowPort | quote }}
+            - name: DNS_RESOLVER
+              value: {{ .Values.studio.dnsResolver | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.studio.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10

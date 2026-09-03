@@ -1,0 +1,148 @@
+{{- $openaiSecretName := .Values.model.openai.existingSecret | default .Values.model.openai.secretName -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencode
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: opencode
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: opencode
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: opencode
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: build-skills-tree
+          image: {{ .Values.opencode.skillsInitImage }}
+          securityContext:
+            runAsUser: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /flat
+              for f in *; do
+                [ "$f" = "*" ] && continue
+                dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
+                name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
+                mkdir -p "$dir"
+                cp "$f" "$dir/$name"
+              done
+          volumeMounts:
+            - name: morty-skills
+              mountPath: /flat
+              readOnly: true
+            - name: skills-tree
+              mountPath: /skills
+      containers:
+        - name: opencode
+          image: {{ include "amortized.image" .Values.images.opencode }}
+          {{- with .Values.images.opencode.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command: ["opencode", "serve", "--port", "4096", "--hostname", "0.0.0.0"]
+          workingDir: /app/workspace
+          ports:
+            - name: http
+              containerPort: 4096
+          env:
+            - name: HOME
+              value: /tmp
+            {{- if eq .Values.model.provider "vertex" }}
+            - name: GOOGLE_CLOUD_PROJECT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.model.vertex.llmSecret }}
+                  key: google-cloud-project
+            - name: VERTEX_LOCATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.model.vertex.llmSecret }}
+                  key: vertex-location
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: /app/gcp/credentials.json
+            {{- else if eq .Values.model.provider "openai" }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $openaiSecretName }}
+                  key: OPENAI_API_KEY
+            {{- else }}
+            {{- fail "model.provider must be either \"vertex\" or \"openai\"" }}
+            {{- end }}
+          volumeMounts:
+            - name: opencode-config
+              mountPath: /app/workspace/opencode.json
+              subPath: .opencode.json
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/workspace/.opencode/agents/morty.md
+              subPath: morty.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/workspace/.opencode/agents/sdg.md
+              subPath: morty-sdg-workflow.md
+              readOnly: true
+            - name: morty-prompt
+              mountPath: /app/workspace/.opencode/agents/training.md
+              subPath: morty-training-workflow.md
+              readOnly: true
+            - name: skills-tree
+              mountPath: /app/workspace/skills
+              readOnly: true
+            {{- if eq .Values.model.provider "vertex" }}
+            - name: gcp-credentials
+              mountPath: /app/gcp
+              readOnly: true
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.opencode.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: opencode-config
+          configMap:
+            name: opencode-config
+        - name: morty-prompt
+          configMap:
+            name: morty-config
+        - name: morty-skills
+          configMap:
+            name: morty-skills
+        - name: skills-tree
+          emptyDir: {}
+        {{- if eq .Values.model.provider "vertex" }}
+        - name: gcp-credentials
+          secret:
+            secretName: {{ .Values.model.vertex.credentialsSecret }}
+        {{- end }}

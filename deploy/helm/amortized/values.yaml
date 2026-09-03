@@ -1,0 +1,151 @@
+# Default values for the amortized core stack.
+# This is a single-tenant / per-namespace install. Override per environment.
+
+# Namespace the application components (server, studio, opencode, data stores)
+# are deployed into, and the namespace training/SDG jobs run in.
+namespace: amortized
+jobsNamespace: amortized-jobs
+
+# When true, the chart renders the two Namespace objects above. Set to false to
+# install into pre-existing namespaces (e.g. `helm install -n <ns>`).
+createNamespaces: true
+
+global:
+  # storageClassName applied to every PVC and volumeClaimTemplate.
+  # Empty string => use the cluster default StorageClass.
+  storageClass: ""
+
+# Container images for the application components.
+images:
+  server:
+    repository: ghcr.io/amortized-ai/amortized
+    tag: latest
+    pullPolicy: ""        # empty => Kubernetes default (Always for :latest)
+  studio:
+    repository: ghcr.io/amortized-ai/studio
+    tag: latest
+    pullPolicy: ""
+  opencode:
+    repository: ghcr.io/anomalyco/opencode
+    tag: latest
+    pullPolicy: Always    # matches the base manifest
+
+server:
+  # AMORTIZED_IMAGE_REGISTRY: registry the server composes job image refs from.
+  imageRegistry: ghcr.io/amortized-ai
+  # AMORTIZED_DATA_DIR: mount path for the server's working data.
+  dataDir: /data
+  persistence:
+    size: 200Gi
+  # Optional AMORTIZED_DOCLING_URL (document conversion service). Omitted when empty.
+  doclingUrl: ""
+  resources: {}
+
+studio:
+  # Hostname for the OpenShift Route (studio.route.enabled). Empty => the cluster
+  # generates a default route host.
+  host: ""
+  # In-cluster DNS resolver IP used by the Studio nginx proxy. Default is the
+  # standard Kubernetes kube-dns/CoreDNS service ClusterIP.
+  dnsResolver: "10.96.0.10"
+  agentHost: ""
+  agentPort: 4096
+  # MLflow host/port the Studio proxy points at when dataStores.bundled=false.
+  # When bundled, the in-cluster MLflow service is used automatically.
+  mlflowHost: ""
+  mlflowPort: 5000
+  resources: {}
+  route:
+    # OpenShift Route for Studio. Requires the route.openshift.io API (OpenShift).
+    enabled: false
+
+opencode:
+  # busybox image used by the init container that rebuilds the skills tree.
+  skillsInitImage: busybox:1.37
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# Model provider wiring for the OpenCode agent.
+model:
+  # "vertex" (Google Vertex AI via ADC, matches the base) or "openai".
+  provider: vertex
+  # Model string written into the OpenCode config (opencode.json). Keep the base
+  # default for Vertex; set an OpenAI-compatible model string when provider=openai.
+  opencodeModel: "google-vertex-anthropic/claude-opus-4-6@default"
+  openai:
+    # API key stored in a Secret as OPENAI_API_KEY (used when existingSecret is empty).
+    apiKey: ""
+    # Reference a pre-existing Secret that holds OPENAI_API_KEY instead of templating one.
+    existingSecret: ""
+    # Name of the Secret created when apiKey is set.
+    secretName: amortized-model
+  vertex:
+    # If both project and location are set, the opencode-llm Secret is templated;
+    # otherwise it (llmSecret) is expected to already exist in the namespace.
+    project: ""
+    location: ""
+    # ADC service-account JSON. If set, the opencode-gcp Secret is templated with
+    # a credentials.json key; otherwise credentialsSecret must already exist.
+    credentials: ""
+    llmSecret: opencode-llm
+    credentialsSecret: opencode-gcp
+
+# Data stores. bundled=true deploys PostgreSQL + MinIO + MLflow in-namespace.
+# bundled=false skips them and wires the app to the external endpoints below.
+dataStores:
+  bundled: true
+
+# --- Bundled data stores (used when dataStores.bundled=true) ---
+
+postgres:
+  image: docker.io/library/postgres:16-alpine
+  database: amortized
+  user: amortized
+  password: amortized
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+minio:
+  image: quay.io/minio/minio:latest
+  rootUser: minioadmin
+  rootPassword: minioadmin
+  persistence:
+    size: 1Ti
+  resources: {}
+
+minioInit:
+  image: docker.io/amazon/aws-cli:latest
+  waitImage: busybox:1.36
+
+mlflow:
+  image: ghcr.io/mlflow/mlflow:latest
+  persistence:
+    size: 200Gi
+  resources: {}
+  # --- External MLflow (used when dataStores.bundled=false) ---
+  trackingUri: ""   # e.g. https://mlflow.example.com
+  gatewayUrl: ""    # e.g. https://mlflow.example.com/gateway/mlflow/v1
+
+# S3 / object storage. bucket applies in both modes; endpoint/creds are used when
+# dataStores.bundled=false (bundled mode uses the in-cluster MinIO + its creds).
+s3:
+  bucket: amortized
+  endpoint: ""      # e.g. https://s3.us-east-1.amazonaws.com
+  accessKey: ""
+  secretKey: ""
+
+# External PostgreSQL (used when dataStores.bundled=false).
+database:
+  url: ""           # e.g. postgresql://user:pass@host:5432/amortized

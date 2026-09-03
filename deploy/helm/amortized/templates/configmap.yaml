@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: server
+data:
+  AMORTIZED_DATABASE_URL: {{ include "amortized.databaseUrl" . | quote }}
+  AMORTIZED_DATA_DIR: {{ .Values.server.dataDir | quote }}
+  AMORTIZED_COMPUTE_BACKEND: "kubernetes"
+  AMORTIZED_COMPUTE_NAMESPACE: {{ .Values.jobsNamespace | quote }}
+  AMORTIZED_IMAGE_REGISTRY: {{ .Values.server.imageRegistry | quote }}
+  AMORTIZED_EXTERNAL_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
+  AMORTIZED_AGENT_SERVER_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
+  AMORTIZED_MLFLOW_TRACKING_URI: {{ include "amortized.mlflowTrackingUri" . | quote }}
+  AMORTIZED_GATEWAY_URL: {{ include "amortized.gatewayUrl" . | quote }}
+  AMORTIZED_S3_BUCKET: {{ .Values.s3.bucket | quote }}
+  {{- with .Values.server.doclingUrl }}
+  AMORTIZED_DOCLING_URL: {{ . | quote }}
+  {{- end }}

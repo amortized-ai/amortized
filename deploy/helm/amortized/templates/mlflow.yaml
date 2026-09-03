@@ -1,0 +1,114 @@
+{{- if .Values.dataStores.bundled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: mlflow
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: mlflow
+    spec:
+      securityContext:
+        runAsNonRoot: false
+      containers:
+        - name: mlflow
+          image: {{ .Values.mlflow.image }}
+          command:
+            - "mlflow"
+            - "server"
+            - "--backend-store-uri"
+            - "sqlite:///mlflow/mlflow.db"
+            - "--default-artifact-root"
+            - "s3://{{ .Values.s3.bucket }}/mlflow/"
+            - "--artifacts-destination"
+            - "s3://{{ .Values.s3.bucket }}/mlflow/"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "5000"
+            - "--allowed-hosts"
+            - "*"
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE
+              value: "true"
+          envFrom:
+            - secretRef:
+                name: amortized-s3
+          volumeMounts:
+            - name: data
+              mountPath: /mlflow
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.mlflow.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mlflow-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-data
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: mlflow
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- include "amortized.storageClass" . | nindent 2 }}
+  resources:
+    requests:
+      storage: {{ .Values.mlflow.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: mlflow
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: mlflow
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+{{- end }}
