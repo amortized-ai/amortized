@@ -1,0 +1,71 @@
+# Server SA manages its own job workloads in the same namespace
+# (AMORTIZED_COMPUTE_NAMESPACE == the server namespace for this overlay).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: amortized-job-manager
+  labels:
+    app: amortized
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["create", "get", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-job-manager
+  labels:
+    app: amortized
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: amortized-job-manager
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+---
+# Grants the server SA read+write access to the enterprise MLflow via its
+# SelfSubjectAccessReview authz (checks verbs on mlflow.kubeflow.org virtual
+# resources in the workspace namespace == this namespace). The operator splits
+# read/write: -view grants get/list, -edit grants create/update/delete. amortized
+# both reads (ensure_experiment -> get-by-name) and writes, so it needs both.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-mlflow-view
+  labels:
+    app: amortized
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-operator-mlflow-view
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-mlflow-edit
+  labels:
+    app: amortized
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mlflow-operator-mlflow-edit
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server

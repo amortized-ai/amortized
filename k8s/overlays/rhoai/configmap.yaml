@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-config
+  labels:
+    app: amortized
+    component: server
+data:
+  AMORTIZED_DATABASE_URL: "postgresql://amortized:amortized@postgres:5432/amortized"
+  AMORTIZED_DATA_DIR: "/data"
+  AMORTIZED_COMPUTE_BACKEND: "kubernetes"
+  AMORTIZED_COMPUTE_NAMESPACE: "amortized-showcase"
+  AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"
+  AMORTIZED_EXTERNAL_URL: "http://amortized-server:8000"
+  AMORTIZED_AGENT_SERVER_URL: "http://amortized-server:8000"
+  AMORTIZED_S3_BUCKET: "amortized"
+  # --- Step B: enterprise MLflow (RHOAI operator), kubernetes-namespaced auth ---
+  AMORTIZED_MLFLOW_TRACKING_URI: "https://mlflow.redhat-ods-applications.svc:8443/mlflow"
+  # SA token read per-request (rotates); server sends it as the bearer token.
+  AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  # MLflow workspace == this namespace (X-MLFLOW-WORKSPACE header).
+  AMORTIZED_MLFLOW_WORKSPACE: "amortized-showcase"
+  # Verify the service-serving cert via the auto-injected service CA (mounted).
+  AMORTIZED_MLFLOW_CA_BUNDLE: "/etc/mlflow-ca/service-ca.crt"
+  AMORTIZED_GATEWAY_URL: ""
+  # --- Step C: OpenShell Morty via the gateway (mTLS + Host routing) ---
+  # URL host == the exposed sandbox service; a hostAlias (see deployment) maps it to the
+  # gateway ClusterIP so the Host header routes correctly and SNI matches *.openshell.localhost.
+  AMORTIZED_AGENT_UPSTREAM_URL: "https://default--morty-aipcc--opencode.openshell.localhost:8080"
+  AMORTIZED_AGENT_UPSTREAM_CLIENT_CERT: "/etc/openshell-mtls/tls.crt"
+  AMORTIZED_AGENT_UPSTREAM_CLIENT_KEY: "/etc/openshell-mtls/tls.key"
+  AMORTIZED_AGENT_UPSTREAM_CA_BUNDLE: "/etc/openshell-mtls/ca.crt"

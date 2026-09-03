@@ -9,8 +9,10 @@
 
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { ensureUserStack, getState, markForRetry } = require('./provision');
+const { ensureUserStack, getState, markForRetry, nsForUser } = require('./provision');
 const { renderSplash } = require('./splash');
 const { resolveUser, identityDebug } = require('./auth');
 
@@ -131,9 +133,36 @@ app.use(createProxyMiddleware({
   },
 }));
 
-// --- Shared MLflow ----------------------------------------------------------
+// --- Shared MLflow (enterprise, kubernetes-namespaced auth) ------------------
+// The enterprise MLflow needs a bearer token (SSAR) + X-MLFLOW-WORKSPACE and
+// serves a service-serving cert. The gateway injects its own SA token (broad
+// mlflow access, granted cluster-wide) and the caller's workspace (== their
+// namespace) per request, and trusts the service CA — so the embedded MLflow UI
+// is scoped to each user's runs. Target should be the MLflow ROOT (no /mlflow
+// suffix): the enterprise server's own --static-prefix=/mlflow matches the path.
+const MLFLOW_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+const MLFLOW_CA_FILE = process.env.MLFLOW_CA_FILE || '';
+function readSaToken() {
+  try { return fs.readFileSync(MLFLOW_TOKEN_PATH, 'utf8').trim(); } catch { return ''; }
+}
 if (MLFLOW_UPSTREAM) {
-  app.use(createProxyMiddleware({ pathFilter: ['/mlflow/**'], target: MLFLOW_UPSTREAM, changeOrigin: true }));
+  const mlflowAgent = MLFLOW_UPSTREAM.startsWith('https')
+    ? new https.Agent({ ca: MLFLOW_CA_FILE ? fs.readFileSync(MLFLOW_CA_FILE) : undefined })
+    : undefined;
+  app.use(createProxyMiddleware({
+    pathFilter: ['/mlflow/**'],
+    target: MLFLOW_UPSTREAM,
+    changeOrigin: true,
+    agent: mlflowAgent,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        const token = readSaToken();
+        if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`);
+        const user = currentUser(req);
+        if (user) proxyReq.setHeader('X-MLFLOW-WORKSPACE', nsForUser(user));
+      },
+    },
+  }));
 } else {
   app.use('/mlflow', (_req, res) => res.status(503).json({ status: 'unconfigured', detail: 'Shared MLflow not configured yet.' }));
 }

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/collapsible"
 import { EditableTitle } from "@/components/editable-title"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
-import { setMlflowRegisteredModelTag } from "@/lib/api-client"
+import { mlflowUiHref, setMlflowRegisteredModelTag } from "@/lib/api-client"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import { TrainingMetricsChart } from "@/features/jobs/components/training-metrics-chart"
 import { useModelRunData, useModelJobs, useDeleteModel } from "../api/use-models"
@@ -96,7 +96,7 @@ export function ModelDetailPanel({
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" asChild>
               <a
-                href={`/mlflow/#/models/${encodeURIComponent(model.name)}`}
+                href={mlflowUiHref(`/models/${encodeURIComponent(model.name)}`)}
                 target="_blank"
                 rel="noopener noreferrer"
               >

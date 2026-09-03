@@ -1,0 +1,252 @@
+# Amortized Studio hybrid shared tier, adapted for ns amortized-showcase.
+# Distinct cluster-scoped RBAC names (amz-*) so meyceoz's existing bindings are untouched.
+# Gateway wired to: our B/C server image, enterprise MLflow, per-user OpenShell Morty (mTLS).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amortized-studio-gateway
+  namespace: amortized-showcase
+  labels: { app: amortized, component: gateway }
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"amortized-studio"}}'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amz-studio-gateway-auth-delegator
+  labels: { app: amortized, component: gateway }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: amortized-showcase
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: amz-studio-gateway-provisioner
+  labels: { app: amortized, component: gateway }
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "resourcequotas", "configmaps", "secrets", "serviceaccounts", "services", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete", "escalate", "bind"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # Let the gateway bind the enterprise MLflow access ClusterRoles into each user ns.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    resourceNames: ["mlflow-operator-mlflow-view", "mlflow-operator-mlflow-edit"]
+    verbs: ["bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amz-studio-gateway-provisioner
+  labels: { app: amortized, component: gateway }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: amz-studio-gateway-provisioner }
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: amortized-showcase
+---
+# Gateway SA gets cluster-wide MLflow access so its injected token passes SSAR for
+# any user's workspace on the /mlflow UI proxy (workspace scoping is per-request).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amz-studio-gateway-mlflow-view
+  labels: { app: amortized, component: gateway }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: mlflow-operator-mlflow-view }
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: amortized-showcase
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: amz-studio-gateway-mlflow-edit
+  labels: { app: amortized, component: gateway }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: mlflow-operator-mlflow-edit }
+subjects:
+  - kind: ServiceAccount
+    name: amortized-studio-gateway
+    namespace: amortized-showcase
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio-gateway
+  namespace: amortized-showcase
+  labels: { app: amortized, component: gateway }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: amortized, component: gateway } }
+  template:
+    metadata: { labels: { app: amortized, component: gateway } }
+    spec:
+      serviceAccountName: amortized-studio-gateway
+      containers:
+        - name: oauth-proxy
+          image: quay.io/openshift/origin-oauth-proxy:latest
+          ports: [{ name: public, containerPort: 8443 }]
+          args:
+            - --provider=openshift
+            - --https-address=:8443
+            - --http-address=
+            - --openshift-service-account=amortized-studio-gateway
+            - --upstream=http://localhost:8080
+            - --tls-cert=/etc/tls/private/tls.crt
+            - --tls-key=/etc/tls/private/tls.key
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --email-domain=*
+            - --skip-provider-button
+            - --pass-user-headers=true
+            - --cookie-samesite=none
+            - --cookie-secure=true
+          volumeMounts:
+            - { name: proxy-tls, mountPath: /etc/tls/private }
+            - { name: proxy-cookie, mountPath: /etc/proxy/secrets }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          resources: { requests: { cpu: 10m, memory: 64Mi }, limits: { cpu: 100m, memory: 128Mi } }
+        - name: gateway
+          image: image-registry.openshift-image-registry.svc:5000/amortized-showcase/studio-gateway:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - { name: PORT, value: "8080" }
+            - { name: EMBED_BASE_PATH, value: "/amortized-studio-embed" }
+            - { name: STUDIO_STATIC_UPSTREAM, value: "http://amortized-studio-static:8080" }
+            - { name: PLUGIN_UPSTREAM, value: "http://amortized-studio-plugin.amortized-showcase.svc.cluster.local:8080" }
+            - { name: MLFLOW_UPSTREAM, value: "https://mlflow.redhat-ods-applications.svc:8443" }
+            - { name: MLFLOW_CA_FILE, value: "/etc/mlflow-ca/service-ca.crt" }
+            - { name: AMORTIZED_SERVER_IMAGE, value: "image-registry.openshift-image-registry.svc:5000/amortized-showcase/amortized:showcase" }
+            - { name: SHARED_MLFLOW_TRACKING_URI, value: "https://mlflow.redhat-ods-applications.svc:8443/mlflow" }
+            # Per-user OpenShell Morty wiring (manifests.js reads these).
+            - { name: OPENSHELL_MTLS_DIR, value: "/etc/openshell-mtls" }
+            - { name: OPENSHELL_GATEWAY_IP, value: "172.30.119.72" }
+          volumeMounts:
+            - { name: openshell-mtls, mountPath: /etc/openshell-mtls, readOnly: true }
+            - { name: mlflow-ca, mountPath: /etc/mlflow-ca, readOnly: true }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 512Mi } }
+          readinessProbe: { httpGet: { path: /gateway/healthz, port: http }, initialDelaySeconds: 5, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /gateway/healthz, port: http }, initialDelaySeconds: 10, periodSeconds: 10 }
+      volumes:
+        - { name: proxy-tls, secret: { secretName: amortized-studio-gateway-tls } }
+        - { name: proxy-cookie, secret: { secretName: amortized-studio-gateway-oauth } }
+        - { name: openshell-mtls, secret: { secretName: openshell-client-tls } }
+        - { name: mlflow-ca, configMap: { name: openshift-service-ca.crt, items: [{ key: service-ca.crt, path: service-ca.crt }] } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-gateway
+  namespace: amortized-showcase
+  labels: { app: amortized, component: gateway }
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: amortized-studio-gateway-tls
+spec:
+  type: ClusterIP
+  selector: { app: amortized, component: gateway }
+  ports: [{ name: public, port: 8443, targetPort: public }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-gateway-http
+  namespace: amortized-showcase
+  labels: { app: amortized, component: gateway }
+spec:
+  type: ClusterIP
+  selector: { app: amortized, component: gateway }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: amortized-studio
+  namespace: amortized-showcase
+  labels: { app: amortized, component: gateway }
+spec:
+  to: { kind: Service, name: amortized-studio-gateway }
+  port: { targetPort: public }
+  tls: { termination: reencrypt, insecureEdgeTerminationPolicy: Redirect }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio-static
+  namespace: amortized-showcase
+  labels: { app: amortized, component: studio-static }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: amortized, component: studio-static } }
+  template:
+    metadata: { labels: { app: amortized, component: studio-static } }
+    spec:
+      containers:
+        - name: studio
+          image: ghcr.io/amortized-ai/studio:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - { name: BACKEND_HOST, value: "amortized-server" }
+            - { name: BACKEND_PORT, value: "8000" }
+            - { name: MLFLOW_HOST, value: "mlflow" }
+            - { name: MLFLOW_PORT, value: "5000" }
+            - { name: DNS_RESOLVER, value: "172.30.0.10" }
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          readinessProbe: { httpGet: { path: /, port: http } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-static
+  namespace: amortized-showcase
+  labels: { app: amortized, component: studio-static }
+spec:
+  type: ClusterIP
+  selector: { app: amortized, component: studio-static }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-studio-plugin
+  namespace: amortized-showcase
+  labels: { app: amortized, component: plugin }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: amortized, component: plugin } }
+  template:
+    metadata: { labels: { app: amortized, component: plugin } }
+    spec:
+      containers:
+        - name: plugin
+          image: image-registry.openshift-image-registry.svc:5000/amortized-showcase/amortized-studio-plugin:latest
+          imagePullPolicy: Always
+          ports: [{ name: http, containerPort: 8080 }]
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          readinessProbe: { httpGet: { path: /, port: http } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-studio-plugin
+  namespace: amortized-showcase
+  labels: { app: amortized, component: plugin }
+spec:
+  type: ClusterIP
+  selector: { app: amortized, component: plugin }
+  ports: [{ name: http, port: 8080, targetPort: http }]
