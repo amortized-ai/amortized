@@ -41,6 +41,10 @@ SESSION_TTL_HOURS = 4
 MAX_TURNS_TRACKED = 8
 UNPOLLED_TURN_TTL = timedelta(minutes=10)
 MAX_TURNS_HARD = 64
+# Max pending (active, not-yet-finished) turns per session. Turns are serialized by
+# state.lock, so beyond this a client is only queuing work unboundedly — reject with
+# 429 rather than letting state.turns / _background_tasks grow without limit.
+MAX_ACTIVE_TURNS = 16
 
 
 @dataclass
@@ -438,6 +442,14 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="unknown session")
 
     state.last_activity = datetime.now(UTC)
+
+    # Bound pending work per session: active turns are never evicted, so without an
+    # admission limit a client could queue unboundedly (state.turns / _background_tasks).
+    if sum(1 for t in state.turns.values() if t.active) >= MAX_ACTIVE_TURNS:
+        raise HTTPException(
+            status_code=429,
+            detail="too many pending turns for this session; retry shortly",
+        )
 
     turn_id = str(uuid.uuid4())
     turn = TurnState()
