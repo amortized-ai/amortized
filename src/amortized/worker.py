@@ -188,6 +188,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         JobType.training.value: "training_output",
         JobType.sdg.value: "sdg_output",
         JobType.upload.value: "upload_output",
+        JobType.eval.value: "eval_output",
     }
     dir_name = output_dir_names.get(job_type, f"{job_type}_output")
     base_dir = str(config_mod.settings.data_dir / dir_name)
@@ -259,7 +260,11 @@ async def _run_job(job: dict[str, Any]) -> None:
             mlflow_run_created = True
             spec_env["MLFLOW_RUN_ID"] = mlflow_run_id
             await _update_job(job_id, mlflow_run_id=mlflow_run_id)
-        elif job_type in (JobType.sdg.value, JobType.upload.value):
+        elif job_type in (
+            JobType.sdg.value,
+            JobType.upload.value,
+            JobType.eval.value,
+        ):
             await _update_job(
                 job_id,
                 status=JobStatus.failed.value,

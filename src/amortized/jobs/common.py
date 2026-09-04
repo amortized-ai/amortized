@@ -104,5 +104,20 @@ async def resolve_parent_artifacts(
                 parent_run_id,
                 local_dir,
             )
+    elif job["type"] == JobType.eval.value and parent["type"] in ("sdg", "upload"):
+        local_dir = "/amortized/work/eval_data"
+        pre_cmd = (
+            f"mlflow artifacts download"
+            f" -r {shlex.quote(parent_run_id)}"
+            f" -a generated_data"
+            f" -d {shlex.quote(local_dir)}"
+        )
+        pre_commands.append(pre_cmd)
+        config["eval_data_path"] = f"{local_dir}/generated_data"
+        logger.info(
+            "Will download eval data from MLflow run %s to %s",
+            parent_run_id,
+            local_dir,
+        )
 
     return config, pre_commands

@@ -312,3 +312,64 @@ class SDGJobRequest(BaseModel):
             raise ValueError(msg)
 
         return self
+
+
+# ---------------------------------------------------------------------------
+# Eval job models — compare two model endpoints on an eval dataset
+# ---------------------------------------------------------------------------
+
+
+class EvalEndpoint(BaseModel):
+    base_url: str = Field(
+        ...,
+        min_length=1,
+        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+    )
+    model: str = Field(
+        ...,
+        min_length=1,
+        description="Model name sent as 'model' in chat completion requests",
+    )
+    api_key: str = Field(
+        "",
+        description=(
+            "Optional bearer token. Never echoed in API responses;"
+            " scrubbed from the DB once the job is dispatched."
+        ),
+    )
+
+
+class EvalJobConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    endpoint_base: EvalEndpoint = Field(
+        ..., description="Endpoint serving the model BEFORE training (base model)"
+    )
+    endpoint_tuned: EvalEndpoint = Field(
+        ..., description="Endpoint serving the model AFTER training (fine-tuned)"
+    )
+    judge: EvalEndpoint | None = Field(
+        None,
+        description="Optional LLM-as-judge endpoint for win-rate scoring of free-form outputs",
+    )
+    metrics: list[str] = Field(
+        default_factory=lambda: ["exact_match", "format_validity"],
+        description="Metrics to compute (exact_match, format_validity, judge_win_rate)",
+    )
+    max_samples: int = Field(200, ge=1, le=10000, description="Max eval samples to run")
+    judge_max_samples: int = Field(
+        100, ge=1, le=10000, description="Max samples for LLM-judge scoring (judge is slower)"
+    )
+    temperature: float = Field(0.0, description="Sampling temperature for evaluated endpoints")
+    eval_data_run_id: str = Field(
+        "",
+        description=(
+            "MLflow run ID holding the eval dataset (alternative to parent_job_id). "
+            "Use with datasets uploaded via /api/v1/datasets."
+        ),
+    )
+    topic: str = Field("", description="1-5 word eval topic for tracking")
+
+
+class EvalJobRequest(EvalJobConfig):
+    parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")

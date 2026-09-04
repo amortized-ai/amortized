@@ -32,6 +32,7 @@ from amortized.core.jobs import (
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import (
+    EvalJobRequest,
     Job,
     JobStatus,
     JobType,
@@ -166,6 +167,52 @@ async def _validate_training_data(
     return errors
 
 
+def _strip_eval_api_keys(job: Job) -> None:
+    """Remove endpoint API keys from a job response before returning it."""
+    if not isinstance(job.config, dict):
+        return
+    for key in ("endpoint_base", "endpoint_tuned", "judge"):
+        endpoint = job.config.get(key)
+        if isinstance(endpoint, dict):
+            endpoint.pop("api_key", None)
+
+
+async def _validate_eval_data(
+    config: dict[str, Any],
+    parent_job_id: str,
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Validate that eval data is available (via parent job or MLflow run)."""
+    errors: list[str] = []
+    data_run_id = config.get("eval_data_run_id", "")
+
+    if not parent_job_id and not data_run_id:
+        errors.append(
+            "eval jobs require either parent_job_id (a completed SDG or upload"
+            " job holding the dataset) or eval_data_run_id (an MLflow run ID,"
+            " e.g. from a dataset uploaded via /api/v1/datasets)"
+        )
+        return errors
+
+    if parent_job_id:
+        repo = Repository(db)
+        parent = await repo.get_job(parent_job_id)
+        if parent is None:
+            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
+        elif parent.get("status") != "succeeded":
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has status"
+                f" '{parent.get('status')}' (must be 'succeeded')"
+            )
+        elif not parent.get("mlflow_run_id"):
+            errors.append(
+                f"parent_job_id: job '{parent_job_id}' has no MLflow"
+                " artifacts — the dataset may not have been uploaded"
+            )
+
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Job creation endpoints (one per job type)
 # ---------------------------------------------------------------------------
@@ -239,6 +286,48 @@ async def create_training_job(
     return _job_response(row)
 
 
+@router.post(
+    "/eval",
+    status_code=201,
+    response_model=Job,
+    operation_id="create_eval_job",
+    summary=(
+        "Create and submit an eval job. Compares a base model endpoint against"
+        " a tuned model endpoint on an eval dataset."
+    ),
+)
+async def create_eval_job(
+    request: EvalJobRequest,
+    http_request: Request,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Job:
+    """Create a model evaluation job."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+
+    errors = await _validate_eval_data(config, parent_job_id, db)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    user_id = http_request.headers.get("X-Forwarded-User", "")
+
+    repo = Repository(db)
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.eval,
+            config=config,
+            parent_job_id=parent_job_id,
+            user_id=user_id,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    response = _job_response(row)
+    _strip_eval_api_keys(response)
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Job validation endpoints (MCP-facing, no DB insert)
 # ---------------------------------------------------------------------------
@@ -298,6 +387,35 @@ async def validate_training_job(
 # ---------------------------------------------------------------------------
 # Job CRUD
 # ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/eval/validate",
+    response_model=ValidatedJobConfig,
+    operation_id="validate_eval_job",
+    summary=(
+        "Validate an eval job config and present it for user confirmation."
+        " Set parent_job_id to chain from a completed SDG job, or"
+        " eval_data_run_id to use an uploaded dataset."
+    ),
+)
+async def validate_eval_job(
+    request: EvalJobRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ValidatedJobConfig:
+    """Validate an eval job config without creating it."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+
+    errors = await _validate_eval_data(config, parent_job_id, db)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    return ValidatedJobConfig(
+        job_type=JobType.eval,
+        config=config,
+        parent_job_id=parent_job_id,
+    )
 
 
 @router.get(
