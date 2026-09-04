@@ -25,8 +25,10 @@ spec:
         - name: build-skills-tree
           image: {{ .Values.opencode.skillsInitImage }}
           securityContext:
-            runAsUser: 1000
-            runAsNonRoot: true
+            # Value-driven like the app pods (no hardcoded UID): on OpenShift the SCC
+            # injects a valid non-root uid from the namespace range; on kind,
+            # values-kind.yaml sets runAsNonRoot=false so busybox runs as its default.
+            runAsNonRoot: {{ .Values.security.runAsNonRoot }}
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]

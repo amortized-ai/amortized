@@ -125,6 +125,11 @@ On OpenShift either:
 - grant an SCC that permits running as root (e.g. `anyuid`) to the namespace's
   default ServiceAccount.
 
+**Bundled credentials are dev-only defaults** (`minio.rootUser`/`rootPassword` =
+`minioadmin`, `postgres.password` = `amortized`). For anything beyond local dev,
+override them (`s3.accessKey`/`s3.secretKey`, `postgres.password`) or use external
+stores.
+
 The application pods (server, studio, opencode) run with pod-level
 `runAsNonRoot` (value `security.runAsNonRoot`, default `true`). On OpenShift the
 SCC injects a non-root uid, so even the root-based images (the server's
