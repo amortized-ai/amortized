@@ -632,6 +632,45 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     return result
 
 
+@router.get("/provider")
+async def list_providers() -> dict[str, Any]:
+    """Provider catalog + connection status from OpenCode, for the Studio settings/model picker.
+
+    Proxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the
+    configured API key into the matching provider entry, so only id/name is surfaced per
+    provider — the key (and every other field) is dropped before it reaches the browser.
+    """
+    empty: dict[str, Any] = {"all": [], "default": {}, "connected": []}
+    try:
+        resp = await _client().get(f"{_opencode_url()}/provider", timeout=10.0)
+        resp.raise_for_status()
+        if "application/json" not in resp.headers.get("content-type", ""):
+            return empty
+        data: dict[str, Any] = resp.json()
+    except httpx.HTTPError:
+        logger.warning("Upstream unreachable on GET /provider")
+        return empty
+    except ValueError:
+        logger.exception("Bad JSON on GET /provider")
+        return empty
+    raw_all = data.get("all")
+    safe_all = (
+        [
+            {"id": p["id"], "name": p.get("name", p["id"])}
+            for p in raw_all
+            if isinstance(p, dict) and p.get("id")
+        ]
+        if isinstance(raw_all, list)
+        else []
+    )
+    connected = data.get("connected")
+    return {
+        "all": safe_all,
+        "default": {},
+        "connected": connected if isinstance(connected, list) else [],
+    }
+
+
 @router.post("/title")
 async def generate_title() -> dict[str, Any]:
     return {"title": ""}

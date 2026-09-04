@@ -1653,6 +1653,30 @@
         }
       }
     },
+    "/agent/provider": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "List Providers",
+        "description": "Provider catalog + connection status from OpenCode, for the Studio settings/model picker.\n\nProxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the\nconfigured API key into the matching provider entry, so only id/name is surfaced per\nprovider \u2014 the key (and every other field) is dropped before it reaches the browser.",
+        "operationId": "list_providers_agent_provider_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Providers Agent Provider Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/title": {
       "post": {
         "tags": [

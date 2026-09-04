@@ -21,6 +21,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Plus, Bot } from "lucide-react"
 import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
+import { useProviderStatus } from "./api/use-providers"
 import { clearConversationSession } from "@/lib/api-client"
 
 import { derivePlan } from "./utils/derive-plan-steps"
@@ -98,7 +99,9 @@ export default function ChatPage() {
     _hasHydrated,
   } = useChatStore()
 
-  const { chatModelSelection, setChatModelSelection, enabledProviders } = useSettingsStore()
+  const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
+    useSettingsStore()
+  const { connectedProviders } = useProviderStatus()
 
   const activeProviders = useMemo(() => {
     return Object.entries(PROVIDER_CATALOG)
@@ -106,15 +109,45 @@ export default function ChatPage() {
       .map(([id, info]) => ({ providerID: id, ...info }))
   }, [enabledProviders])
 
+  // Providers the backend actually has credentials for, limited to ones we render.
+  const connectedKnownProviders = useMemo(
+    () => Object.keys(PROVIDER_CATALOG).filter((id) => connectedProviders.has(id)),
+    [connectedProviders],
+  )
+
+  // If the backend reports connected providers but none of the enabled ones are actually
+  // connected, enable the connected ones. Without this, a deploy whose only credentialed
+  // provider differs from the hard-coded default (e.g. OpenAI-only while the default is
+  // Vertex) leaves the user stuck on a provider the agent can't serve → the first turn 500s.
   useEffect(() => {
-    const isValid = activeProviders.some((p) =>
+    if (connectedKnownProviders.length === 0) return
+    const anyEnabledConnected = enabledProviders.some((id) => connectedProviders.has(id))
+    if (!anyEnabledConnected) {
+      setEnabledProviders(connectedKnownProviders)
+    }
+  }, [connectedKnownProviders, connectedProviders, enabledProviders, setEnabledProviders])
+
+  // Keep the selection on a usable provider: prefer connected ones when the backend has
+  // reported any, otherwise fall back to whatever is enabled (status unknown / offline).
+  useEffect(() => {
+    const usableProviders =
+      connectedKnownProviders.length > 0
+        ? activeProviders.filter((p) => connectedProviders.has(p.providerID))
+        : activeProviders
+    const isValid = usableProviders.some((p) =>
       p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === chatModelSelection)
     )
-    if (!isValid && activeProviders.length > 0 && activeProviders[0]!.models.length > 0) {
-      const first = activeProviders[0]!.models[0]!
+    if (!isValid && usableProviders.length > 0 && usableProviders[0]!.models.length > 0) {
+      const first = usableProviders[0]!.models[0]!
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
-  }, [activeProviders, chatModelSelection, setChatModelSelection])
+  }, [
+    activeProviders,
+    connectedProviders,
+    connectedKnownProviders,
+    chatModelSelection,
+    setChatModelSelection,
+  ])
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
