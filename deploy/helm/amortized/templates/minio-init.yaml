@@ -32,8 +32,14 @@ spec:
             - sh
             - -c
             - |
-              aws --endpoint-url http://minio:9000 s3 mb s3://{{ .Values.s3.bucket }} --region us-east-1 || true
-              aws --endpoint-url http://minio:9000 s3 ls
+              set -e
+              EP=http://minio:9000
+              if aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }} 2>/dev/null; then
+                echo "Bucket {{ .Values.s3.bucket }} already exists"
+              else
+                aws --endpoint-url "$EP" s3 mb s3://{{ .Values.s3.bucket }} --region us-east-1
+              fi
+              aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }}
           env:
             - name: AWS_ACCESS_KEY_ID
               value: {{ .Values.minio.rootUser | quote }}

@@ -15,21 +15,23 @@ app: amortized
 {{- .Values.jobsNamespace -}}
 {{- end -}}
 
-{{/* In-cluster service FQDNs, parameterized by the release namespace. */}}
+{{/* In-cluster service names (<svc>.<ns>.svc), parameterized by the release
+namespace. The short `.svc` form resolves via the pod's DNS search domains
+regardless of the cluster domain, so it does not hard-code `cluster.local`. */}}
 {{- define "amortized.serverFqdn" -}}
-amortized-server.{{ .Values.namespace }}.svc.cluster.local
+amortized-server.{{ .Values.namespace }}.svc
 {{- end -}}
 
 {{- define "amortized.mlflowFqdn" -}}
-mlflow.{{ .Values.namespace }}.svc.cluster.local
+mlflow.{{ .Values.namespace }}.svc
 {{- end -}}
 
 {{- define "amortized.minioFqdn" -}}
-minio.{{ .Values.namespace }}.svc.cluster.local
+minio.{{ .Values.namespace }}.svc
 {{- end -}}
 
 {{- define "amortized.postgresFqdn" -}}
-postgres.{{ .Values.namespace }}.svc.cluster.local
+postgres.{{ .Values.namespace }}.svc
 {{- end -}}
 
 {{/*
