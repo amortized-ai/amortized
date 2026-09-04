@@ -110,6 +110,7 @@ const UI_TOOLS = new Set([
   "create_training_job",
   "validate_sdg_job",
   "validate_training_job",
+  "validate_eval_job",
   "validate_recipe_job",
   "create_job",
 ])

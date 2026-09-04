@@ -47,6 +47,7 @@ prompt: ## Generate k8s configs from agents directory
 	@cp $(AGENTS_DIR)/orchestrator/workflow.md k8s/base/morty-workflow.md
 	@cp $(AGENTS_DIR)/sdg/workflow.md k8s/base/morty-sdg-workflow.md
 	@cp $(AGENTS_DIR)/training/workflow.md k8s/base/morty-training-workflow.md
+	@cp $(AGENTS_DIR)/eval/workflow.md k8s/base/morty-eval-workflow.md
 	@rm -rf $(K8S_SKILLS)
 	@for agent in sdg training; do \
 		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \

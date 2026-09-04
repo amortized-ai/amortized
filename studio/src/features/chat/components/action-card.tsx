@@ -49,9 +49,25 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
   return rows
 }
 
+function extractEvalSummary(config: Record<string, unknown>): [string, string][] {
+  const rows: [string, string][] = []
+
+  const baseModel = (config.endpoint_base as Record<string, unknown> | undefined)?.model
+  const tunedModel = (config.endpoint_tuned as Record<string, unknown> | undefined)?.model
+  if (baseModel) rows.push(["Base model", String(baseModel)])
+  if (tunedModel) rows.push(["Tuned model", String(tunedModel)])
+  if (config.eval_data_run_id) rows.push(["Eval data run", String(config.eval_data_run_id).slice(0, 8)])
+  const metrics = config.metrics as string[] | undefined
+  if (metrics?.length) rows.push(["Metrics", metrics.join(", ")])
+  if (config.max_samples) rows.push(["Max samples", String(config.max_samples)])
+
+  return rows
+}
+
 function extractConfigSummary(jobType: string | undefined, config: Record<string, unknown>): [string, string][] {
   if (jobType === "sdg") return extractSdgSummary(config)
   if (jobType === "training") return extractTrainingSummary(config)
+  if (jobType === "eval") return extractEvalSummary(config)
 
   const rows: [string, string][] = []
   for (const [key, value] of Object.entries(config)) {

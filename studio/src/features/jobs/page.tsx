@@ -26,6 +26,7 @@ const TYPE_OPTIONS = [
   { value: "sdg" as JobType, label: "SDG", color: TYPE_COLORS.sdg },
   { value: "training" as JobType, label: "Training", color: TYPE_COLORS.training },
   { value: "upload" as JobType, label: "Upload", color: TYPE_COLORS.upload },
+  { value: "eval" as JobType, label: "Eval", color: TYPE_COLORS.eval },
 ]
 
 const STATUS_OPTIONS = [
