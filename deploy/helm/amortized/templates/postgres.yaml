@@ -34,7 +34,10 @@ spec:
             - name: POSTGRES_USER
               value: {{ .Values.postgres.user | quote }}
             - name: POSTGRES_PASSWORD
-              value: {{ .Values.postgres.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: amortized-db
+                  key: POSTGRES_PASSWORD
             - name: PGDATA
               value: "/var/lib/postgresql/data/pgdata"
           {{- with .Values.postgres.resources }}

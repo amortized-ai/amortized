@@ -59,6 +59,8 @@ spec:
             - configMapRef:
                 name: amortized-config
             - secretRef:
+                name: amortized-db
+            - secretRef:
                 name: amortized-s3
             {{- with (include "amortized.teacherKeysSecret" .) }}
             - secretRef:
