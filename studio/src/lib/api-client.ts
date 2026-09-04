@@ -169,6 +169,41 @@ export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
   return resp.logs
 }
 
+export interface EvalModelMetrics {
+  num_samples: number
+  num_succeeded: number
+  error_rate: number
+  empty_rate: number
+  exact_match: number | null
+  exact_match_n: number
+  format_validity: number | null
+  format_validity_n: number
+}
+
+export interface EvalJudgeMetrics {
+  num_judged: number
+  tuned_wins: number
+  base_wins: number
+  ties: number
+  win_rate: number | null
+}
+
+export interface EvalResults {
+  num_records: number
+  num_skipped: number
+  base: EvalModelMetrics
+  tuned: EvalModelMetrics
+  judge?: EvalJudgeMetrics
+}
+
+export async function getEvalResults(id: string): Promise<EvalResults | null> {
+  logger.debug("getEvalResults", { id })
+  const resp = await get<{ job_id: string; results: EvalResults | null; message?: string }>(
+    `/api/v1/jobs/${id}/eval-results`,
+  )
+  return resp.results
+}
+
 // --- Recipes ---
 
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {

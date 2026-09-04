@@ -157,10 +157,52 @@ class TestEvalBuilder:
         assert "api_key" not in result.resolved_config["endpoint_base"]
 
     @pytest.mark.asyncio
-    async def test_build_requires_judge_for_win_rate(self) -> None:
+    async def test_build_requires_judge_for_win_rate_without_lineage(self) -> None:
         config = {**EVAL_BODY, "metrics": ["judge_win_rate"]}
         with pytest.raises(eval_builder.JobBuildError, match="judge"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+    @pytest.mark.asyncio
+    async def test_build_judge_auto_filled_from_teacher(self, monkeypatch) -> None:
+        config = {**EVAL_BODY, "metrics": ["judge_win_rate"]}
+
+        async def fake_resolve(job):
+            return "gpt-teacher"
+
+        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
+        monkeypatch.setattr(
+            eval_builder.config_mod.settings, "gateway_url", "http://gateway:5000/gw/v1"
+        )
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert "judge_win_rate" in runner["metrics"]
+        assert runner["endpoints"]["judge"]["model"] == "gpt-teacher"
+        assert runner["endpoints"]["judge"]["base_url"] == "http://gateway:5000/gw/v1"
+        assert result.env["EVAL_JUDGE_API_KEY"] == "not-needed"
+
+    @pytest.mark.asyncio
+    async def test_build_judge_explicit_overrides_default(self, monkeypatch) -> None:
+        config = {
+            **EVAL_BODY,
+            "metrics": ["judge_win_rate"],
+            "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
+        }
+
+        async def fake_resolve(job):
+            return "gpt-teacher"
+
+        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["endpoints"]["judge"]["model"] == "gpt-judge"
 
     @pytest.mark.asyncio
     async def test_build_judge_implies_win_rate_metric(self) -> None:
@@ -181,3 +223,82 @@ class TestEvalBuilder:
         config = {k: v for k, v in EVAL_BODY.items() if k != "eval_data_run_id"}
         with pytest.raises(eval_builder.JobBuildError, match="parent_job_id"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+
+class TestEvalResultsEndpoint:
+    @pytest.mark.asyncio
+    async def test_eval_results_not_found(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/jobs/no-such-job/eval-results")
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_eval_results_rejects_non_eval_job(self, client: httpx.AsyncClient) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, created_at)
+                   VALUES ('tj-1', 'training', 'succeeded', '{}', now())"""
+            )
+
+        response = await client.get("/api/v1/jobs/tj-1/eval-results")
+        assert response.status_code == 400
+        assert "not an eval job" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_eval_results_incomplete_job(self, client: httpx.AsyncClient) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, created_at)
+                   VALUES ('ej-1', 'eval', 'running', '{}', now())"""
+            )
+
+        response = await client.get("/api/v1/jobs/ej-1/eval-results")
+        assert response.status_code == 200
+        assert response.json()["results"] is None
+        assert "not available" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_eval_results_returns_metrics(self, client: httpx.AsyncClient) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, created_at, mlflow_run_id)
+                   VALUES ('ej-2', 'eval', 'succeeded', '{}', now(), 'run123')"""
+            )
+
+        metrics = {
+            "results": {
+                "num_records": 6,
+                "base": {"exact_match": 0.5, "error_rate": 0.0},
+                "tuned": {"exact_match": 0.8, "error_rate": 0.0},
+                "judge": {"win_rate": 0.7, "num_judged": 5},
+            }
+        }
+
+        class FakeClient:
+            def __init__(self, tracking_uri: str, timeout: float = 30.0) -> None:
+                pass
+
+            async def get_artifact_text(self, run_id: str, path: str) -> str:
+                import json
+
+                return json.dumps(metrics)
+
+        from unittest.mock import patch
+
+        import amortized.config as config_mod
+
+        with (
+            patch("amortized.core.mlflow_client.MLflowClient", FakeClient),
+            patch.object(config_mod.settings, "mlflow_tracking_uri", "http://mlflow:5000"),
+        ):
+            response = await client.get("/api/v1/jobs/ej-2/eval-results")
+
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert results["tuned"]["exact_match"] == 0.8
+        assert results["judge"]["win_rate"] == 0.7

@@ -27,7 +27,7 @@ import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
-import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics } from "../api/use-jobs"
+import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
@@ -173,6 +173,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               <TabsTrigger value="overview" className="flex-1 transition-all duration-200">Overview</TabsTrigger>
               <TabsTrigger value="logs" className="flex-1 transition-all duration-200">Logs</TabsTrigger>
               {job.type === "training" && <TabsTrigger value="metrics" className="flex-1 transition-all duration-200">Metrics</TabsTrigger>}
+              {job.type === "eval" && <TabsTrigger value="results" className="flex-1 transition-all duration-200">Results</TabsTrigger>}
               <TabsTrigger value="config" className="flex-1 transition-all duration-200">Config</TabsTrigger>
             </TabsList>
           </div>
@@ -191,6 +192,12 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
           {job.type === "training" && (
             <TabsContent value="metrics" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
               <MetricsTab job={job} />
+            </TabsContent>
+          )}
+
+          {job.type === "eval" && (
+            <TabsContent value="results" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
+              <EvalResultsTab job={job} />
             </TabsContent>
           )}
 
@@ -439,6 +446,104 @@ function MetricsTab({ job }: { job: Job }) {
   return (
     <div className="pt-2">
       <TrainingMetricsChart data={data} isLoading={isLoading} />
+    </div>
+  )
+}
+
+function formatMetric(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—"
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function EvalResultsTab({ job }: { job: Job }) {
+  const isDone = job.status === "succeeded"
+  const { data: results, isLoading } = useEvalResults(job.id, isDone)
+
+  if (job.status !== "succeeded") {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        Results are available once the eval job succeeds (current status: {job.status}).
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        Loading eval results...
+      </div>
+    )
+  }
+
+  if (!results) {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        No eval results found on the MLflow run.
+      </div>
+    )
+  }
+
+  const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+  const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
+  const rows: { label: string; base: string; tuned: string }[] = [
+    { label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) },
+    { label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) },
+    { label: "Error rate", base: formatMetric(results.base?.error_rate), tuned: formatMetric(results.tuned?.error_rate) },
+    { label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) },
+  ]
+
+  return (
+    <div className="space-y-4 pt-2">
+      {results.judge && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="flex items-baseline justify-between">
+            <p className="text-sm font-medium">Judge win rate</p>
+            <p className={`text-2xl font-bold ${
+              results.judge.win_rate === null ? "" :
+              results.judge.win_rate > 0.5 ? "text-green-600 dark:text-green-400" :
+              results.judge.win_rate < 0.5 ? "text-rh-danger" : ""
+            }`}>
+              {results.judge.win_rate === null ? "—" : `${(results.judge.win_rate * 100).toFixed(1)}%`}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {results.judge.num_judged} judged — tuned won {results.judge.tuned_wins}, base won{" "}
+            {results.judge.base_wins}, {results.judge.ties} tie{results.judge.ties === 1 ? "" : "s"}.
+            {results.judge.win_rate !== null && results.judge.win_rate > 0.5 && " Fine-tuning helped."}
+            {results.judge.win_rate !== null && results.judge.win_rate < 0.5 && " Fine-tuning regressed the task."}
+          </p>
+        </div>
+      )}
+
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="px-4 py-2.5 text-left font-medium">Metric</th>
+              <th className="px-4 py-2.5 text-right font-medium">
+                Base{baseModel ? ` (${String(baseModel)})` : ""}
+              </th>
+              <th className="px-4 py-2.5 text-right font-medium">
+                Tuned{tunedModel ? ` (${String(tunedModel)})` : ""}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-b last:border-0 border-border/40">
+                <td className="px-4 py-2.5">{row.label}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{row.base}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{row.tuned}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {results.num_records} records ({results.num_skipped} skipped). Per-sample outputs are in
+        the MLflow run under eval_results/.
+      </p>
     </div>
   )
 }

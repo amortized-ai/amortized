@@ -557,6 +557,61 @@ async def get_job_artifacts(
     }
 
 
+@router.get(
+    "/{job_id}/eval-results",
+    operation_id="get_eval_results",
+    summary=(
+        "Get aggregate eval metrics for a completed eval job: per-model"
+        " exact_match/format_validity/error rates and the judge win-rate."
+    ),
+)
+async def get_eval_results(
+    job_id: str,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> dict[str, Any]:
+    """Return the parsed eval_results/metrics.json for an eval job."""
+    repo = Repository(db)
+    row = await core_get_job(repo, job_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if row.get("type") != "eval":
+        raise HTTPException(status_code=400, detail=f"Job {job_id} is not an eval job")
+
+    mlflow_run_id = row.get("mlflow_run_id", "")
+    if row.get("status") != "succeeded" or not mlflow_run_id:
+        return {
+            "job_id": job_id,
+            "results": None,
+            "message": f"Eval results not available yet (status: {row.get('status')})",
+        }
+
+    from amortized.config import settings as _settings
+
+    if not _settings.mlflow_tracking_uri:
+        raise HTTPException(status_code=503, detail="MLflow tracking URI not configured")
+
+    import json as _json
+
+    from amortized.core.mlflow_client import MLflowClient
+
+    client = MLflowClient(_settings.mlflow_tracking_uri)
+    metrics_text = await client.get_artifact_text(mlflow_run_id, "eval_results/metrics.json")
+    if not metrics_text:
+        return {
+            "job_id": job_id,
+            "results": None,
+            "message": "No eval_results/metrics.json artifact on the MLflow run",
+        }
+    try:
+        results = _json.loads(metrics_text).get("results", {})
+    except ValueError:
+        raise HTTPException(
+            status_code=502, detail="Corrupt metrics.json artifact on the MLflow run"
+        ) from None
+
+    return {"job_id": job_id, "mlflow_run_id": mlflow_run_id, "results": results}
+
+
 @router.post(
     "/{job_id}/delete",
     status_code=204,

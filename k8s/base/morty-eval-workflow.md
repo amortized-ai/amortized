@@ -79,8 +79,14 @@ serving — evaluation does not start any servers.
 
 - Short/categorical answers → `exact_match` (default)
 - JSON/structured outputs → add `format_validity`
-- Free-form generation → add `judge_win_rate` with a judge endpoint
-  (a strong model, ideally the same teacher used for SDG)
+- Free-form generation → add `judge_win_rate`
+
+For `judge_win_rate` you do NOT need to collect a judge endpoint: if
+the eval job has an SDG ancestor (directly or via the training job),
+the judge defaults to that SDG run's teacher model served through the
+platform gateway. Only ask for a judge endpoint if the user wants a
+different judge, or if the job has no SDG ancestor (e.g. an uploaded
+dataset with no parent).
 
 Use sensible defaults: `max_samples` 200, `judge_max_samples` 100,
 `temperature` 0.
@@ -93,8 +99,8 @@ you'll be notified when it completes.
 
 ### Step 5 — Report results
 
-When the eval job completes, fetch the job and its MLflow run tags.
-Report a compact comparison table:
+When the eval job completes, call `get_eval_results` with the job ID to
+fetch the aggregate metrics. Report a compact comparison table:
 
 | Metric | Base | Tuned |
 |---|---|---|
@@ -103,7 +109,8 @@ Report a compact comparison table:
 For judge runs, lead with the win rate and interpret it:
 above 0.5 the fine-tune helped, around 0.5 it changed nothing, below
 0.5 it regressed. Offer next steps: train again with different data
-or parameters, or accept the model.
+or parameters, or accept the model. The Studio job detail panel also
+has a Results tab with the same numbers.
 
 ## Failure Handling
 

@@ -507,6 +507,51 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/eval-results": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get aggregate eval metrics for a completed eval job: per-model exact_match/format_validity/error rates and the judge win-rate.",
+        "description": "Return the parsed eval_results/metrics.json for an eval job.",
+        "operationId": "get_eval_results",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Results"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/{job_id}/delete": {
       "post": {
         "tags": [
