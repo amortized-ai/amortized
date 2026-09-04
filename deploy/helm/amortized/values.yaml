@@ -71,9 +71,6 @@ studio:
     enabled: false
 
 opencode:
-  # busybox image used by the init container that rebuilds the skills tree.
-  # Mirror (not docker.io) so it pulls on OpenShift without a Docker Hub pull secret.
-  skillsInitImage: mirror.gcr.io/library/busybox:1.37
   resources:
     requests:
       cpu: 200m

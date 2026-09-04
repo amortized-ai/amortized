@@ -1,8 +1,9 @@
 {{- /*
 Reproduces the base `morty-skills` configMapGenerator. The base flattens the
 skills directory tree into single-level keys using `__` as the path separator
-(e.g. sdg/classification/guide.md -> sdg__classification__guide.md). The
-opencode init container reverses this (`sed 's|__|/|g'`) to rebuild the tree.
+(e.g. sdg/classification/guide.md -> sdg__classification__guide.md), because
+ConfigMap keys may not contain `/`. The opencode Deployment mounts this ConfigMap
+with items[].path mapping each key back to its nested path, rebuilding the tree.
 */ -}}
 {{- $data := dict -}}
 {{- range $path, $bytes := .Files.Glob "files/morty-skills/**" -}}

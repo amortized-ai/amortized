@@ -21,35 +21,6 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: {{ .Values.security.runAsNonRoot }}
-      initContainers:
-        - name: build-skills-tree
-          image: {{ .Values.opencode.skillsInitImage }}
-          securityContext:
-            # Value-driven like the app pods (no hardcoded UID): on OpenShift the SCC
-            # injects a valid non-root uid from the namespace range; on kind,
-            # values-kind.yaml sets runAsNonRoot=false so busybox runs as its default.
-            runAsNonRoot: {{ .Values.security.runAsNonRoot }}
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          command: ["sh", "-c"]
-          args:
-            - |
-              set -e
-              cd /flat
-              for f in *; do
-                [ "$f" = "*" ] && continue
-                dir="/skills/$(echo "$f" | sed 's|__|/|g' | xargs dirname)"
-                name="$(echo "$f" | sed 's|__|/|g' | xargs basename)"
-                mkdir -p "$dir"
-                cp "$f" "$dir/$name"
-              done
-          volumeMounts:
-            - name: morty-skills
-              mountPath: /flat
-              readOnly: true
-            - name: skills-tree
-              mountPath: /skills
       containers:
         - name: opencode
           image: {{ include "amortized.image" .Values.images.opencode }}
@@ -103,7 +74,7 @@ spec:
               mountPath: /app/workspace/.opencode/agents/training.md
               subPath: morty-training-workflow.md
               readOnly: true
-            - name: skills-tree
+            - name: morty-skills
               mountPath: /app/workspace/skills
               readOnly: true
             {{- if eq .Values.model.provider "vertex" }}
@@ -141,8 +112,15 @@ spec:
         - name: morty-skills
           configMap:
             name: morty-skills
-        - name: skills-tree
-          emptyDir: {}
+            # Rebuild the skills tree directly: map each flattened ConfigMap key
+            # (sdg__classification__guide.md) back to its nested path
+            # (sdg/classification/guide.md). A ConfigMap volume's items[].path
+            # supports subdirectories, so no init container is needed to rebuild it.
+            items:
+            {{- range $path, $_ := .Files.Glob "files/morty-skills/**" }}
+            - key: {{ $path | trimPrefix "files/morty-skills/" | replace "/" "__" }}
+              path: {{ $path | trimPrefix "files/morty-skills/" }}
+            {{- end }}
         {{- if eq .Values.model.provider "vertex" }}
         - name: gcp-credentials
           secret:

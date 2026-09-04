@@ -150,11 +150,13 @@ so they run as root there.
 
 The `morty-config` and `morty-skills` ConfigMaps are built from the files under
 `files/` via `.Files.Glob`, reproducing the base `configMapGenerator` behavior —
-including the base's `__` -> `/` path flattening for skills (the opencode init
-container reverses it to rebuild the skills tree). The content under `files/` is
-generated from the repo's `agents/` directory (the same source the `make prompt`
-target uses for the kustomize build); this chart does not alter persona/skill
-content.
+including the base's `__` -> `/` path flattening for skills (ConfigMap keys can't
+contain `/`). The opencode Deployment mounts the `morty-skills` ConfigMap with
+`items[].path` mapping each flattened key back to its nested path, so the skills
+directory tree is rebuilt directly by the volume (no init container). The content
+under `files/` is generated from the repo's `agents/` directory (the same source
+the `make prompt` target uses for the kustomize build); this chart does not alter
+persona/skill content.
 
 ## Not included (follow-ups)
 
