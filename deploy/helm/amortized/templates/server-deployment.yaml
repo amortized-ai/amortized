@@ -23,8 +23,8 @@ spec:
       serviceAccountName: amortized-server
       securityContext:
         runAsNonRoot: {{ .Values.security.runAsNonRoot }}
-      {{- if .Values.dataStores.bundled }}
       initContainers:
+      {{- if .Values.dataStores.bundled }}
         - name: wait-for-db
           image: {{ .Values.postgres.image }}
           command: ["sh", "-c"]
@@ -46,6 +46,22 @@ spec:
             capabilities:
               drop: ["ALL"]
       {{- end }}
+        # Apply DB migrations before the server starts. Idempotent (alembic tracks
+        # the version), runs in both bundled and external modes; the server itself
+        # does not create its schema.
+        - name: migrate
+          image: {{ include "amortized.image" .Values.images.server }}
+          {{- with .Values.images.server.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command: ["sh", "-c", "cd /app && alembic upgrade head"]
+          envFrom:
+            - secretRef:
+                name: amortized-db
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: server
           image: {{ include "amortized.image" .Values.images.server }}

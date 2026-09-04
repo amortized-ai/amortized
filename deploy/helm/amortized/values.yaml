@@ -72,7 +72,8 @@ studio:
 
 opencode:
   # busybox image used by the init container that rebuilds the skills tree.
-  skillsInitImage: busybox:1.37
+  # Mirror (not docker.io) so it pulls on OpenShift without a Docker Hub pull secret.
+  skillsInitImage: mirror.gcr.io/library/busybox:1.37
   resources:
     requests:
       cpu: 200m
@@ -133,7 +134,9 @@ dataStores:
 # --- Bundled data stores (used when dataStores.bundled=true) ---
 
 postgres:
-  image: docker.io/library/postgres:16-alpine
+  # gcr mirror of the official image (avoids Docker Hub rate-limits on OpenShift);
+  # runs fine under restricted-v2 as an SCC-injected non-root uid.
+  image: mirror.gcr.io/library/postgres:16-alpine
   database: amortized
   user: amortized
   password: amortized
@@ -156,8 +159,9 @@ minio:
   resources: {}
 
 minioInit:
-  image: docker.io/amazon/aws-cli:latest
-  waitImage: busybox:1.36
+  # Non-docker.io registries so these pull on OpenShift without a Docker Hub secret.
+  image: public.ecr.aws/aws-cli/aws-cli:latest
+  waitImage: mirror.gcr.io/library/busybox:1.36
 
 mlflow:
   image: ghcr.io/mlflow/mlflow:latest

@@ -113,17 +113,22 @@ For one OpenAI key to power both Morty and the teacher, point `model.openai` and
 `teacherKeys` at the same secret. **Requires** a server image with direct-provider
 support (amortized #427+); on an older image the teacher path is inert.
 
-## OpenShift SCC note (bundled data stores)
+## OpenShift / `restricted-v2`
 
-The bundled data-store images (PostgreSQL, MinIO, MLflow) run as **root**
-(`runAsNonRoot: false`), matching the base manifests. On OpenShift the default
-`restricted-v2` SCC forbids this, so the bundled stores will not start there.
-On OpenShift either:
+The bundled data stores (PostgreSQL, MinIO, MLflow) **run on OpenShift
+`restricted-v2` with no `anyuid` and no cluster-admin** — the SCC injects a
+non-root uid + fsGroup and the images run under it (verified: all three come up as
+the injected uid on a `restricted-v2` namespace).
 
-- set `dataStores.bundled=false` and point at external MLflow / S3 / PostgreSQL
-  (recommended for production), or
-- grant an SCC that permits running as root (e.g. `anyuid`) to the namespace's
-  default ServiceAccount.
+The bundled-store images default to **non-Docker-Hub registries**
+(`mirror.gcr.io/library/*`, `public.ecr.aws/...`) so they pull on OpenShift
+clusters that have no Docker Hub pull secret (anonymous Docker Hub pulls are
+rate-limited). Override `postgres.image` / `minioInit.*` / `opencode.skillsInitImage`
+if you mirror images elsewhere.
+
+For production you'll still typically want **external** MLflow / S3 / PostgreSQL
+(durability, scale, backups) via `dataStores.bundled=false` — but the bundled
+stack is a valid self-contained install on `restricted-v2`.
 
 **Bundled credentials are dev-only defaults** (`minio.rootUser`/`rootPassword` =
 `minioadmin`, `postgres.password` = `amortized`). For anything beyond local dev,
