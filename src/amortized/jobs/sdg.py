@@ -114,9 +114,20 @@ async def build(
                 " IDs are valid and MLflow is reachable."
             )
 
+    # Providers we actually serve here (direct-provider stopgap for the absent MLflow AI
+    # Gateway) — the set backed by dropped-in keys.
+    provider_defs = enabled_provider_defs()
+    enabled_provider_names = {d["name"] for d in provider_defs}
+    primary_provider = provider_defs[0]["name"] if provider_defs else None
+
     for mc in config.get("model_configs", []):
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
+        # The Morty SDG skills may still emit provider: "gateway" (the old MLflow AI
+        # Gateway convention), which does not exist here. Remap any provider we do not
+        # serve to the primary enabled one so config.yaml matches model_providers.yaml.
+        if primary_provider and mc.get("provider") not in enabled_provider_names:
+            mc["provider"] = primary_provider
 
     for col in config.get("columns", []):
         if "model_config_alias" in col:
@@ -129,12 +140,10 @@ async def build(
     dd_config = {"data_designer": config}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
-    # Direct-provider stopgap for the absent MLflow AI Gateway: the job image's
-    # builtin default provider is `gateway` (a bundled MLflow gateway that does not
-    # exist here), so write a model_providers.yaml with the providers enabled by
-    # dropped-in keys and point DATA_DESIGNER_HOME at it.
+    # Write a model_providers.yaml with the enabled providers and point
+    # DATA_DESIGNER_HOME at it (the job image's builtin default provider is `gateway`,
+    # a bundled MLflow gateway that does not exist here).
     pre_commands: list[str] = []
-    provider_defs = enabled_provider_defs()
     if provider_defs:
         dd_home = "/amortized/work/.data-designer"
         config_files["model_providers.yaml"] = yaml.dump(

@@ -39,10 +39,11 @@ Default: basic (35%), intermediate (45%), advanced (20%).
 
 ### Step 4 — Which teacher model?
 
-Call `list_models` to get the models configured on the AI Gateway.
-Present ONLY those models as options. Do NOT suggest models that aren't
-returned by `list_models` — they won't work. If no models are returned,
-stop and direct the user to Settings -> AI Gateway.
+Call `list_models` to get the available teacher models (each entry has a
+`name` and a `provider`). Present ONLY those models as options. Do NOT
+suggest models that aren't returned by `list_models` — they won't work.
+If no models are returned, stop — no teacher-model provider is configured
+on the server.
 
 ### Step 5 — How many samples?
 
@@ -103,14 +104,15 @@ markdown from MLflow for processing.
 
 ### model_configs
 
-Which LLM to use. Use `provider: "gateway"` to route through the MLflow
-AI Gateway. Always set `skip_health_check: true` with the gateway.
+Which LLM to use. Take BOTH `model` and `provider` from the entry
+`list_models` returns for the chosen teacher — do not hardcode a provider.
+Keep `skip_health_check: true`.
 
 ```json
 "model_configs": [{
   "alias": "text",
-  "model": "gpt-oss",
-  "provider": "gateway",
+  "model": "<from list_models>",
+  "provider": "<from list_models>",
   "skip_health_check": true,
   "inference_parameters": {
     "temperature": 0.7,
