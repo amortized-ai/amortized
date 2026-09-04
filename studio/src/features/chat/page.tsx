@@ -115,6 +115,17 @@ export default function ChatPage() {
     [connectedProviders],
   )
 
+  // Providers the user can actually pick. When connectivity is known, restrict to
+  // connected ones so a disconnected-but-enabled provider can't be selected (its turns
+  // would 500); otherwise (status unknown / offline) fall back to all enabled providers.
+  const usableProviders = useMemo(
+    () =>
+      connectedKnownProviders.length > 0
+        ? activeProviders.filter((p) => connectedProviders.has(p.providerID))
+        : activeProviders,
+    [activeProviders, connectedKnownProviders, connectedProviders],
+  )
+
   // If the backend reports connected providers but none of the enabled ones are actually
   // connected, enable the connected ones. Without this, a deploy whose only credentialed
   // provider differs from the hard-coded default (e.g. OpenAI-only while the default is
@@ -127,13 +138,8 @@ export default function ChatPage() {
     }
   }, [connectedKnownProviders, connectedProviders, enabledProviders, setEnabledProviders])
 
-  // Keep the selection on a usable provider: prefer connected ones when the backend has
-  // reported any, otherwise fall back to whatever is enabled (status unknown / offline).
+  // Keep the selection on a usable provider (see usableProviders above).
   useEffect(() => {
-    const usableProviders =
-      connectedKnownProviders.length > 0
-        ? activeProviders.filter((p) => connectedProviders.has(p.providerID))
-        : activeProviders
     const isValid = usableProviders.some((p) =>
       p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === chatModelSelection)
     )
@@ -141,13 +147,7 @@ export default function ChatPage() {
       const first = usableProviders[0]!.models[0]!
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
-  }, [
-    activeProviders,
-    connectedProviders,
-    connectedKnownProviders,
-    chatModelSelection,
-    setChatModelSelection,
-  ])
+  }, [usableProviders, chatModelSelection, setChatModelSelection])
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
@@ -250,7 +250,7 @@ export default function ChatPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {activeProviders.map((provider) => (
+                {usableProviders.map((provider) => (
                   <SelectGroup key={provider.providerID}>
                     <SelectLabel className="text-xs text-muted-foreground">{provider.label}</SelectLabel>
                     {provider.models.map((m) => {
