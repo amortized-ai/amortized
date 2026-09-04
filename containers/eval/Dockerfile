@@ -4,7 +4,7 @@ FROM docker.io/library/python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir "httpx>=0.27" "pyarrow>=16"
+RUN pip install --no-cache-dir "httpx>=0.27" "pyarrow>=16" "mlflow>=2.14" "boto3"
 
 COPY run_eval.py /app/run_eval.py
 
