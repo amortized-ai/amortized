@@ -1,0 +1,48 @@
+{{- if .Values.dataStores.bundled }}
+{{- /*
+One-shot bucket creation (mirrors k8s/services/minio-init.yaml). Rendered as a
+Helm hook so it re-runs cleanly on upgrade instead of colliding with the
+immutable completed Job from a previous release.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-create-bucket
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: minio
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-minio
+          image: {{ .Values.minioInit.waitImage }}
+          command: ['sh', '-c', 'until wget -qO- http://minio:9000/minio/health/live; do sleep 2; done']
+      containers:
+        - name: create-bucket
+          image: {{ .Values.minioInit.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              EP=http://minio:9000
+              if aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }} 2>/dev/null; then
+                echo "Bucket {{ .Values.s3.bucket }} already exists"
+              else
+                aws --endpoint-url "$EP" s3 mb s3://{{ .Values.s3.bucket }} --region us-east-1
+              fi
+              aws --endpoint-url "$EP" s3api head-bucket --bucket {{ .Values.s3.bucket }}
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              value: {{ .Values.minio.rootUser | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              value: {{ .Values.minio.rootPassword | quote }}
+{{- end }}

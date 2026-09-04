@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-server
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+    component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: server
+    spec:
+      serviceAccountName: amortized-server
+      securityContext:
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
+      initContainers:
+      {{- if .Values.dataStores.bundled }}
+        - name: wait-for-db
+          image: {{ .Values.postgres.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+          env:
+            - name: PGHOST
+              value: {{ include "amortized.postgresFqdn" . | quote }}
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: {{ .Values.postgres.user | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      {{- end }}
+        # Apply DB migrations before the server starts. Idempotent (alembic tracks
+        # the version), runs in both bundled and external modes; the server itself
+        # does not create its schema.
+        - name: migrate
+          image: {{ include "amortized.image" .Values.images.server }}
+          {{- with .Values.images.server.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command: ["sh", "-c", "cd /app && alembic upgrade head"]
+          envFrom:
+            - secretRef:
+                name: amortized-db
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: server
+          image: {{ include "amortized.image" .Values.images.server }}
+          {{- with .Values.images.server.pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: amortized-config
+            - secretRef:
+                name: amortized-db
+            - secretRef:
+                name: amortized-s3
+            {{- with (include "amortized.teacherKeysSecret" .) }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: amortized-server-data
