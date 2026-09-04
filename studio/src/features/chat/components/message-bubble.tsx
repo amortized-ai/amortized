@@ -54,10 +54,15 @@ export function MessageBubble({
     try {
       const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
       if (parsed?.options && Array.isArray(parsed.options)) {
-        return (parsed.options as OptionCard[]).map((opt) => ({
+        const options = (parsed.options as OptionCard[]).map((opt) => ({
           ...opt,
           value: opt.value ?? (opt.description ? `${opt.title} — ${opt.description}` : opt.title),
         }))
+        const question =
+          typeof parsed.question === "string" && parsed.question.trim()
+            ? (parsed.question as string)
+            : null
+        return { question, options }
       }
     } catch { /* ignore parse errors */ }
     return null
@@ -78,7 +83,7 @@ export function MessageBubble({
 
   const parsedOptions = useMemo(() => {
     if (isUser || message.optionCards.length > 0) return []
-    return structuredOptions ?? []
+    return structuredOptions?.options ?? []
   }, [isUser, message.optionCards.length, structuredOptions])
 
   const modelPricing = useMemo(() => {
@@ -124,6 +129,22 @@ export function MessageBubble({
     return message.toolResults.filter((t) => !hidden.has(t.name))
   }, [message.toolResults, modelPricing, vramEstimate, structuredOptions])
 
+  // Some models (e.g. gpt-5.x) put their prose in the present_options `question` field and
+  // return an empty final-answer text, so surface the question when there's no text content.
+  const optionsQuestion = structuredOptions?.question ?? null
+
+  // Only show the "thinking" dots when there is genuinely nothing to render yet. A completed
+  // turn that produced only tool output (options/question/tools) must render that, not dots.
+  const hasRenderableBody =
+    !!displayContent ||
+    !!optionsQuestion ||
+    parsedOptions.length > 0 ||
+    message.optionCards.length > 0 ||
+    jobSubmissions.length > 0 ||
+    visibleToolResults.length > 0 ||
+    !!modelPricing ||
+    !!vramEstimate ||
+    !!message.proposedAction
 
   return (
     <div
@@ -147,7 +168,7 @@ export function MessageBubble({
             : "bg-muted/60 text-foreground border border-border/50 rounded-bl-md hover:bg-muted/80",
         )}
       >
-        {!isUser && !displayContent && (
+        {!isUser && !hasRenderableBody && (
           <div>
             <div className="flex items-center gap-1.5 py-1 px-1">
               <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "0ms" }} />
@@ -155,6 +176,11 @@ export function MessageBubble({
               <span className="thinking-dot h-2 w-2 rounded-full bg-muted-foreground/60" style={{ animationDelay: "560ms" }} />
             </div>
             <ThinkingSteps step={thinkingStep ?? null} />
+          </div>
+        )}
+        {!isUser && !displayContent && optionsQuestion && (
+          <div className="prose prose-sm dark:prose-invert max-w-none [&_strong]:text-foreground">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{optionsQuestion}</ReactMarkdown>
           </div>
         )}
         {displayContent && (
