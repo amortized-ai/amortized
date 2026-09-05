@@ -20,7 +20,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set, get) => ({
       apiKey: "",
       chatModelSelection: DEFAULT_CHAT_MODEL_SELECTION,
-      enabledProviders: ["google-vertex-anthropic"],
+      enabledProviders: ["maas"],
       setApiKey: (_apiKey) => {
         logger.info("setApiKey", { masked: true })
         set({ apiKey: _apiKey })
@@ -44,7 +44,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "amortized-settings",
-      version: 4,
+      version: 5,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>
 
@@ -56,6 +56,14 @@ export const useSettingsStore = create<SettingsState>()(
 
         if (version < 4) {
           state.enabledProviders = ["google-vertex-anthropic"]
+          state.chatModelSelection = DEFAULT_CHAT_MODEL_SELECTION
+        }
+
+        if (version < 5) {
+          const providers = state.enabledProviders as string[] | undefined
+          if (!providers || providers.every((id) => id === "google-vertex-anthropic")) {
+            state.enabledProviders = ["maas"]
+          }
           state.chatModelSelection = DEFAULT_CHAT_MODEL_SELECTION
         }
 

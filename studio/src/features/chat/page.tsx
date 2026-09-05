@@ -101,18 +101,33 @@ export default function ChatPage() {
 
   const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
     useSettingsStore()
-  const { connectedProviders } = useProviderStatus()
+  const { connectedProviders, providers: dynamicProviders } = useProviderStatus()
 
-  const activeProviders = useMemo(() => {
-    return Object.entries(PROVIDER_CATALOG)
-      .filter(([id]) => enabledProviders.includes(id))
-      .map(([id, info]) => ({ providerID: id, ...info }))
-  }, [enabledProviders])
+  // Build provider list: connected+catalog intersection only (avoids the hundreds of built-in
+  // opencode providers that have no models and aren't relevant to this deploy).
+  const allProviders = useMemo(() => {
+    if (dynamicProviders.length > 0) {
+      return dynamicProviders
+        .filter((p) => (p.id in PROVIDER_CATALOG || connectedProviders.has(p.id)) && p.models.length > 0)
+        .map((p) => ({
+          providerID: p.id,
+          label: PROVIDER_CATALOG[p.id]?.label ?? p.name,
+          requiresApiKey: PROVIDER_CATALOG[p.id]?.requiresApiKey ?? false,
+          models: p.models,
+        }))
+    }
+    return Object.entries(PROVIDER_CATALOG).map(([id, info]) => ({ providerID: id, ...info }))
+  }, [dynamicProviders, connectedProviders])
+
+  const activeProviders = useMemo(
+    () => allProviders.filter((p) => enabledProviders.includes(p.providerID)),
+    [allProviders, enabledProviders],
+  )
 
   // Providers the backend actually has credentials for, limited to ones we render.
   const connectedKnownProviders = useMemo(
-    () => Object.keys(PROVIDER_CATALOG).filter((id) => connectedProviders.has(id)),
-    [connectedProviders],
+    () => allProviders.map((p) => p.providerID).filter((id) => connectedProviders.has(id)),
+    [allProviders, connectedProviders],
   )
 
   // Providers the user can actually pick. When connectivity is known, restrict to
@@ -143,8 +158,9 @@ export default function ChatPage() {
     const isValid = usableProviders.some((p) =>
       p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === chatModelSelection)
     )
-    if (!isValid && usableProviders.length > 0 && usableProviders[0]!.models.length > 0) {
-      const first = usableProviders[0]!.models[0]!
+    const firstWithModels = usableProviders.find((p) => p.models.length > 0)
+    if (!isValid && firstWithModels) {
+      const first = firstWithModels.models[0]!
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
   }, [usableProviders, chatModelSelection, setChatModelSelection])
