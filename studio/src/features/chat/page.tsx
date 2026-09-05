@@ -101,18 +101,30 @@ export default function ChatPage() {
 
   const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
     useSettingsStore()
-  const { connectedProviders } = useProviderStatus()
+  const { connectedProviders, providers: dynamicProviders } = useProviderStatus()
 
-  const activeProviders = useMemo(() => {
-    return Object.entries(PROVIDER_CATALOG)
-      .filter(([id]) => enabledProviders.includes(id))
-      .map(([id, info]) => ({ providerID: id, ...info }))
-  }, [enabledProviders])
+  // Build provider list: prefer dynamic models from API, fall back to PROVIDER_CATALOG.
+  const allProviders = useMemo(() => {
+    if (dynamicProviders.length > 0) {
+      return dynamicProviders.map((p) => ({
+        providerID: p.id,
+        label: PROVIDER_CATALOG[p.id]?.label ?? p.name,
+        requiresApiKey: PROVIDER_CATALOG[p.id]?.requiresApiKey ?? false,
+        models: p.models.length > 0 ? p.models : (PROVIDER_CATALOG[p.id]?.models ?? []),
+      }))
+    }
+    return Object.entries(PROVIDER_CATALOG).map(([id, info]) => ({ providerID: id, ...info }))
+  }, [dynamicProviders])
+
+  const activeProviders = useMemo(
+    () => allProviders.filter((p) => enabledProviders.includes(p.providerID)),
+    [allProviders, enabledProviders],
+  )
 
   // Providers the backend actually has credentials for, limited to ones we render.
   const connectedKnownProviders = useMemo(
-    () => Object.keys(PROVIDER_CATALOG).filter((id) => connectedProviders.has(id)),
-    [connectedProviders],
+    () => allProviders.map((p) => p.providerID).filter((id) => connectedProviders.has(id)),
+    [allProviders, connectedProviders],
   )
 
   // Providers the user can actually pick. When connectivity is known, restrict to
