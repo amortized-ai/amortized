@@ -18,6 +18,8 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+// Per-module lock kept for backwards-compat reference; the real per-instance
+// lock lives in sendLockRef inside useChat so conversation switches don't block.
 const _sendLock = { held: false }
 
 function restoreMessages(
@@ -26,17 +28,19 @@ function restoreMessages(
 ): ChatMessage[] {
   if (!conversationId) return []
   const persisted = getConversationMessages(conversationId)
-  return persisted.map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    timestamp: m.timestamp,
-    toolResults: m.toolResults ?? [],
-    proposedAction: m.proposedAction ?? null,
-    optionCards: m.optionCards ?? [],
-    selectedOptionValue: m.selectedOptionValue,
-    phase: m.phase,
-  }))
+  return persisted
+    .filter((m) => m.role === "user" || !!m.content || (m.toolResults && m.toolResults.length > 0))
+    .map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+      toolResults: m.toolResults ?? [],
+      proposedAction: m.proposedAction ?? null,
+      optionCards: m.optionCards ?? [],
+      selectedOptionValue: m.selectedOptionValue,
+      phase: m.phase,
+    }))
 }
 
 const TOOL_BLOCK_RE =
@@ -267,6 +271,7 @@ export function useChat() {
   useEffect(() => { chatStateRef.current = chatState }, [chatState])
 
   const warmupPromiseRef = useRef<Promise<void> | null>(null)
+  const sendLockRef = useRef(false)
 
   useEffect(() => {
     if (!currentConversationId) return
@@ -387,7 +392,8 @@ export function useChat() {
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (chatState === "streaming" || _sendLock.held) return
+      if (chatState === "streaming" || sendLockRef.current) return
+      sendLockRef.current = true
       _sendLock.held = true
 
       try {
@@ -505,29 +511,37 @@ export function useChat() {
           }
         }
 
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === assistantId)
-          if (idx === -1) return prev
-          const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
+        const hasContent = !!responseContent || toolResults.length > 0 || !!proposedAction
+
+        if (!hasContent) {
+          // Empty turn (e.g. model returned 0 tokens) — drop the placeholder so the
+          // bouncing-dots bubble doesn't persist indefinitely in the conversation.
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId))
+        } else {
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === assistantId)
+            if (idx === -1) return prev
+            const updated = [...prev]
+            updated[idx] = {
+              ...prev[idx]!,
+              content: responseContent,
+              toolResults,
+              proposedAction,
+              phase: phase ?? undefined,
+            }
+            return updated
+          })
+
+          addMessage(convId, {
+            id: assistantId,
+            role: "assistant",
             content: responseContent,
+            timestamp: new Date().toISOString(),
             toolResults,
             proposedAction,
             phase: phase ?? undefined,
-          }
-          return updated
-        })
-
-        addMessage(convId, {
-          id: assistantId,
-          role: "assistant",
-          content: responseContent,
-          timestamp: new Date().toISOString(),
-          toolResults,
-          proposedAction,
-          phase: phase ?? undefined,
-        })
+          })
+        }
 
         if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
           useChatStore.getState().setJobInFlight(convId, true)
@@ -561,6 +575,7 @@ export function useChat() {
         setCurrentConversationId(convId)
       }
       } finally {
+        sendLockRef.current = false
         _sendLock.held = false
       }
     },
@@ -708,7 +723,7 @@ export function useChat() {
     let waitedMs = 0
 
     while (jobNotifyQueueRef.current.length > 0) {
-      if (_sendLock.held || BLOCKED_STATES.has(chatStateRef.current)) {
+      if (sendLockRef.current || BLOCKED_STATES.has(chatStateRef.current)) {
         if (waitedMs >= MAX_WAIT_MS) {
           logger.warn("job notify queue timed out waiting for idle state")
           jobNotifyQueueRef.current.length = 0
@@ -740,6 +755,7 @@ export function useChat() {
         optionCards: [],
       }
       setMessages((prev) => [...prev, placeholder])
+      sendLockRef.current = true
       _sendLock.held = true
       setChatState("streaming")
 
@@ -791,6 +807,7 @@ export function useChat() {
         consecutiveFailures++
         logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
       } finally {
+        sendLockRef.current = false
         _sendLock.held = false
       }
     }
