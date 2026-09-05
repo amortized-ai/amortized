@@ -86,6 +86,13 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
             "get_turn_agent_session__session_id__turn__turn_id__get",
             "generate_title_agent_title_post",
             "agent_health_agent_health_get",
+            # Hidden from the MCP tool list — detected via text tags in message parts.
+            # Gemini (via @ai-sdk/openai-compatible) calls tools but opencode never
+            # forwards them to MCP, producing empty turns. Removing them forces any LLM
+            # to express delegation and completion as text, which _detect_delegation /
+            # _detect_completion scan for [[DELEGATE:...]] and [[COMPLETE:...]] patterns.
+            "delegate_to_subagent",
+            "signal_subagent_completion",
         ],
     )
     _mount_http_stateless(mcp, app)
