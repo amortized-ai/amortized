@@ -103,18 +103,22 @@ export default function ChatPage() {
     useSettingsStore()
   const { connectedProviders, providers: dynamicProviders } = useProviderStatus()
 
-  // Build provider list: prefer dynamic models from API, fall back to PROVIDER_CATALOG.
+  // Build provider list from connected+catalog providers only.
+  // Dynamic API can return hundreds of opencode providers; filter to ones in PROVIDER_CATALOG
+  // OR that are actively connected (so a newly-configured provider appears without a code change).
   const allProviders = useMemo(() => {
     if (dynamicProviders.length > 0) {
-      return dynamicProviders.map((p) => ({
-        providerID: p.id,
-        label: PROVIDER_CATALOG[p.id]?.label ?? p.name,
-        requiresApiKey: PROVIDER_CATALOG[p.id]?.requiresApiKey ?? false,
-        models: p.models.length > 0 ? p.models : (PROVIDER_CATALOG[p.id]?.models ?? []),
-      }))
+      return dynamicProviders
+        .filter((p) => p.id in PROVIDER_CATALOG || connectedProviders.has(p.id))
+        .map((p) => ({
+          providerID: p.id,
+          label: PROVIDER_CATALOG[p.id]?.label ?? p.name,
+          requiresApiKey: PROVIDER_CATALOG[p.id]?.requiresApiKey ?? false,
+          models: p.models.length > 0 ? p.models : (PROVIDER_CATALOG[p.id]?.models ?? []),
+        }))
     }
     return Object.entries(PROVIDER_CATALOG).map(([id, info]) => ({ providerID: id, ...info }))
-  }, [dynamicProviders])
+  }, [dynamicProviders, connectedProviders])
 
   const activeProviders = useMemo(
     () => allProviders.filter((p) => enabledProviders.includes(p.providerID)),
@@ -155,8 +159,9 @@ export default function ChatPage() {
     const isValid = usableProviders.some((p) =>
       p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === chatModelSelection)
     )
-    if (!isValid && usableProviders.length > 0 && usableProviders[0]!.models.length > 0) {
-      const first = usableProviders[0]!.models[0]!
+    const firstWithModels = usableProviders.find((p) => p.models.length > 0)
+    if (!isValid && firstWithModels) {
+      const first = firstWithModels.models[0]!
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
   }, [usableProviders, chatModelSelection, setChatModelSelection])
