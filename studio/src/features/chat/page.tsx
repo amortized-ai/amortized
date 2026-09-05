@@ -103,18 +103,17 @@ export default function ChatPage() {
     useSettingsStore()
   const { connectedProviders, providers: dynamicProviders } = useProviderStatus()
 
-  // Build provider list from connected+catalog providers only.
-  // Dynamic API can return hundreds of opencode providers; filter to ones in PROVIDER_CATALOG
-  // OR that are actively connected (so a newly-configured provider appears without a code change).
+  // Build provider list: connected+catalog intersection only (avoids the hundreds of built-in
+  // opencode providers that have no models and aren't relevant to this deploy).
   const allProviders = useMemo(() => {
     if (dynamicProviders.length > 0) {
       return dynamicProviders
-        .filter((p) => p.id in PROVIDER_CATALOG || connectedProviders.has(p.id))
+        .filter((p) => (p.id in PROVIDER_CATALOG || connectedProviders.has(p.id)) && p.models.length > 0)
         .map((p) => ({
           providerID: p.id,
           label: PROVIDER_CATALOG[p.id]?.label ?? p.name,
           requiresApiKey: PROVIDER_CATALOG[p.id]?.requiresApiKey ?? false,
-          models: p.models.length > 0 ? p.models : (PROVIDER_CATALOG[p.id]?.models ?? []),
+          models: p.models,
         }))
     }
     return Object.entries(PROVIDER_CATALOG).map(([id, info]) => ({ providerID: id, ...info }))

@@ -30,9 +30,27 @@ async function fetchProviders(): Promise<{ providers: DynamicProvider[]; connect
     throw new Error(`Failed to fetch providers: ${resp.status}`)
   }
   const data: ProviderListResponse = await resp.json()
+  // Normalize at the API boundary — never trust external data shapes.
+  const rawAll: unknown[] = Array.isArray(data.all) ? (data.all as unknown[]) : []
+  const providers: DynamicProvider[] = rawAll
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === "object" && typeof (p as Record<string, unknown>).id === "string")
+    .map((p) => {
+      const rawModels: unknown[] = Array.isArray(p.models) ? (p.models as unknown[]) : []
+      return {
+        id: p.id as string,
+        name: typeof p.name === "string" ? p.name : (p.id as string),
+        models: rawModels
+          .filter((m): m is Record<string, unknown> => !!m && typeof m === "object" && typeof (m as Record<string, unknown>).modelID === "string")
+          .map((m) => ({
+            providerID: typeof m.providerID === "string" ? m.providerID : (p.id as string),
+            modelID: m.modelID as string,
+            label: typeof m.label === "string" ? m.label : (m.modelID as string),
+          })),
+      }
+    })
   return {
-    providers: data.all ?? [],
-    connected: new Set(data.connected ?? []),
+    providers,
+    connected: new Set(Array.isArray(data.connected) ? data.connected : []),
   }
 }
 
