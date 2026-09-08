@@ -180,12 +180,20 @@ export interface EvalModelMetrics {
   format_validity_n: number
 }
 
-export interface EvalJudgeMetrics {
-  num_judged: number
+export interface EvalCriterionResult {
   tuned_wins: number
   base_wins: number
   ties: number
   win_rate: number | null
+}
+
+export interface EvalJudgeMetrics {
+  num_judged: number
+  tuned_wins?: number
+  base_wins?: number
+  ties?: number
+  win_rate: number | null
+  criteria?: Record<string, EvalCriterionResult>
 }
 
 export interface EvalResults {

@@ -497,7 +497,9 @@ function EvalResultsTab({ job }: { job: Job }) {
       {results.judge && (
         <div className="rounded-xl border bg-card p-4">
           <div className="flex items-baseline justify-between">
-            <p className="text-sm font-medium">Judge win rate</p>
+            <p className="text-sm font-medium">
+              {results.judge.criteria ? "Judge win rate (avg across criteria)" : "Judge win rate"}
+            </p>
             <p className={`text-2xl font-bold ${
               results.judge.win_rate === null ? "" :
               results.judge.win_rate > 0.5 ? "text-green-600 dark:text-green-400" :
@@ -507,11 +509,46 @@ function EvalResultsTab({ job }: { job: Job }) {
             </p>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {results.judge.num_judged} judged — tuned won {results.judge.tuned_wins}, base won{" "}
-            {results.judge.base_wins}, {results.judge.ties} tie{results.judge.ties === 1 ? "" : "s"}.
+            {results.judge.num_judged} judged
+            {!results.judge.criteria && results.judge.tuned_wins !== undefined && (
+              <> — tuned won {results.judge.tuned_wins}, base won {results.judge.base_wins}, {results.judge.ties} tie{results.judge.ties === 1 ? "" : "s"}.</>
+            )}
             {results.judge.win_rate !== null && results.judge.win_rate > 0.5 && " Fine-tuning helped."}
             {results.judge.win_rate !== null && results.judge.win_rate < 0.5 && " Fine-tuning regressed the task."}
           </p>
+        </div>
+      )}
+
+      {results.judge?.criteria && Object.keys(results.judge.criteria).length > 0 && (
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
+                <th className="px-4 py-2.5 text-right font-medium">Tuned wins</th>
+                <th className="px-4 py-2.5 text-right font-medium">Base wins</th>
+                <th className="px-4 py-2.5 text-right font-medium">Ties</th>
+                <th className="px-4 py-2.5 text-right font-medium">Win rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(results.judge.criteria).map(([name, c]) => (
+                <tr key={name} className="border-b last:border-0 border-border/40">
+                  <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.tuned_wins}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.base_wins}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.ties}</td>
+                  <td className={`px-4 py-2.5 text-right font-mono text-xs ${
+                    c.win_rate === null ? "" :
+                    c.win_rate > 0.5 ? "text-green-600 dark:text-green-400" :
+                    c.win_rate < 0.5 ? "text-rh-danger" : ""
+                  }`}>
+                    {c.win_rate === null ? "—" : `${(c.win_rate * 100).toFixed(1)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

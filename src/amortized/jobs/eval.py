@@ -113,12 +113,16 @@ async def build(
     }
 
     metrics = [m for m in (config.get("metrics") or []) if m]
+    rubric = [
+        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
+    ]
     judge_cfg = config.get("judge")
-    if any(m in _JUDGE_METRICS for m in metrics) and not judge_cfg:
+    needs_judge = any(m in _JUDGE_METRICS for m in metrics) or bool(rubric)
+    if needs_judge and not judge_cfg:
         judge_cfg = await _default_judge(job)
         if judge_cfg is None:
             raise JobBuildError(
-                "judge endpoint is required when metrics include 'judge_win_rate'"
+                "judge endpoint is required for judge_win_rate or a custom rubric"
                 " (no SDG ancestor with a teacher_model tag, or no gateway configured)"
             )
     if judge_cfg:
@@ -151,6 +155,7 @@ async def build(
         "eval_data_path": eval_data_path,
         "endpoints": endpoints,
         "metrics": metrics,
+        "rubric": rubric,
         "max_samples": config.get("max_samples", 200),
         "judge_max_samples": config.get("judge_max_samples", 100),
         "temperature": config.get("temperature", 0.0),

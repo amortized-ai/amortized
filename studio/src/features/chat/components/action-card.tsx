@@ -59,6 +59,8 @@ function extractEvalSummary(config: Record<string, unknown>): [string, string][]
   if (config.eval_data_run_id) rows.push(["Eval data run", String(config.eval_data_run_id).slice(0, 8)])
   const metrics = config.metrics as string[] | undefined
   if (metrics?.length) rows.push(["Metrics", metrics.join(", ")])
+  const rubric = config.rubric as { name?: string }[] | undefined
+  if (rubric?.length) rows.push(["Rubric", rubric.map((c) => c.name).join(", ")])
   if (config.max_samples) rows.push(["Max samples", String(config.max_samples)])
 
   return rows

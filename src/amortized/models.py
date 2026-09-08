@@ -339,9 +339,30 @@ class EvalEndpoint(BaseModel):
     )
 
 
+class EvalRubricCriterion(BaseModel):
+    name: str = Field(
+        ...,
+        min_length=1,
+        description="Short criterion name, e.g. 'factual_accuracy' (used as the results key)",
+    )
+    description: str = Field(
+        ...,
+        min_length=1,
+        description="One sentence telling the judge what to check for this criterion",
+    )
+
+
 class EvalJobConfig(BaseModel):
     model_config = {"extra": "allow"}
 
+    rubric: list[EvalRubricCriterion] = Field(
+        default_factory=list,
+        description=(
+            "Custom judge criteria, designed with the user. Each criterion is"
+            " scored base-vs-tuned by the LLM judge against the reference answer."
+            " Implies judge_win_rate."
+        ),
+    )
     endpoint_base: EvalEndpoint = Field(
         ..., description="Endpoint serving the model BEFORE training (base model)"
     )

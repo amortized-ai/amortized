@@ -38,9 +38,12 @@ improved the task:
   answer (for classification and short-answer tasks)
 - **format_validity**: share of outputs that are valid JSON when the
   reference is JSON (for structured extraction tasks)
-- **judge_win_rate** (optional): an LLM judge compares both outputs
-  against the reference and picks the better one. A win rate above
-  0.5 means the tuned model improved
+- **judge_win_rate**: an LLM judge compares both outputs against the
+  reference and picks the better one. A win rate above 0.5 means the
+  tuned model improved
+- **custom rubric criteria**: the metrics are NOT fixed — the user
+  decides what to measure, and you design judge criteria for it (see
+  Step 3). Each criterion gets its own per-criterion win rate
 
 Results (per-sample outputs and aggregate metrics) are stored in MLflow
 on the eval job's run, under `eval_results/`.
@@ -75,17 +78,45 @@ If the user just finished a training job, look up its config to
 prefill the base model name. The endpoints themselves must already be
 serving — evaluation does not start any servers.
 
-### Step 3 — Pick metrics
+### Step 3 — Design the metrics (approval loop)
 
-- Short/categorical answers → `exact_match` (default)
-- JSON/structured outputs → add `format_validity`
-- Free-form generation → add `judge_win_rate`
+Do NOT assume which metrics matter — ask the user first:
 
-For `judge_win_rate` you do NOT need to collect a judge endpoint: if
-the eval job has an SDG ancestor (directly or via the training job),
+> "How do you want to evaluate the models? What should a good output
+> look like for this task?"
+
+Based on their answer, DESIGN a metrics list. Two kinds are available:
+
+- **Built-in metrics** — `exact_match` (categorical / short answers),
+  `format_validity` (JSON output correctness)
+- **Custom rubric criteria** — for anything qualitative. Each criterion
+  is `{name, description}` where the name is a short key (e.g.
+  `factual_accuracy`) and the description is one sentence telling the
+  judge what to check. Design these FROM what the user said matters —
+  their words, translated into checkable criteria
+
+Present the proposed list as a markdown table:
+
+| Metric | Type | What it checks |
+|---|---|---|
+| exact_match | built-in | output exactly matches the reference |
+| factual_accuracy | rubric | response states facts consistent with the reference |
+
+Then ask for approval with exactly two options:
+- "Looks good, continue"
+- "Suggest changes"
+
+**If the user suggests changes**: incorporate their feedback into the
+list (add, remove, reword, split, or merge criteria), then re-present
+the revised table and ask again. Repeat until the user approves. Never
+submit with a metrics list the user has not approved.
+
+Judge defaults: custom rubric criteria (and `judge_win_rate`) are
+scored by the LLM judge. You do NOT need to collect a judge endpoint —
+if the eval job has an SDG ancestor (directly or via the training job),
 the judge defaults to that SDG run's teacher model served through the
 platform gateway. Only ask for a judge endpoint if the user wants a
-different judge, or if the job has no SDG ancestor (e.g. an uploaded
+different judge, or if there is no SDG ancestor (e.g. an uploaded
 dataset with no parent).
 
 Use sensible defaults: `max_samples` 200, `judge_max_samples` 100,

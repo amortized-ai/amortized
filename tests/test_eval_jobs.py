@@ -163,6 +163,37 @@ class TestEvalBuilder:
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
+    async def test_build_rubric_implies_judge_auto_fill(self, monkeypatch) -> None:
+        rubric = [
+            {"name": "factual_accuracy", "description": "Facts match the reference"},
+            {"name": "tone", "description": "Professional tone"},
+        ]
+        config = {**EVAL_BODY, "rubric": rubric}
+
+        async def fake_resolve(job):
+            return "gpt-teacher"
+
+        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
+        monkeypatch.setattr(
+            eval_builder.config_mod.settings, "gateway_url", "http://gateway:5000/gw/v1"
+        )
+
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["rubric"] == rubric
+        assert "judge" in runner["endpoints"]
+        assert "judge_win_rate" in runner["metrics"]
+
+    @pytest.mark.asyncio
+    async def test_build_rubric_without_resolvable_judge_errors(self) -> None:
+        config = {**EVAL_BODY, "rubric": [{"name": "x", "description": "y"}]}
+        with pytest.raises(eval_builder.JobBuildError, match="rubric"):
+            await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+    @pytest.mark.asyncio
     async def test_build_judge_auto_filled_from_teacher(self, monkeypatch) -> None:
         config = {**EVAL_BODY, "metrics": ["judge_win_rate"]}
 
@@ -302,3 +333,40 @@ class TestEvalResultsEndpoint:
         results = response.json()["results"]
         assert results["tuned"]["exact_match"] == 0.8
         assert results["judge"]["win_rate"] == 0.7
+
+
+class TestRubricParsing:
+    """Unit tests for the runner's rubric-verdict parsing (no network)."""
+
+    def _load_runner_module(self):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_parse_valid_rubric_response(self) -> None:
+        m = self._load_runner_module()
+        raw = 'Here you go: {"factual_accuracy": "A", "tone": "B", "style": "tie"}'
+        verdicts = m.parse_rubric_verdicts(raw, ["factual_accuracy", "tone", "style"])
+        assert verdicts == {"factual_accuracy": "A", "tone": "B", "style": "tie"}
+
+    def test_parse_missing_criteria_default_tie(self) -> None:
+        m = self._load_runner_module()
+        raw = '{"factual_accuracy": "A"}'
+        verdicts = m.parse_rubric_verdicts(raw, ["factual_accuracy", "tone"])
+        assert verdicts == {"factual_accuracy": "A", "tone": "tie"}
+
+    def test_parse_garbage_defaults_all_tie(self) -> None:
+        m = self._load_runner_module()
+        verdicts = m.parse_rubric_verdicts("not json at all", ["a", "b"])
+        assert verdicts == {"a": "tie", "b": "tie"}
+
+    def test_parse_invalid_values_default_tie(self) -> None:
+        m = self._load_runner_module()
+        raw = '{"a": "CANDIDATE A WINS", "b": 7}'
+        verdicts = m.parse_rubric_verdicts(raw, ["a", "b"])
+        assert verdicts == {"a": "tie", "b": "tie"}

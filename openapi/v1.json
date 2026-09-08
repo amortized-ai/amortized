@@ -2873,6 +2873,14 @@
       },
       "EvalJobRequest": {
         "properties": {
+          "rubric": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRubricCriterion"
+            },
+            "type": "array",
+            "title": "Rubric",
+            "description": "Custom judge criteria, designed with the user. Each criterion is scored base-vs-tuned by the LLM judge against the reference answer. Implies judge_win_rate."
+          },
           "endpoint_base": {
             "$ref": "#/components/schemas/EvalEndpoint",
             "description": "Endpoint serving the model BEFORE training (base model)"
@@ -2948,6 +2956,28 @@
           "endpoint_tuned"
         ],
         "title": "EvalJobRequest"
+      },
+      "EvalRubricCriterion": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "Short criterion name, e.g. 'factual_accuracy' (used as the results key)"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description",
+            "description": "One sentence telling the judge what to check for this criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "EvalRubricCriterion"
       },
       "ExpressionColumnConfig": {
         "properties": {

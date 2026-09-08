@@ -6,11 +6,14 @@ Reads a config.json (delivered to /amortized/config.json by the control plane):
     {
       "eval_data_path": "/amortized/work/eval_data/generated_data",
       "endpoints": {
-        "base":  {"base_url": "http://host:8000/v1", "model": "m", "api_key_env": "EVAL_BASE_API_KEY"},
-        "tuned": {"base_url": "http://host:8001/v1", "model": "m", "api_key_env": "EVAL_TUNED_API_KEY"},
+        "base":  {"base_url": "http://host:8000/v1", "model": "m",
+                  "api_key_env": "EVAL_BASE_API_KEY"},
+        "tuned": {"base_url": "http://host:8001/v1", "model": "m",
+                  "api_key_env": "EVAL_TUNED_API_KEY"},
         "judge": {"base_url": "...", "model": "...", "api_key_env": "EVAL_JUDGE_API_KEY"}
       },
       "metrics": ["exact_match", "format_validity", "judge_win_rate"],
+      "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
       "max_samples": 200,
       "judge_max_samples": 100,
       "temperature": 0.0,
@@ -33,7 +36,6 @@ import json
 import os
 import random
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +127,7 @@ async def chat_completion(
             resp.raise_for_status()
             data = resp.json()
             return str(data["choices"][0]["message"]["content"] or "")
-        except Exception as exc:  # noqa: BLE001 — retry any transient failure
+        except Exception as exc:
             last_error = exc
             await asyncio.sleep(2.0 * (attempt + 1))
     raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
@@ -152,7 +154,7 @@ async def eval_endpoint(
                     api_key=api_key,
                 )
                 return {"output": output, "error": ""}
-            except Exception as exc:  # noqa: BLE001 — record per-sample failure
+            except Exception as exc:
                 return {"output": "", "error": str(exc)}
 
     return list(await asyncio.gather(*(run_one(s) for s in samples)))
@@ -167,6 +169,35 @@ Respond with ONLY a JSON object: {"winner": "A"}, {"winner": "B"}, \
 or {"winner": "tie"}.
 """
 
+RUBRIC_SYSTEM_PROMPT = """\
+You are an impartial judge comparing two candidate responses to a task.
+Given the task prompt, the reference (gold) answer, two candidates \
+labeled Candidate A and Candidate B, and a list of evaluation criteria, \
+decide which candidate is better for EACH criterion.
+Respond with ONLY a JSON object mapping every criterion name to "A", \
+"B", or "tie", e.g. {"accuracy": "A", "tone": "tie"}.
+"""
+
+
+def parse_rubric_verdicts(raw: str, criteria: list[str]) -> dict[str, str]:
+    """Extract per-criterion A/B/tie verdicts from a judge response.
+
+    Unknown or missing criteria default to "tie" so a partial judge
+    response never crashes aggregation.
+    """
+    try:
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = json.loads(match.group(0)) if match else {}
+    except ValueError:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    verdicts: dict[str, str] = {}
+    for criterion in criteria:
+        value = data.get(criterion, "tie")
+        verdicts[criterion] = value if value in ("A", "B", "tie") else "tie"
+    return verdicts
+
 
 async def judge_one(
     client: httpx.AsyncClient,
@@ -177,30 +208,50 @@ async def judge_one(
     output_a: str,
     output_b: str,
     idx: int,
-) -> str:
+    rubric: list[dict[str, str]] | None = None,
+) -> str | dict[str, str]:
+    """Judge one sample. Returns "A"/"B"/"tie", or with a rubric a
+    {criterion_name: "A"/"B"/"tie"} mapping."""
+    criteria_block = ""
+    if rubric:
+        lines = "\n".join(
+            f"- {c['name']}: {c.get('description', '')}" for c in rubric
+        )
+        criteria_block = f"## Evaluation criteria\n{lines}\n\n"
+        question = "Which candidate is better for each criterion?"
+        system = RUBRIC_SYSTEM_PROMPT
+    else:
+        question = "Which candidate is closer to the reference?"
+        system = JUDGE_SYSTEM_PROMPT
+
     user_content = (
         f"## Task prompt\n"
         f"{json.dumps(prompt)}\n\n"
         f"## Reference answer\n{reference}\n\n"
+        f"{criteria_block}"
         f"## Candidate A\n{output_a or '(empty)'}\n\n"
         f"## Candidate B\n{output_b or '(empty)'}\n\n"
-        f"Which candidate is closer to the reference?"
+        f"{question}"
     )
     try:
         raw = await chat_completion(
             client,
             judge,
             [
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                {"role": "system", "content": system},
                 {"role": "user", "content": user_content},
             ],
             temperature=0.0,
-            max_tokens=512,
+            max_tokens=1024,
             api_key=api_key,
         )
+        if rubric:
+            return parse_rubric_verdicts(raw, [c["name"] for c in rubric])
         match = re.search(r'"winner"\s*:\s*"(A|B|tie)"', raw)
         return match.group(1) if match else "tie"
-    except Exception:  # noqa: BLE001 — unjudgeable sample counts as tie
+    except Exception:
+        if rubric:
+            return {c["name"]: "tie" for c in rubric}
         return "tie"
 
 
@@ -277,15 +328,16 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
             results[name] = per_model[name]
 
         judged = 0
+        rubric = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
         if "judge" in endpoints and "judge_win_rate" in metrics_requested:
             semaphore = asyncio.Semaphore(MAX_PARALLEL)
 
-            async def judge_pair(idx: int) -> str:
+            async def judge_pair(idx: int) -> str | dict[str, str]:
                 async with semaphore:
                     # Deterministic side randomization to cancel position bias
                     a_first = random.Random(idx).random() < 0.5
                     first, second = ("base", "tuned") if a_first else ("tuned", "base")
-                    winner_label = await judge_one(
+                    verdict = await judge_one(
                         client,
                         endpoints["judge"],
                         api_keys.get("judge", ""),
@@ -294,25 +346,63 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
                         outputs_by_model[first][idx],
                         outputs_by_model[second][idx],
                         idx,
+                        rubric=rubric or None,
                     )
-                    if winner_label == "tie":
-                        return "tie"
-                    winner = first if winner_label == "A" else second
-                    return winner
+                    if isinstance(verdict, dict):
+                        return {
+                            criterion: _map_label(label, first, second)
+                            for criterion, label in verdict.items()
+                        }
+                    return _map_label(verdict, first, second)
+
+            def _map_label(label: str, first: str, second: str) -> str:
+                if label == "tie":
+                    return "tie"
+                return first if label == "A" else second
 
             limit = min(judge_max_samples, len(samples))
             judgable = [i for i in range(limit) if samples[i]["reference"].strip()]
             verdicts = list(await asyncio.gather(*(judge_pair(i) for i in judgable)))
             judged = len(verdicts)
-            tuned_wins = sum(1 for v in verdicts if v == "tuned")
-            ties = sum(1 for v in verdicts if v == "tie")
-            results["judge"] = {
-                "num_judged": judged,
-                "tuned_wins": tuned_wins,
-                "base_wins": judged - tuned_wins - ties,
-                "ties": ties,
-                "win_rate": (round((tuned_wins + 0.5 * ties) / judged, 4) if judged else None),
-            }
+
+            if rubric:
+                criteria_stats: dict[str, dict[str, int]] = {
+                    c["name"]: {"tuned": 0, "base": 0, "tie": 0} for c in rubric
+                }
+                for v in verdicts:
+                    for criterion, winner in v.items():
+                        criteria_stats[criterion][winner] += 1
+                criteria_out: dict[str, Any] = {}
+                for name, stats in criteria_stats.items():
+                    n = sum(stats.values())
+                    criteria_out[name] = {
+                        "tuned_wins": stats["tuned"],
+                        "base_wins": stats["base"],
+                        "ties": stats["tie"],
+                        "win_rate": (
+                            round((stats["tuned"] + 0.5 * stats["tie"]) / n, 4)
+                            if n
+                            else None
+                        ),
+                    }
+                win_rates = [
+                    c["win_rate"] for c in criteria_out.values() if c["win_rate"] is not None
+                ]
+                results["judge"] = {
+                    "num_judged": judged,
+                    "criteria": criteria_out,
+                    "win_rate": round(sum(win_rates) / len(win_rates), 4) if win_rates else None,
+                }
+            else:
+                tuned_wins = sum(1 for v in verdicts if v == "tuned")
+                ties = sum(1 for v in verdicts if v == "tie")
+                results["judge"] = {
+                    "num_judged": judged,
+                    "tuned_wins": tuned_wins,
+                    "base_wins": judged - tuned_wins - ties,
+                    "ties": ties,
+                    "win_rate": (round((tuned_wins + 0.5 * ties) / judged, 4) if judged else None),
+                }
 
     rows = []
     for i, sample in enumerate(samples):
