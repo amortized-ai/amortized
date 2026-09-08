@@ -108,11 +108,12 @@ async def _resolve_training_model(
             "python3 /amortized/merge_text_export.py"
             f" $SERVE_MODEL_DIR {shlex.quote(base_model)} {shlex.quote(merge_dir)}"
         )
-        pre_commands.append(f"SERVE_MODEL_DIR={shlex.quote(merge_dir)}")
         with open(_MERGE_SCRIPT_PATH) as f:
             config_files["merge_text_export.py"] = f.read()
+        model_path = merge_dir
+    else:
+        model_path = "$SERVE_MODEL_DIR"
 
-    model_path = "$SERVE_MODEL_DIR"
     base_model_out = base_model if co_serve_base else ""
     return served_name, model_path, pre_commands, base_model_out
 
@@ -145,40 +146,39 @@ async def build(
     else:
         served_name, model_path, pre_commands = _resolve_named_model(config)
 
-    # Built as a single sh -c string so $SERVE_MODEL_DIR set by a pre-command
-    # expands (the worker's _wrap_command shlex.quotes plain arg lists).
-    serve_cmd = f'vllm serve "{model_path}"'
-    serve_cmd += f" --served-model-name {shlex.quote(served_name)}"
-    serve_cmd += f" --port {int(port)}"
+    # Built as a single sh -c string so the worker's _wrap_command can chain
+    # the pre-commands (download, merge) in front of it in one shell.
     max_model_len = config.get("max_model_len")
+    tuned_cmd = f"vllm serve {shlex.quote(model_path)}"
+    tuned_cmd += f" --served-model-name {shlex.quote(served_name)}"
+    tuned_cmd += f" --port {int(port)}"
     if max_model_len:
-        serve_cmd += f" --max-model-len {int(max_model_len)}"
+        tuned_cmd += f" --max-model-len {int(max_model_len)}"
     for extra in config.get("vllm_args", []) or []:
         if extra:
-            serve_cmd += f" {shlex.quote(str(extra))}"
-    if model_path.startswith("$"):
-        serve_cmd = f'test -n "{model_path}" && {serve_cmd}'
+            tuned_cmd += f" {shlex.quote(str(extra))}"
 
     ports = {port: port}
     if base_model:
         # Co-serve the base model alongside the tuned one (same GPU — both
-        # fit; per-user GPU quota is 1). It runs as a second vLLM process on
-        # port+1; wait -n makes the job fail if either process dies. Both
-        # instances get a memory cap so they share the GPU.
+        # fit; per-user GPU quota is 1): two vLLM processes, memory-capped.
+        # Grouped with { ...; } so the worker's pre-command && chain does not
+        # pull the background jobs into its own subshell. POSIX-sh safe wait
+        # (dash has no wait -n); exit code is nonzero if either died.
         base_port = port + 1
         base_cmd = f"vllm serve {shlex.quote(base_model)}"
         base_cmd += f" --served-model-name {shlex.quote(base_model)}"
         base_cmd += f" --port {int(base_port)} --gpu-memory-utilization 0.45"
         if max_model_len:
             base_cmd += f" --max-model-len {int(max_model_len)}"
-        serve_cmd += " --gpu-memory-utilization 0.45"
-        # POSIX-sh safe: wait for both, fail if either died (dash has no
-        # wait -n; exit code is the sum — nonzero if any process failed)
         serve_cmd = (
-            f"{base_cmd} & P1=$!; {serve_cmd} & P2=$!;"
-            " wait $P1; S1=$?; wait $P2; exit $((S1+$?))"
+            f"{{ {base_cmd} & P1=$!;"
+            f" {tuned_cmd} --gpu-memory-utilization 0.45 & P2=$!;"
+            " wait $P1; S1=$?; wait $P2; exit $((S1+$?)); }"
         )
         ports[base_port] = base_port
+    else:
+        serve_cmd = tuned_cmd
 
     cmd = ["sh", "-c", serve_cmd]
 

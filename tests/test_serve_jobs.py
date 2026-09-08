@@ -210,14 +210,15 @@ class TestServeBuilder:
         assert any("SERVE_MODEL_DIR=" in c for c in result.pre_commands)
         assert any("merge_text_export.py" in c for c in result.pre_commands)
         assert "merge_text_export.py" in config_files
-        # Command serves the resolved checkpoint dir via the shell variable
-        assert 'vllm serve "$SERVE_MODEL_DIR"' in result.command[2]
+        # Tuned model is served from the merged dir; base co-served on 8001
+        assert "vllm serve /amortized/work/merged_model" in result.command[2]
         # No MLflow available in tests — falls back to the registration-name pattern
         assert "--served-model-name Qwen3.5-2B-sft-11111111" in result.command[2]
         assert result.resolved_config["served_model_name"] == "Qwen3.5-2B-sft-11111111"
         # Base model co-served on port+1 by default (GPU quota is 1)
         assert "wait $P1" in result.command[2]
         assert "--port 8001" in result.command[2]
+        assert result.command[2].startswith("{ ") and result.command[2].endswith(" }")
         assert result.ports == {8000: 8000, 8001: 8001}
         assert result.resolved_config["base_model"] == "Qwen/Qwen3.5-2B"
         assert result.resolved_config["base_port"] == 8001
