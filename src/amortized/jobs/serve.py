@@ -24,6 +24,7 @@ IMAGE = "ghcr.io/amortized-ai/training:latest"
 DEFAULT_PORT = 8000
 
 _MERGE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "assets", "merge_text_export.py")
+_WAIT_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "assets", "wait_for_health.py")
 
 
 async def _training_display_name(parent: dict[str, Any], run_id: str) -> str:
@@ -163,25 +164,30 @@ async def build(
     ports = {port: port}
     if base_model:
         # Co-serve the base model alongside the tuned one (same GPU — both
-        # fit; per-user GPU quota is 1): two vLLM processes, memory-capped.
-        # Grouped with { ...; } so the worker's pre-command && chain does not
-        # pull the background jobs into its own subshell. POSIX-sh safe wait
-        # (dash has no wait -n); exit code is nonzero if either died.
-        # max-num-seqs is capped because hybrid-attention models (Qwen3.5)
-        # need per-sequence state blocks that don't fit at 0.45 utilization.
+        # fit; per-user GPU quota is 1). The tuned instance starts first and
+        # the base only after it is healthy — vLLM sizes its memory budget
+        # from free GPU memory at init, so a simultaneous start lets the
+        # second instance starve. Both are memory-capped, with max-num-seqs
+        # limited because hybrid-attention models (Qwen3.5) keep per-sequence
+        # state blocks. Grouped with { ...; } so the worker's pre-command &&
+        # chain does not pull the background jobs into its own subshell.
         base_port = port + 1
         shared_flags = (
-            f" --gpu-memory-utilization 0.45 --max-model-len {int(max_model_len)}"
+            f" --gpu-memory-utilization 0.35 --max-model-len {int(max_model_len)}"
             " --max-num-seqs 64"
         )
         base_cmd = f"vllm serve {shlex.quote(base_model)}"
         base_cmd += f" --served-model-name {shlex.quote(base_model)}"
         base_cmd += f" --port {int(base_port)}{shared_flags}"
         serve_cmd = (
-            f"{{ {base_cmd} & P1=$!;"
-            f" {tuned_cmd}{shared_flags} & P2=$!;"
+            f"{{ {tuned_cmd}{shared_flags} & P2=$!;"
+            " python3 /amortized/wait_for_health.py"
+            f" http://127.0.0.1:{int(port)}/health 1200 || exit 1;"
+            f" {base_cmd} & P1=$!;"
             " wait $P1; S1=$?; wait $P2; exit $((S1+$?)); }"
         )
+        with open(_WAIT_SCRIPT_PATH) as f:
+            config_files["wait_for_health.py"] = f.read()
         ports[base_port] = base_port
     else:
         serve_cmd = tuned_cmd
