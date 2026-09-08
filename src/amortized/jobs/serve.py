@@ -149,6 +149,10 @@ async def build(
     # Built as a single sh -c string so the worker's _wrap_command can chain
     # the pre-commands (download, merge) in front of it in one shell.
     max_model_len = config.get("max_model_len")
+    if base_model and not max_model_len:
+        # Two memory-capped instances share one GPU — the default 256K
+        # context of e.g. Qwen3.5 needs more KV cache than the cap allows
+        max_model_len = 32768
     tuned_cmd = f"vllm serve {shlex.quote(model_path)}"
     tuned_cmd += f" --served-model-name {shlex.quote(served_name)}"
     tuned_cmd += f" --port {int(port)}"
