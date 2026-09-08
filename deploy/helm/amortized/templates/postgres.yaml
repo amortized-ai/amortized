@@ -21,7 +21,7 @@ spec:
         component: postgres
     spec:
       securityContext:
-        runAsNonRoot: false
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}

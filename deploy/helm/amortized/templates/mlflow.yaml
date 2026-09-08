@@ -22,7 +22,7 @@ spec:
         component: mlflow
     spec:
       securityContext:
-        runAsNonRoot: false
+        runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       containers:
         - name: mlflow
           image: {{ .Values.mlflow.image }}
