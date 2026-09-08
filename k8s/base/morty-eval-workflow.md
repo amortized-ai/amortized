@@ -50,6 +50,33 @@ on the eval job's run, under `eval_results/`.
 
 ## Workflow
 
+### Step 0 — Confirm WHAT to evaluate
+
+**Never assume which model the user wants to evaluate.** Handoff
+context may list recently completed jobs — that is background
+information, NOT the user's choice. Do not open with "I'll help you
+evaluate your <most recent model>" unless the user actually picked it.
+
+Two legitimate entries:
+
+- **The user explicitly chose a model** — e.g. they picked "Evaluate
+  the model" right after a training job completed (the handoff context
+  says so), or they named the model in their message. Then that
+  training job is the eval subject; skip to Step 1.
+- **The user just said "evaluate a model"** — ask which. Call
+  `list_jobs` with type=training and present options:
+
+  - One option per recent trained model: "Evaluate <tuned model name>
+    against its base (<base model>)"
+  - "Compare two other models — I'll pick or provide the endpoints"
+
+  If there are no trained models at all, go straight to comparing two
+  arbitrary endpoints.
+
+An eval compares exactly two endpoints — they do NOT have to be a
+base/tuned pair from training. Any two OpenAI-compatible endpoints can
+be compared (e.g. two gateway models against each other).
+
 ### Step 1 — Confirm the eval dataset
 
 The eval dataset needs a `messages` column. The trailing assistant
@@ -64,35 +91,32 @@ message is used as the reference answer. Ask which source to use:
 If the user has neither, suggest generating a held-out eval set with
 an SDG job first.
 
-### Step 2 — Collect the two endpoints (with defaults)
+### Step 2 — Collect the two endpoints (show every known option)
 
-You need both endpoints, each with `base_url` (OpenAI-compatible,
-including `/v1`), `model`, and optionally `api_key`. Do NOT ask the
-user to type these from scratch — call
-`get_eval_endpoint_suggestions` first:
+You need two endpoints, each with `base_url` (OpenAI-compatible,
+including `/v1`), `model`, and optionally `api_key`. First call
+`get_eval_endpoint_suggestions` — pass the chosen `training_job_id`
+when there is one, otherwise call it without. It returns the
+**base/tuned model names** for the training job (when given) and
+**known_endpoints** — every model currently served through the
+platform gateway, each with a ready-to-use `base_url` and
+`model_name`.
 
-- **Chained from a training job** (the handoff context contains a
-  training job ID): pass it as `training_job_id`. The response gives
-  you the **base model name** (the training job's `model_name_or_path`)
-  and the **tuned model name** (the registered fine-tuned model).
-  Present them as the defaults:
-  > "Evaluating the tuned model (mdl-...) against the base
-  > (Qwen/Qwen3.5-2B). Which endpoints are they served on?"
-- **Direct eval (no training job)**: call it without
-  `training_job_id` — you still get the known serving endpoints.
+Then present **ALL serving options as clickable choices** — one
+question, every known option visible. Do NOT pre-decide, and do NOT
+just announce which endpoints you are going to use. The option list:
 
-The response also lists **known_endpoints** — models currently served
-through the platform gateway, each with a ready-to-use `base_url` and
-`model_name`. Offer them as clickable options, e.g.:
+1. **Every known endpoint** from the response, e.g.
+   "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills
+   in its `base_url` and `model_name` for that side of the comparison
+2. "Both models on the same vLLM host — I'll give the URL"
+3. "Separate endpoints — I'll give each URL"
 
-- "Base model via gateway (openai/gpt-oss-120b)"
-- "I'll provide custom endpoints"
-
-If the base model is available on the gateway, default the base
-endpoint to it. For the tuned model, the user still needs to tell you
-where it is served (the platform does not serve fine-tuned models) —
-but prefill its **model name** from the suggestions so they only
-supply the URL.
+If a suggested base/tuned model name matches a known endpoint, still
+show it as an option — do not silently use it. When the user picks a
+non-gateway option, ask for the URL(s) and present the suggested
+model names as **editable defaults** ("I'll default the names to X
+(base) and Y (tuned) unless the server expects different ones").
 
 The endpoints themselves must already be serving — evaluation does
 not start any servers.
