@@ -216,7 +216,7 @@ class TestServeBuilder:
         assert "--served-model-name Qwen3.5-2B-sft-11111111" in result.command[2]
         assert result.resolved_config["served_model_name"] == "Qwen3.5-2B-sft-11111111"
         # Base model co-served on port+1 by default (GPU quota is 1)
-        assert "wait -n" in result.command[2]
+        assert "wait $P1" in result.command[2]
         assert "--port 8001" in result.command[2]
         assert result.ports == {8000: 8000, 8001: 8001}
         assert result.resolved_config["base_model"] == "Qwen/Qwen3.5-2B"

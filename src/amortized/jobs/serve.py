@@ -172,7 +172,12 @@ async def build(
         if max_model_len:
             base_cmd += f" --max-model-len {int(max_model_len)}"
         serve_cmd += " --gpu-memory-utilization 0.45"
-        serve_cmd = f"{base_cmd} & {serve_cmd} & wait -n"
+        # POSIX-sh safe: wait for both, fail if either died (dash has no
+        # wait -n; exit code is the sum — nonzero if any process failed)
+        serve_cmd = (
+            f"{base_cmd} & P1=$!; {serve_cmd} & P2=$!;"
+            " wait $P1; S1=$?; wait $P2; exit $((S1+$?))"
+        )
         ports[base_port] = base_port
 
     cmd = ["sh", "-c", serve_cmd]
