@@ -77,10 +77,13 @@ Always include in `model_configs` inference_parameters:
 
 ```json
 "inference_parameters": {
-  "temperature": 0.7,
   "max_parallel_requests": 32
 }
 ```
+
+Do NOT set `temperature` unless the user explicitly asks for it — some models
+(e.g. gpt-5 and other reasoning models) reject any non-default temperature and
+the job fails. Omit it and the provider default is used.
 
 ## SDG Preview Flow
 

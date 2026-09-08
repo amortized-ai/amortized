@@ -115,7 +115,6 @@ Keep `skip_health_check: true`.
   "provider": "<from list_models>",
   "skip_health_check": true,
   "inference_parameters": {
-    "temperature": 0.7,
     "max_parallel_requests": 32
   }
 }]
