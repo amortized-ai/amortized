@@ -70,25 +70,43 @@ async def _serve_endpoints() -> list[dict[str, Any]]:
                     config = json.loads(config)
                 except ValueError:
                     config = {}
-            healthy = False
-            try:
-                resp = await client.get(base_url.replace("/v1", "") + "/health")
-                healthy = resp.status_code == 200
-            except Exception:
-                pass
-            endpoints.append(
-                {
-                    "job_id": job["id"],
-                    "name": str(config.get("served_model_name", "")),
-                    "model_name": str(config.get("served_model_name", "")),
-                    "base_url": base_url,
-                    "healthy": healthy,
-                    "source": "serve job"
-                    + (" (tuned)" if config.get("training_job_id") else ""),
-                    "note": f"Serve job {job['id'][:8]}"
-                    + (" — ready" if healthy else " — starting up, not ready yet"),
-                }
-            )
+            base_model = str(config.get("base_model", "") or "")
+            base_port = config.get("base_port")
+            entries = [
+                (
+                    str(config.get("served_model_name", "")),
+                    base_url,
+                    "serve job" + (" (tuned)" if config.get("training_job_id") else ""),
+                )
+            ]
+            # Co-served base model on port+1 (training-job serve jobs)
+            if base_model and base_port:
+                entries.append(
+                    (
+                        base_model,
+                        _serve_base_url({**job, "config": {"port": base_port}}),
+                        "serve job (base)",
+                    )
+                )
+            for model_name, url, source in entries:
+                healthy = False
+                try:
+                    resp = await client.get(url.replace("/v1", "") + "/health")
+                    healthy = resp.status_code == 200
+                except Exception:
+                    pass
+                endpoints.append(
+                    {
+                        "job_id": job["id"],
+                        "name": model_name,
+                        "model_name": model_name,
+                        "base_url": url,
+                        "healthy": healthy,
+                        "source": source,
+                        "note": f"Serve job {job['id'][:8]}"
+                        + (" — ready" if healthy else " — starting up, not ready yet"),
+                    }
+                )
     return endpoints
 
 

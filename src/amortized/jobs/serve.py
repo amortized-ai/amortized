@@ -101,6 +101,7 @@ async def _resolve_training_model(
     # (model_type qwen3_5_text), which vLLM cannot serve. When the export is
     # text-only, graft it back onto the base multimodal model (script ships
     # as a config file; it copies through untouched for servable exports).
+    co_serve_base = bool(config.get("serve_base", True)) and bool(base_model)
     if base_model:
         merge_dir = "/amortized/work/merged_model"
         pre_commands.append(
@@ -112,7 +113,8 @@ async def _resolve_training_model(
             config_files["merge_text_export.py"] = f.read()
 
     model_path = "$SERVE_MODEL_DIR"
-    return served_name, model_path, pre_commands
+    base_model_out = base_model if co_serve_base else ""
+    return served_name, model_path, pre_commands, base_model_out
 
 
 def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
@@ -135,8 +137,11 @@ async def build(
     port = int(config.get("port", DEFAULT_PORT))
     gpus = int(config.get("nproc_per_node", 1))
 
+    base_model = ""
     if config.get("training_job_id"):
-        served_name, model_path, pre_commands = await _resolve_training_model(config, config_files)
+        served_name, model_path, pre_commands, base_model = await _resolve_training_model(
+            config, config_files
+        )
     else:
         served_name, model_path, pre_commands = _resolve_named_model(config)
 
@@ -153,11 +158,31 @@ async def build(
             serve_cmd += f" {shlex.quote(str(extra))}"
     if model_path.startswith("$"):
         serve_cmd = f'test -n "{model_path}" && {serve_cmd}'
+
+    ports = {port: port}
+    if base_model:
+        # Co-serve the base model alongside the tuned one (same GPU — both
+        # fit; per-user GPU quota is 1). It runs as a second vLLM process on
+        # port+1; wait -n makes the job fail if either process dies. Both
+        # instances get a memory cap so they share the GPU.
+        base_port = port + 1
+        base_cmd = f"vllm serve {shlex.quote(base_model)}"
+        base_cmd += f" --served-model-name {shlex.quote(base_model)}"
+        base_cmd += f" --port {int(base_port)} --gpu-memory-utilization 0.45"
+        if max_model_len:
+            base_cmd += f" --max-model-len {int(max_model_len)}"
+        serve_cmd += " --gpu-memory-utilization 0.45"
+        serve_cmd = f"{base_cmd} & {serve_cmd} & wait -n"
+        ports[base_port] = base_port
+
     cmd = ["sh", "-c", serve_cmd]
 
     resolved_config = dict(config)
     resolved_config["served_model_name"] = served_name
     resolved_config["port"] = port
+    if base_model:
+        resolved_config["base_model"] = base_model
+        resolved_config["base_port"] = port + 1
 
     return JobBuildResult(
         command=cmd,
@@ -167,7 +192,7 @@ async def build(
         post_commands=[],
         resources=Resources(gpus=gpus, memory_gb=config.get("memory_gb") or None),
         image=IMAGE,
-        ports={port: port},
+        ports=ports,
         resolved_config=resolved_config,
     )
 
