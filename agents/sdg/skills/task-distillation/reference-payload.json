@@ -88,10 +88,9 @@
     {
       "alias": "text",
       "model": "<from-list_models>",
-      "provider": "gateway",
+      "provider": "<from-list_models>",
       "skip_health_check": true,
       "inference_parameters": {
-        "temperature": 0.7,
         "max_tokens": 32768,
         "max_parallel_requests": 32
       }
