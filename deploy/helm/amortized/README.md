@@ -25,6 +25,12 @@ and are intentionally not included here.
 
 ## Quick start
 
+> **Generate persona/skills first.** `files/morty-config` and `files/morty-skills` are
+> generated from the repo's `agents/` directory and are **gitignored** (not committed).
+> From a git checkout, run `make prompt` (repo root) once before installing or packaging —
+> otherwise the Morty ConfigMaps render empty. A published chart already includes them.
+> See "Morty persona & skills" below.
+
 Bundled data stores (dev / self-contained, e.g. kind):
 
 ```bash
@@ -153,10 +159,13 @@ The `morty-config` and `morty-skills` ConfigMaps are built from the files under
 including the base's `__` -> `/` path flattening for skills (ConfigMap keys can't
 contain `/`). The opencode Deployment mounts the `morty-skills` ConfigMap with
 `items[].path` mapping each flattened key back to its nested path, so the skills
-directory tree is rebuilt directly by the volume (no init container). The content
-under `files/` is generated from the repo's `agents/` directory (the same source
-the `make prompt` target uses for the kustomize build); this chart does not alter
-persona/skill content.
+directory tree is rebuilt directly by the volume (no init container).
+
+`agents/` (repo root) is the **single source of truth**. `files/morty-config` and
+`files/morty-skills` are **generated** from it by `make prompt` (the same target that
+generates the kustomize `k8s/base/morty-*`) and are **gitignored** — never hand-edited,
+so they cannot drift from `agents/`. Run `make prompt` before installing from a checkout
+or packaging the chart; a release/published chart bakes them in at package time.
 
 ## Not included (follow-ups)
 
