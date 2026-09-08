@@ -166,7 +166,7 @@ class TestServeBuilder:
             "type": "training",
             "status": "succeeded",
             "mlflow_run_id": "r" * 32,
-            "config": {"model_display_name": "mdl-test-1234"},
+            "config": {"model_name_or_path": "Qwen/Qwen3.5-2B"},
         }
 
         class FakeConn:
@@ -208,8 +208,9 @@ class TestServeBuilder:
         assert any("SERVE_MODEL_DIR=" in c for c in result.pre_commands)
         # Command serves the resolved checkpoint dir via the shell variable
         assert 'vllm serve "$SERVE_MODEL_DIR"' in result.command[2]
-        assert "--served-model-name mdl-test-1234" in result.command[2]
-        assert result.resolved_config["served_model_name"] == "mdl-test-1234"
+        # No MLflow available in tests — falls back to the registration-name pattern
+        assert "--served-model-name Qwen3.5-2B-sft-11111111" in result.command[2]
+        assert result.resolved_config["served_model_name"] == "Qwen3.5-2B-sft-11111111"
 
     @pytest.mark.asyncio
     async def test_build_rejects_non_succeeded_training(self, monkeypatch) -> None:

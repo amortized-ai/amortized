@@ -12,6 +12,7 @@ import logging
 import shlex
 from typing import Any
 
+import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.jobs.base import JobBuildError, JobBuildResult
 
@@ -22,6 +23,30 @@ IMAGE = "ghcr.io/amortized-ai/training:latest"
 DEFAULT_PORT = 8000
 
 
+async def _training_display_name(parent: dict[str, Any], run_id: str) -> str:
+    """Registered model name for a training run: MLflow tag, else the
+    registration-name pattern ({short}-{algo}-{job8}) training's on_success uses."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    display = ""
+    if tracking_uri:
+        try:
+            from amortized.core.mlflow_client import MLflowClient
+
+            client = MLflowClient(tracking_uri)
+            run = await client.get_run(run_id)
+            tags = {t["key"]: t["value"] for t in run["data"].get("tags", [])}
+            display = tags.get("model_display_name", "")
+        except Exception:
+            logger.debug("Failed to read model_display_name for run %s", run_id, exc_info=True)
+    if not display:
+        parent_config = parent.get("config", {}) or {}
+        algorithm = str(parent_config.get("algorithm", "sft"))
+        base = str(parent_config.get("model_name_or_path", "") or "model")
+        short = base.split("/")[-1]
+        display = f"{short}-{algorithm}-{parent['id'][:8]}"
+    return display
+
+
 async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
     """Resolve a tuned model from a training job's MLflow artifacts.
 
@@ -29,8 +54,6 @@ async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, lis
     in-container directory the final merged checkpoint will be downloaded to.
     """
     from amortized.core.mlflow_client import MLflowClient
-
-    import amortized.config as config_mod
 
     training_job_id = str(config.get("training_job_id", "")).strip()
     if not training_job_id:
@@ -53,14 +76,11 @@ async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, lis
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
 
-    # Default served name: the training run's display name tag (e.g. mdl-brawny-jay-896)
+    # Default served name: the training run's registered model tag (e.g.
+    # mdl-brawny-jay-896), falling back to the registration-name pattern
     served_name = str(config.get("served_model_name", "")).strip()
     if not served_name:
-        served_name = str((parent.get("config") or {}).get("model_display_name", "")).strip()
-        if not served_name:
-            raise JobBuildError(
-                "served_model_name is required (training job has no model_display_name)"
-            )
+        served_name = await _training_display_name(parent, run_id)
 
     local_dir = "/amortized/work/served_model"
     pre_commands = [
