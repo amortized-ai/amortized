@@ -66,10 +66,24 @@ function extractEvalSummary(config: Record<string, unknown>): [string, string][]
   return rows
 }
 
+function extractServeSummary(config: Record<string, unknown>): [string, string][] {
+  const rows: [string, string][] = []
+
+  if (config.training_job_id)
+    rows.push(["Training job", String(config.training_job_id).slice(0, 8)])
+  if (config.model_name_or_path) rows.push(["Model", String(config.model_name_or_path)])
+  if (config.served_model_name) rows.push(["Served name", String(config.served_model_name)])
+  if (config.nproc_per_node) rows.push(["GPUs", String(config.nproc_per_node)])
+  if (config.max_model_len) rows.push(["Max model len", String(config.max_model_len)])
+
+  return rows
+}
+
 function extractConfigSummary(jobType: string | undefined, config: Record<string, unknown>): [string, string][] {
   if (jobType === "sdg") return extractSdgSummary(config)
   if (jobType === "training") return extractTrainingSummary(config)
   if (jobType === "eval") return extractEvalSummary(config)
+  if (jobType === "serve") return extractServeSummary(config)
 
   const rows: [string, string][] = []
   for (const [key, value] of Object.entries(config)) {

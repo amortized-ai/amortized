@@ -6,6 +6,7 @@ const TYPE_LABELS: Record<JobType, string> = {
   sdg: "SDG",
   upload: "Upload",
   eval: "Eval",
+  serve: "Serve",
 }
 
 export function JobTypeBadge({ type }: { type: JobType }) {

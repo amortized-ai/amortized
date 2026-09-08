@@ -37,6 +37,8 @@ function runningStageLabel(jobType: string): string {
       return "Training model (Stage 3/4)"
     case "EVAL":
       return "Evaluating models (Stage 3/4)"
+    case "SERVE":
+      return "Serving model (Stage 3/4)"
     default:
       return "Generating data (Stage 3/4)"
   }

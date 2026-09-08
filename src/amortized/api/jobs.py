@@ -37,6 +37,7 @@ from amortized.models import (
     JobStatus,
     JobType,
     SDGJobRequest,
+    ServeJobRequest,
     TrainingJobRequest,
     ValidatedJobConfig,
 )
@@ -213,6 +214,20 @@ async def _validate_eval_data(
     return errors
 
 
+async def _validate_serve_model(config: dict[str, Any]) -> list[str]:
+    """Validate that a servable model source is configured."""
+    errors: list[str] = []
+    training_job_id = str(config.get("training_job_id", "")).strip()
+
+    if not training_job_id and not str(config.get("model_name_or_path", "")).strip():
+        errors.append(
+            "serve jobs require either training_job_id (a succeeded training"
+            " job whose tuned model to serve) or model_name_or_path"
+            " (an HF model id or local path)"
+        )
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # Job creation endpoints (one per job type)
 # ---------------------------------------------------------------------------
@@ -328,9 +343,82 @@ async def create_eval_job(
     return response
 
 
+@router.post(
+    "/serve",
+    status_code=201,
+    response_model=Job,
+    operation_id="create_serve_job",
+    summary=(
+        "Create and submit a serve job — brings up a persistent vLLM inference"
+        " endpoint for a tuned model (from a training job) or any HF model."
+        " Runs until cancelled."
+    ),
+)
+async def create_serve_job(
+    request: ServeJobRequest,
+    http_request: Request,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Job:
+    """Create a model serving job."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+    if parent_job_id and not config.get("training_job_id"):
+        config["training_job_id"] = parent_job_id
+    # Lineage: serve jobs are children of the training job they serve
+    parent_job_id = str(config.get("training_job_id", ""))
+
+    errors = await _validate_serve_model(config)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    user_id = http_request.headers.get("X-Forwarded-User", "")
+
+    repo = Repository(db)
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.serve,
+            config=config,
+            parent_job_id=parent_job_id,
+            user_id=user_id,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _job_response(row)
+
+
 # ---------------------------------------------------------------------------
 # Job validation endpoints (MCP-facing, no DB insert)
 # ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/serve/validate",
+    response_model=ValidatedJobConfig,
+    operation_id="validate_serve_job",
+    summary=(
+        "Validate a serve job config and present it for user confirmation."
+        " Set training_job_id to serve a completed training job's tuned model,"
+        " or model_name_or_path to serve any HF model."
+    ),
+)
+async def validate_serve_job(request: ServeJobRequest) -> ValidatedJobConfig:
+    """Validate a serve job config without creating it."""
+    config = request.model_dump(exclude_none=True, exclude_unset=True)
+    parent_job_id = config.pop("parent_job_id", "")
+    if parent_job_id and not config.get("training_job_id"):
+        config["training_job_id"] = parent_job_id
+        parent_job_id = ""
+
+    errors = await _validate_serve_model(config)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    return ValidatedJobConfig(
+        job_type=JobType.serve,
+        config=config,
+        parent_job_id="",
+    )
 
 
 @router.post(

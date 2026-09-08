@@ -348,6 +348,48 @@ class KubernetesBackend:
         created_job = await batch.create_namespaced_job(self._namespace, job)
 
         job_uid = created_job.metadata.uid
+
+        # Long-running jobs (e.g. serve) expose ports via a ClusterIP Service,
+        # owned by the Job so it is garbage-collected on cancel/TTL expiry.
+        if spec.ports:
+            from kubernetes_asyncio.client import (
+                V1OwnerReference,
+                V1Service,
+                V1ServicePort,
+                V1ServiceSpec,
+            )
+
+            service = V1Service(
+                metadata=V1ObjectMeta(
+                    name=resource_name,
+                    namespace=self._namespace,
+                    labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
+                    owner_references=[
+                        V1OwnerReference(
+                            api_version="batch/v1",
+                            kind="Job",
+                            name=resource_name,
+                            uid=job_uid,
+                        )
+                    ],
+                ),
+                spec=V1ServiceSpec(
+                    type="ClusterIP",
+                    selector={"amortized/job-id": spec.job_id},
+                    ports=[
+                        V1ServicePort(name=f"p{container_port}", port=container_port)
+                        for container_port in sorted(spec.ports)
+                    ],
+                ),
+            )
+            await core.create_namespaced_service(self._namespace, service)
+            logger.info(
+                "Created Service %s for job %s (ports %s)",
+                resource_name,
+                spec.job_id,
+                sorted(spec.ports),
+            )
+
         try:
             await core.patch_namespaced_config_map(
                 f"{resource_name}-config",

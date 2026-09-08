@@ -96,30 +96,49 @@ an SDG job first.
 You need two endpoints, each with `base_url` (OpenAI-compatible,
 including `/v1`), `model`, and optionally `api_key`. First call
 `get_eval_endpoint_suggestions` — pass the chosen `training_job_id`
-when there is one, otherwise call it without. It returns the
-**base/tuned model names** for the training job (when given) and
-**known_endpoints** — every model currently served through the
-platform gateway, each with a ready-to-use `base_url` and
-`model_name`.
+when there is one, otherwise call it without. It returns:
+
+- **base/tuned model names** for the training job (when given)
+- **known_endpoints** — every model served through the platform gateway
+- **serve_endpoints** — models the platform itself is serving right now
+  (serve jobs), each with a ready-to-use in-cluster `base_url`,
+  `model_name`, and a `healthy` flag
 
 Then present **ALL serving options as clickable choices** — one
 question, every known option visible. Do NOT pre-decide, and do NOT
 just announce which endpoints you are going to use. The option list:
 
-1. **Every known endpoint** from the response, e.g.
+1. **Every serve endpoint** from `serve_endpoints` — e.g.
+   "mdl-brawny-jay-896 (serve job, ready)". Only offer ones with
+   `healthy: true` as ready; unhealthy ones are still starting up
+   (see "Serving models" below)
+2. **Every gateway endpoint** from `known_endpoints`, e.g.
    "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills
    in its `base_url` and `model_name` for that side of the comparison
-2. "Both models on the same vLLM host — I'll give the URL"
-3. "Separate endpoints — I'll give each URL"
+3. "Serve the models for me" — when the subject is a trained model
+   (or any model by name) that is not currently being served
+4. "Both models on the same vLLM host — I'll give the URL"
+5. "Separate endpoints — I'll give each URL"
 
-If a suggested base/tuned model name matches a known endpoint, still
-show it as an option — do not silently use it. When the user picks a
-non-gateway option, ask for the URL(s) and present the suggested
-model names as **editable defaults** ("I'll default the names to X
-(base) and Y (tuned) unless the server expects different ones").
+If a suggested base/tuned model name matches a serve or gateway
+endpoint, still show it as an option — do not silently use it. When
+the user picks a manual option, ask for the URL(s) and present the
+suggested model names as **editable defaults** ("I'll default the
+names to X (base) and Y (tuned) unless the server expects different
+ones").
 
-The endpoints themselves must already be serving — evaluation does
-not start any servers.
+**Serving models (option 3):** the platform can run a serve job — a
+persistent vLLM endpoint on the training GPUs. To serve the tuned
+model of the chosen training job, call `validate_serve_job` with
+`training_job_id` set and confirm with the user. To serve the base
+model, call `validate_serve_job` with `model_name_or_path` set to the
+suggested base model name. One serve job per model — check
+`serve_endpoints` first to avoid serving something twice. After
+submitting, poll `get_eval_endpoint_suggestions` about every 30
+seconds until the new serve endpoint shows `healthy: true` (model
+loading takes a minute or two), then continue to Step 3. Tell the
+user serve jobs keep running after the eval — they can be stopped
+anytime from the Jobs page.
 
 ### Step 3 — Design the metrics (approval loop)
 

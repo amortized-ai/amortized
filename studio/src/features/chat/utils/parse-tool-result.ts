@@ -83,5 +83,6 @@ export const VALIDATE_TO_CREATE_ENDPOINT: Record<string, string> = {
   validate_sdg_job: "/api/v1/jobs/sdg",
   validate_training_job: "/api/v1/jobs/training",
   validate_eval_job: "/api/v1/jobs/eval",
+  validate_serve_job: "/api/v1/jobs/serve",
   validate_recipe_job: "/api/v1/jobs/recipe",
 }
