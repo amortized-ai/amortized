@@ -135,16 +135,18 @@ export function MessageBubble({
 
   // Only show the "thinking" dots when there is genuinely nothing to render yet. A completed
   // turn that produced only tool output (options/question/tools) must render that, not dots.
+  // Option cards and the action card only render when their callbacks are present, so mirror
+  // those guards here — otherwise the dots would be suppressed with nothing shown in their place.
   const hasRenderableBody =
     !!displayContent ||
     !!optionsQuestion ||
-    parsedOptions.length > 0 ||
-    message.optionCards.length > 0 ||
+    (parsedOptions.length > 0 && !!onOptionSelect) ||
+    (message.optionCards.length > 0 && !!onOptionSelect) ||
     jobSubmissions.length > 0 ||
     visibleToolResults.length > 0 ||
     !!modelPricing ||
     !!vramEstimate ||
-    !!message.proposedAction
+    (!!message.proposedAction && !!onConfirmAction && !!onRejectAction)
 
   return (
     <div

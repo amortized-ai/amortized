@@ -352,4 +352,19 @@ describe("MessageBubble — structured option cards", () => {
     render(<MessageBubble message={msg} onOptionSelect={vi.fn()} />)
     expect(screen.getByText("Explicit")).toBeInTheDocument()
   })
+
+  it("falls back to thinking dots when options can't render (no onOptionSelect)", () => {
+    // present_options with options but no question, and no onOptionSelect: the cards can't
+    // render and the tool result is hidden, so hasRenderableBody must not suppress the dots.
+    const toolResults = [{
+      name: "present_options",
+      result: JSON.stringify({
+        options: [{ title: "A", description: "First", value: "a" }],
+      }),
+      collapsed: true,
+    }]
+    render(<MessageBubble message={makeMsg("", toolResults)} />, { wrapper: Wrapper })
+    expect(screen.queryAllByRole("button")).toHaveLength(0)
+    expect(document.querySelector(".thinking-dot")).not.toBeNull()
+  })
 })
