@@ -156,8 +156,6 @@ async def build(
     tuned_cmd = f"vllm serve {shlex.quote(model_path)}"
     tuned_cmd += f" --served-model-name {shlex.quote(served_name)}"
     tuned_cmd += f" --port {int(port)}"
-    if max_model_len:
-        tuned_cmd += f" --max-model-len {int(max_model_len)}"
     for extra in config.get("vllm_args", []) or []:
         if extra:
             tuned_cmd += f" {shlex.quote(str(extra))}"
@@ -169,15 +167,19 @@ async def build(
         # Grouped with { ...; } so the worker's pre-command && chain does not
         # pull the background jobs into its own subshell. POSIX-sh safe wait
         # (dash has no wait -n); exit code is nonzero if either died.
+        # max-num-seqs is capped because hybrid-attention models (Qwen3.5)
+        # need per-sequence state blocks that don't fit at 0.45 utilization.
         base_port = port + 1
+        shared_flags = (
+            f" --gpu-memory-utilization 0.45 --max-model-len {int(max_model_len)}"
+            " --max-num-seqs 64"
+        )
         base_cmd = f"vllm serve {shlex.quote(base_model)}"
         base_cmd += f" --served-model-name {shlex.quote(base_model)}"
-        base_cmd += f" --port {int(base_port)} --gpu-memory-utilization 0.45"
-        if max_model_len:
-            base_cmd += f" --max-model-len {int(max_model_len)}"
+        base_cmd += f" --port {int(base_port)}{shared_flags}"
         serve_cmd = (
             f"{{ {base_cmd} & P1=$!;"
-            f" {tuned_cmd} --gpu-memory-utilization 0.45 & P2=$!;"
+            f" {tuned_cmd}{shared_flags} & P2=$!;"
             " wait $P1; S1=$?; wait $P2; exit $((S1+$?)); }"
         )
         ports[base_port] = base_port
