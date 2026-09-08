@@ -64,19 +64,38 @@ message is used as the reference answer. Ask which source to use:
 If the user has neither, suggest generating a held-out eval set with
 an SDG job first.
 
-### Step 2 — Collect the two endpoints
+### Step 2 — Collect the two endpoints (with defaults)
 
 You need both endpoints, each with `base_url` (OpenAI-compatible,
-including `/v1`), `model`, and optionally `api_key`:
+including `/v1`), `model`, and optionally `api_key`. Do NOT ask the
+user to type these from scratch — call
+`get_eval_endpoint_suggestions` first:
 
-- **Base model endpoint**: serving the original model
-  (e.g. the `model_name_or_path` used in the training job)
-- **Tuned model endpoint**: serving the fine-tuned model
-  (e.g. the model registered from the training job)
+- **Chained from a training job** (the handoff context contains a
+  training job ID): pass it as `training_job_id`. The response gives
+  you the **base model name** (the training job's `model_name_or_path`)
+  and the **tuned model name** (the registered fine-tuned model).
+  Present them as the defaults:
+  > "Evaluating the tuned model (mdl-...) against the base
+  > (Qwen/Qwen3.5-2B). Which endpoints are they served on?"
+- **Direct eval (no training job)**: call it without
+  `training_job_id` — you still get the known serving endpoints.
 
-If the user just finished a training job, look up its config to
-prefill the base model name. The endpoints themselves must already be
-serving — evaluation does not start any servers.
+The response also lists **known_endpoints** — models currently served
+through the platform gateway, each with a ready-to-use `base_url` and
+`model_name`. Offer them as clickable options, e.g.:
+
+- "Base model via gateway (openai/gpt-oss-120b)"
+- "I'll provide custom endpoints"
+
+If the base model is available on the gateway, default the base
+endpoint to it. For the tuned model, the user still needs to tell you
+where it is served (the platform does not serve fine-tuned models) —
+but prefill its **model name** from the suggestions so they only
+supply the URL.
+
+The endpoints themselves must already be serving — evaluation does
+not start any servers.
 
 ### Step 3 — Design the metrics (approval loop)
 

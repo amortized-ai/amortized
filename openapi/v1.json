@@ -1277,6 +1277,53 @@
         }
       }
     },
+    "/api/v1/eval/endpoint-suggestions": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and the currently known serving endpoints (gateway models).",
+        "operationId": "get_eval_endpoint_suggestions",
+        "parameters": [
+          {
+            "name": "training_job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Training job ID to derive base/tuned model names from (optional)",
+              "default": "",
+              "title": "Training Job Id"
+            },
+            "description": "Training job ID to derive base/tuned model names from (optional)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Endpoint Suggestions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models": {
       "get": {
         "tags": [

@@ -370,3 +370,71 @@ class TestRubricParsing:
         raw = '{"a": "CANDIDATE A WINS", "b": 7}'
         verdicts = m.parse_rubric_verdicts(raw, ["a", "b"])
         assert verdicts == {"a": "tie", "b": "tie"}
+
+
+class TestEvalEndpointSuggestions:
+    @pytest.mark.asyncio
+    async def test_suggestions_without_training_job(self, client: httpx.AsyncClient) -> None:
+        response = await client.get("/api/v1/eval/endpoint-suggestions")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["training_job_id"] == ""
+        assert data["base_model"] == ""
+        assert data["tuned_model"] == ""
+        assert isinstance(data["known_endpoints"], list)
+
+    @pytest.mark.asyncio
+    async def test_suggestions_for_training_job(self, client: httpx.AsyncClient) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, created_at, mlflow_run_id)
+                   VALUES ('tj-9', 'training', 'succeeded',
+                           '{"model_name_or_path": "Qwen/Qwen3.5-2B", "algorithm": "lora_sft"}',
+                           now(), 'run9')"""
+            )
+
+        class FakeClient:
+            def __init__(self, tracking_uri: str, timeout: float = 30.0) -> None:
+                pass
+
+            async def list_gateway_models(self) -> list[dict]:
+                return [
+                    {"name": "gpt-oss", "provider": "openai", "model_name": "openai/gpt-oss-120b"}
+                ]
+
+            async def get_run(self, run_id: str) -> dict:
+                return {
+                    "data": {"tags": [{"key": "model_display_name", "value": "mdl-rfe-scorer"}]}
+                }
+
+        from unittest.mock import patch
+
+        import amortized.config as config_mod
+
+        with (
+            patch("amortized.api.eval.MLflowClient", FakeClient),
+            patch.object(config_mod.settings, "mlflow_tracking_uri", "http://mlflow:5000"),
+            patch.object(config_mod.settings, "gateway_url", "http://gw:5000/v1"),
+        ):
+            response = await client.get(
+                "/api/v1/eval/endpoint-suggestions", params={"training_job_id": "tj-9"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["base_model"] == "Qwen/Qwen3.5-2B"
+        assert data["tuned_model"] == "mdl-rfe-scorer"
+        assert data["known_endpoints"][0]["model_name"] == "openai/gpt-oss-120b"
+        assert data["known_endpoints"][0]["base_url"] == "http://gw:5000/v1"
+
+    @pytest.mark.asyncio
+    async def test_suggestions_unknown_training_job(self, client: httpx.AsyncClient) -> None:
+        response = await client.get(
+            "/api/v1/eval/endpoint-suggestions", params={"training_job_id": "nope"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["base_model"] == ""
+        assert "not found" in data.get("message", "")
