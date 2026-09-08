@@ -1,0 +1,21 @@
+Amortized core stack installed.
+
+  Release:    {{ .Release.Name }}
+  Namespace:  {{ .Values.namespace }} (jobs: {{ .Values.jobsNamespace }})
+  Data stores: {{ if .Values.dataStores.bundled }}bundled (PostgreSQL + MinIO + MLflow){{ else }}external{{ end }}
+  Model provider: {{ .Values.model.provider }}
+
+Check rollout:
+
+  kubectl -n {{ .Values.namespace }} get pods
+
+Reach the services (port-forward):
+
+  kubectl -n {{ .Values.namespace }} port-forward svc/amortized-server 8000:8000
+  kubectl -n {{ .Values.namespace }} port-forward svc/amortized-studio 8080:8080
+{{- if .Values.studio.route.enabled }}
+
+Studio is also exposed via an OpenShift Route ({{ if .Values.studio.host }}{{ .Values.studio.host }}{{ else }}auto-generated host{{ end }}):
+
+  kubectl -n {{ .Values.namespace }} get route amortized-studio
+{{- end }}

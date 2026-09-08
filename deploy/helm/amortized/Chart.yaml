@@ -1,0 +1,18 @@
+apiVersion: v2
+name: amortized
+description: >-
+  Amortized core stack (control plane for building task models on
+  Kubernetes/OpenShift). Single-tenant, per-namespace install of the server,
+  Studio, the OpenCode agent, and optional bundled data stores
+  (PostgreSQL, MinIO, MLflow).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - amortized
+  - mlops
+  - fine-tuning
+  - openshift
+home: https://github.com/amortized-ai/amortized
+sources:
+  - https://github.com/amortized-ai/amortized

@@ -40,6 +40,7 @@ build-studio: ## Build studio image
 
 AGENTS_DIR   := agents
 K8S_SKILLS   := k8s/base/morty-skills
+HELM_FILES   := deploy/helm/amortized/files
 
 prompt: ## Generate k8s configs from agents directory
 	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
@@ -54,7 +55,24 @@ prompt: ## Generate k8s configs from agents directory
 			cp -r $(AGENTS_DIR)/$$agent/skills/* $(K8S_SKILLS)/$$agent/; \
 		fi; \
 	done
-	@echo "Generated k8s configs from $(AGENTS_DIR)/"
+	@# Helm chart carries the same persona + skills. A Helm package is self-contained
+	@# (it can't read files outside the chart dir), so the chart needs its own copy of
+	@# agents/ (the single source of truth). These are generated artifacts (gitignored),
+	@# never hand-edited; run `make prompt` before `helm package`/install-from-checkout.
+	@rm -rf $(HELM_FILES)/morty-config $(HELM_FILES)/morty-skills
+	@mkdir -p $(HELM_FILES)/morty-config
+	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > $(HELM_FILES)/morty-config/morty.md
+	@cp $(AGENTS_DIR)/orchestrator/identity.md $(HELM_FILES)/morty-config/morty-identity.md
+	@cp $(AGENTS_DIR)/orchestrator/workflow.md $(HELM_FILES)/morty-config/morty-workflow.md
+	@cp $(AGENTS_DIR)/sdg/workflow.md $(HELM_FILES)/morty-config/morty-sdg-workflow.md
+	@cp $(AGENTS_DIR)/training/workflow.md $(HELM_FILES)/morty-config/morty-training-workflow.md
+	@for agent in sdg training; do \
+		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
+			mkdir -p $(HELM_FILES)/morty-skills/$$agent; \
+			cp -r $(AGENTS_DIR)/$$agent/skills/* $(HELM_FILES)/morty-skills/$$agent/; \
+		fi; \
+	done
+	@echo "Generated k8s + Helm configs from $(AGENTS_DIR)/"
 
 # ──────────────────────────────────────────────
 # Deploy (single-user dev)
