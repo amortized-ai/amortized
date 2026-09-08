@@ -9,6 +9,7 @@ in-cluster for eval jobs.
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 from typing import Any
 
@@ -21,6 +22,8 @@ logger = logging.getLogger("amortized.jobs.serve")
 IMAGE = "ghcr.io/amortized-ai/training:latest"
 
 DEFAULT_PORT = 8000
+
+_MERGE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "assets", "merge_text_export.py")
 
 
 async def _training_display_name(parent: dict[str, Any], run_id: str) -> str:
@@ -47,14 +50,14 @@ async def _training_display_name(parent: dict[str, Any], run_id: str) -> str:
     return display
 
 
-async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
+async def _resolve_training_model(
+    config: dict[str, Any], config_files: dict[str, str]
+) -> tuple[str, str, list[str]]:
     """Resolve a tuned model from a training job's MLflow artifacts.
 
     Returns (served_model_name, model_path, pre_commands). model_path is the
-    in-container directory the final merged checkpoint will be downloaded to.
+    in-container directory the servable checkpoint ends up in.
     """
-    from amortized.core.mlflow_client import MLflowClient
-
     training_job_id = str(config.get("training_job_id", "")).strip()
     if not training_job_id:
         raise JobBuildError("training_job_id is required when serving a tuned model")
@@ -76,6 +79,9 @@ async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, lis
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
 
+    parent_config = parent.get("config", {}) or {}
+    base_model = str(parent_config.get("model_name_or_path", "")).strip()
+
     # Default served name: the training run's registered model tag (e.g.
     # mdl-brawny-jay-896), falling back to the registration-name pattern
     served_name = str(config.get("served_model_name", "")).strip()
@@ -90,6 +96,21 @@ async def _resolve_training_model(config: dict[str, Any]) -> tuple[str, str, lis
         f"SERVE_MODEL_DIR=$(find {shlex.quote(local_dir)}/hf_format -mindepth 1 -maxdepth 1"
         " -type d | sort -V | tail -1)",
     ]
+
+    # Training Hub exports Qwen3.5 checkpoints as the bare text tower
+    # (model_type qwen3_5_text), which vLLM cannot serve. When the export is
+    # text-only, graft it back onto the base multimodal model (script ships
+    # as a config file; it copies through untouched for servable exports).
+    if base_model:
+        merge_dir = "/amortized/work/merged_model"
+        pre_commands.append(
+            "python3 /amortized/merge_text_export.py"
+            f" $SERVE_MODEL_DIR {shlex.quote(base_model)} {shlex.quote(merge_dir)}"
+        )
+        pre_commands.append(f"SERVE_MODEL_DIR={shlex.quote(merge_dir)}")
+        with open(_MERGE_SCRIPT_PATH) as f:
+            config_files["merge_text_export.py"] = f.read()
+
     model_path = "$SERVE_MODEL_DIR"
     return served_name, model_path, pre_commands
 
@@ -115,7 +136,7 @@ async def build(
     gpus = int(config.get("nproc_per_node", 1))
 
     if config.get("training_job_id"):
-        served_name, model_path, pre_commands = await _resolve_training_model(config)
+        served_name, model_path, pre_commands = await _resolve_training_model(config, config_files)
     else:
         served_name, model_path, pre_commands = _resolve_named_model(config)
 

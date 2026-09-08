@@ -198,14 +198,18 @@ class TestServeBuilder:
 
         monkeypatch.setattr(repo_mod, "Repository", FakeRepoCls())
 
+        config_files: dict = {}
         result = await serve_builder.build(
             {"id": "j1", "type": "serve"},
             {"training_job_id": "11111111-1111-1111-1111-111111111111"},
-            {},
+            config_files,
         )
-        # Pre-command downloads the HF export from MLflow
+        # Pre-command downloads the HF export from MLflow, then grafts the
+        # text-only export onto the base multimodal model (vLLM requirement)
         assert any("mlflow artifacts download" in c for c in result.pre_commands)
         assert any("SERVE_MODEL_DIR=" in c for c in result.pre_commands)
+        assert any("merge_text_export.py" in c for c in result.pre_commands)
+        assert "merge_text_export.py" in config_files
         # Command serves the resolved checkpoint dir via the shell variable
         assert 'vllm serve "$SERVE_MODEL_DIR"' in result.command[2]
         # No MLflow available in tests — falls back to the registration-name pattern

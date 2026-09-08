@@ -49,7 +49,7 @@ where = ["src"]
 include = ["amortized*"]
 
 [tool.setuptools.package-data]
-amortized = ["db/*.sql", "db/migrations/*.py", "db/migrations/versions/*.py", "schemas/*.json"]
+amortized = ["db/*.sql", "db/migrations/*.py", "db/migrations/versions/*.py", "schemas/*.json", "jobs/assets/*.py"]
 
 [tool.ruff]
 target-version = "py311"
