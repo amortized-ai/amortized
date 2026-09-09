@@ -88,7 +88,14 @@ message is used as the reference answer. Ask which source to use:
   ID as `eval_data_run_id`
 
 If the user has neither, suggest generating a held-out eval set with
-an SDG job first.
+an SDG job first. If they agree, delegate: call `delegate_to_subagent`
+with `target: "sdg"` and a context that includes the eval subject and
+endpoint you already collected, plus everything needed to replicate
+the training dataset's structure as an independent eval set (the
+training job ID is the trail to its parent SDG job). When the SDG job
+completes you receive a `[SUBAGENT COMPLETED]` summary with the new
+job ID — continue your eval workflow from there without re-asking
+anything you already know.
 
 ### Step 2 — Collect the endpoint (show every known option)
 
@@ -204,6 +211,24 @@ criterion, averaged over the scored samples. Interpret the numbers
 plainly and offer next steps: evaluate another model to compare, train
 again with different data or parameters, or accept the model. The
 Studio job detail panel also has a Results tab with the same numbers.
+
+## Delegating to the SDG Agent
+
+You can hand the conversation to the SDG agent when a held-out eval
+dataset does not exist yet (see Step 1). This is a real handoff: the
+SDG agent runs the requirement gathering, preview, and submission,
+and when its job completes you get a `[SUBAGENT COMPLETED]` summary
+and the conversation returns to you.
+
+When delegating, pass a `context` that lets the SDG agent work without
+re-asking the user what you already know: the eval subject (model and
+endpoint), the training job ID and its parent SDG job ID (so the eval
+set can mirror the training data's task, schema, and size), and that
+the goal is a held-out eval set the user will use for evaluation.
+
+After the SDG job completes, resume YOUR workflow at Step 3 (metrics
+design) using the new SDG job ID as `parent_job_id` — do not restart
+from Step 0 or re-ask for the endpoint.
 
 ## Failure Handling
 
