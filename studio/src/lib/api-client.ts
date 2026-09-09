@@ -154,6 +154,10 @@ export function getJob(id: string): Promise<Job> {
   return get<Job>(`/api/v1/jobs/${id}`)
 }
 
+export function getJobDurationStats(): Promise<Record<string, number>> {
+  return get<Record<string, number>>("/api/v1/jobs/stats/duration")
+}
+
 export function cancelJob(id: string): Promise<Job> {
   logger.info("cancelJob", { id })
   return del<Job>(`/api/v1/jobs/${id}`)

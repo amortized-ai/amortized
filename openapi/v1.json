@@ -173,6 +173,31 @@
         }
       }
     },
+    "/api/v1/jobs/stats/duration": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Average duration in seconds for completed jobs, grouped by type.",
+        "operationId": "get_job_duration_stats",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "type": "object",
+                  "title": "Response Get Job Duration Stats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs": {
       "get": {
         "tags": [
