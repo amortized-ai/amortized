@@ -485,11 +485,24 @@ function EvalResultsTab({ job }: { job: Job }) {
 
   const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
   const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
+  // Show only the metrics the user configured: structural metrics from
+  // job.config.metrics, judge criteria from job.config.rubric. When neither is
+  // set (older jobs) fall back to showing all structural metrics.
+  const configMetrics = Array.isArray(job.config?.metrics)
+    ? (job.config?.metrics as string[])
+    : []
+  const rubricNames = new Set(
+    (Array.isArray(job.config?.rubric) ? (job.config?.rubric as { name?: string }[]) : [])
+      .map((r) => r?.name)
+      .filter((n): n is string => !!n),
+  )
+  const showAllStructural = configMetrics.length === 0 && rubricNames.size === 0
+  const wantMetric = (key: string) => showAllStructural || configMetrics.includes(key)
   const rows: { label: string; base: string; tuned: string }[] = [
-    { label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) },
-    { label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) },
-    { label: "Error rate", base: formatMetric(results.base?.error_rate), tuned: formatMetric(results.tuned?.error_rate) },
-    { label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) },
+    ...(wantMetric("exact_match") ? [{ label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) }] : []),
+    ...(wantMetric("format_validity") ? [{ label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) }] : []),
+    ...(wantMetric("error_rate") ? [{ label: "Error rate", base: formatMetric(results.base?.error_rate), tuned: formatMetric(results.tuned?.error_rate) }] : []),
+    ...(wantMetric("empty_rate") ? [{ label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) }] : []),
   ]
 
   return (
@@ -532,7 +545,7 @@ function EvalResultsTab({ job }: { job: Job }) {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(results.judge.criteria).map(([name, c]) => (
+              {Object.entries(results.judge.criteria).filter(([name]) => rubricNames.size === 0 || rubricNames.has(name)).map(([name, c]) => (
                 <tr key={name} className="border-b last:border-0 border-border/40">
                   <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
                   <td className="px-4 py-2.5 text-right font-mono text-xs">{c.tuned_wins}</td>
@@ -552,6 +565,7 @@ function EvalResultsTab({ job }: { job: Job }) {
         </div>
       )}
 
+      {rows.length > 0 && (
       <div className="rounded-xl border bg-card overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -576,6 +590,7 @@ function EvalResultsTab({ job }: { job: Job }) {
           </tbody>
         </table>
       </div>
+      )}
 
       <p className="text-xs text-muted-foreground">
         {results.num_records} records ({results.num_skipped} skipped). Per-sample outputs are in
