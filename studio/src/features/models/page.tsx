@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router"
 import { useModels } from "./api/use-models"
 import { ModelTable } from "./components/model-table"
 import { ModelDetailPanel } from "./components/model-detail-panel"
+import { DeployModelDialog, useDeployableTrainingJobs } from "@/features/jobs/components/deploy-model-dialog"
 import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -26,6 +27,8 @@ export default function ModelsPage() {
   const [search, setSearch] = useState("")
   const [selectedModel, setSelectedModel] = useState<ModelRecord | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [deployOpen, setDeployOpen] = useState(false)
+  const { data: trainingJobs = [] } = useDeployableTrainingJobs(deployOpen)
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
 
@@ -104,7 +107,15 @@ export default function ModelsPage() {
         </div>
       </div>
 
-      <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search models..." />
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search models..." />
+        </div>
+        <Button className="gap-2 shrink-0" onClick={() => setDeployOpen(true)}>
+          <Rocket className="h-4 w-4" />
+          Serve
+        </Button>
+      </div>
 
       {isLoading ? (
         <TableSkeleton columns={5} />
@@ -132,6 +143,12 @@ export default function ModelsPage() {
         model={selectedModel}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+      />
+
+      <DeployModelDialog
+        open={deployOpen}
+        onOpenChange={setDeployOpen}
+        trainingJobs={trainingJobs}
       />
     </div>
   )

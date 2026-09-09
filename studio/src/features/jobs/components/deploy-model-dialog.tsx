@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Rocket } from "lucide-react"
-import { createServeJob, getJobs } from "@/lib/api-client"
+import { createServeJob, getJobs, getGpuAvailability } from "@/lib/api-client"
 import type { Job } from "@/types/api"
 
 interface DeployModelDialogProps {
@@ -42,8 +42,16 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
   const [servedName, setServedName] = useState("")
   const [gpus, setGpus] = useState(1)
   const [maxModelLen, setMaxModelLen] = useState("")
+  const [gpuMemUtil, setGpuMemUtil] = useState("0.9")
 
   const queryClient = useQueryClient()
+
+  const { data: gpu } = useQuery({
+    queryKey: ["gpu-availability"],
+    queryFn: getGpuAvailability,
+    enabled: open,
+    refetchInterval: open ? 15000 : false,
+  })
 
   const deploy = useMutation({
     mutationFn: (config: Record<string, unknown>) => createServeJob(config),
@@ -66,6 +74,7 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
     setServedName("")
     setGpus(1)
     setMaxModelLen("")
+    setGpuMemUtil("0.9")
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -76,6 +85,10 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
     if (servedName.trim()) config.served_model_name = servedName.trim()
     const len = parseInt(maxModelLen, 10)
     if (maxModelLen.trim() && Number.isFinite(len) && len > 0) config.max_model_len = len
+    const util = parseFloat(gpuMemUtil)
+    if (Number.isFinite(util) && util > 0 && util <= 1) {
+      config.vllm_args = [`--gpu-memory-utilization=${util}`]
+    }
     if (source === "training") {
       if (!trainingJobId) return
       config.training_job_id = trainingJobId
@@ -173,6 +186,23 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
             />
           </div>
 
+          {gpu && (
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              {gpu.available !== null ? (
+                <>
+                  <span className="font-medium text-foreground">
+                    {gpu.available} GPU{gpu.available === 1 ? "" : "s"} available
+                  </span>{" "}
+                  within your budget
+                  {gpu.quota_limit !== null && ` (${gpu.quota_used}/${gpu.quota_limit} in use)`}
+                  {" · "}~{gpu.per_gpu_memory_gb} GB each
+                </>
+              ) : (
+                <>~{gpu.per_gpu_memory_gb} GB per GPU · budget unavailable</>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="deploy-gpus">GPUs</Label>
@@ -184,6 +214,14 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
                 value={gpus}
                 onChange={(e) => setGpus(parseInt(e.target.value, 10) || 1)}
               />
+              {gpu != null &&
+                gpu.available !== null &&
+                gpu.available !== undefined &&
+                gpus > gpu.available && (
+                  <p className="text-xs text-rh-danger">
+                    Exceeds your available budget ({gpu.available}).
+                  </p>
+                )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="deploy-max-len">
@@ -198,6 +236,25 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
                 placeholder="model default"
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="deploy-gpu-mem">
+              GPU memory utilization{" "}
+              <span className="font-normal text-muted-foreground">
+                (0-1, fraction of each GPU vLLM may use)
+              </span>
+            </Label>
+            <Input
+              id="deploy-gpu-mem"
+              type="number"
+              step="0.05"
+              min={0.1}
+              max={1}
+              value={gpuMemUtil}
+              onChange={(e) => setGpuMemUtil(e.target.value)}
+              placeholder="0.9"
+            />
           </div>
 
           <p className="text-xs text-muted-foreground">

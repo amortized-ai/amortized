@@ -271,6 +271,75 @@ def _detect_gpu() -> dict[str, object]:
     }
 
 
+def _quota_int(value: object) -> int:
+    """Parse a k8s quota quantity (e.g. "2") to int, 0 on failure."""
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Static per-GPU memory (GB). The cluster is homogeneous H100s; we surface a
+# fixed value rather than querying node capacity (which needs cluster-scoped
+# RBAC the server does not have).
+_PER_GPU_MEMORY_GB = 80
+
+
+@app.get("/api/v1/gpu-availability", operation_id="get_gpu_availability")
+async def gpu_availability() -> dict[str, object]:
+    """GPUs the current user can still request, capped by their ResourceQuota.
+
+    Returns the namespace GPU budget (quota_limit), how much of it is in use
+    (quota_used), and how many GPUs are still available within budget. Memory
+    per GPU is a static cluster constant.
+    """
+    result: dict[str, object] = {
+        "backend": _settings.compute_backend,
+        "per_gpu_memory_gb": _PER_GPU_MEMORY_GB,
+        "quota_limit": None,
+        "quota_used": 0,
+        "available": None,
+    }
+
+    if _settings.compute_backend != "kubernetes":
+        det = _detect_gpu()
+        count = int(det.get("count", 0) or 0)  # type: ignore[arg-type]
+        result.update({"quota_limit": count, "quota_used": 0, "available": count})
+        return result
+
+    try:
+        from kubernetes_asyncio import config as k8s_config
+        from kubernetes_asyncio.client import ApiClient, CoreV1Api
+
+        k8s_config.load_incluster_config()  # type: ignore[no-untyped-call]
+        async with ApiClient() as api_client:
+            core = CoreV1Api(api_client)
+            quotas = await core.list_namespaced_resource_quota(_settings.compute_namespace)
+            limit: int | None = None
+            used = 0
+            for rq in quotas.items or []:
+                status = getattr(rq, "status", None)
+                hard = (getattr(status, "hard", None) or {}) if status else {}
+                used_map = (getattr(status, "used", None) or {}) if status else {}
+                for key in (
+                    "requests.nvidia.com/gpu",
+                    "limits.nvidia.com/gpu",
+                    "nvidia.com/gpu",
+                ):
+                    if key in hard:
+                        val = _quota_int(hard[key])
+                        limit = val if limit is None else min(limit, val)
+                    if key in used_map:
+                        used = max(used, _quota_int(used_map[key]))
+            available = None if limit is None else max(0, limit - used)
+            result.update({"quota_limit": limit, "quota_used": used, "available": available})
+    except Exception:
+        logger.warning("GPU availability query failed", exc_info=True)
+        result["error"] = "unavailable"
+
+    return result
+
+
 @app.get("/api/v1/health", response_model=HealthResponse, operation_id="health")
 async def health() -> dict[str, object]:
     from amortized.db import check_db_health

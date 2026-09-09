@@ -442,5 +442,8 @@ class ServeJobConfig(BaseModel):
 class ServeJobRequest(ServeJobConfig):
     parent_job_id: str = Field(
         "",
-        description="Parent training job whose tuned model to serve (alternative to training_job_id)",
+        description=(
+            "Parent training job whose tuned model to serve"
+            " (alternative to training_job_id)"
+        ),
     )

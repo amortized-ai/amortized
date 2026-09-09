@@ -441,6 +441,20 @@ export function getConfig(): Promise<ConfigResponse> {
   return get<ConfigResponse>("/api/v1/config")
 }
 
+export interface GpuAvailability {
+  backend: string
+  per_gpu_memory_gb: number
+  quota_limit: number | null
+  quota_used: number
+  available: number | null
+  error?: string
+}
+
+export function getGpuAvailability(): Promise<GpuAvailability> {
+  logger.debug("getGpuAvailability")
+  return get<GpuAvailability>("/api/v1/gpu-availability")
+}
+
 // --- MLflow: Experiments ---
 
 export function searchMlflowExperiments(): Promise<{
