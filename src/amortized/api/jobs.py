@@ -296,6 +296,33 @@ async def validate_training_job(
 
 
 # ---------------------------------------------------------------------------
+# Duration stats
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/stats/duration",
+    operation_id="get_job_duration_stats",
+    summary="Average duration in seconds for completed jobs, grouped by type.",
+)
+async def get_job_duration_stats(
+    db: asyncpg.Connection = Depends(_get_db),
+) -> dict[str, float]:
+    rows = await db.fetch(
+        """
+        SELECT type,
+               EXTRACT(EPOCH FROM AVG(completed_at - started_at)) AS avg_seconds
+          FROM jobs
+         WHERE status = 'succeeded'
+           AND started_at IS NOT NULL
+           AND completed_at IS NOT NULL
+         GROUP BY type
+        """
+    )
+    return {row["type"]: round(row["avg_seconds"], 1) for row in rows}
+
+
+# ---------------------------------------------------------------------------
 # Job CRUD
 # ---------------------------------------------------------------------------
 

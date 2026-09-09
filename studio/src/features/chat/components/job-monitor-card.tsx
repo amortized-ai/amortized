@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getJob } from "@/lib/api-client"
+import { getJob, getJobDurationStats } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
 
 interface JobMonitorCardProps {
@@ -72,6 +72,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const [error, setError] = useState<string | null>(null)
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
   const [elapsed, setElapsed] = useState(0)
+  const [avgDuration, setAvgDuration] = useState<number | null>(null)
   const jobStartRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -79,9 +80,20 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const onCompleteRef = useRef(onComplete)
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
 
+  useEffect(() => {
+    getJobDurationStats()
+      .then((stats) => {
+        const key = jobType.toLowerCase()
+        if (stats[key]) setAvgDuration(stats[key] * 1000)
+      })
+      .catch(() => {})
+  }, [jobType])
+
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
-  const progress = statusToProgress(status, elapsed)
+  const progress = avgDuration && status === "running"
+    ? Math.min(95, Math.round((elapsed / avgDuration) * 100))
+    : statusToProgress(status, elapsed)
 
   const pollJob = useCallback(async () => {
     try {
@@ -203,6 +215,9 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       {/* Stats */}
       <p className="text-xs text-muted-foreground">
         {formatElapsed(elapsed)} &bull; {Math.round(progress)}%
+        {!isTerminal && avgDuration && elapsed > 0 && avgDuration > elapsed && (
+          <> &bull; ~{formatElapsed(avgDuration - elapsed)} remaining</>
+        )}
       </p>
 
       {/* Error message */}
