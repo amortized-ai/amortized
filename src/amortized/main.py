@@ -279,26 +279,23 @@ def _quota_int(value: object) -> int:
         return 0
 
 
-# Static per-GPU memory (GB). The cluster is homogeneous H100s; we surface a
-# fixed value rather than querying node capacity (which needs cluster-scoped
-# RBAC the server does not have).
-_PER_GPU_MEMORY_GB = 80
-
-
 @app.get("/api/v1/gpu-availability", operation_id="get_gpu_availability")
 async def gpu_availability() -> dict[str, object]:
-    """GPUs the current user can still request, capped by their ResourceQuota.
+    """GPU availability for deploy decisions.
 
-    Returns the namespace GPU budget (quota_limit), how much of it is in use
-    (quota_used), and how many GPUs are still available within budget. Memory
-    per GPU is a static cluster constant.
+    - gpus: every GPU on the cluster with its live free memory (from the
+      gpu-inventory DaemonSet), who holds it, and whether it is "mine"
+      (pinned by this user's running serve jobs — deployments share it).
+    - quota_limit/quota_used/available: the user's namespace ResourceQuota
+      (training jobs request nvidia.com/gpu; serve pods pin instead).
     """
     result: dict[str, object] = {
         "backend": _settings.compute_backend,
-        "per_gpu_memory_gb": _PER_GPU_MEMORY_GB,
         "quota_limit": None,
         "quota_used": 0,
         "available": None,
+        "gpus": [],
+        "my_uuids": [],
     }
 
     if _settings.compute_backend != "kubernetes":
@@ -334,8 +331,21 @@ async def gpu_availability() -> dict[str, object]:
             available = None if limit is None else max(0, limit - used)
             result.update({"quota_limit": limit, "quota_used": used, "available": available})
     except Exception:
-        logger.warning("GPU availability query failed", exc_info=True)
-        result["error"] = "unavailable"
+        logger.warning("GPU availability quota query failed", exc_info=True)
+        result["quota_error"] = "unavailable"
+
+    try:
+        from amortized.core.gpu_inventory import describe_gpus
+
+        described = await describe_gpus(_settings.compute_namespace)
+        result.update(
+            {"gpus": described["gpus"], "my_uuids": described["my_uuids"], "updated": described["updated"]}
+        )
+    except Exception:
+        # Missing RBAC on the gpu-inventory ConfigMap (older deploy overlays)
+        # or the reporter is down — the quota view still works.
+        logger.warning("GPU availability inventory read failed", exc_info=True)
+        result["gpu_error"] = "unavailable"
 
     return result
 

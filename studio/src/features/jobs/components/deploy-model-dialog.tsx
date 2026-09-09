@@ -187,19 +187,33 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
           </div>
 
           {gpu && (
-            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              {gpu.available !== null ? (
-                <>
-                  <span className="font-medium text-foreground">
-                    {gpu.available} GPU{gpu.available === 1 ? "" : "s"} available
-                  </span>{" "}
-                  within your budget
-                  {gpu.quota_limit !== null && ` (${gpu.quota_used}/${gpu.quota_limit} in use)`}
-                  {" · "}~{gpu.per_gpu_memory_gb} GB each
-                </>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+              {gpu.gpus && gpu.gpus.length > 0 ? (
+                gpu.gpus
+                  .filter((g) => g.mine)
+                  .concat(gpu.gpus.filter((g) => !g.mine && g.held_by.length === 0).slice(0, 2))
+                  .map((g) => (
+                    <div key={g.uuid}>
+                      {g.mine ? (
+                        <span className="font-medium text-foreground">
+                          Your GPU #{g.index}
+                        </span>
+                      ) : (
+                        <span>GPU #{g.index} (free)</span>
+                      )}
+                      {" · "}
+                      {(g.memory_free_mb / 1024).toFixed(1)} GB free of{" "}
+                      {(g.memory_total_mb / 1024).toFixed(0)} GB
+                      {!g.mine && g.held_by.length > 0 && ` (held by ${g.held_by.join(", ")})`}
+                    </div>
+                  ))
               ) : (
-                <>~{gpu.per_gpu_memory_gb} GB per GPU · budget unavailable</>
+                <div>~{gpu.per_gpu_memory_gb} GB per GPU · GPU status unavailable</div>
               )}
+              <div className="pt-1 border-t">
+                Deployments share your GPU within your budget — size
+                GPU&nbsp;memory&nbsp;utilization so everything fits.
+              </div>
             </div>
           )}
 
@@ -222,6 +236,7 @@ export function DeployModelDialog({ open, onOpenChange, trainingJobs }: DeployMo
                     Exceeds your available budget ({gpu.available}).
                   </p>
                 )}
+
             </div>
             <div className="space-y-2">
               <Label htmlFor="deploy-max-len">

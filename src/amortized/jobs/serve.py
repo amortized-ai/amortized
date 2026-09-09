@@ -11,8 +11,12 @@ CausalLM) that stock vLLM cannot serve. Those exports are served through
 serve_vllm.py — a generic wrapper that registers vLLM's unregistered
 text-backbone architectures and tolerates non-persistent buffer weights —
 after patch_model_config.py fills in the architectures key. One model per
-job: base and tuned models are served by separate serve jobs so larger
-models can each get their own GPU.
+job: base and tuned models are served by separate serve jobs.
+
+Serve pods do NOT request nvidia.com/gpu. They pin to a GPU chosen by
+core.gpu_inventory.assign_serve_gpu via NVIDIA_VISIBLE_DEVICES=<uuid>, so
+several of a user's deployments share one GPU within their quota (the
+in-pod check_gpu_memory pre-flight fails fast when free memory runs out).
 """
 
 from __future__ import annotations
@@ -131,6 +135,25 @@ async def build(
     port = int(config.get("port", DEFAULT_PORT))
     gpus = int(config.get("nproc_per_node", 1))
 
+    # Pin to a GPU instead of requesting nvidia.com/gpu: all of the user's
+    # serve deployments share one GPU (their quota budget), reusing the GPU
+    # their running serve pods already hold. Falls back to a build error
+    # when nothing is available.
+    from amortized import config as config_module
+
+    try:
+        from amortized.core.gpu_inventory import assign_serve_gpu
+
+        gpu_uuids = await assign_serve_gpu(
+            config_module.settings.compute_namespace, gpus
+        )
+    except Exception as exc:
+        # Non-kubernetes backends (local) have no inventory — request GPUs
+        # the regular way there.
+        if config_module.settings.compute_backend == "kubernetes":
+            raise
+        gpu_uuids = []
+
     if config.get("training_job_id"):
         served_name, model_path, pre_commands = await _resolve_training_model(
             config, config_files
@@ -153,9 +176,10 @@ async def build(
         if str(extra).startswith("--gpu-memory-utilization"):
             with contextlib.suppress(ValueError):
                 gpu_memory_utilization = float(str(extra).split("=", 1)[-1].split()[-1])
+    check_gpus = 1 if gpu_uuids else int(gpus)
     pre_commands.append(
         "python3 /amortized/check_gpu_memory.py"
-        f" {quoted_path} {int(gpus)} {gpu_memory_utilization}"
+        f" {quoted_path} {int(check_gpus)} {gpu_memory_utilization}"
     )
 
     serve_cmd = f"python3 /amortized/serve_vllm.py serve {quoted_path}"
@@ -175,13 +199,26 @@ async def build(
     resolved_config["served_model_name"] = served_name
     resolved_config["port"] = port
 
+    env: dict[str, str] = {}
+    if gpu_uuids:
+        # nvidia-container-runtime honors this env var (it is the node's
+        # default runtime) — the pod sees exactly these GPUs, which the
+        # device plugin does not account for, so the quota stays free for
+        # training jobs.
+        env["NVIDIA_VISIBLE_DEVICES"] = ",".join(gpu_uuids)
+        resolved_config["gpu_uuids"] = gpu_uuids
+        resource_gpus = 0
+    else:
+        resource_gpus = gpus
+
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
         pre_commands=pre_commands,
+        env=env,
         # Serve jobs run until cancelled — no post commands, no completion
         post_commands=[],
-        resources=Resources(gpus=gpus, memory_gb=config.get("memory_gb") or None),
+        resources=Resources(gpus=resource_gpus, memory_gb=config.get("memory_gb") or None),
         image=IMAGE,
         ports={port: port},
         resolved_config=resolved_config,

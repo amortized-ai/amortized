@@ -285,6 +285,35 @@ async def create_training_job(
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
+    # Serve pods pin to the user's GPU instead of requesting
+    # nvidia.com/gpu, so the quota only reflects training. Keep the
+    # one-GPU budget honest: training must wait until the user's serve
+    # deployments are stopped.
+    from amortized import config as config_module
+    from amortized.models import JobStatus, JobType
+
+    if config_module.settings.compute_backend == "kubernetes":
+        running_serves = await db.fetch(
+            """SELECT id FROM jobs
+               WHERE type = $1 AND status = $2 AND k8s_namespace = $3""",
+            JobType.serve.value,
+            JobStatus.running.value,
+            config_module.settings.compute_namespace,
+        )
+        if running_serves:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "You have {} running serve job(s) sharing your GPU budget"
+                    " ({}). Stop them from the Jobs page before training."
+                    " Serve jobs don't count against the GPU quota, so this"
+                    " check keeps your budget at one GPU.".format(
+                        len(running_serves),
+                        ", ".join(sorted(r["id"][:8] for r in running_serves)),
+                    )
+                ),
+            )
+
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
