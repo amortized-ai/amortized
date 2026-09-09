@@ -4,7 +4,7 @@ name: Build Morty image
 # can be dispatched on its own (e.g. to build a testable image from a feature branch).
 on:
   push:
-    branches: [main, feat/morty-image]
+    branches: [main]
     paths: ['agents/**', 'containers/morty/**', '.github/workflows/morty-image.yml']
   workflow_dispatch:
 
