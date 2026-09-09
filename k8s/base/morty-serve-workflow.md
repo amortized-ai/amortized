@@ -32,8 +32,14 @@ A serve job starts a **persistent vLLM inference endpoint** on the
 platform's GPUs:
 
 - The model can be a **trained model** (from a completed training job —
-  the merged HF export is pulled from MLflow automatically) or **any
-  public model** by HF name (e.g. Qwen/Qwen3.5-2B)
+  the HF export is pulled from MLflow automatically) or **any public
+  model** by HF name (e.g. Qwen/Qwen3.5-2B)
+- **One model per serve job.** To compare a tuned model against its
+  base, serve them as two separate jobs — each gets its own GPU(s), so
+  large models are not squeezed together
+- Before starting vLLM, the job pre-checks that the model weights fit
+  in the available GPU memory and fails fast with a clear message if
+  they do not (suggest more GPUs or a smaller model)
 - Clients talk to it over an OpenAI-compatible API; the served name
   defaults to the training job's registered model name
 - The job runs **until stopped** — it occupies its GPUs the whole time
@@ -69,7 +75,9 @@ Sensible defaults — only ask where it matters:
   (from the suggestions) or the HF name. Mention the default; users
   rarely need to change it
 - **GPU count** (`nproc_per_node`): default 1. Only ask for large
-  models (>14B) or high-throughput needs
+  models (>14B) or high-throughput needs. A rough rule is ~2 GB of GPU
+  memory per billion parameters (bf16) plus KV cache — the pre-flight
+  check enforces it at submit time anyway
 - **max_model_len**: leave unset unless the user needs long contexts
 
 ### Step 2 — Validate and submit

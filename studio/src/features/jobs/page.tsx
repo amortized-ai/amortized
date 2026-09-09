@@ -5,6 +5,7 @@ import { useEntityNamesStore } from "@/stores/entity-names-store"
 import { useJobFilters } from "./hooks/use-job-filters"
 import { JobTable } from "./components/job-table"
 import { JobDetailPanel } from "./components/job-detail-panel"
+import { DeployModelDialog, useDeployableTrainingJobs } from "./components/deploy-model-dialog"
 import { FilterChips, TYPE_COLORS, STATUS_COLORS } from "./components/filter-chips"
 import { ErrorState } from "@/components/error-state"
 import { PageHeader } from "@/components/page-header"
@@ -18,7 +19,7 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty"
-import { Briefcase, ArrowRight, GraduationCap, Sparkles, Upload } from "lucide-react"
+import { Briefcase, ArrowRight, GraduationCap, Rocket, Sparkles, Upload } from "lucide-react"
 import { SearchInput } from "@/components/search-input"
 import type { Job, JobType, JobStatus } from "@/types/api"
 
@@ -52,7 +53,9 @@ export default function JobsPage() {
   const [search, setSearch] = useState("")
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [deployOpen, setDeployOpen] = useState(false)
   const { data: selectedJob = null } = useJob(selectedJobId)
+  const { data: trainingJobs = [] } = useDeployableTrainingJobs(deployOpen)
 
   useEffect(() => {
     const jobParam = searchParams.get("job")
@@ -97,7 +100,18 @@ export default function JobsPage() {
   return (
     <div className="space-y-6">
       <div data-tutorial="job-header" className="space-y-6">
-        <PageHeader title="Jobs" description="Track your training, data generation, and upload runs" />
+        <div className="flex items-center justify-between gap-4">
+          <PageHeader title="Jobs" description="Track your training, data generation, and upload runs" />
+          <Button
+            variant="outline"
+            className="gap-2 shrink-0"
+            onClick={() => setDeployOpen(true)}
+            data-tutorial="deploy-model"
+          >
+            <Rocket className="h-4 w-4" />
+            Deploy model
+          </Button>
+        </div>
 
         <div className="animate-message-in rounded-xl border bg-card p-4">
           <div className="grid gap-3 md:grid-cols-3 mb-3">
@@ -188,6 +202,12 @@ export default function JobsPage() {
         job={selectedJob}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+      />
+
+      <DeployModelDialog
+        open={deployOpen}
+        onOpenChange={setDeployOpen}
+        trainingJobs={trainingJobs}
       />
     </div>
   )

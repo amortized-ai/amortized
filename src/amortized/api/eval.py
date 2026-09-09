@@ -70,8 +70,6 @@ async def _serve_endpoints() -> list[dict[str, Any]]:
                     config = json.loads(config)
                 except ValueError:
                     config = {}
-            base_model = str(config.get("base_model", "") or "")
-            base_port = config.get("base_port")
             entries = [
                 (
                     str(config.get("served_model_name", "")),
@@ -79,15 +77,6 @@ async def _serve_endpoints() -> list[dict[str, Any]]:
                     "serve job" + (" (tuned)" if config.get("training_job_id") else ""),
                 )
             ]
-            # Co-served base model on port+1 (training-job serve jobs)
-            if base_model and base_port:
-                entries.append(
-                    (
-                        base_model,
-                        _serve_base_url({**job, "config": {"port": base_port}}),
-                        "serve job (base)",
-                    )
-                )
             for model_name, url, source in entries:
                 healthy = False
                 try:

@@ -239,6 +239,11 @@ export function createSdgJob(config: Record<string, unknown>): Promise<Job> {
   return post<Job>("/api/v1/jobs/sdg", config)
 }
 
+export function createServeJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createServeJob")
+  return post<Job>("/api/v1/jobs/serve", config)
+}
+
 // --- Agent Chat (OpenCode) ---
 
 import type { OpenCodeResponse } from "@/features/chat/types"

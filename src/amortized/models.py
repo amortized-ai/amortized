@@ -423,11 +423,11 @@ class ServeJobConfig(BaseModel):
     )
     port: int = Field(8000, ge=1024, le=65535, description="Container port vLLM listens on")
     serve_base: bool = Field(
-        True,
+        False,
+        deprecated=True,
         description=(
-            "When serving a tuned model, also serve its base model on port+1"
-            " (same GPU — the per-user quota is one GPU, so both run in one job)."
-            " Set false to serve only the tuned model."
+            "Deprecated: base and tuned models are now served by separate serve"
+            " jobs (each gets its own GPU), so this flag no longer has an effect."
         ),
     )
     nproc_per_node: int = Field(1, ge=1, le=8, description="Number of GPUs for serving")

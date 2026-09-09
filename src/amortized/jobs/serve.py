@@ -1,9 +1,18 @@
 """Serve job builder — bring up a persistent vLLM inference endpoint.
 
 Serves either a tuned model from a completed training job (downloading the
-merged HF export from MLflow) or any model by name/path (HF hub id). The job
-stays running until cancelled; a Kubernetes Service exposes the endpoint
+HF export from MLflow) or any model by name/path (HF hub id). The job stays
+running until cancelled; a Kubernetes Service exposes the endpoint
 in-cluster for eval jobs.
+
+Training Hub exports of VLM text backbones (e.g. Qwen3.5) carry a bare text
+config (model_type "qwen3_5_text", no architectures, weights keyed like a
+CausalLM) that stock vLLM cannot serve. Those exports are served through
+serve_vllm.py — a generic wrapper that registers vLLM's unregistered
+text-backbone architectures and tolerates non-persistent buffer weights —
+after patch_model_config.py fills in the architectures key. One model per
+job: base and tuned models are served by separate serve jobs so larger
+models can each get their own GPU.
 """
 
 from __future__ import annotations
@@ -23,8 +32,7 @@ IMAGE = "ghcr.io/amortized-ai/training:latest"
 
 DEFAULT_PORT = 8000
 
-_MERGE_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "assets", "merge_text_export.py")
-_WAIT_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "assets", "wait_for_health.py")
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 
 async def _training_display_name(parent: dict[str, Any], run_id: str) -> str:
@@ -80,9 +88,6 @@ async def _resolve_training_model(
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
 
-    parent_config = parent.get("config", {}) or {}
-    base_model = str(parent_config.get("model_name_or_path", "")).strip()
-
     # Default served name: the training run's registered model tag (e.g.
     # mdl-brawny-jay-896), falling back to the registration-name pattern
     served_name = str(config.get("served_model_name", "")).strip()
@@ -91,32 +96,19 @@ async def _resolve_training_model(
 
     local_dir = "/amortized/work/served_model"
     pre_commands = [
-        # Download the merged HF export, then pick the highest-step checkpoint
+        # Download the HF export, then pick the highest-step checkpoint
         f"mlflow artifacts download -r {shlex.quote(run_id)} -a model/hf_format"
         f" -d {shlex.quote(local_dir)}",
         f"SERVE_MODEL_DIR=$(find {shlex.quote(local_dir)}/hf_format -mindepth 1 -maxdepth 1"
         " -type d | sort -V | tail -1)",
+        # Training exports may be bare text towers (no architectures key) —
+        # patch_model_config.py fills it in via transformers' own registry
+        # and is a no-op for standard exports.
+        "python3 /amortized/patch_model_config.py $SERVE_MODEL_DIR",
     ]
+    model_path = "$SERVE_MODEL_DIR"
 
-    # Training Hub exports Qwen3.5 checkpoints as the bare text tower
-    # (model_type qwen3_5_text), which vLLM cannot serve. When the export is
-    # text-only, graft it back onto the base multimodal model (script ships
-    # as a config file; it copies through untouched for servable exports).
-    co_serve_base = bool(config.get("serve_base", True)) and bool(base_model)
-    if base_model:
-        merge_dir = "/amortized/work/merged_model"
-        pre_commands.append(
-            "python3 /amortized/merge_text_export.py"
-            f" $SERVE_MODEL_DIR {shlex.quote(base_model)} {shlex.quote(merge_dir)}"
-        )
-        with open(_MERGE_SCRIPT_PATH) as f:
-            config_files["merge_text_export.py"] = f.read()
-        model_path = merge_dir
-    else:
-        model_path = "$SERVE_MODEL_DIR"
-
-    base_model_out = base_model if co_serve_base else ""
-    return served_name, model_path, pre_commands, base_model_out
+    return served_name, model_path, pre_commands
 
 
 def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
@@ -139,67 +131,49 @@ async def build(
     port = int(config.get("port", DEFAULT_PORT))
     gpus = int(config.get("nproc_per_node", 1))
 
-    base_model = ""
     if config.get("training_job_id"):
-        served_name, model_path, pre_commands, base_model = await _resolve_training_model(
+        served_name, model_path, pre_commands = await _resolve_training_model(
             config, config_files
         )
     else:
         served_name, model_path, pre_commands = _resolve_named_model(config)
 
-    # Built as a single sh -c string so the worker's _wrap_command can chain
-    # the pre-commands (download, merge) in front of it in one shell.
-    max_model_len = config.get("max_model_len")
-    if base_model and not max_model_len:
-        # Two memory-capped instances share one GPU — the default 256K
-        # context of e.g. Qwen3.5 needs more KV cache than the cap allows
-        max_model_len = 32768
-    tuned_cmd = f"vllm serve {shlex.quote(model_path)}"
-    tuned_cmd += f" --served-model-name {shlex.quote(served_name)}"
-    tuned_cmd += f" --port {int(port)}"
+    # $SERVE_MODEL_DIR is our own pre-command variable (find output, no
+    # spaces) — shlex-quoting it would suppress expansion, so it goes in raw
+    # while user-provided paths (HF ids) stay quoted.
+    quoted_path = model_path if model_path.startswith("$") else shlex.quote(model_path)
+
+    # Pre-flight: fail fast (before vLLM's slow engine init) when the model
+    # weights won't fit in the GPU memory available to this job. Uses the
+    # same model ref as the serve command (checkpoint dir or HF id).
+    import contextlib
+
+    gpu_memory_utilization = 0.9
+    for extra in config.get("vllm_args", []) or []:
+        if str(extra).startswith("--gpu-memory-utilization"):
+            with contextlib.suppress(ValueError):
+                gpu_memory_utilization = float(str(extra).split("=", 1)[-1].split()[-1])
+    pre_commands.append(
+        "python3 /amortized/check_gpu_memory.py"
+        f" {quoted_path} {int(gpus)} {gpu_memory_utilization}"
+    )
+
+    serve_cmd = f"python3 /amortized/serve_vllm.py serve {quoted_path}"
+    serve_cmd += f" --served-model-name {shlex.quote(served_name)}"
+    serve_cmd += f" --port {int(port)}"
     for extra in config.get("vllm_args", []) or []:
         if extra:
-            tuned_cmd += f" {shlex.quote(str(extra))}"
+            serve_cmd += f" {shlex.quote(str(extra))}"
 
-    ports = {port: port}
-    if base_model:
-        # Co-serve the base model alongside the tuned one (same GPU — both
-        # fit; per-user GPU quota is 1). The tuned instance starts first and
-        # the base only after it is healthy — vLLM sizes its memory budget
-        # from free GPU memory at init, so a simultaneous start lets the
-        # second instance starve. Both are memory-capped, with max-num-seqs
-        # limited because hybrid-attention models (Qwen3.5) keep per-sequence
-        # state blocks. Grouped with { ...; } so the worker's pre-command &&
-        # chain does not pull the background jobs into its own subshell.
-        base_port = port + 1
-        shared_flags = (
-            f" --gpu-memory-utilization 0.35 --max-model-len {int(max_model_len)}"
-            " --max-num-seqs 64"
-        )
-        base_cmd = f"vllm serve {shlex.quote(base_model)}"
-        base_cmd += f" --served-model-name {shlex.quote(base_model)}"
-        base_cmd += f" --port {int(base_port)}{shared_flags}"
-        serve_cmd = (
-            f"{{ {tuned_cmd}{shared_flags} & P2=$!;"
-            " python3 /amortized/wait_for_health.py"
-            f" http://127.0.0.1:{int(port)}/health 1200 || exit 1;"
-            f" {base_cmd} & P1=$!;"
-            " wait $P1; S1=$?; wait $P2; exit $((S1+$?)); }"
-        )
-        with open(_WAIT_SCRIPT_PATH) as f:
-            config_files["wait_for_health.py"] = f.read()
-        ports[base_port] = base_port
-    else:
-        serve_cmd = tuned_cmd
+    for asset in ("serve_vllm.py", "patch_model_config.py", "check_gpu_memory.py"):
+        with open(os.path.join(_ASSETS_DIR, asset)) as f:
+            config_files[asset] = f.read()
 
     cmd = ["sh", "-c", serve_cmd]
 
     resolved_config = dict(config)
     resolved_config["served_model_name"] = served_name
     resolved_config["port"] = port
-    if base_model:
-        resolved_config["base_model"] = base_model
-        resolved_config["base_port"] = port + 1
 
     return JobBuildResult(
         command=cmd,
@@ -209,7 +183,7 @@ async def build(
         post_commands=[],
         resources=Resources(gpus=gpus, memory_gb=config.get("memory_gb") or None),
         image=IMAGE,
-        ports=ports,
+        ports={port: port},
         resolved_config=resolved_config,
     )
 

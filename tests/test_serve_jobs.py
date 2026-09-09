@@ -127,14 +127,17 @@ class TestServeBuilder:
             {},
         )
         assert result.command[:2] == ["sh", "-c"]
-        assert "vllm serve" in result.command[2]
-        assert "Qwen/Qwen3.5-2B" in result.command[2]
+        # Served through the generic wrapper (registers text-backbone archs)
+        assert "serve_vllm.py serve Qwen/Qwen3.5-2B" in result.command[2]
         assert "--served-model-name Qwen/Qwen3.5-2B" in result.command[2]
         assert "--port 8000" in result.command[2]
         assert result.ports == {8000: 8000}
         assert result.resources.gpus == 1
         assert result.image == serve_builder.IMAGE
         assert result.resolved_config["served_model_name"] == "Qwen/Qwen3.5-2B"
+        # Wrapper + pre-flight assets ship as config files
+        assert "serve_vllm.py" in result.config_files
+        assert "check_gpu_memory.py" in result.config_files
 
     @pytest.mark.asyncio
     async def test_build_custom_port_and_gpus(self) -> None:
@@ -204,24 +207,25 @@ class TestServeBuilder:
             {"training_job_id": "11111111-1111-1111-1111-111111111111"},
             config_files,
         )
-        # Pre-command downloads the HF export from MLflow, then grafts the
-        # text-only export onto the base multimodal model (vLLM requirement)
+        # Pre-commands: download the HF export from MLflow, pick the latest
+        # checkpoint, patch its config (text-tower exports have no
+        # architectures key), and pre-flight GPU memory
         assert any("mlflow artifacts download" in c for c in result.pre_commands)
         assert any("SERVE_MODEL_DIR=" in c for c in result.pre_commands)
-        assert any("merge_text_export.py" in c for c in result.pre_commands)
-        assert "merge_text_export.py" in config_files
-        # Tuned model is served from the merged dir; base co-served on 8001
-        assert "vllm serve /amortized/work/merged_model" in result.command[2]
+        assert any("patch_model_config.py" in c for c in result.pre_commands)
+        assert any("check_gpu_memory.py" in c for c in result.pre_commands)
+        assert "patch_model_config.py" in config_files
+        # Tuned export is served through the generic wrapper as-is (no merge
+        # with the base model — one model per serve job)
+        assert "serve_vllm.py serve $SERVE_MODEL_DIR" in result.command[2]
+        assert "merge_text_export.py" not in "".join(result.pre_commands)
         # No MLflow available in tests — falls back to the registration-name pattern
         assert "--served-model-name Qwen3.5-2B-sft-11111111" in result.command[2]
         assert result.resolved_config["served_model_name"] == "Qwen3.5-2B-sft-11111111"
-        # Base model co-served on port+1 by default (GPU quota is 1)
-        assert "wait $P1" in result.command[2]
-        assert "--port 8001" in result.command[2]
-        assert result.command[2].startswith("{ ") and result.command[2].endswith(" }")
-        assert result.ports == {8000: 8000, 8001: 8001}
-        assert result.resolved_config["base_model"] == "Qwen/Qwen3.5-2B"
-        assert result.resolved_config["base_port"] == 8001
+        # Single endpoint: no co-served base model
+        assert "wait $P1" not in result.command[2]
+        assert result.ports == {8000: 8000}
+        assert "base_model" not in result.resolved_config
 
     @pytest.mark.asyncio
     async def test_build_rejects_non_succeeded_training(self, monkeypatch) -> None:
