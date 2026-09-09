@@ -116,8 +116,7 @@ async def get_eval_endpoint_suggestions(
 
     suggestions: dict[str, Any] = {
         "training_job_id": training_job_id,
-        "base_model": "",
-        "tuned_model": "",
+        "model": "",
         "known_endpoints": [],
         "serve_endpoints": [],
     }
@@ -170,7 +169,6 @@ async def get_eval_endpoint_suggestions(
             config = {}
 
     base_model = str(config.get("model_name_or_path") or config.get("model_id") or "")
-    suggestions["base_model"] = base_model
 
     tuned_model = ""
     mlflow_run_id = training.get("mlflow_run_id", "")
@@ -189,6 +187,6 @@ async def get_eval_endpoint_suggestions(
         algorithm = str(config.get("algorithm", "sft"))
         short = base_model.split("/")[-1] if base_model else "model"
         tuned_model = f"{short}-{algorithm}-{training_job_id[:8]}"
-    suggestions["tuned_model"] = tuned_model
+    suggestions["model"] = tuned_model
 
     return suggestions

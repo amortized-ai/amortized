@@ -359,24 +359,24 @@ class EvalJobConfig(BaseModel):
     rubric: list[EvalRubricCriterion] = Field(
         default_factory=list,
         description=(
-            "Custom judge criteria, designed with the user. Each criterion is"
-            " scored base-vs-tuned by the LLM judge against the reference answer."
-            " Implies judge_win_rate."
+            "Custom judge criteria, designed with the user. The LLM judge scores"
+            " the model's response against the reference answer on each criterion"
+            " (absolute 0-1), averaged over the dataset."
         ),
     )
-    endpoint_base: EvalEndpoint = Field(
-        ..., description="Endpoint serving the model BEFORE training (base model)"
-    )
-    endpoint_tuned: EvalEndpoint = Field(
-        ..., description="Endpoint serving the model AFTER training (fine-tuned)"
+    endpoint: EvalEndpoint = Field(
+        ..., description="Endpoint serving the model to evaluate (one model per eval job)"
     )
     judge: EvalEndpoint | None = Field(
         None,
-        description="Optional LLM-as-judge endpoint for win-rate scoring of free-form outputs",
+        description=(
+            "Optional LLM-as-judge endpoint for scoring free-form outputs"
+            " against the reference answer"
+        ),
     )
     metrics: list[str] = Field(
         default_factory=lambda: ["exact_match", "format_validity"],
-        description="Metrics to compute (exact_match, format_validity, judge_win_rate)",
+        description="Structural metrics to compute (exact_match, format_validity)",
     )
     max_samples: int = Field(200, ge=1, le=10000, description="Max eval samples to run")
     judge_max_samples: int = Field(

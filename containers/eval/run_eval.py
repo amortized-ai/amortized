@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
-"""Eval runner — compare base and tuned model endpoints on an eval dataset.
+"""Eval runner — score ONE model endpoint on an eval dataset (absolute).
 
 Reads a config.json (delivered to /amortized/config.json by the control plane):
 
     {
       "eval_data_path": "/amortized/work/eval_data/generated_data",
       "endpoints": {
-        "base":  {"base_url": "http://host:8000/v1", "model": "m",
-                  "api_key_env": "EVAL_BASE_API_KEY"},
-        "tuned": {"base_url": "http://host:8001/v1", "model": "m",
-                  "api_key_env": "EVAL_TUNED_API_KEY"},
+        "model": {"base_url": "http://host:8000/v1", "model": "m",
+                  "api_key_env": "EVAL_MODEL_API_KEY"},
         "judge": {"base_url": "...", "model": "...", "api_key_env": "EVAL_JUDGE_API_KEY"}
       },
-      "metrics": ["exact_match", "format_validity", "judge_win_rate"],
+      "metrics": ["exact_match", "format_validity"],
       "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
       "max_samples": 200,
       "judge_max_samples": 100,
       "temperature": 0.0,
       "output_dir": "/amortized/work/results"
     }
+
+One model per eval job. Structural metrics (exact_match, format_validity, ...)
+are computed against the held-out reference answer. When a rubric + judge are
+provided, the judge scores the model's response against the reference on each
+criterion on an absolute 0-10 scale (reported normalized to 0-1), averaged
+over the dataset — NO pairwise win-rate comparison.
 
 Dataset format: jsonl or parquet with a `messages` column (list of
 {role, content} dicts). The trailing assistant message is held out as the
@@ -34,7 +38,6 @@ import asyncio
 import glob
 import json
 import os
-import random
 import re
 from pathlib import Path
 from typing import Any
@@ -44,6 +47,7 @@ import httpx
 MAX_PARALLEL = 16
 REQUEST_TIMEOUT = 300.0
 MAX_RETRIES = 3
+SCORE_SCALE = 10  # judge scores each criterion 0..SCORE_SCALE; reported /SCALE
 
 
 def load_records(eval_data_path: str) -> list[dict[str, Any]]:
@@ -160,30 +164,25 @@ async def eval_endpoint(
     return list(await asyncio.gather(*(run_one(s) for s in samples)))
 
 
-JUDGE_SYSTEM_PROMPT = """\
-You are an impartial judge comparing two candidate responses to a task.
-Given the task prompt, the reference (gold) answer, and two candidates \
-labeled Candidate A and Candidate B, decide which candidate is closer to \
-the reference in correctness and completeness.
-Respond with ONLY a JSON object: {"winner": "A"}, {"winner": "B"}, \
-or {"winner": "tie"}.
-"""
-
-RUBRIC_SYSTEM_PROMPT = """\
-You are an impartial judge comparing two candidate responses to a task.
-Given the task prompt, the reference (gold) answer, two candidates \
-labeled Candidate A and Candidate B, and a list of evaluation criteria, \
-decide which candidate is better for EACH criterion.
-Respond with ONLY a JSON object mapping every criterion name to "A", \
-"B", or "tie", e.g. {"accuracy": "A", "tone": "tie"}.
+SCORE_SYSTEM_PROMPT = f"""\
+You are an impartial judge scoring a single candidate response against a \
+reference (gold) answer.
+Given the task prompt, the reference answer, the candidate response, and a \
+list of evaluation criteria, score the candidate on EACH criterion from 0 to \
+{SCORE_SCALE}, where 0 means the criterion is not met at all (wrong, missing, \
+or contradicts the reference) and {SCORE_SCALE} means it is fully met (matches \
+the reference in correctness and completeness).
+Judge only against the reference; do not reward style beyond what the \
+criterion asks. Respond with ONLY a JSON object mapping every criterion name \
+to an integer 0-{SCORE_SCALE}, e.g. {{"accuracy": 8, "reasoning_quality": 5}}.
 """
 
 
-def parse_rubric_verdicts(raw: str, criteria: list[str]) -> dict[str, str]:
-    """Extract per-criterion A/B/tie verdicts from a judge response.
+def parse_scores(raw: str, criteria: list[str]) -> dict[str, float | None]:
+    """Extract per-criterion 0..SCORE_SCALE scores from a judge response.
 
-    Unknown or missing criteria default to "tie" so a partial judge
-    response never crashes aggregation.
+    Missing/unparseable criteria default to None so a partial judge response
+    never crashes aggregation.
     """
     try:
         match = re.search(r"\{.*\}", raw, re.DOTALL)
@@ -192,67 +191,53 @@ def parse_rubric_verdicts(raw: str, criteria: list[str]) -> dict[str, str]:
         data = {}
     if not isinstance(data, dict):
         data = {}
-    verdicts: dict[str, str] = {}
+    scores: dict[str, float | None] = {}
     for criterion in criteria:
-        value = data.get(criterion, "tie")
-        verdicts[criterion] = value if value in ("A", "B", "tie") else "tie"
-    return verdicts
+        value = data.get(criterion)
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            scores[criterion] = None
+            continue
+        num = max(0.0, min(float(SCORE_SCALE), num))
+        scores[criterion] = num
+    return scores
 
 
-async def judge_one(
+async def score_one(
     client: httpx.AsyncClient,
     judge: dict[str, Any],
     api_key: str,
     prompt: list[dict[str, str]],
     reference: str,
-    output_a: str,
-    output_b: str,
-    idx: int,
-    rubric: list[dict[str, str]] | None = None,
-) -> str | dict[str, str]:
-    """Judge one sample. Returns "A"/"B"/"tie", or with a rubric a
-    {criterion_name: "A"/"B"/"tie"} mapping."""
-    criteria_block = ""
-    if rubric:
-        lines = "\n".join(
-            f"- {c['name']}: {c.get('description', '')}" for c in rubric
-        )
-        criteria_block = f"## Evaluation criteria\n{lines}\n\n"
-        question = "Which candidate is better for each criterion?"
-        system = RUBRIC_SYSTEM_PROMPT
-    else:
-        question = "Which candidate is closer to the reference?"
-        system = JUDGE_SYSTEM_PROMPT
-
+    output: str,
+    rubric: list[dict[str, str]],
+) -> dict[str, float | None]:
+    """Score one response against the reference on each rubric criterion."""
+    lines = "\n".join(f"- {c['name']}: {c.get('description', '')}" for c in rubric)
     user_content = (
-        f"## Task prompt\n"
-        f"{json.dumps(prompt)}\n\n"
+        f"## Task prompt\n{json.dumps(prompt)}\n\n"
         f"## Reference answer\n{reference}\n\n"
-        f"{criteria_block}"
-        f"## Candidate A\n{output_a or '(empty)'}\n\n"
-        f"## Candidate B\n{output_b or '(empty)'}\n\n"
-        f"{question}"
+        f"## Evaluation criteria\n{lines}\n\n"
+        f"## Candidate response\n{output or '(empty)'}\n\n"
+        f"Score the candidate on each criterion from 0 to {SCORE_SCALE}."
     )
+    names = [c["name"] for c in rubric]
     try:
         raw = await chat_completion(
             client,
             judge,
             [
-                {"role": "system", "content": system},
+                {"role": "system", "content": SCORE_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             temperature=0.0,
             max_tokens=1024,
             api_key=api_key,
         )
-        if rubric:
-            return parse_rubric_verdicts(raw, [c["name"] for c in rubric])
-        match = re.search(r'"winner"\s*:\s*"(A|B|tie)"', raw)
-        return match.group(1) if match else "tie"
+        return parse_scores(raw, names)
     except Exception:
-        if rubric:
-            return {c["name"]: "tie" for c in rubric}
-        return "tie"
+        return {name: None for name in names}
 
 
 def structural_metrics(
@@ -284,7 +269,6 @@ def structural_metrics(
 
 async def run(config: dict[str, Any]) -> dict[str, Any]:
     endpoints = config["endpoints"]
-    metrics_requested = set(config.get("metrics", []))
     max_samples = int(config.get("max_samples", 200))
     judge_max_samples = int(config.get("judge_max_samples", 100))
     temperature = float(config.get("temperature", 0.0))
@@ -313,96 +297,59 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
     results: dict[str, Any] = {"num_records": len(records), "num_skipped": skipped}
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(REQUEST_TIMEOUT)) as client:
-        per_model: dict[str, dict[str, Any]] = {}
-        outputs_by_model: dict[str, list[str]] = {}
-        for name in ("base", "tuned"):
-            raw = await eval_endpoint(
-                client, endpoints[name], samples, api_keys.get(name, ""), temperature
-            )
-            outputs_by_model[name] = [r["output"] for r in raw]
-            per_model[name] = structural_metrics(
-                [r["output"] for r in raw],
-                [s["reference"] for s in samples],
-                [r["error"] for r in raw],
-            )
-            results[name] = per_model[name]
+        raw = await eval_endpoint(
+            client, endpoints["model"], samples, api_keys.get("model", ""), temperature
+        )
+        outputs = [r["output"] for r in raw]
+        results["model"] = structural_metrics(
+            outputs,
+            [s["reference"] for s in samples],
+            [r["error"] for r in raw],
+        )
 
-        judged = 0
+        # Absolute per-criterion scoring against the reference (no pairing).
         rubric = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
-        if "judge" in endpoints and "judge_win_rate" in metrics_requested:
+        sample_scores: list[dict[str, float | None]] = [{} for _ in samples]
+        if "judge" in endpoints and rubric:
             semaphore = asyncio.Semaphore(MAX_PARALLEL)
 
-            async def judge_pair(idx: int) -> str | dict[str, str]:
+            async def score_idx(idx: int) -> tuple[int, dict[str, float | None]]:
                 async with semaphore:
-                    # Deterministic side randomization to cancel position bias
-                    a_first = random.Random(idx).random() < 0.5
-                    first, second = ("base", "tuned") if a_first else ("tuned", "base")
-                    verdict = await judge_one(
+                    s = await score_one(
                         client,
                         endpoints["judge"],
                         api_keys.get("judge", ""),
                         samples[idx]["prompt"],
                         samples[idx]["reference"],
-                        outputs_by_model[first][idx],
-                        outputs_by_model[second][idx],
-                        idx,
-                        rubric=rubric or None,
+                        outputs[idx],
+                        rubric,
                     )
-                    if isinstance(verdict, dict):
-                        return {
-                            criterion: _map_label(label, first, second)
-                            for criterion, label in verdict.items()
-                        }
-                    return _map_label(verdict, first, second)
-
-            def _map_label(label: str, first: str, second: str) -> str:
-                if label == "tie":
-                    return "tie"
-                return first if label == "A" else second
+                    return idx, s
 
             limit = min(judge_max_samples, len(samples))
-            judgable = [i for i in range(limit) if samples[i]["reference"].strip()]
-            verdicts = list(await asyncio.gather(*(judge_pair(i) for i in judgable)))
-            judged = len(verdicts)
+            scorable = [
+                i for i in range(limit) if samples[i]["reference"].strip() and not raw[i]["error"]
+            ]
+            scored = await asyncio.gather(*(score_idx(i) for i in scorable))
+            for idx, s in scored:
+                sample_scores[idx] = s
 
-            if rubric:
-                criteria_stats: dict[str, dict[str, int]] = {
-                    c["name"]: {"tuned": 0, "base": 0, "tie": 0} for c in rubric
-                }
-                for v in verdicts:
-                    for criterion, winner in v.items():
-                        criteria_stats[criterion][winner] += 1
-                criteria_out: dict[str, Any] = {}
-                for name, stats in criteria_stats.items():
-                    n = sum(stats.values())
-                    criteria_out[name] = {
-                        "tuned_wins": stats["tuned"],
-                        "base_wins": stats["base"],
-                        "ties": stats["tie"],
-                        "win_rate": (
-                            round((stats["tuned"] + 0.5 * stats["tie"]) / n, 4)
-                            if n
-                            else None
-                        ),
-                    }
-                win_rates = [
-                    c["win_rate"] for c in criteria_out.values() if c["win_rate"] is not None
+            scores_out: dict[str, float | None] = {}
+            scores_n: dict[str, int] = {}
+            for c in rubric:
+                name = c["name"]
+                vals = [
+                    sample_scores[i][name]
+                    for i in scorable
+                    if sample_scores[i].get(name) is not None
                 ]
-                results["judge"] = {
-                    "num_judged": judged,
-                    "criteria": criteria_out,
-                    "win_rate": round(sum(win_rates) / len(win_rates), 4) if win_rates else None,
-                }
-            else:
-                tuned_wins = sum(1 for v in verdicts if v == "tuned")
-                ties = sum(1 for v in verdicts if v == "tie")
-                results["judge"] = {
-                    "num_judged": judged,
-                    "tuned_wins": tuned_wins,
-                    "base_wins": judged - tuned_wins - ties,
-                    "ties": ties,
-                    "win_rate": (round((tuned_wins + 0.5 * ties) / judged, 4) if judged else None),
-                }
+                scores_n[name] = len(vals)
+                scores_out[name] = (
+                    round(sum(vals) / len(vals) / SCORE_SCALE, 4) if vals else None
+                )
+            results["scores"] = scores_out
+            results["scores_n"] = scores_n
+            results["num_scored"] = len(scorable)
 
     rows = []
     for i, sample in enumerate(samples):
@@ -411,8 +358,8 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
                 "sample_index": i,
                 "prompt": sample["prompt"],
                 "reference": sample["reference"],
-                "output_base": outputs_by_model["base"][i],
-                "output_tuned": outputs_by_model["tuned"][i],
+                "output": outputs[i],
+                "scores": sample_scores[i],
             }
         )
     with open(output_dir / "results.jsonl", "w", encoding="utf-8") as f:
@@ -437,13 +384,11 @@ def main() -> None:
 
     summary = asyncio.run(run(config))
 
-    # Hard-fail if either endpoint mostly errored — metrics would be meaningless
-    for name in ("base", "tuned"):
-        if summary["results"][name]["error_rate"] > 0.5:
-            raise SystemExit(
-                f"endpoint '{name}' errored on "
-                f"{summary['results'][name]['error_rate']:.0%} of samples"
-            )
+    # Hard-fail if the model mostly errored — metrics would be meaningless
+    if summary["results"]["model"]["error_rate"] > 0.5:
+        raise SystemExit(
+            f"model errored on {summary['results']['model']['error_rate']:.0%} of samples"
+        )
 
 
 if __name__ == "__main__":

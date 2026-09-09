@@ -199,8 +199,14 @@ export interface EvalJudgeMetrics {
 export interface EvalResults {
   num_records: number
   num_skipped: number
-  base: EvalModelMetrics
-  tuned: EvalModelMetrics
+  // New single-model schema (one model per eval job, absolute scores):
+  model?: EvalModelMetrics
+  scores?: Record<string, number | null>
+  scores_n?: Record<string, number>
+  num_scored?: number
+  // Legacy pairwise schema (older eval jobs):
+  base?: EvalModelMetrics
+  tuned?: EvalModelMetrics
   judge?: EvalJudgeMetrics
 }
 

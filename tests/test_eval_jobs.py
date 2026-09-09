@@ -48,12 +48,9 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
         yield c  # type: ignore[misc]
 
 
+# One model per eval job — a single endpoint to evaluate.
 EVAL_BODY = {
-    "endpoint_base": {
-        "base_url": "http://base:8000/v1",
-        "model": "qwen-base",
-    },
-    "endpoint_tuned": {
+    "endpoint": {
         "base_url": "http://tuned:8000/v1",
         "model": "qwen-tuned",
     },
@@ -74,7 +71,7 @@ class TestCreateEvalJob:
         data = response.json()
         assert data["type"] == "eval"
         assert data["status"] == "queued"
-        assert data["config"]["endpoint_tuned"]["model"] == "qwen-tuned"
+        assert data["config"]["endpoint"]["model"] == "qwen-tuned"
         assert data["id"]
 
     @pytest.mark.asyncio
@@ -84,8 +81,8 @@ class TestCreateEvalJob:
         assert "parent_job_id" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_create_eval_job_requires_endpoints(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(client, endpoint_tuned={"base_url": "", "model": ""})
+    async def test_create_eval_job_requires_endpoint(self, client: httpx.AsyncClient) -> None:
+        response = await _create_eval(client, endpoint={"base_url": "", "model": ""})
         assert response.status_code == 422
 
     @pytest.mark.asyncio
@@ -106,15 +103,15 @@ class TestCreateEvalJob:
     async def test_api_key_not_echoed_in_response(self, client: httpx.AsyncClient) -> None:
         response = await _create_eval(
             client,
-            endpoint_base={
-                "base_url": "http://base:8000/v1",
-                "model": "qwen-base",
+            endpoint={
+                "base_url": "http://tuned:8000/v1",
+                "model": "qwen-tuned",
                 "api_key": "sk-secret",
             },
         )
         assert response.status_code == 201
         config = response.json()["config"]
-        assert "api_key" not in config["endpoint_base"]
+        assert "api_key" not in config["endpoint"]
 
 
 class TestEvalBuilder:
@@ -135,38 +132,61 @@ class TestEvalBuilder:
 
         runner = json.loads(result.config_files["config.json"])
         assert runner["eval_data_path"] == "/amortized/work/eval_data/generated_data"
-        assert runner["endpoints"]["base"]["model"] == "qwen-base"
-        assert "api_key" not in runner["endpoints"]["base"]
+        # single model under the "model" key
+        assert runner["endpoints"]["model"]["model"] == "qwen-tuned"
+        assert "base" not in runner["endpoints"]
+        assert "tuned" not in runner["endpoints"]
+        assert "api_key" not in runner["endpoints"]["model"]
         assert runner["max_samples"] == 50
         assert any("mlflow artifacts download" in c for c in result.pre_commands)
         assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
 
     @pytest.mark.asyncio
+    async def test_build_accepts_legacy_endpoint_tuned(self) -> None:
+        # Backward compatibility: old configs used endpoint_tuned/endpoint_base.
+        config = {
+            "endpoint_tuned": {"base_url": "http://tuned:8000/v1", "model": "legacy-tuned"},
+            "endpoint_base": {"base_url": "http://base:8000/v1", "model": "legacy-base"},
+            "eval_data_run_id": "a" * 32,
+        }
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        # endpoint_tuned wins over endpoint_base as the model to evaluate
+        assert runner["endpoints"]["model"]["model"] == "legacy-tuned"
+
+    @pytest.mark.asyncio
     async def test_build_scrubs_api_keys_from_resolved_config(self) -> None:
         config = {
             **EVAL_BODY,
-            "endpoint_base": {
-                "base_url": "http://base:8000/v1",
-                "model": "qwen-base",
+            "endpoint": {
+                "base_url": "http://tuned:8000/v1",
+                "model": "qwen-tuned",
                 "api_key": "sk-secret",
             },
         }
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
-        assert result.env["EVAL_BASE_API_KEY"] == "sk-secret"
-        assert "api_key" not in result.resolved_config["endpoint_base"]
+        assert result.env["EVAL_MODEL_API_KEY"] == "sk-secret"
+        assert "api_key" not in result.resolved_config["endpoint"]
 
     @pytest.mark.asyncio
-    async def test_build_requires_judge_for_win_rate_without_lineage(self) -> None:
-        config = {**EVAL_BODY, "metrics": ["judge_win_rate"]}
-        with pytest.raises(eval_builder.JobBuildError, match="judge"):
-            await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+    async def test_build_no_judge_without_rubric(self) -> None:
+        # No rubric => no judge required, none configured.
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, dict(EVAL_BODY), {})
+
+        import json
+
+        runner = json.loads(result.config_files["config.json"])
+        assert "judge" not in runner["endpoints"]
 
     @pytest.mark.asyncio
     async def test_build_rubric_implies_judge_auto_fill(self, monkeypatch) -> None:
         rubric = [
             {"name": "factual_accuracy", "description": "Facts match the reference"},
-            {"name": "tone", "description": "Professional tone"},
+            {"name": "reasoning_quality", "description": "Rationale is sound"},
         ]
         config = {**EVAL_BODY, "rubric": rubric}
 
@@ -185,7 +205,7 @@ class TestEvalBuilder:
         runner = json.loads(result.config_files["config.json"])
         assert runner["rubric"] == rubric
         assert "judge" in runner["endpoints"]
-        assert "judge_win_rate" in runner["metrics"]
+        assert runner["endpoints"]["judge"]["model"] == "gpt-teacher"
 
     @pytest.mark.asyncio
     async def test_build_rubric_without_resolvable_judge_errors(self) -> None:
@@ -194,32 +214,10 @@ class TestEvalBuilder:
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
-    async def test_build_judge_auto_filled_from_teacher(self, monkeypatch) -> None:
-        config = {**EVAL_BODY, "metrics": ["judge_win_rate"]}
-
-        async def fake_resolve(job):
-            return "gpt-teacher"
-
-        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
-        monkeypatch.setattr(
-            eval_builder.config_mod.settings, "gateway_url", "http://gateway:5000/gw/v1"
-        )
-
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        import json
-
-        runner = json.loads(result.config_files["config.json"])
-        assert "judge_win_rate" in runner["metrics"]
-        assert runner["endpoints"]["judge"]["model"] == "gpt-teacher"
-        assert runner["endpoints"]["judge"]["base_url"] == "http://gateway:5000/gw/v1"
-        assert result.env["EVAL_JUDGE_API_KEY"] == "not-needed"
-
-    @pytest.mark.asyncio
     async def test_build_judge_explicit_overrides_default(self, monkeypatch) -> None:
         config = {
             **EVAL_BODY,
-            "metrics": ["judge_win_rate"],
+            "rubric": [{"name": "accuracy", "description": "matches reference"}],
             "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
         }
 
@@ -234,20 +232,6 @@ class TestEvalBuilder:
 
         runner = json.loads(result.config_files["config.json"])
         assert runner["endpoints"]["judge"]["model"] == "gpt-judge"
-
-    @pytest.mark.asyncio
-    async def test_build_judge_implies_win_rate_metric(self) -> None:
-        config = {
-            **EVAL_BODY,
-            "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
-        }
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        import json
-
-        runner = json.loads(result.config_files["config.json"])
-        assert "judge_win_rate" in runner["metrics"]
-        assert "judge" in runner["endpoints"]
 
     @pytest.mark.asyncio
     async def test_build_requires_data_source(self) -> None:
@@ -304,9 +288,10 @@ class TestEvalResultsEndpoint:
         metrics = {
             "results": {
                 "num_records": 6,
-                "base": {"exact_match": 0.5, "error_rate": 0.0},
-                "tuned": {"exact_match": 0.8, "error_rate": 0.0},
-                "judge": {"win_rate": 0.7, "num_judged": 5},
+                "model": {"exact_match": 0.8, "error_rate": 0.0, "num_samples": 6},
+                "scores": {"score_accuracy": 0.72, "reasoning_quality": 0.65},
+                "scores_n": {"score_accuracy": 5, "reasoning_quality": 5},
+                "num_scored": 5,
             }
         }
 
@@ -331,12 +316,12 @@ class TestEvalResultsEndpoint:
 
         assert response.status_code == 200
         results = response.json()["results"]
-        assert results["tuned"]["exact_match"] == 0.8
-        assert results["judge"]["win_rate"] == 0.7
+        assert results["model"]["exact_match"] == 0.8
+        assert results["scores"]["score_accuracy"] == 0.72
 
 
-class TestRubricParsing:
-    """Unit tests for the runner's rubric-verdict parsing (no network)."""
+class TestScoreParsing:
+    """Unit tests for the runner's absolute-score parsing (no network)."""
 
     def _load_runner_module(self):
         import importlib.util
@@ -348,28 +333,28 @@ class TestRubricParsing:
         spec.loader.exec_module(module)
         return module
 
-    def test_parse_valid_rubric_response(self) -> None:
+    def test_parse_valid_scores(self) -> None:
         m = self._load_runner_module()
-        raw = 'Here you go: {"factual_accuracy": "A", "tone": "B", "style": "tie"}'
-        verdicts = m.parse_rubric_verdicts(raw, ["factual_accuracy", "tone", "style"])
-        assert verdicts == {"factual_accuracy": "A", "tone": "B", "style": "tie"}
+        raw = 'Scores: {"score_accuracy": 8, "reasoning_quality": 3}'
+        scores = m.parse_scores(raw, ["score_accuracy", "reasoning_quality"])
+        assert scores == {"score_accuracy": 8.0, "reasoning_quality": 3.0}
 
-    def test_parse_missing_criteria_default_tie(self) -> None:
+    def test_parse_missing_criteria_default_none(self) -> None:
         m = self._load_runner_module()
-        raw = '{"factual_accuracy": "A"}'
-        verdicts = m.parse_rubric_verdicts(raw, ["factual_accuracy", "tone"])
-        assert verdicts == {"factual_accuracy": "A", "tone": "tie"}
+        raw = '{"score_accuracy": 8}'
+        scores = m.parse_scores(raw, ["score_accuracy", "reasoning_quality"])
+        assert scores == {"score_accuracy": 8.0, "reasoning_quality": None}
 
-    def test_parse_garbage_defaults_all_tie(self) -> None:
+    def test_parse_garbage_defaults_all_none(self) -> None:
         m = self._load_runner_module()
-        verdicts = m.parse_rubric_verdicts("not json at all", ["a", "b"])
-        assert verdicts == {"a": "tie", "b": "tie"}
+        scores = m.parse_scores("not json at all", ["a", "b"])
+        assert scores == {"a": None, "b": None}
 
-    def test_parse_invalid_values_default_tie(self) -> None:
+    def test_parse_clamps_out_of_range(self) -> None:
         m = self._load_runner_module()
-        raw = '{"a": "CANDIDATE A WINS", "b": 7}'
-        verdicts = m.parse_rubric_verdicts(raw, ["a", "b"])
-        assert verdicts == {"a": "tie", "b": "tie"}
+        raw = '{"a": 15, "b": -3}'
+        scores = m.parse_scores(raw, ["a", "b"])
+        assert scores == {"a": 10.0, "b": 0.0}
 
 
 class TestEvalEndpointSuggestions:
@@ -379,8 +364,7 @@ class TestEvalEndpointSuggestions:
         assert response.status_code == 200
         data = response.json()
         assert data["training_job_id"] == ""
-        assert data["base_model"] == ""
-        assert data["tuned_model"] == ""
+        assert data["model"] == ""
         assert isinstance(data["known_endpoints"], list)
 
     @pytest.mark.asyncio
@@ -424,8 +408,7 @@ class TestEvalEndpointSuggestions:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["base_model"] == "Qwen/Qwen3.5-2B"
-        assert data["tuned_model"] == "mdl-rfe-scorer"
+        assert data["model"] == "mdl-rfe-scorer"
         assert data["known_endpoints"][0]["model_name"] == "openai/gpt-oss-120b"
         assert data["known_endpoints"][0]["base_url"] == "http://gw:5000/v1"
 
@@ -436,5 +419,5 @@ class TestEvalEndpointSuggestions:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["base_model"] == ""
+        assert data["model"] == ""
         assert "not found" in data.get("message", "")

@@ -16,8 +16,7 @@ logger = logging.getLogger("amortized.jobs.eval")
 
 IMAGE = "ghcr.io/amortized-ai/eval:latest"
 
-_JUDGE_METRICS = {"judge_win_rate"}
-_ENDPOINT_KEYS = ("endpoint_base", "endpoint_tuned", "judge")
+_ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 
 def _endpoint_spec(
@@ -107,30 +106,31 @@ async def build(
 ) -> JobBuildResult:
     env: dict[str, str] = {}
 
-    endpoints = {
-        "base": _endpoint_spec(config, "endpoint_base", "EVAL_BASE_API_KEY", env),
-        "tuned": _endpoint_spec(config, "endpoint_tuned", "EVAL_TUNED_API_KEY", env),
-    }
+    model_key = (
+        "endpoint"
+        if config.get("endpoint")
+        else "endpoint_tuned"
+        if config.get("endpoint_tuned")
+        else "endpoint_base"
+    )
+    endpoints = {"model": _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)}
 
     metrics = [m for m in (config.get("metrics") or []) if m]
     rubric = [
         c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
     ]
     judge_cfg = config.get("judge")
-    needs_judge = any(m in _JUDGE_METRICS for m in metrics) or bool(rubric)
-    if needs_judge and not judge_cfg:
+    if bool(rubric) and not judge_cfg:
         judge_cfg = await _default_judge(job)
         if judge_cfg is None:
             raise JobBuildError(
-                "judge endpoint is required for judge_win_rate or a custom rubric"
+                "judge endpoint is required to score a custom rubric"
                 " (no SDG ancestor with a teacher_model tag, or no gateway configured)"
             )
     if judge_cfg:
         endpoints["judge"] = _endpoint_spec(
             {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env
         )
-        if "judge_win_rate" not in metrics:
-            metrics.append("judge_win_rate")
 
     eval_data_path = config.get("eval_data_path", "")
     eval_data_run_id = config.get("eval_data_run_id", "")
@@ -196,12 +196,15 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
     if isinstance(job_config, str):
         job_config = json.loads(job_config)
 
-    base_model = (job_config.get("endpoint_base") or {}).get("model", "")
-    tuned_model = (job_config.get("endpoint_tuned") or {}).get("model", "")
-    if base_model:
-        await set_mlflow_run_tag(mlflow_run_id, "eval_base_model", base_model)
-    if tuned_model:
-        await set_mlflow_run_tag(mlflow_run_id, "eval_tuned_model", tuned_model)
+    endpoint = (
+        job_config.get("endpoint")
+        or job_config.get("endpoint_tuned")
+        or job_config.get("endpoint_base")
+        or {}
+    )
+    model_name = endpoint.get("model", "")
+    if model_name:
+        await set_mlflow_run_tag(mlflow_run_id, "eval_model", model_name)
 
     topic = job_config.get("topic", "")
     if topic:
@@ -220,14 +223,14 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
             return
         metrics = json.loads(metrics_text).get("results", {})
 
-        for name in ("base", "tuned"):
-            em = metrics.get(name, {}).get("exact_match")
-            if em is not None:
-                await set_mlflow_run_tag(mlflow_run_id, f"eval_exact_match_{name}", str(em))
-        win_rate = metrics.get("judge", {}).get("win_rate")
-        if win_rate is not None:
-            await set_mlflow_run_tag(mlflow_run_id, "eval_win_rate", str(win_rate))
-        num_samples = metrics.get("base", {}).get("num_samples")
+        model_metrics = metrics.get("model", {})
+        em = model_metrics.get("exact_match")
+        if em is not None:
+            await set_mlflow_run_tag(mlflow_run_id, "eval_exact_match", str(em))
+        for criterion, score in (metrics.get("scores") or {}).items():
+            if score is not None:
+                await set_mlflow_run_tag(mlflow_run_id, f"eval_score_{criterion}", str(score))
+        num_samples = model_metrics.get("num_samples")
         if num_samples is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(num_samples))
     except Exception:

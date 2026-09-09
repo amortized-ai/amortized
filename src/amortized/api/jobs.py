@@ -172,7 +172,7 @@ def _strip_eval_api_keys(job: Job) -> None:
     """Remove endpoint API keys from a job response before returning it."""
     if not isinstance(job.config, dict):
         return
-    for key in ("endpoint_base", "endpoint_tuned", "judge"):
+    for key in ("endpoint", "endpoint_base", "endpoint_tuned", "judge"):
         endpoint = job.config.get(key)
         if isinstance(endpoint, dict):
             endpoint.pop("api_key", None)

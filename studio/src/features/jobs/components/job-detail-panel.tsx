@@ -483,11 +483,8 @@ function EvalResultsTab({ job }: { job: Job }) {
     )
   }
 
-  const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
-  const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
-  // Show only the metrics the user configured: structural metrics from
-  // job.config.metrics, judge criteria from job.config.rubric. When neither is
-  // set (older jobs) fall back to showing all structural metrics.
+  // Metric selection: structural metrics come from job.config.metrics, judge
+  // scores from job.config.rubric. When neither is set (older jobs) show all.
   const configMetrics = Array.isArray(job.config?.metrics)
     ? (job.config?.metrics as string[])
     : []
@@ -498,6 +495,91 @@ function EvalResultsTab({ job }: { job: Job }) {
   )
   const showAllStructural = configMetrics.length === 0 && rubricNames.size === 0
   const wantMetric = (key: string) => showAllStructural || configMetrics.includes(key)
+
+  const modelName =
+    (job.config?.endpoint as Record<string, unknown> | undefined)?.model ??
+    (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model ??
+    (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+
+  // ---- New single-model schema (one model per eval job, absolute scores) ----
+  if (results.model) {
+    const structural: { label: string; value: string }[] = [
+      ...(wantMetric("exact_match") ? [{ label: "Exact match", value: formatMetric(results.model.exact_match) }] : []),
+      ...(wantMetric("format_validity") ? [{ label: "Format validity", value: formatMetric(results.model.format_validity) }] : []),
+      ...(wantMetric("error_rate") ? [{ label: "Error rate", value: formatMetric(results.model.error_rate) }] : []),
+      ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
+    ]
+    const scoreEntries = Object.entries(results.scores ?? {}).filter(
+      ([name]) => rubricNames.size === 0 || rubricNames.has(name),
+    )
+    return (
+      <div className="space-y-4 pt-2">
+        {modelName ? (
+          <p className="text-sm text-muted-foreground">
+            Model: <span className="font-mono text-foreground">{String(modelName)}</span>
+          </p>
+        ) : null}
+
+        {scoreEntries.length > 0 && (
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Score</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Scored</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreEntries.map(([name, score]) => (
+                  <tr key={name} className="border-b last:border-0 border-border/40">
+                    <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {score === null || score === undefined ? "—" : `${(score * 100).toFixed(1)}%`}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {results.scores_n?.[name] ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {structural.length > 0 && (
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="px-4 py-2.5 text-left font-medium">Metric</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {structural.map((row) => (
+                  <tr key={row.label} className="border-b last:border-0 border-border/40">
+                    <td className="px-4 py-2.5">{row.label}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          {results.num_records} records ({results.num_skipped} skipped)
+          {results.num_scored !== undefined ? `, ${results.num_scored} scored` : ""}. Per-sample
+          outputs are in the MLflow run under eval_results/.
+        </p>
+      </div>
+    )
+  }
+
+  // ---- Legacy pairwise schema (older eval jobs: base vs tuned, win rate) ----
+  const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+  const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
   const rows: { label: string; base: string; tuned: string }[] = [
     ...(wantMetric("exact_match") ? [{ label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) }] : []),
     ...(wantMetric("format_validity") ? [{ label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) }] : []),
