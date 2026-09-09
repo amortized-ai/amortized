@@ -5,7 +5,7 @@ name: Build Morty image
 on:
   push:
     branches: [main]
-    paths: ['agents/**', 'containers/morty/**', '.github/workflows/morty-image.yml']
+    paths: ['agents/**', 'containers/morty/**', 'Makefile', '.github/workflows/morty-image.yml']
   workflow_dispatch:
 
 jobs:
