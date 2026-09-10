@@ -92,10 +92,6 @@ spec:
               mountPath: /app/workspace/.opencode/agents/eval.md
               subPath: morty-eval-workflow.md
               readOnly: true
-            - name: morty-prompt
-              mountPath: /app/workspace/.opencode/agents/serve.md
-              subPath: morty-serve-workflow.md
-              readOnly: true
             - name: skills-tree
               mountPath: /app/workspace/skills
               readOnly: true

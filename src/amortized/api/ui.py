@@ -171,8 +171,8 @@ async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:
 
 
 class DelegateRequest(BaseModel):
-    target: Literal["sdg", "training"] = Field(
-        ..., description="Workflow agent to delegate to: 'sdg' or 'training'"
+    target: Literal["sdg", "training", "eval"] = Field(
+        ..., description="Workflow agent to delegate to: 'sdg', 'training', or 'eval'"
     )
     context: str = Field(
         ...,
@@ -210,7 +210,7 @@ class DelegateResponse(BaseModel):
     "/delegate_to_subagent",
     response_model=DelegateResponse,
     operation_id="delegate_to_subagent",
-    summary="Delegate the conversation to a specialized workflow agent for SDG or training",
+    summary="Delegate the conversation to a specialized workflow agent (SDG, training, or eval)",
 )
 async def delegate_to_subagent(body: DelegateRequest) -> DelegateResponse:
     return DelegateResponse(target=body.target)

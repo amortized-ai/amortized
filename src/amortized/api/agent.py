@@ -124,7 +124,7 @@ def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-_VALID_TARGETS = {"sdg", "training", "eval", "serve"}
+_VALID_TARGETS = {"sdg", "training", "eval"}
 
 
 def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str, bool] | None:

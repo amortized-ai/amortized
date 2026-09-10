@@ -24,7 +24,6 @@ configMapGenerator:
       - morty-sdg-workflow.md=morty-sdg-workflow.md
       - morty-training-workflow.md=morty-training-workflow.md
       - morty-eval-workflow.md=morty-eval-workflow.md
-      - morty-serve-workflow.md=morty-serve-workflow.md
     options:
       disableNameSuffixHash: true
   - name: morty-skills
