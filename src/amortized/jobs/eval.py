@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shlex
@@ -191,10 +192,68 @@ async def build(
     )
 
 
+async def _stop_eval_serve_jobs(job: dict[str, Any]) -> None:
+    """Auto-stop the serve endpoints this eval used (refcounted).
+
+    Serve jobs are transient eval infrastructure: when the eval finishes,
+    stop each serve job it recorded — unless another still-running eval
+    job references the same one.
+    """
+    log = logging.getLogger("amortized.jobs.eval")
+    job_config = job.get("config", {})
+    if isinstance(job_config, str):
+        job_config = json.loads(job_config)
+    serve_job_ids = job_config.get("serve_job_ids") or []
+    if not serve_job_ids:
+        return
+
+    try:
+        from amortized.core.jobs import cancel_job
+        from amortized.db.connection import get_pool
+        from amortized.models import JobStatus, JobType
+
+        async with get_pool().acquire() as conn:
+            from amortized.db.repository import Repository
+
+            repo = Repository(conn)
+            running_evals = await repo.list_jobs(
+                status=JobStatus.running, job_type=JobType.eval
+            )
+            still_used: set[str] = set()
+            for other in running_evals:
+                if other["id"] == job.get("id"):
+                    continue
+                other_cfg = other.get("config", {})
+                if isinstance(other_cfg, str):
+                    with contextlib.suppress(ValueError):
+                        other_cfg = json.loads(other_cfg)
+                if isinstance(other_cfg, dict):
+                    still_used.update(other_cfg.get("serve_job_ids") or [])
+
+            for sid in serve_job_ids:
+                if sid in still_used:
+                    log.info("Keeping serve job %s — used by another running eval", sid)
+                    continue
+                row = await repo.get_job(sid)
+                if not row or row.get("status") != JobStatus.running.value:
+                    continue
+                try:
+                    await cancel_job(repo, sid)
+                    log.info("Auto-stopped serve job %s (eval finished)", sid)
+                except Exception:
+                    log.warning("Failed to auto-stop serve job %s", sid, exc_info=True)
+    except Exception:
+        log.warning(
+            "Auto-stop of eval serve jobs failed for %s", job.get("id"), exc_info=True
+        )
+
+
 async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
     job_config = job.get("config", {})
     if isinstance(job_config, str):
         job_config = json.loads(job_config)
+
+    await _stop_eval_serve_jobs(job)
 
     endpoint = (
         job_config.get("endpoint")

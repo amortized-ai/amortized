@@ -35,6 +35,7 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
             "create_training_job",
             "create_eval_job",
             "create_serve_job",
+            "list_evaluations_api_v1_evaluations_get",
             "submit_recipe_job",
             "create_session_agent_session_post",
             "send_message_agent_session__session_id__message_post",

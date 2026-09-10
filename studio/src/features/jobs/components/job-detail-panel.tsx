@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, GraduationCap, Rocket } from "lucide-react"
+import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, GraduationCap } from "lucide-react"
 import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
@@ -214,13 +214,6 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
 function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
   const navigate = useNavigate()
 
-  const servePort = Number(job.config?.port) || 8000
-  const serveModel = String(job.config?.served_model_name ?? "")
-  const serveEndpoint =
-    job.type === "serve" && job.k8s_job_name
-      ? `http://${job.k8s_job_name}.${job.k8s_namespace ?? ""}.svc.cluster.local:${servePort}/v1`
-      : ""
-
   return (
     <div className="space-y-0">
       {job.type === "sdg" && job.status === "succeeded" && job.mlflow_run_id && (
@@ -260,31 +253,6 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
           </div>
           <ArrowRight className="h-4 w-4 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
-      )}
-      {serveEndpoint && (
-        <div className="rounded-xl border bg-card p-3.5 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">
-              <Rocket className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold">Serving endpoint</p>
-              <p className="text-xs text-muted-foreground">
-                {job.status === "running"
-                  ? "In-cluster OpenAI-compatible URL"
-                  : `Available while the job is running (status: ${job.status})`}
-              </p>
-            </div>
-          </div>
-          <code className="block w-full break-all rounded-md bg-muted px-2.5 py-1.5 text-xs font-mono">
-            {serveEndpoint}
-          </code>
-          {serveModel && (
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Model name: <span className="font-mono text-foreground">{serveModel}</span>
-            </p>
-          )}
-        </div>
       )}
       <MetadataRow label="ID" value={job.id} mono />
       <MetadataRow label="Type" value={job.type} />

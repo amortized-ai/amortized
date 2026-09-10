@@ -127,6 +127,29 @@ def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
     return served_name, model_name, []
 
 
+async def _auto_memory_utilization(gpu_uuid: str) -> float:
+    """Utilization for a pinned GPU from the inventory's free memory.
+
+    vLLM's --gpu-memory-utilization is a fraction of TOTAL GPU memory, so
+    when the GPU already hosts another serve job we must size to the free
+    slice. Falls back to the vLLM default 0.9 when the inventory is
+    unreadable. Leaves a 10% safety margin for non-torch overhead.
+    """
+    try:
+        from amortized.core.gpu_inventory import read_inventory
+
+        for gpu in await read_inventory():
+            if gpu.get("uuid") == gpu_uuid:
+                total = float(gpu.get("memory_total_mb") or 0)
+                free = float(gpu.get("memory_free_mb") or 0)
+                if total > 0 and free > 0:
+                    return round(min(0.95, max(0.05, 0.9 * free / total)), 3)
+                break
+    except Exception:
+        pass
+    return 0.9
+
+
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -171,11 +194,21 @@ async def build(
     # same model ref as the serve command (checkpoint dir or HF id).
     import contextlib
 
-    gpu_memory_utilization = 0.9
+    explicit_util: float | None = None
     for extra in config.get("vllm_args", []) or []:
         if str(extra).startswith("--gpu-memory-utilization"):
             with contextlib.suppress(ValueError):
-                gpu_memory_utilization = float(str(extra).split("=", 1)[-1].split()[-1])
+                explicit_util = float(str(extra).split("=", 1)[-1].split()[-1])
+
+    if explicit_util is not None:
+        gpu_memory_utilization = explicit_util
+    elif gpu_uuids:
+        # Auto-size from the DaemonSet inventory: cap vLLM at (most of) the
+        # memory actually free on the assigned GPU so concurrent serve jobs
+        # sharing it (GPU sharing within quota) don't evict each other.
+        gpu_memory_utilization = await _auto_memory_utilization(gpu_uuids[0])
+    else:
+        gpu_memory_utilization = 0.9
     check_gpus = 1 if gpu_uuids else int(gpus)
     pre_commands.append(
         "python3 /amortized/check_gpu_memory.py"
@@ -185,6 +218,7 @@ async def build(
     serve_cmd = f"python3 /amortized/serve_vllm.py serve {quoted_path}"
     serve_cmd += f" --served-model-name {shlex.quote(served_name)}"
     serve_cmd += f" --port {int(port)}"
+    serve_cmd += f" --gpu-memory-utilization {gpu_memory_utilization}"
     for extra in config.get("vllm_args", []) or []:
         if extra:
             serve_cmd += f" {shlex.quote(str(extra))}"
@@ -198,6 +232,7 @@ async def build(
     resolved_config = dict(config)
     resolved_config["served_model_name"] = served_name
     resolved_config["port"] = port
+    resolved_config["gpu_memory_utilization"] = gpu_memory_utilization
 
     env: dict[str, str] = {}
     if gpu_uuids:

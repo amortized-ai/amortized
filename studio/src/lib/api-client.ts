@@ -218,6 +218,33 @@ export async function getEvalResults(id: string): Promise<EvalResults | null> {
   return resp.results
 }
 
+// --- Evaluations (cross-model comparison groups) ---
+
+export interface EvaluationEntry {
+  job_id: string
+  model: string
+  status: string
+  created_at: string | null
+  mlflow_run_id: string
+  scores: Record<string, number>
+  num_samples: number | null
+  topic: string
+}
+
+export interface EvaluationGroup {
+  id: string
+  dataset: { run_id: string; name: string }
+  metric_names: string[]
+  evals: EvaluationEntry[]
+  latest_created_at: string | null
+}
+
+export async function getEvaluations(): Promise<EvaluationGroup[]> {
+  logger.debug("getEvaluations")
+  const resp = await get<{ groups: EvaluationGroup[] }>("/api/v1/evaluations")
+  return resp.groups
+}
+
 // --- Recipes ---
 
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {

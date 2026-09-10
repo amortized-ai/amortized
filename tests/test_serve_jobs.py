@@ -116,6 +116,30 @@ class TestCreateServeJob:
         assert data["config"]["served_model_name"] == "my-model"
 
 
+class TestAutoMemoryUtilization:
+    @pytest.mark.asyncio
+    async def test_sizes_from_inventory_free_memory(self, monkeypatch) -> None:
+        from amortized.core import gpu_inventory as gi
+        from amortized.jobs import serve as serve_builder
+
+        async def fake_read():
+            return [
+                {"uuid": "GPU-a", "memory_free_mb": 40000, "memory_total_mb": 80000},
+            ]
+
+        monkeypatch.setattr(gi, "read_inventory", fake_read)
+        # patched via the module the builder imports from
+        util = await serve_builder._auto_memory_utilization("GPU-a")
+        assert util == round(0.9 * 40000 / 80000, 3)  # 0.45
+
+    @pytest.mark.asyncio
+    async def test_clamps_to_bounds(self, monkeypatch) -> None:
+        from amortized.jobs import serve as serve_builder
+
+        util = await serve_builder._auto_memory_utilization("GPU-missing")
+        assert util == 0.9  # unknown GPU falls back to default
+
+
 class TestServeBuilder:
     @pytest.mark.asyncio
     async def test_build_named_model(self) -> None:

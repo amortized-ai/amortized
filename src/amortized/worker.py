@@ -419,6 +419,10 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error=error_msg,
             )
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
+            if job.get("type") == "eval":
+                from amortized.jobs.eval import _stop_eval_serve_jobs
+
+                await _stop_eval_serve_jobs(job)
 
     except Exception as exc:
         await _finish_mlflow_run(mlflow_run_id, "FAILED")

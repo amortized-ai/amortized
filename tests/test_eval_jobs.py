@@ -114,6 +114,148 @@ class TestCreateEvalJob:
         assert "api_key" not in config["endpoint"]
 
 
+class TestServeJobRecording:
+    async def test_create_eval_records_matching_serve_jobs(self, client: httpx.AsyncClient) -> None:
+        import asyncio
+
+        from amortized.db.connection import get_pool
+        from amortized.models import JobStatus, JobType
+        from amortized.core.jobs import create_job
+
+        async with get_pool().acquire() as conn:
+            from amortized.db.repository import Repository
+
+            repo = Repository(conn)
+            row = await create_job(
+                repo,
+                job_type=JobType.serve,
+                config={"port": 8000, "served_model_name": "m"},
+            )
+            await repo.update_job(
+                row["id"],
+                status=JobStatus.running.value,
+                k8s_job_name="amortized-serve-1",
+            )
+            serve_job_id = row["id"]
+
+        # The eval endpoint matches the serve job's in-cluster URL
+        response = await _create_eval(
+            client,
+            endpoint={
+                "base_url": "http://amortized-serve-1.amortized-jobs.svc.cluster.local:8000/v1",
+                "model": "m",
+            },
+        )
+        assert response.status_code == 201
+        cfg = response.json()["config"]
+        assert cfg["serve_job_ids"] == [serve_job_id]
+
+    async def test_create_eval_no_serve_match(self, client: httpx.AsyncClient) -> None:
+        response = await _create_eval(client)
+        assert response.status_code == 201
+        assert "serve_job_ids" not in response.json()["config"]
+
+
+class TestAutoStopServeJobs:
+    async def test_stops_unused_serve_jobs(self, monkeypatch) -> None:
+        import types
+
+        from amortized.jobs import eval as eval_builder
+
+        cancelled: list[str] = []
+        rows = {
+            "s1": {"id": "s1", "status": "running", "backend_handle": None},
+        }
+
+        class FakeRepo:
+            async def list_jobs(self, *, status, job_type):
+                # no other running evals
+                return []
+
+            async def get_job(self, job_id):
+                return rows.get(job_id)
+
+            async def update_job(self, job_id, **kw):
+                rows[job_id].update(kw)
+                return rows[job_id]
+
+        class FakePool:
+            def acquire(self):
+                return self
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def execute(self, *a, **k):
+                return ""
+
+        import amortized.jobs.eval as ev
+
+        monkeypatch.setattr(
+            "amortized.db.connection.get_pool", lambda: FakePool()
+        )
+        import amortized.core.jobs as core_jobs
+
+        async def fake_cancel(repo, job_id):
+            cancelled.append(job_id)
+            rows[job_id]["status"] = "cancelled"
+
+        monkeypatch.setattr(core_jobs, "cancel_job", fake_cancel)
+        # Repository symbol inside eval module resolved at call time
+        import amortized.db.repository as repo_mod
+
+        monkeypatch.setattr(repo_mod, "Repository", lambda conn: FakeRepo())
+
+        job = {"id": "e1", "config": {"serve_job_ids": ["s1"]}}
+        await ev._stop_eval_serve_jobs(job)
+        assert cancelled == ["s1"]
+
+    async def test_keeps_serve_jobs_used_by_running_evals(self, monkeypatch) -> None:
+        from amortized.jobs import eval as eval_builder
+
+        class FakeRepo:
+            async def list_jobs(self, *, status, job_type):
+                assert job_type.value == "eval"
+                return [
+                    {
+                        "id": "e2",
+                        "config": {"serve_job_ids": ["s1"]},
+                    }
+                ]
+
+            async def get_job(self, job_id):
+                return {"id": "s1", "status": "running", "backend_handle": None}
+
+        class FakePool:
+            def acquire(self):
+                return self
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+        import amortized.jobs.eval as ev
+
+        monkeypatch.setattr("amortized.db.connection.get_pool", lambda: FakePool())
+        import amortized.core.jobs as core_jobs
+        import amortized.db.repository as repo_mod
+
+        monkeypatch.setattr(repo_mod, "Repository", lambda conn: FakeRepo())
+
+        async def fail_cancel(repo, job_id):
+            raise AssertionError("should not cancel")
+
+        monkeypatch.setattr(core_jobs, "cancel_job", fail_cancel)
+
+        job = {"id": "e1", "config": {"serve_job_ids": ["s1"]}}
+        await ev._stop_eval_serve_jobs(job)  # no assertion error = kept
+
+
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:

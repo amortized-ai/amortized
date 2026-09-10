@@ -131,21 +131,35 @@ manual option, ask for the URL and present the suggested model name as
 an **editable default** ("I'll default the name to X unless the server
 expects a different one").
 
-**Serving the model (option 3):** the platform can run a serve job — a
-persistent vLLM endpoint on the training GPUs. To serve the tuned
-model of the chosen training job, call `validate_serve_job` with
-`training_job_id` set and confirm with the user. To serve a model by
-name, call `validate_serve_job` with `model_name_or_path` set. One
-serve job per model — check `serve_endpoints` first to avoid serving
-something twice. After submitting, poll
+**Serving the model (option 3):** the platform can start a serve job
+on the fly — a vLLM endpoint on the training GPUs. Serving is internal
+plumbing: never show or mention endpoint URLs, GPU pinning, or serve
+job IDs to the user. To serve the tuned model of the chosen training
+job, call `validate_serve_job` with `training_job_id` set and confirm
+with the user. To serve a model by name, call `validate_serve_job`
+with `model_name_or_path` set. One serve job per model — check
+`serve_endpoints` first to avoid serving something twice. Do NOT pass
+`--gpu-memory-utilization` — the platform sizes it automatically from
+live GPU free memory. After submitting, poll
 `get_eval_endpoint_suggestions` about every 30 seconds until the new
 serve endpoint shows `healthy: true` (model loading takes a minute or
-two), then continue to Step 3. Tell the user serve jobs keep running
-after the eval — they can be stopped anytime from the Jobs page.
+two), then continue to Step 3. Endpoints the eval started are stopped
+automatically when the eval finishes — mention this only if the user
+asks about cleanup.
 
 ### Step 3 — Design the metrics (approval loop)
 
-Do NOT assume which metrics matter — ask the user first:
+**First, check for an existing metric set.** The eval dataset may
+already carry an `eval_metric_set` tag (read the dataset's MLflow run —
+e.g. via the dataset detail / run tags). If it exists, REUSE it
+verbatim — same metrics, same rubric — and tell the user: "Reusing the
+metric set already defined for this dataset, so scores are comparable
+across models." Do NOT redesign, reword, or re-confirm criteria the
+dataset already defines. Only design new metrics when the tag is
+absent (the first eval on this dataset).
+
+When designing (first eval on the dataset): do NOT assume which
+metrics matter — ask the user first:
 
 > "How do you want to evaluate the model? What should a good output
 > look like for this task?"
@@ -209,8 +223,12 @@ Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that
 criterion, averaged over the scored samples. Interpret the numbers
 plainly and offer next steps: evaluate another model to compare, train
-again with different data or parameters, or accept the model. The
-Studio job detail panel also has a Results tab with the same numbers.
+again with different data or parameters, or accept the model.
+
+Cross-model comparisons live in the Studio **Evaluation tab**: every
+model evaluated on the same dataset with the same metric set appears
+as a column there — point the user to it when they want to compare
+numbers side by side.
 
 ## Delegating to the SDG Agent
 

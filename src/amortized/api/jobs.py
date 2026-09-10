@@ -304,10 +304,11 @@ async def create_training_job(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "You have {} running serve job(s) sharing your GPU budget"
-                    " ({}). Stop them from the Jobs page before training."
-                    " Serve jobs don't count against the GPU quota, so this"
-                    " check keeps your budget at one GPU.".format(
+                    "You have {} model endpoint(s) running that share your"
+                    " GPU budget ({}). Ask Morty in the chat to stop the"
+                    " running model endpoints before training. Endpoints"
+                    " don't count against the GPU quota, so this check"
+                    " keeps your budget at one GPU.".format(
                         len(running_serves),
                         ", ".join(sorted(r["id"][:8] for r in running_serves)),
                     )
@@ -328,6 +329,63 @@ async def create_training_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _job_response(row)
+
+
+async def _persist_metric_set(
+    config: dict, parent_job_id: str, db: asyncpg.Connection
+) -> None:
+    """Tag the dataset run with the eval's metric set (idempotent).
+
+    The tag is the source of truth for "which metrics does this dataset
+    evaluate on" — the eval agent reads it in later sessions instead of
+    re-designing metrics, keeping comparisons across models consistent.
+    """
+    dataset_run_id = str(config.get("eval_data_run_id") or "")
+    if not dataset_run_id and parent_job_id:
+        repo = Repository(db)
+        parent = await repo.get_job(parent_job_id)
+        if parent:
+            dataset_run_id = parent.get("mlflow_run_id", "")
+    if not dataset_run_id:
+        return
+
+    metric_set = {
+        "metrics": [m for m in (config.get("metrics") or []) if m],
+        "rubric": [
+            {"name": c.get("name"), "description": c.get("description", "")}
+            for c in (config.get("rubric") or [])
+            if isinstance(c, dict) and c.get("name")
+        ],
+    }
+    if not metric_set["metrics"] and not metric_set["rubric"]:
+        return
+
+    import json as _json
+
+    from amortized.jobs.common import set_mlflow_run_tag
+
+    await set_mlflow_run_tag(
+        dataset_run_id, "eval_metric_set", _json.dumps(metric_set)
+    )
+
+
+async def _match_serve_jobs(config: dict, db: asyncpg.Connection) -> list[str]:
+    """Running serve jobs whose in-cluster URL matches the eval endpoint."""
+    endpoint = config.get("endpoint") or {}
+    base_url = str(endpoint.get("base_url") or "").rstrip("/")
+    if not base_url:
+        return []
+    from amortized.api.eval import _serve_base_url
+
+    repo = Repository(db)
+    serve_jobs = await repo.list_jobs(
+        status=JobStatus.running, job_type=JobType.serve
+    )
+    return [
+        j["id"]
+        for j in serve_jobs
+        if _serve_base_url(j).rstrip("/") == base_url
+    ]
 
 
 @router.post(
@@ -354,6 +412,17 @@ async def create_eval_job(
         raise HTTPException(status_code=422, detail=errors)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
+
+    # Persist the metric set on the dataset's MLflow run so every later
+    # eval on the same dataset (any session) reuses the same metrics.
+    await _persist_metric_set(config, parent_job_id, db)
+
+    # Record which running serve jobs this eval uses so they can be
+    # auto-stopped when it finishes (serve endpoints are transient
+    # eval infrastructure, not user-visible jobs).
+    serve_job_ids = await _match_serve_jobs(config, db)
+    if serve_job_ids:
+        config["serve_job_ids"] = serve_job_ids
 
     repo = Repository(db)
     try:

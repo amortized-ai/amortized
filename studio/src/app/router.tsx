@@ -10,6 +10,7 @@ import DatasetsPage from "@/features/datasets/page"
 import ModelsPage from "@/features/models/page"
 import DocumentsPage from "@/features/documents/page"
 import SettingsPage from "@/features/settings/page"
+import EvaluationPage from "@/features/evaluation/page"
 
 const OverviewPage = lazy(() => import("@/features/overview/page"))
 const RecipesPage = lazy(() => import("@/features/recipes/page"))
@@ -34,6 +35,7 @@ export function AppRouter() {
         <Route path="datasets" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DatasetsPage /></ErrorBoundary>} />
         <Route path="documents" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><DocumentsPage /></ErrorBoundary>} />
         <Route path="models" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><ModelsPage /></ErrorBoundary>} />
+        <Route path="evaluation" element={<ErrorBoundary FallbackComponent={RouteErrorFallback}><EvaluationPage /></ErrorBoundary>} />
         <Route
           path="recipes"
           element={
