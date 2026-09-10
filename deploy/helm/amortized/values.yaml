@@ -51,8 +51,18 @@ server:
   # Optional AMORTIZED_DOCLING_URL (document conversion service). Omitted when empty.
   doclingUrl: ""
   resources: {}
+  # Extra env / volumes / volumeMounts / hostAliases appended to the server
+  # Deployment. Used by the RHOAI per-user provisioner to inject the sandboxed
+  # Morty mTLS upstream wiring; empty by default (single-tenant installs need none).
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  hostAliases: []
 
 studio:
+  # Deploy the bundled Studio (Deployment + Service). Set false when a front-end
+  # (e.g. the RHOAI studio-gateway) serves Studio itself and only needs the server.
+  enabled: true
   # Hostname for the OpenShift Route (studio.route.enabled). Empty => the cluster
   # generates a default route host.
   host: ""
@@ -71,6 +81,10 @@ studio:
     enabled: false
 
 opencode:
+  # Deploy the bundled OpenCode (Morty) agent. Set false when Morty runs elsewhere
+  # (e.g. an OpenShell-sandboxed Morty wired via server.extraEnv), so the plain
+  # in-cluster agent + its morty-config/morty-skills ConfigMaps are not rendered.
+  enabled: true
   resources:
     requests:
       cpu: 200m
