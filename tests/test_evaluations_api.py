@@ -103,19 +103,90 @@ class TestGrouping:
             _job(
                 "j1", "base", metrics=["exact_match"],
                 rubric=[{"name": "accuracy"}], eval_data_run_id="d1",
-                created="2026-01-01",
+                created="2026-01-01", run_id="r1",
             ),
             _job(
                 "j2", "tuned", metrics=["exact_match"],
                 rubric=[{"name": "accuracy"}], eval_data_run_id="d1",
-                created="2026-01-02",
+                created="2026-01-02", run_id="r2",
             ),
             # Same dataset, different metric set → separate group
-            _job("j3", "base", metrics=["format_validity"], eval_data_run_id="d1"),
+            _job("j3", "base", metrics=["format_validity"], eval_data_run_id="d1", run_id="r3"),
             # Different dataset
             _job(
                 "j4", "base", metrics=["exact_match"],
-                rubric=[{"name": "accuracy"}], eval_data_run_id="d2",
+                rubric=[{"name": "accuracy"}], eval_data_run_id="d2", run_id="r4",
+            ),
+        ]
+
+        class FakeRepo:
+            async def list_jobs(self, **kw):
+                return jobs
+
+            async def get_job(self, job_id):
+                return None
+
+        class FakeConn:
+            pass
+
+        async def fake_runs():
+            return {
+                "r1": {"eval_score_accuracy": "0.8"},
+                "r2": {"eval_score_accuracy": "0.9"},
+                "r3": {"eval_score_format": "0.7"},
+                "r4": {"eval_score_accuracy": "0.6"},
+            }
+
+        monkeypatch.setattr(evals_api, "_eval_runs_by_id", fake_runs)
+        monkeypatch.setattr(evals_api, "Repository", lambda conn: FakeRepo())
+        result = await evals_api.list_evaluations(db=FakeConn())
+        groups = result["groups"]
+        assert len(groups) == 3
+        # The d1+exact_match+accuracy group has both models, newest first
+        pair = [g for g in groups if len(g["evals"]) == 2][0]
+        assert {e["model"] for e in pair["evals"]} == {"base", "tuned"}
+        assert pair["evals"][0]["model"] == "tuned"  # newest first
+        assert set(pair["metric_names"]) == {"exact_match", "accuracy"}
+
+
+class TestScoredGroupFilter:
+    @pytest.mark.asyncio
+    async def test_groups_without_scores_are_hidden(self, monkeypatch) -> None:
+        jobs = [
+            # scored eval on d1 → group kept
+            _job(
+                "j1", "base", metrics=["exact_match"],
+                eval_data_run_id="d1", run_id="r1",
+            ),
+            # eval on d2 that never produced scores → group hidden
+            _job("j2", "m2", metrics=["exact_match"], eval_data_run_id="d2"),
+        ]
+
+        class FakeRepo:
+            async def list_jobs(self, **kw):
+                return jobs
+
+            async def get_job(self, job_id):
+                return None
+
+        class FakeConn:
+            pass
+
+        async def fake_runs():
+            return {"r1": {"eval_model": "base", "eval_exact_match": "0.5"}}
+
+        monkeypatch.setattr(evals_api, "_eval_runs_by_id", fake_runs)
+        monkeypatch.setattr(evals_api, "Repository", lambda conn: FakeRepo())
+        result = await evals_api.list_evaluations(db=FakeConn())
+        assert len(result["groups"]) == 1
+        assert result["groups"][0]["dataset"]["run_id"] == "d1"
+
+    @pytest.mark.asyncio
+    async def test_failed_only_group_hidden(self, monkeypatch) -> None:
+        jobs = [
+            _job(
+                "j1", "m1", status="failed",
+                metrics=["exact_match"], eval_data_run_id="d1",
             ),
         ]
 
@@ -135,10 +206,4 @@ class TestGrouping:
         monkeypatch.setattr(evals_api, "_eval_runs_by_id", fake_runs)
         monkeypatch.setattr(evals_api, "Repository", lambda conn: FakeRepo())
         result = await evals_api.list_evaluations(db=FakeConn())
-        groups = result["groups"]
-        assert len(groups) == 3
-        # The d1+exact_match+accuracy group has both models, newest first
-        pair = [g for g in groups if len(g["evals"]) == 2][0]
-        assert {e["model"] for e in pair["evals"]} == {"base", "tuned"}
-        assert pair["evals"][0]["model"] == "tuned"  # newest first
-        assert set(pair["metric_names"]) == {"exact_match", "accuracy"}
+        assert result["groups"] == []

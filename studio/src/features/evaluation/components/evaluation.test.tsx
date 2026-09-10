@@ -71,7 +71,7 @@ describe("EvaluationTable", () => {
 })
 
 describe("EvaluationDetailPanel", () => {
-  it("renders the model comparison table with scores", () => {
+  it("renders the model comparison table with scores (one row per model)", () => {
     const group = makeGroup({
       evals: [
         makeEntry({ model: "tuned-model", scores: { accuracy: 0.9 }, job_id: "aaaaaaaa-1111" }),
@@ -87,7 +87,10 @@ describe("EvaluationDetailPanel", () => {
     expect(screen.getByText("base-model")).toBeInTheDocument()
     expect(screen.getByText("90%")).toBeInTheDocument()
     expect(screen.getByText("60%")).toBeInTheDocument()
-    expect(screen.getByText("accuracy")).toBeInTheDocument()
+    // metrics are column headers
+    expect(screen.getByRole("columnheader", { name: "accuracy" })).toBeInTheDocument()
+    // models are rows
+    expect(screen.getByRole("cell", { name: /tuned-model/ })).toBeInTheDocument()
   })
 
   it("links each model column to its job", () => {

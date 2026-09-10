@@ -202,8 +202,14 @@ async def list_evaluations(
         group["evals"].append(_entry_from_job(job, run_tags))
         group["latest_created_at"] = job.get("created_at")
 
+    # Only datasets that actually have evaluation results — a dataset whose
+    # eval jobs all failed or predate the tag schema (no scores) is not
+    # "evaluated" and should not appear as a comparison row.
+    scored_groups = [
+        g for g in groups.values() if any(e["scores"] for e in g["evals"])
+    ]
     result = sorted(
-        groups.values(),
+        scored_groups,
         key=lambda g: g.get("latest_created_at") or "",
         reverse=True,
     )
