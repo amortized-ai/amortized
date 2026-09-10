@@ -149,13 +149,14 @@ asks about cleanup.
 
 ### Step 3 — Design the metrics (approval loop)
 
-**First, check for an existing metric set.** The eval dataset may
-already carry an `eval_metric_set` tag (read the dataset's MLflow run —
-e.g. via the dataset detail / run tags). If it exists, REUSE it
+**First, check for an existing metric set.** Call `get_dataset` with
+the dataset's run ID — the response includes an `eval_metric_set`
+field (`{metrics: [...], rubric: [{name, description}]}`) when any
+eval has run on this dataset before. If it is present, REUSE it
 verbatim — same metrics, same rubric — and tell the user: "Reusing the
 metric set already defined for this dataset, so scores are comparable
 across models." Do NOT redesign, reword, or re-confirm criteria the
-dataset already defines. Only design new metrics when the tag is
+dataset already defines. Only design new metrics when the field is
 absent (the first eval on this dataset).
 
 When designing (first eval on the dataset): do NOT assume which
