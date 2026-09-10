@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { getBaseUrl } from "@/lib/api-client"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-providers")
@@ -10,7 +11,7 @@ interface ProviderListResponse {
 }
 
 async function fetchProviderStatus(): Promise<Set<string>> {
-  const resp = await fetch("/agent/provider", {
+  const resp = await fetch(`${getBaseUrl()}/agent/provider`, {
     headers: { "Content-Type": "application/json" },
   })
   if (!resp.ok) {

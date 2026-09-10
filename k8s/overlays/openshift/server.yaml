@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amortized-server
+  labels:
+    app: amortized
+    component: server
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: amortized-server-data
+  labels:
+    app: amortized
+    component: server
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amortized-server
+  labels:
+    app: amortized
+    component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amortized
+      component: server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: server
+    spec:
+      serviceAccountName: amortized-server
+      initContainers:
+        - name: wait-for-db
+          image: quay.io/sclorg/postgresql-16-c9s:latest
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+          env:
+            - name: PGHOST
+              value: "postgres"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "amortized"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: server
+          image: ghcr.io/amortized-ai/amortized:latest
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: amortized-config
+            - secretRef:
+                name: amortized-s3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: amortized-server-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amortized-server
+  labels:
+    app: amortized
+    component: server
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: server
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

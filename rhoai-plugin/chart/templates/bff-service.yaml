@@ -1,0 +1,20 @@
+{{- if .Values.bff.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "amortized-studio.fullname" . }}-bff
+  namespace: {{ include "amortized-studio.namespace" . }}
+  labels:
+    {{- include "amortized-studio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bff
+spec:
+  type: {{ .Values.bff.service.type }}
+  ports:
+    - port: {{ .Values.bff.service.port }}
+      targetPort: {{ .Values.bff.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "amortized-studio.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bff
+{{- end }}

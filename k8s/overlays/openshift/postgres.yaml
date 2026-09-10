@@ -1,0 +1,83 @@
+# OpenShift-native Postgres (SCL image on quay.io): runs as an arbitrary UID
+# under restricted-v2 and avoids Docker Hub's unauthenticated pull rate limit.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: amortized
+    component: postgres
+spec:
+  replicas: 1
+  serviceName: postgres
+  selector:
+    matchLabels:
+      app: amortized
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: amortized
+        component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: quay.io/sclorg/postgresql-16-c9s:latest
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRESQL_DATABASE
+              value: "amortized"
+            - name: POSTGRESQL_USER
+              value: "amortized"
+            - name: POSTGRESQL_PASSWORD
+              value: "amortized"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "amortized"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "amortized"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: amortized
+          component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: amortized
+    component: postgres
+spec:
+  type: ClusterIP
+  selector:
+    app: amortized
+    component: postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg

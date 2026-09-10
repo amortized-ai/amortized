@@ -1,0 +1,69 @@
+# --- Plugin identity (required) ---
+name: amortized-studio                    # [PLUGIN-SPECIFIC] unique plugin identifier (kebab-case)
+displayName: Amortized Studio             # [PLUGIN-SPECIFIC] human-readable name
+description: Embeds Amortized Studio (task-model building UI) in the RHOAI dashboard
+version: 0.4.2
+
+# --- Maintainer (required) ---
+maintainer:                          # [PLUGIN-SPECIFIC]
+  name: Guillaume Moutier                    # [PLUGIN-SPECIFIC] replace with maintainer's name
+  github: guimou        # [PLUGIN-SPECIFIC] replace with maintainer's GitHub handle
+
+# --- RHOAI compatibility (required) ---
+rhoai_compatibility:                 # [PLUGIN-SPECIFIC]
+  min_version: "3.3.0"
+  tested_versions: ["3.3.0", "3.4.2"]
+
+# --- Deployment (required) ---
+deployment_model: cluster-shared     # per-project | cluster-shared | both
+
+image:                               # [PLUGIN-SPECIFIC]
+  repository: quay.io/rh-ai-community-plugins/amortized-studio
+  tag: "0.4.2"
+
+bff_image:                           # [PLUGIN-SPECIFIC] (optional — only if using BFF pattern)
+  repository: quay.io/rh-ai-community-plugins/amortized-studio-bff
+  tag: "0.4.2"
+
+# --- Installation (required) ---
+install:
+  method: automatic                  # automatic | assisted | manual
+  namespace: cp-amortized-studio          # [PLUGIN-SPECIFIC] default namespace for deployment
+  helm:
+    chart_path: chart/
+    registry: oci://quay.io/rh-ai-community-plugins/amortized-studio-chart  # [PLUGIN-SPECIFIC]
+  prerequisites: []
+  instructions: https://github.com/rh-ai-community-plugins/amortized-studio/blob/main/docs/deployment  # [PLUGIN-SPECIFIC]
+
+# --- Dashboard integration (required) ---
+remote:
+  type: module-federation
+  spec:
+    name: amortizedStudio                 # [PLUGIN-SPECIFIC] Module Federation container name (camelCase)
+    scope: amortizedStudio                # [PLUGIN-SPECIFIC] must match name above
+    # [PLUGIN-SPECIFIC] Update this URL to point to your deployed OpenShift route.
+    # The URL is cluster-specific and depends on the route created by the Helm chart or Ingress.
+    # Example: https://amortized-studio-mynamespace.apps.mycluster.example.com/remoteEntry.js
+    remoteEntry: https://<your-openshift-route>/remoteEntry.js  # [PLUGIN-SPECIFIC]
+    paths:
+      - type: route
+        path: /amortized-studio           # [PLUGIN-SPECIFIC] must match route prefix in extensions.ts
+        extensions:
+          - amortizedStudio/extensions     # [PLUGIN-SPECIFIC] {scope}/extensions
+      - type: icon
+        path: amortizedStudio/Icon         # [PLUGIN-SPECIFIC] {scope}/Icon
+
+# --- RBAC (required) ---
+# NOTE: The plugin itself requires no cluster roles at install time. However,
+# users of the Cluster Resources page need RBAC permissions for create/list/delete
+# on apps/deployments, core/services, core/configmaps, and core/secrets via the
+# dashboard's K8s API pass-through.
+rbac:
+  required_roles: []
+  cluster_roles: false
+
+# --- Support (optional) ---
+support:
+  repo: https://github.com/rh-ai-community-plugins/amortized-studio   # [PLUGIN-SPECIFIC]
+  docs: https://github.com/rh-ai-community-plugins/amortized-studio/tree/main/docs
+  issues: https://github.com/rh-ai-community-plugins/amortized-studio/issues

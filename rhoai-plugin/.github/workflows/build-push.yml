@@ -1,0 +1,69 @@
+name: Build and Push
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag for the images (e.g. 0.5.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    name: Build and push container image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Quay.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Build and push image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: amortized-studio
+          tags: ${{ inputs.version }}
+          containerfiles: |
+            ./Containerfile
+
+      - name: Push to Quay.io
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: amortized-studio
+          tags: ${{ inputs.version }}
+          registry: quay.io/rh-ai-community-plugins
+
+  build-and-push-bff:
+    runs-on: ubuntu-latest
+    name: Build and push BFF container image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Quay.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Build BFF image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: amortized-studio-bff
+          tags: ${{ inputs.version }}
+          containerfiles: |
+            ./bff/Containerfile
+          context: ./bff
+
+      - name: Push BFF to Quay.io
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: amortized-studio-bff
+          tags: ${{ inputs.version }}
+          registry: quay.io/rh-ai-community-plugins

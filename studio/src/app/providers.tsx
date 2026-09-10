@@ -18,9 +18,14 @@ const queryClient = new QueryClient({
   },
 })
 
+// Client-side routing base, derived from the Vite build base (import.meta.env.
+// BASE_URL). "/" for the standalone/kind deployment; a subpath (e.g.
+// "/amortized-studio-embed/") when served behind the RHOAI dashboard proxy.
+const routerBasename = import.meta.env.BASE_URL.replace(/\/+$/, "") || "/"
+
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           {children}
