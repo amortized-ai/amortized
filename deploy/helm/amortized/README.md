@@ -74,7 +74,9 @@ helm install amortized deploy/helm/amortized \
 | `server.doclingUrl` | `""` | optional `AMORTIZED_DOCLING_URL` |
 | `studio.host` | `""` | Route host (empty = auto) |
 | `studio.route.enabled` | `false` | create an OpenShift Route for Studio |
-| `dataStores.bundled` | `true` | deploy PostgreSQL + MinIO + MLflow in-namespace |
+| `dataStores.bundled` | `true` | default for all stores; deploy PostgreSQL + MinIO + MLflow in-namespace |
+| `postgres.bundled` / `minio.bundled` / `mlflow.bundled` | inherit `dataStores.bundled` | per-store override to mix bundled + external |
+| `mlflow.enterprise.enabled` | `false` | RHOAI operator MLflow (bearer SA token + `X-MLFLOW-WORKSPACE` + service-CA TLS + view/edit RoleBindings) |
 | `model.provider` | `vertex` | `vertex` or `openai` |
 | `model.opencodeModel` | `google-vertex-anthropic/claude-opus-4-8@default` | model string in `opencode.json` |
 | `security.runAsNonRoot` | `true` | app pods runAsNonRoot; set `false` on vanilla/kind (see `values-kind.yaml`) |
@@ -118,6 +120,44 @@ helm install amortized deploy/helm/amortized \
 For one OpenAI key to power both Morty and the teacher, point `model.openai` and
 `teacherKeys` at the same secret. **Requires** a server image with direct-provider
 support (amortized #427+); on an older image the teacher path is inert.
+
+## Data stores: bundled, external, per-store
+
+`dataStores.bundled` is the default for all three stores; override any store on its own
+(`postgres.bundled` / `minio.bundled` / `mlflow.bundled`) to mix bundled and external — e.g.
+bundle a per-namespace PostgreSQL while pointing MLflow at a shared server:
+
+```bash
+helm install amortized deploy/helm/amortized \
+  --set postgres.bundled=true \
+  --set mlflow.bundled=false --set mlflow.trackingUri='https://mlflow.example.com'
+```
+
+## Enterprise (RHOAI) MLflow
+
+To log to the RHOAI operator-managed MLflow, enable `mlflow.enterprise` and point
+`mlflow.trackingUri` at the operator MLflow (must be `https://` — the app refuses to send a
+bearer token over cleartext). The server **and** dispatched jobs then send a bearer SA token
++ an `X-MLFLOW-WORKSPACE` header (`== namespace`) and verify TLS via the service CA; the chart
+also binds the server and job (`default`) ServiceAccounts to the operator's MLflow view/edit
+ClusterRoles in the workspace namespace.
+
+```bash
+helm install amortized deploy/helm/amortized \
+  -n amz-user --set namespace=amz-user --set jobsNamespace=amz-user --set createNamespaces=false \
+  --set mlflow.enterprise.enabled=true \
+  --set mlflow.trackingUri='https://mlflow.redhat-ods-applications.svc:8443/mlflow'
+```
+
+Notes:
+- Enabling it forces MLflow **external** (never bundled); PostgreSQL/MinIO still follow their
+  own `bundled` flags (bundle per-namespace PostgreSQL while sharing the enterprise MLflow).
+- Workspace `==` namespace, so set `jobsNamespace == namespace` (jobs and the server share one
+  workspace). Defaults: workspace = release namespace, token = the auto-mounted SA token
+  (`/var/run/secrets/kubernetes.io/serviceaccount/token`), CA = the `openshift-service-ca.crt`
+  configmap (auto-present on OpenShift).
+- Requires the `mlflow-operator-mlflow-{view,edit}` ClusterRoles (RHOAI MLflow operator) to
+  exist; override the names via `mlflow.enterprise.{view,edit}ClusterRole` if they differ.
 
 ## OpenShift / `restricted-v2`
 

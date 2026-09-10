@@ -123,14 +123,17 @@ teacherKeys:
   forward:
     - OPENAI_API_KEY
 
-# Data stores. bundled=true deploys PostgreSQL + MinIO + MLflow in-namespace.
-# bundled=false skips them and wires the app to the external endpoints below.
+# Data stores. dataStores.bundled is the default for all three stores; override any store
+# individually with postgres.bundled / minio.bundled / mlflow.bundled to mix bundled and
+# external (e.g. bundle PostgreSQL while using an external / enterprise MLflow).
+# bundled=true deploys the store in-namespace; false wires the app to the external endpoints below.
 dataStores:
   bundled: true
 
 # --- Bundled data stores (used when dataStores.bundled=true) ---
 
 postgres:
+  # bundled: true    # override dataStores.bundled for PostgreSQL only
   # gcr mirror of the official image (avoids Docker Hub rate-limits on OpenShift);
   # runs fine under restricted-v2 as an SCC-injected non-root uid.
   image: mirror.gcr.io/library/postgres:16-alpine
@@ -148,6 +151,7 @@ postgres:
       memory: 1Gi
 
 minio:
+  # bundled: true    # override dataStores.bundled for MinIO only
   image: quay.io/minio/minio:latest
   rootUser: minioadmin
   rootPassword: minioadmin
@@ -161,13 +165,36 @@ minioInit:
   waitImage: mirror.gcr.io/library/busybox:1.36
 
 mlflow:
+  # bundled: true    # override dataStores.bundled for MLflow only (enterprise.enabled forces external)
   image: ghcr.io/mlflow/mlflow:latest
   persistence:
     size: 200Gi
   resources: {}
-  # --- External MLflow (used when dataStores.bundled=false) ---
+  # --- External MLflow (used when MLflow is not bundled) ---
   trackingUri: ""   # e.g. https://mlflow.example.com
   gatewayUrl: ""    # e.g. https://mlflow.example.com/gateway/mlflow/v1
+  # --- Enterprise (RHOAI operator-managed) MLflow ---
+  # When enabled, MLflow is treated as external and the server AND dispatched jobs send a
+  # bearer SA token + an X-MLFLOW-WORKSPACE header (== namespace) and verify TLS via the
+  # service CA. Set mlflow.trackingUri to the operator MLflow https:// URL
+  # (e.g. https://mlflow.redhat-ods-applications.svc:8443/mlflow) — the app refuses to send a
+  # bearer token over a cleartext URI.
+  enterprise:
+    enabled: false
+    # X-MLFLOW-WORKSPACE header. Empty => the release namespace.
+    workspace: ""
+    # Bearer-token file (a Kubernetes SA token). The default projected SA token is auto-mounted
+    # and rotated in place; the client re-reads it per request.
+    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    # ConfigMap providing the service-CA bundle used to verify the MLflow TLS cert. On OpenShift
+    # the openshift-service-ca.crt configmap is auto-present in every namespace.
+    caConfigMap: openshift-service-ca.crt
+    caConfigMapKey: service-ca.crt
+    # Skip TLS verification instead of mounting a CA bundle (not recommended).
+    insecureTls: false
+    # Operator MLflow ClusterRoles bound to the server + job SAs (workspace == namespace).
+    viewClusterRole: mlflow-operator-mlflow-view
+    editClusterRole: mlflow-operator-mlflow-edit
 
 # S3 / object storage. bucket applies in both modes; endpoint/creds are used when
 # dataStores.bundled=false (bundled mode uses the in-cluster MinIO + its creds).
