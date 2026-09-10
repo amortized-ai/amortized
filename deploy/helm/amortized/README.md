@@ -146,16 +146,23 @@ ClusterRoles in the workspace namespace.
 helm install amortized deploy/helm/amortized \
   -n amz-user --set namespace=amz-user --set jobsNamespace=amz-user --set createNamespaces=false \
   --set mlflow.enterprise.enabled=true \
-  --set mlflow.trackingUri='https://mlflow.redhat-ods-applications.svc:8443/mlflow'
+  --set mlflow.trackingUri='https://mlflow.redhat-ods-applications.svc:8443/mlflow' \
+  --set minio.bundled=false
 ```
 
-Notes:
-- Enabling it forces MLflow **external** (never bundled); PostgreSQL/MinIO still follow their
-  own `bundled` flags (bundle per-namespace PostgreSQL while sharing the enterprise MLflow).
-- Workspace `==` namespace, so set `jobsNamespace == namespace` (jobs and the server share one
-  workspace). Defaults: workspace = release namespace, token = the auto-mounted SA token
-  (`/var/run/secrets/kubernetes.io/serviceaccount/token`), CA = the `openshift-service-ca.crt`
-  configmap (auto-present on OpenShift).
+What gets bundled and what doesn't (three separate stores):
+- **MLflow's own DB + artifact store** are the operator's / **cluster-level — not managed here**.
+  Enabling enterprise forces MLflow **external**; the app just logs to it.
+- **PostgreSQL stays bundled** — that's the amortized *app's* database (job records), unrelated to
+  MLflow's DB; each install has its own.
+- **MinIO should be off** (`minio.bundled=false`) — the app's own S3 is **unused** with enterprise
+  MLflow (the server never reads it; jobs route artifacts through MLflow, which uses its own
+  artifact store). With enterprise MLflow `s3.*` is therefore **optional** (empty renders fine).
+
+Other notes:
+- Workspace `==` namespace, so set `jobsNamespace == namespace`. Defaults: workspace = release
+  namespace, token = the auto-mounted SA token (`/var/run/secrets/kubernetes.io/serviceaccount/token`),
+  CA = the `openshift-service-ca.crt` configmap (auto-present on OpenShift).
 - Requires the `mlflow-operator-mlflow-{view,edit}` ClusterRoles (RHOAI MLflow operator) to
   exist; override the names via `mlflow.enterprise.{view,edit}ClusterRole` if they differ.
 

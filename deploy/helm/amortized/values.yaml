@@ -196,8 +196,9 @@ mlflow:
     viewClusterRole: mlflow-operator-mlflow-view
     editClusterRole: mlflow-operator-mlflow-edit
 
-# S3 / object storage. bucket applies in both modes; endpoint/creds are used when
-# dataStores.bundled=false (bundled mode uses the in-cluster MinIO + its creds).
+# S3 / object storage. bucket applies in both modes; endpoint/creds are used when MinIO is not
+# bundled (bundled mode uses the in-cluster MinIO + its creds). With mlflow.enterprise.enabled
+# the app's S3 is unused (artifacts flow through MLflow), so these are OPTIONAL there.
 s3:
   bucket: amortized
   endpoint: ""      # e.g. https://s3.us-east-1.amazonaws.com

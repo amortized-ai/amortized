@@ -87,9 +87,17 @@ http://{{ include "amortized.mlflowFqdn" . }}:5000/gateway/mlflow/v1
 {{- end -}}
 {{- end -}}
 
+{{/*
+S3 helpers. Bundled MinIO => the in-cluster service. With enterprise MLflow the app's own S3
+is unused (the server never reads it; jobs route artifacts through the MLflow proxy per AD-3,
+and MLflow uses its own artifact store), so s3.* is OPTIONAL there (empty renders fine). For a
+plain external (non-enterprise) MLflow, s3.* is still required.
+*/}}
 {{- define "amortized.s3Endpoint" -}}
 {{- if eq (include "amortized.minioBundled" .) "true" -}}
 http://{{ include "amortized.minioFqdn" . }}:9000
+{{- else if .Values.mlflow.enterprise.enabled -}}
+{{- .Values.s3.endpoint -}}
 {{- else -}}
 {{- required "s3.endpoint is required when MinIO is not bundled" .Values.s3.endpoint -}}
 {{- end -}}
@@ -98,6 +106,8 @@ http://{{ include "amortized.minioFqdn" . }}:9000
 {{- define "amortized.s3AccessKey" -}}
 {{- if eq (include "amortized.minioBundled" .) "true" -}}
 {{- .Values.minio.rootUser -}}
+{{- else if .Values.mlflow.enterprise.enabled -}}
+{{- .Values.s3.accessKey -}}
 {{- else -}}
 {{- required "s3.accessKey is required when MinIO is not bundled" .Values.s3.accessKey -}}
 {{- end -}}
@@ -106,6 +116,8 @@ http://{{ include "amortized.minioFqdn" . }}:9000
 {{- define "amortized.s3SecretKey" -}}
 {{- if eq (include "amortized.minioBundled" .) "true" -}}
 {{- .Values.minio.rootPassword -}}
+{{- else if .Values.mlflow.enterprise.enabled -}}
+{{- .Values.s3.secretKey -}}
 {{- else -}}
 {{- required "s3.secretKey is required when MinIO is not bundled" .Values.s3.secretKey -}}
 {{- end -}}
