@@ -61,20 +61,33 @@ export function EvaluationTable({
       },
       {
         accessorFn: (row) =>
-          row.evals
-            .filter((e) => e.status === "succeeded")
-            .map((e) => e.model)
-            .join(", "),
+          row.evals.filter((e) => e.status === "succeeded").length,
         id: "models_list",
         header: "Evaluated Models",
         size: 280,
         minSize: 150,
         maxSize: 500,
-        cell: ({ getValue }) => (
-          <span className="text-sm text-muted-foreground truncate block">
-            {(getValue() as string) || "--"}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const models = row.original.evals
+            .filter((e) => e.status === "succeeded")
+            .map((e) => e.model)
+          if (models.length === 0) return <span className="text-sm text-muted-foreground">--</span>
+          const shown = models.slice(0, 2)
+          const rest = models.length - shown.length
+          return (
+            <span
+              className="text-sm text-muted-foreground truncate block"
+              title={models.join(", ")}
+            >
+              {shown.join(", ")}
+              {rest > 0 && (
+                <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
+                  +{rest} more
+                </span>
+              )}
+            </span>
+          )
+        },
       },
       {
         accessorFn: (row) => formatDate(row.latest_created_at),

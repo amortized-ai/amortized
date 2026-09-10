@@ -87,10 +87,8 @@ describe("EvaluationDetailPanel", () => {
     expect(screen.getByText("base-model")).toBeInTheDocument()
     expect(screen.getByText("90%")).toBeInTheDocument()
     expect(screen.getByText("60%")).toBeInTheDocument()
-    // metrics are column headers
-    expect(screen.getByRole("columnheader", { name: "accuracy" })).toBeInTheDocument()
-    // models are rows
-    expect(screen.getByRole("cell", { name: /tuned-model/ })).toBeInTheDocument()
+    // metric is a row, models are column headers
+    expect(screen.getByText("accuracy")).toBeInTheDocument()
   })
 
   it("links each model column to its job", () => {
