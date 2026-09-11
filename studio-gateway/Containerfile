@@ -62,14 +62,17 @@ COPY --from=tools /usr/local/bin/helm /usr/local/bin/helm
 COPY --from=tools /usr/local/bin/openshell /usr/local/bin/openshell
 # helm + openshell write caches/config under $HOME; make those dirs group-0
 # writable so the arbitrary OpenShift uid (runs in group 0) can use them.
-ENV HOME=/opt/app-root/src \
+# HOME=/tmp so the openshell CLI's config dir (~/.config/openshell) is created and OWNED
+# by the arbitrary OpenShift uid at runtime — the CLI chmods that dir, and a root-owned
+# pre-created dir fails with EPERM. helm uses the explicit HELM_*_HOME below regardless.
+ENV HOME=/tmp \
     EGRESS_POLICY_FILE=/opt/app-root/src/policy.aipcc.yaml \
     HELM_CACHE_HOME=/opt/app-root/src/.helm/cache \
     HELM_CONFIG_HOME=/opt/app-root/src/.helm/config \
     HELM_DATA_HOME=/opt/app-root/src/.helm/data \
-    OPENSHELL_CONFIG_HOME=/opt/app-root/src/.config/openshell
-RUN mkdir -p .helm/cache .helm/config .helm/data .config/openshell \
- && chgrp -R 0 .helm .config && chmod -R g+rwX .helm .config
+    OPENSHELL_CONFIG_HOME=/tmp/.config/openshell
+RUN mkdir -p .helm/cache .helm/config .helm/data \
+ && chgrp -R 0 .helm && chmod -R g+rwX .helm
 USER 1001:0
 EXPOSE 8080
 CMD ["node", "src/server.js"]

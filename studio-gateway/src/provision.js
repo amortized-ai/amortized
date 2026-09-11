@@ -53,6 +53,9 @@ const OPENSHELL_NAMESPACE = process.env.OPENSHELL_NAMESPACE || 'openshell';
 const OPENSHELL_SERVICE = process.env.OPENSHELL_SERVICE || 'openshell';
 const OPENSHELL_CONFIG_HOME =
   process.env.OPENSHELL_CONFIG_HOME || path.join(os.homedir() || '/tmp', '.config', 'openshell');
+// Backstop timeout on openshell CLI calls so a hang (e.g. a mis-typed gateway that
+// blocks on auth) fails fast + retryable instead of wedging provisioning forever.
+const OPENSHELL_TIMEOUT_MS = parseInt(process.env.OPENSHELL_TIMEOUT_MS || '300000', 10);
 
 // --- Morty sandbox ---
 const MORTY_IMAGE = process.env.MORTY_IMAGE || 'ghcr.io/amortized-ai/morty:latest';
@@ -182,12 +185,11 @@ async function configureOpenshell() {
   for (const f of ['ca.crt', 'tls.crt', 'tls.key']) {
     fs.copyFileSync(path.join(OPENSHELL_MTLS_DIR, f), path.join(mtlsDir, f));
   }
-  try {
-    await run(OPENSHELL_BIN, ['gateway', 'add', OPENSHELL_ENDPOINT, '--name', OPENSHELL_GATEWAY]);
-  } catch (err) {
-    if (!/exist|already/i.test(err.message)) throw err;
-    console.log(`  openshell gateway ${OPENSHELL_GATEWAY} already registered`);
-  }
+  // Remove any stale/wrong-type registration, then add as a --local mTLS gateway.
+  // --local is REQUIRED: without it an https endpoint is treated as a cloud gateway
+  // and blocks on browser authentication, which never completes in a pod.
+  await run(OPENSHELL_BIN, ['gateway', 'remove', OPENSHELL_GATEWAY], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
+  await run(OPENSHELL_BIN, ['gateway', 'add', OPENSHELL_ENDPOINT, '--name', OPENSHELL_GATEWAY, '--local'], { timeout: OPENSHELL_TIMEOUT_MS });
   openshellConfigured = true;
 }
 
@@ -234,7 +236,7 @@ async function ensureSandbox(ns) {
 
   let created = false;
   try {
-    await run(OPENSHELL_BIN, createArgs);
+    await run(OPENSHELL_BIN, createArgs, { timeout: OPENSHELL_TIMEOUT_MS });
     created = true;
   } catch (err) {
     if (!/exist|already/i.test(err.message)) throw err;
