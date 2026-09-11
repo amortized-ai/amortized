@@ -165,6 +165,10 @@ Other notes:
   CA = the `openshift-service-ca.crt` configmap (auto-present on OpenShift).
 - Requires the `mlflow-operator-mlflow-{view,edit}` ClusterRoles (RHOAI MLflow operator) to
   exist; override the names via `mlflow.enterprise.{view,edit}ClusterRole` if they differ.
+- **Studio's embedded MLflow tab (`/mlflow`) does not work in enterprise mode** — the bundled
+  Studio's plain-http proxy can't reach the operator MLflow (`https://` + bearer token +
+  `X-MLFLOW-WORKSPACE`). Job logging is unaffected; only the in-Studio MLflow *view* is. Tracked
+  in [#430](https://github.com/amortized-ai/amortized/issues/430).
 
 ## OpenShift / `restricted-v2`
 
