@@ -1,0 +1,78 @@
+# Built from the amortized repo ROOT (needs studio/ + studio-gateway/):
+#   oc start-build studio-gateway --from-dir=.   (repo root)
+# All base images are UBI (registry.access.redhat.com) to avoid Docker Hub rate
+# limits on the cluster.
+#
+# The gateway provisions each user by running `helm` (installs the core chart, PULLED
+# FROM OCI at runtime via AMORTIZED_CHART_OCI/_VERSION) and the `openshell` CLI
+# (creates the sandboxed Morty), so both binaries are baked in. The chart is NOT baked
+# into the image — it's pulled per install, so image and chart version move independently.
+
+# 1) Build the studio SPA with the embed base path.
+FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS studio-builder
+WORKDIR /studio
+COPY --chown=default:root studio/package.json studio/package-lock.json ./
+RUN npm ci
+COPY --chown=default:root studio/ ./
+ARG VITE_BASE_PATH=/amortized-studio-embed
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
+RUN npm run build
+
+# 2) Install gateway dependencies.
+FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS gw-builder
+WORKDIR /app
+COPY --chown=default:root studio-gateway/package.json ./
+RUN npm install --omit=dev
+COPY --chown=default:root studio-gateway/src ./src
+
+# 3) Fetch pinned CLIs (static binaries -> copied into the minimal runtime).
+FROM registry.access.redhat.com/ubi9:latest AS tools
+RUN dnf install -y --nodocs tar gzip findutils && dnf clean all
+# helm (static Go binary).
+ARG HELM_VERSION=v3.22.0
+RUN set -eux; cd /tmp; \
+    curl -fsSL -o helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
+    tar -xzf helm.tgz; \
+    install -m 0755 linux-amd64/helm /usr/local/bin/helm; \
+    helm version --short
+# openshell CLI — PINNED TO MATCH THE E1 GATEWAY (openshell-platform chart in
+# amortized-deploy, currently 0.0.113). If that gateway version moves, bump this
+# together. The x86_64 musl build is fully static, so it runs on UBI9 as-is.
+ARG OPENSHELL_CLI_VERSION=0.0.113
+RUN set -eux; cd /tmp; \
+    base="https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_CLI_VERSION}"; \
+    curl -fsSL -o openshell-x86_64-unknown-linux-musl.tar.gz "${base}/openshell-x86_64-unknown-linux-musl.tar.gz"; \
+    curl -fsSL -o openshell-checksums-sha256.txt "${base}/openshell-checksums-sha256.txt"; \
+    grep 'openshell-x86_64-unknown-linux-musl.tar.gz' openshell-checksums-sha256.txt | sha256sum -c -; \
+    mkdir -p /tmp/os; tar -xzf openshell-x86_64-unknown-linux-musl.tar.gz -C /tmp/os; \
+    install -m 0755 "$(find /tmp/os -type f -name openshell | head -1)" /usr/local/bin/openshell; \
+    openshell --version
+
+# 4) Runtime: gateway + baked studio dist + chart + CLIs.
+FROM registry.access.redhat.com/ubi9/nodejs-22-minimal:latest
+WORKDIR /opt/app-root/src
+COPY --from=gw-builder --chown=1001:0 /app/node_modules ./node_modules
+COPY --from=gw-builder --chown=1001:0 /app/src ./src
+COPY --from=gw-builder --chown=1001:0 /app/package.json ./package.json
+COPY --from=studio-builder --chown=1001:0 /studio/dist ./studio-dist
+# Base egress policy the provisioner templates per user (the core chart is pulled from OCI).
+COPY --chown=1001:0 studio-gateway/policy.aipcc.yaml ./policy.aipcc.yaml
+# helm + openshell CLIs.
+COPY --from=tools /usr/local/bin/helm /usr/local/bin/helm
+COPY --from=tools /usr/local/bin/openshell /usr/local/bin/openshell
+# helm + openshell write caches/config under $HOME; make those dirs group-0
+# writable so the arbitrary OpenShift uid (runs in group 0) can use them.
+# HOME=/tmp so the openshell CLI's config dir (~/.config/openshell) is created and OWNED
+# by the arbitrary OpenShift uid at runtime — the CLI chmods that dir, and a root-owned
+# pre-created dir fails with EPERM. helm uses the explicit HELM_*_HOME below regardless.
+ENV HOME=/tmp \
+    EGRESS_POLICY_FILE=/opt/app-root/src/policy.aipcc.yaml \
+    HELM_CACHE_HOME=/opt/app-root/src/.helm/cache \
+    HELM_CONFIG_HOME=/opt/app-root/src/.helm/config \
+    HELM_DATA_HOME=/opt/app-root/src/.helm/data \
+    OPENSHELL_CONFIG_HOME=/tmp/.config/openshell
+RUN mkdir -p .helm/cache .helm/config .helm/data \
+ && chgrp -R 0 .helm && chmod -R g+rwX .helm
+USER 1001:0
+EXPOSE 8080
+CMD ["node", "src/server.js"]
