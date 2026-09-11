@@ -36,12 +36,15 @@ for deep expertise before building the config.
 |-----------|------|----------|
 | knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
 | classification | `skills/sdg/classification/` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
+| rfe-assessment | `skills/sdg/rfe-assessment/` | Rubric-based scoring, RFE quality assessment, structured evaluation against criteria |
 
 ### How to Choose
 
 - **User has documents they want a model to answer questions about** →
   `knowledge-ingestion`
 - **User wants to sort/label/categorize text** → `classification`
+- **User wants to score/assess/evaluate content against a rubric** →
+  `rfe-assessment`
 
 Once determined, read `skills/sdg/<sub-skill>/guide.md` for the detailed
 requirement-gathering steps, tool parameters, and prompt engineering rules.
@@ -117,9 +120,9 @@ change. Do NOT restart from Phase 1.
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine whether this is a classification or knowledge-ingestion task.
-Use the context provided by the orchestrator to make this decision. If
-the context does not make it clear, ask the user.
+Determine whether this is a classification, knowledge-ingestion, or
+rfe-assessment task. Use the context provided by the orchestrator to
+make this decision. If the context does not make it clear, ask the user.
 
 Once determined, read the sub-skill's `guide.md` from
 `skills/sdg/<sub-skill>/guide.md`.

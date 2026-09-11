@@ -1,0 +1,118 @@
+{
+  "_meta": {
+    "name": "RFE Quality Scoring",
+    "description": "Generate synthetic RFE documents at varying quality levels and score them against a structured rubric (WHAT, WHY, HOW, Not-a-task, Right-sized)."
+  },
+  "topic": "RFE quality scorer",
+  "columns": [
+    {
+      "drop": false,
+      "name": "product_area",
+      "params": {
+        "values": [
+          "OpenShift AI",
+          "RHEL AI",
+          "Platform Operations",
+          "Workbenches",
+          "Partner Integrations"
+        ],
+        "sampler_type": "category"
+      },
+      "column_type": "sampler",
+      "sampler_type": "category",
+      "propagate_skip": true,
+      "conditional_params": {}
+    },
+    {
+      "drop": false,
+      "name": "quality_tier",
+      "params": {
+        "values": [
+          "strong_pass",
+          "borderline_pass",
+          "borderline_fail",
+          "clear_fail",
+          "zero_auto_fail"
+        ],
+        "weights": [
+          0.25,
+          0.2,
+          0.2,
+          0.2,
+          0.15
+        ],
+        "sampler_type": "category"
+      },
+      "column_type": "sampler",
+      "sampler_type": "category",
+      "propagate_skip": true,
+      "conditional_params": {}
+    },
+    {
+      "drop": false,
+      "name": "rfe_issue",
+      "prompt": "Write a realistic RFE for the {{ product_area }} product area. The RFE should be {{ quality_tier }} quality.\n\nFormat the RFE exactly like this:\n\n# RHAIRFE-{{ range(1000, 9999) | random }}: <Title>\n\n## Problem Statement\n<description of customer need \u2014 for strong_pass/borderline_pass: clear and specific; for borderline_fail: partially clear but missing key details; for clear_fail/zero_auto_fail: missing or one sentence>\n\n## Business Justification\n<why this matters \u2014 for strong_pass/borderline_pass: includes customer impact, market context, revenue implications; for borderline_fail: generic justification; for clear_fail/zero_auto_fail: missing or just \"customers want this\">\n\n## Acceptance Criteria\n<measurable outcomes \u2014 for strong_pass/borderline_pass: 3-5 specific, testable criteria; for borderline_fail: 1-2 vague criteria; for clear_fail/zero_auto_fail: missing or untestable>\n\nQuality guidelines:\n- strong_pass: All sections are thorough, specific, well-scoped, customer-driven, with clear acceptance criteria. Scores 8-10 with no zeros.\n- borderline_pass: Solid overall but one criterion is weak (scores 1 not 0). Total 7-8, still passes.\n- borderline_fail: Has the structure but one criterion is missing or zero-scored, causing auto-fail despite decent total (5-7).\n- clear_fail: Multiple weak sections, vague scope, generic justification. Total 3-5.\n- zero_auto_fail: Missing critical sections entirely (e.g., no business justification at all, or reads as a pure engineering task). Has 2+ zero-scored criteria.\n\nHere is a reference example of a high-quality RFE (scored 9/10 PASS) for style and content guidance:\n\n--- Reference Example ---\n# RHAIRFE-1: Use RHEL10 base images in AIPCC, RHELAI, RHOAI\n\n## Problem Statement\n\nRed Hat AI product users need RHEL 10-based container images and packages for RHELAI, RHOAI, and RHAIIS to remain on a supported, current OS platform and to receive ongoing security updates, driver compatibility, and vendor stack support as RHEL 9 approaches end of life.\n\n## Business Justification\n\nRHEL 10 has been released and will become the standard platform for enterprise deployments. As vendors (NVIDIA, AMD, Intel) shift their driver and library stacks to RHEL 10, customers running AI workloads on RHEL 9-based products will face a growing gap in driver support and security coverage. Maintaining product currency on the current RHEL major version is a baseline expectation for enterprise customers and a prerequisite for partner certification of GPU and accelerator stacks.\n\nAdditionally, OpenShift will migrate to RHEL 10 at version 10.2. Customers deploying RHOAI on OpenShift will expect RHEL 10-based product images aligned with their cluster platform version.\n\n## Desired Outcome\n\nRed Hat AI products (RHELAI, RHOAI, RHAIIS) ship container images and packages built on RHEL 10 / UBI 10 base images, enabling customers to deploy on RHEL 10-based infrastructure with full vendor driver and library stack compatibility.\n\n## Acceptance Criteria\n\n- RHELAI, RHOAI, and RHAIIS container images are built on RHEL 10 / UBI 10 base images\n- Vendor GPU and accelerator stacks (NVIDIA CUDA, AMD ROCm, Intel Gaudi) are supported on the RHEL 10-based images once vendors publish RHEL 10 RPMs\n- Products are tested and certified on RHEL 10-based OpenShift versions\n- A defined support lifecycle policy exists for the transition period between RHEL 9 and RHEL 10 product variants\n\n## Context\n\n- RHEL 10 was released at the 2025 Summit. Vendors NVIDIA, AMD, and Intel (and IBM in Oct 2025) are expected to consume this release for their driver and library stacks.\n- OpenShift will not migrate to RHEL 10 until version 10.2 (not 10.0), which may require a transition period where RHEL 9 and RHEL 10 product variants coexist.\n- AIPCC base images are already parameterized for RHEL major/minor versions, supporting concurrent RHEL 9 and RHEL 10 builds.\n- Vendor RHEL 10 RPMs for CUDA, ROCm, and Gaudi stacks are not yet available as of the last comment record and represent a gating dependency.\n--- End Reference Example ---\n\nNow write a new, different RHAIRFE issue for the {{ product_area }} area at {{ quality_tier }} quality. Do NOT copy the reference example \u2014 use it only for style and structure guidance. Output ONLY the RHAIRFE issue text.",
+      "with_trace": "none",
+      "column_type": "llm-text",
+      "model_alias": "teacher",
+      "system_prompt": "You are a product manager at Red Hat writing internal RFE (Request for Enhancement) documents for Red Hat AI products. Write realistic RFEs that vary in quality based on the quality_tier instruction. Use the format exactly as specified.",
+      "propagate_skip": true,
+      "extract_reasoning_content": false
+    },
+    {
+      "drop": false,
+      "name": "rfe_assessment",
+      "prompt": "Assess the following RFE against the quality rubric. Be honest and calibrated to the actual quality of the writing.\n\nRFE:\n{{ rfe_issue }}\n\nProvide your assessment in exactly this format:\n\nTITLE: <extract the RFE title>\n\n| Criterion | Score | Notes |\n|---|---|---|\n| WHAT (clear problem statement) | X/2 | <brief note> |\n| WHY (business justification) | X/2 | <brief note> |\n| Open to HOW (solution-agnostic) | X/2 | <brief note> |\n| Not a task (feature, not a to-do) | X/2 | <brief note> |\n| Right-sized (appropriate scope) | X/2 | <brief note> |\n| **Total** | **X/10** | **PASS/FAIL** (PASS = 6+) |\n\n### Verdict\n<one sentence summary of overall quality>\n\n### Feedback\n<2-3 actionable suggestions for improvement, or praise if the RFE is strong>\n\nFor calibration, here is an example RFE with its scored assessment:\n\n--- Example RFE ---\n# RHAIRFE-1: Use RHEL10 base images in AIPCC, RHELAI, RHOAI\n\n## Problem Statement\n\nRed Hat AI product users need RHEL 10-based container images and packages for RHELAI, RHOAI, and RHAIIS to remain on a supported, current OS platform and to receive ongoing security updates, driver compatibility, and vendor stack support as RHEL 9 approaches end of life.\n\n## Business Justification\n\nRHEL 10 has been released and will become the standard platform for enterprise deployments. As vendors (NVIDIA, AMD, Intel) shift their driver and library stacks to RHEL 10, customers running AI workloads on RHEL 9-based products will face a growing gap in driver support and security coverage. Maintaining product currency on the current RHEL major version is a baseline expectation for enterprise customers and a prerequisite for partner certification of GPU and accelerator stacks.\n\nAdditionally, OpenShift will migrate to RHEL 10 at version 10.2. Customers deploying RHOAI on OpenShift will expect RHEL 10-based product images aligned with their cluster platform version.\n\n## Desired Outcome\n\nRed Hat AI products (RHELAI, RHOAI, RHAIIS) ship container images and packages built on RHEL 10 / UBI 10 base images, enabling customers to deploy on RHEL 10-based infrastructure with full vendor driver and library stack compatibility.\n\n## Acceptance Criteria\n\n- RHELAI, RHOAI, and RHAIIS container images are built on RHEL 10 / UBI 10 base images\n- Vendor GPU and accelerator stacks (NVIDIA CUDA, AMD ROCm, Intel Gaudi) are supported on the RHEL 10-based images once vendors publish RHEL 10 RPMs\n- Products are tested and certified on RHEL 10-based OpenShift versions\n- A defined support lifecycle policy exists for the transition period between RHEL 9 and RHEL 10 product variants\n\n## Context\n\n- RHEL 10 was released at the 2025 Summit. Vendors NVIDIA, AMD, and Intel (and IBM in Oct 2025) are expected to consume this release for their driver and library stacks.\n- OpenShift will not migrate to RHEL 10 until version 10.2 (not 10.0), which may require a transition period where RHEL 9 and RHEL 10 product variants coexist.\n- AIPCC base images are already parameterized for RHEL major/minor versions, supporting concurrent RHEL 9 and RHEL 10 builds.\n- Vendor RHEL 10 RPMs for CUDA, ROCm, and Gaudi stacks are not yet available as of the last comment record and represent a gating dependency.\n\n--- Example Assessment ---\nTITLE: Use RHEL10 base images in AIPCC, RHELAI, RHOAI\n\n| Criterion | Score | Notes |\n|-----------|-------|-------|\n| WHAT      | 2/2   | The RFE clearly states the need: Red Hat AI products (RHELAI, RHOAI, RHAIIS) must ship container images and packages built on RHEL 10 / UBI 10 base images. Acceptance criteria are specific and measurable -- RHEL 10 base images, vendor GPU stack support (NVIDIA CUDA, AMD ROCm, Intel Gaudi), certification on RHEL 10-based OpenShift, and a defined transition-period support lifecycle policy. |\n| WHY       | 1/2   | The business justification cites platform currency as a baseline enterprise expectation, vendor driver/library stack migration to RHEL 10, security coverage gaps as RHEL 9 approaches end of life, and OpenShift 10.2 alignment. This is a plausible and well-reasoned case grounded in vendor ecosystem dynamics and platform lifecycle realities. However, there are no named customer accounts, no specific revenue or deal impact, and no analyst ratings. |\n| Open to HOW | 2/2 | The RFE describes the desired outcome (RHEL 10-based images and packages) without prescribing internal architecture. RHEL, UBI, OpenShift, CUDA, ROCm, and Gaudi are all established platform vocabulary. Engineering retains full freedom to determine the migration approach, build pipeline changes, and transition strategy. |\n| Not a task | 2/2  | Despite the title sounding task-like, the body frames a genuine business need: customers require products on a supported, current OS platform for ongoing security updates, driver compatibility, and vendor certification. |\n| Right-sized | 2/2 | The three products (RHELAI, RHOAI, RHAIIS) are delivery targets for the same capability, not independent features. The deliverables are tightly interdependent. This maps cleanly to a single strategy feature. |\n| **Total** | **9/10** | **PASS** |\n\n### Verdict\nA well-structured RFE with a clear customer need, appropriate scope, and no architecture prescription, held back only by the lack of named customer accounts or specific revenue impact in the business justification.\n\n### Feedback\nThe RFE passes comfortably. Its primary weakness is the WHY criterion: the business case is logically sound (platform currency, vendor ecosystem migration, security) but relies on generic enterprise customer expectations rather than named accounts or quantified deal impact. To reach a perfect score, cite specific customer accounts blocked or at risk due to RHEL 9 dependency, or reference concrete revenue exposure tied to the RHEL 10 timeline.\n--- End Calibration Example ---\n\nNow assess the following RFE using the same rubric and calibration. Be honest and calibrated to the actual quality of the writing.",
+      "with_trace": "none",
+      "column_type": "llm-text",
+      "model_alias": "teacher",
+      "system_prompt": "You are a senior product quality reviewer assessing RFE (Request for Enhancement) documents for Red Hat AI products. You evaluate RFEs against a strict rubric and provide structured, actionable feedback. Be calibrated: excellent RFEs score 8-10, good ones 6-8, mediocre 4-6, poor 0-4.",
+      "propagate_skip": true,
+      "extract_reasoning_content": false
+    },
+    {
+      "drop": true,
+      "expr": "{{ rfe_issue }}\n\n---\n\nASSESSMENT:\n{{ rfe_assessment }}",
+      "name": "formatted_output",
+      "dtype": "str",
+      "column_type": "expression",
+      "propagate_skip": true
+    }
+  ],
+  "processors": [
+    {
+      "name": "sft_chat",
+      "template": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an RFE quality assessment assistant for Red Hat AI products. When given an RFE document, you evaluate it against a structured rubric covering: WHAT (clear problem statement), WHY (business justification), Open to HOW (solution-agnostic), Not a task (feature vs to-do), and Right-sized (appropriate scope). Each criterion is scored 0-2, for a total out of 10. A score of 7+ is a PASS. Provide a detailed assessment table, a one-sentence verdict, and actionable feedback."
+          },
+          {
+            "role": "user",
+            "content": "{{ rfe_issue }}"
+          },
+          {
+            "role": "assistant",
+            "content": "{{ rfe_assessment }}"
+          }
+        ]
+      },
+      "processor_type": "schema_transform"
+    }
+  ],
+  "num_records": 1800,
+  "model_configs": [
+    {
+      "alias": "teacher",
+      "model": "gpt-oss",
+      "provider": "gateway",
+      "skip_health_check": true,
+      "inference_parameters": {
+        "temperature": 0.7,
+        "generation_type": "chat-completion",
+        "max_parallel_requests": 32
+      }
+    }
+  ]
+}
