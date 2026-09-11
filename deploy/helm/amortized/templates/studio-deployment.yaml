@@ -1,5 +1,6 @@
-{{- $mlflowHost := ternary (include "amortized.mlflowFqdn" .) .Values.studio.mlflowHost .Values.dataStores.bundled -}}
-{{- $mlflowPort := ternary "5000" (.Values.studio.mlflowPort | toString) .Values.dataStores.bundled -}}
+{{- $mlflowBundled := eq (include "amortized.mlflowBundled" .) "true" -}}
+{{- $mlflowHost := ternary (include "amortized.mlflowFqdn" .) .Values.studio.mlflowHost $mlflowBundled -}}
+{{- $mlflowPort := ternary "5000" (.Values.studio.mlflowPort | toString) $mlflowBundled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -1,4 +1,4 @@
-{{- if .Values.dataStores.bundled }}
+{{- if eq (include "amortized.minioBundled" .) "true" }}
 {{- /*
 One-shot bucket creation (mirrors k8s/services/minio-init.yaml). Rendered as a
 Helm hook so it re-runs cleanly on upgrade instead of colliding with the
