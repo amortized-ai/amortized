@@ -291,9 +291,24 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
         <MetadataRow
           label="Source"
           value={
-            <span className="font-mono text-xs truncate max-w-[400px]" title={model.source}>
-              {model.source}
-            </span>
+            jobsData?.trainingJob ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  setTimeout(() => navigate(`/jobs?job=${encodeURIComponent(jobsData.trainingJob!.id)}`), 200)
+                }}
+                className="inline-flex items-center gap-1 font-mono text-xs truncate max-w-[400px] text-primary hover:underline"
+                title={model.source}
+              >
+                {model.source}
+                <ArrowRight className="h-3 w-3 shrink-0" />
+              </button>
+            ) : (
+              <span className="font-mono text-xs truncate max-w-[400px]" title={model.source}>
+                {model.source}
+              </span>
+            )
           }
         />
         {jobsData?.trainingJob && (

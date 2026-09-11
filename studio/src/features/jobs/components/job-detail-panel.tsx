@@ -28,6 +28,7 @@ import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
 import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
+import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
@@ -213,6 +214,15 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
 
 function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
   const navigate = useNavigate()
+  const isEval = job.type === "eval"
+  const { data: datasets } = useDatasets()
+  const evalModel = isEval
+    ? String((job.config?.endpoint as { model?: unknown } | undefined)?.model ?? "")
+    : ""
+  const evalDatasetRunId = isEval ? String(job.config?.eval_data_run_id ?? "") : ""
+  const evalDataset = evalDatasetRunId
+    ? datasets?.find((d) => d.run_id === evalDatasetRunId)
+    : undefined
 
   return (
     <div className="space-y-0">
@@ -256,6 +266,42 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
       )}
       <MetadataRow label="ID" value={job.id} mono />
       <MetadataRow label="Type" value={job.type} />
+      {evalModel !== "" && (
+        <MetadataRow
+          label="Model"
+          value={
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                setTimeout(() => navigate(`/models?name=${encodeURIComponent(evalModel)}`), 200)
+              }}
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              {evalModel}
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          }
+        />
+      )}
+      {evalDatasetRunId !== "" && (
+        <MetadataRow
+          label="Dataset"
+          value={
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                setTimeout(() => navigate(`/datasets?run=${encodeURIComponent(evalDatasetRunId)}`), 200)
+              }}
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              {evalDataset?.name ?? evalDatasetRunId}
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          }
+        />
+      )}
       <MetadataRow label="Status" value={job.status} />
       <MetadataRow label="Created" value={formatDate(job.created_at, { includeTime: true })} />
       {job.started_at && (
@@ -385,7 +431,7 @@ function MetadataRow({
   mono,
 }: {
   label: string
-  value: string
+  value: React.ReactNode
   mono?: boolean
 }) {
   return (

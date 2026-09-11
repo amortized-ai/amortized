@@ -100,4 +100,23 @@ describe("EvaluationDetailPanel", () => {
     const link = screen.getByTestId("eval-job-link-11111111-2222-3333-4444-555555555555")
     expect(link).toBeInTheDocument()
   })
+
+  it("shows the dataset info card with a link to the Datasets tab", () => {
+    const group = makeGroup()
+    render(
+      <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
+      { wrapper },
+    )
+    expect(screen.getByText("Dataset", { selector: "span" })).toBeInTheDocument()
+    expect(screen.getByTestId("eval-dataset-link")).toHaveTextContent("Eval Dataset")
+  })
+
+  it("links model names to the Models tab", () => {
+    const group = makeGroup()
+    render(
+      <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
+      { wrapper },
+    )
+    expect(screen.getByTestId("eval-model-link-11111111-2222-3333-4444-555555555555")).toBeInTheDocument()
+  })
 })
