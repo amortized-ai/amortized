@@ -1,7 +1,8 @@
 // On-demand per-user provisioning for the RHOAI hybrid deployment.
 //
 // Each dashboard user (X-Forwarded-User -> amz-<user>) gets an isolated stack:
-//   1. the amortized core chart via `helm upgrade --install` in enterprise-MLflow
+//   1. the amortized core chart, pulled from OCI and installed per user via
+//      `helm upgrade --install oci://... --version <pinned>` in enterprise-MLflow
 //      mode (server + Postgres + MLflow RBAC/wiring + the sandboxed-Morty mTLS
 //      upstream, injected through the chart's server.extra* hooks);
 //   2. an OpenShell-sandboxed Morty, created through the one cluster OpenShell
@@ -31,12 +32,14 @@ const execFileP = promisify(execFile);
 const kc = new k8s.KubeConfig();
 kc.loadFromCluster();
 const objApi = k8s.KubernetesObjectApi.makeApiClient(kc);
+const coreApi = kc.makeApiClient(k8s.CoreV1Api);
 
 const FIELD_MANAGER = 'studio-gateway';
 
-// --- Helm (baked chart in the gateway image) ---
+// --- Helm: the core chart is pulled from OCI; the version is pinned by the deployer ---
 const HELM_BIN = process.env.HELM_BIN || 'helm';
-const CHART_DIR = process.env.AMORTIZED_CHART_DIR || '/opt/app-root/src/chart';
+const CHART_OCI = process.env.AMORTIZED_CHART_OCI || 'oci://ghcr.io/amortized-ai/charts/amortized';
+const CHART_VERSION = process.env.AMORTIZED_CHART_VERSION || '';
 const HELM_TIMEOUT = process.env.HELM_TIMEOUT || '5m';
 
 // --- OpenShell CLI (baked in the gateway image; talks to the one cluster gateway) ---
@@ -44,13 +47,15 @@ const OPENSHELL_BIN = process.env.OPENSHELL_BIN || 'openshell';
 const OPENSHELL_GATEWAY = process.env.OPENSHELL_GATEWAY || 'openshift';
 const OPENSHELL_ENDPOINT = process.env.OPENSHELL_ENDPOINT || 'https://openshell.openshell.svc.cluster.local:8080';
 const OPENSHELL_MTLS_DIR = process.env.OPENSHELL_MTLS_DIR || '/etc/openshell-mtls';
+// The OpenShell gateway Service — its ClusterIP is resolved at runtime for the
+// per-user server's hostAlias (so nothing hardcodes the IP).
+const OPENSHELL_NAMESPACE = process.env.OPENSHELL_NAMESPACE || 'openshell';
+const OPENSHELL_SERVICE = process.env.OPENSHELL_SERVICE || 'openshell';
 const OPENSHELL_CONFIG_HOME =
   process.env.OPENSHELL_CONFIG_HOME || path.join(os.homedir() || '/tmp', '.config', 'openshell');
 
 // --- Morty sandbox ---
 const MORTY_IMAGE = process.env.MORTY_IMAGE || 'ghcr.io/amortized-ai/morty:latest';
-// Base egress allowlist (Vertex / npm / opencode registries) applied at sandbox
-// create; the per-user MCP host is added afterward via `policy update`.
 const BASE_POLICY_FILE = process.env.EGRESS_POLICY_FILE || path.join(__dirname, '..', 'policy.aipcc.yaml');
 
 // Model provider (deployment-level; per-user creds is a follow-up). `vertex` uses a
@@ -65,9 +70,9 @@ const MORTY_ADC_FILE = process.env.MORTY_ADC_FILE || '/etc/morty-adc/adc.json';
 const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || '';
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'global';
 
-// Morty automation runs only when the OpenShell wiring is configured (gateway IP +
-// mounted mTLS certs). Otherwise the core stack is provisioned without chat.
-const MORTY_ENABLED = !!(process.env.OPENSHELL_GATEWAY_IP && fs.existsSync(OPENSHELL_MTLS_DIR));
+// Morty automation runs only when the OpenShell mTLS certs are mounted. Otherwise
+// the core stack is provisioned without chat.
+const MORTY_ENABLED = fs.existsSync(path.join(OPENSHELL_MTLS_DIR, 'tls.crt'));
 
 // namespace -> { state: 'provisioning'|'ready'|'error', promise, error }
 const stacks = new Map();
@@ -120,6 +125,21 @@ function parseReason(err) {
   }
 }
 
+// Resolve the OpenShell gateway Service ClusterIP (cached). Used for the per-user
+// server's hostAlias so the mTLS Morty URL (*.openshell.localhost) routes to the
+// gateway — nothing hardcodes the IP.
+let cachedGatewayIP = '';
+async function openshellGatewayIP() {
+  if (cachedGatewayIP) return cachedGatewayIP;
+  const res = await coreApi.readNamespacedService({ name: OPENSHELL_SERVICE, namespace: OPENSHELL_NAMESPACE });
+  const ip = (res?.spec || res?.body?.spec || {}).clusterIP;
+  if (!ip || ip === 'None') {
+    throw new Error(`could not resolve ClusterIP for service ${OPENSHELL_SERVICE}.${OPENSHELL_NAMESPACE}`);
+  }
+  cachedGatewayIP = ip;
+  return ip;
+}
+
 async function serverAvailable(ns) {
   // True readiness: the server answers health (migrations complete + app up), not
   // just pod-ready. Avoids AppsV1Api return-shape differences across client versions.
@@ -135,13 +155,17 @@ async function serverAvailable(ns) {
   }
 }
 
-// `helm upgrade --install` the core chart for this user (enterprise MLflow mode).
+// `helm upgrade --install` the core chart (pulled from OCI) for this user.
 // Values are written as JSON (a valid YAML subset) so no YAML serializer is needed.
-async function helmInstall(ns) {
+async function helmInstall(ns, gatewayIP) {
+  if (!CHART_VERSION) throw new Error('AMORTIZED_CHART_VERSION is not set — pin the core chart version');
   const valuesFile = path.join(os.tmpdir(), `values-${ns}.json`);
-  fs.writeFileSync(valuesFile, JSON.stringify(userValues(ns), null, 2));
+  fs.writeFileSync(valuesFile, JSON.stringify(userValues(ns, { mortyEnabled: MORTY_ENABLED, gatewayIP }), null, 2));
   try {
-    await run(HELM_BIN, ['upgrade', '--install', 'amortized', CHART_DIR, '-n', ns, '-f', valuesFile, '--timeout', HELM_TIMEOUT]);
+    await run(HELM_BIN, [
+      'upgrade', '--install', 'amortized', CHART_OCI,
+      '--version', CHART_VERSION, '-n', ns, '-f', valuesFile, '--timeout', HELM_TIMEOUT,
+    ]);
   } finally {
     try { fs.unlinkSync(valuesFile); } catch { /* best-effort cleanup */ }
   }
@@ -233,10 +257,13 @@ async function ensureSandbox(ns) {
 
 async function provision(ns, user) {
   console.log(`provisioning ${ns} for ${user}`);
+  // Resolve the OpenShell gateway IP first (needed in the chart values for the
+  // server's mTLS hostAlias) when Morty is enabled.
+  const gatewayIP = MORTY_ENABLED ? await openshellGatewayIP() : '';
   // 1. Residual objects the chart does not create (namespace first, then ns-scoped).
   for (const obj of residualObjects(ns, user)) await applyObject(obj);
-  // 2. Core stack via Helm (enterprise MLflow; opencode/studio off).
-  await helmInstall(ns);
+  // 2. Core stack via Helm from OCI (enterprise MLflow; opencode/studio off).
+  await helmInstall(ns, gatewayIP);
   // 3. Per-user OpenShell-sandboxed Morty. Best-effort: a sandbox failure leaves the
   //    core stack (server/SDG/MLflow) usable — chat is degraded and can be retried.
   if (MORTY_ENABLED) {
@@ -246,7 +273,7 @@ async function provision(ns, user) {
       console.error(`  morty sandbox for ${ns} failed (chat unavailable, retryable): ${err.message}`);
     }
   } else {
-    console.log('  morty automation disabled (OpenShell wiring not configured)');
+    console.log('  morty automation disabled (OpenShell mTLS certs not mounted)');
   }
   // 4. Wait for the server to answer health (migrations run as the chart's init).
   const deadline = Date.now() + 5 * 60 * 1000;

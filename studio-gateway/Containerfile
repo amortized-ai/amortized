@@ -1,14 +1,12 @@
-# Built from the amortized repo ROOT (needs studio/, studio-gateway/, and the chart
-# at deploy/helm/amortized):
+# Built from the amortized repo ROOT (needs studio/ + studio-gateway/):
 #   oc start-build studio-gateway --from-dir=.   (repo root)
 # All base images are UBI (registry.access.redhat.com) to avoid Docker Hub rate
 # limits on the cluster.
 #
-# The gateway provisions each user by running `helm` (installs the core chart per
-# user) and the `openshell` CLI (creates the sandboxed Morty), so both binaries are
-# baked in. The chart is copied from the repo; `make prompt` before building only
-# matters if the chart's bundled opencode is enabled (the per-user provisioner
-# disables it), so it is optional for this image.
+# The gateway provisions each user by running `helm` (installs the core chart, PULLED
+# FROM OCI at runtime via AMORTIZED_CHART_OCI/_VERSION) and the `openshell` CLI
+# (creates the sandboxed Morty), so both binaries are baked in. The chart is NOT baked
+# into the image — it's pulled per install, so image and chart version move independently.
 
 # 1) Build the studio SPA with the embed base path.
 FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS studio-builder
@@ -57,8 +55,7 @@ COPY --from=gw-builder --chown=1001:0 /app/node_modules ./node_modules
 COPY --from=gw-builder --chown=1001:0 /app/src ./src
 COPY --from=gw-builder --chown=1001:0 /app/package.json ./package.json
 COPY --from=studio-builder --chown=1001:0 /studio/dist ./studio-dist
-# Chart + base egress policy the provisioner uses at runtime.
-COPY --chown=1001:0 deploy/helm/amortized ./chart
+# Base egress policy the provisioner templates per user (the core chart is pulled from OCI).
 COPY --chown=1001:0 studio-gateway/policy.aipcc.yaml ./policy.aipcc.yaml
 # helm + openshell CLIs.
 COPY --from=tools /usr/local/bin/helm /usr/local/bin/helm
@@ -66,7 +63,6 @@ COPY --from=tools /usr/local/bin/openshell /usr/local/bin/openshell
 # helm + openshell write caches/config under $HOME; make those dirs group-0
 # writable so the arbitrary OpenShift uid (runs in group 0) can use them.
 ENV HOME=/opt/app-root/src \
-    AMORTIZED_CHART_DIR=/opt/app-root/src/chart \
     EGRESS_POLICY_FILE=/opt/app-root/src/policy.aipcc.yaml \
     HELM_CACHE_HOME=/opt/app-root/src/.helm/cache \
     HELM_CONFIG_HOME=/opt/app-root/src/.helm/config \

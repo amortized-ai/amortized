@@ -1,8 +1,9 @@
 // Per-user provisioning artifacts for the RHOAI hybrid deployment.
 //
-// The core stack (server + Postgres + enterprise-MLflow wiring) is installed via
-// the amortized Helm chart (see provision.js) — the chart is the single source of
-// truth. This module builds only the pieces the chart cannot express:
+// The core stack (server + Postgres + enterprise-MLflow wiring) is installed by
+// pulling the amortized Helm chart from OCI (see provision.js) — the chart is the
+// single source of truth. This module builds only the pieces the chart cannot
+// express:
 //   - the per-user Helm values (including the sandboxed-Morty mTLS upstream, wired
 //     through the chart's server.extra* hooks);
 //   - the residual K8s objects the gateway applies directly (the namespace, the
@@ -12,16 +13,15 @@
 // provisioner via `openshell policy update` (provision.js), not templated here.
 
 const fs = require('fs');
+const path = require('path');
 
 // Enterprise MLflow (kubernetes-namespaced auth): workspace == namespace, so the
 // chart derives it from .Values.namespace; we only pass the tracking URI here.
 const MLFLOW_TRACKING_URI = process.env.SHARED_MLFLOW_TRACKING_URI || '';
 
-// Sandboxed-Morty wiring. The OpenShell gateway serves each sandbox's opencode at
-// a Host-routed mTLS URL; the server reaches it via a hostAlias to the gateway IP
-// and the openshell client cert mounted at OPENSHELL_MTLS_DIR.
+// The dir where the gateway mounts the openshell client cert (used both to stamp the
+// per-user secret and as the in-server mount path for the mTLS upstream).
 const OPENSHELL_MTLS_DIR = process.env.OPENSHELL_MTLS_DIR || '/etc/openshell-mtls';
-const OPENSHELL_GATEWAY_IP = process.env.OPENSHELL_GATEWAY_IP || '';
 
 // Optional overrides passed through to the chart.
 const SERVER_IMAGE_TAG = process.env.AMORTIZED_SERVER_IMAGE_TAG || '';
@@ -47,15 +47,20 @@ function mortyHost(ns) {
 function sanitizeLabel(v) {
   return String(v).toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 63);
 }
+function mtlsCertsPresent() {
+  return fs.existsSync(path.join(OPENSHELL_MTLS_DIR, 'tls.crt'));
+}
 
 /**
  * Helm values for a per-user enterprise install into `ns`
  * (namespace == workspace == jobsNamespace). The gateway creates the namespace
  * itself (createNamespaces:false) — the chart would otherwise render two identical
  * Namespace objects when namespace == jobsNamespace.
+ * @param {object} opts
+ * @param {boolean} opts.mortyEnabled  wire the sandboxed-Morty mTLS upstream
+ * @param {string}  opts.gatewayIP     OpenShell gateway ClusterIP (resolved at runtime)
  */
-function userValues(ns) {
-  const host = mortyHost(ns);
+function userValues(ns, { mortyEnabled = false, gatewayIP = '' } = {}) {
   const values = {
     namespace: ns,
     jobsNamespace: ns,
@@ -69,9 +74,12 @@ function userValues(ns) {
     // Morty is the OpenShell sandbox; Studio is served by the gateway itself.
     opencode: { enabled: false },
     studio: { enabled: false },
+  };
+  if (mortyEnabled) {
     // Sandboxed-Morty mTLS upstream, injected via the chart's server.extra* hooks.
-    server: {
-      hostAliases: [{ ip: OPENSHELL_GATEWAY_IP, hostnames: [host] }],
+    const host = mortyHost(ns);
+    values.server = {
+      hostAliases: [{ ip: gatewayIP, hostnames: [host] }],
       extraEnv: [
         { name: 'AMORTIZED_AGENT_UPSTREAM_URL', value: `https://${host}:8080` },
         { name: 'AMORTIZED_AGENT_UPSTREAM_CLIENT_CERT', value: `${OPENSHELL_MTLS_DIR}/tls.crt` },
@@ -80,8 +88,8 @@ function userValues(ns) {
       ],
       extraVolumes: [{ name: 'openshell-mtls', secret: { secretName: 'openshell-client-tls' } }],
       extraVolumeMounts: [{ name: 'openshell-mtls', mountPath: OPENSHELL_MTLS_DIR, readOnly: true }],
-    },
-  };
+    };
+  }
   if (TEACHER_KEYS_DIR) values.teacherKeys = { existingSecret: TEACHER_KEYS_SECRET };
   if (SERVER_IMAGE_TAG) values.images = { server: { tag: SERVER_IMAGE_TAG } };
   return values;
@@ -102,7 +110,7 @@ function namespaceManifest(ns, user) {
 // The openshell client cert Secret, stamped into the user ns from the gateway's
 // own mounted copy, so the server can present it for mTLS to the sandbox gateway.
 function openshellTlsSecret(ns) {
-  const read = (f) => fs.readFileSync(`${OPENSHELL_MTLS_DIR}/${f}`).toString('base64');
+  const read = (f) => fs.readFileSync(path.join(OPENSHELL_MTLS_DIR, f)).toString('base64');
   return {
     apiVersion: 'v1',
     kind: 'Secret',
@@ -118,7 +126,7 @@ function teacherKeysSecret(ns) {
   const data = {};
   for (const f of fs.readdirSync(TEACHER_KEYS_DIR)) {
     if (f.startsWith('.')) continue;
-    data[f] = fs.readFileSync(`${TEACHER_KEYS_DIR}/${f}`).toString('base64');
+    data[f] = fs.readFileSync(path.join(TEACHER_KEYS_DIR, f)).toString('base64');
   }
   return {
     apiVersion: 'v1',
@@ -139,9 +147,15 @@ function gpuQuota(ns) {
   };
 }
 
-// Objects the gateway applies directly, in dependency order (namespace first).
+// Objects the gateway applies directly, in dependency order (namespace first). The
+// openshell client-cert secret is stamped only when the gateway has the certs mounted.
 function residualObjects(ns, user) {
-  return [namespaceManifest(ns, user), openshellTlsSecret(ns), gpuQuota(ns), teacherKeysSecret(ns)].filter(Boolean);
+  return [
+    namespaceManifest(ns, user),
+    mtlsCertsPresent() ? openshellTlsSecret(ns) : null,
+    gpuQuota(ns),
+    teacherKeysSecret(ns),
+  ].filter(Boolean);
 }
 
 module.exports = { userValues, residualObjects, mortyName };
