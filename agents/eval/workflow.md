@@ -143,7 +143,13 @@ with `model_name_or_path` set. One serve job per model — check
 live GPU free memory. After submitting, poll
 `get_eval_endpoint_suggestions` about every 30 seconds until the new
 serve endpoint shows `healthy: true` (model loading takes a minute or
-two), then continue to Step 3. Endpoints the eval started are stopped
+two), then continue to Step 3.
+
+While waiting for the endpoint you MUST keep polling inside the same
+turn — do NOT end your reply with "let me know how to proceed" or
+similar, and do NOT wait for the user. Model loading can take several
+minutes; that is expected, keep polling. Only after `healthy: true` do
+you move on to Step 3. Endpoints the eval started are stopped
 automatically when the eval finishes — mention this only if the user
 asks about cleanup.
 
