@@ -1,0 +1,33 @@
+name: Publish core chart (OCI)
+
+# Package the amortized core Helm chart and push it to ghcr as an OCI artifact, so the
+# studio-gateway (and any other consumer) can install it with
+#   helm install ... oci://ghcr.io/amortized-ai/charts/amortized --version <x>
+# The chart version comes from Chart.yaml — bump it to publish a new immutable version.
+on:
+  push:
+    branches: [main]
+    paths: ['deploy/helm/amortized/**', 'agents/**', '.github/workflows/chart-publish.yml']
+  workflow_dispatch:
+
+jobs:
+  publish-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      # The chart's morty-config / morty-skills files are generated from agents/.
+      - name: Generate chart files (make prompt)
+        run: make prompt
+
+      - name: Package + push to OCI
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm package deploy/helm/amortized -d "${RUNNER_TEMP}/chart"
+          helm push "${RUNNER_TEMP}"/chart/amortized-*.tgz oci://ghcr.io/amortized-ai/charts
+          helm registry logout ghcr.io || true
