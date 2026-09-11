@@ -214,6 +214,46 @@ async def _validate_eval_data(
     return errors
 
 
+async def _validate_eval_endpoint(
+    config: dict[str, Any],
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Reject eval configs pointing at a serve job that is not running.
+
+    Serve jobs are auto-stopped when their eval finishes (success or
+    failure), so a retried eval that reuses the old endpoint URL would
+    otherwise pass validation and then fail on 100% of samples with
+    connection errors. Serve URLs embed the job id
+    (http://amortized-<job_id>.<ns>.svc...), so resolve and check it.
+    """
+    endpoint = config.get("endpoint") or {}
+    base_url = str(endpoint.get("base_url") or "")
+    host = base_url.split("//")[-1].split("/")[0].split(":")[0]
+    if not host.startswith("amortized-"):
+        # Gateway or external endpoint — not a serve job we can check.
+        return []
+    parts = host.split(".")
+    job_part = parts[0][len("amortized-"):]
+    if len(job_part) < 32 or "-" not in job_part:
+        return []
+    # job part is "<uuid-with-dashes>", possibly suffixed
+    serve_job_id = job_part
+    repo = Repository(db)
+    job = await repo.get_job(serve_job_id)
+    if job is None:
+        return []
+    if job.get("type") != "serve":
+        return []
+    if job.get("status") != "running":
+        return [
+            f"endpoint: serve job '{serve_job_id[:8]}' is"
+            f" '{job.get('status')}', not running. It was likely"
+            " auto-stopped when a previous eval finished. Start a new"
+            " serve job (or ask the agent to) and use its endpoint URL."
+        ]
+    return []
+
+
 async def _validate_serve_model(config: dict[str, Any]) -> list[str]:
     """Validate that a servable model source is configured."""
     errors: list[str] = []
@@ -408,6 +448,7 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors += await _validate_eval_endpoint(config, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -594,6 +635,7 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors += await _validate_eval_endpoint(config, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
