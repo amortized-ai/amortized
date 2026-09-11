@@ -68,8 +68,9 @@ export default function JobsPage() {
   }, [searchParams, setSearchParams])
 
   const filteredJobs = useMemo(() => {
-    // Serve jobs are internal (eval-time model endpoints), not user-facing
-    let result = jobs.filter((j) => j.type !== "serve")
+    // Serve jobs show for status/log tracking during evals (endpoints stay
+    // internal — serve job config carries no URL)
+    let result = jobs
     if (typeFilter.length > 0) {
       result = result.filter((j) => typeFilter.includes(j.type))
     }
