@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getJob } from "@/lib/api-client"
+import { getJob, getEvalEndpointSuggestions } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
 
 interface JobMonitorCardProps {
@@ -79,6 +79,11 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
+  // Serve jobs: the job stays running until its eval finishes, so "running"
+  // is not a completion signal — the monitor ends when the endpoint is
+  // healthy instead (that is what the eval flow is waiting for).
+  const isServe = jobType.toUpperCase() === "SERVE"
+  const [endpointHealthy, setEndpointHealthy] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const jobStartRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -89,7 +94,8 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
-  const progress = statusToProgress(status, elapsed)
+  const isReady = isServe && endpointHealthy
+  const progress = isReady ? 100 : statusToProgress(status, elapsed)
 
   const pollJob = useCallback(async () => {
     try {
@@ -109,11 +115,27 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
           completeFired.current = true
           onCompleteRef.current?.(jobId, jobType, job.status)
         }
+        return
+      }
+      if (isServe && !completeFired.current) {
+        try {
+          const suggestions = await getEvalEndpointSuggestions()
+          const mine = suggestions.serve_endpoints?.find((e) => e.job_id === jobId)
+          if (mine?.healthy) {
+            setEndpointHealthy(true)
+            if (pollRef.current) clearInterval(pollRef.current)
+            if (timerRef.current) clearInterval(timerRef.current)
+            completeFired.current = true
+            onCompleteRef.current?.(jobId, jobType, "succeeded")
+          }
+        } catch {
+          // health probe is best-effort; job status polling continues
+        }
       }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, jobType])
+  }, [jobId, jobType, isServe])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -137,7 +159,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
     <div
       className={cn(
         "rounded-xl border p-4 transition-colors duration-300",
-        status === "succeeded"
+        status === "succeeded" || isReady
           ? "border-rh-green/40 dark:border-rh-green-dark bg-rh-green-light/80 dark:bg-rh-green-dark/30"
           : status === "failed" || status === "cancelled"
             ? "border-rh-danger/40 dark:border-rh-danger-dark bg-rh-danger-light/80 dark:bg-rh-danger-dark/30"
@@ -147,7 +169,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          {status === "succeeded" ? (
+          {status === "succeeded" || isReady ? (
             <CircleCheck className="h-4 w-4 text-rh-green dark:text-rh-green" />
           ) : status === "failed" || status === "cancelled" ? (
             <XCircle className="h-4 w-4 text-rh-danger dark:text-rh-danger" />
@@ -164,8 +186,10 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
                   : "text-rh-yellow dark:text-rh-yellow",
             )}
           >
-            {status === "succeeded"
-              ? "Job completed"
+            {status === "succeeded" || isReady
+              ? isReady
+                ? "Endpoint ready"
+                : "Job completed"
               : status === "failed"
                 ? "Job failed"
                 : status === "cancelled"
@@ -190,7 +214,9 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {/* Stage */}
       <p className="text-xs text-muted-foreground mb-2">
-        {statusToStageLabel(status, jobType)}
+        {isReady
+          ? "Endpoint ready — waiting for the eval job"
+          : statusToStageLabel(status, jobType)}
       </p>
 
       {/* Progress bar */}
@@ -198,7 +224,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         <div
           className={cn(
             "h-2 rounded-full transition-all duration-500",
-            status === "succeeded"
+            status === "succeeded" || isReady
               ? "bg-rh-green"
               : status === "failed" || status === "cancelled"
                 ? "bg-rh-danger"
@@ -220,7 +246,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         </p>
       )}
 
-      {status === "succeeded" && (
+      {(status === "succeeded" || isReady) && (
         <div className="mt-3 flex items-center gap-3 text-xs">
           <a
             href={`/jobs?job=${encodeURIComponent(jobId)}`}
