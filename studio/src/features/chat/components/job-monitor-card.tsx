@@ -37,8 +37,12 @@ function runningStageLabel(jobType: string): string {
       return "Training model (Stage 3/4)"
     case "EVAL":
       return "Evaluating models (Stage 3/4)"
+    // Serve jobs are internal eval-time endpoints — they run until the
+    // eval finishes, so a "stage" label misleads users into thinking the
+    // workflow is stuck mid-pipeline while it is actually waiting on
+    // something else (e.g. an eval confirmation card).
     case "SERVE":
-      return "Serving model (Stage 3/4)"
+      return "Serving model (runs until the eval finishes)"
     default:
       return "Generating data (Stage 3/4)"
   }
