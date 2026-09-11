@@ -614,6 +614,15 @@ export function listDatasets(search = ""): Promise<DatasetListItem[]> {
   return get<DatasetListItem[]>(`/api/v1/datasets${query}`)
 }
 
+export interface DatasetDetailItem extends DatasetListItem {
+  eval_metric_set: { metrics: string[]; rubric: { name: string; description: string }[] } | null
+  artifacts: { path: string; file_size: number }[]
+}
+
+export function getDatasetByRun(runId: string): Promise<DatasetDetailItem> {
+  return get<DatasetDetailItem>(`/api/v1/datasets/${encodeURIComponent(runId)}`)
+}
+
 export function uploadDataset(file: File): Promise<Job> {
   const formData = new FormData()
   formData.append("file", file)

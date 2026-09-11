@@ -5,6 +5,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { EvaluationTable } from "./evaluation-table"
 import { EvaluationDetailPanel } from "./evaluation-detail-panel"
 import type { EvaluationGroup, EvaluationEntry } from "@/lib/api-client"
+import type { ModelRecord } from "@/types/api"
+
+vi.mock("@/features/models/api/use-models", () => ({
+  useModels: () => ({
+    data: [
+      {
+        name: "base-osft-1",
+        version: "1",
+        run_id: "run-1",
+        source: "runs:/run-1/model",
+        created_at: 0,
+        description: "",
+        aliases: [],
+        tags: { model_display_name: "base-model" },
+      } satisfies ModelRecord,
+    ],
+  }),
+}))
 
 function makeEntry(overrides: Partial<EvaluationEntry> = {}): EvaluationEntry {
   return {
@@ -118,5 +136,19 @@ describe("EvaluationDetailPanel", () => {
       { wrapper },
     )
     expect(screen.getByTestId("eval-model-link-11111111-2222-3333-4444-555555555555")).toBeInTheDocument()
+  })
+
+  it("renders unresolvable models as plain text, not links", () => {
+    const group = makeGroup({
+      evals: [makeEntry({ model: "some/hf-base-model" })],
+    })
+    render(
+      <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
+      { wrapper },
+    )
+    expect(screen.getByText("some/hf-base-model")).toBeInTheDocument()
+    expect(
+      screen.queryByTestId("eval-model-link-11111111-2222-3333-4444-555555555555"),
+    ).not.toBeInTheDocument()
   })
 })

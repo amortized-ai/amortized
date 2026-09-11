@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import { Link, useSearchParams } from "react-router"
 import { SearchInput } from "@/components/search-input"
-import { useDatasets, useUploadDataset } from "./api/use-datasets"
+import { useDatasets, useUploadDataset, fetchDatasetByRun } from "./api/use-datasets"
 import { DatasetTable } from "./components/dataset-table"
 import { DatasetDetailPanel } from "./components/dataset-detail-panel"
 import { ErrorState } from "@/components/error-state"
@@ -41,6 +41,21 @@ export default function DatasetsPage() {
         setSelectedDataset(ds)
         setDetailOpen(true)
         setSearchParams({}, { replace: true })
+        return
+      }
+      // Not in the list (e.g. soft-deleted run) — fetch it directly so the
+      // deep link still opens the dataset it points at.
+      if (runId) {
+        fetchDatasetByRun(runId)
+          .then((rec) => {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
+            setSelectedDataset(rec)
+            setDetailOpen(true)
+          })
+          .catch(() => {
+            // run truly gone — nothing to open
+          })
+          .finally(() => setSearchParams({}, { replace: true }))
       }
     }
   }, [searchParams, datasets, setSearchParams])

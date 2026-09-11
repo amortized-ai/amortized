@@ -33,9 +33,14 @@ export default function ModelsPage() {
     const runId = searchParams.get("run")
     const name = searchParams.get("name")
     if (models.length > 0 && (runId || name)) {
+      // The Models tab shows friendly display names (mdl-*) while the
+      // underlying registered name differs — match either so deep links
+      // from other tabs resolve.
       const found = runId
         ? models.find((m) => m.run_id === runId)
-        : models.find((m) => m.name === name)
+        : models.find(
+            (m) => m.name === name || m.tags?.model_display_name === name,
+          )
       if (found) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
         setSelectedModel(found)

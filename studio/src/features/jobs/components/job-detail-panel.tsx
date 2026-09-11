@@ -29,6 +29,7 @@ import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
 import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
+import { useModels } from "@/features/models/api/use-models"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
@@ -216,6 +217,7 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
   const navigate = useNavigate()
   const isEval = job.type === "eval"
   const { data: datasets } = useDatasets()
+  const { data: models } = useModels()
   const evalModel = isEval
     ? String((job.config?.endpoint as { model?: unknown } | undefined)?.model ?? "")
     : ""
@@ -223,6 +225,13 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
   const evalDataset = evalDatasetRunId
     ? datasets?.find((d) => d.run_id === evalDatasetRunId)
     : undefined
+  // Models are displayed under mdl-* names but registered as *-osft-* —
+  // only hyperlink when the Models tab can actually resolve the model.
+  const evalModelResolvable =
+    evalModel !== "" &&
+    !!models?.find(
+      (m) => m.name === evalModel || m.tags?.model_display_name === evalModel,
+    )
 
   return (
     <div className="space-y-0">
@@ -270,17 +279,21 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
         <MetadataRow
           label="Model"
           value={
-            <button
-              type="button"
-              onClick={() => {
-                onClose()
-                setTimeout(() => navigate(`/models?name=${encodeURIComponent(evalModel)}`), 200)
-              }}
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-            >
-              {evalModel}
-              <ArrowRight className="h-3 w-3" />
-            </button>
+            evalModelResolvable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  setTimeout(() => navigate(`/models?name=${encodeURIComponent(evalModel)}`), 200)
+                }}
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                {evalModel}
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            ) : (
+              <span title={`${evalModel} (not in the Models tab)`}>{evalModel}</span>
+            )
           }
         />
       )}

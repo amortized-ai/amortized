@@ -215,6 +215,7 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
   const finalLoss = runData?.finalMetrics["loss"] ?? runData?.finalMetrics["avg_loss_backward"]
   const epochs = runData?.finalMetrics["epoch"] ?? (runData?.params["max_epochs"] ? Number(runData.params["max_epochs"]) : undefined)
   const trainingJob = jobsData?.trainingJob
+  const sourceJobId = runData?.tags?.["job_id"] ?? trainingJob?.id ?? null
   const trainDuration = trainingJob?.started_at && trainingJob?.completed_at
     ? (new Date(trainingJob.completed_at).getTime() - new Date(trainingJob.started_at).getTime()) / 1000
     : undefined
@@ -291,12 +292,13 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
         <MetadataRow
           label="Source"
           value={
-            jobsData?.trainingJob ? (
+            sourceJobId ? (
               <button
                 type="button"
+                data-testid="model-source-job-link"
                 onClick={() => {
                   onClose()
-                  setTimeout(() => navigate(`/jobs?job=${encodeURIComponent(jobsData.trainingJob!.id)}`), 200)
+                  setTimeout(() => navigate(`/jobs?job=${encodeURIComponent(sourceJobId)}`), 200)
                 }}
                 className="inline-flex items-center gap-1 font-mono text-xs truncate max-w-[400px] text-primary hover:underline"
                 title={model.source}

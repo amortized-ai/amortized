@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router"
 import {
   Dialog,
@@ -7,7 +8,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { X, ClipboardCheck, Briefcase, ArrowRight, Database, Cpu } from "lucide-react"
 import type { EvaluationGroup } from "@/lib/api-client"
-import { useDatasets } from "@/features/datasets/api/use-datasets"
+import { useDatasets, fetchDatasetByRun } from "@/features/datasets/api/use-datasets"
+import { useModels } from "@/features/models/api/use-models"
+import type { DatasetRecord } from "@/types/api"
 
 interface EvaluationDetailPanelProps {
   group: EvaluationGroup | null
@@ -22,9 +25,36 @@ export function EvaluationDetailPanel({
 }: EvaluationDetailPanelProps) {
   const navigate = useNavigate()
   const { data: datasets } = useDatasets()
+  const { data: models } = useModels()
+  // Datasets with evals may be soft-deleted (absent from the list) — fetch
+  // the run directly so the info card still shows its source details.
+  const [fetchedDataset, setFetchedDataset] = useState<DatasetRecord | null>(null)
+  const dataset =
+    datasets?.find((d) => d.run_id === group?.dataset.run_id) ?? fetchedDataset
+  useEffect(() => {
+    setFetchedDataset(null)
+    if (!group || dataset) return
+    let cancelled = false
+    fetchDatasetByRun(group.dataset.run_id)
+      .then((rec) => {
+        if (!cancelled) setFetchedDataset(rec)
+      })
+      .catch(() => {
+        // run truly gone — card falls back to name only
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the group's dataset changes and it is not in the list
+  }, [group?.dataset.run_id, dataset === undefined])
   if (!group) return null
 
-  const dataset = datasets?.find((d) => d.run_id === group.dataset.run_id)
+  // Models are listed under registered names but displayed as mdl-* —
+  // resolve either way, and only link when the Models tab has the model.
+  const resolveModel = (name: string) =>
+    models?.find(
+      (m) => m.name === name || m.tags?.model_display_name === name,
+    )
   const metricRows = buildMetricRows(group)
 
   return (
@@ -130,19 +160,28 @@ export function EvaluationDetailPanel({
                   {group.evals.map((e) => (
                     <th key={e.job_id} className="text-left font-medium px-4 py-3 min-w-[200px]">
                       <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          data-testid={`eval-model-link-${e.job_id}`}
-                          onClick={() => {
-                            onOpenChange(false)
-                            setTimeout(() => navigate(`/models?name=${encodeURIComponent(e.model)}`), 200)
-                          }}
-                          className="inline-flex items-center gap-1 font-semibold truncate text-left hover:underline"
-                          title={e.model}
-                        >
-                          <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          {e.model}
-                        </button>
+                        {resolveModel(e.model) ? (
+                          <button
+                            type="button"
+                            data-testid={`eval-model-link-${e.job_id}`}
+                            onClick={() => {
+                              onOpenChange(false)
+                              setTimeout(() => navigate(`/models?name=${encodeURIComponent(e.model)}`), 200)
+                            }}
+                            className="inline-flex items-center gap-1 font-semibold truncate text-left hover:underline"
+                            title={e.model}
+                          >
+                            <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {e.model}
+                          </button>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 font-semibold truncate text-left"
+                            title={`${e.model} (not in the Models tab)`}
+                          >
+                            {e.model}
+                          </span>
+                        )}
                         <button
                           type="button"
                           data-testid={`eval-job-link-${e.job_id}`}
