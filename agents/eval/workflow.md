@@ -157,7 +157,12 @@ verbatim — same metrics, same rubric — and tell the user: "Reusing the
 metric set already defined for this dataset, so scores are comparable
 across models." Do NOT redesign, reword, or re-confirm criteria the
 dataset already defines. Only design new metrics when the field is
-absent (the first eval on this dataset).
+absent (the first eval on this dataset) — UNLESS the user explicitly
+asks to change or replace the metric set. In that case design the new
+set with the user, use it for the eval, and note that it replaces the
+dataset's old metric set (only evals created afterwards use it; past
+scores in the Evaluation tab keep their own metrics). Also warn that
+scores before and after the change are not comparable.
 
 When designing (first eval on the dataset): do NOT assume which
 metrics matter — ask the user first:
