@@ -181,7 +181,7 @@ mlflow:
   # bearer token over a cleartext URI.
   enterprise:
     enabled: false
-    # X-MLFLOW-WORKSPACE header. Empty => the release namespace.
+    # X-MLFLOW-WORKSPACE header. Empty => the application namespace (.Values.namespace).
     workspace: ""
     # Bearer-token file (a Kubernetes SA token). The default projected SA token is auto-mounted
     # and rotated in place; the client re-reads it per request.

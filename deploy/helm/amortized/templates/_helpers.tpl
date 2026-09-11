@@ -75,7 +75,11 @@ postgresql://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ incl
 {{- if eq (include "amortized.mlflowBundled" .) "true" -}}
 http://{{ include "amortized.mlflowFqdn" . }}:5000
 {{- else -}}
-{{- required "mlflow.trackingUri is required when MLflow is not bundled (external/enterprise)" .Values.mlflow.trackingUri -}}
+{{- $uri := required "mlflow.trackingUri is required when MLflow is not bundled (external/enterprise)" .Values.mlflow.trackingUri -}}
+{{- if and .Values.mlflow.enterprise.enabled (not (hasPrefix "https://" $uri)) -}}
+{{- fail "mlflow.trackingUri must be https:// when mlflow.enterprise.enabled is true (a bearer SA token is sent; the app refuses to transmit it over cleartext http://)" -}}
+{{- end -}}
+{{- $uri -}}
 {{- end -}}
 {{- end -}}
 

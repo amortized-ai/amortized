@@ -160,8 +160,8 @@ What gets bundled and what doesn't (three separate stores):
   artifact store). With enterprise MLflow `s3.*` is therefore **optional** (empty renders fine).
 
 Other notes:
-- Workspace `==` namespace, so set `jobsNamespace == namespace`. Defaults: workspace = release
-  namespace, token = the auto-mounted SA token (`/var/run/secrets/kubernetes.io/serviceaccount/token`),
+- Workspace `==` namespace, so set `jobsNamespace == namespace`. Defaults: workspace = the
+  application namespace (`.Values.namespace`), token = the auto-mounted SA token (`/var/run/secrets/kubernetes.io/serviceaccount/token`),
   CA = the `openshift-service-ca.crt` configmap (auto-present on OpenShift).
 - Requires the `mlflow-operator-mlflow-{view,edit}` ClusterRoles (RHOAI MLflow operator) to
   exist; override the names via `mlflow.enterprise.{view,edit}ClusterRole` if they differ.

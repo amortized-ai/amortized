@@ -40,17 +40,18 @@ subjects:
 {{- if .Values.mlflow.enterprise.enabled }}
 ---
 {{- /*
-RHOAI enterprise MLflow workspace access. Workspace == namespace, so the bindings live in
-.Values.namespace (the workspace). The operator SSAR splits read (view) / write (edit), so
-bind both ClusterRoles. Subjects: the server SA and the dispatched-job SA (`default` in the
-jobs namespace) — cross-namespace SA subjects are valid and let the job's bearer token +
+RHOAI enterprise MLflow workspace access. The bindings live in the MLflow workspace namespace
+(mlflow.enterprise.workspace, defaulting to .Values.namespace) so they match the
+X-MLFLOW-WORKSPACE header. The operator SSAR splits read (view) / write (edit), so bind both
+ClusterRoles. Subjects: the server SA and the dispatched-job SA (`default` in the jobs
+namespace) — cross-namespace SA subjects are valid and let the job's bearer token +
 X-MLFLOW-WORKSPACE header authorize against this workspace.
 */ -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: amortized-mlflow-view
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "amortized.mlflowWorkspace" . }}
   labels:
     {{- include "amortized.labels" . | nindent 4 }}
 roleRef:
@@ -69,7 +70,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: amortized-mlflow-edit
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "amortized.mlflowWorkspace" . }}
   labels:
     {{- include "amortized.labels" . | nindent 4 }}
 roleRef:
