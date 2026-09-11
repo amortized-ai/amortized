@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 import asyncpg
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -402,7 +403,36 @@ async def _persist_metric_set(
 
     import json as _json
 
+    from amortized.core.mlflow_client import MLflowClient
     from amortized.jobs.common import set_mlflow_run_tag
+
+    # A soft-deleted dataset run rejects tag writes, which would silently
+    # drop the metric set (and later sessions would re-design metrics).
+    # The dataset is clearly still in use — the eval references it — so
+    # restore the run and keep it visible in the Datasets tab.
+    from amortized.config import settings as _settings
+
+    if _settings.mlflow_tracking_uri:
+        client = MLflowClient(_settings.mlflow_tracking_uri)
+        try:
+            run = await client.get_run(dataset_run_id)
+            if run.get("info", {}).get("lifecycle_stage") == "deleted":
+                async with httpx.AsyncClient(timeout=30.0) as _http:
+                    _resp = await _http.post(
+                        client._url("/api/2.0/mlflow/runs/restore"),
+                        json={"run_id": dataset_run_id},
+                    )
+                    _resp.raise_for_status()
+                logger.info(
+                    "Restored soft-deleted dataset run %s to persist its"
+                    " eval metric set", dataset_run_id[:8],
+                )
+        except Exception:
+            logger.warning(
+                "Could not check/restore dataset run %s before tagging",
+                dataset_run_id[:8],
+                exc_info=True,
+            )
 
     await set_mlflow_run_tag(
         dataset_run_id, "eval_metric_set", _json.dumps(metric_set)

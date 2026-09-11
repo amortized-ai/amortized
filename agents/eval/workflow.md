@@ -158,12 +158,16 @@ asks about cleanup.
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
 field (`{metrics: [...], rubric: [{name, description}]}`) when any
-eval has run on this dataset before. If it is present, REUSE it
-verbatim — same metrics, same rubric — and tell the user: "Reusing the
-metric set already defined for this dataset, so scores are comparable
-across models." Do NOT redesign, reword, or re-confirm criteria the
-dataset already defines. Only design new metrics when the field is
-absent (the first eval on this dataset) — UNLESS the user explicitly
+eval has run on this dataset before. If it is present, show the user
+the persisted metric set as a table (same format as a new proposal)
+and ask them to confirm reuse — do NOT silently reuse it, and do NOT
+design a new one. Frame it as: "This dataset already has a metric set
+(from earlier evals, so scores stay comparable across models). Reuse
+it?" with options "Reuse these metrics" and "Suggest changes". If they
+confirm reuse, use the persisted set verbatim. If they suggest
+changes, incorporate their feedback (this counts as the explicit
+change request below). Only design new metrics from scratch when the
+field is absent (the first eval on this dataset) — UNLESS the user explicitly
 asks to change or replace the metric set. In that case design the new
 set with the user, use it for the eval, and note that it replaces the
 dataset's old metric set (only evals created afterwards use it; past
