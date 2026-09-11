@@ -5,6 +5,7 @@ skills directory tree into single-level keys using `__` as the path separator
 ConfigMap keys may not contain `/`. The opencode Deployment mounts this ConfigMap
 with items[].path mapping each key back to its nested path, rebuilding the tree.
 */ -}}
+{{- if .Values.opencode.enabled }}
 {{- $data := dict -}}
 {{- range $path, $bytes := .Files.Glob "files/morty-skills/**" -}}
 {{- $key := $path | trimPrefix "files/morty-skills/" | replace "/" "__" -}}
@@ -19,3 +20,4 @@ metadata:
     {{- include "amortized.labels" . | nindent 4 }}
 data:
 {{ toYaml $data | indent 2 }}
+{{- end }}
