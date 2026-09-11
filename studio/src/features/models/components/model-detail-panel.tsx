@@ -215,7 +215,9 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
   const finalLoss = runData?.finalMetrics["loss"] ?? runData?.finalMetrics["avg_loss_backward"]
   const epochs = runData?.finalMetrics["epoch"] ?? (runData?.params["max_epochs"] ? Number(runData.params["max_epochs"]) : undefined)
   const trainingJob = jobsData?.trainingJob
-  const sourceJobId = runData?.tags?.["job_id"] ?? trainingJob?.id ?? null
+  // Link the source only when the job exists in this user's namespace —
+  // jobs are namespaced, so a cross-user training job would be a dead link.
+  const sourceJobId = trainingJob?.id ?? null
   const trainDuration = trainingJob?.started_at && trainingJob?.completed_at
     ? (new Date(trainingJob.completed_at).getTime() - new Date(trainingJob.started_at).getTime()) / 1000
     : undefined
