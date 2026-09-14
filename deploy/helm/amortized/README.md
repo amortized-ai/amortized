@@ -72,11 +72,14 @@ helm install amortized deploy/helm/amortized \
 | `images.{server,studio,opencode}` | see values | `{repository, tag, pullPolicy}` |
 | `server.persistence.size` | `200Gi` | server data PVC |
 | `server.doclingUrl` | `""` | optional `AMORTIZED_DOCLING_URL` |
+| `server.extraEnv` / `extraVolumes` / `extraVolumeMounts` / `hostAliases` | `[]` | appended to the server Deployment (e.g. sandboxed-Morty mTLS wiring) |
+| `studio.enabled` | `true` | deploy the bundled Studio (Deployment + Service) |
 | `studio.host` | `""` | Route host (empty = auto) |
 | `studio.route.enabled` | `false` | create an OpenShift Route for Studio |
 | `dataStores.bundled` | `true` | deploy PostgreSQL + MinIO + MLflow in-namespace |
 | `model.provider` | `vertex` | `vertex` or `openai` |
 | `model.opencodeModel` | `google-vertex-anthropic/claude-opus-4-8@default` | model string in `opencode.json` |
+| `opencode.enabled` | `true` | deploy the bundled OpenCode (Morty) agent |
 | `security.runAsNonRoot` | `true` | app pods runAsNonRoot; set `false` on vanilla/kind (see `values-kind.yaml`) |
 | `mlflow.trackingUri` / `mlflow.gatewayUrl` | `""` | external MLflow (when not bundled) |
 | `s3.bucket` / `s3.endpoint` / `s3.accessKey` / `s3.secretKey` | see values | object storage |

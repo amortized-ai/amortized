@@ -21,6 +21,10 @@ spec:
         component: server
     spec:
       serviceAccountName: amortized-server
+      {{- with .Values.server.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       initContainers:
@@ -82,9 +86,16 @@ spec:
             - secretRef:
                 name: {{ . }}
             {{- end }}
+          {{- with .Values.server.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data
+            {{- with .Values.server.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -109,3 +120,6 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: amortized-server-data
+        {{- with .Values.server.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

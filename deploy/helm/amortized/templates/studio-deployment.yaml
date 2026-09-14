@@ -1,3 +1,4 @@
+{{- if .Values.studio.enabled }}
 {{- $mlflowHost := ternary (include "amortized.mlflowFqdn" .) .Values.studio.mlflowHost .Values.dataStores.bundled -}}
 {{- $mlflowPort := ternary "5000" (.Values.studio.mlflowPort | toString) .Values.dataStores.bundled -}}
 apiVersion: apps/v1
@@ -66,3 +67,4 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+{{- end }}
