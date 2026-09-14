@@ -4,12 +4,11 @@
 # bring up the model on a pinned GPU, wait for it to be healthy, run the
 # eval against localhost, and exit — the serve lifetime equals the eval
 # lifetime. External-endpoint evals run the same image CPU-only.
+# httpx and pyarrow are already in the training base.
 FROM ghcr.io/amortized-ai/training:latest
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-
-RUN pip install --no-cache-dir "httpx>=0.27" "pyarrow>=16"
 
 COPY run_eval.py /app/run_eval.py
 
