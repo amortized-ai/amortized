@@ -108,10 +108,10 @@ const UI_TOOLS = new Set([
   "submit_recipe_job",
   "create_sdg_job",
   "create_training_job",
+  "create_serve_job",
   "validate_sdg_job",
   "validate_training_job",
   "validate_eval_job",
-  "validate_serve_job",
   "validate_recipe_job",
   "create_job",
 ])
@@ -179,7 +179,7 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job"
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "create_serve_job" || name === "submit_recipe_job" || name === "create_job"
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
