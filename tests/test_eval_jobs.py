@@ -168,7 +168,7 @@ class TestCheckEvalGpu:
         assert response.status_code == 200
         data = response.json()
         assert data["model_size_gb"] == 4.8
-        # 8 GB free * 0.9 margin = 7.2 GB budget -> 4.8 fits
+        # 8 GB free * 0.9 = 7.2 GB budget, weights x 1.5 = 7.2 -> fits
         assert data["fits"] is True
         assert data["assigned_gpu"]["uuid"] == "GPU-abc"
         assert data["assigned_gpu"]["occupants"][0]["job_type"] == "serve"
@@ -212,6 +212,52 @@ class TestCheckEvalGpu:
         data = response.json()
         assert data["fits"] is False
         assert "only" in data["error"]
+        assert "KV cache" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_gpu_check_borderline_weights_rejected(self, client, monkeypatch) -> None:
+        # 4.8 GB weights into a 6.3 GB budget passed the weights-only
+        # check and OOM-ed at vLLM sampler warmup in production — the
+        # 1.5x KV-cache headroom must reject it.
+        from amortized.core import gpu_inventory as gi
+
+        described = {
+            "gpus": [
+                {
+                    "node": "worker",
+                    "index": 0,
+                    "uuid": "GPU-abc",
+                    "memory_free_mb": 7 * 1024,
+                    "memory_total_mb": 79 * 1024,
+                    "mine": True,
+                    "busy": True,
+                    "held_by": ["me"],
+                    "occupants": [
+                        {"pod": "p", "namespace": "amortized-me-jobs", "job_id": "x", "job_type": "serve", "started_at": ""}
+                    ],
+                },
+            ],
+            "my_uuids": ["GPU-abc"],
+            "updated": "now",
+        }
+
+        async def fake_describe(ns):
+            return described
+
+        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
+
+        async def fake_size(tj, mn):
+            return 4.8
+
+        import amortized.api.eval as eval_api
+
+        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
+
+        response = await client.get("/api/v1/eval/gpu-check", params={"model_name_or_path": "Qwen/Qwen3.5-4B"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["fits"] is False
+        assert data["assigned_gpu"]["occupants"][0]["job_type"] == "serve"
 
     @pytest.mark.asyncio
     async def test_gpu_check_unknown_size_fits_null(self, client: httpx.AsyncClient, monkeypatch) -> None:

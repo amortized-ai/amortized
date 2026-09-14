@@ -192,10 +192,13 @@ async def check_eval_gpu(
 
     fits: bool | None = None
     if assigned and size_gb is not None:
-        # Same 0.9 margin the job builder's auto gpu-memory-utilization
-        # leaves; weights must fit in that slice.
+        # The budget (free x 0.9, matching the builder's auto
+        # gpu-memory-utilization) must hold the weights PLUS vLLM's KV
+        # cache and activation overhead — a weights-only check passed
+        # 4.8 GB into a 6.3 GB budget and OOM'd at sampler warmup, so
+        # require 1.5x the weight size.
         budget_gb = round(assigned["memory_free_mb"] / 1024 * 0.9, 2)
-        fits = size_gb <= budget_gb
+        fits = size_gb * 1.5 <= budget_gb
 
     result: dict[str, Any] = {
         "model_size_gb": size_gb,
@@ -211,8 +214,16 @@ async def check_eval_gpu(
         )
     elif fits is False:
         result["error"] = (
-            f"the model needs ~{size_gb} GB for weights but the assigned GPU"
-            f" ({assigned['node']} #{assigned['index']}) has only"
-            f" ~{assigned['memory_free_mb'] / 1024:.0f} GB free"
+            f"the model needs ~{size_gb} GB for weights (plus KV cache)"
+            f" but the assigned GPU ({assigned['node']} #{assigned['index']})"
+            f" has only ~{assigned['memory_free_mb'] / 1024:.0f} GB free"
+        )
+    elif assigned["memory_free_mb"] < 10 * 1024:
+        # Size unknown (or fits), but the assigned GPU is nearly full —
+        # flag it so the agent does not sail into an in-job OOM.
+        result["warning"] = (
+            f"the assigned GPU ({assigned['node']} #{assigned['index']})"
+            f" has only ~{assigned['memory_free_mb'] / 1024:.0f} GB free"
+            " — a serving workload may not fit"
         )
     return result
