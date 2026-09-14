@@ -12,9 +12,11 @@
 // the openshell client-cert Secret, an optional teacher-keys Secret, a GPU quota).
 //
 // The OpenShell CLI usage mirrors the RHOAI opencode starter kit's documented flow
-// (`gateway add`, `sandbox create`, `policy update --add-endpoint`, `service expose`).
-// The Morty model provider is deployment-level (vertex ADC, or an openai/anthropic
-// key auto-discovered from the gateway env); per-user creds is a follow-up.
+// (`gateway add`, `sandbox create`, `service expose`). The Morty model provider is
+// per-user (bring-your-own-key): each user picks a provider (openai|anthropic) and
+// supplies its API key via the Studio splash/settings; the key is stored as a
+// per-user Secret and, at sandbox-create time, given to opencode via its env while
+// the provider's API host is opened in the sandbox egress policy.
 //
 // Idempotent + non-blocking: ensureUserStack kicks off provisioning and returns the
 // current state immediately; callers poll getState / retry.
@@ -35,6 +37,16 @@ const objApi = k8s.KubernetesObjectApi.makeApiClient(kc);
 const coreApi = kc.makeApiClient(k8s.CoreV1Api);
 
 const FIELD_MANAGER = 'studio-gateway';
+
+// The gateway's own namespace (from the downward-API service-account file), used to
+// store per-user model-key Secrets.
+function readOwnNamespace() {
+  try {
+    return fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/namespace', 'utf8').trim() || 'default';
+  } catch {
+    return 'default';
+  }
+}
 
 // --- Helm: the core chart is pulled from OCI; the version is pinned by the deployer ---
 const HELM_BIN = process.env.HELM_BIN || 'helm';
@@ -59,19 +71,35 @@ const OPENSHELL_TIMEOUT_MS = parseInt(process.env.OPENSHELL_TIMEOUT_MS || '30000
 
 // --- Morty sandbox ---
 const MORTY_IMAGE = process.env.MORTY_IMAGE || 'ghcr.io/amortized-ai/morty:latest';
-const BASE_POLICY_FILE = process.env.EGRESS_POLICY_FILE || path.join(__dirname, '..', 'policy.aipcc.yaml');
 
-// Model provider (deployment-level; per-user creds is a follow-up). `vertex` uses a
-// Vertex ADC (project/location + an uploaded adc.json); `openai`/`anthropic` use the
-// corresponding API key, auto-discovered from the gateway env by `--auto-providers`
-// and injected into the sandbox as runtime env (never written to the sandbox disk).
-const MODEL_PROVIDER = (process.env.MORTY_MODEL_PROVIDER || 'vertex').toLowerCase();
-const MORTY_MODEL = process.env.MORTY_MODEL || 'google-vertex-anthropic/claude-opus-4-8@default';
-const OPENSHELL_PROVIDER_TYPE = { vertex: 'google-vertex-ai', openai: 'openai', anthropic: 'anthropic' }[MODEL_PROVIDER];
-// Vertex-only.
-const MORTY_ADC_FILE = process.env.MORTY_ADC_FILE || '/etc/morty-adc/adc.json';
-const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || '';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'global';
+// Model provider is per-user (bring-your-own-key). A user picks one of these and
+// supplies its API key (Studio splash/settings). The key is stored as a per-user
+// Secret, then delivered to opencode two ways at sandbox-create time: the key goes
+// into opencode's env (opencode reads <credentialKey> to authenticate the provider),
+// and the provider's API host is added to the sandbox egress policy so the request
+// is allowed out. OpenShell's proxy does not inject credentials in this deployment,
+// so egress-allowlist + env-key is the delivery mechanism; the tight allowlist is
+// what bounds the key's exposure (Morty can only reach the model API, the user's own
+// server, and opencode's model catalog — no attacker-controllable host).
+//   provider -> { credential env-var opencode reads, API host to allow, opencode model }
+// Model ids are overridable per deployment and track opencode's models.dev naming.
+const PROVIDERS = {
+  openai: {
+    credentialKey: 'OPENAI_API_KEY',
+    apiHost: 'api.openai.com',
+    model: process.env.MORTY_MODEL_OPENAI || 'openai/gpt-4o',
+  },
+  anthropic: {
+    credentialKey: 'ANTHROPIC_API_KEY',
+    apiHost: 'api.anthropic.com',
+    model: process.env.MORTY_MODEL_ANTHROPIC || 'anthropic/claude-opus-4-8',
+  },
+};
+const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS);
+
+// The gateway's own namespace: per-user model-key Secrets live here so a key
+// survives stack/sandbox recreation and is readable before amz-<user> exists.
+const GATEWAY_NAMESPACE = process.env.GATEWAY_NAMESPACE || readOwnNamespace();
 
 // Morty automation runs only when the OpenShell mTLS certs are mounted. Otherwise
 // the core stack is provisioned without chat.
@@ -88,8 +116,15 @@ function nsForUser(user) {
   return `amz-${slug}`;
 }
 
+// Mask secret-looking `NAME=value` args (e.g. `OPENAI_API_KEY=sk-...`) so keys
+// never land in the gateway logs.
+function redactArg(a) {
+  const m = /^([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY))=.+/.exec(a);
+  return m ? `${m[1]}=***` : a;
+}
+
 async function run(bin, args, opts = {}) {
-  console.log(`  $ ${bin} ${args.join(' ')}`);
+  console.log(`  $ ${bin} ${args.map(redactArg).join(' ')}`);
   try {
     const { stdout, stderr } = await execFileP(bin, args, { maxBuffer: 16 * 1024 * 1024, ...opts });
     const tail = (stderr || '').trim();
@@ -143,6 +178,87 @@ async function openshellGatewayIP() {
   return ip;
 }
 
+// --- Per-user model key (bring-your-own-key) ---------------------------------
+function slugForNs(ns) { return ns.replace(/^amz-/, ''); }
+function keySecretName(ns) { return `morty-key-${slugForNs(ns)}`; }
+
+// Read the per-user model key Secret from the gateway namespace.
+// Returns { provider, key } or null when unset / unsupported.
+async function readUserKey(ns) {
+  try {
+    const res = await coreApi.readNamespacedSecret({ name: keySecretName(ns), namespace: GATEWAY_NAMESPACE });
+    const data = res?.data || res?.body?.data || {};
+    if (!data.provider || !data.key) return null;
+    const provider = Buffer.from(data.provider, 'base64').toString('utf8');
+    const key = Buffer.from(data.key, 'base64').toString('utf8');
+    return PROVIDERS[provider] ? { provider, key } : null;
+  } catch (err) {
+    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+    if (code === 404) return null;
+    throw err;
+  }
+}
+
+// Persist (create or replace) the per-user model key Secret.
+async function writeUserKey(ns, provider, key) {
+  const body = {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: {
+      name: keySecretName(ns),
+      namespace: GATEWAY_NAMESPACE,
+      labels: { app: 'amortized', 'app.kubernetes.io/managed-by': FIELD_MANAGER, 'amortized.ai/user-ns': ns },
+    },
+    type: 'Opaque',
+    data: {
+      provider: Buffer.from(provider).toString('base64'),
+      key: Buffer.from(key).toString('base64'),
+    },
+  };
+  try {
+    await coreApi.createNamespacedSecret({ namespace: GATEWAY_NAMESPACE, body });
+  } catch (err) {
+    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+    if (code !== 409) throw err;
+    await coreApi.replaceNamespacedSecret({ name: keySecretName(ns), namespace: GATEWAY_NAMESPACE, body });
+  }
+}
+
+// The OpenShell egress + landlock policy baked into the sandbox at create time.
+// Static parts (filesystem, landlock, allowed binaries) mirror the opencode kit;
+// the egress endpoints are per-provision: the chosen model API host, opencode's
+// model catalog + npm (for opencode itself), and the user's own amortized-server
+// (the MCP host). Nothing else is reachable, which is what bounds the in-env key.
+function buildMortyPolicy(ns, provider) {
+  const p = PROVIDERS[provider];
+  return {
+    version: 1,
+    filesystem_policy: {
+      include_workdir: true,
+      read_only: ['/usr', '/lib', '/lib64', '/bin', '/sbin', '/proc', '/dev/urandom', '/app', '/etc', '/opt', '/var/log'],
+      read_write: ['/sandbox', '/workspace', '/tmp', '/dev/null'],
+    },
+    landlock: { compatibility: 'best_effort' },
+    network_policies: {
+      morty_egress: {
+        name: 'morty-egress',
+        endpoints: [
+          { host: p.apiHost, port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-write' },
+          { host: 'models.opencode.ai', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
+          { host: 'models.dev', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
+          { host: 'registry.npmjs.org', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
+          { host: `amortized-server.${ns}.svc.cluster.local`, port: 8000, protocol: 'rest', enforcement: 'enforce', access: 'read-write' },
+        ],
+        binaries: [
+          { path: '/usr/local/lib/node_modules/opencode-ai/bin/opencode.exe' },
+          { path: '/usr/bin/node' },
+          { path: '/usr/bin/curl' },
+        ],
+      },
+    },
+  };
+}
+
 async function serverAvailable(ns) {
   // True readiness: the server answers health (migrations complete + app up), not
   // just pod-ready. Avoids AppsV1Api return-shape differences across client versions.
@@ -194,12 +310,15 @@ async function configureOpenshell() {
 }
 
 // Create + wire the per-user Morty sandbox through the cluster OpenShell gateway.
-// Idempotent: re-provisioning tolerates an existing sandbox and just re-asserts the
-// egress rule + gateway route (both must survive a sandbox pod recreation).
-async function ensureSandbox(ns) {
+// The model key is delivered to opencode via its env, and egress to the model API
+// (plus opencode's catalog + the user's MCP host) is opened in the create-time
+// policy. Idempotent: an existing sandbox is a benign re-provision (a key change
+// recreates it via setUserKey), so we just re-assert the gateway route.
+async function ensureSandbox(ns, provider, key) {
   await configureOpenshell();
-  if (!OPENSHELL_PROVIDER_TYPE) {
-    throw new Error(`unsupported MORTY_MODEL_PROVIDER '${MODEL_PROVIDER}' (expected vertex|openai|anthropic)`);
+  const p = PROVIDERS[provider];
+  if (!p) {
+    throw new Error(`unsupported model provider '${provider}' (expected ${SUPPORTED_PROVIDERS.join('|')})`);
   }
   const name = mortyName(ns);
   const g = ['-g', OPENSHELL_GATEWAY];
@@ -214,50 +333,36 @@ async function ensureSandbox(ns) {
     'fs.writeFileSync(f,JSON.stringify(c,null,2))';
   const serveCmd = `cd /workspace && node -e '${rewrite}' && HOME=/workspace opencode serve --port 4096 --hostname 0.0.0.0`;
 
-  const createArgs = [
-    ...g, 'sandbox', 'create',
-    '--name', name,
-    '--from', MORTY_IMAGE,
-    '--policy', BASE_POLICY_FILE,
-    '--provider', OPENSHELL_PROVIDER_TYPE, '--auto-providers',
-    '--env', `USER_NS=${ns}`,
-    '--env', `MORTY_MODEL=${MORTY_MODEL}`,
-  ];
-  if (MODEL_PROVIDER === 'vertex') {
-    createArgs.push(
-      '--env', `GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}`,
-      '--env', `VERTEX_LOCATION=${VERTEX_LOCATION}`,
-      '--env', 'GOOGLE_APPLICATION_CREDENTIALS=/workspace/adc.json',
-    );
-  }
-  // openai/anthropic: the API key is auto-discovered from the gateway env by
-  // `--auto-providers` and injected as sandbox runtime env — no file to upload.
-  createArgs.push('--', 'sh', '-c', serveCmd);
-
-  let created = false;
+  // Egress/landlock policy baked at create time (JSON is a valid YAML subset).
+  const policyFile = path.join(os.tmpdir(), `policy-${ns}.json`);
+  fs.writeFileSync(policyFile, JSON.stringify(buildMortyPolicy(ns, provider)));
   try {
-    await run(OPENSHELL_BIN, createArgs, { timeout: OPENSHELL_TIMEOUT_MS });
-    created = true;
-  } catch (err) {
-    if (!/exist|already/i.test(err.message)) throw err;
-    console.log(`  openshell sandbox ${name} already exists`);
+    const createArgs = [
+      ...g, 'sandbox', 'create',
+      '--name', name,
+      '--from', MORTY_IMAGE,
+      '--policy', policyFile,
+      '--env', `USER_NS=${ns}`,
+      '--env', `MORTY_MODEL=${p.model}`,
+      // opencode reads <credentialKey> from its env to authenticate the provider;
+      // redacted from logs by run(), and reachable only to the allowlisted hosts.
+      '--env', `${p.credentialKey}=${key}`,
+      '--', 'sh', '-c', serveCmd,
+    ];
+    try {
+      await run(OPENSHELL_BIN, createArgs, { timeout: OPENSHELL_TIMEOUT_MS });
+    } catch (err) {
+      if (!/exist|already/i.test(err.message)) throw err;
+      console.log(`  openshell sandbox ${name} already exists — re-asserting gateway route`);
+    }
+  } finally {
+    try { fs.unlinkSync(policyFile); } catch { /* best-effort cleanup */ }
   }
-  // Vertex ADC is a file (unlike API keys) — upload it after a fresh create.
-  if (created && MODEL_PROVIDER === 'vertex') {
-    await run(OPENSHELL_BIN, [...g, 'sandbox', 'upload', name, MORTY_ADC_FILE, '/workspace/adc.json']);
-  }
-  // Per-user MCP host egress (documented `policy update`, per the RHOAI opencode kit).
-  // FQDN required — the short .svc form is rejected (403) and opencode drops MCP tools.
-  await run(OPENSHELL_BIN, [
-    ...g, 'policy', 'update', name,
-    '--add-endpoint', `amortized-server.${ns}.svc.cluster.local:8000:read-write:rest:enforce`,
-    '--wait',
-  ]);
   // Expose opencode :4096 via the gateway (Host-routed mTLS -> mortyHost).
   await run(OPENSHELL_BIN, [...g, 'service', 'expose', name, '4096', 'opencode']);
 }
 
-async function provision(ns, user) {
+async function provision(ns, user, keyInfo) {
   console.log(`provisioning ${ns} for ${user}`);
   // Resolve the OpenShell gateway IP first (needed in the chart values for the
   // server's mTLS hostAlias) when Morty is enabled.
@@ -268,14 +373,16 @@ async function provision(ns, user) {
   await helmInstall(ns, gatewayIP);
   // 3. Per-user OpenShell-sandboxed Morty. Best-effort: a sandbox failure leaves the
   //    core stack (server/SDG/MLflow) usable — chat is degraded and can be retried.
-  if (MORTY_ENABLED) {
+  if (MORTY_ENABLED && keyInfo) {
     try {
-      await ensureSandbox(ns);
+      await ensureSandbox(ns, keyInfo.provider, keyInfo.key);
     } catch (err) {
       console.error(`  morty sandbox for ${ns} failed (chat unavailable, retryable): ${err.message}`);
     }
-  } else {
+  } else if (!MORTY_ENABLED) {
     console.log('  morty automation disabled (OpenShell mTLS certs not mounted)');
+  } else {
+    console.log('  no model key set — Morty chat disabled until the user provides a key');
   }
   // 4. Wait for the server to answer health (migrations run as the chart's init).
   const deadline = Date.now() + 5 * 60 * 1000;
@@ -295,31 +402,80 @@ function ensureUserStack(user) {
   let entry = stacks.get(ns);
   if (!entry) {
     entry = { state: 'provisioning', error: null };
-    // Fast path: if the backend is already healthy (gateway restart / returning
-    // user), mark ready without re-provisioning. Otherwise provision the stack.
-    entry.promise = serverAvailable(ns)
-      .then((healthy) => {
-        if (healthy) { entry.state = 'ready'; return; }
-        return provision(ns, user).then(() => { entry.state = 'ready'; });
-      })
-      .catch((err) => {
-        entry.state = 'error';
-        entry.error = String(err.message || err);
-        console.error(`provisioning failed for ${ns}:`, err?.body || err?.message || err);
-      });
+    entry.promise = (async () => {
+      // Per-user BYOK gate: no model key -> ask for one (splash form) before
+      // provisioning. Skipped when Morty is disabled (no OpenShell certs mounted).
+      const keyInfo = MORTY_ENABLED ? await readUserKey(ns) : null;
+      if (MORTY_ENABLED && !keyInfo) { entry.state = 'needs_key'; return; }
+      // Fast path: backend already healthy (gateway restart / returning user).
+      if (await serverAvailable(ns)) { entry.state = 'ready'; return; }
+      await provision(ns, user, keyInfo);
+      entry.state = 'ready';
+    })().catch((err) => {
+      entry.state = 'error';
+      entry.error = String(err.message || err);
+      console.error(`provisioning failed for ${ns}:`, err?.body || err?.message || err);
+    });
     stacks.set(ns, entry);
   }
-  return { ns, state: entry.state, error: entry.error };
+  return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
 }
 
 function getState(user) {
   const ns = nsForUser(user);
   const entry = stacks.get(ns);
-  return { ns, state: entry ? entry.state : 'unprovisioned', error: entry?.error || null };
+  return { ns, state: entry ? entry.state : 'unprovisioned', error: entry?.error || null, providers: SUPPORTED_PROVIDERS };
 }
 
 function markForRetry(user) {
   stacks.delete(nsForUser(user));
 }
 
-module.exports = { ensureUserStack, getState, markForRetry, nsForUser };
+// Set (or rotate) the user's model key: persist it, then (re)provision Morty. First
+// set triggers the full stack provision; rotation (stack already up) recreates just
+// the provider + sandbox so the new key takes effect without a full re-provision.
+async function setUserKey(user, provider, key) {
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    throw new Error(`unsupported provider '${provider}' (expected ${SUPPORTED_PROVIDERS.join('|')})`);
+  }
+  if (typeof key !== 'string' || key.trim().length < 8) {
+    throw new Error('invalid or missing API key');
+  }
+  if (!MORTY_ENABLED) {
+    throw new Error('Morty is not enabled on this deployment (OpenShell mTLS certs not mounted)');
+  }
+  const ns = nsForUser(user);
+  key = key.trim();
+  await writeUserKey(ns, provider, key);
+
+  const existing = stacks.get(ns);
+  const rotate = existing && existing.state === 'ready';
+  stacks.delete(ns);
+
+  if (rotate) {
+    // Core stack is up: recreate provider + sandbox in place so the new key applies.
+    const entry = { state: 'provisioning', error: null };
+    entry.promise = (async () => {
+      await run(OPENSHELL_BIN, ['-g', OPENSHELL_GATEWAY, 'sandbox', 'delete', mortyName(ns)], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
+      await ensureSandbox(ns, provider, key);
+      entry.state = 'ready';
+    })().catch((err) => {
+      entry.state = 'error';
+      entry.error = String(err.message || err);
+      console.error(`morty key rotation failed for ${ns}:`, err?.message || err);
+    });
+    stacks.set(ns, entry);
+    return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
+  }
+  // First-time set: full provision now that a key exists.
+  return ensureUserStack(user);
+}
+
+// Current provider status for the settings UI (never returns the key value).
+async function getProviderStatus(user) {
+  const ns = nsForUser(user);
+  const info = await readUserKey(ns);
+  return { ns, provider: info ? info.provider : null, providers: SUPPORTED_PROVIDERS };
+}
+
+module.exports = { ensureUserStack, getState, markForRetry, setUserKey, getProviderStatus, nsForUser };

@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { ensureUserStack, getState, markForRetry, nsForUser } = require('./provision');
+const { ensureUserStack, getState, markForRetry, setUserKey, getProviderStatus, nsForUser } = require('./provision');
 const { renderSplash } = require('./splash');
 const { resolveUser, identityDebug } = require('./auth');
 
@@ -100,6 +100,33 @@ app.post('/gateway/retry', (req, res) => {
   markForRetry(user);
   const state = ensureUserStack(user);
   res.json({ user, ...state });
+});
+
+// Current model-provider status for the caller (provider name only, never the key).
+app.get('/gateway/provider', async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  try {
+    const status = await getProviderStatus(user);
+    res.json({ user, ...status });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message || err) });
+  }
+});
+
+// Set (or rotate) the caller's model provider key (bring-your-own-key). JSON body
+// is parsed only for this route so the per-user backend/MLflow proxies keep the raw
+// request stream intact. The key is never logged or echoed back.
+app.post('/gateway/provider', express.json({ limit: '16kb' }), async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  const { provider, key } = req.body || {};
+  try {
+    const state = await setUserKey(user, provider, key);
+    res.json({ user, ...state });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
 });
 
 // --- Per-user backend proxy (/api, /agent, /mcp) ----------------------------
