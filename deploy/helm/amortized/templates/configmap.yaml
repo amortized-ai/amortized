@@ -15,6 +15,18 @@ data:
   AMORTIZED_EXTERNAL_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
   AMORTIZED_AGENT_SERVER_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
   AMORTIZED_MLFLOW_TRACKING_URI: {{ include "amortized.mlflowTrackingUri" . | quote }}
+  {{- if .Values.mlflow.enterprise.enabled }}
+  # RHOAI enterprise MLflow auth: bearer token (SA token file, re-read per request for
+  # rotation) + workspace header (== namespace) + TLS trust via the service CA. The worker
+  # propagates these to dispatched job pods (gated on the token file being set).
+  AMORTIZED_MLFLOW_TRACKING_TOKEN_FILE: {{ .Values.mlflow.enterprise.tokenFile | quote }}
+  AMORTIZED_MLFLOW_WORKSPACE: {{ include "amortized.mlflowWorkspace" . | quote }}
+  {{- if .Values.mlflow.enterprise.insecureTls }}
+  AMORTIZED_MLFLOW_TRACKING_INSECURE_TLS: "true"
+  {{- else }}
+  AMORTIZED_MLFLOW_CA_BUNDLE: {{ printf "/etc/mlflow-ca/%s" .Values.mlflow.enterprise.caConfigMapKey | quote }}
+  {{- end }}
+  {{- end }}
   AMORTIZED_GATEWAY_URL: {{ include "amortized.gatewayUrl" . | quote }}
   AMORTIZED_S3_BUCKET: {{ .Values.s3.bucket | quote }}
   {{- if include "amortized.teacherKeysSecret" . }}

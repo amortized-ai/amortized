@@ -2,7 +2,7 @@ Amortized core stack installed.
 
   Release:    {{ .Release.Name }}
   Namespace:  {{ .Values.namespace }} (jobs: {{ .Values.jobsNamespace }})
-  Data stores: {{ if .Values.dataStores.bundled }}bundled (PostgreSQL + MinIO + MLflow){{ else }}external{{ end }}
+  Data stores: PostgreSQL={{ if eq (include "amortized.postgresBundled" .) "true" }}bundled{{ else }}external{{ end }}, MinIO={{ if eq (include "amortized.minioBundled" .) "true" }}bundled{{ else }}external{{ end }}, MLflow={{ if .Values.mlflow.enterprise.enabled }}enterprise{{ else if eq (include "amortized.mlflowBundled" .) "true" }}bundled{{ else }}external{{ end }}
   Model provider: {{ .Values.model.provider }}
 
 Check rollout:
