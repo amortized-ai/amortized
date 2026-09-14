@@ -39,6 +39,7 @@ _TRAINING_HUB_SKIP_KEYS = {
     "dataset_job_id",
     "topic",
     "model_job_id",
+    "device",
 }
 
 

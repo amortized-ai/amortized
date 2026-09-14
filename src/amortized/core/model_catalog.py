@@ -16,12 +16,20 @@ gateway that does not exist here), which is why the provider file must be suppli
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("amortized.core.model_catalog")
 
 _PROVIDER_FIELDS = ("name", "endpoint", "provider_type", "api_key")
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_SUPPORTED_MODELS_PATH = _REPO_ROOT / "agents" / "training" / "skills" / "supported_models.json"
+
+_supported_training_models: list[dict[str, Any]] | None = None
 
 
 def _key_available(api_key: str | None) -> bool:
@@ -81,3 +89,27 @@ def enabled_models() -> list[tuple[str, str]]:
             seen.add((provider, model_id))
             models.append((provider, model_id))
     return models
+
+
+def training_model_cpu_compatibility(model_name_or_path: str) -> str | None:
+    """CPU-compatibility verdict for a training model from the supported-models catalog.
+
+    Returns ``"ok"``, ``"warn"`` (very slow — expect hours), ``"reject"`` (too
+    large for CPU), or ``None`` for models not in the catalog. Single source of
+    truth for the per-model CPU flags — validation and agent guidance both
+    derive from it.
+    """
+    global _supported_training_models
+    if _supported_training_models is None:
+        try:
+            _supported_training_models = json.loads(_SUPPORTED_MODELS_PATH.read_text())
+        except (OSError, ValueError):
+            logger.warning("supported training models catalog unavailable", exc_info=True)
+            _supported_training_models = []
+    for entry in _supported_training_models:
+        size = entry.get("size")
+        if model_name_or_path in (entry.get("id"), size) or (
+            size and model_name_or_path.endswith(f"-{size}")
+        ):
+            return entry.get("cpu_compatible")
+    return None

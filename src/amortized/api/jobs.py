@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
 from amortized.core.compute import get_backend
+from amortized.core.cpu_policy import check_cpu_policy
 from amortized.core.jobs import (
     InvalidJobStateError,
     JobNotFoundError,
@@ -285,13 +286,15 @@ async def validate_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+    cpu_errors, cpu_warnings = check_cpu_policy(config)
+    if errors or cpu_errors:
+        raise HTTPException(status_code=422, detail=errors + cpu_errors)
 
     return ValidatedJobConfig(
         job_type=JobType.training,
         config=config,
         parent_job_id=parent_job_id,
+        warnings=cpu_warnings,
     )
 
 

@@ -2,22 +2,26 @@
   {
     "id": "Qwen/Qwen3.5-0.8B",
     "size": "0.8B",
+    "cpu_compatible": "ok",
     "description": "Fastest inference, good for prototyping"
   },
   {
     "id": "Qwen/Qwen3.5-2B",
     "size": "2B",
+    "cpu_compatible": "ok",
     "description": "Small but capable"
   },
   {
     "id": "Qwen/Qwen3.5-4B",
     "size": "4B",
     "default": true,
+    "cpu_compatible": "warn",
     "description": "Balanced, recommended default"
   },
   {
     "id": "Qwen/Qwen3.5-9B",
     "size": "9B",
+    "cpu_compatible": "reject",
     "description": "Best accuracy for knowledge tasks"
   }
 ]
