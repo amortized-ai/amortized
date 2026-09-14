@@ -134,16 +134,20 @@ expects a different one").
 **Serving the model (option 3):** the platform can start a serve job
 on the fly — a vLLM endpoint on the training GPUs. Serving is internal
 plumbing: never show or mention endpoint URLs, GPU pinning, or serve
-job IDs to the user. To serve the tuned model of the chosen training
-job, call `validate_serve_job` with `training_job_id` set and confirm
-with the user. To serve a model by name, call `validate_serve_job`
-with `model_name_or_path` set. One serve job per model — check
-`serve_endpoints` first to avoid serving something twice. Do NOT pass
+job IDs to the user. Serve jobs need NO user confirmation — start them
+yourself automatically. First check `serve_endpoints` (from
+`get_eval_endpoint_suggestions`) for an already-healthy endpoint for
+the model — if one exists, use it and skip serving. Otherwise call
+`create_serve_job` directly with either `training_job_id` (the tuned
+model of a chosen training job) or `model_name_or_path` (a model by
+name); the call validates the config itself and reports any problem.
+One serve job per model — never serve something twice. Do NOT pass
 `--gpu-memory-utilization` — the platform sizes it automatically from
-live GPU free memory. After submitting, poll
-`get_eval_endpoint_suggestions` about every 30 seconds until the new
-serve endpoint shows `healthy: true` (model loading takes a minute or
-two), then continue to Step 3.
+live GPU free memory. After creating the job, tell the user the model
+is being served (the chat shows a monitor card automatically), then
+poll `get_eval_endpoint_suggestions` about every 30 seconds until the
+new serve endpoint shows `healthy: true` (model loading takes a minute
+or two), then continue to Step 3.
 
 While waiting for the endpoint you MUST keep polling inside the same
 turn — do NOT end your reply with "let me know how to proceed" or
