@@ -11,6 +11,8 @@ def _pod(
     uuids: str,
     phase: str = "Running",
     annotations: dict[str, str] | None = None,
+    labels: dict[str, str] | None = None,
+    start_time=None,
 ):
     """A minimal fake k8s pod with an NVIDIA_VISIBLE_DEVICES env var.
 
@@ -21,9 +23,13 @@ def _pod(
     container = SimpleNamespace(env=env)
     spec = SimpleNamespace(containers=[container])
     metadata = SimpleNamespace(
-        name=name, namespace=namespace, annotations=annotations or {}
+        name=name,
+        namespace=namespace,
+        annotations=annotations or {},
+        labels=labels or {},
     )
-    return SimpleNamespace(spec=spec, metadata=metadata, status=SimpleNamespace(phase=phase))
+    status = SimpleNamespace(phase=phase, start_time=start_time)
+    return SimpleNamespace(spec=spec, metadata=metadata, status=status)
 
 
 class TestPodGpuUuids:
@@ -198,3 +204,43 @@ def _async_result(value):
         return value
 
     return result
+
+
+class TestPinnedOccupancyAttribution:
+    def test_holders_carry_job_labels(self, monkeypatch) -> None:
+        from datetime import datetime, UTC
+
+        pod = _pod(
+            "pod-1",
+            "amortized-me-jobs",
+            "GPU-abc",
+            labels={
+                "amortized/job-id": "cc7cbd77-1111",
+                "amortized/job-type": "serve",
+            },
+            start_time=datetime(2026, 9, 14, 18, 18, tzinfo=UTC),
+        )
+
+        async def fake_pods():
+            return [pod]
+
+        monkeypatch.setattr(gi, "_pinned_gpu_pods", fake_pods)
+        import asyncio
+
+        occ = asyncio.run(gi._pinned_occupancy())
+        assert occ["GPU-abc"][0]["job_id"] == "cc7cbd77-1111"
+        assert occ["GPU-abc"][0]["job_type"] == "serve"
+        assert occ["GPU-abc"][0]["started_at"].startswith("2026-09-14T18:18")
+
+    def test_holders_without_labels_default_empty(self, monkeypatch) -> None:
+        pod = _pod("pod-2", "amortized-me-jobs", "GPU-abc")
+
+        async def fake_pods():
+            return [pod]
+
+        monkeypatch.setattr(gi, "_pinned_gpu_pods", fake_pods)
+        import asyncio
+
+        occ = asyncio.run(gi._pinned_occupancy())
+        assert occ["GPU-abc"][0]["job_id"] == ""
+        assert occ["GPU-abc"][0]["job_type"] == ""

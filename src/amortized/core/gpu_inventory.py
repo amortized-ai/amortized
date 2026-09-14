@@ -141,12 +141,23 @@ def _user_of_namespace(namespace: str) -> str:
 
 
 async def _pinned_occupancy() -> dict[str, list[dict[str, Any]]]:
-    """Map of GPU uuid -> pinning pods: [{pod, namespace}] (serve pods)."""
+    """Map of GPU uuid -> pinning pods with job attribution.
+
+    Each holder: {pod, namespace, job_id, job_type, started_at} — the
+    amortized/job-id and amortized/job-type pod labels tie a pinning pod
+    back to its job so an agent can tell the user exactly what is holding
+    a GPU ("your serve job cc7cbd77, running for 1.5h").
+    """
     occupancy: dict[str, list[dict[str, Any]]] = {}
     for pod in await _pinned_gpu_pods():
+        labels = getattr(getattr(pod, "metadata", None), "labels", None) or {}
+        started = getattr(getattr(pod, "status", None), "start_time", None)
         holder = {
             "pod": pod.metadata.name or "",
             "namespace": getattr(pod.metadata, "namespace", "") or "",
+            "job_id": str(labels.get("amortized/job-id", "")),
+            "job_type": str(labels.get("amortized/job-type", "")),
+            "started_at": started.isoformat() if started else "",
         }
         for uuid in _pod_gpu_uuids(pod):
             occupancy.setdefault(uuid, []).append(holder)
@@ -239,6 +250,7 @@ async def describe_gpus(my_namespace: str) -> dict[str, Any]:
                 "mine": mine,
                 "busy": busy,
                 "held_by": held_by,
+                "occupants": holders,
             }
         )
     my_uuids = sorted({g["uuid"] for g in gpus if g["mine"]})

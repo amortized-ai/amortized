@@ -176,25 +176,6 @@ async def _auto_memory_utilization(gpu_uuid: str) -> float:
     return 0.9
 
 
-def _serve_health_wait_script(port: int) -> str:
-    """sh snippet: block until the in-pod vLLM answers /health.
-
-    Prints a stage marker once ready. Runs under python3 (always present in
-    the image) rather than curl — the eval image has no curl.
-    """
-    return (
-        "python3 -c 'import sys,time,urllib.request;"
-        f"deadline=time.time()+{SERVE_STARTUP_TIMEOUT};"
-        "ok=False\n"
-        "while time.time()<deadline:\n"
-        " try:\n"
-        "  urllib.request.urlopen(\"http://localhost:"
-        f"{port}/health\", timeout=5); ok=True; break\n"
-        " except Exception: time.sleep(5)\n"
-        "sys.exit(0 if ok else 1)'"
-    )
-
-
 async def _build_embedded_serving(
     config: dict[str, Any],
     env: dict[str, str],
@@ -262,20 +243,34 @@ async def _build_embedded_serving(
             serve_cmd += f" {shlex.quote(str(extra))}"
 
     # The eval stages are visible in the job logs (and the studio monitor
-    # card parses the EVAL-STAGE markers to show where the job is).
+    # card parses the EVAL-STAGE markers to show where the job is). The
+    # script is a sh brace group (see build) so a failed pre-command
+    # aborts all of it, and it never ends in a bare `exit` so the
+    # worker-appended post-command (results upload) runs on success.
     script = "\n".join(
         [
             'echo "=== EVAL-STAGE: serving ==="',
             f"{serve_cmd} &",
             "SERVE_PID=$!",
             'echo "=== EVAL-STAGE: waiting-for-endpoint ==="',
-            _serve_health_wait_script(port),
+            # Fails fast when the server process dies (OOM) instead of
+            # polling the full timeout.
+            f"python3 /amortized/wait_for_endpoint.py {int(port)} $SERVE_PID"
+            f" {SERVE_STARTUP_TIMEOUT}",
+            "WAIT_RC=$?",
+            'if [ "$WAIT_RC" -ne 0 ]; then',
+            '  echo "=== EVAL-STAGE: serve-failed ==="',
+            "  kill $SERVE_PID 2>/dev/null || true",
+            "  wait $SERVE_PID 2>/dev/null || true",
+            '  echo "eval aborted: the model server never became healthy"',
+            "  exit 1",
+            "fi",
             'echo "=== EVAL-STAGE: evaluating ==="',
             "python3 /app/run_eval.py --config /amortized/config.json",
             "EVAL_RC=$?",
             "kill $SERVE_PID 2>/dev/null || true",
             "wait $SERVE_PID 2>/dev/null || true",
-            "exit $EVAL_RC",
+            'if [ "$EVAL_RC" -ne 0 ]; then exit 1; fi',
         ]
     )
 
@@ -378,11 +373,20 @@ async def build(
         }
         image = IMAGE
         resources = Resources(gpus=0, cpus=4, memory_gb=16)
-        command: list[str] = ["sh", "-c", main_script]
+        # The brace group makes the multi-line script a single compound
+        # command — without it the worker's "pre && main" chain would only
+        # guard the first line and a failed pre-check would not stop the
+        # serve/eval lines below it.
+        command: list[str] = ["sh", "-c", "{\n" + main_script + "\n}"]
         # serve_vllm.py / patch_model_config.py / check_gpu_memory.py are
         # shipped as config files (mounted at /amortized) — same mechanism
         # the standalone serve jobs used.
-        for asset in ("serve_vllm.py", "patch_model_config.py", "check_gpu_memory.py"):
+        for asset in (
+            "serve_vllm.py",
+            "patch_model_config.py",
+            "check_gpu_memory.py",
+            "wait_for_endpoint.py",
+        ):
             with open(os.path.join(_ASSETS_DIR, asset)) as f:
                 config_files[asset] = f.read()
     else:

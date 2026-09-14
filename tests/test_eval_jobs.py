@@ -121,6 +121,141 @@ class TestCreateEvalJob:
 
 
 
+class TestCheckEvalGpu:
+    @pytest.mark.asyncio
+    async def test_gpu_check_reports_fit_and_occupants(self, client: httpx.AsyncClient, monkeypatch) -> None:
+        from amortized.core import gpu_inventory as gi
+
+        described = {
+            "gpus": [
+                {
+                    "node": "worker",
+                    "index": 3,
+                    "uuid": "GPU-abc",
+                    "memory_free_mb": 8 * 1024,
+                    "memory_total_mb": 80 * 1024,
+                    "mine": True,
+                    "busy": True,
+                    "held_by": ["me"],
+                    "occupants": [
+                        {
+                            "pod": "pod-1",
+                            "namespace": "amortized-me-jobs",
+                            "job_id": "cc7cbd77-1111",
+                            "job_type": "serve",
+                            "started_at": "2026-09-14T18:18:00+00:00",
+                        }
+                    ],
+                },
+            ],
+            "my_uuids": ["GPU-abc"],
+            "updated": "now",
+        }
+
+        async def fake_describe(ns):
+            return described
+
+        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
+
+        async def fake_size(tj, mn):
+            return 4.8
+
+        import amortized.api.eval as eval_api
+
+        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
+
+        response = await client.get("/api/v1/eval/gpu-check", params={"model_name_or_path": "Qwen/Qwen3.5-4B"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model_size_gb"] == 4.8
+        # 8 GB free * 0.9 margin = 7.2 GB budget -> 4.8 fits
+        assert data["fits"] is True
+        assert data["assigned_gpu"]["uuid"] == "GPU-abc"
+        assert data["assigned_gpu"]["occupants"][0]["job_type"] == "serve"
+
+    @pytest.mark.asyncio
+    async def test_gpu_check_reports_shortage(self, client: httpx.AsyncClient, monkeypatch) -> None:
+        from amortized.core import gpu_inventory as gi
+
+        described = {
+            "gpus": [
+                {
+                    "node": "worker",
+                    "index": 3,
+                    "uuid": "GPU-abc",
+                    "memory_free_mb": 4 * 1024,
+                    "memory_total_mb": 80 * 1024,
+                    "mine": True,
+                    "busy": True,
+                    "held_by": ["me"],
+                    "occupants": [],
+                },
+            ],
+            "my_uuids": ["GPU-abc"],
+            "updated": "now",
+        }
+
+        async def fake_describe(ns):
+            return described
+
+        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
+
+        async def fake_size(tj, mn):
+            return 14.2
+
+        import amortized.api.eval as eval_api
+
+        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
+
+        response = await client.get("/api/v1/eval/gpu-check", params={"model_name_or_path": "big/model"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["fits"] is False
+        assert "only" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_gpu_check_unknown_size_fits_null(self, client: httpx.AsyncClient, monkeypatch) -> None:
+        from amortized.core import gpu_inventory as gi
+
+        described = {
+            "gpus": [
+                {
+                    "node": "worker",
+                    "index": 0,
+                    "uuid": "GPU-xyz",
+                    "memory_free_mb": 80 * 1024,
+                    "memory_total_mb": 80 * 1024,
+                    "mine": False,
+                    "busy": False,
+                    "held_by": [],
+                    "occupants": [],
+                },
+            ],
+            "my_uuids": [],
+            "updated": "now",
+        }
+
+        async def fake_describe(ns):
+            return described
+
+        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
+
+        async def fake_size(tj, mn):
+            return None
+
+        import amortized.api.eval as eval_api
+
+        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
+
+        response = await client.get("/api/v1/eval/gpu-check", params={"model_name_or_path": "unknown/model"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["model_size_gb"] is None
+        assert data["fits"] is None
+        assert data["assigned_gpu"]["uuid"] == "GPU-xyz"
+        assert "error" not in data
+
+
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:
@@ -173,9 +308,15 @@ class TestEvalBuilder:
         assert "=== EVAL-STAGE: serving ===" in script
         assert "=== EVAL-STAGE: waiting-for-endpoint ===" in script
         assert "=== EVAL-STAGE: evaluating ===" in script
-        assert "http://localhost:8000/health" in script
         assert "serve_vllm.py serve" in script
         assert "run_eval.py" in script
+        # fail fast when the server dies; never eval without an endpoint
+        assert "wait_for_endpoint.py" in script
+        assert "EVAL-STAGE: serve-failed ===" in script
+        assert "EVAL_RC" in script
+        # brace group: a failed pre-command aborts the whole script
+        assert script.startswith("{")
+        assert script.rstrip().endswith("}")
         # GPU pinned via env, no device requests — pod shares the GPU
         assert result.env["NVIDIA_VISIBLE_DEVICES"] == "gpu-uuid-1"
         assert result.resources.gpus == 0
@@ -183,6 +324,7 @@ class TestEvalBuilder:
         # serve assets ship alongside config.json
         assert "serve_vllm.py" in result.config_files
         assert "patch_model_config.py" in result.config_files
+        assert "wait_for_endpoint.py" in result.config_files
         # model endpoint points at the in-pod server
         runner = json.loads(result.config_files["config.json"])
         assert runner["endpoints"]["model"]["base_url"] == "http://localhost:8000/v1"

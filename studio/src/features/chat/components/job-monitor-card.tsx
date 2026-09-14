@@ -40,6 +40,8 @@ function runningStageLabel(jobType: string, stageMarker: string | null): string 
         return "Loading model — waiting for it to be ready (Stage 3/4)"
       case "evaluating":
         return "Evaluating the model (Stage 3/4)"
+      case "serve-failed":
+        return "The model server failed to start — stopping"
       default:
         return "Evaluating model (Stage 3/4)"
     }
@@ -67,6 +69,8 @@ function statusToStageLabel(
     case "succeeded":
       return "Complete (Stage 4/4)"
     case "failed":
+      if (stageMarker === "serve-failed")
+        return "Failed — the model server did not start (check logs)"
       return "Failed"
     case "cancelled":
       return "Cancelled"
@@ -119,6 +123,22 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
+        if (isEval && job.status === "failed" && stageMarker === null) {
+          // Best-effort: find which stage the eval died in (e.g. the
+          // model server never came up) so the card can say why.
+          try {
+            const lines = await getJobLogs(jobId, 500)
+            for (let i = lines.length - 1; i >= 0; i--) {
+              const m = lines[i]?.match(/=== EVAL-STAGE: ([\w-]+) ===/)
+              if (m) {
+                setStageMarker(m[1] ?? null)
+                break
+              }
+            }
+          } catch {
+            // log fetch is best-effort
+          }
+        }
         if (!completeFired.current) {
           completeFired.current = true
           onCompleteRef.current?.(jobId, jobType, job.status)

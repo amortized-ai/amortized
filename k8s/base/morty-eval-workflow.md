@@ -124,6 +124,25 @@ Do NOT pre-decide — show the options and let the user pick. Never
 mention endpoint URLs, GPU pinning, or utilization numbers for models
 the eval serves itself; that is internal plumbing.
 
+**GPU pre-flight (options 1 and 2 only).** Before creating the eval
+job, call `check_eval_gpu` (pass `training_job_id` or
+`model_name_or_path` — the same model source the eval will use). It
+returns the model's weight size, the GPU the eval would get, its free
+memory, and what is currently holding each GPU.
+
+- `fits: true` (or `model_size_gb` unknown but the assigned GPU has
+  plenty free) → proceed without mentioning GPU details.
+- `fits: false` → do NOT create the job. Tell the user plainly:
+  the model needs ~X GB and the GPU has only ~Y GB free because
+  <what is running> (use `gpus[].occupants` — job type, short job id,
+  and how long it has been running). Ask whether to (a) cancel that
+  job to free the memory (then re-check and proceed), or (b) pick a
+  different/smaller model or a gateway model. Only cancel another
+  job after the user explicitly agrees — never stop anything on your
+  own. Cancel via the `cancel_job` tool (a DELETE on the job).
+- `error: "no GPU is available..."` → tell the user every GPU is busy
+  or held by another user, and offer the gateway/endpoint options.
+
 ### Step 3 — Design the metrics (approval loop)
 
 **First, check for an existing metric set.** Call `get_dataset` with
