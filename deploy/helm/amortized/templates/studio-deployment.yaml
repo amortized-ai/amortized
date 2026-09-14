@@ -1,3 +1,4 @@
+{{- if .Values.studio.enabled }}
 {{- $mlflowBundled := eq (include "amortized.mlflowBundled" .) "true" -}}
 {{- $mlflowHost := ternary (include "amortized.mlflowFqdn" .) .Values.studio.mlflowHost $mlflowBundled -}}
 {{- $mlflowPort := ternary "5000" (.Values.studio.mlflowPort | toString) $mlflowBundled -}}
@@ -67,3 +68,4 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+{{- end }}
