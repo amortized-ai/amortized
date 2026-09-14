@@ -656,7 +656,19 @@ async def list_providers() -> dict[str, Any]:
     raw_all = data.get("all")
     safe_all = (
         [
-            {"id": p["id"], "name": p.get("name", p["id"])}
+            {
+                "id": p["id"],
+                "name": p.get("name", p["id"]),
+                "models": [
+                    {
+                        "providerID": p["id"],
+                        "modelID": mid,
+                        "label": (m.get("name") if isinstance(m, dict) else None) or mid,
+                    }
+                    for mid, m in (p.get("models") or {}).items()
+                    if isinstance(mid, str)
+                ],
+            }
             for p in raw_all
             if isinstance(p, dict) and p.get("id")
         ]

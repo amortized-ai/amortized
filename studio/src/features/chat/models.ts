@@ -11,6 +11,15 @@ export interface ProviderInfo {
 }
 
 export const PROVIDER_CATALOG: Record<string, ProviderInfo> = {
+  "maas": {
+    label: "MaaS Gateway (Gemini)",
+    requiresApiKey: false,
+    models: [
+      { providerID: "maas", modelID: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+      { providerID: "maas", modelID: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { providerID: "maas", modelID: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+    ],
+  },
   "google-vertex-anthropic": {
     label: "Anthropic (Vertex AI)",
     requiresApiKey: false,
@@ -54,8 +63,8 @@ export function encodeModelSelection(providerID: string, modelID: string): strin
 
 export function parseModelSelection(encoded: string): { providerID: string; modelID: string } {
   const idx = encoded.indexOf(SEPARATOR)
-  if (idx === -1) return { providerID: "google-vertex-anthropic", modelID: encoded }
+  if (idx === -1) return { providerID: "maas", modelID: encoded }
   return { providerID: encoded.slice(0, idx), modelID: encoded.slice(idx + SEPARATOR.length) }
 }
 
-export const DEFAULT_CHAT_MODEL_SELECTION = encodeModelSelection("google-vertex-anthropic", "claude-opus-4-8@default")
+export const DEFAULT_CHAT_MODEL_SELECTION = encodeModelSelection("maas", "gemini-2.5-flash")
