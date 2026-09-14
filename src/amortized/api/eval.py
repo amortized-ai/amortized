@@ -1,4 +1,4 @@
-"""Eval endpoint suggestions — known serving endpoints and model-name defaults."""
+"""Eval endpoint suggestions — gateway models and model-name defaults."""
 
 from __future__ import annotations
 
@@ -9,94 +9,10 @@ from fastapi import APIRouter, Query
 
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
-from amortized.models import JobStatus
 
 logger = logging.getLogger("amortized.api.eval")
 
 router = APIRouter(prefix="/api/v1/eval", tags=["eval"])
-
-
-def _serve_base_url(job: dict[str, Any]) -> str:
-    """In-cluster base URL of a serve job's vLLM endpoint ("" if unknown)."""
-    k8s_job_name = job.get("k8s_job_name", "")
-    namespace = job.get("k8s_namespace", "") or config_mod.settings.compute_namespace
-    port = 8000
-    config = job.get("config", {})
-    if isinstance(config, str):
-        import json
-
-        try:
-            config = json.loads(config)
-        except ValueError:
-            config = {}
-    if isinstance(config, dict):
-        try:
-            port = int(config.get("port", 8000))
-        except (TypeError, ValueError):
-            port = 8000
-    if not k8s_job_name:
-        return ""
-    return f"http://{k8s_job_name}.{namespace}.svc.cluster.local:{port}/v1"
-
-
-async def _serve_endpoints() -> list[dict[str, Any]]:
-    """Running serve jobs as selectable endpoints, with a live health check."""
-    from amortized.db.connection import get_pool
-    from amortized.db.repository import Repository
-
-    endpoints: list[dict[str, Any]] = []
-    try:
-        from amortized.models import JobType
-
-        async with get_pool().acquire() as conn:
-            repo = Repository(conn)
-            jobs = await repo.list_jobs(status=JobStatus.running, job_type=JobType.serve)
-    except Exception:
-        logger.warning("Failed to list serve jobs for suggestions", exc_info=True)
-        return endpoints
-
-    import httpx
-
-    async with httpx.AsyncClient(timeout=2.0) as client:
-        for job in jobs:
-            base_url = _serve_base_url(job)
-            if not base_url:
-                continue
-            config = job.get("config", {})
-            if isinstance(config, str):
-                try:
-                    import json
-
-                    config = json.loads(config)
-                except ValueError:
-                    config = {}
-            entries = [
-                (
-                    str(config.get("served_model_name", "")),
-                    base_url,
-                    "serve job" + (" (tuned)" if config.get("training_job_id") else ""),
-                )
-            ]
-            for model_name, url, source in entries:
-                healthy = False
-                try:
-                    resp = await client.get(url.replace("/v1", "") + "/health")
-                    healthy = resp.status_code == 200
-                except Exception:
-                    pass
-                endpoints.append(
-                    {
-                        "job_id": job["id"],
-                        "name": model_name,
-                        "model_name": model_name,
-                        "base_url": url,
-                        "healthy": healthy,
-                        "source": source,
-                        "note": f"Serve job {job['id'][:8]}"
-                        + (" — ready" if healthy else " — starting up, not ready yet"),
-                    }
-                )
-    return endpoints
 
 
 @router.get(
@@ -104,8 +20,9 @@ async def _serve_endpoints() -> list[dict[str, Any]]:
     operation_id="get_eval_endpoint_suggestions",
     summary=(
         "Suggest eval endpoints: model-name defaults for a training job"
-        " (base from its config, tuned from its registered model) and the"
-        " currently known serving endpoints (gateway models)."
+        " (base from its config, tuned from its registered model) and"
+        " gateway models. Eval jobs with a training_job_id or"
+        " model_name_or_path serve the model themselves."
     ),
 )
 async def get_eval_endpoint_suggestions(
@@ -118,11 +35,7 @@ async def get_eval_endpoint_suggestions(
         "training_job_id": training_job_id,
         "model": "",
         "known_endpoints": [],
-        "serve_endpoints": [],
     }
-
-    # --- Serve jobs the platform itself is running (vLLM endpoints) ---
-    suggestions["serve_endpoints"] = await _serve_endpoints()
 
     # --- Known serving endpoints: models behind the MLflow AI Gateway ---
     tracking_uri = config_mod.settings.mlflow_tracking_uri

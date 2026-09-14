@@ -81,9 +81,14 @@ class TestCreateEvalJob:
         assert "parent_job_id" in response.json()["message"]
 
     @pytest.mark.asyncio
-    async def test_create_eval_job_requires_endpoint(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(client, endpoint={"base_url": "", "model": ""})
-        assert response.status_code == 422
+    async def test_create_eval_job_with_model_name(self, client: httpx.AsyncClient) -> None:
+        response = await _create_eval(
+            client, endpoint=None, model_name_or_path="Qwen/Qwen3.5-4B"
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["config"]["model_name_or_path"] == "Qwen/Qwen3.5-4B"
+        assert "endpoint" not in data["config"] or data["config"]["endpoint"] is None
 
     @pytest.mark.asyncio
     async def test_create_eval_job_validates_parent_status(self, client: httpx.AsyncClient) -> None:
@@ -114,146 +119,6 @@ class TestCreateEvalJob:
         assert "api_key" not in config["endpoint"]
 
 
-class TestServeJobRecording:
-    async def test_create_eval_records_matching_serve_jobs(self, client: httpx.AsyncClient) -> None:
-        import asyncio
-
-        from amortized.db.connection import get_pool
-        from amortized.models import JobStatus, JobType
-        from amortized.core.jobs import create_job
-
-        async with get_pool().acquire() as conn:
-            from amortized.db.repository import Repository
-
-            repo = Repository(conn)
-            row = await create_job(
-                repo,
-                job_type=JobType.serve,
-                config={"port": 8000, "served_model_name": "m"},
-            )
-            await repo.update_job(
-                row["id"],
-                status=JobStatus.running.value,
-                k8s_job_name="amortized-serve-1",
-            )
-            serve_job_id = row["id"]
-
-        # The eval endpoint matches the serve job's in-cluster URL
-        response = await _create_eval(
-            client,
-            endpoint={
-                "base_url": "http://amortized-serve-1.amortized-jobs.svc.cluster.local:8000/v1",
-                "model": "m",
-            },
-        )
-        assert response.status_code == 201
-        cfg = response.json()["config"]
-        assert cfg["serve_job_ids"] == [serve_job_id]
-
-    async def test_create_eval_no_serve_match(self, client: httpx.AsyncClient) -> None:
-        response = await _create_eval(client)
-        assert response.status_code == 201
-        assert "serve_job_ids" not in response.json()["config"]
-
-
-class TestAutoStopServeJobs:
-    async def test_stops_unused_serve_jobs(self, monkeypatch) -> None:
-        import types
-
-        from amortized.jobs import eval as eval_builder
-
-        cancelled: list[str] = []
-        rows = {
-            "s1": {"id": "s1", "status": "running", "backend_handle": None},
-        }
-
-        class FakeRepo:
-            async def list_jobs(self, *, status, job_type):
-                # no other running evals
-                return []
-
-            async def get_job(self, job_id):
-                return rows.get(job_id)
-
-            async def update_job(self, job_id, **kw):
-                rows[job_id].update(kw)
-                return rows[job_id]
-
-        class FakePool:
-            def acquire(self):
-                return self
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *a):
-                return False
-
-            async def execute(self, *a, **k):
-                return ""
-
-        import amortized.jobs.eval as ev
-
-        monkeypatch.setattr(
-            "amortized.db.connection.get_pool", lambda: FakePool()
-        )
-        import amortized.core.jobs as core_jobs
-
-        async def fake_cancel(repo, job_id):
-            cancelled.append(job_id)
-            rows[job_id]["status"] = "cancelled"
-
-        monkeypatch.setattr(core_jobs, "cancel_job", fake_cancel)
-        # Repository symbol inside eval module resolved at call time
-        import amortized.db.repository as repo_mod
-
-        monkeypatch.setattr(repo_mod, "Repository", lambda conn: FakeRepo())
-
-        job = {"id": "e1", "config": {"serve_job_ids": ["s1"]}}
-        await ev._stop_eval_serve_jobs(job)
-        assert cancelled == ["s1"]
-
-    async def test_keeps_serve_jobs_used_by_running_evals(self, monkeypatch) -> None:
-        from amortized.jobs import eval as eval_builder
-
-        class FakeRepo:
-            async def list_jobs(self, *, status, job_type):
-                assert job_type.value == "eval"
-                return [
-                    {
-                        "id": "e2",
-                        "config": {"serve_job_ids": ["s1"]},
-                    }
-                ]
-
-            async def get_job(self, job_id):
-                return {"id": "s1", "status": "running", "backend_handle": None}
-
-        class FakePool:
-            def acquire(self):
-                return self
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *a):
-                return False
-
-        import amortized.jobs.eval as ev
-
-        monkeypatch.setattr("amortized.db.connection.get_pool", lambda: FakePool())
-        import amortized.core.jobs as core_jobs
-        import amortized.db.repository as repo_mod
-
-        monkeypatch.setattr(repo_mod, "Repository", lambda conn: FakeRepo())
-
-        async def fail_cancel(repo, job_id):
-            raise AssertionError("should not cancel")
-
-        monkeypatch.setattr(core_jobs, "cancel_job", fail_cancel)
-
-        job = {"id": "e1", "config": {"serve_job_ids": ["s1"]}}
-        await ev._stop_eval_serve_jobs(job)  # no assertion error = kept
 
 
 class TestEvalBuilder:
@@ -282,6 +147,82 @@ class TestEvalBuilder:
         assert runner["max_samples"] == 50
         assert any("mlflow artifacts download" in c for c in result.pre_commands)
         assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
+
+    @pytest.mark.asyncio
+    async def test_build_embeds_serving_for_model_name(self, monkeypatch) -> None:
+        from amortized.core import gpu_inventory
+
+        async def fake_assign(namespace, gpus=1):
+            return ["gpu-uuid-1"]
+
+        async def fake_util(gpu_uuid):
+            return 0.75
+
+        monkeypatch.setattr(gpu_inventory, "assign_serve_gpu", fake_assign)
+        monkeypatch.setattr(eval_builder, "_auto_memory_utilization", fake_util)
+
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B"}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        import json
+
+        # command is a sh -c script that runs serve, waits for health, evals
+        assert result.command[:2] == ["sh", "-c"]
+        script = result.command[2]
+        assert "=== EVAL-STAGE: serving ===" in script
+        assert "=== EVAL-STAGE: waiting-for-endpoint ===" in script
+        assert "=== EVAL-STAGE: evaluating ===" in script
+        assert "http://localhost:8000/health" in script
+        assert "serve_vllm.py serve" in script
+        assert "run_eval.py" in script
+        # GPU pinned via env, no device requests — pod shares the GPU
+        assert result.env["NVIDIA_VISIBLE_DEVICES"] == "gpu-uuid-1"
+        assert result.resources.gpus == 0
+        assert result.resources.cpus == 4
+        # serve assets ship alongside config.json
+        assert "serve_vllm.py" in result.config_files
+        assert "patch_model_config.py" in result.config_files
+        # model endpoint points at the in-pod server
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["endpoints"]["model"]["base_url"] == "http://localhost:8000/v1"
+        assert runner["endpoints"]["model"]["model"] == "Qwen/Qwen3.5-4B"
+        # resolved config records the embedded serve parameters
+        assert result.resolved_config["gpu_uuids"] == ["gpu-uuid-1"]
+        assert result.resolved_config["gpu_memory_utilization"] == 0.75
+        assert result.resolved_config["served_model_name"] == "Qwen/Qwen3.5-4B"
+
+    @pytest.mark.asyncio
+    async def test_build_embeds_serving_respects_explicit_utilization(
+        self, monkeypatch
+    ) -> None:
+        from amortized.core import gpu_inventory
+
+        async def fake_assign(namespace, gpus=1):
+            return ["gpu-uuid-1"]
+
+        monkeypatch.setattr(gpu_inventory, "assign_serve_gpu", fake_assign)
+
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "vllm_args": ["--gpu-memory-utilization=0.5"],
+        }
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        assert result.resolved_config["gpu_memory_utilization"] == 0.5
+        assert "--gpu-memory-utilization 0.5" in result.command[2]
+
+    @pytest.mark.asyncio
+    async def test_build_endpoint_wins_over_model_source(self) -> None:
+        # An explicit endpoint bypasses embedded serving entirely.
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B"}
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        assert result.command[:2] == ["python3", "/app/run_eval.py"]
+        assert "EVAL-STAGE" not in result.command[2]
+        assert "NVIDIA_VISIBLE_DEVICES" not in result.env
 
     @pytest.mark.asyncio
     async def test_build_accepts_legacy_endpoint_tuned(self) -> None:

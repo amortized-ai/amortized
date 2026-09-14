@@ -25,8 +25,4 @@ def get_builder(job_type: str) -> ModuleType | None:
         from amortized.jobs import eval as eval_builder
 
         return eval_builder
-    if job_type == JobType.serve.value:
-        from amortized.jobs import serve
-
-        return serve
     return None

@@ -189,7 +189,6 @@ async def _run_job(job: dict[str, Any]) -> None:
         JobType.sdg.value: "sdg_output",
         JobType.upload.value: "upload_output",
         JobType.eval.value: "eval_output",
-        JobType.serve.value: "serve_output",
     }
     dir_name = output_dir_names.get(job_type, f"{job_type}_output")
     base_dir = str(config_mod.settings.data_dir / dir_name)
@@ -254,10 +253,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     mlflow_run_id = ""
     mlflow_run_created = False
     mlflow_tag_type = job_type
-    # Serve jobs run indefinitely and log no artifacts — skip MLflow entirely
-    if job_type == JobType.serve.value:
-        mlflow_experiment = ""
-    elif config_mod.settings.mlflow_tracking_uri:
+    if config_mod.settings.mlflow_tracking_uri:
         run_id = await _create_mlflow_run(mlflow_experiment, job_id, mlflow_tag_type)
         if run_id:
             mlflow_run_id = run_id
@@ -349,13 +345,6 @@ async def _run_job(job: dict[str, Any]) -> None:
             k8s_job_name=k8s_job_name,
         )
 
-        # Serve jobs run until cancelled — don't block the worker queue on
-        # them. Crash detection is handled by the periodic serve reconcile.
-        if job_type == JobType.serve.value:
-            await _update_job(job_id, status=JobStatus.running.value)
-            logger.info("Serve job %s dispatched (running until cancelled)", job_id)
-            return
-
         # --- Poll until completion ---
         poll_interval = 2.0
         transitioned_to_running = False
@@ -419,10 +408,6 @@ async def _run_job(job: dict[str, Any]) -> None:
                 error=error_msg,
             )
             logger.error("Job %s failed with code %s", job_id, status.exit_code)
-            if job.get("type") == "eval":
-                from amortized.jobs.eval import _stop_eval_serve_jobs
-
-                await _stop_eval_serve_jobs(job)
 
     except Exception as exc:
         await _finish_mlflow_run(mlflow_run_id, "FAILED")
@@ -497,65 +482,12 @@ async def cleanup_orphaned_jobs() -> None:
                 logger.warning("Marked orphaned job %s as failed", job_id)
 
 
-async def reconcile_serve_jobs() -> None:
-    """Check running serve jobs; mark failed if their container died.
-
-    Serve jobs are dispatched without a poll loop (they run until cancelled),
-    so this periodic check is the only crash detector.
-    """
-    from amortized.db.connection import get_pool
-
-    async with get_pool().acquire() as conn:
-        repo = Repository(conn)
-        rows = await repo.list_jobs(status=JobStatus.running, job_type=JobType.serve)
-
-    for job in rows:
-        if job["type"] != JobType.serve.value:
-            continue
-        job_id = job["id"]
-        handle = deserialize_handle(job.get("backend_handle"))
-        if handle is None:
-            continue
-        try:
-            backend = get_backend(handle.backend_name)
-            bs = await backend.status(handle)
-        except (KeyError, OSError):
-            continue
-        if bs.running:
-            continue
-        if bs.exit_code == 0:
-            # vLLM exited cleanly on its own — unusual for a serve job
-            error = "Serve process exited"
-        else:
-            error = bs.error or f"Serve job died (exit code {bs.exit_code})"
-        async with get_pool().acquire() as conn:
-            result = await conn.execute(
-                """UPDATE jobs SET status = $1, completed_at = $2,
-                   error = $3 WHERE id = $4 AND status = $5""",
-                JobStatus.failed.value,
-                datetime.now(UTC),
-                error,
-                job_id,
-                JobStatus.running.value,
-            )
-        if result == "UPDATE 1":
-            logger.warning("Marked dead serve job %s as failed", job_id)
-
-
 async def worker_loop(poll_interval: float = 2.0) -> None:
     ns = config_mod.settings.compute_namespace
     logger.info("Worker started (poll interval: %.1fs, namespace: %s)", poll_interval, ns)
 
-    serve_reconcile_interval = 30.0
-    last_serve_reconcile = 0.0
-
     while True:
         try:
-            now = asyncio.get_event_loop().time()
-            if now - last_serve_reconcile >= serve_reconcile_interval:
-                last_serve_reconcile = now
-                await reconcile_serve_jobs()
-
             job = await _pick_pending_job()
             if job is not None:
                 logger.info("Picked job %s (type=%s)", job["id"], job["type"])

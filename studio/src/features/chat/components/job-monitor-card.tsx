@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getJob, getEvalEndpointSuggestions } from "@/lib/api-client"
+import { getJob, getJobLogs } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
 
 interface JobMonitorCardProps {
@@ -31,31 +31,39 @@ function statusToProgress(status: JobStatus, elapsed: number): number {
   }
 }
 
-function runningStageLabel(jobType: string): string {
+function runningStageLabel(jobType: string, stageMarker: string | null): string {
+  if (jobType === "EVAL") {
+    switch (stageMarker) {
+      case "serving":
+        return "Serving the model inside the eval job (Stage 3/4)"
+      case "waiting-for-endpoint":
+        return "Loading model — waiting for it to be ready (Stage 3/4)"
+      case "evaluating":
+        return "Evaluating the model (Stage 3/4)"
+      default:
+        return "Evaluating model (Stage 3/4)"
+    }
+  }
   switch (jobType) {
     case "TRAINING":
       return "Training model (Stage 3/4)"
-    case "EVAL":
-      return "Evaluating models (Stage 3/4)"
-    // Serve jobs are internal eval-time endpoints — they run until the
-    // eval finishes, so a "stage" label misleads users into thinking the
-    // workflow is stuck mid-pipeline while it is actually waiting on
-    // something else (e.g. an eval confirmation card).
-    case "SERVE":
-      return "Serving model (runs until the eval finishes)"
     default:
       return "Generating data (Stage 3/4)"
   }
 }
 
-function statusToStageLabel(status: JobStatus, jobType: string): string {
+function statusToStageLabel(
+  status: JobStatus,
+  jobType: string,
+  stageMarker: string | null = null,
+): string {
   switch (status) {
     case "queued":
       return "Queued (Stage 1/4)"
     case "provisioning":
       return "Provisioning resources (Stage 2/4)"
     case "running":
-      return runningStageLabel(jobType)
+      return runningStageLabel(jobType, stageMarker)
     case "succeeded":
       return "Complete (Stage 4/4)"
     case "failed":
@@ -79,11 +87,12 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
-  // Serve jobs: the job stays running until its eval finishes, so "running"
-  // is not a completion signal — the monitor ends when the endpoint is
-  // healthy instead (that is what the eval flow is waiting for).
-  const isServe = jobType.toUpperCase() === "SERVE"
-  const [endpointHealthy, setEndpointHealthy] = useState(false)
+  // Eval jobs that serve the model themselves print stage markers into the
+  // job logs (=== EVAL-STAGE: serving | waiting-for-endpoint | evaluating ===)
+  // — surface them so the user sees where the eval is (model loading is the
+  // slow part and used to be an invisible serve job).
+  const isEval = jobType.toUpperCase() === "EVAL"
+  const [stageMarker, setStageMarker] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const jobStartRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -94,8 +103,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
   const shortId = jobId.slice(0, 8)
   const isTerminal = TERMINAL_STATUSES.includes(status)
-  const isReady = isServe && endpointHealthy
-  const progress = isReady ? 100 : statusToProgress(status, elapsed)
+  const progress = statusToProgress(status, elapsed)
 
   const pollJob = useCallback(async () => {
     try {
@@ -117,25 +125,24 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         }
         return
       }
-      if (isServe && !completeFired.current) {
+      if (isEval && job.status === "running") {
         try {
-          const suggestions = await getEvalEndpointSuggestions()
-          const mine = suggestions.serve_endpoints?.find((e) => e.job_id === jobId)
-          if (mine?.healthy) {
-            setEndpointHealthy(true)
-            if (pollRef.current) clearInterval(pollRef.current)
-            if (timerRef.current) clearInterval(timerRef.current)
-            completeFired.current = true
-            onCompleteRef.current?.(jobId, jobType, "succeeded")
+          const lines = await getJobLogs(jobId, 5)
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const m = lines[i]?.match(/=== EVAL-STAGE: ([\w-]+) ===/)
+            if (m) {
+              setStageMarker(m[1] ?? null)
+              break
+            }
           }
         } catch {
-          // health probe is best-effort; job status polling continues
+          // log fetch is best-effort; job status polling continues
         }
       }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, jobType, isServe])
+  }, [jobId, jobType, isEval])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -159,7 +166,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
     <div
       className={cn(
         "rounded-xl border p-4 transition-colors duration-300",
-        status === "succeeded" || isReady
+        status === "succeeded"
           ? "border-rh-green/40 dark:border-rh-green-dark bg-rh-green-light/80 dark:bg-rh-green-dark/30"
           : status === "failed" || status === "cancelled"
             ? "border-rh-danger/40 dark:border-rh-danger-dark bg-rh-danger-light/80 dark:bg-rh-danger-dark/30"
@@ -169,7 +176,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          {status === "succeeded" || isReady ? (
+          {status === "succeeded" ? (
             <CircleCheck className="h-4 w-4 text-rh-green dark:text-rh-green" />
           ) : status === "failed" || status === "cancelled" ? (
             <XCircle className="h-4 w-4 text-rh-danger dark:text-rh-danger" />
@@ -186,10 +193,8 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
                   : "text-rh-yellow dark:text-rh-yellow",
             )}
           >
-            {status === "succeeded" || isReady
-              ? isReady
-                ? "Endpoint ready"
-                : "Job completed"
+            {status === "succeeded"
+              ? "Job completed"
               : status === "failed"
                 ? "Job failed"
                 : status === "cancelled"
@@ -214,9 +219,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {/* Stage */}
       <p className="text-xs text-muted-foreground mb-2">
-        {isReady
-          ? "Endpoint ready — waiting for the eval job"
-          : statusToStageLabel(status, jobType)}
+        {statusToStageLabel(status, jobType, stageMarker)}
       </p>
 
       {/* Progress bar */}
@@ -224,7 +227,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         <div
           className={cn(
             "h-2 rounded-full transition-all duration-500",
-            status === "succeeded" || isReady
+            status === "succeeded"
               ? "bg-rh-green"
               : status === "failed" || status === "cancelled"
                 ? "bg-rh-danger"
@@ -246,7 +249,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         </p>
       )}
 
-      {(status === "succeeded" || isReady) && (
+      {status === "succeeded" && (
         <div className="mt-3 flex items-center gap-3 text-xs">
           <a
             href={`/jobs?job=${encodeURIComponent(jobId)}`}

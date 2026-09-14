@@ -73,8 +73,8 @@ Two legitimate entries:
   If there are no trained models at all, go straight to evaluating an
   arbitrary endpoint.
 
-The model does NOT have to come from training. Any OpenAI-compatible
-endpoint can be evaluated (e.g. a gateway model, or a served model).
+The model does NOT have to come from training. Any HF model or
+OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
 
 ### Step 1 — Confirm the eval dataset
 
@@ -90,72 +90,39 @@ message is used as the reference answer. Ask which source to use:
 If the user has neither, suggest generating a held-out eval set with
 an SDG job first. If they agree, delegate: call `delegate_to_subagent`
 with `target: "sdg"` and a context that includes the eval subject and
-endpoint you already collected, plus everything needed to replicate
+model source you already collected, plus everything needed to replicate
 the training dataset's structure as an independent eval set (the
 training job ID is the trail to its parent SDG job). When the SDG job
 completes you receive a `[SUBAGENT COMPLETED]` summary with the new
 job ID — continue your eval workflow from there without re-asking
 anything you already know.
 
-### Step 2 — Collect the endpoint (show every known option)
+### Step 2 — Choose the model source
 
-You need one endpoint, with `base_url` (OpenAI-compatible, including
-`/v1`), `model`, and optionally `api_key`. First call
-`get_eval_endpoint_suggestions` — pass the chosen `training_job_id`
-when there is one, otherwise call it without. It returns:
+The eval job serves the model itself: when the config names a model
+(`training_job_id` for a tuned model, or `model_name_or_path` for an HF
+id), the job pod starts vLLM on a GPU, waits for it to be healthy, runs
+the eval, and exits when scores are done — no separate serving step,
+nothing to poll, no endpoint URLs involved.
 
-- **model** — the suggested model name for the training job (when given)
-- **known_endpoints** — every model served through the platform gateway
-- **serve_endpoints** — models the platform itself is serving right now
-  (serve jobs), each with a ready-to-use in-cluster `base_url`,
-  `model_name`, and a `healthy` flag
+Present the model-source options as clickable choices:
 
-Then present **ALL serving options as clickable choices** — one
-question, every known option visible. Do NOT pre-decide, and do NOT
-just announce which endpoint you are going to use. The option list:
+1. **The trained model** — when the user picked a training job, the
+   default: the eval config gets `training_job_id` set. Tell the user
+   the model will be served inside the eval job (loading takes a few
+   minutes; the job's monitor card shows the progress).
+2. **A model by name** — any HF hub id (e.g. Qwen/Qwen3.5-4B): the
+   config gets `model_name_or_path` set.
+3. **A gateway model** — models served through the platform gateway
+   (from `get_eval_endpoint_suggestions` → `known_endpoints`), e.g.
+   "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills in
+   the eval's `endpoint` (base_url + model). Gateway evals need no GPU.
+4. "I'll give the endpoint URL" — an external OpenAI-compatible
+   endpoint: ask for the URL and the model name it serves.
 
-1. **Every serve endpoint** from `serve_endpoints` — e.g.
-   "mdl-brawny-jay-896 (serve job, ready)". Only offer ones with
-   `healthy: true` as ready; unhealthy ones are still starting up
-   (see "Serving models" below)
-2. **Every gateway endpoint** from `known_endpoints`, e.g.
-   "gpt-oss (openai/gpt-oss-120b) via gateway" — selecting one fills
-   in its `base_url` and `model_name`
-3. "Serve the model for me" — when the subject is a trained model
-   (or any model by name) that is not currently being served
-4. "I'll give the endpoint URL"
-
-If the suggested model name matches a serve or gateway endpoint, still
-show it as an option — do not silently use it. When the user picks the
-manual option, ask for the URL and present the suggested model name as
-an **editable default** ("I'll default the name to X unless the server
-expects a different one").
-
-**Serving the model (option 3):** the platform can start a serve job
-on the fly — a vLLM endpoint on the training GPUs. Serving is internal
-plumbing: never show or mention endpoint URLs, GPU pinning, or serve
-job IDs to the user. Serve jobs need NO user confirmation — start them
-yourself automatically. First check `serve_endpoints` (from
-`get_eval_endpoint_suggestions`) for an already-healthy endpoint for
-the model — if one exists, use it and skip serving. Otherwise call
-`create_serve_job` directly with either `training_job_id` (the tuned
-model of a chosen training job) or `model_name_or_path` (a model by
-name); the call validates the config itself and reports any problem.
-One serve job per model — never serve something twice. Do NOT pass
-`--gpu-memory-utilization` — the platform sizes it automatically from
-live GPU free memory. After creating the job, tell the user the model
-is being served (the chat shows a monitor card automatically), then
-poll `get_eval_endpoint_suggestions` about every 30 seconds until the
-new serve endpoint shows `healthy: true` (model loading takes a minute
-or two), then continue to Step 3.
-
-While waiting for the endpoint you MUST keep polling inside the same
-turn — do NOT end your reply with "let me know how to proceed" or
-similar, and do NOT wait for the user. Model loading can take several
-minutes; that is expected, keep polling. Only after `healthy: true` do
-you move on to Step 3. Endpoints the eval started are stopped
-automatically when the eval finishes — mention this only if the user
-asks about cleanup.
+Do NOT pre-decide — show the options and let the user pick. Never
+mention endpoint URLs, GPU pinning, or utilization numbers for models
+the eval serves itself; that is internal plumbing.
 
 ### Step 3 — Design the metrics (approval loop)
 

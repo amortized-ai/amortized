@@ -38,7 +38,6 @@ from amortized.models import (
     JobStatus,
     JobType,
     SDGJobRequest,
-    ServeJobRequest,
     TrainingJobRequest,
     ValidatedJobConfig,
 )
@@ -215,60 +214,6 @@ async def _validate_eval_data(
     return errors
 
 
-async def _validate_eval_endpoint(
-    config: dict[str, Any],
-    db: asyncpg.Connection,
-) -> list[str]:
-    """Reject eval configs pointing at a serve job that is not running.
-
-    Serve jobs are auto-stopped when their eval finishes (success or
-    failure), so a retried eval that reuses the old endpoint URL would
-    otherwise pass validation and then fail on 100% of samples with
-    connection errors. Serve URLs embed the job id
-    (http://amortized-<job_id>.<ns>.svc...), so resolve and check it.
-    """
-    endpoint = config.get("endpoint") or {}
-    base_url = str(endpoint.get("base_url") or "")
-    host = base_url.split("//")[-1].split("/")[0].split(":")[0]
-    if not host.startswith("amortized-"):
-        # Gateway or external endpoint — not a serve job we can check.
-        return []
-    parts = host.split(".")
-    job_part = parts[0][len("amortized-"):]
-    if len(job_part) < 32 or "-" not in job_part:
-        return []
-    # job part is "<uuid-with-dashes>", possibly suffixed
-    serve_job_id = job_part
-    repo = Repository(db)
-    job = await repo.get_job(serve_job_id)
-    if job is None:
-        return []
-    if job.get("type") != "serve":
-        return []
-    if job.get("status") != "running":
-        return [
-            f"endpoint: serve job '{serve_job_id[:8]}' is"
-            f" '{job.get('status')}', not running. It was likely"
-            " auto-stopped when a previous eval finished. Start a new"
-            " serve job (or ask the agent to) and use its endpoint URL."
-        ]
-    return []
-
-
-async def _validate_serve_model(config: dict[str, Any]) -> list[str]:
-    """Validate that a servable model source is configured."""
-    errors: list[str] = []
-    training_job_id = str(config.get("training_job_id", "")).strip()
-
-    if not training_job_id and not str(config.get("model_name_or_path", "")).strip():
-        errors.append(
-            "serve jobs require either training_job_id (a succeeded training"
-            " job whose tuned model to serve) or model_name_or_path"
-            " (an HF model id or local path)"
-        )
-    return errors
-
-
 # ---------------------------------------------------------------------------
 # Job creation endpoints (one per job type)
 # ---------------------------------------------------------------------------
@@ -325,36 +270,6 @@ async def create_training_job(
     errors = await _validate_training_data(config, parent_job_id, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
-
-    # Serve pods pin to the user's GPU instead of requesting
-    # nvidia.com/gpu, so the quota only reflects training. Keep the
-    # one-GPU budget honest: training must wait until the user's serve
-    # deployments are stopped.
-    from amortized import config as config_module
-    from amortized.models import JobStatus, JobType
-
-    if config_module.settings.compute_backend == "kubernetes":
-        running_serves = await db.fetch(
-            """SELECT id FROM jobs
-               WHERE type = $1 AND status = $2 AND k8s_namespace = $3""",
-            JobType.serve.value,
-            JobStatus.running.value,
-            config_module.settings.compute_namespace,
-        )
-        if running_serves:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "You have {} model endpoint(s) running that share your"
-                    " GPU budget ({}). Ask Morty in the chat to stop the"
-                    " running model endpoints before training. Endpoints"
-                    " don't count against the GPU quota, so this check"
-                    " keeps your budget at one GPU.".format(
-                        len(running_serves),
-                        ", ".join(sorted(r["id"][:8] for r in running_serves)),
-                    )
-                ),
-            )
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
@@ -439,25 +354,6 @@ async def _persist_metric_set(
     )
 
 
-async def _match_serve_jobs(config: dict, db: asyncpg.Connection) -> list[str]:
-    """Running serve jobs whose in-cluster URL matches the eval endpoint."""
-    endpoint = config.get("endpoint") or {}
-    base_url = str(endpoint.get("base_url") or "").rstrip("/")
-    if not base_url:
-        return []
-    from amortized.api.eval import _serve_base_url
-
-    repo = Repository(db)
-    serve_jobs = await repo.list_jobs(
-        status=JobStatus.running, job_type=JobType.serve
-    )
-    return [
-        j["id"]
-        for j in serve_jobs
-        if _serve_base_url(j).rstrip("/") == base_url
-    ]
-
-
 @router.post(
     "/eval",
     status_code=201,
@@ -478,7 +374,6 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
-    errors += await _validate_eval_endpoint(config, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -487,13 +382,6 @@ async def create_eval_job(
     # Persist the metric set on the dataset's MLflow run so every later
     # eval on the same dataset (any session) reuses the same metrics.
     await _persist_metric_set(config, parent_job_id, db)
-
-    # Record which running serve jobs this eval uses so they can be
-    # auto-stopped when it finishes (serve endpoints are transient
-    # eval infrastructure, not user-visible jobs).
-    serve_job_ids = await _match_serve_jobs(config, db)
-    if serve_job_ids:
-        config["serve_job_ids"] = serve_job_ids
 
     repo = Repository(db)
     try:
@@ -512,82 +400,9 @@ async def create_eval_job(
     return response
 
 
-@router.post(
-    "/serve",
-    status_code=201,
-    response_model=Job,
-    operation_id="create_serve_job",
-    summary=(
-        "Create and submit a serve job — brings up a persistent vLLM inference"
-        " endpoint for a tuned model (from a training job) or any HF model."
-        " Runs until cancelled."
-    ),
-)
-async def create_serve_job(
-    request: ServeJobRequest,
-    http_request: Request,
-    db: asyncpg.Connection = Depends(_get_db),
-) -> Job:
-    """Create a model serving job."""
-    config = request.model_dump(exclude_none=True, exclude_unset=True)
-    parent_job_id = config.pop("parent_job_id", "")
-    if parent_job_id and not config.get("training_job_id"):
-        config["training_job_id"] = parent_job_id
-    # Lineage: serve jobs are children of the training job they serve
-    parent_job_id = str(config.get("training_job_id", ""))
-
-    errors = await _validate_serve_model(config)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    user_id = http_request.headers.get("X-Forwarded-User", "")
-
-    repo = Repository(db)
-    try:
-        row = await core_create_job(
-            repo,
-            job_type=JobType.serve,
-            config=config,
-            parent_job_id=parent_job_id,
-            user_id=user_id,
-        )
-    except InvalidJobStateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _job_response(row)
-
-
 # ---------------------------------------------------------------------------
 # Job validation endpoints (MCP-facing, no DB insert)
 # ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/serve/validate",
-    response_model=ValidatedJobConfig,
-    operation_id="validate_serve_job",
-    summary=(
-        "Validate a serve job config and present it for user confirmation."
-        " Set training_job_id to serve a completed training job's tuned model,"
-        " or model_name_or_path to serve any HF model."
-    ),
-)
-async def validate_serve_job(request: ServeJobRequest) -> ValidatedJobConfig:
-    """Validate a serve job config without creating it."""
-    config = request.model_dump(exclude_none=True, exclude_unset=True)
-    parent_job_id = config.pop("parent_job_id", "")
-    if parent_job_id and not config.get("training_job_id"):
-        config["training_job_id"] = parent_job_id
-        parent_job_id = ""
-
-    errors = await _validate_serve_model(config)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
-
-    return ValidatedJobConfig(
-        job_type=JobType.serve,
-        config=config,
-        parent_job_id="",
-    )
 
 
 @router.post(
@@ -665,7 +480,6 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
-    errors += await _validate_eval_endpoint(config, db)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 

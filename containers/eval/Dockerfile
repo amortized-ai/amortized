@@ -1,10 +1,15 @@
-# Eval container — compare model endpoints on an eval dataset (CPU-only)
-FROM docker.io/library/python:3.12-slim
+# Eval container — evaluates a model on a dataset, serving the model itself.
+#
+# Based on the training image (vLLM + model tooling) so the eval pod can
+# bring up the model on a pinned GPU, wait for it to be healthy, run the
+# eval against localhost, and exit — the serve lifetime equals the eval
+# lifetime. External-endpoint evals run the same image CPU-only.
+FROM ghcr.io/amortized-ai/training:latest
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN pip install --no-cache-dir "httpx>=0.27" "pyarrow>=16" "mlflow>=2.14" "boto3"
+RUN pip install --no-cache-dir "httpx>=0.27" "pyarrow>=16"
 
 COPY run_eval.py /app/run_eval.py
 

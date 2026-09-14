@@ -220,24 +220,6 @@ export async function getEvalResults(id: string): Promise<EvalResults | null> {
 
 // --- Evaluations (cross-model comparison groups) ---
 
-// --- Serve endpoint health (for monitoring serve jobs in chat) ---
-
-export interface ServeEndpointSuggestion {
-  job_id: string
-  name: string
-  model_name: string
-  base_url: string
-  healthy: boolean
-}
-
-export interface EvalEndpointSuggestions {
-  serve_endpoints: ServeEndpointSuggestion[]
-}
-
-export function getEvalEndpointSuggestions(): Promise<EvalEndpointSuggestions> {
-  return get<EvalEndpointSuggestions>("/api/v1/eval/endpoint-suggestions")
-}
-
 export interface EvaluationEntry {
   job_id: string
   model: string

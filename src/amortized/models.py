@@ -364,8 +364,35 @@ class EvalJobConfig(BaseModel):
             " (absolute 0-1), averaged over the dataset."
         ),
     )
-    endpoint: EvalEndpoint = Field(
-        ..., description="Endpoint serving the model to evaluate (one model per eval job)"
+    endpoint: EvalEndpoint | None = Field(
+        None,
+        description=(
+            "External OpenAI-compatible endpoint serving the model to evaluate"
+            " (e.g. a gateway model). When omitted, set training_job_id or"
+            " model_name_or_path and the eval job serves the model itself."
+        ),
+    )
+    training_job_id: str = Field(
+        "",
+        description=(
+            "Training job whose tuned model to evaluate. The eval job serves"
+            " the model itself (vLLM inside the job) and stops when scores"
+            " are computed. Takes precedence over model_name_or_path."
+        ),
+    )
+    model_name_or_path: str = Field(
+        "",
+        description=(
+            "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate."
+            " The eval job serves the model itself."
+        ),
+    )
+    served_model_name: str = Field(
+        "",
+        description=(
+            "Name passed as 'model' in requests. Defaults to the training"
+            " job's model_display_name (tuned models) or model_name_or_path."
+        ),
     )
     judge: EvalEndpoint | None = Field(
         None,
@@ -397,53 +424,4 @@ class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
 
 
-class ServeJobConfig(BaseModel):
-    model_config = {"extra": "allow"}
 
-    training_job_id: str = Field(
-        "",
-        description=(
-            "Training job whose tuned model to serve. Takes precedence over"
-            " model_name_or_path. The merged HF export is downloaded from MLflow."
-        ),
-    )
-    model_name_or_path: str = Field(
-        "",
-        description=(
-            "HF hub model id (e.g. Qwen/Qwen3.5-2B) or local path to serve."
-            " Ignored when training_job_id is set."
-        ),
-    )
-    served_model_name: str = Field(
-        "",
-        description=(
-            "Name clients pass as 'model' in requests. Defaults to the training"
-            " job's model_display_name (tuned models) or model_name_or_path."
-        ),
-    )
-    port: int = Field(8000, ge=1024, le=65535, description="Container port vLLM listens on")
-    serve_base: bool = Field(
-        False,
-        deprecated=True,
-        description=(
-            "Deprecated: base and tuned models are now served by separate serve"
-            " jobs (each gets its own GPU), so this flag no longer has an effect."
-        ),
-    )
-    nproc_per_node: int = Field(1, ge=1, le=8, description="Number of GPUs for serving")
-    max_model_len: int = Field(0, ge=0, description="Optional vLLM --max-model-len (0 = default)")
-    vllm_args: list[str] = Field(
-        default_factory=list,
-        description="Extra raw args appended to the vllm serve command",
-    )
-    topic: str = Field("", description="1-5 word serve topic for tracking")
-
-
-class ServeJobRequest(ServeJobConfig):
-    parent_job_id: str = Field(
-        "",
-        description=(
-            "Parent training job whose tuned model to serve"
-            " (alternative to training_job_id)"
-        ),
-    )
