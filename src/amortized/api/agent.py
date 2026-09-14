@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import ssl
 import uuid
 from dataclasses import dataclass, field
@@ -166,10 +167,34 @@ async def _session_cleanup_loop() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Response scanning — detect delegation/completion from tool parts
+# Response scanning — detect delegation/completion from tool OR text parts
+#
+# Delegation: LLM outputs [[DELEGATE: sdg|training]] and [[CONTEXT: ...]]
+# Completion:  LLM outputs [[COMPLETE: summary text]]
+# Resume flag: LLM outputs [[RESUME: true]] alongside [[DELEGATE: ...]]
+#
+# Text-based signals are used because @ai-sdk/openai-compatible (opencode's
+# Gemini integration) receives tool calls from Gemini but never forwards them
+# to MCP — so delegate_to_subagent and signal_subagent_completion are hidden
+# from the tool list and the LLM must signal intent via message text instead.
 # ---------------------------------------------------------------------------
 
 INTERNAL_TOOLS = {"delegate_to_subagent", "signal_subagent_completion"}
+
+_DELEGATE_RE = re.compile(r"\[\[DELEGATE:\s*(sdg|training)\]\]", re.IGNORECASE)
+_CONTEXT_RE = re.compile(r"\[\[CONTEXT:\s*(.*?)\]\]", re.IGNORECASE | re.DOTALL)
+_RESUME_RE = re.compile(r"\[\[RESUME:\s*true\]\]", re.IGNORECASE)
+_COMPLETE_RE = re.compile(r"\[\[COMPLETE:\s*(.*?)\]\]", re.IGNORECASE | re.DOTALL)
+
+
+def _text_from_parts(parts: list[dict[str, Any]]) -> str:
+    chunks: list[str] = []
+    for p in parts:
+        if p.get("type") == "text":
+            t = p.get("text") or ""
+            if t:
+                chunks.append(t)
+    return "\n".join(chunks)
 
 
 def _tool_name(part: dict[str, Any]) -> str:
@@ -207,6 +232,18 @@ def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str, bool] | N
                 logger.warning("Ignoring delegation to unknown target: %r", target)
                 return None
             return (target, inp.get("context", ""), inp.get("resume", False))
+
+    text = _text_from_parts(parts)
+    if text:
+        m = _DELEGATE_RE.search(text)
+        if m:
+            target = m.group(1).lower()
+            ctx_m = _CONTEXT_RE.search(text)
+            context = ctx_m.group(1).strip() if ctx_m else ""
+            resume = bool(_RESUME_RE.search(text))
+            logger.info("Text-based delegation detected: target=%r resume=%r", target, resume)
+            return (target, context, resume)
+
     return None
 
 
@@ -217,6 +254,15 @@ def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
         if _tool_name(part) == "signal_subagent_completion":
             inp = _get_tool_input(part)
             return str(inp.get("summary", "")) or "Task completed."
+
+    text = _text_from_parts(parts)
+    if text:
+        m = _COMPLETE_RE.search(text)
+        if m:
+            summary = m.group(1).strip()
+            logger.info("Text-based completion detected")
+            return summary or "Task completed."
+
     return None
 
 
