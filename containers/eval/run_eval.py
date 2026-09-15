@@ -13,7 +13,7 @@ Reads a config.json (delivered to /amortized/config.json by the control plane):
       "metrics": ["exact_match", "format_validity"],
       "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
       "max_samples": 200,
-      "judge_max_samples": 100,
+      "judge_max_samples": 0,  # 0 = judge all samples
       "temperature": 0.0,
       "output_dir": "/amortized/work/results"
     }
@@ -270,7 +270,9 @@ def structural_metrics(
 async def run(config: dict[str, Any]) -> dict[str, Any]:
     endpoints = config["endpoints"]
     max_samples = int(config.get("max_samples", 200))
-    judge_max_samples = int(config.get("judge_max_samples", 100))
+    # 0 = judge every sample (the default); a positive value caps judge
+    # cost/latency for large evals.
+    judge_max_samples = int(config.get("judge_max_samples", 0))
     temperature = float(config.get("temperature", 0.0))
     output_dir = Path(config.get("output_dir", "/amortized/work/results"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -326,7 +328,7 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
                     )
                     return idx, s
 
-            limit = min(judge_max_samples, len(samples))
+            limit = len(samples) if judge_max_samples <= 0 else min(judge_max_samples, len(samples))
             scorable = [
                 i for i in range(limit) if samples[i]["reference"].strip() and not raw[i]["error"]
             ]

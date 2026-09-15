@@ -205,8 +205,9 @@ ask for a judge endpoint if the user wants a different judge, or if
 there is no SDG ancestor (e.g. an uploaded dataset with no parent).
 The judge is only needed when there is a custom rubric.
 
-Use sensible defaults: `max_samples` 200, `judge_max_samples` 100,
-`temperature` 0.
+Use sensible defaults: `max_samples` 200, `temperature` 0. Leave
+`judge_max_samples` unset — the judge scores every sample; only set it
+(lower) if the user explicitly wants to cap judge cost.
 
 ### Step 4 — Validate and submit
 

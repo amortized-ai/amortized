@@ -407,7 +407,13 @@ class EvalJobConfig(BaseModel):
     )
     max_samples: int = Field(200, ge=1, le=10000, description="Max eval samples to run")
     judge_max_samples: int = Field(
-        100, ge=1, le=10000, description="Max samples for LLM-judge scoring (judge is slower)"
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max samples for LLM-judge scoring; 0 (default) judges ALL samples"
+            " — set lower only to cap judge cost/latency"
+        ),
     )
     temperature: float = Field(0.0, description="Sampling temperature for evaluated endpoints")
     eval_data_run_id: str = Field(

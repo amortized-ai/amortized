@@ -447,7 +447,7 @@ async def build(
         "metrics": metrics,
         "rubric": rubric,
         "max_samples": config.get("max_samples", 200),
-        "judge_max_samples": config.get("judge_max_samples", 100),
+        "judge_max_samples": config.get("judge_max_samples", 0),
         "temperature": config.get("temperature", 0.0),
         "output_dir": "/amortized/work/results",
     }
@@ -523,5 +523,15 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         num_samples = model_metrics.get("num_samples")
         if num_samples is not None:
             await set_mlflow_run_tag(mlflow_run_id, "num_samples", str(num_samples))
+        # Transparency: how many samples the judge actually scored and
+        # which model judged — a partial judge run otherwise looks like a
+        # full one in the comparison table.
+        num_scored = metrics.get("num_scored")
+        if num_scored is not None:
+            await set_mlflow_run_tag(mlflow_run_id, "num_scored", str(num_scored))
+        judge = (job_config.get("judge") or {})
+        judge_model = str(judge.get("model") or "")
+        if judge_model:
+            await set_mlflow_run_tag(mlflow_run_id, "judge_model", judge_model)
     except Exception:
         logger.debug("Failed to tag eval metrics on run %s", mlflow_run_id, exc_info=True)
