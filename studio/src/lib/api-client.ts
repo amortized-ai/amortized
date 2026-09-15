@@ -225,7 +225,12 @@ export interface EvalSemanticConfig {
   max_samples: number
   judge_max_samples: number
   judge_model: string
-  vllm_args: string[]
+  /**
+   * Canonical JSON string: vLLM engine-resolved args (object) when the
+   * run recorded them, else the raw explicit args (sorted array). This
+   * is the serving fingerprint — same string = same engine behavior.
+   */
+  vllm_args: string
 }
 
 export interface EvaluationEntry {

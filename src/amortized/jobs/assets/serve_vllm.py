@@ -167,9 +167,61 @@ def _ignore_nonpersistent_buffers() -> None:
 _ignore_nonpersistent_buffers()
 
 
+def _dump_resolved_args() -> None:
+    """Write the RESOLVED semantic engine args to a sidecar JSON.
+
+    The eval fingerprint uses this instead of the raw CLI args so that an
+    arg explicitly set to its default ("--max-model-len <native length>")
+    and the same arg left unset produce the SAME resolved value and merge
+    in the comparison table. Best-effort: on any failure the sidecar is
+    not written and the fingerprint falls back to the raw args.
+    """
+    import argparse
+    import json
+    import os
+    import sys
+
+    out_path = os.environ.get(
+        "VLLM_RESOLVED_ARGS_JSON", "/amortized/work/resolved_vllm_args.json"
+    )
+    try:
+        from vllm.engine.arg_utils import EngineArgs
+
+        # argv: [serve_vllm.py, serve, <model>, ...engine+server flags]
+        args_after_sub = sys.argv[2:] if len(sys.argv) > 2 else []
+        p = argparse.ArgumentParser()
+        EngineArgs.add_cli_args(p)
+        ns, _unknown = p.parse_known_args(args_after_sub)  # skip server flags
+        cfg = EngineArgs.from_cli_args(ns).create_engine_config()
+        mc = getattr(cfg, "model_config", None)
+        cc = getattr(cfg, "cache_config", None)
+        resolved = {
+            "max_model_len": getattr(mc, "max_model_len", None),
+            "quantization": str(getattr(mc, "quantization", None) or ""),
+            "kv_cache_dtype": str(getattr(cc, "cache_dtype", None) or ""),
+            "seed": getattr(ns, "seed", None),
+        }
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump(resolved, f)
+    except SystemExit:
+        # argparse rejects e.g. --help; the CLI delegation handles it
+        pass
+    except Exception:
+        import traceback
+
+        print(
+            "serve_vllm: resolved-args dump failed (fingerprint falls back"
+            " to raw args):\n" + traceback.format_exc(),
+            file=sys.stderr,
+        )
+
+
 def main() -> None:
     import runpy
     import sys
+
+    _dump_resolved_args()
 
     # Delegate to vLLM's CLI; argv[0] is replaced with the expected "vllm"
     sys.argv = ["vllm", *sys.argv[1:]]

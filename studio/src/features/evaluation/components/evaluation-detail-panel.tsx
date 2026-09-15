@@ -338,7 +338,7 @@ interface ModelColumn {
 function configKeyOf(e: EvaluationEntry): string {
   const c = e.config
   if (!c) return "legacy"
-  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}|${(c.vllm_args ?? []).join(",")}`
+  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}|${c.vllm_args ?? ""}`
 }
 
 /**
@@ -391,9 +391,32 @@ function formatConfigHint(
     else if (f === "judge_max_samples")
       parts.push(v === 0 ? "judge all" : `judge ${v}`)
     else if (f === "judge_model" && v) parts.push(`judge ${v}`)
-    else if (f === "vllm_args" && Array.isArray(v) && v.length) parts.push(v.join(" "))
+    else if (f === "vllm_args" && typeof v === "string" && v) {
+      const rendered = formatVllmArgs(v)
+      if (rendered) parts.push(rendered)
+    }
   }
   return parts.join(" · ")
+}
+
+/**
+ * Render the vllm_args fingerprint JSON for the hint line. Engine-resolved
+ * args (object) become k=v pairs; raw explicit args (array) stay space-joined.
+ */
+function formatVllmArgs(raw: string): string {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.map(String).join(" ")
+    if (parsed && typeof parsed === "object") {
+      return Object.entries(parsed as Record<string, unknown>)
+        .filter(([, v]) => v !== null && v !== "")
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")
+    }
+  } catch {
+    // fall through to raw
+  }
+  return raw
 }
 
 interface ScoreStat {
