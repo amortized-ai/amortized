@@ -21,6 +21,7 @@ class JobBuildResult:
     env: dict[str, str] = field(default_factory=dict)
     resources: Resources = field(default_factory=Resources)
     image: str = ""
+    timeout: int | None = None
     resolved_config: dict[str, Any] = field(default_factory=dict)
     pre_commands: list[str] = field(default_factory=list)
     post_commands: list[str] = field(default_factory=list)

@@ -72,7 +72,7 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
 
     if (config.get("nproc_per_node") or 1) > 1:
         warnings.append(
-            "nproc_per_node > 1 is not supported for CPU training; use nproc_per_node: 1"
+            "nproc_per_node > 1 is not supported for CPU training; it will be capped at 1"
         )
 
     return errors, warnings

@@ -383,6 +383,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         env=spec_env,
         work_dir=output_dir,
         image=result.image,
+        timeout=result.timeout,
         config_files=result.config_files,
         job_type=job_type,
         user_id=job.get("user_id", ""),

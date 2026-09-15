@@ -111,6 +111,30 @@ def training_model_cpu_compatibility(model_name_or_path: str) -> str | None:
     truth for the per-model CPU flags — validation and agent guidance both
     derive from it.
     """
+    entry = _find_training_model(model_name_or_path)
+    return entry.get("cpu_compatible") if entry else None
+
+
+# CPU RAM (GiB) per training-model size — single source for the builder's
+# memory requests (0.8B→8, 2B→16, 4B→32 for the warned 4B ceiling).
+_CPU_MEMORY_GB_BY_SIZE: dict[str, int] = {"0.8B": 8, "2B": 16, "4B": 32}
+_CPU_MEMORY_GB_DEFAULT = 8
+
+
+def training_model_cpu_memory_gb(model_name_or_path: str) -> int:
+    """CPU RAM request (GiB) for a training model, from the supported-models catalog.
+
+    Unknown models get the conservative default; validation already warns that
+    their CPU compatibility is unknown.
+    """
+    entry = _find_training_model(model_name_or_path)
+    if entry is None:
+        return _CPU_MEMORY_GB_DEFAULT
+    return _CPU_MEMORY_GB_BY_SIZE.get(entry.get("size", ""), _CPU_MEMORY_GB_DEFAULT)
+
+
+def _find_training_model(model_name_or_path: str) -> dict[str, Any] | None:
+    """Catalog entry for a training model, or ``None`` if not in the catalog."""
     global _supported_training_models
     if _supported_training_models is None:
         try:
@@ -123,5 +147,5 @@ def training_model_cpu_compatibility(model_name_or_path: str) -> str | None:
         if model_name_or_path in (entry.get("id"), size) or (
             size and model_name_or_path.endswith(f"-{size}")
         ):
-            return entry.get("cpu_compatible")
+            return entry
     return None
