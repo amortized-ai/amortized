@@ -215,7 +215,7 @@ export function EvaluationDetailPanel({
                         {(() => {
                           const diff = differingConfigFields(modelColumns, col.model)
                           if (diff.length === 0) return null
-                          const hint = formatConfigHint(col, diff)
+                          const hint = formatConfigHint(col, diff, modelColumns)
                           return hint ? (
                             <span
                               className="text-xs text-muted-foreground/80 truncate"
@@ -381,6 +381,7 @@ function differingConfigFields(
 function formatConfigHint(
   col: ModelColumn,
   fields: (keyof EvalSemanticConfig)[],
+  modelColumns: ModelColumn[],
 ): string {
   const parts: string[] = []
   for (const f of fields) {
@@ -392,7 +393,7 @@ function formatConfigHint(
       parts.push(v === 0 ? "judge all" : `judge ${v}`)
     else if (f === "judge_model" && v) parts.push(`judge ${v}`)
     else if (f === "vllm_args" && typeof v === "string" && v) {
-      const rendered = formatVllmArgs(v)
+      const rendered = formatVllmArgsDiff(col, modelColumns)
       if (rendered) parts.push(rendered)
     }
   }
@@ -400,23 +401,51 @@ function formatConfigHint(
 }
 
 /**
- * Render the vllm_args fingerprint JSON for the hint line. Engine-resolved
- * args (object) become k=v pairs; raw explicit args (array) stay space-joined.
+ * Flatten the vllm_args fingerprint JSON to dot.key -> primitive string.
+ * Null/empty values are dropped; a non-JSON payload (raw args or a hash
+ * fallback) collapses to a single "(fingerprint)" entry.
  */
-function formatVllmArgs(raw: string): string {
+function flattenVllmArgs(raw: string): Map<string, string> {
+  const out = new Map<string, string>()
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed.map(String).join(" ")
-    if (parsed && typeof parsed === "object") {
-      return Object.entries(parsed as Record<string, unknown>)
-        .filter(([, v]) => v !== null && v !== "")
-        .map(([k, v]) => `${k}=${v}`)
-        .join(" ")
+    const walk = (prefix: string, v: unknown): void => {
+      if (v === null || v === undefined || v === "") return
+      if (Array.isArray(v)) {
+        if (v.length) out.set(prefix, v.map(String).join(","))
+        return
+      }
+      if (typeof v === "object") {
+        for (const [k, cv] of Object.entries(v as Record<string, unknown>))
+          walk(prefix ? `${prefix}.${k}` : k, cv)
+        return
+      }
+      out.set(prefix, String(v))
     }
+    walk("", parsed)
+    if (out.size === 0) out.set("(fingerprint)", raw.slice(0, 12))
   } catch {
-    // fall through to raw
+    out.set("(fingerprint)", raw.slice(0, 12))
   }
-  return raw
+  return out
+}
+
+/**
+ * The resolved-args fingerprint is large; the hint shows only the keys
+ * where this model's columns disagree, as k=v for THIS column.
+ */
+function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
+  const cols = columns.filter((c) => c.model === col.model && c.config)
+  const idx = cols.findIndex((c) => c === col)
+  if (idx < 0 || cols.length < 2) return ""
+  const flat = cols.map((c) => flattenVllmArgs(c.config?.vllm_args ?? ""))
+  const keys = new Set(flat.flatMap((m) => [...m.keys()]))
+  const parts: string[] = []
+  for (const k of keys) {
+    const vals = flat.map((m) => m.get(k))
+    if (new Set(vals).size > 1) parts.push(`${k}=${vals[idx] ?? "(unset)"}`)
+  }
+  return parts.join(" ")
 }
 
 interface ScoreStat {

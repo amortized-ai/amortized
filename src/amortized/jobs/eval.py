@@ -535,8 +535,15 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
             await set_mlflow_run_tag(mlflow_run_id, "judge_model", judge_model)
         resolved = metrics.get("resolved_vllm_args") or {}
         if resolved:
-            await set_mlflow_run_tag(
-                mlflow_run_id, "resolved_vllm_args", json.dumps(resolved, sort_keys=True)
+            payload = json.dumps(
+                resolved, sort_keys=True, separators=(",", ":"), default=str
             )
+            if len(payload) > 7500:
+                # MLflow caps tag values at 8000 chars; degrade to a hash —
+                # still merge-correct, only the hint detail is lost.
+                import hashlib
+
+                payload = "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+            await set_mlflow_run_tag(mlflow_run_id, "resolved_vllm_args", payload)
     except Exception:
         logger.debug("Failed to tag eval metrics on run %s", mlflow_run_id, exc_info=True)

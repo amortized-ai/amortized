@@ -167,16 +167,80 @@ def _ignore_nonpersistent_buffers() -> None:
 _ignore_nonpersistent_buffers()
 
 
+# Engine-config sections describing HOW the engine is hosted (weight
+# loading, compilation, profiling, metrics) — auto-derived from hardware
+# and vLLM version, vary per run, and never distinguish eval configs.
+_SECTION_DENY = frozenset(
+    {
+        "load_config",
+        "offload_config",
+        "compilation_config",
+        "profiler_config",
+        "observability_config",
+    }
+)
+
+# Fields dropped from every kept section: model identity/paths/secrets
+# (the model id is already the comparison key), per-run KV capacity
+# (auto-sized from free GPU memory), and host/worker runtime
+# coordinates. Anything NOT on these lists fingerprints the config, so
+# an arg we did not think of distinguishes runs (visible false split)
+# instead of silently merging them.
+_FIELD_DENY = frozenset(
+    {
+        # model identity, paths, secrets
+        "model",
+        "tokenizer",
+        "model_weights",
+        "hf_config",
+        "hf_text_config",
+        "hf_config_path",
+        "hf_token",
+        "instance_id",
+        # per-run KV capacity
+        "gpu_memory_utilization",
+        "num_gpu_blocks",
+        "num_cpu_blocks",
+        "num_gpu_blocks_override",
+        "kv_cache_size_tokens",
+        "kv_cache_memory_bytes",
+        "kv_cache_max_concurrency",
+        "kv_offloading_size",
+        # host runtime coordinates
+        "data_parallel_master_ip",
+        "data_parallel_rpc_port",
+        "data_parallel_master_port",
+        "data_parallel_rank",
+        "data_parallel_rank_local",
+        "data_parallel_index",
+        "master_addr",
+        "master_port",
+        "node_rank",
+        "rank",
+        "world_size",
+        "_data_parallel_master_port_list",
+        "_coord_store_port",
+        "_api_process_count",
+        "_api_process_rank",
+        "assigned_physical_gpu_ids",
+    }
+)
+
+
 def _dump_resolved_args() -> None:
-    """Write the RESOLVED semantic engine args to a sidecar JSON.
+    """Write the RESOLVED engine config to a sidecar JSON.
 
     The eval fingerprint uses this instead of the raw CLI args so that an
     arg explicitly set to its default ("--max-model-len <native length>")
     and the same arg left unset produce the SAME resolved value and merge
-    in the comparison table. Best-effort: on any failure the sidecar is
-    not written and the fingerprint falls back to the raw args.
+    in the comparison table. The full engine config is serialized minus a
+    denylist of hosting/capacity/identity fields (see above) so any
+    unknown user-set arg participates in the fingerprint. Best-effort:
+    on any failure the sidecar is not written and the fingerprint falls
+    back to the raw args.
     """
     import argparse
+    import dataclasses
     import json
     import os
     import sys
@@ -189,21 +253,30 @@ def _dump_resolved_args() -> None:
 
         # argv: [serve_vllm.py, serve, <model>, ...engine+server flags]
         args_after_sub = sys.argv[2:] if len(sys.argv) > 2 else []
+        if args_after_sub and not args_after_sub[0].startswith("-"):
+            # "serve <model>" passes the model positionally; EngineArgs'
+            # parser only knows --model, and its default would resolve
+            # the WRONG model's config here.
+            args_after_sub = ["--model", args_after_sub[0], *args_after_sub[1:]]
         p = argparse.ArgumentParser()
         EngineArgs.add_cli_args(p)
         ns, _unknown = p.parse_known_args(args_after_sub)  # skip server flags
         cfg = EngineArgs.from_cli_args(ns).create_engine_config()
-        mc = getattr(cfg, "model_config", None)
-        cc = getattr(cfg, "cache_config", None)
-        resolved = {
-            "max_model_len": getattr(mc, "max_model_len", None),
-            "quantization": str(getattr(mc, "quantization", None) or ""),
-            "kv_cache_dtype": str(getattr(cc, "cache_dtype", None) or ""),
-            "seed": getattr(ns, "seed", None),
-        }
+        resolved = {}
+        for f in dataclasses.fields(cfg):
+            if f.name in _SECTION_DENY:
+                continue
+            v = getattr(cfg, f.name)
+            if dataclasses.is_dataclass(v) and not isinstance(v, type):
+                section = dataclasses.asdict(v)
+                resolved[f.name] = {
+                    k: v2 for k, v2 in section.items() if k not in _FIELD_DENY
+                }
+            elif f.name not in _FIELD_DENY:
+                resolved[f.name] = str(v) if v is not None else None
         os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         with open(out_path, "w") as f:
-            json.dump(resolved, f)
+            json.dump(resolved, f, sort_keys=True, default=str)
     except SystemExit:
         # argparse rejects e.g. --help; the CLI delegation handles it
         pass
