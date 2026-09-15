@@ -30,6 +30,11 @@ const SERVER_IMAGE_TAG = process.env.AMORTIZED_SERVER_IMAGE_TAG || '';
 // references via the chart's teacherKeys.existingSecret. Empty => no teacher keys.
 const TEACHER_KEYS_DIR = process.env.TEACHER_KEYS_DIR || '';
 const TEACHER_KEYS_SECRET = 'amortized-teacher-keys';
+// The per-user BYOK model key is stamped into this Secret (provider env-var name ->
+// key) in the user ns and referenced via the chart's teacherKeys.existingSecret, so
+// the SAME key powers the server's model catalog (list_models + SDG teacher) as well
+// as Morty. Created by the provisioner (provision.js), not from a mounted dir.
+const MODEL_KEY_SECRET = 'amortized-model-key';
 const GPU_PER_USER = process.env.GPU_PER_USER || '1';
 
 const labels = { app: 'amortized', 'app.kubernetes.io/managed-by': 'studio-gateway' };
@@ -59,8 +64,10 @@ function mtlsCertsPresent() {
  * @param {object} opts
  * @param {boolean} opts.mortyEnabled  wire the sandboxed-Morty mTLS upstream
  * @param {string}  opts.gatewayIP     OpenShell gateway ClusterIP (resolved at runtime)
+ * @param {boolean} opts.hasModelKey   wire the per-user BYOK key into the server env
+ *                                     (via teacherKeys) so list_models + SDG teacher work
  */
-function userValues(ns, { mortyEnabled = false, gatewayIP = '' } = {}) {
+function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = false } = {}) {
   const values = {
     namespace: ns,
     jobsNamespace: ns,
@@ -90,7 +97,10 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '' } = {}) {
       extraVolumeMounts: [{ name: 'openshell-mtls', mountPath: OPENSHELL_MTLS_DIR, readOnly: true }],
     };
   }
-  if (TEACHER_KEYS_DIR) values.teacherKeys = { existingSecret: TEACHER_KEYS_SECRET };
+  // The per-user BYOK key (stamped into MODEL_KEY_SECRET) powers the server's model
+  // catalog too; fall back to a deployment-level mounted teacher-keys dir otherwise.
+  if (hasModelKey) values.teacherKeys = { existingSecret: MODEL_KEY_SECRET };
+  else if (TEACHER_KEYS_DIR) values.teacherKeys = { existingSecret: TEACHER_KEYS_SECRET };
   if (SERVER_IMAGE_TAG) values.images = { server: { tag: SERVER_IMAGE_TAG } };
   return values;
 }
@@ -158,4 +168,4 @@ function residualObjects(ns, user) {
   ].filter(Boolean);
 }
 
-module.exports = { userValues, residualObjects, mortyName };
+module.exports = { userValues, residualObjects, mortyName, MODEL_KEY_SECRET };

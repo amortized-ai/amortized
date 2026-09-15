@@ -27,7 +27,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const k8s = require('@kubernetes/client-node');
-const { userValues, residualObjects, mortyName } = require('./manifests');
+const { userValues, residualObjects, mortyName, MODEL_KEY_SECRET } = require('./manifests');
 
 const execFileP = promisify(execFile);
 
@@ -191,7 +191,7 @@ async function readUserKey(ns) {
     if (!data.provider || !data.key) return null;
     const provider = Buffer.from(data.provider, 'base64').toString('utf8');
     const key = Buffer.from(data.key, 'base64').toString('utf8');
-    return PROVIDERS[provider] ? { provider, key } : null;
+    return PROVIDERS[provider] ? { provider, key, credentialKey: PROVIDERS[provider].credentialKey } : null;
   } catch (err) {
     const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
     if (code === 404) return null;
@@ -222,6 +222,39 @@ async function writeUserKey(ns, provider, key) {
     if (code !== 409) throw err;
     await coreApi.replaceNamespacedSecret({ name: keySecretName(ns), namespace: GATEWAY_NAMESPACE, body });
   }
+}
+
+// Stamp the per-user model key into the USER namespace as the chart's teacherKeys
+// secret (provider env-var name -> key), so the SAME key reaches the server env
+// (model_catalog -> list_models + SDG teacher), not just the Morty sandbox.
+async function ensureServerKeySecret(ns, keyInfo) {
+  const body = {
+    apiVersion: 'v1',
+    kind: 'Secret',
+    metadata: {
+      name: MODEL_KEY_SECRET,
+      namespace: ns,
+      labels: { app: 'amortized', 'app.kubernetes.io/managed-by': FIELD_MANAGER },
+    },
+    type: 'Opaque',
+    data: { [keyInfo.credentialKey]: Buffer.from(keyInfo.key).toString('base64') },
+  };
+  try {
+    await coreApi.createNamespacedSecret({ namespace: ns, body });
+  } catch (err) {
+    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+    if (code !== 409) throw err;
+    await coreApi.replaceNamespacedSecret({ name: MODEL_KEY_SECRET, namespace: ns, body });
+  }
+}
+
+// Restart the user's server so it re-reads the model key from its env (the chart
+// envFrom's the teacherKeys secret). Deletes the server pod(s); the Deployment
+// recreates them. Used on key rotation, when the core stack is already up.
+async function restartServer(ns) {
+  await coreApi
+    .deleteCollectionNamespacedPod({ namespace: ns, labelSelector: 'app=amortized,component=server' })
+    .catch((err) => console.error(`  server restart (${ns}) failed: ${err.message || err}`));
 }
 
 // The OpenShell egress + landlock policy baked into the sandbox at create time.
@@ -276,10 +309,10 @@ async function serverAvailable(ns) {
 
 // `helm upgrade --install` the core chart (pulled from OCI) for this user.
 // Values are written as JSON (a valid YAML subset) so no YAML serializer is needed.
-async function helmInstall(ns, gatewayIP) {
+async function helmInstall(ns, gatewayIP, hasModelKey) {
   if (!CHART_VERSION) throw new Error('AMORTIZED_CHART_VERSION is not set — pin the core chart version');
   const valuesFile = path.join(os.tmpdir(), `values-${ns}.json`);
-  fs.writeFileSync(valuesFile, JSON.stringify(userValues(ns, { mortyEnabled: MORTY_ENABLED, gatewayIP }), null, 2));
+  fs.writeFileSync(valuesFile, JSON.stringify(userValues(ns, { mortyEnabled: MORTY_ENABLED, gatewayIP, hasModelKey }), null, 2));
   try {
     await run(HELM_BIN, [
       'upgrade', '--install', 'amortized', CHART_OCI,
@@ -369,8 +402,11 @@ async function provision(ns, user, keyInfo) {
   const gatewayIP = MORTY_ENABLED ? await openshellGatewayIP() : '';
   // 1. Residual objects the chart does not create (namespace first, then ns-scoped).
   for (const obj of residualObjects(ns, user)) await applyObject(obj);
+  // 1b. Stamp the per-user model key into the ns (before Helm) so the chart wires it
+  //     into the server env (list_models + SDG teacher) — the same key Morty uses.
+  if (keyInfo) await ensureServerKeySecret(ns, keyInfo);
   // 2. Core stack via Helm from OCI (enterprise MLflow; opencode/studio off).
-  await helmInstall(ns, gatewayIP);
+  await helmInstall(ns, gatewayIP, !!keyInfo);
   // 3. Per-user OpenShell-sandboxed Morty. Best-effort: a sandbox failure leaves the
   //    core stack (server/SDG/MLflow) usable — chat is degraded and can be retried.
   if (MORTY_ENABLED && keyInfo) {
@@ -453,9 +489,13 @@ async function setUserKey(user, provider, key) {
   stacks.delete(ns);
 
   if (rotate) {
-    // Core stack is up: recreate provider + sandbox in place so the new key applies.
+    // Core stack is up: update the server-side key (list_models + SDG teacher) and
+    // restart the server, then recreate the sandbox — so the new key applies everywhere.
+    const keyInfo = { provider, key, credentialKey: PROVIDERS[provider].credentialKey };
     const entry = { state: 'provisioning', error: null };
     entry.promise = (async () => {
+      await ensureServerKeySecret(ns, keyInfo);
+      await restartServer(ns);
       await run(OPENSHELL_BIN, ['-g', OPENSHELL_GATEWAY, 'sandbox', 'delete', mortyName(ns)], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
       await ensureSandbox(ns, provider, key);
       entry.state = 'ready';
