@@ -507,3 +507,60 @@ class TestPostCommandGuard:
         result = _wrap_command(cmd, [], guarded)
 
         assert "mlflow artifacts log-artifacts" in result[2]
+
+
+class TestPollJobTimeout:
+    """The poll-loop deadline check — a safety net for backends without
+    server-side deadlines (K8s activeDeadlineSeconds is authoritative)."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_cancels_job(self) -> None:
+        from amortized.backends import BackendHandle, BackendStatus
+        from amortized.worker import _poll_job
+
+        class FakeBackend:
+            def __init__(self) -> None:
+                self.cancelled = False
+
+            async def status(self, handle: BackendHandle) -> BackendStatus:
+                if self.cancelled:
+                    return BackendStatus(running=False, exit_code=1, error="stopped")
+                return BackendStatus(running=True)
+
+            async def cancel(self, handle: BackendHandle) -> None:
+                self.cancelled = True
+
+        backend = FakeBackend()
+        handle = BackendHandle(backend_name="fake", job_id="j1")
+        with patch("amortized.worker._update_job", new_callable=AsyncMock) as update:
+            status, timed_out = await _poll_job(backend, handle, "j1", 0, poll_interval=0.01)
+
+        assert timed_out is True
+        assert backend.cancelled is True
+        assert status.running is False
+        update.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_timeout_runs_to_completion(self) -> None:
+        from amortized.backends import BackendHandle, BackendStatus
+        from amortized.worker import _poll_job
+
+        class FakeBackend:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def status(self, handle: BackendHandle) -> BackendStatus:
+                self.calls += 1
+                return BackendStatus(running=self.calls < 2)
+
+            async def cancel(self, handle: BackendHandle) -> None:
+                raise AssertionError("cancel should not be called without a timeout")
+
+        with patch("amortized.worker._update_job", new_callable=AsyncMock):
+            status, timed_out = await _poll_job(
+                FakeBackend(), BackendHandle(backend_name="fake", job_id="j1"), "j1", None,
+                poll_interval=0.01,
+            )
+
+        assert timed_out is False
+        assert status.running is False

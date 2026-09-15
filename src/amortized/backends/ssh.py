@@ -148,8 +148,10 @@ class SSHBackend:
                     config_mounts += " "
 
                 network_flag = "--network host " if not port_flags else ""
+                gpu_flag = "--gpus all " if spec.resources.gpus > 0 else ""
                 full_cmd = (
-                    f"{self._container_runtime} run -d --gpus all "
+                    f"{self._container_runtime} run -d "
+                    f"{gpu_flag}"
                     f"--ipc=host --pids-limit=-1 "
                     f"{network_flag}"
                     f"{port_flags + ' ' if port_flags else ''}"
