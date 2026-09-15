@@ -173,9 +173,13 @@ function readSaToken() {
   try { return fs.readFileSync(MLFLOW_TOKEN_PATH, 'utf8').trim(); } catch { return ''; }
 }
 if (MLFLOW_UPSTREAM) {
-  const mlflowAgent = MLFLOW_UPSTREAM.startsWith('https')
-    ? new https.Agent({ ca: MLFLOW_CA_FILE ? fs.readFileSync(MLFLOW_CA_FILE) : undefined })
-    : undefined;
+  // The gateway injects its own SA bearer token on every MLflow request; refuse to
+  // do so over cleartext where the token would be exposed in transit (CWE-319). The
+  // enterprise MLflow always serves TLS, so require https.
+  if (!MLFLOW_UPSTREAM.startsWith('https://')) {
+    throw new Error(`MLFLOW_UPSTREAM must be https:// to protect the injected SA token (got '${MLFLOW_UPSTREAM}')`);
+  }
+  const mlflowAgent = new https.Agent({ ca: MLFLOW_CA_FILE ? fs.readFileSync(MLFLOW_CA_FILE) : undefined });
   app.use(createProxyMiddleware({
     pathFilter: ['/mlflow/**'],
     target: MLFLOW_UPSTREAM,

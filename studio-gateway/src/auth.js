@@ -16,6 +16,7 @@ const authApi = kc.makeApiClient(k8s.AuthenticationV1Api);
 
 const DEV_USER = process.env.DEV_USER || '';
 const CACHE_TTL_MS = 60_000;
+const CACHE_MAX = 1024;
 const tokenCache = new Map(); // token -> { user, exp }
 
 function headerUser(req) {
@@ -33,14 +34,24 @@ function bearerToken(req) {
   return req.headers['x-forwarded-access-token'] || '';
 }
 
+// Drop expired entries so the cache does not grow without bound in a long-lived
+// gateway process (one entry accrues per distinct token / rotation).
+function pruneTokenCache(now) {
+  for (const [k, v] of tokenCache) {
+    if (v.exp <= now) tokenCache.delete(k);
+  }
+}
+
 async function usernameFromToken(token) {
   const now = Date.now();
   const hit = tokenCache.get(token);
   if (hit && hit.exp > now) return hit.user;
+  if (hit) tokenCache.delete(token); // expired
   try {
     const res = await authApi.createTokenReview({ body: { spec: { token } } });
     const status = res.status || res.body?.status || {};
     const user = status.authenticated ? status.user?.username || '' : '';
+    if (tokenCache.size >= CACHE_MAX) pruneTokenCache(now);
     tokenCache.set(token, { user, exp: now + CACHE_TTL_MS });
     return user;
   } catch (err) {

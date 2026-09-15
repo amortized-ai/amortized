@@ -24,6 +24,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const k8s = require('@kubernetes/client-node');
@@ -109,11 +110,23 @@ const MORTY_ENABLED = fs.existsSync(path.join(OPENSHELL_MTLS_DIR, 'tls.crt'));
 const stacks = new Map();
 
 function nsForUser(user) {
-  const local = String(user).split('@')[0];
-  const slug = local.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'anon';
+  const s = String(user);
+  const local = s.split('@')[0];
+  // Collision-resistant: append a short hash of the FULL identity (incl. domain) so
+  // two users whose sanitized local-parts would collide never share a namespace
+  // (and thus MLflow workspace): a@x.com vs a@y.com, foo.bar vs foo-bar, or two
+  // long local-parts sharing a prefix. The readable slug is capped so the derived
+  // Morty host label (default--morty-<slug>-<hash>--opencode) stays within the
+  // 63-char DNS label limit.
+  const slug = local.toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 28)
+    .replace(/-+$/, '') || 'anon';
+  const hash = crypto.createHash('sha256').update(s).digest('hex').slice(0, 8);
   // `amz-` (not `amortized-u-`) so this integrated per-user stack does not collide
   // with pre-existing `amortized-u-*` backends. Keep in sync with manifests.js.
-  return `amz-${slug}`;
+  return `amz-${slug}-${hash}`;
 }
 
 // Mask secret-looking `NAME=value` args (e.g. `OPENAI_API_KEY=sk-...`) so keys
@@ -326,20 +339,26 @@ async function helmInstall(ns, gatewayIP, hasModelKey) {
 // Register the cluster OpenShell gateway with the CLI (once per process): place the
 // mounted mTLS certs where the CLI expects them, then `openshell gateway add` — the
 // documented flow from the RHOAI opencode kit (Step 4).
-let openshellConfigured = false;
-async function configureOpenshell() {
-  if (openshellConfigured) return;
-  const mtlsDir = path.join(OPENSHELL_CONFIG_HOME, 'gateways', OPENSHELL_GATEWAY, 'mtls');
-  fs.mkdirSync(mtlsDir, { recursive: true });
-  for (const f of ['ca.crt', 'tls.crt', 'tls.key']) {
-    fs.copyFileSync(path.join(OPENSHELL_MTLS_DIR, f), path.join(mtlsDir, f));
-  }
-  // Remove any stale/wrong-type registration, then add as a --local mTLS gateway.
-  // --local is REQUIRED: without it an https endpoint is treated as a cloud gateway
-  // and blocks on browser authentication, which never completes in a pod.
-  await run(OPENSHELL_BIN, ['gateway', 'remove', OPENSHELL_GATEWAY], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
-  await run(OPENSHELL_BIN, ['gateway', 'add', OPENSHELL_ENDPOINT, '--name', OPENSHELL_GATEWAY, '--local'], { timeout: OPENSHELL_TIMEOUT_MS });
-  openshellConfigured = true;
+let openshellConfigured = null;
+function configureOpenshell() {
+  // Memoize the in-flight/completed promise so concurrent first-time provisions do
+  // not both run `gateway remove` + `gateway add` — an interleaved remove can delete
+  // the registration the other call just added. Reset on failure so a later provision
+  // can retry.
+  if (openshellConfigured) return openshellConfigured;
+  openshellConfigured = (async () => {
+    const mtlsDir = path.join(OPENSHELL_CONFIG_HOME, 'gateways', OPENSHELL_GATEWAY, 'mtls');
+    fs.mkdirSync(mtlsDir, { recursive: true });
+    for (const f of ['ca.crt', 'tls.crt', 'tls.key']) {
+      fs.copyFileSync(path.join(OPENSHELL_MTLS_DIR, f), path.join(mtlsDir, f));
+    }
+    // Remove any stale/wrong-type registration, then add as a --local mTLS gateway.
+    // --local is REQUIRED: without it an https endpoint is treated as a cloud gateway
+    // and blocks on browser authentication, which never completes in a pod.
+    await run(OPENSHELL_BIN, ['gateway', 'remove', OPENSHELL_GATEWAY], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
+    await run(OPENSHELL_BIN, ['gateway', 'add', OPENSHELL_ENDPOINT, '--name', OPENSHELL_GATEWAY, '--local'], { timeout: OPENSHELL_TIMEOUT_MS });
+  })().catch((err) => { openshellConfigured = null; throw err; });
+  return openshellConfigured;
 }
 
 // Create + wire the per-user Morty sandbox through the cluster OpenShell gateway.
@@ -392,7 +411,7 @@ async function ensureSandbox(ns, provider, key) {
     try { fs.unlinkSync(policyFile); } catch { /* best-effort cleanup */ }
   }
   // Expose opencode :4096 via the gateway (Host-routed mTLS -> mortyHost).
-  await run(OPENSHELL_BIN, [...g, 'service', 'expose', name, '4096', 'opencode']);
+  await run(OPENSHELL_BIN, [...g, 'service', 'expose', name, '4096', 'opencode'], { timeout: OPENSHELL_TIMEOUT_MS });
 }
 
 async function provision(ns, user, keyInfo) {

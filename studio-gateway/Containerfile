@@ -9,7 +9,8 @@
 # into the image — it's pulled per install, so image and chart version move independently.
 
 # 1) Build the studio SPA with the embed base path.
-FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS studio-builder
+# ubi9/nodejs-22:latest pinned by digest (resolved 2026-09-15).
+FROM registry.access.redhat.com/ubi9/nodejs-22@sha256:6d86fecb222cfc477376a582665e55741cf403240a83bee2b59331c77a4dce96 AS studio-builder
 WORKDIR /studio
 COPY --chown=default:root studio/package.json studio/package-lock.json ./
 RUN npm ci
@@ -19,20 +20,24 @@ ENV VITE_BASE_PATH=$VITE_BASE_PATH
 RUN npm run build
 
 # 2) Install gateway dependencies.
-FROM registry.access.redhat.com/ubi9/nodejs-22:latest AS gw-builder
+# ubi9/nodejs-22:latest pinned by digest (resolved 2026-09-15).
+FROM registry.access.redhat.com/ubi9/nodejs-22@sha256:6d86fecb222cfc477376a582665e55741cf403240a83bee2b59331c77a4dce96 AS gw-builder
 WORKDIR /app
 COPY --chown=default:root studio-gateway/package.json ./
 RUN npm install --omit=dev
 COPY --chown=default:root studio-gateway/src ./src
 
 # 3) Fetch pinned CLIs (static binaries -> copied into the minimal runtime).
-FROM registry.access.redhat.com/ubi9:latest AS tools
+# ubi9:latest pinned by digest (resolved 2026-09-15).
+FROM registry.access.redhat.com/ubi9@sha256:c5cc9c221baa8eb13093f90c31bb58c04d83f6afd14510d3496691f92566f99e AS tools
 RUN dnf install -y --nodocs tar gzip findutils && dnf clean all
 # helm (static Go binary).
 ARG HELM_VERSION=v3.22.0
 RUN set -eux; cd /tmp; \
-    curl -fsSL -o helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
-    tar -xzf helm.tgz; \
+    curl -fsSL -O "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
+    curl -fsSL -O "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"; \
+    sha256sum -c "helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"; \
+    tar -xzf "helm-${HELM_VERSION}-linux-amd64.tar.gz"; \
     install -m 0755 linux-amd64/helm /usr/local/bin/helm; \
     helm version --short
 # openshell CLI — PINNED TO MATCH THE E1 GATEWAY (openshell-platform chart in
@@ -49,7 +54,8 @@ RUN set -eux; cd /tmp; \
     openshell --version
 
 # 4) Runtime: gateway + baked studio dist + chart + CLIs.
-FROM registry.access.redhat.com/ubi9/nodejs-22-minimal:latest
+# ubi9/nodejs-22-minimal:latest pinned by digest (resolved 2026-09-15).
+FROM registry.access.redhat.com/ubi9/nodejs-22-minimal@sha256:00f862eda4fcba6f07b1abb7b28714495f9a9b00291dc188d6c5c66cf6ff30e1
 WORKDIR /opt/app-root/src
 COPY --from=gw-builder --chown=1001:0 /app/node_modules ./node_modules
 COPY --from=gw-builder --chown=1001:0 /app/src ./src

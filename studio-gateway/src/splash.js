@@ -133,8 +133,11 @@ function renderSplash(state, basePath = '') {
   }
   function poll(){
     fetch(READY_URL, { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
-      .then(function(r){ return r.json(); })
-      .then(applyState)
+      .then(function(r){
+        if (r.status === 401 || r.status === 403) { toError('Your session has expired. Reload the page to sign in again.'); return null; }
+        return r.json();
+      })
+      .then(function(s){ if (s) applyState(s); })
       .catch(function(){ setTimeout(poll, POLL_MS); });
   }
   function retry(){

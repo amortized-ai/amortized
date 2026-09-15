@@ -132,7 +132,9 @@ function openshellTlsSecret(ns) {
 
 // Optional: stamp the SDG teacher-keys Secret from the gateway's mounted dir.
 function teacherKeysSecret(ns) {
-  if (!TEACHER_KEYS_DIR) return null;
+  // Skip when unset or the dir is not mounted — readdirSync would otherwise throw
+  // ENOENT and fail provisioning for every user.
+  if (!TEACHER_KEYS_DIR || !fs.existsSync(TEACHER_KEYS_DIR)) return null;
   const data = {};
   for (const f of fs.readdirSync(TEACHER_KEYS_DIR)) {
     if (f.startsWith('.')) continue;
