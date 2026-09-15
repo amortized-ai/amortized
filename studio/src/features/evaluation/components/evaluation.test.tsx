@@ -135,7 +135,33 @@ describe("EvaluationDetailPanel", () => {
       <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
       { wrapper },
     )
-    expect(screen.getByTestId("eval-model-link-11111111-2222-3333-4444-555555555555")).toBeInTheDocument()
+    expect(screen.getByTestId("eval-model-link-base-model")).toBeInTheDocument()
+  })
+
+  it("merges duplicate model evals into one column with mean ± std", () => {
+    const group = makeGroup({
+      evals: [
+        makeEntry({ model: "tuned-model", scores: { accuracy: 0.8 }, job_id: "aaaaaaaa-1111" }),
+        makeEntry({ model: "tuned-model", scores: { accuracy: 0.6 }, job_id: "bbbbbbbb-2222" }),
+        makeEntry({ model: "base-model", scores: { accuracy: 0.4 }, job_id: "cccccccc-3333" }),
+      ],
+      metric_names: ["accuracy"],
+    })
+    render(
+      <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
+      { wrapper },
+    )
+    // one column per model, not per run
+    expect(screen.getAllByText("tuned-model").length).toBe(1)
+    // mean of 0.8/0.6 = 0.7, sample std of two values = 0.1
+    expect(screen.getByText("70%")).toBeInTheDocument()
+    expect(screen.getByText("±14.1%")).toBeInTheDocument()
+    // base model single run shows its own score without std
+    expect(screen.getByText("40%")).toBeInTheDocument()
+    expect(screen.queryByText("±0%")).not.toBeInTheDocument()
+    // both job links of the merged runs remain
+    expect(screen.getByTestId("eval-job-link-aaaaaaaa-1111")).toBeInTheDocument()
+    expect(screen.getByTestId("eval-job-link-bbbbbbbb-2222")).toBeInTheDocument()
   })
 
   it("renders unresolvable models as plain text, not links", () => {
@@ -148,7 +174,7 @@ describe("EvaluationDetailPanel", () => {
     )
     expect(screen.getByText("some/hf-base-model")).toBeInTheDocument()
     expect(
-      screen.queryByTestId("eval-model-link-11111111-2222-3333-4444-555555555555"),
+      screen.queryByTestId("eval-model-link-some/hf-base-model"),
     ).not.toBeInTheDocument()
   })
 })
