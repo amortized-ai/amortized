@@ -142,6 +142,8 @@ async def list_evaluations(
     dataset_name_by_run: dict[str, str] = {}
     parent_cache: dict[str, dict[str, Any] | None] = {}
     for job in eval_jobs:
+        if job.get("status") != JobStatus.succeeded.value:
+            continue
         cfg = _job_config(job)
         run_id = str(cfg.get("eval_data_run_id") or "")
         if not run_id:
@@ -182,6 +184,10 @@ async def list_evaluations(
 
     groups: dict[tuple[str, str], dict[str, Any]] = {}
     for job in sorted(eval_jobs, key=lambda j: j.get("created_at") or "", reverse=True):
+        # Only succeeded evals are comparable — failed/cancelled runs have
+        # no scores and would render as dead "(unknown)" columns.
+        if job.get("status") != JobStatus.succeeded.value:
+            continue
         cfg = _job_config(job)
         ds_run = dataset_run_by_job[job["id"]]
         sig = _metric_set_signature(cfg)

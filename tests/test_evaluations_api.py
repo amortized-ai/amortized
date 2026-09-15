@@ -182,6 +182,49 @@ class TestScoredGroupFilter:
         assert result["groups"][0]["dataset"]["run_id"] == "d1"
 
     @pytest.mark.asyncio
+    async def test_failed_evals_excluded_from_group(self, monkeypatch) -> None:
+        # A failed eval on the same dataset + metric set as succeeded ones
+        # must not appear as a (scoreless) column in the comparison table.
+        jobs = [
+            _job(
+                "j1", "base", metrics=["exact_match"],
+                eval_data_run_id="d1", run_id="r1", created="2026-01-01",
+            ),
+            _job(
+                "j2", "broken", status="failed",
+                metrics=["exact_match"], eval_data_run_id="d1", run_id="r2",
+                created="2026-01-02",
+            ),
+            _job(
+                "j3", "tuned", metrics=["exact_match"],
+                eval_data_run_id="d1", run_id="r3", created="2026-01-03",
+            ),
+        ]
+
+        class FakeRepo:
+            async def list_jobs(self, **kw):
+                return jobs
+
+            async def get_job(self, job_id):
+                return None
+
+        class FakeConn:
+            pass
+
+        async def fake_runs():
+            return {
+                "r1": {"eval_score_exact_match": "0.5"},
+                "r3": {"eval_score_exact_match": "0.6"},
+            }
+
+        monkeypatch.setattr(evals_api, "_eval_runs_by_id", fake_runs)
+        monkeypatch.setattr(evals_api, "Repository", lambda conn: FakeRepo())
+        result = await evals_api.list_evaluations(db=FakeConn())
+        assert len(result["groups"]) == 1
+        models = [e["model"] for e in result["groups"][0]["evals"]]
+        assert models == ["tuned", "base"]  # newest first, no "broken"
+
+    @pytest.mark.asyncio
     async def test_failed_only_group_hidden(self, monkeypatch) -> None:
         jobs = [
             _job(
