@@ -221,8 +221,11 @@ async def create_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+    cpu_errors, cpu_warnings = check_cpu_policy(config)
+    if errors or cpu_errors:
+        raise HTTPException(status_code=422, detail=errors + cpu_errors)
+    if cpu_warnings:
+        logger.warning("CPU policy warnings (job creation): %s", cpu_warnings)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 

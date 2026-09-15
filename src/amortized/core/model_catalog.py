@@ -22,12 +22,24 @@ import os
 from pathlib import Path
 from typing import Any
 
+import amortized.config as _config_mod
+
 logger = logging.getLogger("amortized.core.model_catalog")
 
 _PROVIDER_FIELDS = ("name", "endpoint", "provider_type", "api_key")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_SUPPORTED_MODELS_PATH = _REPO_ROOT / "agents" / "training" / "skills" / "supported_models.json"
+
+
+def _supported_models_path() -> Path:
+    """Locate supported_models.json — settings override first (needed when the
+    package is installed into site-packages, e.g. the Docker image), repo
+    layout otherwise. Mirrors the recipes_dir override pattern."""
+    base = _config_mod.settings.supported_models_dir
+    if base is None:
+        base = _REPO_ROOT
+    return base / "agents" / "training" / "skills" / "supported_models.json"
+
 
 _supported_training_models: list[dict[str, Any]] | None = None
 
@@ -102,7 +114,7 @@ def training_model_cpu_compatibility(model_name_or_path: str) -> str | None:
     global _supported_training_models
     if _supported_training_models is None:
         try:
-            _supported_training_models = json.loads(_SUPPORTED_MODELS_PATH.read_text())
+            _supported_training_models = json.loads(_supported_models_path().read_text())
         except (OSError, ValueError):
             logger.warning("supported training models catalog unavailable", exc_info=True)
             _supported_training_models = []

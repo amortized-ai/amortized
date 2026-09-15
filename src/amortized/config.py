@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
+    supported_models_dir: Path | None = None
 
     api_key: str = Field(default="", description="API key for auth (empty = no auth)")
     cors_origins: str = Field(default="*", description="Comma-separated allowed CORS origins")

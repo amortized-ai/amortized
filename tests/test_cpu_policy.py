@@ -1,5 +1,9 @@
 """Tests for the CPU training guardrail matrix (issue #442, Phase 1)."""
 
+import logging
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from amortized.core.cpu_policy import check_cpu_policy
@@ -14,6 +18,10 @@ def _config(**overrides: object) -> dict:
         "device": "cpu",
     }
     return {**base, **overrides}
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
 
 
 class TestModelCatalogCpuFlags:
@@ -33,6 +41,28 @@ class TestModelCatalogCpuFlags:
 
     def test_unknown_model_is_neutral(self) -> None:
         assert training_model_cpu_compatibility("test/model") is None
+
+    def test_catalog_unavailable_falls_back_neutral(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The site-packages path (Docker) or a missing file must not crash —
+        every model returns None (fail-open), matching the logged fallback."""
+        import amortized.core.model_catalog as mc
+
+        monkeypatch.setattr(mc, "_supported_training_models", None)
+        missing = Path("/nonexistent/supported_models.json")
+        monkeypatch.setattr(mc, "_supported_models_path", lambda: missing)
+        assert mc.training_model_cpu_compatibility("Qwen/Qwen3.5-9B") is None
+        assert mc.training_model_cpu_compatibility("Qwen/Qwen3.5-0.8B") is None
+
+    def test_settings_override_resolves_catalog(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AMORTIZED_SUPPORTED_MODELS_DIR redirects the lookup (Docker deployments)."""
+        import amortized.config as config_mod
+        import amortized.core.model_catalog as mc
+
+        monkeypatch.setattr(mc, "_supported_training_models", None)
+        monkeypatch.setattr(config_mod.settings, "supported_models_dir", _repo_root())
+        path = mc._supported_models_path()
+        assert path == _repo_root() / "agents" / "training" / "skills" / "supported_models.json"
+        assert mc.training_model_cpu_compatibility("Qwen/Qwen3.5-9B") == "reject"
 
 
 class TestCpuPolicyMatrix:
@@ -92,6 +122,18 @@ class TestCpuPolicyMatrix:
         errors, _ = check_cpu_policy(_config(algorithm="lora_sft", qlora=True))
         assert len(errors) == 1
         assert "QLoRA" in errors[0]
+
+    def test_bnb_4bit_quant_type_rejected(self) -> None:
+        errors, _ = check_cpu_policy(_config(algorithm="lora_sft", bnb_4bit_quant_type="nf4"))
+        assert len(errors) == 1
+        assert "QLoRA" in errors[0]
+
+    def test_unknown_model_warns_cpu_compatibility_unknown(self) -> None:
+        errors, warnings = check_cpu_policy(
+            _config(model_name_or_path="test/model-70B", algorithm="lora_sft", use_peft=True)
+        )
+        assert errors == []  # fail-open: unknown models are not rejected
+        assert any("not in the supported catalog" in w for w in warnings)
 
     def test_bf16_warns(self) -> None:
         errors, warnings = check_cpu_policy(_config(algorithm="lora_sft", use_peft=True, bf16=True))
@@ -195,6 +237,72 @@ class TestValidateTrainingJobWiring:
         # identical validation outcome to pre-change behavior.
         assert "device" not in result.config
         assert result.warnings == []
+
+
+class TestCreateTrainingJobWiring:
+    """Direct POST /jobs/training must enforce the same matrix as validate."""
+
+    @pytest.mark.asyncio
+    async def test_cpu_rejection_blocks_creation(self) -> None:
+        from fastapi import HTTPException
+
+        from amortized.api.jobs import create_training_job
+        from amortized.models import TrainingJobRequest
+
+        request = TrainingJobRequest(**_config(model_name_or_path="Qwen/Qwen3.5-9B"))
+        http_request = SimpleNamespace(headers={})
+        with pytest.raises(HTTPException) as exc_info:
+            await create_training_job(
+                request=request,
+                http_request=http_request,
+                db=None,  # type: ignore[arg-type]
+            )
+        assert exc_info.value.status_code == 422
+        assert any("too large" in str(e) for e in exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_cpu_warnings_logged_at_creation(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        from amortized.api.jobs import create_training_job
+        from amortized.models import TrainingJobRequest
+
+        async def fake_create_job(*args: object, **kwargs: object) -> dict:
+            return {"type": "training", "config": {}}
+
+        monkeypatch.setattr("amortized.api.jobs.core_create_job", fake_create_job)
+        request = TrainingJobRequest(**_config(algorithm="lora_sft", use_peft=True, bf16=True))
+        http_request = SimpleNamespace(headers={})
+        with caplog.at_level(logging.WARNING, logger="amortized.api.jobs"):
+            result = await create_training_job(
+                request=request,
+                http_request=http_request,
+                db=None,  # type: ignore[arg-type]
+            )
+        assert result.type.value == "training"  # job created despite warnings
+        assert any("CPU policy warnings" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_gpu_creation_unaffected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GPU configs raise no CPU-policy errors (job creation proceeds)."""
+        from amortized.api.jobs import create_training_job
+        from amortized.models import TrainingJobRequest
+
+        called = {}
+
+        async def fake_create_job(*args: object, **kwargs: object) -> dict:
+            called["yes"] = True
+            return {"type": "training", "config": {}}
+
+        monkeypatch.setattr("amortized.api.jobs.core_create_job", fake_create_job)
+        request = TrainingJobRequest(**_config(device="gpu", algorithm="grpo"))
+        http_request = SimpleNamespace(headers={})
+        await create_training_job(
+            request=request,
+            http_request=http_request,
+            db=None,  # type: ignore[arg-type]
+        )
+        assert called.get("yes") is True
 
 
 class TestDeviceSkippedFromThubConfig:

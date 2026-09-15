@@ -40,12 +40,17 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
         errors.append(f"{model} is too large for CPU training — use a smaller model (≤2B) or a GPU")
     elif support == "warn":
         warnings.append(f"{model} on CPU is very slow — expect hours; consider a GPU")
+    elif support is None:
+        warnings.append(
+            f"{model} not in the supported catalog — CPU compatibility unknown; "
+            "training may be very slow or fail"
+        )
 
     algorithm = config.get("algorithm", "")
     if algorithm in _CPU_REJECTED_ALGORITHMS:
         errors.append(f"{algorithm} requires vLLM, which is CUDA-only — it cannot run on CPU")
 
-    if config.get("load_in_4bit") or config.get("qlora"):
+    if config.get("load_in_4bit") or config.get("qlora") or config.get("bnb_4bit_quant_type"):
         errors.append(
             "QLoRA / 4-bit quantization is not supported on CPU "
             "(bitsandbytes CPU support is experimental)"
@@ -66,6 +71,8 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
         )
 
     if (config.get("nproc_per_node") or 1) > 1:
-        warnings.append("nproc_per_node > 1 on CPU has no benefit — it will be capped at 1")
+        warnings.append(
+            "nproc_per_node > 1 is not supported for CPU training; use nproc_per_node: 1"
+        )
 
     return errors, warnings
