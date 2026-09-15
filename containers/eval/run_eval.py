@@ -12,7 +12,7 @@ Reads a config.json (delivered to /amortized/config.json by the control plane):
       },
       "metrics": ["exact_match", "format_validity"],
       "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
-      "max_samples": 200,
+      "max_samples": 0,  # 0 = evaluate all records
       "judge_max_samples": 0,  # 0 = judge all samples
       "temperature": 0.0,
       "output_dir": "/amortized/work/results"
@@ -269,7 +269,9 @@ def structural_metrics(
 
 async def run(config: dict[str, Any]) -> dict[str, Any]:
     endpoints = config["endpoints"]
-    max_samples = int(config.get("max_samples", 200))
+    # 0 = evaluate every record in the dataset (the default); a positive
+    # value bounds generation cost/latency for large datasets.
+    max_samples = int(config.get("max_samples", 0))
     # 0 = judge every sample (the default); a positive value caps judge
     # cost/latency for large evals.
     judge_max_samples = int(config.get("judge_max_samples", 0))
@@ -281,7 +283,7 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
     samples: list[dict[str, Any]] = []
     skipped = 0
     for record in records:
-        if len(samples) >= max_samples:
+        if max_samples > 0 and len(samples) >= max_samples:
             break
         try:
             prompt, reference = split_prompt_reference(record)

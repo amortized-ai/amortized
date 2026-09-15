@@ -405,7 +405,15 @@ class EvalJobConfig(BaseModel):
         default_factory=lambda: ["exact_match", "format_validity"],
         description="Structural metrics to compute (exact_match, format_validity)",
     )
-    max_samples: int = Field(200, ge=1, le=10000, description="Max eval samples to run")
+    max_samples: int = Field(
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max eval samples to run; 0 (default) evaluates ALL records"
+            " in the dataset — set lower only to bound eval time/cost"
+        ),
+    )
     judge_max_samples: int = Field(
         0,
         ge=0,

@@ -446,7 +446,7 @@ async def build(
         "endpoints": endpoints,
         "metrics": metrics,
         "rubric": rubric,
-        "max_samples": config.get("max_samples", 200),
+        "max_samples": config.get("max_samples", 0),
         "judge_max_samples": config.get("judge_max_samples", 0),
         "temperature": config.get("temperature", 0.0),
         "output_dir": "/amortized/work/results",
