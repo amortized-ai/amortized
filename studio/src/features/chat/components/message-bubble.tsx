@@ -205,7 +205,15 @@ export function MessageBubble({
 
         {vramEstimate && (
           <div className="mt-3">
-            <VRAMEstimateCard data={vramEstimate} />
+            {message.proposedAction?.config?.device === "cpu" ? (
+              // CPU jobs (issue #442): GPU-math VRAM estimates are misleading —
+              // show a static CPU note instead.
+              <p className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                CPU mode — tiny models only · expect slow training
+              </p>
+            ) : (
+              <VRAMEstimateCard data={vramEstimate} />
+            )}
           </div>
         )}
         {visibleToolResults.length > 0 && (

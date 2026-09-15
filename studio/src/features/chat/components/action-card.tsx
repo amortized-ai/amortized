@@ -44,7 +44,13 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
     rows.push(["Batch size", String(config.effective_batch_size ?? config.per_device_train_batch_size)])
   if (config.max_length) rows.push(["Max seq length", String(config.max_length)])
   if (config.unfreeze_rank_ratio) rows.push(["Unfreeze ratio", String(config.unfreeze_rank_ratio)])
-  if (config.nproc_per_node) rows.push(["GPUs", String(config.nproc_per_node)])
+  if (config.device === "cpu") {
+    // CPU jobs (issue #442): nproc_per_node is forced to 1, so showing "GPUs: 1"
+    // would be misleading — render an explicit compute row instead.
+    rows.push(["Compute", "CPU"])
+  } else if (config.nproc_per_node) {
+    rows.push(["GPUs", String(config.nproc_per_node)])
+  }
 
   return rows
 }
