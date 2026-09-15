@@ -39,26 +39,31 @@ guidance.
 ## Student Model Selection
 
 Read `skills/training/supported_models.json` for the list of candidate
-models. You MUST show VRAM estimates before presenting model options.
+models. You MUST show resource estimates before presenting model options.
 
 1. Estimate training resources for EACH model size from the file
-2. Show a VRAM comparison card with ALL collected estimates
+2. Show a comparison card with ALL collected estimates
 3. THEN present model options
+
+For CPU jobs (`device: "cpu"`), show CPU RAM expectations instead of
+VRAM: ~8 Gi for 0.8B, ~16 Gi for 2B, ~32 Gi for 4B (very slow — expect
+hours).
 
 ## Training Method Selection
 
-You MUST show VRAM estimates before presenting method options.
+You MUST show resource estimates (VRAM for GPU jobs, CPU RAM for CPU
+jobs) before presenting method options.
 
 1. Estimate training resources with the selected model size for EACH
    method (lora, qlora, osft, sft)
-2. Show a VRAM comparison card with ALL collected estimates
+2. Show a comparison card with ALL collected estimates
 3. THEN present method options
 
 ## Training Confirmation
 
 Before submitting, estimate training resources with the final model
-size and method, then show the VRAM card so the user sees what they
-are committing to.
+size and method, then show the resource card (VRAM for GPU jobs, CPU RAM
+for CPU jobs) so the user sees what they are committing to.
 
 ## Job Chaining
 
@@ -104,10 +109,10 @@ care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
 Key decisions to gather:
-- **Model** — present options with VRAM estimates
+- **Model** — present options with resource estimates
 - **Training data** — should come from a completed SDG job via
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
-- **Training method** — present options with VRAM estimates
+- **Training method** — present options with resource estimates
 
 ### Phase 3 — Validate and Confirm
 
@@ -116,7 +121,8 @@ If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
 Estimate training resources with the final configuration and show the
-VRAM card. Call `validate_training_job` with the assembled config.
+resource card (VRAM for GPU jobs, CPU RAM for CPU jobs). Call
+`validate_training_job` with the assembled config.
 The UI renders a confirmation card — the user clicks confirm to
 submit the job.
 
