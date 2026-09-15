@@ -220,6 +220,13 @@ export async function getEvalResults(id: string): Promise<EvalResults | null> {
 
 // --- Evaluations (cross-model comparison groups) ---
 
+export interface EvalSemanticConfig {
+  temperature: number
+  max_samples: number
+  judge_max_samples: number
+  judge_model: string
+}
+
 export interface EvaluationEntry {
   job_id: string
   model: string
@@ -229,6 +236,7 @@ export interface EvaluationEntry {
   scores: Record<string, number>
   num_samples: number | null
   topic: string
+  config?: EvalSemanticConfig
 }
 
 export interface EvaluationGroup {

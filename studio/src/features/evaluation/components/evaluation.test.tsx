@@ -164,6 +164,50 @@ describe("EvaluationDetailPanel", () => {
     expect(screen.getByTestId("eval-job-link-bbbbbbbb-2222")).toBeInTheDocument()
   })
 
+  it("splits same model with different configs into separate columns", () => {
+    const group = makeGroup({
+      evals: [
+        makeEntry({
+          model: "tuned-model",
+          scores: { accuracy: 0.8 },
+          job_id: "aaaaaaaa-1111",
+          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
+        }),
+        makeEntry({
+          model: "tuned-model",
+          scores: { accuracy: 0.5 },
+          job_id: "bbbbbbbb-2222",
+          config: { temperature: 0.7, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
+        }),
+        // same config as the first run -> merges with it (mean of 0.8, 0.6)
+        makeEntry({
+          model: "tuned-model",
+          scores: { accuracy: 0.6 },
+          job_id: "cccccccc-3333",
+          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
+        }),
+      ],
+      metric_names: ["accuracy"],
+    })
+    render(
+      <EvaluationDetailPanel group={group} open={true} onOpenChange={vi.fn()} />,
+      { wrapper },
+    )
+    // two columns for the same model (temp 0 merged x2, temp 0.7 alone)
+    expect(screen.getAllByText("tuned-model").length).toBe(2)
+    // merged column: mean of 0.8 and 0.6
+    expect(screen.getByText("70%")).toBeInTheDocument()
+    // separate column: its own score
+    expect(screen.getByText("50%")).toBeInTheDocument()
+    // config hint only on multi-config models, showing what differs
+    expect(screen.getByText("temp 0")).toBeInTheDocument()
+    expect(screen.getByText("temp 0.7")).toBeInTheDocument()
+    // all three job links present
+    expect(screen.getByTestId("eval-job-link-aaaaaaaa-1111")).toBeInTheDocument()
+    expect(screen.getByTestId("eval-job-link-bbbbbbbb-2222")).toBeInTheDocument()
+    expect(screen.getByTestId("eval-job-link-cccccccc-3333")).toBeInTheDocument()
+  })
+
   it("renders unresolvable models as plain text, not links", () => {
     const group = makeGroup({
       evals: [makeEntry({ model: "some/hf-base-model" })],

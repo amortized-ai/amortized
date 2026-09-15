@@ -7,7 +7,11 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { X, ClipboardCheck, Briefcase, ArrowRight, Database, Cpu } from "lucide-react"
-import type { EvaluationEntry, EvaluationGroup } from "@/lib/api-client"
+import type {
+  EvalSemanticConfig,
+  EvaluationEntry,
+  EvaluationGroup,
+} from "@/lib/api-client"
 import { useDatasets, fetchDatasetByRun } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import type { DatasetRecord } from "@/types/api"
@@ -58,7 +62,7 @@ export function EvaluationDetailPanel({
   const metricRows = buildMetricRows(group)
   // Multiple eval runs of the same model (same dataset + metric set)
   // merge into one column: mean across runs, ± std when >1 value.
-  const modelColumns = mergeEvalsByModel(group.evals)
+  const modelColumns = mergeEvalColumns(group.evals)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,6 +212,19 @@ export function EvaluationDetailPanel({
                             </button>
                           ))}
                         </div>
+                        {(() => {
+                          const diff = differingConfigFields(modelColumns, col.model)
+                          if (diff.length === 0) return null
+                          const hint = formatConfigHint(col, diff)
+                          return hint ? (
+                            <span
+                              className="text-xs text-muted-foreground/80 truncate"
+                              title={hint}
+                            >
+                              {hint}
+                            </span>
+                          ) : null
+                        })()}
                         <div className="flex items-center gap-1.5">
                           <StatusDot
                             status={
@@ -238,7 +255,7 @@ export function EvaluationDetailPanel({
                       {row.name}
                     </td>
                     {modelColumns.map((col) => {
-                      const cell = row.cells[col.model]
+                      const cell = row.cells[`${col.model}::${col.configKey}`]
                       return (
                         <td key={col.model} className="px-4 py-3">
                           {cell == null ? (
@@ -312,17 +329,69 @@ function formatScore(value: number): string {
 interface ModelColumn {
   model: string
   runs: EvaluationEntry[]
+  config: EvalSemanticConfig | null
+  /** Distinguishes a column key within a model when configs differ. */
+  configKey: string
 }
 
-/** Group eval runs by model id, first-appearance order. */
-function mergeEvalsByModel(evals: EvaluationEntry[]): ModelColumn[] {
-  const byModel = new Map<string, EvaluationEntry[]>()
+/** Stable key of the semantic config (absent config = legacy, its own key). */
+function configKeyOf(e: EvaluationEntry): string {
+  const c = e.config
+  if (!c) return "legacy"
+  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}`
+}
+
+/**
+ * Group eval runs into comparison columns by model + semantic config.
+ * The same model under different configs (temperature, judge, sample
+ * caps) is NOT the same evaluation — those become separate columns;
+ * identical model+config runs merge (mean ± std).
+ */
+function mergeEvalColumns(evals: EvaluationEntry[]): ModelColumn[] {
+  const byKey = new Map<string, ModelColumn>()
   for (const e of evals) {
-    const runs = byModel.get(e.model)
-    if (runs) runs.push(e)
-    else byModel.set(e.model, [e])
+    const key = `${e.model}::${configKeyOf(e)}`
+    let col = byKey.get(key)
+    if (!col) {
+      col = { model: e.model, runs: [], config: e.config ?? null, configKey: configKeyOf(e) }
+      byKey.set(key, col)
+    }
+    col.runs.push(e)
   }
-  return [...byModel.entries()].map(([model, runs]) => ({ model, runs }))
+  return [...byKey.values()]
+}
+
+/** Which config fields differ between a model's columns (for the hint line). */
+function differingConfigFields(
+  columns: ModelColumn[],
+  model: string,
+): (keyof EvalSemanticConfig)[] {
+  const cols = columns.filter((c) => c.model === model)
+  if (cols.length < 2 || cols.some((c) => !c.config)) return []
+  const fields: (keyof EvalSemanticConfig)[] = [
+    "temperature",
+    "max_samples",
+    "judge_max_samples",
+    "judge_model",
+  ]
+  return fields.filter((f) => new Set(cols.map((c) => c.config?.[f])).size > 1)
+}
+
+function formatConfigHint(
+  col: ModelColumn,
+  fields: (keyof EvalSemanticConfig)[],
+): string {
+  const parts: string[] = []
+  for (const f of fields) {
+    const v = col.config?.[f]
+    if (v === undefined) continue
+    if (f === "temperature") parts.push(`temp ${v}`)
+    else if (f === "max_samples") parts.push(v === 0 ? "all samples" : `${v} samples`)
+    else if (f === "judge_max_samples")
+      parts.push(v === 0 ? "judge all" : `judge ${v}`)
+    else if (f === "judge_model" && v) parts.push(`judge ${v}`)
+  }
+  return parts.join(" · ")
 }
 
 interface ScoreStat {
@@ -355,7 +424,7 @@ function buildMetricRows(group: EvaluationGroup): {
     ...group.metric_names.filter((n) => names.has(n)),
     ...[...names].filter((n) => !group.metric_names.includes(n)).sort(),
   ]
-  const columns = mergeEvalsByModel(group.evals)
+  const columns = mergeEvalColumns(group.evals)
   return ordered.map((name) => ({
     name,
     cells: Object.fromEntries(
@@ -364,7 +433,10 @@ function buildMetricRows(group: EvaluationGroup): {
           .filter((e) => e.status === "succeeded")
           .map((e) => e.scores[name])
           .filter((v): v is number => v != null)
-        return [col.model, values.length ? scoreStat(values) : null]
+        return [
+          `${col.model}::${col.configKey}`,
+          values.length ? scoreStat(values) : null,
+        ]
       }),
     ),
   }))
