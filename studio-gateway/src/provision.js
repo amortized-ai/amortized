@@ -212,6 +212,34 @@ async function readUserKey(ns) {
   }
 }
 
+// Create the Secret, or replace it if it already exists. A full replace (PUT) must
+// carry the current metadata.resourceVersion, so read it back first; retry if the
+// object changes underneath us.
+async function upsertSecret(namespace, name, body) {
+  try {
+    await coreApi.createNamespacedSecret({ namespace, body });
+    return;
+  } catch (err) {
+    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+    if (code !== 409) throw err;
+  }
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await coreApi.readNamespacedSecret({ name, namespace });
+    const meta = existing?.metadata || existing?.body?.metadata || {};
+    const put = { ...body, metadata: { ...body.metadata, resourceVersion: meta.resourceVersion } };
+    try {
+      await coreApi.replaceNamespacedSecret({ name, namespace, body: put });
+      return;
+    } catch (err) {
+      const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
+      if (code !== 409) throw err;
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 // Persist (create or replace) the per-user model key Secret.
 async function writeUserKey(ns, provider, key) {
   const body = {
@@ -228,13 +256,7 @@ async function writeUserKey(ns, provider, key) {
       key: Buffer.from(key).toString('base64'),
     },
   };
-  try {
-    await coreApi.createNamespacedSecret({ namespace: GATEWAY_NAMESPACE, body });
-  } catch (err) {
-    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
-    if (code !== 409) throw err;
-    await coreApi.replaceNamespacedSecret({ name: keySecretName(ns), namespace: GATEWAY_NAMESPACE, body });
-  }
+  await upsertSecret(GATEWAY_NAMESPACE, keySecretName(ns), body);
 }
 
 // Stamp the per-user model key into the USER namespace as the chart's teacherKeys
@@ -252,22 +274,16 @@ async function ensureServerKeySecret(ns, keyInfo) {
     type: 'Opaque',
     data: { [keyInfo.credentialKey]: Buffer.from(keyInfo.key).toString('base64') },
   };
-  try {
-    await coreApi.createNamespacedSecret({ namespace: ns, body });
-  } catch (err) {
-    const code = err?.code ?? err?.statusCode ?? err?.response?.statusCode;
-    if (code !== 409) throw err;
-    await coreApi.replaceNamespacedSecret({ name: MODEL_KEY_SECRET, namespace: ns, body });
-  }
+  await upsertSecret(ns, MODEL_KEY_SECRET, body);
 }
 
 // Restart the user's server so it re-reads the model key from its env (the chart
 // envFrom's the teacherKeys secret). Deletes the server pod(s); the Deployment
 // recreates them. Used on key rotation, when the core stack is already up.
 async function restartServer(ns) {
-  await coreApi
-    .deleteCollectionNamespacedPod({ namespace: ns, labelSelector: 'app=amortized,component=server' })
-    .catch((err) => console.error(`  server restart (${ns}) failed: ${err.message || err}`));
+  // Let a deletion failure reject: setUserKey's rotation catch turns it into an
+  // `error` state instead of falsely reporting `ready` while the pods keep the old key.
+  await coreApi.deleteCollectionNamespacedPod({ namespace: ns, labelSelector: 'app=amortized,component=server' });
 }
 
 // The OpenShell egress + landlock policy baked into the sandbox at create time.

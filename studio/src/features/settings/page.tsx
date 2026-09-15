@@ -191,7 +191,11 @@ export default function SettingsPage() {
   // In the hybrid gateway deployment the per-user BYOK "Model Provider" card is the
   // key control, so hide the legacy runtime-auth "Agent Provider" section there;
   // keep it for local/KIND (no gateway) where opencode provider auth is the path.
-  const byokGateway = modelProvider?.available ?? false
+  const byokGateway = modelProvider?.available === true
+  // Confirmed gateway absence (local/KIND): only then fall back to the legacy
+  // runtime-auth "Agent Provider" section. A pending or errored status is "unknown"
+  // — show neither, rather than wrongly activating the legacy flow.
+  const gatewayAbsent = modelProvider?.available === false
 
   const filteredRoutes = useMemo(() => {
     if (!routeSearch.trim()) return routes
@@ -229,7 +233,7 @@ export default function SettingsPage() {
 
         <button
           type="button"
-          onClick={() => document.getElementById("section-agent")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onClick={() => document.getElementById(byokGateway ? "section-model" : "section-agent")?.scrollIntoView({ behavior: "smooth", block: "start" })}
           className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-all duration-200 hover:border-[#ffb3b3] hover:shadow-sm cursor-pointer dark:hover:border-[#730303]"
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ffe0e0] text-[#cc0000] transition-colors duration-200 group-hover:bg-[#ffb3b3] dark:bg-[#420303]/40 dark:text-[#e54343]">
@@ -367,8 +371,10 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Agent Provider — legacy runtime-auth section; hidden when BYOK gateway is present */}
-      {!byokGateway && <AgentProviderSection />}
+      {/* Agent Provider — legacy runtime-auth section; shown only on confirmed gateway
+          absence (local/KIND). When BYOK is present the Model Provider card (id
+          section-model) is the Agent nav target instead. */}
+      {gatewayAbsent && <AgentProviderSection />}
 
       {/* AI Gateway */}
       <Card id="section-gateway" className="scroll-mt-6">
