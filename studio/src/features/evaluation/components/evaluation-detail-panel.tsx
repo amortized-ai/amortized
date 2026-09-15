@@ -155,7 +155,11 @@ export function EvaluationDetailPanel({
             )}
           </div>
 
-          <div className="rounded-xl border bg-card overflow-hidden">
+          {/* min-w-max lets this wrapper grow with the table's
+              max-content width — otherwise the block wrapper stays at the
+              scroll container's width and overflow-hidden CLIPS the last
+              model columns instead of letting the container scroll. */}
+          <div className="rounded-xl border bg-card overflow-hidden min-w-max">
             <table className="w-full min-w-max text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
