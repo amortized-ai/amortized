@@ -80,6 +80,10 @@ def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str,
         judge_max_samples = int(cfg.get("judge_max_samples", 0) or 0)
     judge = cfg.get("judge") or {}
     judge_model = str(judge.get("model", "") or "") if isinstance(judge, dict) else ""
+    # vllm_args is serving plumbing EXCEPT when it changes model behavior
+    # (max-model-len, quantization, ...) — always part of the fingerprint,
+    # normalized to a sorted list so unset (absent) == [].
+    vllm_args = sorted(str(a) for a in (cfg.get("vllm_args") or []) if str(a).strip())
     # What actually ran beats what the config says.
     if run_tags.get("num_samples"):
         with _suppress():
@@ -95,6 +99,7 @@ def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str,
         "max_samples": max_samples,
         "judge_max_samples": judge_max_samples,
         "judge_model": judge_model,
+        "vllm_args": vllm_args,
     }
 
 

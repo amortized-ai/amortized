@@ -225,6 +225,7 @@ export interface EvalSemanticConfig {
   max_samples: number
   judge_max_samples: number
   judge_model: string
+  vllm_args: string[]
 }
 
 export interface EvaluationEntry {

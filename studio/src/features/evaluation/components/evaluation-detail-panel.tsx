@@ -338,7 +338,7 @@ interface ModelColumn {
 function configKeyOf(e: EvaluationEntry): string {
   const c = e.config
   if (!c) return "legacy"
-  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}`
+  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}|${(c.vllm_args ?? []).join(",")}`
 }
 
 /**
@@ -373,6 +373,7 @@ function differingConfigFields(
     "max_samples",
     "judge_max_samples",
     "judge_model",
+    "vllm_args",
   ]
   return fields.filter((f) => new Set(cols.map((c) => c.config?.[f])).size > 1)
 }
@@ -390,6 +391,7 @@ function formatConfigHint(
     else if (f === "judge_max_samples")
       parts.push(v === 0 ? "judge all" : `judge ${v}`)
     else if (f === "judge_model" && v) parts.push(`judge ${v}`)
+    else if (f === "vllm_args" && Array.isArray(v) && v.length) parts.push(v.join(" "))
   }
   return parts.join(" · ")
 }
