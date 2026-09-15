@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amortized-config
+  labels:
+    app: amortized
+    component: server
+data:
+  # Postgres lives in the same namespace (short service name resolves).
+  AMORTIZED_DATABASE_URL: "postgresql://amortized:amortized@postgres:5432/amortized"
+  AMORTIZED_DATA_DIR: "/data"
+  # Run training/SDG jobs in this same namespace for the experiment.
+  AMORTIZED_COMPUTE_BACKEND: "kubernetes"
+  AMORTIZED_COMPUTE_NAMESPACE: "meyceoz-amortized"
+  AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"
+  AMORTIZED_EXTERNAL_URL: "http://amortized-server:8000"
+  AMORTIZED_AGENT_SERVER_URL: "http://amortized-server:8000"
+  # MLflow / S3 / gateway wired up in a later phase.
+  AMORTIZED_MLFLOW_TRACKING_URI: ""
+  AMORTIZED_GATEWAY_URL: ""
+  AMORTIZED_S3_BUCKET: "amortized"

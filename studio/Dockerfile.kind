@@ -6,6 +6,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Optional SPA base path (e.g. /amortized-studio-embed) for serving behind the
+# RHOAI dashboard proxy. Defaults to "/" (standalone/kind).
+ARG VITE_BASE_PATH=""
+ENV VITE_BASE_PATH=$VITE_BASE_PATH
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:alpine

@@ -1,0 +1,24 @@
+/* [SHARED] Do not remove or modify — these styles support the CommunityBanner
+   component used by all community plugins. */
+.community-plugin-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.community-plugin-banner {
+  background-color: var(--pf-t--color--orange--40);
+  color: #fff;
+  text-align: center;
+  padding: 6px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  border-radius: 1rem 1rem 0 0;
+}
+
+.community-plugin-content {
+  flex: 1;
+  overflow-y: auto;
+}
