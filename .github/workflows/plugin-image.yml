@@ -1,0 +1,44 @@
+name: Build amortized-studio plugin image
+
+# The RHOAI dashboard plugin frontend (Module Federation remote). Published to our own
+# org (ghcr.io/amortized-ai, public) so the amortized-rhoai umbrella can pull it. The
+# upstream quay.io/rh-ai-community-plugins images need creds we don't have.
+on:
+  push:
+    branches: [main]
+    paths: ['rhoai-plugin/**', '.github/workflows/plugin-image.yml']
+  workflow_dispatch:
+
+jobs:
+  build-plugin-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/amortized-studio
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: rhoai-plugin
+          file: rhoai-plugin/Containerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
