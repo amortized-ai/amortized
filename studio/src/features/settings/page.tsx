@@ -20,6 +20,8 @@ import { PageHeader } from "@/components/page-header"
 import { SearchInput } from "@/components/search-input"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { PrerequisitesCard } from "./components/prerequisites-card"
+import { ModelProviderCard } from "./components/model-provider-card"
+import { useModelProvider } from "./api/use-model-provider"
 import {
   useHealth,
   useConfig,
@@ -184,7 +186,12 @@ export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
   const { data: healthData } = useHealth({ refetchInterval: 30000 })
   const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
+  const { data: modelProvider } = useModelProvider()
   const [routeSearch, setRouteSearch] = useState("")
+  // In the hybrid gateway deployment the per-user BYOK "Model Provider" card is the
+  // key control, so hide the legacy runtime-auth "Agent Provider" section there;
+  // keep it for local/KIND (no gateway) where opencode provider auth is the path.
+  const byokGateway = modelProvider?.available ?? false
 
   const filteredRoutes = useMemo(() => {
     if (!routeSearch.trim()) return routes
@@ -270,6 +277,9 @@ export default function SettingsPage() {
         </a>
       </div>
       </div>
+
+      {/* Model Provider — per-user BYOK key that powers Morty (hybrid gateway) */}
+      <ModelProviderCard />
 
       {/* Connection Status */}
       <div id="section-system" className="scroll-mt-6">
@@ -357,8 +367,8 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Agent Provider */}
-      <AgentProviderSection />
+      {/* Agent Provider — legacy runtime-auth section; hidden when BYOK gateway is present */}
+      {!byokGateway && <AgentProviderSection />}
 
       {/* AI Gateway */}
       <Card id="section-gateway" className="scroll-mt-6">

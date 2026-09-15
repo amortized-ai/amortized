@@ -11,7 +11,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, responseInterceptor } = require('http-proxy-middleware');
 const { ensureUserStack, getState, markForRetry, setUserKey, getProviderStatus, nsForUser } = require('./provision');
 const { renderSplash } = require('./splash');
 const { resolveUser, identityDebug } = require('./auth');
@@ -181,13 +181,42 @@ if (MLFLOW_UPSTREAM) {
     target: MLFLOW_UPSTREAM,
     changeOrigin: true,
     agent: mlflowAgent,
+    selfHandleResponse: true,
     on: {
       proxyReq: (proxyReq, req) => {
         const token = readSaToken();
         if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`);
         const user = currentUser(req);
         if (user) proxyReq.setHeader('X-MLFLOW-WORKSPACE', nsForUser(user));
+        // Force a full 200 for the SPA index (not assets/api) so the seed below is
+        // always injected. MLflow's index etag is computed on the un-seeded upstream
+        // file, so a browser holding a pre-seed copy would otherwise revalidate to a
+        // 304 and keep serving HTML without the seed.
+        if (!/\/(static-files|api|ajax-api)\//.test(req.path)) {
+          proxyReq.removeHeader('if-none-match');
+          proxyReq.removeHeader('if-modified-since');
+        }
       },
+      // MLflow 3.x keeps the active workspace only in the browser
+      // (localStorage["mlflow.activeWorkspace"]); seed it — to the caller's
+      // namespace, the same value forced into X-MLFLOW-WORKSPACE — in the index
+      // HTML so deep-links resolve straight to the run, not the workspace picker.
+      proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+        const type = String(proxyRes.headers['content-type'] || '');
+        if (!type.includes('text/html')) return responseBuffer;
+        const user = currentUser(req);
+        if (!user) return responseBuffer;
+        // The seeded index must not be cached/revalidated — its upstream etag does
+        // not reflect our injection, so a cached copy would be served stale.
+        for (const h of ['etag', 'last-modified']) { delete proxyRes.headers[h]; res.removeHeader(h); }
+        proxyRes.headers['cache-control'] = 'no-store';
+        res.setHeader('cache-control', 'no-store');
+        const seed = `<script>try{localStorage.setItem("mlflow.activeWorkspace",${JSON.stringify(nsForUser(user))})}catch(e){}</script>`;
+        const html = responseBuffer.toString('utf8');
+        return html.includes('<head')
+          ? html.replace(/<head[^>]*>/i, (m) => `${m}${seed}`)
+          : `${seed}${html}`;
+      }),
     },
   }));
 } else {
