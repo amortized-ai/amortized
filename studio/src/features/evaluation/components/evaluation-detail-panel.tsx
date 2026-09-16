@@ -215,15 +215,14 @@ export function EvaluationDetailPanel({
                         {(() => {
                           const diff = differingConfigFields(modelColumns, col.model)
                           // Multi-column: every column lists the differing
-                          // fields. Single column: surface the same
-                          // categories — temp, judge #, serving mode.
+                          // fields. Single column: surface the config.
                           // (max_samples is omitted there — the evaluated
                           // count is displayed below the model name.)
                           const fields = diff.length > 0
                             ? diff
-                            : (["temperature", "judge_max_samples", "vllm_args"] as (keyof EvalSemanticConfig)[])
+                            : (["temperature", "judge_max_samples", "judge_model"] as (keyof EvalSemanticConfig)[])
                           if (fields.length === 0 || !col.config) return null
-                          const hint = formatConfigHint(col, fields, modelColumns)
+                          const hint = formatConfigHint(col, fields)
                           return hint ? (
                             <span
                               className="text-xs text-muted-foreground/80 truncate"
@@ -346,7 +345,7 @@ interface ModelColumn {
 function configKeyOf(e: EvaluationEntry): string {
   const c = e.config
   if (!c) return "legacy"
-  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}|${c.vllm_args ?? ""}`
+  return `${c.temperature}|${c.max_samples}|${c.judge_max_samples}|${c.judge_model}`
 }
 
 /**
@@ -384,7 +383,6 @@ function differingConfigFields(
     "max_samples",
     "judge_max_samples",
     "judge_model",
-    "vllm_args",
   ]
   return fields.filter((f) => new Set(cols.map((c) => c.config?.[f])).size > 1)
 }
@@ -392,7 +390,6 @@ function differingConfigFields(
 function formatConfigHint(
   col: ModelColumn,
   fields: (keyof EvalSemanticConfig)[],
-  modelColumns: ModelColumn[],
 ): string {
   const parts: string[] = []
   // A judge only exists when a judge model was recorded; "judge all"
@@ -407,96 +404,8 @@ function formatConfigHint(
     else if (f === "judge_max_samples")
       parts.push(v === 0 ? (hasJudge ? "judge all" : "no judge") : `judge ${v}`)
     else if (f === "judge_model" && v) parts.push(`judge ${v}`)
-    else if (f === "vllm_args") {
-      const rendered = formatVllmArgsDiff(col, modelColumns)
-      if (rendered) parts.push(rendered)
-    }
   }
   return parts.join(" · ")
-}
-
-/**
- * Parse the vllm_args payload: a JSON object is the engine-resolved
- * fingerprint; arrays (legacy raw args) and hash strings return null —
- * they cannot be compared key-by-key.
- */
-function parseVllmArgs(raw: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-      return parsed as Record<string, unknown>
-  } catch {
-    // not a JSON object
-  }
-  return null
-}
-
-/** Flatten a resolved-args object to dot.key -> primitive string. */
-function flattenObject(obj: Record<string, unknown>): Map<string, string> {
-  const out = new Map<string, string>()
-  const walk = (prefix: string, v: unknown): void => {
-    if (v === null || v === undefined || v === "") return
-    if (Array.isArray(v)) {
-      if (v.length) out.set(prefix, v.map(String).join(","))
-      return
-    }
-    if (typeof v === "object") {
-      for (const [k, cv] of Object.entries(v as Record<string, unknown>))
-        walk(prefix ? `${prefix}.${k}` : k, cv)
-      return
-    }
-    out.set(prefix, String(v))
-  }
-  walk("", obj)
-  return out
-}
-
-/**
- * The vllm line of the hint. When a model's columns disagree on
- * vllm_args, EVERY column lists the keys that differ between any two
- * fingerprinted columns with its own value — parallel to how the
- * scalar config fields render. Payloads without a resolved
- * fingerprint get a label instead: external-endpoint runs, or
- * pre-fingerprint recordings.
- */
-function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
-  const cols = columns.filter((c) => c.model === col.model && c.config)
-  const idx = cols.findIndex((c) => c === col)
-  if (idx < 0) return ""
-  const raws = cols.map((c) => c.config?.vllm_args ?? "")
-  const mine = raws[idx] ?? ""
-  // Single column: nothing to diff, but the serving mode itself is the
-  // category a multi-column table would list.
-  if (cols.length < 2)
-    return mine === "" || mine === "[]" ? "external endpoint" : "embedded vLLM"
-  const objs = raws.map(parseVllmArgs)
-  const mineObj: Record<string, unknown> | null | undefined = objs[idx]
-  if (mineObj == null) {
-    return mine === "" || mine === "[]"
-      ? "external endpoint"
-      : "vllm args (pre-fingerprint recording)"
-  }
-  const flatObjs = objs.map((o) => (o == null ? null : flattenObject(o)))
-  const self = flatObjs[idx]
-  const fingerprinted = flatObjs.filter(
-    (m): m is Map<string, string> => m !== null,
-  )
-  if (fingerprinted.length < 2) return "embedded vLLM"
-  const keys = new Set(fingerprinted.flatMap((m) => [...m.keys()]))
-  const parts: string[] = []
-  let hidden = 0
-  for (const k of keys) {
-    // A key that agrees across all fingerprinted columns is not a
-    // difference; every column then shows its own value for the rest.
-    const vals = fingerprinted.map((m) => m.get(k))
-    if (new Set(vals).size <= 1) continue
-    if (parts.length >= 4) hidden += 1
-    else parts.push(`${k}=${self?.get(k) ?? "(unset)"}`)
-  }
-  if (hidden > 0) parts.push(`+${hidden} more`)
-  // All fingerprints identical — the field differs only against
-  // endpoint/legacy sibling columns.
-  return parts.length > 0 ? parts.join(" ") : "embedded vLLM"
 }
 
 interface ScoreStat {

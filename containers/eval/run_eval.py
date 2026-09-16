@@ -355,18 +355,6 @@ async def run(config: dict[str, Any]) -> dict[str, Any]:
             results["scores_n"] = scores_n
             results["num_scored"] = len(scorable)
 
-    # Resolved vLLM engine args from the embedded serve wrapper (written
-    # before the server started; absent for external-endpoint evals).
-    resolved_args_path = os.environ.get(
-        "VLLM_RESOLVED_ARGS_JSON", "/amortized/work/resolved_vllm_args.json"
-    )
-    if os.path.exists(resolved_args_path):
-        try:
-            with open(resolved_args_path) as f:
-                results["resolved_vllm_args"] = json.load(f)
-        except Exception:
-            pass
-
     rows = []
     for i, sample in enumerate(samples):
         rows.append(

@@ -96,34 +96,6 @@ class TestEntryFromJob:
         assert entry["model"] == "legacy-tuned"
 
 
-class TestSemanticConfig:
-    def test_prefers_resolved_vllm_args_tag(self) -> None:
-        # Engine-resolved args from the run tag win over raw config args.
-        job = _job("j1", "m1")
-        job["config"]["vllm_args"] = ["--max-model-len=32768"]
-        tags = {"r-none": {}}
-        cfg = evals_api._semantic_config(job["config"], {"resolved_vllm_args": json.dumps({"max_model_len": 32768})})
-        assert cfg["vllm_args"] == json.dumps({"max_model_len": 32768})
-
-    def test_resolved_tag_normalizes_explicit_default(self) -> None:
-        # Explicitly-set-to-default resolves identically to unset.
-        a = evals_api._semantic_config(
-            {"vllm_args": ["--max-model-len=32768"]},
-            {"resolved_vllm_args": json.dumps({"max_model_len": 32768})},
-        )
-        b = evals_api._semantic_config(
-            {"vllm_args": []},
-            {"resolved_vllm_args": json.dumps({"max_model_len": 32768})},
-        )
-        assert a["vllm_args"] == b["vllm_args"]
-
-    def test_falls_back_to_raw_args_without_tag(self) -> None:
-        job = _job("j1", "m1")
-        job["config"]["vllm_args"] = ["--max-model-len=8192", "--seed=1"]
-        cfg = evals_api._semantic_config(job["config"], {})
-        assert json.loads(cfg["vllm_args"]) == ["--max-model-len=8192", "--seed=1"]
-
-
 class TestGrouping:
     @pytest.mark.asyncio
     async def test_groups_by_dataset_and_metric_set(self, monkeypatch) -> None:

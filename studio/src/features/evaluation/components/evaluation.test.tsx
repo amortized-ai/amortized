@@ -171,20 +171,20 @@ describe("EvaluationDetailPanel", () => {
           model: "tuned-model",
           scores: { accuracy: 0.8 },
           job_id: "aaaaaaaa-1111",
-          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss", vllm_args: "[]" },
+          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
         }),
         makeEntry({
           model: "tuned-model",
           scores: { accuracy: 0.5 },
           job_id: "bbbbbbbb-2222",
-          config: { temperature: 0.7, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss", vllm_args: "[]" },
+          config: { temperature: 0.7, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
         }),
         // same config as the first run -> merges with it (mean of 0.8, 0.6)
         makeEntry({
           model: "tuned-model",
           scores: { accuracy: 0.6 },
           job_id: "cccccccc-3333",
-          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss", vllm_args: "[]" },
+          config: { temperature: 0, max_samples: 0, judge_max_samples: 0, judge_model: "gpt-oss" },
         }),
       ],
       metric_names: ["accuracy"],

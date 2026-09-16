@@ -80,21 +80,6 @@ def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str,
         judge_max_samples = int(cfg.get("judge_max_samples", 0) or 0)
     judge = cfg.get("judge") or {}
     judge_model = str(judge.get("model", "") or "") if isinstance(judge, dict) else ""
-    # vllm_args is serving plumbing EXCEPT when it changes model behavior
-    # (max-model-len, quantization, ...). Prefer the RESOLVED engine args
-    # (recorded by the serve wrapper) — an arg explicitly set to its
-    # default resolves to the same value as an unset one, so those runs
-    # merge. Fall back to the raw explicit args when no resolution exists
-    # (legacy runs, external endpoints).
-    vllm_args = ""
-    raw = run_tags.get("resolved_vllm_args", "")
-    if raw:
-        with _suppress():
-            vllm_args = raw  # canonical JSON string, sort_keys
-    if not vllm_args:
-        vllm_args = json.dumps(
-            sorted(str(a) for a in (cfg.get("vllm_args") or []) if str(a).strip())
-        )
     # What actually ran beats what the config says.
     if run_tags.get("num_samples"):
         with _suppress():
@@ -110,7 +95,6 @@ def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str,
         "max_samples": max_samples,
         "judge_max_samples": judge_max_samples,
         "judge_model": judge_model,
-        "vllm_args": vllm_args,
     }
 
 
