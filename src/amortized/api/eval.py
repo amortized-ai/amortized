@@ -176,8 +176,7 @@ async def check_eval_gpu(
         "", description="HF hub id of the model to evaluate (optional)"
     ),
 ) -> dict[str, Any]:
-    from amortized.core.gpu_inventory import describe_gpus, read_inventory
-    from amortized.jobs.base import JobBuildError
+    from amortized.core.gpu_inventory import describe_gpus
 
     described = await describe_gpus(config_mod.settings.compute_namespace)
     size_gb = await _model_size_gb(training_job_id, model_name_or_path)

@@ -182,7 +182,7 @@ class TestSubagentDelegation:
         assert state.subagent_stack == [("eval", eval_id)]
 
     def test_internal_tools_stripped_from_response(self, router: _Router) -> None:
-        sdg_id = router.queue_session([[_text_part("What kind of dataset?")]])
+        _ = router.queue_session([[_text_part("What kind of dataset?")]])
         state = _make_state(router)
         state.subagent_id = router.add_session(
             [[_tool_part("delegate_to_subagent", {"target": "sdg", "context": "c"})]]

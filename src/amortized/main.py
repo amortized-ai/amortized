@@ -342,7 +342,8 @@ async def gpu_availability() -> dict[str, object]:
 
         described = await describe_gpus(_settings.compute_namespace)
         result.update(
-            {"gpus": described["gpus"], "my_uuids": described["my_uuids"], "updated": described["updated"]}
+            {"gpus": described["gpus"], "my_uuids": described["my_uuids"], "updated":
+                described["updated"]}
         )
     except Exception:
         # Missing RBAC on the gpu-inventory ConfigMap (older deploy overlays)

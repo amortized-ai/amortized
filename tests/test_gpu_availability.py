@@ -126,9 +126,9 @@ class TestAssignServeGpu:
     def test_nothing_available_raises(self, monkeypatch) -> None:
         # everything busy by memory
         _patch(monkeypatch, [{"uuid": "GPU-A", "memory_free_mb": 5000}], [])
-        from amortized.jobs.base import JobBuildError
-
         import pytest
+
+        from amortized.jobs.base import JobBuildError
 
         with pytest.raises(JobBuildError):
             _run(gi.assign_serve_gpu("amortized-me-jobs"))
@@ -208,7 +208,7 @@ def _async_result(value):
 
 class TestPinnedOccupancyAttribution:
     def test_holders_carry_job_labels(self, monkeypatch) -> None:
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
 
         pod = _pod(
             "pod-1",

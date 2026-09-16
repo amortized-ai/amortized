@@ -48,7 +48,6 @@ export default function DatasetsPage() {
       if (runId) {
         fetchDatasetByRun(runId)
           .then((rec) => {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
             setSelectedDataset(rec)
             setDetailOpen(true)
           })

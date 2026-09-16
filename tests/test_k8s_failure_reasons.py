@@ -9,7 +9,9 @@ def _backend() -> KubernetesBackend:
     return KubernetesBackend(namespace="test-jobs")
 
 
-def _pod(phase: str, waiting: dict | None = None, terminated: dict | None = None) -> SimpleNamespace:
+def _pod(
+    phase: str, waiting: dict | None = None, terminated: dict | None = None
+) -> SimpleNamespace:
     state = SimpleNamespace(
         waiting=SimpleNamespace(**waiting) if waiting else None,
         terminated=SimpleNamespace(**terminated) if terminated else None,
@@ -61,7 +63,10 @@ class TestStuckPodReason:
             "Pending",
             waiting={
                 "reason": "ImagePullBackOff",
-                "message": 'Back-off pulling image "ghcr.io/amortized-ai/eval:latest": ... 403 Forbidden',
+                "message": (
+                    'Back-off pulling image "ghcr.io/amortized-ai/eval:latest":'
+                    " ... 403 Forbidden"
+                ),
             },
         )
         _patch_core(monkeypatch, [pod])

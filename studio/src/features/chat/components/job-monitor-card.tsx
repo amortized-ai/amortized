@@ -174,7 +174,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, jobType, isEval])
+  }, [jobId, jobType, isEval, stageMarker])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {

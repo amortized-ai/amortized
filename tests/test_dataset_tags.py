@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -81,13 +80,15 @@ class TestEvalMetricSetVisibility:
     def _run(tags: dict[str, str]) -> dict:
         return {
             "info": {"run_id": "r1", "run_name": "ds", "experiment_id": "e1", "start_time": 1},
-            "data": {"tags": [{"key": k, "value": v} for k, v in tags.items()], "params": [], "metrics": []},
+            "data": {"tags": [{"key": k, "value": v} for k, v in tags.items()], "params": [],
+                "metrics": []},
         }
 
     def test_summary_includes_parsed_metric_set(self) -> None:
         from amortized.api.datasets import _run_to_summary
 
-        metric_set = {"metrics": ["verdict_agreement"], "rubric": [{"name": "f", "description": "d"}]}
+        metric_set = {"metrics": ["verdict_agreement"], "rubric": [{"name": "f", "description":
+            "d"}]}
         summary = _run_to_summary(self._run({"eval_metric_set": json.dumps(metric_set)}))
         assert summary["eval_metric_set"] == metric_set
 
@@ -99,7 +100,8 @@ class TestEvalMetricSetVisibility:
     def test_summary_malformed_tag_gives_none(self) -> None:
         from amortized.api.datasets import _run_to_summary
 
-        assert _run_to_summary(self._run({"eval_metric_set": "not json{"}))["eval_metric_set"] is None
+        summary = _run_to_summary(self._run({"eval_metric_set": "not json{"}))
+        assert summary["eval_metric_set"] is None
 
     def test_summary_non_dict_json_gives_none(self) -> None:
         from amortized.api.datasets import _run_to_summary

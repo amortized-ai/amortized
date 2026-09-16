@@ -34,12 +34,13 @@ export function EvaluationDetailPanel({
   // the run directly so the info card still shows its source details.
   const [fetchedDataset, setFetchedDataset] = useState<DatasetRecord | null>(null)
   const dataset =
-    datasets?.find((d) => d.run_id === group?.dataset.run_id) ?? fetchedDataset
+    datasets?.find((d) => d.run_id === group?.dataset.run_id) ??
+    (fetchedDataset?.run_id === group?.dataset.run_id ? fetchedDataset : null)
+  const runId = group?.dataset.run_id
   useEffect(() => {
-    setFetchedDataset(null)
-    if (!group || dataset) return
+    if (!runId) return
     let cancelled = false
-    fetchDatasetByRun(group.dataset.run_id)
+    fetchDatasetByRun(runId)
       .then((rec) => {
         if (!cancelled) setFetchedDataset(rec)
       })
@@ -49,8 +50,7 @@ export function EvaluationDetailPanel({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch only when the group's dataset changes and it is not in the list
-  }, [group?.dataset.run_id, dataset === undefined])
+  }, [runId])
   if (!group) return null
 
   // Models are listed under registered names but displayed as mdl-* —

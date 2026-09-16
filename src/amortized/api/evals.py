@@ -82,10 +82,10 @@ def _semantic_config(cfg: dict[str, Any], run_tags: dict[str, str]) -> dict[str,
     judge_model = str(judge.get("model", "") or "") if isinstance(judge, dict) else ""
     # What actually ran beats what the config says.
     if run_tags.get("num_samples"):
-        with _suppress():
+        with _Suppress():
             max_samples = int(run_tags["num_samples"])
     if run_tags.get("num_scored"):
-        with _suppress():
+        with _Suppress():
             judge_max_samples = int(run_tags["num_scored"])
     elif run_tags.get("num_samples"):
         # No judge ran (no num_scored) — 0 stays 0.
@@ -148,14 +148,14 @@ def _entry_from_job(
         if not model:
             model = tags.get("eval_model", "")
         if tags.get("eval_exact_match"):
-            with _suppress():
+            with _Suppress():
                 scores["exact_match"] = float(tags["eval_exact_match"])
         for key, value in tags.items():
             if key.startswith("eval_score_"):
-                with _suppress():
+                with _Suppress():
                     scores[key[len("eval_score_"):]] = float(value)
         if tags.get("num_samples"):
-            with _suppress():
+            with _Suppress():
                 num_samples = int(tags["num_samples"])
     return {
         "job_id": job["id"],
@@ -170,7 +170,7 @@ def _entry_from_job(
     }
 
 
-class _suppress:
+class _Suppress:
     def __enter__(self):
         return self
 
@@ -249,7 +249,10 @@ async def list_evaluations(
         group = groups.setdefault(
             key,
             {
-                "id": f"{ds_run[:8] if ds_run != 'unknown' else 'unknown'}-{abs(hash(key)) % 100000}",
+                "id": (
+                    f"{ds_run[:8] if ds_run != 'unknown' else 'unknown'}"
+                    f"-{abs(hash(key)) % 100000}"
+                ),
                 "dataset": {
                     "run_id": ds_run,
                     "name": dataset_name_by_run.get(ds_run, ds_run),

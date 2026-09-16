@@ -318,14 +318,13 @@ async def _persist_metric_set(
 
     import json as _json
 
-    from amortized.core.mlflow_client import MLflowClient
-    from amortized.jobs.common import set_mlflow_run_tag
-
     # A soft-deleted dataset run rejects tag writes, which would silently
     # drop the metric set (and later sessions would re-design metrics).
     # The dataset is clearly still in use — the eval references it — so
     # restore the run and keep it visible in the Datasets tab.
     from amortized.config import settings as _settings
+    from amortized.core.mlflow_client import MLflowClient
+    from amortized.jobs.common import set_mlflow_run_tag
 
     if _settings.mlflow_tracking_uri:
         client = MLflowClient(_settings.mlflow_tracking_uri)

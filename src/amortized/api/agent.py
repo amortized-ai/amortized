@@ -616,7 +616,12 @@ async def _resume_parent_subagent(
         "this result — do not restart it or re-ask the user for information "
         "you already have."
     )
-    parent_result = await _proxy_send_message(parent_id, resume_prompt, agent=parent_target, model=body.model)
+    parent_result = await _proxy_send_message(
+        parent_id,
+        resume_prompt,
+        agent=parent_target,
+        model=body.model
+    )
 
     # The parent may delegate again (e.g. on to another workflow); honor it
     # the same way as the initial subagent delegation.

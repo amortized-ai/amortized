@@ -1,6 +1,5 @@
 """Tests for the /api/v1/evaluations grouping endpoint."""
 
-import json
 
 import pytest
 
@@ -143,7 +142,7 @@ class TestGrouping:
         groups = result["groups"]
         assert len(groups) == 3
         # The d1+exact_match+accuracy group has both models, newest first
-        pair = [g for g in groups if len(g["evals"]) == 2][0]
+        pair = next(g for g in groups if len(g["evals"]) == 2)
         assert {e["model"] for e in pair["evals"]} == {"base", "tuned"}
         assert pair["evals"][0]["model"] == "tuned"  # newest first
         assert set(pair["metric_names"]) == {"exact_match", "accuracy"}
