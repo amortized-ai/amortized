@@ -215,12 +215,13 @@ export function EvaluationDetailPanel({
                         {(() => {
                           const diff = differingConfigFields(modelColumns, col.model)
                           // Multi-column: every column lists the differing
-                          // fields. Single column: still surface the config.
+                          // fields. Single column: surface the same
+                          // categories — temp, judge #, serving mode.
                           // (max_samples is omitted there — the evaluated
                           // count is displayed below the model name.)
                           const fields = diff.length > 0
                             ? diff
-                            : (["temperature", "judge_max_samples", "judge_model"] as (keyof EvalSemanticConfig)[])
+                            : (["temperature", "judge_max_samples", "vllm_args"] as (keyof EvalSemanticConfig)[])
                           if (fields.length === 0 || !col.config) return null
                           const hint = formatConfigHint(col, fields, modelColumns)
                           return hint ? (
@@ -461,9 +462,13 @@ function flattenObject(obj: Record<string, unknown>): Map<string, string> {
 function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
   const cols = columns.filter((c) => c.model === col.model && c.config)
   const idx = cols.findIndex((c) => c === col)
-  if (idx < 0 || cols.length < 2) return ""
+  if (idx < 0) return ""
   const raws = cols.map((c) => c.config?.vllm_args ?? "")
   const mine = raws[idx] ?? ""
+  // Single column: nothing to diff, but the serving mode itself is the
+  // category a multi-column table would list.
+  if (cols.length < 2)
+    return mine === "" || mine === "[]" ? "external endpoint" : "embedded vLLM"
   const objs = raws.map(parseVllmArgs)
   const mineObj: Record<string, unknown> | null | undefined = objs[idx]
   if (mineObj == null) {
