@@ -214,8 +214,15 @@ export function EvaluationDetailPanel({
                         </div>
                         {(() => {
                           const diff = differingConfigFields(modelColumns, col.model)
-                          if (diff.length === 0) return null
-                          const hint = formatConfigHint(col, diff, modelColumns)
+                          // Multi-column: every column lists the differing
+                          // fields. Single column: still surface the config.
+                          // (max_samples is omitted there — the evaluated
+                          // count is displayed below the model name.)
+                          const fields = diff.length > 0
+                            ? diff
+                            : (["temperature", "judge_max_samples", "judge_model"] as (keyof EvalSemanticConfig)[])
+                          if (fields.length === 0 || !col.config) return null
+                          const hint = formatConfigHint(col, fields, modelColumns)
                           return hint ? (
                             <span
                               className="text-xs text-muted-foreground/80 truncate"
@@ -358,7 +365,10 @@ function mergeEvalColumns(evals: EvaluationEntry[]): ModelColumn[] {
     }
     col.runs.push(e)
   }
-  return [...byKey.values()]
+  // Sort by model name so a model's config-columns sit together.
+  return [...byKey.values()].sort((a, b) =>
+    a.model.localeCompare(b.model, undefined, { sensitivity: "base" }),
+  )
 }
 
 /** Which config fields differ between a model's columns (for the hint line). */
