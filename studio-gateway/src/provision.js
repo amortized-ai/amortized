@@ -478,8 +478,25 @@ function ensureUserStack(user) {
       // provisioning. Skipped when Morty is disabled (no OpenShell certs mounted).
       const keyInfo = MORTY_ENABLED ? await readUserKey(ns) : null;
       if (MORTY_ENABLED && !keyInfo) { entry.state = 'needs_key'; return; }
-      // Fast path: backend already healthy (gateway restart / returning user).
-      if (await serverAvailable(ns)) { entry.state = 'ready'; return; }
+      // Fast path: backend already healthy (gateway restart / returning user). The core
+      // stack is up, but the in-memory 'ready' would otherwise skip reconciling what
+      // provision() sets up — re-stamp the key secret and ensure the Morty sandbox exists
+      // (both idempotent), so a lost in-memory entry can't leave a server-up/sandbox-gone
+      // stack. No restartServer here: the stored key already matches the running server
+      // env (genuine key changes go through setUserKey). Sandbox is best-effort so a Morty
+      // hiccup still leaves the server usable.
+      if (await serverAvailable(ns)) {
+        if (MORTY_ENABLED && keyInfo) {
+          await ensureServerKeySecret(ns, keyInfo);
+          try {
+            await ensureSandbox(ns, keyInfo.provider, keyInfo.key);
+          } catch (err) {
+            console.error(`  morty sandbox reconcile for ${ns} failed (chat unavailable, retryable): ${err.message}`);
+          }
+        }
+        entry.state = 'ready';
+        return;
+      }
       await provision(ns, user, keyInfo);
       entry.state = 'ready';
     })().catch((err) => {
@@ -526,7 +543,11 @@ async function setUserKey(user, provider, key) {
   await writeUserKey(ns, provider, key);
 
   const existing = stacks.get(ns);
-  const rotate = existing && existing.state === 'ready';
+  // Rotate = the core stack is already up. Check the cluster (serverAvailable), not just
+  // the in-memory state, so a key change still applies (delete+recreate sandbox, restart
+  // server) after a gateway restart cleared the map — otherwise ensureUserStack's fast
+  // path would mark ready with the old credential still in the server env and sandbox.
+  const rotate = (existing && existing.state === 'ready') || (await serverAvailable(ns));
   stacks.delete(ns);
 
   if (rotate) {
