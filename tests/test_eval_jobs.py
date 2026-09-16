@@ -253,6 +253,62 @@ class TestEvalBuilder:
         assert "judge" not in runner["endpoints"]
 
     @pytest.mark.asyncio
+    async def test_build_embeds_serving_for_lora_training_job(self, monkeypatch) -> None:
+        # lora_sft: the resolved model path is a merged dir produced by
+        # merge_lora.py in a pre-command — not the $SERVE_MODEL_DIR var.
+        async def fake_resolve(config):
+            return (
+                "mdl-lora",
+                "/amortized/work/served_model/merged",
+                [
+                    "mlflow artifacts download -r run -a model"
+                    " -d /amortized/work/served_model",
+                    "python3 /amortized/merge_lora.py"
+                    " /amortized/work/served_model/model"
+                    " /amortized/work/served_model/merged",
+                ],
+            )
+
+        monkeypatch.setattr(eval_builder, "_resolve_training_model", fake_resolve)
+
+        config = {**EVAL_BODY, "training_job_id": "tj-1"}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        script = result.command[2]
+        # the merged (plain) path is quoted, not the $VAR passthrough
+        assert "serve_vllm.py serve /amortized/work/served_model/merged" in script
+        assert "merge_lora.py" in "\n".join(result.pre_commands)
+        # the merge asset ships alongside the other serve assets
+        assert "merge_lora.py" in result.config_files
+
+    @pytest.mark.asyncio
+    async def test_is_lora_export_detects_adapter(self, monkeypatch) -> None:
+        class FakeClient:
+            def __init__(self, files):
+                self._files = files
+
+            async def list_artifacts(self, run_id, path):
+                return self._files
+
+        import amortized.jobs.eval as eb
+
+        monkeypatch.setattr(eb.config_mod.settings, "mlflow_tracking_uri", "http://ml")
+        monkeypatch.setattr(
+            "amortized.core.mlflow_client.MLflowClient",
+            lambda uri: FakeClient(
+                [{"path": "model/adapter_config.json"}, {"path": "model/tokenizer.json"}]
+            ),
+        )
+        assert await eb._is_lora_export("run-1") is True
+
+        monkeypatch.setattr(
+            "amortized.core.mlflow_client.MLflowClient",
+            lambda uri: FakeClient([{"path": "model/hf_format"}]),
+        )
+        assert await eb._is_lora_export("run-1") is False
+
+    @pytest.mark.asyncio
     async def test_build_rubric_implies_judge_auto_fill(self, monkeypatch) -> None:
         rubric = [
             {"name": "factual_accuracy", "description": "Facts match the reference"},

@@ -17,7 +17,9 @@ Two modes:
 Training Hub exports of VLM text backbones (e.g. Qwen3.5) carry a bare
 text config that stock vLLM cannot serve; those are handled through
 serve_vllm.py + patch_model_config.py (delivered as config files), same
-as the removed standalone serve jobs did.
+as the removed standalone serve jobs did. lora_sft exports carry only
+the PEFT adapter; merge_lora.py merges it into the base model before
+serving.
 """
 
 from __future__ import annotations
@@ -127,20 +129,56 @@ async def _resolve_training_model(
         served_name = await _training_display_name(parent, run_id)
 
     local_dir = "/amortized/work/served_model"
-    pre_commands = [
-        # Download the HF export, then pick the highest-step checkpoint
-        f"mlflow artifacts download -r {shlex.quote(run_id)} -a model/hf_format"
-        f" -d {shlex.quote(local_dir)}",
-        f"SERVE_MODEL_DIR=$(find {shlex.quote(local_dir)}/hf_format -mindepth 1 -maxdepth 1"
-        " -type d | sort -V | tail -1)",
-        # Training exports may be bare text towers (no architectures key) —
-        # patch_model_config.py fills it in via transformers' own registry
-        # and is a no-op for standard exports.
-        "python3 /amortized/patch_model_config.py $SERVE_MODEL_DIR",
-    ]
-    model_path = "$SERVE_MODEL_DIR"
+    if await _is_lora_export(run_id):
+        # lora_sft exports only the adapter (no model/hf_format) — merge it
+        # into the base model before serving; vLLM cannot serve a bare adapter.
+        # The architectures patch after merging is a no-op for standard
+        # base models but covers text-tower bases.
+        pre_commands = [
+            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model"
+            f" -d {shlex.quote(local_dir)}",
+            "python3 /amortized/merge_lora.py"
+            f" {shlex.quote(local_dir)}/model {shlex.quote(local_dir)}/merged",
+            f"python3 /amortized/patch_model_config.py {shlex.quote(local_dir)}/merged",
+        ]
+        model_path = f"{local_dir}/merged"
+    else:
+        pre_commands = [
+            # Download the HF export, then pick the highest-step checkpoint
+            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model/hf_format"
+            f" -d {shlex.quote(local_dir)}",
+            f"SERVE_MODEL_DIR=$(find {shlex.quote(local_dir)}/hf_format -mindepth 1 -maxdepth 1"
+            " -type d | sort -V | tail -1)",
+            # Training exports may be bare text towers (no architectures key) —
+            # patch_model_config.py fills it in via transformers' own registry
+            # and is a no-op for standard exports.
+            "python3 /amortized/patch_model_config.py $SERVE_MODEL_DIR",
+        ]
+        model_path = "$SERVE_MODEL_DIR"
 
     return served_name, model_path, pre_commands
+
+
+async def _is_lora_export(run_id: str) -> bool:
+    """True when the training run's model artifacts are a bare PEFT adapter.
+
+    lora_sft saves adapter_config.json/adapter_model.safetensors at the top
+    of model/ and no merged hf_format export; every other algorithm exports
+    model/hf_format/<step>/. Detection is by artifact listing, not the
+    parent job's algorithm field, so any peft-style export is handled.
+    """
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return False
+    try:
+        from amortized.core.mlflow_client import MLflowClient
+
+        client = MLflowClient(tracking_uri)
+        files = await client.list_artifacts(run_id, "model")
+        return any(f.get("path") == "model/adapter_config.json" for f in files)
+    except Exception:
+        logger.debug("artifact listing failed for run %s", run_id, exc_info=True)
+        return False
 
 
 def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
@@ -338,12 +376,13 @@ async def build(
         # guard the first line and a failed pre-check would not stop the
         # serve/eval lines below it.
         command: list[str] = ["sh", "-c", "{\n" + main_script + "\n}"]
-        # serve_vllm.py / patch_model_config.py / check_gpu_memory.py are
-        # shipped as config files (mounted at /amortized) — same mechanism
-        # the standalone serve jobs used.
+        # serve_vllm.py / patch_model_config.py / merge_lora.py /
+        # check_gpu_memory.py are shipped as config files (mounted at
+        # /amortized) — same mechanism the standalone serve jobs used.
         for asset in (
             "serve_vllm.py",
             "patch_model_config.py",
+            "merge_lora.py",
             "check_gpu_memory.py",
             "wait_for_endpoint.py",
         ):
