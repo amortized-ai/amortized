@@ -394,18 +394,18 @@ function formatConfigHint(
   modelColumns: ModelColumn[],
 ): string {
   const parts: string[] = []
+  // A judge only exists when a judge model was recorded; "judge all"
+  // without one would be misleading.
+  const hasJudge = Boolean(col.config?.judge_model)
   for (const f of fields) {
     const v = col.config?.[f]
-    if (f === "temperature") parts.push(`temp ${v ?? "(unset)"}`)
+    if (v === undefined) continue
+    if (f === "temperature") parts.push(`temp ${v}`)
     else if (f === "max_samples")
-      parts.push(
-        v === undefined ? "samples (unset)" : v === 0 ? "all samples" : `${v} samples`,
-      )
+      parts.push(v === 0 ? "all samples" : `${v} samples`)
     else if (f === "judge_max_samples")
-      parts.push(
-        v === undefined ? "judge (unset)" : v === 0 ? "judge all" : `judge ${v}`,
-      )
-    else if (f === "judge_model") parts.push(`judge ${v || "(unset)"}`)
+      parts.push(v === 0 ? (hasJudge ? "judge all" : "no judge") : `judge ${v}`)
+    else if (f === "judge_model" && v) parts.push(`judge ${v}`)
     else if (f === "vllm_args") {
       const rendered = formatVllmArgsDiff(col, modelColumns)
       if (rendered) parts.push(rendered)
