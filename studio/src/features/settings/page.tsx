@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react"
+import { getBaseUrl } from "@/lib/api-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -392,7 +393,7 @@ export default function SettingsPage() {
               <p className="text-xs text-[#1e4f18] dark:text-[#5ba352]">
                 SDG and evaluation jobs auto-route through the gateway. Manage endpoints in the{" "}
                 <a
-                  href="/mlflow/#/gateway"
+                  href={`${getBaseUrl()}/mlflow/#/gateway`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2 hover:text-[#163b11] dark:hover:text-[#7ec975]"
@@ -413,7 +414,7 @@ export default function SettingsPage() {
                 </p>
               </div>
               <a
-                href="/mlflow/#/gateway"
+                href={`${getBaseUrl()}/mlflow/#/gateway`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 hover:bg-muted hover:border-border"

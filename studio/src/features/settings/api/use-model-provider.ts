@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { getBaseUrl } from "@/lib/api-client"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-model-provider")
@@ -15,7 +16,7 @@ export interface ModelProviderStatus {
 }
 
 async function fetchModelProvider(): Promise<ModelProviderStatus> {
-  const resp = await fetch("/gateway/provider", { headers: { Accept: "application/json" } })
+  const resp = await fetch(`${getBaseUrl()}/gateway/provider`, { headers: { Accept: "application/json" } })
   // Reserve `available: false` for CONFIRMED absence: a 404, or a non-JSON 200 (the
   // SPA index served for an unknown path in local dev). Any other non-OK status
   // (401/500/…) or a network failure is an operational error, not absence — let it
@@ -41,7 +42,7 @@ export function useModelProvider() {
 }
 
 async function setModelProvider({ provider, key }: { provider: string; key: string }): Promise<void> {
-  const resp = await fetch("/gateway/provider", {
+  const resp = await fetch(`${getBaseUrl()}/gateway/provider`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ provider, key }),
