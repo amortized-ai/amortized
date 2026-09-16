@@ -240,6 +240,48 @@
         }
       }
     },
+    "/api/v1/jobs/eval/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate an eval job config and present it for user confirmation. Set parent_job_id to chain from a completed SDG job, or eval_data_run_id to use an uploaded dataset.",
+        "description": "Validate an eval job config without creating it.",
+        "operationId": "validate_eval_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs": {
       "get": {
         "tags": [
@@ -1265,7 +1307,7 @@
         "tags": [
           "eval"
         ],
-        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and the currently known serving endpoints (gateway models).",
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and gateway models. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
         "operationId": "get_eval_endpoint_suggestions",
         "parameters": [
           {
@@ -1300,6 +1342,89 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/eval/gpu-check": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Pre-flight GPU memory check for an eval job that serves its own model (training_job_id or model_name_or_path set). Returns the model's weight size, the GPU the eval would be assigned, its free memory, what jobs currently hold each GPU, and whether the model fits. Call before creating the eval job.",
+        "operationId": "check_eval_gpu",
+        "parameters": [
+          {
+            "name": "training_job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Training job ID of the tuned model to evaluate (optional)",
+              "default": "",
+              "title": "Training Job Id"
+            },
+            "description": "Training job ID of the tuned model to evaluate (optional)"
+          },
+          {
+            "name": "model_name_or_path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "HF hub id of the model to evaluate (optional)",
+              "default": "",
+              "title": "Model Name Or Path"
+            },
+            "description": "HF hub id of the model to evaluate (optional)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Check Eval Gpu"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List Evaluations",
+        "description": "Eval jobs grouped by (dataset, metric set) with per-model scores.",
+        "operationId": "list_evaluations_api_v1_evaluations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Evaluations Api V1 Evaluations Get"
                 }
               }
             }
@@ -1520,7 +1645,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Delegate the conversation to a specialized workflow agent for SDG or training",
+        "summary": "Delegate the conversation to a specialized workflow agent (SDG, training, or eval)",
         "operationId": "delegate_to_subagent",
         "requestBody": {
           "content": {
@@ -1875,6 +2000,27 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Agent Health Agent Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gpu-availability": {
+      "get": {
+        "summary": "Gpu Availability",
+        "description": "GPU availability for deploy decisions.\n\n- gpus: every GPU on the cluster with its live free memory (from the\n  gpu-inventory DaemonSet), who holds it, and whether it is \"mine\"\n  (pinned by this user's running serve jobs \u2014 deployments share it).\n- quota_limit/quota_used/available: the user's namespace ResourceQuota\n  (training jobs request nvidia.com/gpu; serve pods pin instead).",
+        "operationId": "get_gpu_availability",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Gpu Availability"
                 }
               }
             }
@@ -2524,10 +2670,11 @@
             "type": "string",
             "enum": [
               "sdg",
-              "training"
+              "training",
+              "eval"
             ],
             "title": "Target",
-            "description": "Workflow agent to delegate to: 'sdg' or 'training'"
+            "description": "Workflow agent to delegate to: 'sdg', 'training', or 'eval'"
           },
           "context": {
             "type": "string",
@@ -2987,15 +3134,36 @@
             },
             "type": "array",
             "title": "Rubric",
-            "description": "Custom judge criteria, designed with the user. Each criterion is scored base-vs-tuned by the LLM judge against the reference answer. Implies judge_win_rate."
+            "description": "Custom judge criteria, designed with the user. The LLM judge scores the model's response against the reference answer on each criterion (absolute 0-1), averaged over the dataset."
           },
-          "endpoint_base": {
-            "$ref": "#/components/schemas/EvalEndpoint",
-            "description": "Endpoint serving the model BEFORE training (base model)"
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "External OpenAI-compatible endpoint serving the model to evaluate (e.g. a gateway model). When omitted, set training_job_id or model_name_or_path and the eval job serves the model itself."
           },
-          "endpoint_tuned": {
-            "$ref": "#/components/schemas/EvalEndpoint",
-            "description": "Endpoint serving the model AFTER training (fine-tuned)"
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "Training job whose tuned model to evaluate. The eval job serves the model itself (vLLM inside the job) and stops when scores are computed. Takes precedence over model_name_or_path.",
+            "default": ""
+          },
+          "model_name_or_path": {
+            "type": "string",
+            "title": "Model Name Or Path",
+            "description": "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate. The eval job serves the model itself.",
+            "default": ""
+          },
+          "served_model_name": {
+            "type": "string",
+            "title": "Served Model Name",
+            "description": "Name passed as 'model' in requests. Defaults to the training job's model_display_name (tuned models) or model_name_or_path.",
+            "default": ""
           },
           "judge": {
             "anyOf": [
@@ -3006,7 +3174,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional LLM-as-judge endpoint for win-rate scoring of free-form outputs"
+            "description": "Optional LLM-as-judge endpoint for scoring free-form outputs against the reference answer"
           },
           "metrics": {
             "items": {
@@ -3014,23 +3182,23 @@
             },
             "type": "array",
             "title": "Metrics",
-            "description": "Metrics to compute (exact_match, format_validity, judge_win_rate)"
+            "description": "Structural metrics to compute (exact_match, format_validity)"
           },
           "max_samples": {
             "type": "integer",
             "maximum": 10000.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Max Samples",
-            "description": "Max eval samples to run",
-            "default": 200
+            "description": "Max eval samples to run; 0 (default) evaluates ALL records in the dataset \u2014 set lower only to bound eval time/cost",
+            "default": 0
           },
           "judge_max_samples": {
             "type": "integer",
             "maximum": 10000.0,
-            "minimum": 1.0,
+            "minimum": 0.0,
             "title": "Judge Max Samples",
-            "description": "Max samples for LLM-judge scoring (judge is slower)",
-            "default": 100
+            "description": "Max samples for LLM-judge scoring; 0 (default) judges ALL samples \u2014 set lower only to cap judge cost/latency",
+            "default": 0
           },
           "temperature": {
             "type": "number",
@@ -3059,10 +3227,6 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "endpoint_base",
-          "endpoint_tuned"
-        ],
         "title": "EvalJobRequest"
       },
       "EvalRubricCriterion": {
@@ -3592,7 +3756,8 @@
           "training",
           "sdg",
           "upload",
-          "eval"
+          "eval",
+          "serve"
         ],
         "title": "JobType"
       },

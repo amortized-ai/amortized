@@ -8,6 +8,7 @@ const getJobLogs = vi.fn()
 vi.mock("@/lib/api-client", () => ({
   getJob: (...args: unknown[]) => getJob(...args),
   getJobLogs: (...args: unknown[]) => getJobLogs(...args),
+  getJobDurationStats: () => Promise.resolve({}),
 }))
 
 function job(status: string, type = "eval") {
