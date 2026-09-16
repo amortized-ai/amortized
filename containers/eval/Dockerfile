@@ -44,6 +44,13 @@ RUN pip install --no-cache-dir \
         "mlflow==3.15.1" \
         "boto3"
 
+# flashinfer's JIT linker expects the toolkit lib64 layout with the
+# unversioned libcudart.so dev name; the pip cu13 tree ships lib/ with
+# only the versioned soname — bridge both.
+RUN cu13=/usr/local/lib/python3.12/site-packages/nvidia/cu13 \
+    && ln -s lib "$cu13/lib64" \
+    && ln -s libcudart.so.13 "$cu13/lib/libcudart.so"
+
 COPY run_eval.py /app/run_eval.py
 
 WORKDIR /amortized/work
