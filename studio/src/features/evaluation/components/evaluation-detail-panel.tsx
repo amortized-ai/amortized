@@ -437,31 +437,47 @@ function flattenObject(obj: Record<string, unknown>): Map<string, string> {
 }
 
 /**
- * The resolved-args fingerprint is large; the hint shows only the keys
- * where this model's columns disagree, as k=v for THIS column (capped).
- * Payloads recorded in different formats (legacy raw args, the old
- * 4-field dump, the hash fallback) cannot be diffed key-by-key and
- * collapse to a single short marker.
+ * The vllm line of the hint shows only what DISTINGUISHES this column
+ * from the model's other columns. If another column carries the same
+ * fingerprint the args are not a difference and nothing is shown; an
+ * empty payload means the run used an external endpoint (no embedded
+ * vLLM); otherwise the differing keys are shown as k=v (capped).
  */
 function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
   const cols = columns.filter((c) => c.model === col.model && c.config)
   const idx = cols.findIndex((c) => c === col)
   if (idx < 0 || cols.length < 2) return ""
-  const objs = cols.map((c) => parseVllmArgs(c.config?.vllm_args ?? ""))
-  if (objs.some((o) => o === null))
-    return "vllm args differ (recorded in different formats)"
-  const tops = objs.map((o) => Object.keys(o ?? {}).sort().join(","))
+  const raws = cols.map((c) => c.config?.vllm_args ?? "")
+  const mine = raws[idx] ?? ""
+  if (raws.some((r, i) => i !== idx && r === mine)) return ""
+  const objs = raws.map(parseVllmArgs)
+  const mineObj: Record<string, unknown> | null | undefined = objs[idx]
+  if (mineObj == null) {
+    return mine === "" || mine === "[]"
+      ? "external endpoint"
+      : "vllm args (pre-fingerprint recording)"
+  }
+  const others = objs.filter(
+    (o, i): o is Record<string, unknown> => o !== null && i !== idx,
+  )
+  if (others.length === 0) return "vllm args (embedded serving)"
+  const tops = [mineObj, ...others].map((o) => Object.keys(o).sort().join(","))
   if (new Set(tops).size > 1)
     return "vllm args differ (recorded in different formats)"
-  const flat = objs.map((o) => flattenObject(o ?? {}))
-  const keys = new Set(flat.flatMap((m) => [...m.keys()]))
+  const flatSelf = flattenObject(mineObj)
+  const flatOthers = others.map(flattenObject)
+  const keys = new Set([
+    ...flatSelf.keys(),
+    ...flatOthers.flatMap((m) => [...m.keys()]),
+  ])
   const parts: string[] = []
   let hidden = 0
   for (const k of keys) {
-    const vals = flat.map((m) => m.get(k))
-    if (new Set(vals).size <= 1) continue
+    const self = flatSelf.get(k)
+    // A key that matches ANY other column does not distinguish this one.
+    if (flatOthers.some((m) => m.get(k) === self)) continue
     if (parts.length >= 4) hidden += 1
-    else parts.push(`${k}=${vals[idx] ?? "(unset)"}`)
+    else parts.push(`${k}=${self ?? "(unset)"}`)
   }
   if (hidden > 0) parts.push(`+${hidden} more`)
   return parts.join(" ")
