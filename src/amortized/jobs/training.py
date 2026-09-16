@@ -98,6 +98,25 @@ def _image(device: str) -> str:
     return f"{registry}/training:{IMAGE_TAG}"
 
 
+def _cpu_timeout_seconds(raw: Any) -> int:
+    """Fail-open validation of the optional ``timeout_seconds`` config key.
+
+    Only a positive integer is honored; anything else (non-numeric string,
+    0, negative) falls back to the default with a warning rather than
+    raising or producing an invalid ``activeDeadlineSeconds``.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        if raw is not None:
+            logger.warning(
+                "Ignoring invalid timeout_seconds=%r (must be a positive integer); "
+                "using default %ss",
+                raw,
+                CPU_TIMEOUT_SECONDS,
+            )
+        return CPU_TIMEOUT_SECONDS
+    return raw
+
+
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -121,7 +140,7 @@ async def build(
             "MKL_NUM_THREADS": str(CPU_CPUS),
             "TOKENIZERS_PARALLELISM": "false",
         }
-        timeout = int(config.get("timeout_seconds", CPU_TIMEOUT_SECONDS))
+        timeout = _cpu_timeout_seconds(config.get("timeout_seconds"))
     else:
         resources = Resources(gpus=config.get("nproc_per_node", 1))
 

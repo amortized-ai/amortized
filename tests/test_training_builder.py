@@ -175,3 +175,21 @@ class TestCpuBranch:
         thub = yaml.safe_load(result.config_files["config.yaml"])
         assert "timeout_seconds" not in thub
         assert "device" not in thub
+
+    async def test_timeout_invalid_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Fail-open: non-numeric / 0 / negative values warn and use the default."""
+        _default_registry(monkeypatch)
+        for bad in ("abc", 0, -5):
+            result = await _build(_cpu_config(timeout_seconds=bad))
+            assert result.timeout == 3600, f"timeout_seconds={bad!r} should fall back to 3600"
+        assert "Ignoring invalid timeout_seconds" in caplog.text
+
+    async def test_timeout_valid_value_does_not_warn(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _default_registry(monkeypatch)
+        result = await _build(_cpu_config(timeout_seconds=120))
+        assert result.timeout == 120
+        assert "Ignoring invalid timeout_seconds" not in caplog.text

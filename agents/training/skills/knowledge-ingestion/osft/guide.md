@@ -113,6 +113,8 @@ rules as platform validation (`src/amortized/core/cpu_policy.py`):
 - **Config** — set `bf16: false` (no effect on CPU; runs fp32) and
   `nproc_per_node: 1`. Full-parameter SFT needs ~16 bytes/param of RAM —
   prefer LoRA/OSFT on CPU.
+- **Timeout** — CPU jobs default to a 60-minute timeout, configurable
+  per job via `timeout_seconds`.
 
 ## Compute Requirements
 

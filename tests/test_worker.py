@@ -564,3 +564,76 @@ class TestPollJobTimeout:
 
         assert timed_out is False
         assert status.running is False
+
+
+class TestRunJobTimeoutPath:
+    """The full ``_run_job`` timeout path — MLflow FAILED + failed status
+    (complements the ``_poll_job``-level tests above)."""
+
+    @pytest.mark.asyncio
+    async def test_run_job_timeout_marks_failed(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from amortized import worker as worker_mod
+        from amortized.backends import BackendHandle, BackendStatus
+
+        class FakeBackend:
+            def __init__(self) -> None:
+                self.cancelled = False
+
+            async def submit(self, spec: object) -> BackendHandle:
+                return BackendHandle(backend_name="fake", job_id="j-timeout01")
+
+            async def status(self, handle: BackendHandle) -> BackendStatus:
+                if self.cancelled:
+                    return BackendStatus(running=False, exit_code=1, error="stopped")
+                return BackendStatus(running=True)
+
+            async def cancel(self, handle: BackendHandle) -> None:
+                self.cancelled = True
+
+        # Fast-forwarding clock: every datetime.now() call jumps past the
+        # job's timeout so the poll deadline fires on the first check.
+        class FakeDateTime:
+            def __init__(self) -> None:
+                self._now = datetime.now(UTC)
+
+            def now(self, tz: object = None) -> datetime:
+                self._now += timedelta(seconds=120)
+                return self._now
+
+        job = {
+            "id": "j-timeout01",
+            "type": "training",
+            "user_id": "u1",
+            "config": {
+                "algorithm": "sft",
+                "model_name_or_path": "Qwen/Qwen3.5-0.8B",
+                "data_path": "./data.jsonl",
+                "device": "cpu",
+                "timeout_seconds": 60,
+            },
+        }
+
+        update = AsyncMock()
+        finish = AsyncMock()
+        backend = FakeBackend()
+        with (
+            patch("amortized.worker.get_backend", return_value=backend),
+            patch("amortized.worker._update_job", update),
+            patch("amortized.worker._create_mlflow_run", AsyncMock(return_value=None)),
+            patch("amortized.worker._finish_mlflow_run", finish),
+            patch("amortized.worker._resolve_parent_artifacts", AsyncMock(
+                return_value=(job["config"], [])
+            )),
+            patch("amortized.worker.datetime", FakeDateTime()),
+        ):
+            await worker_mod._run_job(job)
+
+        assert backend.cancelled is True
+        finish.assert_awaited_once_with("", "FAILED")
+
+        statuses = [c.kwargs.get("status") for c in update.await_args_list if "status" in c.kwargs]
+        assert statuses == ["provisioning", "running", "failed"]
+        failed_call = update.await_args_list[-1]
+        assert failed_call.kwargs["error"] == "Job timed out after 60 seconds."
