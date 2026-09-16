@@ -37,9 +37,11 @@ export const PROVIDER_CATALOG: Record<string, ProviderInfo> = {
     label: "OpenAI",
     requiresApiKey: true,
     models: [
-      { providerID: "openai", modelID: "gpt-4.1", label: "GPT-4.1" },
-      { providerID: "openai", modelID: "gpt-4o", label: "GPT-4o" },
-      { providerID: "openai", modelID: "gpt-4o-mini", label: "GPT-4o Mini" },
+      { providerID: "openai", modelID: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      { providerID: "openai", modelID: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+      { providerID: "openai", modelID: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+      { providerID: "openai", modelID: "gpt-5.5-2026-04-23", label: "GPT-5.5 (2026-04-23)" },
+      { providerID: "openai", modelID: "gpt-5.4-2026-03-05", label: "GPT-5.4 (2026-03-05)" },
     ],
   },
 }

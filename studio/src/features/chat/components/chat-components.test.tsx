@@ -302,6 +302,31 @@ describe("MessageBubble — structured option cards", () => {
     expect(onSelect).toHaveBeenCalledWith("80/20 split", "1")
   })
 
+  it("renders the present_options question and no thinking dots when text is empty", () => {
+    const toolResults = [{
+      name: "present_options",
+      result: JSON.stringify({
+        question: "How would you like to add your documentation?",
+        options: [
+          { title: "Upload file", description: "PDF, DOCX, ...", value: "upload" },
+          { title: "Import URL", description: "A direct URL", value: "url" },
+        ],
+      }),
+      collapsed: true,
+    }]
+    // Empty content mirrors the empty final-answer text some models (e.g. gpt-5.x) return
+    // after a tool call — the prose lives in the tool's `question` field instead.
+    render(
+      <MessageBubble message={makeMsg("", toolResults)} onOptionSelect={vi.fn()} />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByText("How would you like to add your documentation?")).toBeInTheDocument()
+    expect(screen.getByText("Upload file")).toBeInTheDocument()
+    expect(screen.getByText("Import URL")).toBeInTheDocument()
+    // Completed turn with tool output must not show the perpetual "thinking" dots.
+    expect(document.querySelector(".thinking-dot")).toBeNull()
+  })
+
   it("does not render option cards for user messages", () => {
     const userMsg: ChatMessage = {
       ...makeMsg("Some text"),
@@ -326,5 +351,20 @@ describe("MessageBubble — structured option cards", () => {
     }
     render(<MessageBubble message={msg} onOptionSelect={vi.fn()} />)
     expect(screen.getByText("Explicit")).toBeInTheDocument()
+  })
+
+  it("falls back to thinking dots when options can't render (no onOptionSelect)", () => {
+    // present_options with options but no question, and no onOptionSelect: the cards can't
+    // render and the tool result is hidden, so hasRenderableBody must not suppress the dots.
+    const toolResults = [{
+      name: "present_options",
+      result: JSON.stringify({
+        options: [{ title: "A", description: "First", value: "a" }],
+      }),
+      collapsed: true,
+    }]
+    render(<MessageBubble message={makeMsg("", toolResults)} />, { wrapper: Wrapper })
+    expect(screen.queryAllByRole("button")).toHaveLength(0)
+    expect(document.querySelector(".thinking-dot")).not.toBeNull()
   })
 })

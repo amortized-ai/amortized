@@ -1,0 +1,17 @@
+# Overrides for a vanilla (non-OpenShift) cluster such as kind:
+#
+#   helm install amortized deploy/helm/amortized -f deploy/helm/amortized/values-kind.yaml
+#
+# There is no SCC to inject a non-root uid, so the application pods must not
+# enforce runAsNonRoot — the server's postgres wait-for-db init and the opencode
+# image both run as root. Also prefer images already loaded into the kind nodes.
+security:
+  runAsNonRoot: false
+
+images:
+  server:
+    pullPolicy: IfNotPresent
+  studio:
+    pullPolicy: IfNotPresent
+  opencode:
+    pullPolicy: IfNotPresent

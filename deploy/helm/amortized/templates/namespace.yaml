@@ -1,0 +1,17 @@
+{{- if .Values.createNamespaces }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+{{- if ne .Values.jobsNamespace .Values.namespace }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+{{- end }}
+{{- end }}

@@ -24,7 +24,7 @@ from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
 from amortized.core.compute import get_all_backends, register_backend
 from amortized.db import close_db, init_db
-from amortized.mcp.server import create_mcp_server
+from amortized.mcp.server import create_mcp_server, shutdown_mcp_transport
 from amortized.models import ConfigResponse, HealthResponse
 from amortized.worker import cleanup_orphaned_jobs, worker_loop
 
@@ -119,6 +119,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     with contextlib.suppress(asyncio.CancelledError):
         await worker_task
     await agent.shutdown()
+    await shutdown_mcp_transport(getattr(_app.state, "mcp_transport", None))
     await close_db()
     logger.info("Amortized runtime shutting down")
 

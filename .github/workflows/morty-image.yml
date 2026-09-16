@@ -1,0 +1,48 @@
+name: Build Morty image
+
+# Sandboxed Morty (opencode + persona) for OpenShell. Separate from containers.yml so it
+# can be dispatched on its own (e.g. to build a testable image from a feature branch).
+on:
+  push:
+    branches: [main]
+    paths: ['agents/**', 'containers/morty/**', 'Makefile', '.github/workflows/morty-image.yml']
+  workflow_dispatch:
+
+jobs:
+  build-morty:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Persona/skills come from agents/ via `make prompt`; stage the build context.
+      - name: Assemble build context
+        run: containers/morty/prepare-context.sh "${{ runner.temp }}/morty-ctx"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/amortized-ai/morty
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: ${{ runner.temp }}/morty-ctx
+          file: ${{ runner.temp }}/morty-ctx/Dockerfile
+          # amd64 only — sandbox nodes are amd64; an arm64 layer fails with "exec format error".
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

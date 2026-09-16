@@ -1,0 +1,87 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: amortized-job-manager
+  namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+rules:
+    - apiGroups: ["batch"]
+      resources: ["jobs"]
+      verbs: ["create", "get", "list", "watch", "delete"]
+    - apiGroups: ["apps"]
+      resources: ["deployments"]
+      verbs: ["create", "get", "list", "watch", "delete"]
+    - apiGroups: [""]
+      resources: ["services"]
+      verbs: ["create", "get", "list", "delete"]
+    - apiGroups: [""]
+      resources: ["pods", "pods/log"]
+      verbs: ["get", "list", "watch"]
+    - apiGroups: [""]
+      resources: ["secrets", "configmaps"]
+      verbs: ["create", "get", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-job-manager
+  namespace: {{ .Values.jobsNamespace }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: amortized-job-manager
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+    namespace: {{ .Values.namespace }}
+{{- if .Values.mlflow.enterprise.enabled }}
+---
+{{- /*
+RHOAI enterprise MLflow workspace access. The bindings live in the MLflow workspace namespace
+(mlflow.enterprise.workspace, defaulting to .Values.namespace) so they match the
+X-MLFLOW-WORKSPACE header. The operator SSAR splits read (view) / write (edit), so bind both
+ClusterRoles. Subjects: the server SA and the dispatched-job SA (`default` in the jobs
+namespace) — cross-namespace SA subjects are valid and let the job's bearer token +
+X-MLFLOW-WORKSPACE header authorize against this workspace.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-mlflow-view
+  namespace: {{ include "amortized.mlflowWorkspace" . }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.mlflow.enterprise.viewClusterRole }}
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+    namespace: {{ .Values.namespace }}
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ .Values.jobsNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: amortized-mlflow-edit
+  namespace: {{ include "amortized.mlflowWorkspace" . }}
+  labels:
+    {{- include "amortized.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.mlflow.enterprise.editClusterRole }}
+subjects:
+  - kind: ServiceAccount
+    name: amortized-server
+    namespace: {{ .Values.namespace }}
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ .Values.jobsNamespace }}
+{{- end }}

@@ -401,6 +401,10 @@ export function useChat() {
       setError(null)
       setCurrentToolCall(null)
 
+      if (chatState === "action_pending") {
+        clearProposedActions()
+      }
+
       const userMessage: ChatMessage = {
         id: generateId(),
         role: "user",
@@ -576,6 +580,21 @@ export function useChat() {
     ],
   )
 
+  const clearProposedActions = useCallback(() => {
+    setMessages((prev: ChatMessage[]) =>
+      prev.map((m: ChatMessage) => m.proposedAction ? { ...m, proposedAction: null } : m),
+    )
+    if (currentConversationId) {
+      const store = useChatStore.getState()
+      const msgs = store.getConversationMessages(currentConversationId)
+      for (const m of msgs) {
+        if (m.proposedAction) {
+          store.updateMessageFields(currentConversationId, m.id, { proposedAction: null })
+        }
+      }
+    }
+  }, [currentConversationId])
+
   const selectOption = useCallback((messageId: string, value: string) => {
     setMessages((prev) =>
       prev.map((m) =>
@@ -659,20 +678,11 @@ export function useChat() {
   }, [currentConversationId])
 
   const rejectAction = useCallback(async () => {
-    const actionMsg = [...messagesRef.current].reverse().find((m) => m.proposedAction !== null)
-    if (!actionMsg?.proposedAction) return
+    if (!messagesRef.current.some((m) => m.proposedAction)) return
 
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === actionMsg.id ? { ...m, proposedAction: null } : m,
-      ),
-    )
+    clearProposedActions()
 
     if (currentConversationId) {
-      useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
-        proposedAction: null,
-      })
-
       const sessionId = useChatStore.getState().getSessionId(currentConversationId)
       if (sessionId) {
         try {
@@ -694,7 +704,7 @@ export function useChat() {
     }
 
     setChatState("done")
-  }, [currentConversationId])
+  }, [currentConversationId, clearProposedActions])
 
   const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string }>>([])
   const jobNotifyRunningRef = useRef(false)

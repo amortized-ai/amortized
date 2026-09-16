@@ -90,7 +90,9 @@ async def _store_dataset_in_mlflow(
     )
 
     try:
-        await mlflow.upload_artifact(run_id, f"generated_data/{filename}", file_bytes)
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jsonl"
+        normalized = f"data.{ext}"
+        await mlflow.upload_artifact(run_id, f"generated_data/{normalized}", file_bytes)
         await mlflow.finish_run(run_id)
     except Exception:
         await mlflow.fail_run_quiet(run_id)

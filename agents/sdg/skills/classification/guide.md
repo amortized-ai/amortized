@@ -26,11 +26,11 @@ Ask the user these questions (one at a time, with numbered options):
    1) Yes, 3 levels — Low, Medium, High
    2) Yes, 4 levels — Low, Medium, High, Critical
    3) No urgency — Just classify by category
-4. **Which teacher model?** — Call `list_models` to get the models
-   configured on the AI Gateway. Present ONLY those models as options.
-   Do NOT suggest models that aren't returned by `list_models` — they
-   won't work. If no models are returned, stop and direct the user to
-   Settings → AI Gateway.
+4. **Which teacher model?** — Call `list_models` to get the available
+   teacher models (each has a `name` and a `provider`). Present ONLY those
+   models as options. Do NOT suggest models that aren't returned by
+   `list_models` — they won't work. If no models are returned, stop — no
+   teacher-model provider is configured on the server.
 5. **How many samples?** — Scale based on category count and desired
    coverage. Recommend at least 50 samples per category for basic
    coverage and 150+ per category for production quality.
@@ -49,7 +49,7 @@ model name from `list_models` in `model_configs`.
 
 Key parameters for classification:
 - `columns` — a category sampler, an LLM column to generate text, an LLM column to generate labels
-- `model_configs` — `[{"alias": "text", "model": "<from list_models>", "provider": "gateway", "skip_health_check": true}]`
+- `model_configs` — `[{"alias": "text", "model": "<from list_models>", "provider": "<from list_models>", "skip_health_check": true}]`
 - `processors` — schema_transform to produce SFT `messages` format
 - `num_records` — based on category count (see sample count step)
 
@@ -96,10 +96,10 @@ Call `present_options` with step="sdg-samples" and these options:
 
 ### Step 5 — Teacher model
 
-Call `list_models` to discover available models from the AI Gateway.
+Call `list_models` to discover available teacher models (name + provider).
 Call `present_options` with step="sdg-teacher-model" and each model as an option.
 ALWAYS add as the last option:
-- title: "Configure a model", description: "Set up an AI Gateway endpoint in Settings", value: "Configure a model — Set up an AI Gateway endpoint in Settings"
+- title: "Configure a model", description: "Configure a teacher-model provider key on the server", value: "Configure a model — Configure a teacher-model provider key on the server"
 
 ## After SDG — Training
 

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -28,15 +28,57 @@ class Settings(BaseSettings):
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
+    mlflow_tracking_token_file: str = Field(
+        "",
+        description="Path to a bearer-token file for MLflow auth (e.g. a K8s service-account "
+        "token). Empty = no bearer auth (self-hosted MLflow).",
+    )
+    mlflow_workspace: str = Field(
+        "",
+        description="X-MLFLOW-WORKSPACE header for RHOAI MLflow workspaces. Empty with a token "
+        "file set auto-reads the pod's K8s namespace.",
+    )
+    mlflow_ca_bundle: str = Field(
+        "", description="Path to a CA bundle used to verify the MLflow server TLS certificate."
+    )
+    mlflow_tracking_insecure_tls: bool = Field(
+        False, description="Skip TLS verification for the MLflow server (not recommended)."
+    )
 
     agent_upstream_url: str = Field(
         "http://opencode:4096", description="OpenCode upstream URL for agent session proxy"
+    )
+    agent_upstream_client_cert: str = Field(
+        "",
+        description="Path to a client cert (PEM) for mTLS to the agent upstream, e.g. the "
+        "OpenShell gateway. Empty = no client cert (plain opencode Service).",
+    )
+    agent_upstream_client_key: str = Field(
+        "", description="Path to the client key (PEM) for agent_upstream_client_cert."
+    )
+    agent_upstream_ca_bundle: str = Field(
+        "", description="Path to a CA bundle to verify the agent upstream's TLS certificate."
+    )
+    agent_upstream_insecure_tls: bool = Field(
+        False, description="Skip TLS verification for the agent upstream (not recommended)."
     )
     external_url: str = Field("", description="Externally reachable server URL")
     gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")
     default_backend: str = Field(
         "", description="Default compute backend (falls back to compute_backend if empty)"
     )
+
+    @model_validator(mode="after")
+    def _require_https_for_bearer(self) -> "Settings":
+        """Refuse to send a bearer token over cleartext HTTP (CWE-319)."""
+        uri = self.mlflow_tracking_uri
+        if self.mlflow_tracking_token_file and uri and not uri.startswith("https://"):
+            raise ValueError(
+                "mlflow_tracking_token_file is set (MLflow bearer auth) but "
+                "mlflow_tracking_uri is not https:// — refusing to send the token in "
+                "cleartext. Use an https:// MLflow URI, or unset the token file."
+            )
+        return self
 
     @property
     def resolved_default_backend(self) -> str:

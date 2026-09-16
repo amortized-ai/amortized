@@ -139,7 +139,6 @@ class KubernetesBackend:
             V1EmptyDirVolumeSource,
             V1EnvVar,
             V1EnvVarSource,
-            V1HostPathVolumeSource,
             V1PodSecurityContext,
             V1PodSpec,
             V1ResourceRequirements,
@@ -149,18 +148,17 @@ class KubernetesBackend:
             V1VolumeMount,
         )
 
-        work_host_path = f"/var/local-path-provisioner/job-work/{spec.job_id}"
         volumes = [
             V1Volume(
                 name="config",
                 config_map={"name": f"{resource_name}-config"},  # type: ignore[arg-type]
             ),
+            # Per-job work dir shared between init (data download) and main containers.
+            # emptyDir (node ephemeral) — hostPath is forbidden by the OpenShift
+            # restricted SCC, which rejects the pod before it schedules.
             V1Volume(
                 name="work",
-                host_path=V1HostPathVolumeSource(
-                    path=work_host_path,
-                    type="DirectoryOrCreate",
-                ),
+                empty_dir=V1EmptyDirVolumeSource(),
             ),
             V1Volume(
                 name="shm",
