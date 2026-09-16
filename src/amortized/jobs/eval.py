@@ -5,9 +5,12 @@ Two modes:
 - **Embedded serving** (the common path): the eval config names the model
   to evaluate (``training_job_id`` for a tuned model, or
   ``model_name_or_path`` for an HF id). The eval job pod serves the model
-  itself on a pinned GPU — vLLM starts in the background, the script waits
-  for the endpoint to become healthy, runs the eval against localhost, and
+  itself — vLLM starts in the background, the script waits for the
+  endpoint to become healthy, runs the eval against localhost, and
   exits. The serve lifetime is the eval lifetime: scores done → pod done.
+  GPU allocation matches training jobs: the pod requests
+  ``nvidia.com/gpu`` (``nproc_per_node``) and is bounded by the user's
+  namespace quota — GPUs are assumed free, so no occupancy checking.
 - **External endpoint**: ``endpoint`` points at an OpenAI-compatible URL
   (e.g. a gateway model). CPU-only, no GPU.
 
@@ -152,29 +155,6 @@ def _resolve_named_model(config: dict[str, Any]) -> tuple[str, str, list[str]]:
     return served_name, model_name, []
 
 
-async def _auto_memory_utilization(gpu_uuid: str) -> float:
-    """Utilization for a pinned GPU from the inventory's free memory.
-
-    vLLM's --gpu-memory-utilization is a fraction of TOTAL GPU memory, so
-    when the GPU already hosts other work we must size to the free slice.
-    Falls back to the vLLM default 0.9 when the inventory is unreadable.
-    Leaves a 10% safety margin for non-torch overhead.
-    """
-    try:
-        from amortized.core.gpu_inventory import read_inventory
-
-        for gpu in await read_inventory():
-            if gpu.get("uuid") == gpu_uuid:
-                total = float(gpu.get("memory_total_mb") or 0)
-                free = float(gpu.get("memory_free_mb") or 0)
-                if total > 0 and free > 0:
-                    return round(min(0.95, max(0.05, 0.9 * free / total)), 3)
-                break
-    except Exception:
-        pass
-    return 0.9
-
-
 async def _build_embedded_serving(
     config: dict[str, Any],
     env: dict[str, str],
@@ -183,29 +163,17 @@ async def _build_embedded_serving(
 
     Returns (pre_commands, main_script, resolved_extras) where
     resolved_extras carries config fields to persist (served name, gpu
-    pinning, utilization).
+    count, utilization).
     """
     if config.get("training_job_id"):
         served_name, model_path, pre_commands = await _resolve_training_model(config)
     else:
         served_name, model_path, pre_commands = _resolve_named_model(config)
 
-    # Pin to a GPU instead of requesting nvidia.com/gpu — same sharing
-    # scheme the standalone serve jobs used: the eval's vLLM shares the
-    # user's GPU within quota and frees it when the eval pod exits.
-    from amortized import config as config_module
-
+    # Same GPU budget scheme as training jobs: the pod requests
+    # nvidia.com/gpu and the namespace ResourceQuota bounds it. GPUs are
+    # assumed free, so nothing is pinned or occupancy-checked here.
     gpus = int(config.get("nproc_per_node", 1))
-    try:
-        from amortized.core.gpu_inventory import assign_serve_gpu
-
-        gpu_uuids = await assign_serve_gpu(
-            config_module.settings.compute_namespace, gpus
-        )
-    except Exception:
-        if config_module.settings.compute_backend == "kubernetes":
-            raise
-        gpu_uuids = []
 
     # $SERVE_MODEL_DIR is our own pre-command variable (find output, no
     # spaces) — shlex-quoting it would suppress expansion, so it goes in raw
@@ -220,16 +188,10 @@ async def _build_embedded_serving(
             with _cl.suppress(ValueError):
                 explicit_util = float(str(extra).split("=", 1)[-1].split()[-1])
 
-    if explicit_util is not None:
-        gpu_memory_utilization = explicit_util
-    elif gpu_uuids:
-        gpu_memory_utilization = await _auto_memory_utilization(gpu_uuids[0])
-    else:
-        gpu_memory_utilization = 0.9
-    check_gpus = 1 if gpu_uuids else gpus
+    gpu_memory_utilization = explicit_util if explicit_util is not None else 0.9
     pre_commands.append(
         "python3 /amortized/check_gpu_memory.py"
-        f" {quoted_path} {int(check_gpus)} {gpu_memory_utilization}"
+        f" {quoted_path} {int(gpus)} {gpu_memory_utilization}"
     )
 
     port = int(config.get("port", DEFAULT_SERVE_PORT))
@@ -273,14 +235,11 @@ async def _build_embedded_serving(
         ]
     )
 
-    if gpu_uuids:
-        env["NVIDIA_VISIBLE_DEVICES"] = ",".join(gpu_uuids)
-
     extras = {
         "served_model_name": served_name,
         "port": port,
         "gpu_memory_utilization": gpu_memory_utilization,
-        "gpu_uuids": gpu_uuids,
+        "gpus": gpus,
     }
     return pre_commands, script, extras
 
@@ -371,7 +330,9 @@ async def build(
             "api_key_env": "EVAL_MODEL_API_KEY",
         }
         image = IMAGE
-        resources = Resources(gpus=0, cpus=4, memory_gb=16)
+        # GPU budget like a training job: the pod requests nvidia.com/gpu
+        # and the namespace ResourceQuota bounds it.
+        resources = Resources(gpus=int(extras.get("gpus", 1)), cpus=4, memory_gb=16)
         # The brace group makes the multi-line script a single compound
         # command — without it the worker's "pre && main" chain would only
         # guard the first line and a failed pre-check would not stop the

@@ -327,15 +327,6 @@ class KubernetesBackend:
         pod_spec = self._build_pod_spec(spec, resource_name, mount_gcp=mount_gcp)
         pod_spec.restart_policy = "Never"
 
-        # GPU pinning is delivered as an env var (Secret), but Secrets are
-        # not readable cross-namespace; mirror it as a pod annotation so the
-        # gpu-inventory scan can attribute the GPU without secret access.
-        template_annotations = {}
-        if spec.env.get("NVIDIA_VISIBLE_DEVICES"):
-            template_annotations["amortized.io/gpu-uuids"] = spec.env[
-                "NVIDIA_VISIBLE_DEVICES"
-            ]
-
         job = V1Job(
             metadata=V1ObjectMeta(
                 name=resource_name,
@@ -346,7 +337,6 @@ class KubernetesBackend:
                 template={  # type: ignore[arg-type]
                     "metadata": {
                         "labels": self._labels(spec.job_id, spec.job_type, spec.user_id),
-                        "annotations": template_annotations or None,
                     },
                     "spec": pod_spec,
                 },

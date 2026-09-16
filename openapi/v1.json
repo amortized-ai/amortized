@@ -1349,65 +1349,6 @@
         }
       }
     },
-    "/api/v1/eval/gpu-check": {
-      "get": {
-        "tags": [
-          "eval"
-        ],
-        "summary": "Pre-flight GPU memory check for an eval job that serves its own model (training_job_id or model_name_or_path set). Returns the model's weight size, the GPU the eval would be assigned, its free memory, what jobs currently hold each GPU, and whether the model fits. Call before creating the eval job.",
-        "operationId": "check_eval_gpu",
-        "parameters": [
-          {
-            "name": "training_job_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "Training job ID of the tuned model to evaluate (optional)",
-              "default": "",
-              "title": "Training Job Id"
-            },
-            "description": "Training job ID of the tuned model to evaluate (optional)"
-          },
-          {
-            "name": "model_name_or_path",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "description": "HF hub id of the model to evaluate (optional)",
-              "default": "",
-              "title": "Model Name Or Path"
-            },
-            "description": "HF hub id of the model to evaluate (optional)"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Check Eval Gpu"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/evaluations": {
       "get": {
         "tags": [
@@ -2000,27 +1941,6 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Agent Health Agent Health Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/gpu-availability": {
-      "get": {
-        "summary": "Gpu Availability",
-        "description": "GPU availability for deploy decisions.\n\n- gpus: every GPU on the cluster with its live free memory (from the\n  gpu-inventory DaemonSet), who holds it, and whether it is \"mine\"\n  (pinned by this user's running serve jobs \u2014 deployments share it).\n- quota_limit/quota_used/available: the user's namespace ResourceQuota\n  (training jobs request nvidia.com/gpu; serve pods pin instead).",
-        "operationId": "get_gpu_availability",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Gpu Availability"
                 }
               }
             }

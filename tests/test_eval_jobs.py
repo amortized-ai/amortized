@@ -121,203 +121,6 @@ class TestCreateEvalJob:
 
 
 
-class TestCheckEvalGpu:
-    @pytest.mark.asyncio
-    async def test_gpu_check_reports_fit_and_occupants(self, client: httpx.AsyncClient,
-        monkeypatch) -> None:
-        from amortized.core import gpu_inventory as gi
-
-        described = {
-            "gpus": [
-                {
-                    "node": "worker",
-                    "index": 3,
-                    "uuid": "GPU-abc",
-                    "memory_free_mb": 8 * 1024,
-                    "memory_total_mb": 80 * 1024,
-                    "mine": True,
-                    "busy": True,
-                    "held_by": ["me"],
-                    "occupants": [
-                        {
-                            "pod": "pod-1",
-                            "namespace": "amortized-me-jobs",
-                            "job_id": "cc7cbd77-1111",
-                            "job_type": "serve",
-                            "started_at": "2026-09-14T18:18:00+00:00",
-                        }
-                    ],
-                },
-            ],
-            "my_uuids": ["GPU-abc"],
-            "updated": "now",
-        }
-
-        async def fake_describe(ns):
-            return described
-
-        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
-
-        async def fake_size(tj, mn):
-            return 4.8
-
-        import amortized.api.eval as eval_api
-
-        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
-
-        response = await client.get(
-            "/api/v1/eval/gpu-check",
-            params={"model_name_or_path": "Qwen/Qwen3.5-4B"}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["model_size_gb"] == 4.8
-        # 8 GB free * 0.9 = 7.2 GB budget, weights x 1.5 = 7.2 -> fits
-        assert data["fits"] is True
-        assert data["assigned_gpu"]["uuid"] == "GPU-abc"
-        assert data["assigned_gpu"]["occupants"][0]["job_type"] == "serve"
-
-    @pytest.mark.asyncio
-    async def test_gpu_check_reports_shortage(self, client: httpx.AsyncClient, monkeypatch) -> None:
-        from amortized.core import gpu_inventory as gi
-
-        described = {
-            "gpus": [
-                {
-                    "node": "worker",
-                    "index": 3,
-                    "uuid": "GPU-abc",
-                    "memory_free_mb": 4 * 1024,
-                    "memory_total_mb": 80 * 1024,
-                    "mine": True,
-                    "busy": True,
-                    "held_by": ["me"],
-                    "occupants": [],
-                },
-            ],
-            "my_uuids": ["GPU-abc"],
-            "updated": "now",
-        }
-
-        async def fake_describe(ns):
-            return described
-
-        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
-
-        async def fake_size(tj, mn):
-            return 14.2
-
-        import amortized.api.eval as eval_api
-
-        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
-
-        response = await client.get(
-            "/api/v1/eval/gpu-check",
-            params={"model_name_or_path": "big/model"}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["fits"] is False
-        assert "only" in data["error"]
-        assert "KV cache" in data["error"]
-
-    @pytest.mark.asyncio
-    async def test_gpu_check_borderline_weights_rejected(self, client, monkeypatch) -> None:
-        # 4.8 GB weights into a 6.3 GB budget passed the weights-only
-        # check and OOM-ed at vLLM sampler warmup in production — the
-        # 1.5x KV-cache headroom must reject it.
-        from amortized.core import gpu_inventory as gi
-
-        described = {
-            "gpus": [
-                {
-                    "node": "worker",
-                    "index": 0,
-                    "uuid": "GPU-abc",
-                    "memory_free_mb": 7 * 1024,
-                    "memory_total_mb": 79 * 1024,
-                    "mine": True,
-                    "busy": True,
-                    "held_by": ["me"],
-                    "occupants": [
-                        {"pod": "p", "namespace": "amortized-me-jobs", "job_id": "x", "job_type":
-                            "serve", "started_at": ""}
-                    ],
-                },
-            ],
-            "my_uuids": ["GPU-abc"],
-            "updated": "now",
-        }
-
-        async def fake_describe(ns):
-            return described
-
-        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
-
-        async def fake_size(tj, mn):
-            return 4.8
-
-        import amortized.api.eval as eval_api
-
-        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
-
-        response = await client.get(
-            "/api/v1/eval/gpu-check",
-            params={"model_name_or_path": "Qwen/Qwen3.5-4B"}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["fits"] is False
-        assert data["assigned_gpu"]["occupants"][0]["job_type"] == "serve"
-
-    @pytest.mark.asyncio
-    async def test_gpu_check_unknown_size_fits_null(
-        self, client: httpx.AsyncClient, monkeypatch
-    ) -> None:
-        from amortized.core import gpu_inventory as gi
-
-        described = {
-            "gpus": [
-                {
-                    "node": "worker",
-                    "index": 0,
-                    "uuid": "GPU-xyz",
-                    "memory_free_mb": 80 * 1024,
-                    "memory_total_mb": 80 * 1024,
-                    "mine": False,
-                    "busy": False,
-                    "held_by": [],
-                    "occupants": [],
-                },
-            ],
-            "my_uuids": [],
-            "updated": "now",
-        }
-
-        async def fake_describe(ns):
-            return described
-
-        monkeypatch.setattr(gi, "describe_gpus", fake_describe)
-
-        async def fake_size(tj, mn):
-            return None
-
-        import amortized.api.eval as eval_api
-
-        monkeypatch.setattr(eval_api, "_model_size_gb", fake_size)
-
-        response = await client.get(
-            "/api/v1/eval/gpu-check",
-            params={"model_name_or_path": "unknown/model"}
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["model_size_gb"] is None
-        assert data["fits"] is None
-        assert data["assigned_gpu"]["uuid"] == "GPU-xyz"
-        assert "error" not in data
-
-
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:
@@ -346,18 +149,7 @@ class TestEvalBuilder:
         assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
 
     @pytest.mark.asyncio
-    async def test_build_embeds_serving_for_model_name(self, monkeypatch) -> None:
-        from amortized.core import gpu_inventory
-
-        async def fake_assign(namespace, gpus=1):
-            return ["gpu-uuid-1"]
-
-        async def fake_util(gpu_uuid):
-            return 0.75
-
-        monkeypatch.setattr(gpu_inventory, "assign_serve_gpu", fake_assign)
-        monkeypatch.setattr(eval_builder, "_auto_memory_utilization", fake_util)
-
+    async def test_build_embeds_serving_for_model_name(self) -> None:
         config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B"}
         del config["endpoint"]
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
@@ -379,10 +171,10 @@ class TestEvalBuilder:
         # brace group: a failed pre-command aborts the whole script
         assert script.startswith("{")
         assert script.rstrip().endswith("}")
-        # GPU pinned via env, no device requests — pod shares the GPU
-        assert result.env["NVIDIA_VISIBLE_DEVICES"] == "gpu-uuid-1"
-        assert result.resources.gpus == 0
+        # GPU budget like a training job: nvidia.com/gpu device request
+        assert result.resources.gpus == 1
         assert result.resources.cpus == 4
+        assert "NVIDIA_VISIBLE_DEVICES" not in result.env
         # serve assets ship alongside config.json
         assert "serve_vllm.py" in result.config_files
         assert "patch_model_config.py" in result.config_files
@@ -392,21 +184,12 @@ class TestEvalBuilder:
         assert runner["endpoints"]["model"]["base_url"] == "http://localhost:8000/v1"
         assert runner["endpoints"]["model"]["model"] == "Qwen/Qwen3.5-4B"
         # resolved config records the embedded serve parameters
-        assert result.resolved_config["gpu_uuids"] == ["gpu-uuid-1"]
-        assert result.resolved_config["gpu_memory_utilization"] == 0.75
+        assert result.resolved_config["gpus"] == 1
+        assert result.resolved_config["gpu_memory_utilization"] == 0.9
         assert result.resolved_config["served_model_name"] == "Qwen/Qwen3.5-4B"
 
     @pytest.mark.asyncio
-    async def test_build_embeds_serving_respects_explicit_utilization(
-        self, monkeypatch
-    ) -> None:
-        from amortized.core import gpu_inventory
-
-        async def fake_assign(namespace, gpus=1):
-            return ["gpu-uuid-1"]
-
-        monkeypatch.setattr(gpu_inventory, "assign_serve_gpu", fake_assign)
-
+    async def test_build_embeds_serving_respects_explicit_utilization(self) -> None:
         config = {
             **EVAL_BODY,
             "model_name_or_path": "Qwen/Qwen3.5-4B",
