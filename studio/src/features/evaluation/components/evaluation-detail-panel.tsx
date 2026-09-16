@@ -214,15 +214,12 @@ export function EvaluationDetailPanel({
                         </div>
                         {(() => {
                           const diff = differingConfigFields(modelColumns, col.model)
-                          // Multi-column: every column lists the differing
-                          // fields. Single column: surface the config.
-                          // (max_samples is omitted there — the evaluated
-                          // count is displayed below the model name.)
-                          const fields = diff.length > 0
-                            ? diff
-                            : (["temperature", "judge_max_samples", "judge_model"] as (keyof EvalSemanticConfig)[])
-                          if (fields.length === 0 || !col.config) return null
-                          const hint = formatConfigHint(col, fields)
+                          // Only models with multiple columns get a hint:
+                          // every column lists the fields that differ
+                          // between them. A single column has no
+                          // difference to explain.
+                          if (diff.length === 0 || !col.config) return null
+                          const hint = formatConfigHint(col, diff)
                           return hint ? (
                             <span
                               className="text-xs text-muted-foreground/80 truncate"
