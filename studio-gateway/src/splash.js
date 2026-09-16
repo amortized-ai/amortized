@@ -23,7 +23,9 @@ function renderSplash(state, basePath = '') {
   const options = providers
     .map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(PROVIDER_LABELS[p] || p)}</option>`)
     .join('');
-  const initial = JSON.stringify({ state: st, error: (state && state.error) || '' });
+  // Escape "<" so an error string containing "</script>" can't break out of the inline
+  // <script> below (JSON.stringify alone doesn't escape it) — markup-injection safe.
+  const initial = JSON.stringify({ state: st, error: (state && state.error) || '' }).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
 <html lang="en">

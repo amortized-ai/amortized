@@ -149,7 +149,6 @@ app.use((req, res, next) => {
 app.use(createProxyMiddleware({
   pathFilter: ['/api/**', '/agent/**', '/mcp/**'],
   changeOrigin: true,
-  ws: true,
   router: (req) => `http://amortized-server.${getState(currentUser(req)).ns}.svc.cluster.local:8000`,
   on: {
     error: (_err, _req, res) => {
@@ -180,6 +179,14 @@ if (MLFLOW_UPSTREAM) {
     throw new Error(`MLFLOW_UPSTREAM must be https:// to protect the injected SA token (got '${MLFLOW_UPSTREAM}')`);
   }
   const mlflowAgent = new https.Agent({ ca: MLFLOW_CA_FILE ? fs.readFileSync(MLFLOW_CA_FILE) : undefined });
+  // Gate: this proxy injects the gateway SA token (broad, cluster-wide MLflow access),
+  // so an identity-less request must never reach upstream — otherwise a client-supplied
+  // X-MLFLOW-WORKSPACE would read another user's runs (CWE-862).
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/mlflow')) return next();
+    if (!currentUser(req)) return res.status(401).json({ error: 'no authenticated user' });
+    next();
+  });
   app.use(createProxyMiddleware({
     pathFilter: ['/mlflow/**'],
     target: MLFLOW_UPSTREAM,
@@ -190,8 +197,11 @@ if (MLFLOW_UPSTREAM) {
       proxyReq: (proxyReq, req) => {
         const token = readSaToken();
         if (token) proxyReq.setHeader('Authorization', `Bearer ${token}`);
+        // The gate above guarantees a user; always overwrite the workspace header
+        // (dropping any client-supplied value) so it is scoped strictly to the caller.
         const user = currentUser(req);
-        if (user) proxyReq.setHeader('X-MLFLOW-WORKSPACE', nsForUser(user));
+        proxyReq.removeHeader('X-MLFLOW-WORKSPACE');
+        proxyReq.setHeader('X-MLFLOW-WORKSPACE', nsForUser(user));
         // Force a full 200 for the SPA index (not assets/api) so the seed below is
         // always injected. MLflow's index etag is computed on the un-seeded upstream
         // file, so a browser holding a pre-seed copy would otherwise revalidate to a

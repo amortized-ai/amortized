@@ -499,7 +499,13 @@ function getState(user) {
 }
 
 function markForRetry(user) {
-  stacks.delete(nsForUser(user));
+  const ns = nsForUser(user);
+  const entry = stacks.get(ns);
+  // Only clear a settled attempt. Deleting an in-flight entry orphans its promise and
+  // lets ensureUserStack start a second provision() concurrently (racing helm upgrade
+  // --install + duplicate sandbox create), so retrying mid-provision is a no-op.
+  if (entry && entry.state === 'provisioning') return;
+  stacks.delete(ns);
 }
 
 // Set (or rotate) the user's model key: persist it, then (re)provision Morty. First

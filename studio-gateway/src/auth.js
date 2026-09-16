@@ -14,7 +14,13 @@ const kc = new k8s.KubeConfig();
 kc.loadFromCluster();
 const authApi = kc.makeApiClient(k8s.AuthenticationV1Api);
 
-const DEV_USER = process.env.DEV_USER || '';
+// DEV_USER bypasses auth entirely (any request without proxy/token identity becomes
+// this user), so honor it ONLY when explicitly opted in for local/testing via
+// ALLOW_DEV_USER=1 — never by accident in a real deployment.
+const DEV_USER = process.env.ALLOW_DEV_USER === '1' ? (process.env.DEV_USER || '') : '';
+if (process.env.DEV_USER && process.env.ALLOW_DEV_USER !== '1') {
+  console.warn('DEV_USER is set but ignored (ALLOW_DEV_USER!=1): refusing to bypass auth');
+}
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX = 1024;
 const tokenCache = new Map(); // token -> { user, exp }
@@ -39,6 +45,13 @@ function bearerToken(req) {
 function pruneTokenCache(now) {
   for (const [k, v] of tokenCache) {
     if (v.exp <= now) tokenCache.delete(k);
+  }
+  // Even with nothing expired, bound the cache: evict oldest (Map is insertion-ordered)
+  // entries until under the cap, so a burst of distinct tokens can't grow it without limit.
+  while (tokenCache.size >= CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest === undefined) break;
+    tokenCache.delete(oldest);
   }
 }
 
