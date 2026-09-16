@@ -43,7 +43,10 @@ function slugFor(ns) {
   return ns.replace(/^amz-/, '');
 }
 function mortyName(ns) {
-  return `morty-${slugFor(ns)}`;
+  // OpenShell caps sandbox names at 19 chars. Derive from the ns's stable hash suffix
+  // (the last '-' segment, e.g. amz-esivaram-c1769b02 -> morty-c1769b02) so the name
+  // stays short + unique regardless of the readable slug length.
+  return `morty-${ns.split('-').pop()}`;
 }
 // The Host the OpenShell gateway routes to this sandbox's opencode :4096.
 function mortyHost(ns) {
