@@ -303,7 +303,8 @@ async def gpu_availability() -> dict[str, object]:
 
     if _settings.compute_backend != "kubernetes":
         det = _detect_gpu()
-        count = int(det.get("count", 0) or 0)  # type: ignore[arg-type]
+        raw_count = det.get("count")
+        count = int(raw_count) if isinstance(raw_count, (int, str)) else 0
         result.update({"quota_limit": count, "quota_used": 0, "available": count})
         return result
 

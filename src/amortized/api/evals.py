@@ -171,10 +171,10 @@ def _entry_from_job(
 
 
 class _Suppress:
-    def __enter__(self):
+    def __enter__(self) -> _Suppress:
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: object) -> bool:
         return True  # swallow ValueError etc.
 
 

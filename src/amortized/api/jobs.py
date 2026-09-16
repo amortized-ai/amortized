@@ -288,7 +288,7 @@ async def create_training_job(
 
 
 async def _persist_metric_set(
-    config: dict, parent_job_id: str, db: asyncpg.Connection
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
 ) -> None:
     """Tag the dataset run with the eval's metric set (idempotent).
 

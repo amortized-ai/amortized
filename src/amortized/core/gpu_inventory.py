@@ -130,7 +130,8 @@ async def _pinned_gpu_pods() -> list[Any]:
 
 
 def _is_busy(gpu: dict[str, Any]) -> bool:
-    return gpu["memory_total_mb"] - gpu["memory_free_mb"] > BUSY_THRESHOLD_MB
+    used = int(gpu["memory_total_mb"]) - int(gpu["memory_free_mb"])
+    return used > BUSY_THRESHOLD_MB
 
 
 def _user_of_namespace(namespace: str) -> str:

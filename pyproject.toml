@@ -70,6 +70,13 @@ plugins = ["pydantic.mypy"]
 module = ["torch", "torch.*", "training_hub", "training_hub.*", "datasets", "datasets.*", "asyncpg", "asyncpg.*", "alembic", "alembic.*", "sse_starlette", "sse_starlette.*", "jsonschema", "jsonschema.*", "yaml", "yaml.*", "asyncssh", "asyncssh.*", "typer", "typer.*", "fastapi_mcp", "fastapi_mcp.*", "asynth", "asynth.*", "google", "google.*", "google.cloud", "google.cloud.*", "boto3", "boto3.*", "botocore", "botocore.*", "kubernetes_asyncio", "kubernetes_asyncio.*", "data_designer", "data_designer.*"]
 ignore_missing_imports = true
 
+# Job assets (serve_vllm.py, patch_model_config.py, ...) execute inside the
+# job containers, not the typed server codebase — their heavy runtime deps
+# (vllm, transformers) are not installed in the server environment.
+[[tool.mypy.overrides]]
+module = "amortized.jobs.assets.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
