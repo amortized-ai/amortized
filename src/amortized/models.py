@@ -13,6 +13,7 @@ class JobType(StrEnum):
     sdg = "sdg"
     upload = "upload"
     eval = "eval"
+    serve = "serve"
 
 
 class JobStatus(StrEnum):
@@ -312,3 +313,129 @@ class SDGJobRequest(BaseModel):
             raise ValueError(msg)
 
         return self
+
+
+# ---------------------------------------------------------------------------
+# Eval job models — compare two model endpoints on an eval dataset
+# ---------------------------------------------------------------------------
+
+
+class EvalEndpoint(BaseModel):
+    base_url: str = Field(
+        ...,
+        min_length=1,
+        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+    )
+    model: str = Field(
+        ...,
+        min_length=1,
+        description="Model name sent as 'model' in chat completion requests",
+    )
+    api_key: str = Field(
+        "",
+        description=(
+            "Optional bearer token. Never echoed in API responses;"
+            " scrubbed from the DB once the job is dispatched."
+        ),
+    )
+
+
+class EvalRubricCriterion(BaseModel):
+    name: str = Field(
+        ...,
+        min_length=1,
+        description="Short criterion name, e.g. 'factual_accuracy' (used as the results key)",
+    )
+    description: str = Field(
+        ...,
+        min_length=1,
+        description="One sentence telling the judge what to check for this criterion",
+    )
+
+
+class EvalJobConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rubric: list[EvalRubricCriterion] = Field(
+        default_factory=list,
+        description=(
+            "Custom judge criteria, designed with the user. The LLM judge scores"
+            " the model's response against the reference answer on each criterion"
+            " (absolute 0-1), averaged over the dataset."
+        ),
+    )
+    endpoint: EvalEndpoint | None = Field(
+        None,
+        description=(
+            "External OpenAI-compatible endpoint serving the model to evaluate"
+            " (e.g. a gateway model). When omitted, set training_job_id or"
+            " model_name_or_path and the eval job serves the model itself."
+        ),
+    )
+    training_job_id: str = Field(
+        "",
+        description=(
+            "Training job whose tuned model to evaluate. The eval job serves"
+            " the model itself (vLLM inside the job) and stops when scores"
+            " are computed. Takes precedence over model_name_or_path."
+        ),
+    )
+    model_name_or_path: str = Field(
+        "",
+        description=(
+            "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate."
+            " The eval job serves the model itself."
+        ),
+    )
+    served_model_name: str = Field(
+        "",
+        description=(
+            "Name passed as 'model' in requests. Defaults to the training"
+            " job's model_display_name (tuned models) or model_name_or_path."
+        ),
+    )
+    judge: EvalEndpoint | None = Field(
+        None,
+        description=(
+            "Optional LLM-as-judge endpoint for scoring free-form outputs"
+            " against the reference answer"
+        ),
+    )
+    metrics: list[str] = Field(
+        default_factory=lambda: ["exact_match", "format_validity"],
+        description="Structural metrics to compute (exact_match, format_validity)",
+    )
+    max_samples: int = Field(
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max eval samples to run; 0 (default) evaluates ALL records"
+            " in the dataset — set lower only to bound eval time/cost"
+        ),
+    )
+    judge_max_samples: int = Field(
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max samples for LLM-judge scoring; 0 (default) judges ALL samples"
+            " — set lower only to cap judge cost/latency"
+        ),
+    )
+    temperature: float = Field(0.0, description="Sampling temperature for evaluated endpoints")
+    eval_data_run_id: str = Field(
+        "",
+        description=(
+            "MLflow run ID holding the eval dataset (alternative to parent_job_id). "
+            "Use with datasets uploaded via /api/v1/datasets."
+        ),
+    )
+    topic: str = Field("", description="1-5 word eval topic for tracking")
+
+
+class EvalJobRequest(EvalJobConfig):
+    parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
+
+
+

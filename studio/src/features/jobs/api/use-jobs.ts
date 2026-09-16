@@ -10,10 +10,12 @@ import {
   cancelJob,
   deleteJob,
   getJobLogs,
+  getEvalResults,
   getMlflowRun,
   getMlflowMetricHistory,
 } from "@/lib/api-client"
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
+import type { EvalResults } from "@/lib/api-client"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
 
 const ACTIVE_STATUSES = new Set(["queued", "provisioning", "running"])
@@ -104,6 +106,14 @@ export function useJobLogs(jobId: string | null, isActive = false) {
     queryFn: () => getJobLogs(jobId!),
     enabled: !!jobId,
     refetchInterval: isActive ? 5000 : false,
+  })
+}
+
+export function useEvalResults(jobId: string | null, enabled = false) {
+  return useQuery<EvalResults | null>({
+    queryKey: ["jobs", jobId, "eval-results"],
+    queryFn: () => getEvalResults(jobId!),
+    enabled: !!jobId && enabled,
   })
 }
 

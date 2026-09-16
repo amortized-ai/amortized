@@ -15,7 +15,7 @@ import {
   EmptyContent,
 } from "@/components/ui/empty"
 import { Button } from "@/components/ui/button"
-import { Box, ArrowRight, GraduationCap, Layers, Rocket } from "lucide-react"
+import { Box, ArrowRight, GraduationCap, Layers } from "lucide-react"
 import { Link } from "react-router"
 import { SearchInput } from "@/components/search-input"
 import type { ModelRecord } from "@/types/api"
@@ -33,9 +33,14 @@ export default function ModelsPage() {
     const runId = searchParams.get("run")
     const name = searchParams.get("name")
     if (models.length > 0 && (runId || name)) {
+      // The Models tab shows friendly display names (mdl-*) while the
+      // underlying registered name differs — match either so deep links
+      // from other tabs resolve.
       const found = runId
         ? models.find((m) => m.run_id === runId)
-        : models.find((m) => m.name === name)
+        : models.find(
+            (m) => m.name === name || m.tags?.model_display_name === name,
+          )
       if (found) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
         setSelectedModel(found)
@@ -87,11 +92,11 @@ export default function ModelsPage() {
             </div>
             <div className="flex items-start gap-2.5">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#daf2f2] text-[#147878] dark:bg-[#003333]/40 dark:text-[#37a3a3]">
-                <Rocket className="h-3.5 w-3.5" />
+                <Layers className="h-3.5 w-3.5" />
               </div>
               <div>
-                <p className="text-sm font-medium">Deployable</p>
-                <p className="text-xs text-muted-foreground">Ready to serve via vLLM or TGI</p>
+                <p className="text-sm font-medium">Evaluable</p>
+                <p className="text-xs text-muted-foreground">Compare models in the Evaluation tab</p>
               </div>
             </div>
           </div>
@@ -104,7 +109,11 @@ export default function ModelsPage() {
         </div>
       </div>
 
-      <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search models..." />
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0) }} placeholder="Search models..." />
+        </div>
+      </div>
 
       {isLoading ? (
         <TableSkeleton columns={5} />

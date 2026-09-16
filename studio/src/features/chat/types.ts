@@ -8,7 +8,7 @@ export interface ProposedAction {
   action: string
   description: string
   params: Record<string, unknown>
-  jobType?: "sdg" | "training"
+  jobType?: "sdg" | "training" | "eval" | "serve"
   endpoint?: string
   config?: Record<string, unknown>
   parentJobId?: string

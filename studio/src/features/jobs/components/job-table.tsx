@@ -99,7 +99,7 @@ export function JobTable({ jobs, page, onPageChange, onSelectJob }: JobTableProp
         <EmptyState
           icon={Briefcase}
           title="No jobs yet"
-          description="Jobs appear here when you run training, SDG, eval, or serve tasks."
+          description="Jobs appear here when you run training, SDG, or eval tasks."
           actionLabel="Go to Chat"
           onAction={() => navigate("/chat")}
         />

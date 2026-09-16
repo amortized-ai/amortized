@@ -233,7 +233,23 @@ def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
         "job_id": tags.get("job_id", ""),
         "experiment_id": info.get("experiment_id", ""),
         "created_at": info.get("start_time"),
+        # The metric set this dataset evaluates with (if any eval has run
+        # on it) — reused by the eval agent so scores stay comparable
+        # across models and sessions.
+        "eval_metric_set": _parse_metric_set(tags.get("eval_metric_set", "")),
     }
+
+
+def _parse_metric_set(raw: str) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except ValueError:
+        pass
+    return None
 
 
 async def _get_all_experiment_ids(mlflow: MLflowClient) -> list[str]:

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader2, CircleCheck, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { getJob, getJobDurationStats } from "@/lib/api-client"
+import { getJob, getJobDurationStats, getJobLogs } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
 
 interface JobMonitorCardProps {
@@ -31,7 +31,21 @@ function statusToProgress(status: JobStatus, elapsed: number): number {
   }
 }
 
-function runningStageLabel(jobType: string): string {
+function runningStageLabel(jobType: string, stageMarker: string | null): string {
+  if (jobType === "EVAL") {
+    switch (stageMarker) {
+      case "serving":
+        return "Serving the model inside the eval job (Stage 3/4)"
+      case "waiting-for-endpoint":
+        return "Loading model — waiting for it to be ready (Stage 3/4)"
+      case "evaluating":
+        return "Evaluating the model (Stage 3/4)"
+      case "serve-failed":
+        return "The model server failed to start — stopping"
+      default:
+        return "Evaluating model (Stage 3/4)"
+    }
+  }
   switch (jobType) {
     case "TRAINING":
       return "Training model (Stage 3/4)"
@@ -40,17 +54,23 @@ function runningStageLabel(jobType: string): string {
   }
 }
 
-function statusToStageLabel(status: JobStatus, jobType: string): string {
+function statusToStageLabel(
+  status: JobStatus,
+  jobType: string,
+  stageMarker: string | null = null,
+): string {
   switch (status) {
     case "queued":
       return "Queued (Stage 1/4)"
     case "provisioning":
       return "Provisioning resources (Stage 2/4)"
     case "running":
-      return runningStageLabel(jobType)
+      return runningStageLabel(jobType, stageMarker)
     case "succeeded":
       return "Complete (Stage 4/4)"
     case "failed":
+      if (stageMarker === "serve-failed")
+        return "Failed — the model server did not start (check logs)"
       return "Failed"
     case "cancelled":
       return "Cancelled"
@@ -71,6 +91,12 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
   const [status, setStatus] = useState<JobStatus>("queued")
   const [error, setError] = useState<string | null>(null)
   const [mlflowRunId, setMlflowRunId] = useState<string>("")
+  // Eval jobs that serve the model themselves print stage markers into the
+  // job logs (=== EVAL-STAGE: serving | waiting-for-endpoint | evaluating ===)
+  // — surface them so the user sees where the eval is (model loading is the
+  // slow part and used to be an invisible serve job).
+  const isEval = jobType.toUpperCase() === "EVAL"
+  const [stageMarker, setStageMarker] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [avgDuration, setAvgDuration] = useState<number | null>(null)
   const jobStartRef = useRef(0)
@@ -109,15 +135,46 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
       if (TERMINAL_STATUSES.includes(job.status)) {
         if (pollRef.current) clearInterval(pollRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
+        if (isEval && job.status === "failed" && stageMarker === null) {
+          // Best-effort: find which stage the eval died in (e.g. the
+          // model server never came up) so the card can say why.
+          try {
+            const lines = await getJobLogs(jobId, 500)
+            for (let i = lines.length - 1; i >= 0; i--) {
+              const m = lines[i]?.match(/=== EVAL-STAGE: ([\w-]+) ===/)
+              if (m) {
+                setStageMarker(m[1] ?? null)
+                break
+              }
+            }
+          } catch {
+            // log fetch is best-effort
+          }
+        }
         if (!completeFired.current) {
           completeFired.current = true
           onCompleteRef.current?.(jobId, jobType, job.status)
+        }
+        return
+      }
+      if (isEval && job.status === "running") {
+        try {
+          const lines = await getJobLogs(jobId, 5)
+          for (let i = lines.length - 1; i >= 0; i--) {
+            const m = lines[i]?.match(/=== EVAL-STAGE: ([\w-]+) ===/)
+            if (m) {
+              setStageMarker(m[1] ?? null)
+              break
+            }
+          }
+        } catch {
+          // log fetch is best-effort; job status polling continues
         }
       }
     } catch {
       // Silently continue polling on transient errors
     }
-  }, [jobId, jobType])
+  }, [jobId, jobType, isEval, stageMarker])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -194,7 +251,7 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {/* Stage */}
       <p className="text-xs text-muted-foreground mb-2">
-        {statusToStageLabel(status, jobType)}
+        {statusToStageLabel(status, jobType, stageMarker)}
       </p>
 
       {/* Progress bar */}

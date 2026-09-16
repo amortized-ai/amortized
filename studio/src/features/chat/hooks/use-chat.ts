@@ -110,6 +110,7 @@ const UI_TOOLS = new Set([
   "create_training_job",
   "validate_sdg_job",
   "validate_training_job",
+  "validate_eval_job",
   "validate_recipe_job",
   "create_job",
 ])
@@ -119,6 +120,7 @@ const ALL_TURN_TOOLS = new Set(["signal_phase"])
 const JOB_CREATION_TOOLS = new Set([
   "create_sdg_job",
   "create_training_job",
+  "create_eval_job",
   "submit_recipe_job",
   "create_job",
 ])
@@ -500,7 +502,7 @@ export function useChat() {
               action: `Create ${validated.jobType.toUpperCase()} Job`,
               description: `Submit this ${validated.jobType} job?`,
               params: validated.config,
-              jobType: validated.jobType as "sdg" | "training",
+              jobType: validated.jobType as "sdg" | "training" | "eval" | "serve",
               endpoint: VALIDATE_TO_CREATE_ENDPOINT[validationTool.name],
               config: validated.config,
               parentJobId: validated.parentJobId,

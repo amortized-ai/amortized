@@ -335,7 +335,9 @@ class KubernetesBackend:
             ),
             spec=V1JobSpec(
                 template={  # type: ignore[arg-type]
-                    "metadata": {"labels": self._labels(spec.job_id, spec.job_type, spec.user_id)},
+                    "metadata": {
+                        "labels": self._labels(spec.job_id, spec.job_type, spec.user_id),
+                    },
                     "spec": pod_spec,
                 },
                 backoff_limit=0,
@@ -346,6 +348,48 @@ class KubernetesBackend:
         created_job = await batch.create_namespaced_job(self._namespace, job)
 
         job_uid = created_job.metadata.uid
+
+        # Long-running jobs (e.g. serve) expose ports via a ClusterIP Service,
+        # owned by the Job so it is garbage-collected on cancel/TTL expiry.
+        if spec.ports:
+            from kubernetes_asyncio.client import (
+                V1OwnerReference,
+                V1Service,
+                V1ServicePort,
+                V1ServiceSpec,
+            )
+
+            service = V1Service(
+                metadata=V1ObjectMeta(
+                    name=resource_name,
+                    namespace=self._namespace,
+                    labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
+                    owner_references=[
+                        V1OwnerReference(
+                            api_version="batch/v1",
+                            kind="Job",
+                            name=resource_name,
+                            uid=job_uid,
+                        )
+                    ],
+                ),
+                spec=V1ServiceSpec(
+                    type="ClusterIP",
+                    selector={"amortized/job-id": spec.job_id},
+                    ports=[
+                        V1ServicePort(name=f"p{container_port}", port=container_port)
+                        for container_port in sorted(spec.ports)
+                    ],
+                ),
+            )
+            await core.create_namespaced_service(self._namespace, service)
+            logger.info(
+                "Created Service %s for job %s (ports %s)",
+                resource_name,
+                spec.job_id,
+                sorted(spec.ports),
+            )
+
         try:
             await core.patch_namespaced_config_map(
                 f"{resource_name}-config",
@@ -432,12 +476,81 @@ class KubernetesBackend:
             return BackendStatus(running=False, exit_code=0)
         if status.failed and status.failed > 0:
             reason = await self._get_pod_failure_reason(resource_name, api_client)
+            if not reason:
+                reason = self._job_condition_message(job) or "Job failed. Check logs for details."
             return BackendStatus(
                 running=False,
                 exit_code=1,
-                error=reason or "Job failed. Check logs for details.",
+                error=reason,
             )
+
+        # The Job still reports active, but a pod whose container is stuck
+        # in a waiting state (image pull backoff, bad config) will never
+        # progress and this cluster's job controller does not mark the Job
+        # failed for it — poll forever. Fail fast with the pod's reason.
+        stuck = await self._get_stuck_pod_reason(resource_name, api_client)
+        if stuck:
+            return BackendStatus(running=False, exit_code=1, error=stuck)
+
         return BackendStatus(running=True)
+
+    @staticmethod
+    def _job_condition_message(job: Any) -> str | None:
+        """Human-readable message from the Job's failure conditions, if any."""
+        conditions = getattr(getattr(job, "status", None), "conditions", None) or []
+        for cond in conditions:
+            reason = getattr(cond, "reason", "") or ""
+            message = (getattr(cond, "message", "") or "").strip()
+            if reason in ("BackoffLimitExceeded", "DeadlineExceeded", "FailedIndexes"):
+                return message or f"Job {reason}."
+        return None
+
+    # Container waiting reasons that stall a Never-restart pod forever.
+    _STUCK_WAITING_REASONS = (
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "CreateContainerConfigError",
+    )
+
+    async def _get_stuck_pod_reason(self, job_name: str, api_client: Any) -> str | None:
+        """Waiting-state error (e.g. image pull failure) on an active pod.
+
+        Called while the Job still reports active/running: an image that
+        cannot be pulled never terminates the pod, so surface the failure
+        instead of polling forever.
+        """
+        from kubernetes_asyncio.client import CoreV1Api
+
+        try:
+            core = CoreV1Api(api_client)
+            pods = await core.list_namespaced_pod(
+                self._namespace, label_selector=f"job-name={job_name}"
+            )
+            for pod in pods.items or []:
+                if (getattr(pod, "status", None) or None) is None:
+                    continue
+                if pod.status.phase != "Pending":
+                    continue
+                for cs in pod.status.container_statuses or []:
+                    waiting = getattr(cs.state, "waiting", None) if cs.state else None
+                    if not waiting:
+                        continue
+                    reason = waiting.reason or ""
+                    if reason not in self._STUCK_WAITING_REASONS:
+                        continue
+                    image = cs.image or "unknown"
+                    detail = (waiting.message or "").strip()
+                    msg = (
+                        f"Failed to start container using image '{image}'"
+                        f" ({reason})."
+                        " Check that the image exists and is accessible."
+                    )
+                    if detail:
+                        msg += f" Detail: {detail[:300]}"
+                    return msg
+        except Exception:
+            logger.debug("Could not inspect pods for %s", job_name, exc_info=True)
+        return None
 
     async def _get_pod_failure_reason(self, job_name: str, api_client: Any) -> str | None:
         from kubernetes_asyncio.client import CoreV1Api
@@ -451,13 +564,17 @@ class KubernetesBackend:
                 for cs in pod.status.container_statuses or []:
                     if cs.state and cs.state.waiting:
                         reason = cs.state.waiting.reason or ""
-                        if "ImagePull" in reason or "ErrImagePull" in reason:
+                        if reason in self._STUCK_WAITING_REASONS:
                             image = cs.image or "unknown"
-                            return (
-                                f"Failed to pull container image '{image}'."
-                                " Check that the image exists and is"
-                                " accessible."
+                            detail = (cs.state.waiting.message or "").strip()
+                            msg = (
+                                f"Failed to start container using image '{image}'"
+                                f" ({reason})."
+                                " Check that the image exists and is accessible."
                             )
+                            if detail:
+                                msg += f" Detail: {detail[:300]}"
+                            return msg
                     if cs.state and cs.state.terminated:
                         exit_code = cs.state.terminated.exit_code
                         reason = cs.state.terminated.reason or ""

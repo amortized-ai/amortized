@@ -90,6 +90,48 @@
         }
       }
     },
+    "/api/v1/jobs/eval": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create and submit an eval job. Compares a base model endpoint against a tuned model endpoint on an eval dataset.",
+        "description": "Create a model evaluation job.",
+        "operationId": "create_eval_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/sdg/validate": {
       "post": {
         "tags": [
@@ -191,6 +233,48 @@
                   },
                   "type": "object",
                   "title": "Response Get Job Duration Stats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/eval/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate an eval job config and present it for user confirmation. Set parent_job_id to chain from a completed SDG job, or eval_data_run_id to use an uploaded dataset.",
+        "description": "Validate an eval job config without creating it.",
+        "operationId": "validate_eval_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -431,6 +515,51 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Job Artifacts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/eval-results": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get aggregate eval metrics for a completed eval job: per-model exact_match/format_validity/error rates and the judge win-rate.",
+        "description": "Return the parsed eval_results/metrics.json for an eval job.",
+        "operationId": "get_eval_results",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Results"
                 }
               }
             }
@@ -1173,6 +1302,77 @@
         }
       }
     },
+    "/api/v1/eval/endpoint-suggestions": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and gateway models. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
+        "operationId": "get_eval_endpoint_suggestions",
+        "parameters": [
+          {
+            "name": "training_job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Training job ID to derive base/tuned model names from (optional)",
+              "default": "",
+              "title": "Training Job Id"
+            },
+            "description": "Training job ID to derive base/tuned model names from (optional)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Endpoint Suggestions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List Evaluations",
+        "description": "Eval jobs grouped by (dataset, metric set) with per-model scores.",
+        "operationId": "list_evaluations_api_v1_evaluations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Evaluations Api V1 Evaluations Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models": {
       "get": {
         "tags": [
@@ -1386,7 +1586,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Delegate the conversation to a specialized workflow agent for SDG or training",
+        "summary": "Delegate the conversation to a specialized workflow agent (SDG, training, or eval)",
         "operationId": "delegate_to_subagent",
         "requestBody": {
           "content": {
@@ -2390,10 +2590,11 @@
             "type": "string",
             "enum": [
               "sdg",
-              "training"
+              "training",
+              "eval"
             ],
             "title": "Target",
-            "description": "Workflow agent to delegate to: 'sdg' or 'training'"
+            "description": "Workflow agent to delegate to: 'sdg', 'training', or 'eval'"
           },
           "context": {
             "type": "string",
@@ -2816,6 +3017,159 @@
         "type": "object",
         "title": "EmbeddingInferenceParams",
         "description": "Configuration for embedding generation parameters.\n\nAttributes:\n    generation_type: Type of generation, always \"embedding\" for this class.\n    encoding_format: Format of the embedding encoding (\"float\" or \"base64\").\n    dimensions: Number of dimensions for the embedding."
+      },
+      "EvalEndpoint": {
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Base Url",
+            "description": "OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model",
+            "description": "Model name sent as 'model' in chat completion requests"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key",
+            "description": "Optional bearer token. Never echoed in API responses; scrubbed from the DB once the job is dispatched.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_url",
+          "model"
+        ],
+        "title": "EvalEndpoint"
+      },
+      "EvalJobRequest": {
+        "properties": {
+          "rubric": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRubricCriterion"
+            },
+            "type": "array",
+            "title": "Rubric",
+            "description": "Custom judge criteria, designed with the user. The LLM judge scores the model's response against the reference answer on each criterion (absolute 0-1), averaged over the dataset."
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "External OpenAI-compatible endpoint serving the model to evaluate (e.g. a gateway model). When omitted, set training_job_id or model_name_or_path and the eval job serves the model itself."
+          },
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "Training job whose tuned model to evaluate. The eval job serves the model itself (vLLM inside the job) and stops when scores are computed. Takes precedence over model_name_or_path.",
+            "default": ""
+          },
+          "model_name_or_path": {
+            "type": "string",
+            "title": "Model Name Or Path",
+            "description": "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate. The eval job serves the model itself.",
+            "default": ""
+          },
+          "served_model_name": {
+            "type": "string",
+            "title": "Served Model Name",
+            "description": "Name passed as 'model' in requests. Defaults to the training job's model_display_name (tuned models) or model_name_or_path.",
+            "default": ""
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional LLM-as-judge endpoint for scoring free-form outputs against the reference answer"
+          },
+          "metrics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Metrics",
+            "description": "Structural metrics to compute (exact_match, format_validity)"
+          },
+          "max_samples": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Max Samples",
+            "description": "Max eval samples to run; 0 (default) evaluates ALL records in the dataset \u2014 set lower only to bound eval time/cost",
+            "default": 0
+          },
+          "judge_max_samples": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Judge Max Samples",
+            "description": "Max samples for LLM-judge scoring; 0 (default) judges ALL samples \u2014 set lower only to cap judge cost/latency",
+            "default": 0
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature",
+            "description": "Sampling temperature for evaluated endpoints",
+            "default": 0.0
+          },
+          "eval_data_run_id": {
+            "type": "string",
+            "title": "Eval Data Run Id",
+            "description": "MLflow run ID holding the eval dataset (alternative to parent_job_id). Use with datasets uploaded via /api/v1/datasets.",
+            "default": ""
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic",
+            "description": "1-5 word eval topic for tracking",
+            "default": ""
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "description": "Parent SDG/upload job ID holding the eval dataset",
+            "default": ""
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "EvalJobRequest"
+      },
+      "EvalRubricCriterion": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "Short criterion name, e.g. 'factual_accuracy' (used as the results key)"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description",
+            "description": "One sentence telling the judge what to check for this criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "EvalRubricCriterion"
       },
       "ExpressionColumnConfig": {
         "properties": {
@@ -3322,7 +3676,8 @@
           "training",
           "sdg",
           "upload",
-          "eval"
+          "eval",
+          "serve"
         ],
         "title": "JobType"
       },

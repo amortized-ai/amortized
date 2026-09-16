@@ -173,6 +173,90 @@ export async function getJobLogs(id: string, tail = 2000): Promise<string[]> {
   return resp.logs
 }
 
+export interface EvalModelMetrics {
+  num_samples: number
+  num_succeeded: number
+  error_rate: number
+  empty_rate: number
+  exact_match: number | null
+  exact_match_n: number
+  format_validity: number | null
+  format_validity_n: number
+}
+
+export interface EvalCriterionResult {
+  tuned_wins: number
+  base_wins: number
+  ties: number
+  win_rate: number | null
+}
+
+export interface EvalJudgeMetrics {
+  num_judged: number
+  tuned_wins?: number
+  base_wins?: number
+  ties?: number
+  win_rate: number | null
+  criteria?: Record<string, EvalCriterionResult>
+}
+
+export interface EvalResults {
+  num_records: number
+  num_skipped: number
+  // New single-model schema (one model per eval job, absolute scores):
+  model?: EvalModelMetrics
+  scores?: Record<string, number | null>
+  scores_n?: Record<string, number>
+  num_scored?: number
+  // Legacy pairwise schema (older eval jobs):
+  base?: EvalModelMetrics
+  tuned?: EvalModelMetrics
+  judge?: EvalJudgeMetrics
+}
+
+export async function getEvalResults(id: string): Promise<EvalResults | null> {
+  logger.debug("getEvalResults", { id })
+  const resp = await get<{ job_id: string; results: EvalResults | null; message?: string }>(
+    `/api/v1/jobs/${id}/eval-results`,
+  )
+  return resp.results
+}
+
+// --- Evaluations (cross-model comparison groups) ---
+
+export interface EvalSemanticConfig {
+  temperature: number
+  max_samples: number
+  judge_max_samples: number
+  judge_model: string
+}
+
+export interface EvaluationEntry {
+  job_id: string
+  model: string
+  status: string
+  created_at: string | null
+  mlflow_run_id: string
+  scores: Record<string, number>
+  num_samples: number | null
+  topic: string
+  config?: EvalSemanticConfig
+}
+
+export interface EvaluationGroup {
+  id: string
+  dataset: { run_id: string; name: string }
+  metric_names: string[]
+  evals: EvaluationEntry[]
+  latest_created_at: string | null
+}
+
+export async function getEvaluations(): Promise<EvaluationGroup[]> {
+  logger.debug("getEvaluations")
+  const resp = await get<{ groups: EvaluationGroup[] }>("/api/v1/evaluations")
+  return resp.groups
+}
+
 // --- Recipes ---
 
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {
@@ -198,6 +282,11 @@ export function createTrainingJob(config: Record<string, unknown>): Promise<Job>
 export function createSdgJob(config: Record<string, unknown>): Promise<Job> {
   logger.info("createSdgJob")
   return post<Job>("/api/v1/jobs/sdg", config)
+}
+
+export function createServeJob(config: Record<string, unknown>): Promise<Job> {
+  logger.info("createServeJob")
+  return post<Job>("/api/v1/jobs/serve", config)
 }
 
 // --- Agent Chat (OpenCode) ---
@@ -562,6 +651,15 @@ export interface DatasetListItem {
 export function listDatasets(search = ""): Promise<DatasetListItem[]> {
   const query = search ? buildQuery({ search }) : ""
   return get<DatasetListItem[]>(`/api/v1/datasets${query}`)
+}
+
+export interface DatasetDetailItem extends DatasetListItem {
+  eval_metric_set: { metrics: string[]; rubric: { name: string; description: string }[] } | null
+  artifacts: { path: string; file_size: number }[]
+}
+
+export function getDatasetByRun(runId: string): Promise<DatasetDetailItem> {
+  return get<DatasetDetailItem>(`/api/v1/datasets/${encodeURIComponent(runId)}`)
 }
 
 export function uploadDataset(file: File): Promise<Job> {

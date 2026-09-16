@@ -27,7 +27,9 @@ import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
-import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics } from "../api/use-jobs"
+import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
+import { useDatasets } from "@/features/datasets/api/use-datasets"
+import { useModels } from "@/features/models/api/use-models"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
 
@@ -173,6 +175,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
               <TabsTrigger value="overview" className="flex-1 transition-all duration-200">Overview</TabsTrigger>
               <TabsTrigger value="logs" className="flex-1 transition-all duration-200">Logs</TabsTrigger>
               {job.type === "training" && <TabsTrigger value="metrics" className="flex-1 transition-all duration-200">Metrics</TabsTrigger>}
+              {job.type === "eval" && <TabsTrigger value="results" className="flex-1 transition-all duration-200">Results</TabsTrigger>}
               <TabsTrigger value="config" className="flex-1 transition-all duration-200">Config</TabsTrigger>
             </TabsList>
           </div>
@@ -194,6 +197,12 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             </TabsContent>
           )}
 
+          {job.type === "eval" && (
+            <TabsContent value="results" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
+              <EvalResultsTab job={job} />
+            </TabsContent>
+          )}
+
           <TabsContent value="config" className="mt-0 flex-1 min-h-0 overflow-y-auto px-6 py-4">
             <ConfigTab job={job} />
           </TabsContent>
@@ -206,6 +215,23 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
 
 function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
   const navigate = useNavigate()
+  const isEval = job.type === "eval"
+  const { data: datasets } = useDatasets()
+  const { data: models } = useModels()
+  const evalModel = isEval
+    ? String((job.config?.endpoint as { model?: unknown } | undefined)?.model ?? "")
+    : ""
+  const evalDatasetRunId = isEval ? String(job.config?.eval_data_run_id ?? "") : ""
+  const evalDataset = evalDatasetRunId
+    ? datasets?.find((d) => d.run_id === evalDatasetRunId)
+    : undefined
+  // Models are displayed under mdl-* names but registered as *-osft-* —
+  // only hyperlink when the Models tab can actually resolve the model.
+  const evalModelResolvable =
+    evalModel !== "" &&
+    !!models?.find(
+      (m) => m.name === evalModel || m.tags?.model_display_name === evalModel,
+    )
 
   return (
     <div className="space-y-0">
@@ -249,6 +275,46 @@ function OverviewTab({ job, onClose }: { job: Job; onClose: () => void }) {
       )}
       <MetadataRow label="ID" value={job.id} mono />
       <MetadataRow label="Type" value={job.type} />
+      {evalModel !== "" && (
+        <MetadataRow
+          label="Model"
+          value={
+            evalModelResolvable ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  setTimeout(() => navigate(`/models?name=${encodeURIComponent(evalModel)}`), 200)
+                }}
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                {evalModel}
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            ) : (
+              <span title={`${evalModel} (not in the Models tab)`}>{evalModel}</span>
+            )
+          }
+        />
+      )}
+      {evalDatasetRunId !== "" && (
+        <MetadataRow
+          label="Dataset"
+          value={
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                setTimeout(() => navigate(`/datasets?run=${encodeURIComponent(evalDatasetRunId)}`), 200)
+              }}
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            >
+              {evalDataset?.name ?? evalDatasetRunId}
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          }
+        />
+      )}
       <MetadataRow label="Status" value={job.status} />
       <MetadataRow label="Created" value={formatDate(job.created_at, { includeTime: true })} />
       {job.started_at && (
@@ -378,7 +444,7 @@ function MetadataRow({
   mono,
 }: {
   label: string
-  value: string
+  value: React.ReactNode
   mono?: boolean
 }) {
   return (
@@ -439,6 +505,238 @@ function MetricsTab({ job }: { job: Job }) {
   return (
     <div className="pt-2">
       <TrainingMetricsChart data={data} isLoading={isLoading} />
+    </div>
+  )
+}
+
+function formatMetric(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—"
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function EvalResultsTab({ job }: { job: Job }) {
+  const isDone = job.status === "succeeded"
+  const { data: results, isLoading } = useEvalResults(job.id, isDone)
+
+  if (job.status !== "succeeded") {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        Results are available once the eval job succeeds (current status: {job.status}).
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        Loading eval results...
+      </div>
+    )
+  }
+
+  if (!results) {
+    return (
+      <div className="pt-4 text-sm text-muted-foreground text-center">
+        No eval results found on the MLflow run.
+      </div>
+    )
+  }
+
+  // Metric selection: structural metrics come from job.config.metrics, judge
+  // scores from job.config.rubric. When neither is set (older jobs) show all.
+  const configMetrics = Array.isArray(job.config?.metrics)
+    ? (job.config?.metrics as string[])
+    : []
+  const rubricNames = new Set(
+    (Array.isArray(job.config?.rubric) ? (job.config?.rubric as { name?: string }[]) : [])
+      .map((r) => r?.name)
+      .filter((n): n is string => !!n),
+  )
+  const showAllStructural = configMetrics.length === 0 && rubricNames.size === 0
+  const wantMetric = (key: string) => showAllStructural || configMetrics.includes(key)
+
+  const modelName =
+    (job.config?.endpoint as Record<string, unknown> | undefined)?.model ??
+    (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model ??
+    (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+
+  // ---- New single-model schema (one model per eval job, absolute scores) ----
+  if (results.model) {
+    const structural: { label: string; value: string }[] = [
+      ...(wantMetric("exact_match") ? [{ label: "Exact match", value: formatMetric(results.model.exact_match) }] : []),
+      ...(wantMetric("format_validity") ? [{ label: "Format validity", value: formatMetric(results.model.format_validity) }] : []),
+      ...(wantMetric("error_rate") ? [{ label: "Error rate", value: formatMetric(results.model.error_rate) }] : []),
+      ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
+    ]
+    const scoreEntries = Object.entries(results.scores ?? {}).filter(
+      ([name]) => rubricNames.size === 0 || rubricNames.has(name),
+    )
+    return (
+      <div className="space-y-4 pt-2">
+        {modelName ? (
+          <p className="text-sm text-muted-foreground">
+            Model: <span className="font-mono text-foreground">{String(modelName)}</span>
+          </p>
+        ) : null}
+
+        {scoreEntries.length > 0 && (
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Score</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Scored</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreEntries.map(([name, score]) => (
+                  <tr key={name} className="border-b last:border-0 border-border/40">
+                    <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {score === null || score === undefined ? "—" : `${(score * 100).toFixed(1)}%`}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">
+                      {results.scores_n?.[name] ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {structural.length > 0 && (
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="px-4 py-2.5 text-left font-medium">Metric</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {structural.map((row) => (
+                  <tr key={row.label} className="border-b last:border-0 border-border/40">
+                    <td className="px-4 py-2.5">{row.label}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-xs">{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          {results.num_records} records ({results.num_skipped} skipped)
+          {results.num_scored !== undefined ? `, ${results.num_scored} scored` : ""}. Per-sample
+          outputs are in the MLflow run under eval_results/.
+        </p>
+      </div>
+    )
+  }
+
+  // ---- Legacy pairwise schema (older eval jobs: base vs tuned, win rate) ----
+  const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
+  const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
+  const rows: { label: string; base: string; tuned: string }[] = [
+    ...(wantMetric("exact_match") ? [{ label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) }] : []),
+    ...(wantMetric("format_validity") ? [{ label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) }] : []),
+    ...(wantMetric("error_rate") ? [{ label: "Error rate", base: formatMetric(results.base?.error_rate), tuned: formatMetric(results.tuned?.error_rate) }] : []),
+    ...(wantMetric("empty_rate") ? [{ label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) }] : []),
+  ]
+
+  return (
+    <div className="space-y-4 pt-2">
+      {results.judge && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="flex items-baseline justify-between">
+            <p className="text-sm font-medium">
+              {results.judge.criteria ? "Judge win rate (avg across criteria)" : "Judge win rate"}
+            </p>
+            <p className={`text-2xl font-bold ${
+              results.judge.win_rate === null ? "" :
+              results.judge.win_rate > 0.5 ? "text-green-600 dark:text-green-400" :
+              results.judge.win_rate < 0.5 ? "text-rh-danger" : ""
+            }`}>
+              {results.judge.win_rate === null ? "—" : `${(results.judge.win_rate * 100).toFixed(1)}%`}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {results.judge.num_judged} judged
+            {!results.judge.criteria && results.judge.tuned_wins !== undefined && (
+              <> — tuned won {results.judge.tuned_wins}, base won {results.judge.base_wins}, {results.judge.ties} tie{results.judge.ties === 1 ? "" : "s"}.</>
+            )}
+            {results.judge.win_rate !== null && results.judge.win_rate > 0.5 && " Fine-tuning helped."}
+            {results.judge.win_rate !== null && results.judge.win_rate < 0.5 && " Fine-tuning regressed the task."}
+          </p>
+        </div>
+      )}
+
+      {results.judge?.criteria && Object.keys(results.judge.criteria).length > 0 && (
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-4 py-2.5 text-left font-medium">Criterion</th>
+                <th className="px-4 py-2.5 text-right font-medium">Tuned wins</th>
+                <th className="px-4 py-2.5 text-right font-medium">Base wins</th>
+                <th className="px-4 py-2.5 text-right font-medium">Ties</th>
+                <th className="px-4 py-2.5 text-right font-medium">Win rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(results.judge.criteria).filter(([name]) => rubricNames.size === 0 || rubricNames.has(name)).map(([name, c]) => (
+                <tr key={name} className="border-b last:border-0 border-border/40">
+                  <td className="px-4 py-2.5 font-mono text-xs">{name}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.tuned_wins}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.base_wins}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs">{c.ties}</td>
+                  <td className={`px-4 py-2.5 text-right font-mono text-xs ${
+                    c.win_rate === null ? "" :
+                    c.win_rate > 0.5 ? "text-green-600 dark:text-green-400" :
+                    c.win_rate < 0.5 ? "text-rh-danger" : ""
+                  }`}>
+                    {c.win_rate === null ? "—" : `${(c.win_rate * 100).toFixed(1)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {rows.length > 0 && (
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="px-4 py-2.5 text-left font-medium">Metric</th>
+              <th className="px-4 py-2.5 text-right font-medium">
+                Base{baseModel ? ` (${String(baseModel)})` : ""}
+              </th>
+              <th className="px-4 py-2.5 text-right font-medium">
+                Tuned{tunedModel ? ` (${String(tunedModel)})` : ""}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-b last:border-0 border-border/40">
+                <td className="px-4 py-2.5">{row.label}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{row.base}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs">{row.tuned}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {results.num_records} records ({results.num_skipped} skipped). Per-sample outputs are in
+        the MLflow run under eval_results/.
+      </p>
     </div>
   )
 }

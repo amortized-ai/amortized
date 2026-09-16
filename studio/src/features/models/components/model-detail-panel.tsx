@@ -215,6 +215,9 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
   const finalLoss = runData?.finalMetrics["loss"] ?? runData?.finalMetrics["avg_loss_backward"]
   const epochs = runData?.finalMetrics["epoch"] ?? (runData?.params["max_epochs"] ? Number(runData.params["max_epochs"]) : undefined)
   const trainingJob = jobsData?.trainingJob
+  // Link the source only when the job exists in this user's namespace —
+  // jobs are namespaced, so a cross-user training job would be a dead link.
+  const sourceJobId = trainingJob?.id ?? null
   const trainDuration = trainingJob?.started_at && trainingJob?.completed_at
     ? (new Date(trainingJob.completed_at).getTime() - new Date(trainingJob.started_at).getTime()) / 1000
     : undefined
@@ -291,9 +294,25 @@ function OverviewTab({ model, onClose }: { model: ModelRecord; onClose: () => vo
         <MetadataRow
           label="Source"
           value={
-            <span className="font-mono text-xs truncate max-w-[400px]" title={model.source}>
-              {model.source}
-            </span>
+            sourceJobId ? (
+              <button
+                type="button"
+                data-testid="model-source-job-link"
+                onClick={() => {
+                  onClose()
+                  setTimeout(() => navigate(`/jobs?job=${encodeURIComponent(sourceJobId)}`), 200)
+                }}
+                className="inline-flex items-center gap-1 font-mono text-xs truncate max-w-[400px] text-primary hover:underline"
+                title={model.source}
+              >
+                {model.source}
+                <ArrowRight className="h-3 w-3 shrink-0" />
+              </button>
+            ) : (
+              <span className="font-mono text-xs truncate max-w-[400px]" title={model.source}>
+                {model.source}
+              </span>
+            )
           }
         />
         {jobsData?.trainingJob && (
