@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     training_cpu_image_tag: str = Field(
-        "2026-09-15", description="Tag for the CPU training image (versioned from day one)"
+        "latest",
+        description="Tag for the CPU training image (CI publishes :latest; pin a sha or "
+        "semver tag for reproducibility)",
     )
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")

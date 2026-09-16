@@ -4,7 +4,7 @@
 #
 # Intended image: {settings.image_registry}/training-cpu:{settings.training_cpu_image_tag}
 # (composed in src/amortized/jobs/training.py; registry/tag come from settings — defaults:
-# ghcr.io/amortized-ai/training-cpu:2026-09-15). The Dockerfile itself does not encode
+# ghcr.io/amortized-ai/training-cpu:latest). The Dockerfile itself does not encode
 # the registry or tag.
 #
 # Deliberately EXCLUDED (CUDA-only or transformers-capping): vllm, flash-attn,

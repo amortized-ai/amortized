@@ -64,6 +64,16 @@ class TestModelCatalogCpuFlags:
         assert path == _repo_root() / "agents" / "training" / "skills" / "supported_models.json"
         assert mc.training_model_cpu_compatibility("Qwen/Qwen3.5-9B") == "reject"
 
+    def test_supported_models_dir_env_var_maps_to_setting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AMORTIZED_SUPPORTED_MODELS_DIR (set in the root Dockerfile) reaches Settings —
+        guarding the env-var name the deployed container relies on."""
+        from amortized.config import Settings
+
+        monkeypatch.setenv("AMORTIZED_SUPPORTED_MODELS_DIR", str(_repo_root()))
+        assert Settings().supported_models_dir == _repo_root()
+
 
 class TestCpuPolicyMatrix:
     def test_gpu_device_untouched(self) -> None:

@@ -39,7 +39,7 @@ async def _build(config: dict[str, Any]) -> JobBuildResult:
 
 def _default_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config_mod.settings, "image_registry", "ghcr.io/amortized-ai")
-    monkeypatch.setattr(config_mod.settings, "training_cpu_image_tag", "2026-09-15")
+    monkeypatch.setattr(config_mod.settings, "training_cpu_image_tag", "latest")
 
 
 class TestGpuBranchUnchanged:
@@ -152,7 +152,20 @@ class TestCpuBranch:
     async def test_image(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _default_registry(monkeypatch)
         result = await _build(dict(_cpu_config()))
-        assert result.image == "ghcr.io/amortized-ai/training-cpu:2026-09-15"
+        assert result.image == "ghcr.io/amortized-ai/training-cpu:latest"
+
+    async def test_image_default_settings_compose_latest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Under default settings the CPU image is ghcr.io/amortized-ai/training-cpu:latest —
+        the same :latest convention CI publishes (sha/semver tags stay available by pinning
+        training_cpu_image_tag)."""
+        assert (
+            config_mod.Settings.model_fields["training_cpu_image_tag"].default == "latest"
+        )
+        monkeypatch.setattr(config_mod.settings, "image_registry", "ghcr.io/amortized-ai")
+        result = await _build(dict(_cpu_config()))
+        assert result.image == "ghcr.io/amortized-ai/training-cpu:latest"
 
     async def test_image_uses_configured_registry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(config_mod.settings, "image_registry", "registry.local:5000")
