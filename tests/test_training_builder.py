@@ -75,6 +75,8 @@ class TestGpuBranchUnchanged:
                 " -r $MLFLOW_RUN_ID -a model"
             ],
         )
+        # GPU keeps the thub dispatch, byte-identical to pre-CPU behavior.
+        assert result.command == ["thub", "sft", "--config", "/amortized/config.yaml"]
 
     async def test_config_without_device_is_gpu(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Old/persisted configs without `device` produce identical GPU specs."""
@@ -174,6 +176,46 @@ class TestCpuBranch:
         assert result.image == "registry.local:5000/training-cpu:deadbeef"
         gpu_result = await _build(dict(_gpu_config()))
         assert gpu_result.image == "registry.local:5000/training:latest"
+
+    async def test_cpu_command_dispatches_cpu_sft_runner(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CPU jobs must NOT dispatch `thub` — the CPU image has no runnable
+        thub backend (unsloth excluded by design; instructlab-training is
+        hard-CUDA). They run the TRL-based runner baked into the image."""
+        _default_registry(monkeypatch)
+        result = await _build(dict(_cpu_config()))
+        assert result.command == [
+            "python3",
+            "/usr/local/bin/cpu_sft.py",
+            "--config",
+            "/amortized/config.yaml",
+        ]
+        assert "thub" not in result.command
+
+    async def test_cpu_command_runner_for_every_cpu_algorithm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All CPU-allowed algorithms dispatch the same runner; the LoRA/full
+        distinction travels in config.yaml (lora_r present or not)."""
+        _default_registry(monkeypatch)
+        for algo in ("sft", "lora_sft", "osft"):
+            result = await _build(_cpu_config(algorithm=algo))
+            assert result.command[:2] == ["python3", "/usr/local/bin/cpu_sft.py"], algo
+            assert result.command[2:] == ["--config", "/amortized/config.yaml"], algo
+
+    async def test_cpu_config_yaml_still_thub_format(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The runner consumes the same builder-generated thub-format YAML —
+        config generation is unchanged by the command switch."""
+        _default_registry(monkeypatch)
+        result = await _build(dict(_cpu_config(algorithm="lora_sft", lora_r=8)))
+        parsed = yaml.safe_load(result.config_files["config.yaml"])
+        assert parsed["model_path"] == "Qwen/Qwen3.5-0.8B"
+        assert parsed["bf16"] is False
+        assert parsed["nproc_per_node"] == 1
+        assert parsed["lora_r"] == 8
 
     async def test_timeout_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _default_registry(monkeypatch)

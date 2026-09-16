@@ -62,6 +62,11 @@ RUN pip install --no-cache-dir --upgrade --break-system-packages "transformers>=
 # nvidia-* CUDA stack — do not add it there.)
 RUN pip install --no-cache-dir --ignore-installed --break-system-packages s3fs fsspec mlflow boto3
 
+# The CPU runner the builder dispatches (src/amortized/jobs/training.py CPU branch).
+# It lives at /usr/local/bin — NOT under /amortized — because the K8s job mounts a
+# read-only ConfigMap at /amortized that would shadow any image file placed there.
+COPY cpu_sft.py /usr/local/bin/cpu_sft.py
+
 # Build-time smoke checks — every supported CPU algorithm path must import cleanly.
 # These FAIL the build on error (no `|| echo deferred` fallbacks): CPU problems must
 # surface in CI, not in a user's first job.
@@ -75,7 +80,7 @@ print(f'transformers {transformers.__version__}'); \
 print(f'trl {trl.__version__}'); \
 print(f'accelerate {accelerate.__version__}'); \
 print(f'peft {peft.__version__}'); \
-" && thub --help > /dev/null && echo "thub CLI OK"
+" && thub --help > /dev/null && python3 -m py_compile /usr/local/bin/cpu_sft.py && echo "thub CLI + cpu_sft.py OK"
 
 FROM docker.io/library/ubuntu:24.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized
@@ -91,6 +96,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/lib/python3/dist-packages /usr/lib/python3/dist-packages
 COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+# The dispatched CPU runner — same path the builder emits in its command.
+COPY cpu_sft.py /usr/local/bin/cpu_sft.py
 
 WORKDIR /app
 CMD ["python3"]

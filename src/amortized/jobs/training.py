@@ -145,8 +145,18 @@ async def build(
         resources = Resources(gpus=config.get("nproc_per_node", 1))
 
     config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
-    thub_subcommand = algorithm.replace("_", "-")
-    cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
+    if config.get("device") == "cpu":
+        # The CPU image cannot run the `thub` CLI: lora_sft's only backend
+        # (unsloth) is excluded by design, and sft's only backend
+        # (instructlab-training) unconditionally calls torch.cuda.set_device().
+        # Dispatch the TRL-based runner baked into the image instead — it
+        # consumes the same thub-format config.yaml generated above. It lives
+        # at /usr/local/bin (not /amortized) because the K8s ConfigMap mounts
+        # /amortized read-only and would shadow image files placed there.
+        cmd = ["python3", "/usr/local/bin/cpu_sft.py", "--config", "/amortized/config.yaml"]
+    else:
+        thub_subcommand = algorithm.replace("_", "-")
+        cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
 
     output_dir = config.get("output_dir", "/amortized/work/output")
     post_cmd = (
