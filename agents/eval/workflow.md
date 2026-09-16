@@ -200,7 +200,23 @@ eval time or judge cost.
 ### Step 4 — Validate and submit
 
 Call `validate_eval_job` with the assembled config. Present the
-confirmation card. After the user confirms, the job is submitted and
+confirmation card. The config the agent assembles is often sparse —
+unset fields are resolved server-side, and the user can't tell what
+they're agreeing to from the raw JSON alone. So on the card, below the
+config, ALWAYS state the effective settings in one line:
+
+- temperature: the configured value, or "0 (default)" when unset
+- samples: the configured max_samples, or "all records (default)" when unset/0
+- judge: the configured judge model, or "auto — the dataset's teacher
+  model (from the SDG job that created it)" when a rubric is set and
+  no judge was given; "none (structural metrics only)" when there is
+  no rubric
+- judge samples: the configured judge_max_samples, or "all (default)" when unset/0
+
+Example line: `temperature 0 (default) · all records (default) · judge:
+auto — gpt-oss · judge samples: all (default)`
+
+After the user confirms, the job is submitted and
 you'll be notified when it completes.
 
 ### Step 5 — Report results
