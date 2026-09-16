@@ -386,13 +386,17 @@ function formatConfigHint(
   const parts: string[] = []
   for (const f of fields) {
     const v = col.config?.[f]
-    if (v === undefined) continue
-    if (f === "temperature") parts.push(`temp ${v}`)
-    else if (f === "max_samples") parts.push(v === 0 ? "all samples" : `${v} samples`)
+    if (f === "temperature") parts.push(`temp ${v ?? "(unset)"}`)
+    else if (f === "max_samples")
+      parts.push(
+        v === undefined ? "samples (unset)" : v === 0 ? "all samples" : `${v} samples`,
+      )
     else if (f === "judge_max_samples")
-      parts.push(v === 0 ? "judge all" : `judge ${v}`)
-    else if (f === "judge_model" && v) parts.push(`judge ${v}`)
-    else if (f === "vllm_args" && typeof v === "string" && v) {
+      parts.push(
+        v === undefined ? "judge (unset)" : v === 0 ? "judge all" : `judge ${v}`,
+      )
+    else if (f === "judge_model") parts.push(`judge ${v || "(unset)"}`)
+    else if (f === "vllm_args") {
       const rendered = formatVllmArgsDiff(col, modelColumns)
       if (rendered) parts.push(rendered)
     }
@@ -437,11 +441,12 @@ function flattenObject(obj: Record<string, unknown>): Map<string, string> {
 }
 
 /**
- * The vllm line of the hint shows only what DISTINGUISHES this column
- * from the model's other columns. If another column carries the same
- * fingerprint the args are not a difference and nothing is shown; an
- * empty payload means the run used an external endpoint (no embedded
- * vLLM); otherwise the differing keys are shown as k=v (capped).
+ * The vllm line of the hint. When a model's columns disagree on
+ * vllm_args, EVERY column lists the keys that differ between any two
+ * fingerprinted columns with its own value — parallel to how the
+ * scalar config fields render. Payloads without a resolved
+ * fingerprint get a label instead: external-endpoint runs, or
+ * pre-fingerprint recordings.
  */
 function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
   const cols = columns.filter((c) => c.model === col.model && c.config)
@@ -449,7 +454,6 @@ function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
   if (idx < 0 || cols.length < 2) return ""
   const raws = cols.map((c) => c.config?.vllm_args ?? "")
   const mine = raws[idx] ?? ""
-  if (raws.some((r, i) => i !== idx && r === mine)) return ""
   const objs = raws.map(parseVllmArgs)
   const mineObj: Record<string, unknown> | null | undefined = objs[idx]
   if (mineObj == null) {
@@ -457,30 +461,27 @@ function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
       ? "external endpoint"
       : "vllm args (pre-fingerprint recording)"
   }
-  const others = objs.filter(
-    (o, i): o is Record<string, unknown> => o !== null && i !== idx,
+  const flatObjs = objs.map((o) => (o == null ? null : flattenObject(o)))
+  const self = flatObjs[idx]
+  const fingerprinted = flatObjs.filter(
+    (m): m is Map<string, string> => m !== null,
   )
-  if (others.length === 0) return "vllm args (embedded serving)"
-  const tops = [mineObj, ...others].map((o) => Object.keys(o).sort().join(","))
-  if (new Set(tops).size > 1)
-    return "vllm args differ (recorded in different formats)"
-  const flatSelf = flattenObject(mineObj)
-  const flatOthers = others.map(flattenObject)
-  const keys = new Set([
-    ...flatSelf.keys(),
-    ...flatOthers.flatMap((m) => [...m.keys()]),
-  ])
+  if (fingerprinted.length < 2) return "embedded vLLM"
+  const keys = new Set(fingerprinted.flatMap((m) => [...m.keys()]))
   const parts: string[] = []
   let hidden = 0
   for (const k of keys) {
-    const self = flatSelf.get(k)
-    // A key that matches ANY other column does not distinguish this one.
-    if (flatOthers.some((m) => m.get(k) === self)) continue
+    // A key that agrees across all fingerprinted columns is not a
+    // difference; every column then shows its own value for the rest.
+    const vals = fingerprinted.map((m) => m.get(k))
+    if (new Set(vals).size <= 1) continue
     if (parts.length >= 4) hidden += 1
-    else parts.push(`${k}=${self ?? "(unset)"}`)
+    else parts.push(`${k}=${self?.get(k) ?? "(unset)"}`)
   }
   if (hidden > 0) parts.push(`+${hidden} more`)
-  return parts.join(" ")
+  // All fingerprints identical — the field differs only against
+  // endpoint/legacy sibling columns.
+  return parts.length > 0 ? parts.join(" ") : "embedded vLLM"
 }
 
 interface ScoreStat {
