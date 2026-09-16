@@ -401,50 +401,69 @@ function formatConfigHint(
 }
 
 /**
- * Flatten the vllm_args fingerprint JSON to dot.key -> primitive string.
- * Null/empty values are dropped; a non-JSON payload (raw args or a hash
- * fallback) collapses to a single "(fingerprint)" entry.
+ * Parse the vllm_args payload: a JSON object is the engine-resolved
+ * fingerprint; arrays (legacy raw args) and hash strings return null —
+ * they cannot be compared key-by-key.
  */
-function flattenVllmArgs(raw: string): Map<string, string> {
-  const out = new Map<string, string>()
+function parseVllmArgs(raw: string): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(raw)
-    const walk = (prefix: string, v: unknown): void => {
-      if (v === null || v === undefined || v === "") return
-      if (Array.isArray(v)) {
-        if (v.length) out.set(prefix, v.map(String).join(","))
-        return
-      }
-      if (typeof v === "object") {
-        for (const [k, cv] of Object.entries(v as Record<string, unknown>))
-          walk(prefix ? `${prefix}.${k}` : k, cv)
-        return
-      }
-      out.set(prefix, String(v))
-    }
-    walk("", parsed)
-    if (out.size === 0) out.set("(fingerprint)", raw.slice(0, 12))
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>
   } catch {
-    out.set("(fingerprint)", raw.slice(0, 12))
+    // not a JSON object
   }
+  return null
+}
+
+/** Flatten a resolved-args object to dot.key -> primitive string. */
+function flattenObject(obj: Record<string, unknown>): Map<string, string> {
+  const out = new Map<string, string>()
+  const walk = (prefix: string, v: unknown): void => {
+    if (v === null || v === undefined || v === "") return
+    if (Array.isArray(v)) {
+      if (v.length) out.set(prefix, v.map(String).join(","))
+      return
+    }
+    if (typeof v === "object") {
+      for (const [k, cv] of Object.entries(v as Record<string, unknown>))
+        walk(prefix ? `${prefix}.${k}` : k, cv)
+      return
+    }
+    out.set(prefix, String(v))
+  }
+  walk("", obj)
   return out
 }
 
 /**
  * The resolved-args fingerprint is large; the hint shows only the keys
- * where this model's columns disagree, as k=v for THIS column.
+ * where this model's columns disagree, as k=v for THIS column (capped).
+ * Payloads recorded in different formats (legacy raw args, the old
+ * 4-field dump, the hash fallback) cannot be diffed key-by-key and
+ * collapse to a single short marker.
  */
 function formatVllmArgsDiff(col: ModelColumn, columns: ModelColumn[]): string {
   const cols = columns.filter((c) => c.model === col.model && c.config)
   const idx = cols.findIndex((c) => c === col)
   if (idx < 0 || cols.length < 2) return ""
-  const flat = cols.map((c) => flattenVllmArgs(c.config?.vllm_args ?? ""))
+  const objs = cols.map((c) => parseVllmArgs(c.config?.vllm_args ?? ""))
+  if (objs.some((o) => o === null))
+    return "vllm args differ (recorded in different formats)"
+  const tops = objs.map((o) => Object.keys(o ?? {}).sort().join(","))
+  if (new Set(tops).size > 1)
+    return "vllm args differ (recorded in different formats)"
+  const flat = objs.map((o) => flattenObject(o ?? {}))
   const keys = new Set(flat.flatMap((m) => [...m.keys()]))
   const parts: string[] = []
+  let hidden = 0
   for (const k of keys) {
     const vals = flat.map((m) => m.get(k))
-    if (new Set(vals).size > 1) parts.push(`${k}=${vals[idx] ?? "(unset)"}`)
+    if (new Set(vals).size <= 1) continue
+    if (parts.length >= 4) hidden += 1
+    else parts.push(`${k}=${vals[idx] ?? "(unset)"}`)
   }
+  if (hidden > 0) parts.push(`+${hidden} more`)
   return parts.join(" ")
 }
 
