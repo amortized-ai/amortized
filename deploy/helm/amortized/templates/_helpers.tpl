@@ -35,54 +35,106 @@ postgres.{{ .Values.namespace }}.svc
 {{- end -}}
 
 {{/*
-Wiring helpers. When dataStores.bundled is true we point at the in-cluster
-services; otherwise we use the operator-supplied external endpoints.
+Per-store "bundled" resolution. Each store defaults to dataStores.bundled but can be
+overridden individually (postgres.bundled / minio.bundled / mlflow.bundled) so you can,
+e.g., bundle PostgreSQL while pointing MLflow at an external / enterprise server.
+Enterprise MLflow always implies external MLflow. Helpers return the string "true"/"false"
+(use with `eq ... "true"`); hasKey is used so an explicit `false` override is honored
+(Helm's `default` would treat false as unset).
+*/}}
+{{- define "amortized.postgresBundled" -}}
+{{- if hasKey .Values.postgres "bundled" -}}{{ .Values.postgres.bundled }}{{- else -}}{{ .Values.dataStores.bundled }}{{- end -}}
+{{- end -}}
+
+{{- define "amortized.minioBundled" -}}
+{{- if hasKey .Values.minio "bundled" -}}{{ .Values.minio.bundled }}{{- else -}}{{ .Values.dataStores.bundled }}{{- end -}}
+{{- end -}}
+
+{{- define "amortized.mlflowBundled" -}}
+{{- if .Values.mlflow.enterprise.enabled -}}false{{- else if hasKey .Values.mlflow "bundled" -}}{{ .Values.mlflow.bundled }}{{- else -}}{{ .Values.dataStores.bundled }}{{- end -}}
+{{- end -}}
+
+{{/* MLflow workspace (X-MLFLOW-WORKSPACE) for the enterprise RHOAI MLflow == the namespace. */}}
+{{- define "amortized.mlflowWorkspace" -}}
+{{- .Values.mlflow.enterprise.workspace | default .Values.namespace -}}
+{{- end -}}
+
+{{/*
+Wiring helpers. Each store points at its in-cluster service when bundled, else the
+external / operator-supplied endpoint.
 */}}
 {{- define "amortized.databaseUrl" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.postgresBundled" .) "true" -}}
 postgresql://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ include "amortized.postgresFqdn" . }}:5432/{{ .Values.postgres.database }}
 {{- else -}}
-{{- required "database.url is required when dataStores.bundled=false" .Values.database.url -}}
+{{- required "database.url is required when PostgreSQL is not bundled" .Values.database.url -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "amortized.mlflowTrackingUri" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.mlflowBundled" .) "true" -}}
 http://{{ include "amortized.mlflowFqdn" . }}:5000
 {{- else -}}
-{{- required "mlflow.trackingUri is required when dataStores.bundled=false" .Values.mlflow.trackingUri -}}
+{{- $uri := required "mlflow.trackingUri is required when MLflow is not bundled (external/enterprise)" .Values.mlflow.trackingUri -}}
+{{- if and .Values.mlflow.enterprise.enabled (not (hasPrefix "https://" $uri)) -}}
+{{- fail "mlflow.trackingUri must be https:// when mlflow.enterprise.enabled is true (a bearer SA token is sent; the app refuses to transmit it over cleartext http://)" -}}
+{{- end -}}
+{{- $uri -}}
 {{- end -}}
 {{- end -}}
 
+{{/*
+MLflow AI Gateway URL (LLM routing), surfaced to clients via /api/v1/config + list_models.
+Informational only — the server never sends the MLflow bearer token here (gateway models are
+fetched through the tracking URI), so unlike amortized.mlflowTrackingUri this needs no https
+guard, and an in-cluster http:// gateway is valid. Empty under enterprise (no gateway there).
+*/}}
 {{- define "amortized.gatewayUrl" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.mlflowBundled" .) "true" -}}
 http://{{ include "amortized.mlflowFqdn" . }}:5000/gateway/mlflow/v1
 {{- else -}}
 {{- .Values.mlflow.gatewayUrl -}}
 {{- end -}}
 {{- end -}}
 
+{{/*
+S3 helpers. Bundled MinIO => the in-cluster service. With enterprise MLflow the app's own S3
+is unused (the server never reads it; jobs route artifacts through the MLflow proxy per AD-3,
+and MLflow uses its own artifact store), so s3.* is OPTIONAL there (empty renders fine). For a
+plain external (non-enterprise) MLflow, s3.* is still required. `amortized.s3Required` is the
+single predicate for "the user must supply s3.*": MinIO not bundled AND not enterprise.
+*/}}
+{{- define "amortized.s3Required" -}}
+{{- if and (ne (include "amortized.minioBundled" .) "true") (not .Values.mlflow.enterprise.enabled) -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+
 {{- define "amortized.s3Endpoint" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.minioBundled" .) "true" -}}
 http://{{ include "amortized.minioFqdn" . }}:9000
+{{- else if eq (include "amortized.s3Required" .) "true" -}}
+{{- required "s3.endpoint is required when MinIO is not bundled (external non-enterprise MLflow)" .Values.s3.endpoint -}}
 {{- else -}}
-{{- required "s3.endpoint is required when dataStores.bundled=false" .Values.s3.endpoint -}}
+{{- .Values.s3.endpoint -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "amortized.s3AccessKey" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.minioBundled" .) "true" -}}
 {{- .Values.minio.rootUser -}}
+{{- else if eq (include "amortized.s3Required" .) "true" -}}
+{{- required "s3.accessKey is required when MinIO is not bundled (external non-enterprise MLflow)" .Values.s3.accessKey -}}
 {{- else -}}
-{{- required "s3.accessKey is required when dataStores.bundled=false" .Values.s3.accessKey -}}
+{{- .Values.s3.accessKey -}}
 {{- end -}}
 {{- end -}}
 
 {{- define "amortized.s3SecretKey" -}}
-{{- if .Values.dataStores.bundled -}}
+{{- if eq (include "amortized.minioBundled" .) "true" -}}
 {{- .Values.minio.rootPassword -}}
+{{- else if eq (include "amortized.s3Required" .) "true" -}}
+{{- required "s3.secretKey is required when MinIO is not bundled (external non-enterprise MLflow)" .Values.s3.secretKey -}}
 {{- else -}}
-{{- required "s3.secretKey is required when dataStores.bundled=false" .Values.s3.secretKey -}}
+{{- .Values.s3.secretKey -}}
 {{- end -}}
 {{- end -}}
 

@@ -1,3 +1,4 @@
+{{- if .Values.opencode.enabled }}
 {{- $openaiSecretName := .Values.model.openai.existingSecret | default .Values.model.openai.secretName -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -126,3 +127,4 @@ spec:
           secret:
             secretName: {{ .Values.model.vertex.credentialsSecret }}
         {{- end }}
+{{- end }}

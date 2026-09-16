@@ -21,10 +21,14 @@ spec:
         component: server
     spec:
       serviceAccountName: amortized-server
+      {{- with .Values.server.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: {{ .Values.security.runAsNonRoot }}
       initContainers:
-      {{- if .Values.dataStores.bundled }}
+      {{- if eq (include "amortized.postgresBundled" .) "true" }}
         - name: wait-for-db
           image: {{ .Values.postgres.image }}
           command: ["sh", "-c"]
@@ -82,9 +86,21 @@ spec:
             - secretRef:
                 name: {{ . }}
             {{- end }}
+          {{- with .Values.server.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data
+            {{- if and .Values.mlflow.enterprise.enabled (not .Values.mlflow.enterprise.insecureTls) }}
+            - name: mlflow-ca
+              mountPath: /etc/mlflow-ca
+              readOnly: true
+            {{- end }}
+            {{- with .Values.server.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -109,3 +125,12 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: amortized-server-data
+        {{- if and .Values.mlflow.enterprise.enabled (not .Values.mlflow.enterprise.insecureTls) }}
+        # Service-CA bundle to verify the RHOAI MLflow TLS cert (auto-present configmap on OpenShift).
+        - name: mlflow-ca
+          configMap:
+            name: {{ .Values.mlflow.enterprise.caConfigMap }}
+        {{- end }}
+        {{- with .Values.server.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
