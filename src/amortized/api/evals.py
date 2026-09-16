@@ -260,7 +260,13 @@ async def list_evaluations(
             },
         )
         group["evals"].append(_entry_from_job(job, run_tags))
-        group["latest_created_at"] = job.get("created_at")
+        # Jobs iterate newest-first; only the first (newest) one sets the
+        # timestamp — later, older jobs must not clobber it. Prefer
+        # completed_at: the eval finished then, not when it was queued.
+        if group["latest_created_at"] is None:
+            group["latest_created_at"] = (
+                job.get("completed_at") or job.get("created_at")
+            )
 
     # Only datasets that actually have evaluation results — a dataset whose
     # eval jobs all failed or predate the tag schema (no scores) is not
