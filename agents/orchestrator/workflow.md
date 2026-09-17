@@ -87,12 +87,22 @@ act on it immediately — delegate to the appropriate agent instead of
 re-presenting options the user already answered. Otherwise, present
 contextual next steps via `present_options`:
 
-**After SDG:**
+**After SDG (training data):**
 - "Train on this data" — delegate to training agent (`resume: false`)
   with the SDG job ID in context
 - "Adjust and regenerate" — delegate to SDG agent with `resume: true`
   (same agent picks up where it left off)
 - "Generate a different dataset" — delegate to SDG agent with
+  `resume: false` (new agent, fresh workflow)
+- "Preview the dataset" — handle directly
+
+**After SDG (evaluation data):**
+- "Evaluate with this data" — delegate to eval agent (`resume: false`)
+  with the SDG job ID in context
+- "Adjust and regenerate" — delegate to SDG agent with `resume: true`
+  (same agent picks up where it left off; the eval context is
+  preserved so the next run still targets evaluation)
+- "Generate a different eval dataset" — delegate to SDG agent with
   `resume: false` (new agent, fresh workflow)
 - "Preview the dataset" — handle directly
 
