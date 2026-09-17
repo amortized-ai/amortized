@@ -9,23 +9,26 @@ merge_and_unload(), and save a standard checkpoint. This mirrors what
 patch_model_config.py does for bare text towers — a pre-serve transform
 that makes the export servable.
 
-Two mismatches between the training-side save and this image's loading
-stack are handled explicitly:
+The merge is architecture-agnostic: target modules are derived from the
+checkpoint keys themselves and validated against the loaded base, so
+any adapter whose modules exist in the base model merges cleanly. Two
+naming quirks are auto-detected rather than assumed:
 
-1. The training stack fine-tuned the composite model whose module paths
-   carry a ``language_model`` segment (``model.language_model.layers.*``),
-   while transformers here loads the same weights flat
-   (``model.layers.*``). The adapter's auto-generated target_modules
-   regex covers the composite naming for linear-attention modules but
-   NOT the flat one, so peft would skip them (and every checkpoint key
-   would miss its module). The adapter is therefore rewritten into a
-   patched dir: tensor keys remapped flat, and target_modules replaced
-   by the explicit module list derived from the checkpoint itself.
+1. Composite-trained checkpoints (the Qwen3.5 text tower is the known
+   case) carry an extra ``language_model`` segment in their module
+   paths (``model.language_model.layers.*``) that the flat-loaded base
+   doesn't have. Module paths are matched as-is first; only when that
+   fails is the segment stripped. The adapter's auto-generated
+   target_modules regex has the same blind spot (it covers
+   linear-attention modules only under the composite branch), so it is
+   replaced by the exact module list from the checkpoint.
 
-2. save_pretrained writes weights in the hub's checkpoint naming for
-   this family (``model.language_model.*``), while vLLM (via the same
-   text-tower serving the osft exports use) expects the flat
-   ``model.*`` names. The saved safetensors are re-keyed to flat.
+2. save_pretrained may write weights in the hub's checkpoint naming
+   (``model.language_model.*``) instead of the model's own parameter
+   names. The saved shards are re-keyed only when the flattened form
+   matches the merged model's parameters — otherwise they are left
+   untouched, and an unexpected naming fails loudly instead of
+   producing a corrupt checkpoint.
 
 Usage: python3 merge_lora.py <adapter_dir> <out_dir>
 """
@@ -58,8 +61,9 @@ def main() -> int:
     try:
         pm = PeftModel.from_pretrained(model, patched, autocast_adapter_dtype=False)
         merged = pm.merge_and_unload()
+        param_names = {n for n, _ in merged.named_parameters(remove_duplicate=False)}
         merged.save_pretrained(out_dir)
-        _rekey_checkpoint(out_dir)
+        _rekey_checkpoint(out_dir, param_names)
     finally:
         shutil.rmtree(patched, ignore_errors=True)
 
@@ -78,12 +82,11 @@ def main() -> int:
 def _patched_adapter(adapter_dir: str, model, dtype) -> str:
     """Rewrite the adapter so peft's standard loader applies it fully.
 
-    - Tensor keys: strip the training-side ``language_model`` segment
-      (model.language_model.layers... -> model.layers...).
-    - target_modules: the config's regex only covers linear-attention
-      modules under the composite naming, so replace it with the exact
-      module list the checkpoint was trained on — peft then injects
-      (and loads) every one of them.
+    Tensor keys are matched against the loaded base's module names
+    (as-is first, then with a composite ``language_model`` segment
+    stripped), and target_modules is replaced by the exact module list
+    the checkpoint was trained on — peft then injects (and loads)
+    every one of them.
     """
     from safetensors.torch import load_file, save_file
 
@@ -91,18 +94,29 @@ def _patched_adapter(adapter_dir: str, model, dtype) -> str:
     if not glob.glob(path):
         raise SystemExit(f"no adapter_model.safetensors in {adapter_dir}")
     tensors = load_file(path)
-    remapped = {k.replace("model.language_model.", "model."): v for k, v in tensors.items()}
 
     module_names = {n for n, _ in model.named_modules()}
+    remapped: dict = {}
     targets: set[str] = set()
-    for key in remapped:
+    flattened = 0
+    for key, tensor in tensors.items():
         for suffix in (".lora_A.weight", ".lora_B.weight"):
-            if key.endswith(suffix):
-                target = key[: -len(suffix)].removeprefix("base_model.model.")
-                if target not in module_names:
-                    raise SystemExit(f"adapter targets unknown module: {target}")
-                targets.add(target)
-                break
+            if not key.endswith(suffix):
+                continue
+            target = key[: -len(suffix)].removeprefix("base_model.model.")
+            if target not in module_names:
+                # Composite-trained checkpoints carry an extra
+                # language_model segment; standard checkpoints match
+                # the loaded model as-is.
+                stripped = target.replace("model.language_model.", "model.")
+                if stripped in module_names:
+                    target = stripped
+                    flattened += 1
+            if target not in module_names:
+                raise SystemExit(f"adapter targets unknown module: {target}")
+            targets.add(target)
+            remapped[f"base_model.model.{target}{suffix}"] = tensor.to(dtype)
+            break
         else:
             raise SystemExit(f"unexpected adapter tensor (not lora_A/lora_B): {key}")
 
@@ -119,47 +133,60 @@ def _patched_adapter(adapter_dir: str, model, dtype) -> str:
     patched = tempfile.mkdtemp(
         prefix="patched-adapter-", dir=os.path.dirname(os.path.abspath(adapter_dir))
     )
-    save_file(
-        {k: v.to(dtype) for k, v in remapped.items()},
-        f"{patched}/adapter_model.safetensors",
-    )
+    save_file(remapped, f"{patched}/adapter_model.safetensors")
     with open(f"{patched}/adapter_config.json", "w") as f:
         json.dump(config, f, indent=2)
-    print(f"patched adapter: {len(targets)} target modules, {len(remapped)} tensors")
+    print(
+        f"patched adapter: {len(targets)} target modules, {len(remapped)} tensors"
+        f" ({flattened} keys flattened from composite naming)"
+    )
     return patched
 
 
-def _rekey_checkpoint(out_dir: str) -> None:
-    """Flatten the saved weights to the text-tower naming vLLM expects.
+def _rekey_checkpoint(out_dir: str, param_names: set[str]) -> None:
+    """Make the saved weights match the model's own parameter names.
 
-    save_pretrained writes the hub's composite checkpoint naming
-    (model.language_model.*); strip the segment so the export matches
-    the osft hf_format layout (model.* + lm_head), which the patched
-    vLLM registry serves.
+    Some families (the Qwen3.5 text tower is the known case) are saved
+    in the hub's composite checkpoint naming (model.language_model.*)
+    while vLLM expects the flat parameter names. The shards are
+    re-keyed only when the flattened form matches the merged model's
+    parameters; anything else fails loudly rather than corrupting the
+    checkpoint.
     """
     from safetensors import safe_open
     from safetensors.torch import save_file
 
-    def rekey(key: str) -> str:
+    def flatten(key: str) -> str:
         return key.replace("model.language_model.", "model.")
 
+    shards = []
+    all_keys: set[str] = set()
     for shard in sorted(glob.glob(f"{out_dir}/*.safetensors")):
         with safe_open(shard, framework="pt") as f:
             keys = list(f.keys())
-            tensors = {k: f.get_tensor(k) for k in keys}
-        rekeyed = {rekey(k): v for k, v in tensors.items()}
-        if rekeyed != tensors:
-            save_file(rekeyed, shard)
+            shards.append((shard, {k: f.get_tensor(k) for k in keys}))
+        all_keys |= set(keys)
+
+    if all_keys <= param_names:
+        # save_pretrained already wrote the model's own parameter names
+        # (the normal case for most architectures) — nothing to do.
+        print(f"checkpoint keys already match parameter names ({len(all_keys)} tensors)")
+        return
+    if not {flatten(k) for k in all_keys} <= param_names:
+        raise SystemExit(
+            "saved checkpoint naming matches neither the merged model's parameter"
+            " names nor the flattened text-tower form — refusing to rekey"
+        )
+    for shard, tensors in shards:
+        save_file({flatten(k): v for k, v in tensors.items()}, shard)
     index_path = f"{out_dir}/model.safetensors.index.json"
     if glob.glob(index_path):
         with open(index_path) as f:
             index = json.load(f)
-        index["weight_map"] = {rekey(k): v for k, v in index["weight_map"].items()}
+        index["weight_map"] = {flatten(k): v for k, v in index["weight_map"].items()}
         with open(index_path, "w") as f:
             json.dump(index, f, indent=2)
-    with open(f"{out_dir}/config.json") as f:
-        config = json.load(f)
-    print(f"rekeyed checkpoint shards in {out_dir} (config model_type={config.get('model_type')})")
+    print(f"rekeyed checkpoint shards in {out_dir} to flat parameter names")
 
 
 def _base_model_id(adapter_dir: str) -> str:
