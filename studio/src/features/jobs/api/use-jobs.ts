@@ -9,6 +9,7 @@ import {
   getJob,
   cancelJob,
   deleteJob,
+  retryJob,
   getJobLogs,
   getEvalResults,
   getMlflowRun,
@@ -74,6 +75,23 @@ export function useCancelJob() {
       if (context?.previousJobs) {
         queryClient.setQueryData<Job[]>(["jobs"], context.previousJobs)
       }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    },
+  })
+}
+
+export function useRetryJob() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (jobId: string) => retryJob(jobId),
+    onSuccess: (newJob) => {
+      toast.success(`Retrying as new job ${newJob.id.slice(0, 8)}`)
+    },
+    onError: (err) => {
+      toast.error(`Failed to retry job: ${err instanceof Error ? err.message : "Unknown error"}`)
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] })

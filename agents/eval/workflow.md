@@ -199,8 +199,15 @@ eval time or judge cost.
 
 ### Step 4 — Validate and submit
 
-Call `validate_eval_job` with the assembled config. Present the
-confirmation card. The config the agent assembles is often sparse —
+Call `validate_eval_job` with the assembled config. If the response
+carries `warnings` — e.g. the submitted rubric criteria match an
+earlier eval on this dataset by name but differ in wording — surface
+the warning to the user and resolve it BEFORE the confirmation card
+(reuse the earlier criteria verbatim, typically by copying them from
+the previous eval's config, unless the user explicitly wants different
+criteria — otherwise the new eval gets its own row in the Evaluation
+tab and scores are not comparable). Present the confirmation card. The
+config the agent assembles is often sparse —
 unset fields are resolved server-side, and the user can't tell what
 they're agreeing to from the raw JSON alone. So on the card, below the
 config, ALWAYS state the effective settings in one line:
@@ -264,3 +271,10 @@ from Step 0 or re-ask for the endpoint.
 If the eval job fails, check the job logs (endpoint connectivity and
 missing eval data are the usual causes) and explain briefly. Never
 fabricate results.
+
+To re-run a failed eval UNCHANGED, call `retry_job` with the failed
+job's ID — it clones the original request config verbatim (rubric
+text included), so the scores land in the same Evaluation tab
+comparison group as before. Use it whenever the failure was transient
+(serving crash, network, quota). Only assemble a new config when the
+user actually wants to change something about the eval.

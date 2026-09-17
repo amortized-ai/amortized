@@ -17,7 +17,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, GraduationCap } from "lucide-react"
+import { ChevronDown, XCircle, AlertCircle, ArrowRight, X, Database, ExternalLink, Trash2, GraduationCap, RotateCcw } from "lucide-react"
 import { Link, useNavigate } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogViewer } from "@/components/log-viewer"
@@ -27,7 +27,7 @@ import { JobTypeBadge } from "./job-type-badge"
 import { TrainingMetricsChart } from "./training-metrics-chart"
 import { formatDuration } from "../lib/format"
 import { formatDate } from "@/lib/utils"
-import { useCancelJob, useDeleteJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
+import { useCancelJob, useDeleteJob, useRetryJob, useJobLogs, useJobMlflowMetrics, useEvalResults } from "../api/use-jobs"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
@@ -49,6 +49,7 @@ interface JobDetailPanelProps {
 export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps) {
   const cancelMutation = useCancelJob()
   const deleteMutation = useDeleteJob()
+  const retryMutation = useRetryJob()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const { getName, setName } = useEntityNamesStore()
@@ -57,6 +58,10 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
 
   const canCancel = job ? ["queued", "provisioning", "running"].includes(job.status) : false
   const canDelete = job ? ["succeeded", "failed", "cancelled"].includes(job.status) : false
+  const canRetry =
+    job != null &&
+    job.type === "eval" &&
+    ["failed", "cancelled"].includes(job.status)
 
   function handleCancel() {
     cancelMutation.mutate(job!.id)
@@ -139,6 +144,18 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             )}
             {canDelete && (
               <>
+                {canRetry && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title="Re-run this eval with its original config — scores land in the same comparison group"
+                    disabled={retryMutation.isPending}
+                    onClick={() => retryMutation.mutate(job.id)}
+                  >
+                    <RotateCcw className="mr-1 h-4 w-4" />
+                    Retry
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

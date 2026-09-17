@@ -1,5 +1,6 @@
 """Job management endpoints."""
 
+import json
 import logging
 from typing import Any
 
@@ -399,6 +400,91 @@ async def create_eval_job(
     return response
 
 
+# Runtime-injected keys the eval builder recomputes on every dispatch —
+# stripped when a legacy job (no request_config snapshot) is retried.
+_RETRY_STRIP_KEYS = ("eval_data_path", "port", "served_model_name")
+
+
+@router.post(
+    "/{job_id}/retry",
+    status_code=201,
+    response_model=Job,
+    operation_id="retry_job",
+    summary=(
+        "Retry a FAILED eval job by cloning its original request config"
+        " verbatim (rubric text included — the new scores land in the same"
+        " Evaluation tab comparison group). Only use this to re-run an"
+        " eval UNCHANGED; to change anything, assemble a new config"
+        " instead. Note: external-endpoint API keys are not retained, so"
+        " keyed endpoints need resubmission."
+    ),
+)
+async def retry_job(
+    job_id: str,
+    http_request: Request,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Job:
+    """Clone a failed eval job's original config into a new job."""
+    repo = Repository(db)
+    job = await repo.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if job.get("type") != JobType.eval.value:
+        raise HTTPException(status_code=422, detail="only eval jobs can be retried")
+    if job.get("status") not in (JobStatus.failed.value, JobStatus.cancelled.value):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"job status is '{job.get('status')}' — only failed or"
+                " cancelled jobs can be retried"
+            ),
+        )
+
+    # The pre-dispatch snapshot is authoritative; legacy rows (created
+    # before the snapshot existed) carry the worker-resolved config, so
+    # strip the keys the builder recomputes.
+    snapshot = job.get("request_config")
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot)
+        except ValueError:
+            snapshot = None
+    if isinstance(snapshot, dict) and snapshot.get("rubric"):
+        config = dict(snapshot)
+    else:
+        config = dict(job.get("config") or {})
+        for key in _RETRY_STRIP_KEYS:
+            config.pop(key, None)
+    config.pop("parent_job_id", None)
+
+    parent_job_id = job.get("parent_job_id", "")
+    errors = await _validate_eval_data(config, parent_job_id, db)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    user_id = http_request.headers.get("X-Forwarded-User", "") or job.get("user_id", "")
+
+    await _persist_metric_set(config, parent_job_id, db)
+
+    try:
+        row = await core_create_job(
+            repo,
+            job_type=JobType.eval,
+            config=config,
+            recipe=job.get("recipe", ""),
+            parent_job_id=parent_job_id,
+            user_id=user_id,
+            retry_of=job_id,
+        )
+    except InvalidJobStateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    logger.info("Retrying eval job %s as %s", job_id[:8], row["id"][:8])
+    response = _job_response(row)
+    _strip_eval_api_keys(response)
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Job validation endpoints (MCP-facing, no DB insert)
 # ---------------------------------------------------------------------------
@@ -509,11 +595,75 @@ async def validate_eval_job(
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
+    # Paraphrase guardrail: comparison groups key on the exact rubric
+    # text, so a re-typed (even slightly reworded) criterion set would
+    # fork the dataset's row in the Evaluation tab. Warn — do not
+    # block — when the submitted criterion names match an earlier eval
+    # on this dataset but the descriptions differ.
+    warnings = await _rubric_drift_warning(config, parent_job_id, db)
+
     return ValidatedJobConfig(
         job_type=JobType.eval,
         config=config,
         parent_job_id=parent_job_id,
+        warnings=warnings,
     )
+
+
+async def _rubric_drift_warning(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """Warn when submitted criteria shadow an earlier eval's rubric.
+
+    Looks at existing eval jobs on the same dataset (same parent job
+    or eval_data_run_id) and compares criterion sets: same names with
+    different descriptions means the judge will score something
+    slightly different, and the new eval will NOT share a comparison
+    group with the old ones.
+    """
+    inline = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
+    if not inline:
+        return []
+
+    data_run_id = str(config.get("eval_data_run_id") or "")
+    repo = Repository(db)
+    candidates = await repo.list_jobs(job_type=JobType.eval)
+    submitted = {str(c["name"]): str(c.get("description", "")) for c in inline}
+    for job in candidates:
+        cfg = job.get("config", {})
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except ValueError:
+                continue
+        same_dataset = (
+            data_run_id
+            and str(cfg.get("eval_data_run_id") or "") == data_run_id
+        ) or (parent_job_id and job.get("parent_job_id") == parent_job_id)
+        if not same_dataset:
+            continue
+        existing = {
+            str(c["name"]): str(c.get("description", ""))
+            for c in (cfg.get("rubric") or [])
+            if isinstance(c, dict) and c.get("name")
+        }
+        if not existing or set(existing) != set(submitted):
+            continue
+        if existing == submitted:
+            return []  # exact reuse — nothing to warn about
+        changed = sorted(
+            n for n in existing if existing[n] != submitted.get(n, existing[n])
+        )
+        return [
+            "this dataset already has evals with these rubric criteria"
+            f" but different descriptions (changed: {', '.join(changed)})."
+            " Scores will NOT be comparable across the two, and the new"
+            " eval gets its own row in the Evaluation tab. Reuse the"
+            " earlier criteria verbatim (copy them from the previous"
+            " eval's config) unless the user explicitly wants different"
+            " criteria."
+        ]
+    return []
 
 
 @router.get(
