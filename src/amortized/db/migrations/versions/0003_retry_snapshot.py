@@ -33,5 +33,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE jobs DROP COLUMN IF EXISTS retry_of")
-    op.execute("ALTER TABLE jobs DROP COLUMN IF EXISTS request_config")
+    # No-op: dropping the columns would lose every job's request
+    # snapshot, and CI forbids destructive schema changes. The columns
+    # are additive and harmless if this migration is rolled back
+    # (code predating them ignores them entirely).
+    pass
