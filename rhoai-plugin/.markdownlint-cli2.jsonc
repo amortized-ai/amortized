@@ -1,0 +1,13 @@
+{
+  "config": {
+    // Disable line-length — 80 chars is too strict for documentation prose
+    "MD013": false,
+    // PR templates and machine-generated files don't need a top-level heading
+    "MD041": false,
+    // Allow compact table style without extra spacing
+    "MD060": false,
+    // Allow sibling headings with the same text (e.g. repeated build steps)
+    "MD024": { "siblings_only": true }
+  },
+  "ignores": ["node_modules", "dist", "bff/node_modules", "bff/dist"]
+}
