@@ -34,7 +34,7 @@ Extract the assessment format from calibration examples: keyword, table layout,
 headings, scoring notation (e.g., "X/10"). If the user provided only
 raw examples (no assessments), ask the user for the desired format.
 
-Then verify your format with the given example (if any), to check the correctness of the format. Output a short demo assessment using placeholder content so the user can confirm the format before proceeding.
+Then verify your format with the given example (if any), to check the correctness of the format. Output a complete demo assessment using placeholder content so the user can confirm the format before proceeding.
 
 ### Step 4 — Rubric and criteria
 
@@ -53,8 +53,11 @@ Each becomes a sampler column. Only ask if ambiguous.
 
 ### Step 6 — Teacher model
 
-Call `list_models`. Present ONLY those models. If none returned,
-direct to Settings -> AI Gateway.
+Call `list_models` to get the available teacher models (each entry has a
+`name` and a `provider`). Present ONLY those models as options. Do NOT
+suggest models that aren't returned by `list_models` — they won't work.
+If no models are returned, stop — no teacher-model provider is configured
+on the server.
 
 ### Step 7 — Sample count
 
@@ -183,6 +186,10 @@ Step 3 so every generated assessment strictly matches it.
 ```
 
 ## Model Config
+
+Which LLM to use. Take BOTH `model` and `provider` from the entry
+`list_models` returns for the chosen teacher — do not hardcode a provider.
+Keep `skip_health_check: true`.
 
 ```json
 "model_configs": [{
