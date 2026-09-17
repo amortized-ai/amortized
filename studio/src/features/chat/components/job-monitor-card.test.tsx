@@ -89,3 +89,35 @@ describe("JobMonitorCard — eval jobs with embedded serving", () => {
     expect(getJobLogs).not.toHaveBeenCalled()
   })
 })
+
+describe("JobMonitorCard — dataset splits", () => {
+  it("shows the split stage label while the split runs", async () => {
+    getJob.mockResolvedValue(job("running", "upload"))
+    render(
+      <JobMonitorCard jobId="34bd1852-e8bd-433c-aca0-4a42181210f4" jobType="SPLIT" />,
+    )
+    await waitFor(
+      () => expect(screen.getByText("Splitting dataset (Stage 3/4)")).toBeInTheDocument(),
+      { timeout: 3000 },
+    )
+  })
+
+  it("fires completion with the job status when the split succeeds", async () => {
+    getJob.mockResolvedValue(job("succeeded", "upload"))
+    const onComplete = vi.fn()
+    render(
+      <JobMonitorCard
+        jobId="34bd1852-e8bd-433c-aca0-4a42181210f4"
+        jobType="SPLIT"
+        onComplete={onComplete}
+      />,
+    )
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        "34bd1852-e8bd-433c-aca0-4a42181210f4",
+        "SPLIT",
+        "succeeded",
+      ),
+    )
+  })
+})

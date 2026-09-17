@@ -115,6 +115,29 @@ Key decisions to gather:
   `parent_job_id`. If not provided in context, ask for the SDG job ID.
 - **Training method** — present options with VRAM estimates
 
+**Confirm how much of the data to train on.** Once the training data
+is chosen, ALWAYS confirm data usage with the user before Phase 3 —
+never silently train on the whole dataset. Call `get_dataset` on the
+dataset's run ID (for an SDG parent, the job's `mlflow_run_id`) and
+present its record count, then ask:
+
+- "Train on all N records" (the default)
+- "Hold out a portion first" (the user gives a count or fraction to
+  set aside — typically for a later eval)
+
+Skip this question ONLY if the user already specified the portion in
+this conversation. If they want a hold-out: call `split_dataset` with
+their count or fraction (strategy random, seed 42 by default,
+`create_complement` true) on the dataset run — the complement becomes
+the training set and the portion the held-out set. Tell the user the
+split is running — a monitor card appears automatically and they will
+be notified when it finishes. When the split job completes, call
+`get_job` with its ID and report both datasets from the config:
+`complement_run_id` (the training set, `num_complement` records) and
+`split_run_id` (the held-out portion, `num_portion` records). Then set
+`data_run_id` to the complement's run ID and continue — do not re-ask
+anything already decided.
+
 ### Phase 3 — Validate and Confirm
 
 Before validating, silently verify the platform can execute the job.

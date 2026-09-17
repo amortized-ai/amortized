@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
@@ -15,6 +15,17 @@ import { MessageList } from "./message-list"
 import { MessageBubble } from "./message-bubble"
 import type { ChatMessage, PhasePlan } from "../types"
 import { useChatStore } from "@/stores/chat-store"
+
+const getJob = vi.fn()
+
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-client")>()
+  return {
+    ...actual,
+    getJob: (...args: unknown[]) => getJob(...args),
+    getJobDurationStats: () => Promise.resolve({}),
+  }
+})
 
 describe("OptionCards", () => {
   const cards = [
@@ -366,5 +377,46 @@ describe("MessageBubble — structured option cards", () => {
     render(<MessageBubble message={makeMsg("", toolResults)} />, { wrapper: Wrapper })
     expect(screen.queryAllByRole("button")).toHaveLength(0)
     expect(document.querySelector(".thinking-dot")).not.toBeNull()
+  })
+})
+
+describe("MessageBubble — split_dataset monitor card", () => {
+  function makeMsg(content: string, toolResults: ChatMessage["toolResults"] = []): ChatMessage {
+    return {
+      id: "1",
+      role: "assistant",
+      content,
+      timestamp: new Date().toISOString(),
+      toolResults,
+      proposedAction: null,
+      optionCards: [],
+    }
+  }
+
+  it("renders a monitor card labelled SPLIT for a split_dataset tool result", async () => {
+    getJob.mockResolvedValue({
+      id: "9e2c1f70-1111-4222-8333-444455556666",
+      status: "running",
+      type: "upload",
+      config: {},
+    })
+    const toolResults = [{
+      name: "split_dataset",
+      result: JSON.stringify({
+        id: "9e2c1f70-1111-4222-8333-444455556666",
+        type: "upload",
+        status: "queued",
+        config: {},
+      }),
+      collapsed: true,
+    }]
+    render(
+      <MessageBubble message={makeMsg("Splitting the dataset now.", toolResults)} />,
+      { wrapper: Wrapper },
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/Monitoring SPLIT job #9e2c1f70/)).toBeInTheDocument(),
+    )
+    expect(screen.getByText("Splitting dataset (Stage 3/4)")).toBeInTheDocument()
   })
 })

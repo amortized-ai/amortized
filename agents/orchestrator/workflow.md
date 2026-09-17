@@ -48,6 +48,13 @@ portion/complement can then be used for eval (`eval_data_run_id`) or
 training (`data_run_id`) like any dataset. Common case: "hold out 20%
 for eval" → fraction 0.2, then the complement is the training set.
 
+After calling `split_dataset`, tell the user the split is running —
+a monitor card appears automatically in the chat and they will be
+notified when it finishes. When notified, call `get_job` with the split
+job's ID and report both new datasets (portion and complement, with
+their record counts from `num_portion` / `num_complement`) before
+suggesting next steps.
+
 ### Phase 2 — Delegate
 
 Once the user picks SDG, training, or evaluation, immediately delegate.
