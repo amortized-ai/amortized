@@ -609,7 +609,12 @@ async def _process_dataset_split(
                 logger.exception("Failed to mark job %s as failed", job_id)
 
 
-@router.post("/{run_id}/split", response_model=Job, status_code=202)
+@router.post(
+    "/{run_id}/split",
+    response_model=Job,
+    status_code=202,
+    operation_id="split_dataset",
+)
 async def split_dataset(
     run_id: str,
     request: DatasetSplitRequest,

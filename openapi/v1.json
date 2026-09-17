@@ -971,7 +971,7 @@
         ],
         "summary": "Split Dataset",
         "description": "Materialize a portion of a dataset (and optionally its complement).\n\nCreates a new dataset run holding the selected rows \u2014 usable anywhere\na dataset run id works (eval_data_run_id for evals, data_run_id for\ntraining). With create_complement (default) this is the two-way\ntrain/eval split: the portion is typically the eval set and the\ncomplement the training set. Read both run ids from the finished\njob's config (split_run_id / complement_run_id).",
-        "operationId": "split_dataset_api_v1_datasets__run_id__split_post",
+        "operationId": "split_dataset",
         "parameters": [
           {
             "name": "run_id",
