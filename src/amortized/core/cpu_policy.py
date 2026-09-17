@@ -15,6 +15,19 @@ from amortized.core.model_catalog import training_model_cpu_compatibility
 # vLLM is CUDA-only: online-RL and vLLM-backed methods cannot run on CPU.
 _CPU_REJECTED_ALGORITHMS = frozenset({"grpo", "lora_grpo", "gepa"})
 
+# Allowlist: the ONLY algorithms the CPU runner (containers/training/cpu_sft.py,
+# dispatched by amortized.jobs.training) actually implements. Everything else
+# must be rejected here — cpu_sft.py would otherwise silently run plain SFT or
+# LoRA for configs it does not understand (e.g. osft, dpo, kto, gkd).
+_CPU_ALLOWED_ALGORITHMS = frozenset({"sft", "lora_sft"})
+
+# Algorithm values that mean QLoRA regardless of which flags are set.
+_CPU_QLORA_ALGORITHMS = frozenset({"qlora", "qlora_sft"})
+
+# The builder aliases these in amortized.jobs.training (algo_aliases); the
+# policy sees the raw config value, so normalize the alias here too.
+_CPU_ALGORITHM_ALIASES = {"lora": "lora_sft"}
+
 _CPU_NOTICE = (
     "CPU training is slow by design — tiny models and smoke tests only. "
     "A job that looks hung is probably just slow; check the logs before cancelling."
@@ -46,15 +59,25 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
             "training may be very slow or fail"
         )
 
-    algorithm = config.get("algorithm", "")
+    algorithm = _CPU_ALGORITHM_ALIASES.get(config.get("algorithm", ""), config.get("algorithm", ""))
     if algorithm in _CPU_REJECTED_ALGORITHMS:
         errors.append(f"{algorithm} requires vLLM, which is CUDA-only — it cannot run on CPU")
-
-    if config.get("load_in_4bit") or config.get("qlora") or config.get("bnb_4bit_quant_type"):
+    elif algorithm == "osft":
+        errors.append(
+            "OSFT requires the GPU training path (thub/instructlab) — use lora_sft or sft on CPU"
+        )
+    elif (
+        algorithm in _CPU_QLORA_ALGORITHMS
+        or config.get("load_in_4bit")
+        or config.get("qlora")
+        or config.get("bnb_4bit_quant_type")
+    ):
         errors.append(
             "QLoRA / 4-bit quantization is not supported on CPU "
             "(bitsandbytes CPU support is experimental)"
         )
+    elif algorithm not in _CPU_ALLOWED_ALGORITHMS:
+        errors.append(f"{algorithm} is not supported for CPU training — supported: sft, lora_sft")
 
     if config.get("bf16"):
         warnings.append("bf16 mixed precision has no effect on CPU — training runs in fp32")
@@ -68,7 +91,7 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
         warnings.append(
             "full-parameter SFT on CPU needs ~16 bytes/param of AdamW optimizer state "
             "in RAM — a 0.8B model needs ~13 GB, more than the 8 GB the builder "
-            "allocates for it, so expect an OOM kill — consider LoRA/OSFT or a GPU"
+            "allocates for it, so expect an OOM kill — consider LoRA or a GPU"
         )
 
     if (config.get("nproc_per_node") or 1) > 1:

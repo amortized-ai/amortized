@@ -107,12 +107,11 @@ rules as platform validation (`src/amortized/core/cpu_policy.py`):
 
 - **Models** — 0.8B and 2B run on CPU; 4B is very slow — expect hours,
   suggest a GPU; 9B is too large for CPU (use ≤2B or a GPU).
-- **Methods** — GRPO/LoRA-GRPO and GEPA require vLLM, which is
-  CUDA-only; they cannot run on CPU. QLoRA / 4-bit quantization is not
-  supported on CPU. OSFT/LoRA/SFT are fine.
+- **Methods** — SFT and LoRA (`lora_sft`) run on CPU; OSFT, GRPO/LoRA-GRPO,
+  GEPA, QLoRA/4-bit quantization, and other methods require the GPU path.
 - **Config** — set `bf16: false` (no effect on CPU; runs fp32) and
   `nproc_per_node: 1`. Full-parameter SFT needs ~16 bytes/param of RAM —
-  prefer LoRA/OSFT on CPU.
+  prefer LoRA on CPU.
 - **Timeout** — CPU jobs default to a 60-minute timeout, configurable
   per job via `timeout_seconds`.
 

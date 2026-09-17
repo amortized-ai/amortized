@@ -114,12 +114,50 @@ class TestCpuPolicyMatrix:
             assert len(errors) == 1, algo
             assert "vLLM" in errors[0]
 
-    def test_non_vllm_algorithms_not_rejected_for_method(self) -> None:
-        for algo in ("sft", "lora_sft", "osft", "dpo", "kto", "gkd"):
+    def test_allowed_algorithms_pass(self) -> None:
+        for algo in ("sft", "lora_sft"):
             errors, _ = check_cpu_policy(
                 _config(algorithm=algo, use_peft=True, unfreeze_rank_ratio=0.2)
             )
             assert errors == [], algo
+
+    def test_lora_alias_allowed(self) -> None:
+        """The builder aliases 'lora' -> 'lora_sft' (training.py algo_aliases);
+        the policy sees the raw value and must accept it too."""
+        errors, _ = check_cpu_policy(_config(algorithm="lora", use_peft=True))
+        assert errors == []
+
+    def test_osft_rejected_gpu_path_message(self) -> None:
+        """OSFT has no CPU implementation in cpu_sft.py — it would silently
+        run as full-param SFT (OOM) or plain LoRA. Reject loudly."""
+        errors, _ = check_cpu_policy(
+            _config(algorithm="osft", use_peft=True, unfreeze_rank_ratio=0.2)
+        )
+        assert len(errors) == 1
+        assert "GPU training path" in errors[0]
+        assert "lora_sft" in errors[0]
+
+    def test_dpo_kto_gkd_rejected(self) -> None:
+        """Preference-tuning algorithms are advertised by TrainingJobConfig
+        but not implemented on CPU — they must not silently run as SFT."""
+        for algo in ("dpo", "kto", "gkd"):
+            errors, _ = check_cpu_policy(_config(algorithm=algo))
+            assert len(errors) == 1, algo
+            assert "not supported for CPU training" in errors[0], algo
+            assert "supported: sft, lora_sft" in errors[0], algo
+
+    def test_unknown_algorithm_rejected(self) -> None:
+        errors, _ = check_cpu_policy(_config(algorithm="rlhf"))
+        assert len(errors) == 1
+        assert "rlhf is not supported for CPU training" in errors[0]
+
+    def test_qlora_algorithm_gets_qlora_message(self) -> None:
+        """A raw 'qlora'/'qlora_sft' algorithm must hit the specific QLoRA
+        rejection, not the generic 'unsupported algorithm' message."""
+        for algo in ("qlora", "qlora_sft"):
+            errors, _ = check_cpu_policy(_config(algorithm=algo))
+            assert len(errors) == 1, algo
+            assert "QLoRA" in errors[0], algo
 
     def test_qlora_rejected(self) -> None:
         errors, _ = check_cpu_policy(
