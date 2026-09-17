@@ -280,17 +280,23 @@ async def list_datasets(
         order_by=["start_time DESC"],
         max_results=200,
     )
+    # The deployed MLflow's filter syntax has no OR/parentheses — one
+    # search per source value, merged and deduped below.
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string=(
-            "(tags.source = 'upload' OR tags.source = 'split') AND attributes.status = 'FINISHED'"
-        ),
+        filter_string="tags.source = 'upload' AND attributes.status = 'FINISHED'",
+        order_by=["start_time DESC"],
+        max_results=200,
+    )
+    split_runs = await mlflow.search_runs(
+        exp_ids,
+        filter_string="tags.source = 'split' AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )
     seen: set[str] = set()
     runs: list[dict[str, Any]] = []
-    for r in sdg_runs + upload_runs:
+    for r in sdg_runs + upload_runs + split_runs:
         rid = r.get("info", {}).get("run_id", "")
         if rid and rid not in seen:
             seen.add(rid)
