@@ -1,7 +1,7 @@
 {
   "name": "amortized-studio",
   "version": "0.4.2",
-  "description": "A reference implementation and scaffold plugin for the RHOAI Dashboard",
+  "description": "Amortized Studio - RHOAI dashboard plugin (Module Federation frontend)",
   "private": true,
   "_comment_name": "[PLUGIN-SPECIFIC] package name — change to {your-plugin}",
   "_comment_mf": "[PLUGIN-SPECIFIC] module-federation.name — camelCase, must match webpack and plugin.yaml",
@@ -39,10 +39,7 @@
     "validate": "npm run typecheck && npm run lint && npm test",
     "lint": "npm run lint:ts && npm run lint:md",
     "lint:ts": "eslint --ext .ts,.tsx src/",
-    "lint:md": "markdownlint-cli2 '**/*.md'",
-    "rename-plugin": "node scripts/rename-plugin.js",
-    "sync-chart-version": "node scripts/sync-chart-version.js",
-    "version": "npm run sync-chart-version && git add chart/Chart.yaml bff/package.json plugin.yaml README.md docs/development/BUILD_AND_PUSH.md docs/deployment/OPENSHIFT_DEPLOY.md"
+    "lint:md": "markdownlint-cli2 '**/*.md'"
   },
   "dependencies": {
     "@openshift/dynamic-plugin-sdk": "^5",
