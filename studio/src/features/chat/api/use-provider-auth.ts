@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { getBaseUrl } from "@/lib/api-client"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-provider-auth")
@@ -9,7 +10,7 @@ interface AuthorizeInput {
 }
 
 async function authorizeProvider({ providerID, apiKey }: AuthorizeInput): Promise<void> {
-  const resp = await fetch(`/agent/provider/${encodeURIComponent(providerID)}/oauth/authorize`, {
+  const resp = await fetch(`${getBaseUrl()}/agent/provider/${encodeURIComponent(providerID)}/oauth/authorize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ method: 0, inputs: { key: apiKey } }),

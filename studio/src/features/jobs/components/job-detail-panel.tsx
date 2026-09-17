@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { getBaseUrl } from "@/lib/api-client"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import {
@@ -100,7 +101,7 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             {job.mlflow_run_id && (
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={`/mlflow/#/runs/${job.mlflow_run_id}`}
+                  href={`${getBaseUrl()}/mlflow/#/runs/${job.mlflow_run_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

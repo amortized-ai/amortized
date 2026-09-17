@@ -6,6 +6,10 @@ import { defineConfig } from "vite"
 const proxy = process.env.VITE_PROXY_TARGET
 
 export default defineConfig({
+  // Asset base path. Root for standalone; set to /amortized-studio-embed at build time
+  // (VITE_BASE_PATH) for the RHOAI dashboard embed so assets resolve under the
+  // dashboard proxy prefix instead of the dashboard origin root.
+  base: process.env.VITE_BASE_PATH || "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { getBaseUrl } from "@/lib/api-client"
 import { useNavigate, useLocation } from "react-router"
 import {
   Bot,
@@ -480,7 +481,7 @@ export function TutorialOverlay() {
                 MLflow
               </a>
               <a
-                href="/mlflow/#/gateway"
+                href={`${getBaseUrl()}/mlflow/#/gateway`}
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
                 <Zap className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Configure AI Gateway

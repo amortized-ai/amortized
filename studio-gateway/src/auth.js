@@ -1,0 +1,99 @@
+// User identity resolution.
+//
+// Two deployment modes:
+//   - Behind oauth-proxy: identity arrives as X-Forwarded-User (+ variants).
+//   - Behind the RHOAI dashboard proxy (authorize:true): the dashboard forwards
+//     the user's OpenShift token; we resolve the username via a TokenReview
+//     (the gateway SA holds system:auth-delegator).
+//
+// Results are cached briefly by token to avoid a TokenReview per request.
+
+const k8s = require('@kubernetes/client-node');
+
+const kc = new k8s.KubeConfig();
+kc.loadFromCluster();
+const authApi = kc.makeApiClient(k8s.AuthenticationV1Api);
+
+// DEV_USER bypasses auth entirely (any request without proxy/token identity becomes
+// this user), so honor it ONLY when explicitly opted in for local/testing via
+// ALLOW_DEV_USER=1 — never by accident in a real deployment.
+const DEV_USER = process.env.ALLOW_DEV_USER === '1' ? (process.env.DEV_USER || '') : '';
+if (process.env.DEV_USER && process.env.ALLOW_DEV_USER !== '1') {
+  console.warn('DEV_USER is set but ignored (ALLOW_DEV_USER!=1): refusing to bypass auth');
+}
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX = 1024;
+const tokenCache = new Map(); // token -> { user, exp }
+
+function headerUser(req) {
+  return (
+    req.headers['x-forwarded-preferred-username'] ||
+    req.headers['x-forwarded-user'] ||
+    req.headers['x-forwarded-email'] ||
+    ''
+  );
+}
+
+function bearerToken(req) {
+  const auth = req.headers['authorization'] || '';
+  if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7);
+  return req.headers['x-forwarded-access-token'] || '';
+}
+
+// Drop expired entries so the cache does not grow without bound in a long-lived
+// gateway process (one entry accrues per distinct token / rotation).
+function pruneTokenCache(now) {
+  for (const [k, v] of tokenCache) {
+    if (v.exp <= now) tokenCache.delete(k);
+  }
+  // Even with nothing expired, bound the cache: evict oldest (Map is insertion-ordered)
+  // entries until under the cap, so a burst of distinct tokens can't grow it without limit.
+  while (tokenCache.size >= CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest === undefined) break;
+    tokenCache.delete(oldest);
+  }
+}
+
+async function usernameFromToken(token) {
+  const now = Date.now();
+  const hit = tokenCache.get(token);
+  if (hit && hit.exp > now) return hit.user;
+  if (hit) tokenCache.delete(token); // expired
+  try {
+    const res = await authApi.createTokenReview({ body: { spec: { token } } });
+    const status = res.status || res.body?.status || {};
+    const user = status.authenticated ? status.user?.username || '' : '';
+    if (tokenCache.size >= CACHE_MAX) pruneTokenCache(now);
+    tokenCache.set(token, { user, exp: now + CACHE_TTL_MS });
+    return user;
+  } catch (err) {
+    console.error('TokenReview failed:', err?.body || err?.message || err);
+    return '';
+  }
+}
+
+// Resolve the acting user for a request (async). Prefer proxy headers; fall back
+// to token review; finally DEV_USER (local/testing only).
+async function resolveUser(req) {
+  const h = headerUser(req);
+  if (h) return h;
+  const token = bearerToken(req);
+  if (token) {
+    const u = await usernameFromToken(token);
+    if (u) return u;
+  }
+  return DEV_USER;
+}
+
+// Debug helper: which identity signals are present on the request.
+function identityDebug(req) {
+  return {
+    headerUser: headerUser(req) || null,
+    hasBearer: !!(req.headers['authorization'] || '').toLowerCase().startsWith('bearer '),
+    hasForwardedAccessToken: !!req.headers['x-forwarded-access-token'],
+    forwardedHeaders: Object.keys(req.headers).filter((k) => k.startsWith('x-forwarded')),
+  };
+}
+
+module.exports = { resolveUser, identityDebug };
