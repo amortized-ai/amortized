@@ -415,8 +415,8 @@ describe("MessageBubble — split_dataset monitor card", () => {
       { wrapper: Wrapper },
     )
     await waitFor(() =>
-      expect(screen.getByText(/Monitoring SPLIT job #9e2c1f70/)).toBeInTheDocument(),
+      expect(screen.getByText("Splitting dataset (Stage 3/4)")).toBeInTheDocument(),
     )
-    expect(screen.getByText("Splitting dataset (Stage 3/4)")).toBeInTheDocument()
+    expect(screen.getByText(/Monitoring SPLIT job #9e2c1f70/)).toBeInTheDocument()
   })
 })
