@@ -377,6 +377,12 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+        errors.append(
+            "eval jobs require at least one rubric criterion (custom"
+            " judge-scored metrics — the built-in structural metrics"
+            " exact_match/format_validity were removed)"
+        )
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -596,6 +602,12 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+        errors.append(
+            "eval jobs require at least one rubric criterion (custom"
+            " judge-scored metrics — the built-in structural metrics"
+            " exact_match/format_validity were removed)"
+        )
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 

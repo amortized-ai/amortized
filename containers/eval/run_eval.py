@@ -10,7 +10,6 @@ Reads a config.json (delivered to /amortized/config.json by the control plane):
                   "api_key_env": "EVAL_MODEL_API_KEY"},
         "judge": {"base_url": "...", "model": "...", "api_key_env": "EVAL_JUDGE_API_KEY"}
       },
-      "metrics": ["exact_match", "format_validity"],
       "rubric": [{"name": "accuracy", "description": "Facts match the reference"}],
       "max_samples": 0,  # 0 = evaluate all records
       "judge_max_samples": 0,  # 0 = judge all samples
@@ -18,11 +17,12 @@ Reads a config.json (delivered to /amortized/config.json by the control plane):
       "output_dir": "/amortized/work/results"
     }
 
-One model per eval job. Structural metrics (exact_match, format_validity, ...)
-are computed against the held-out reference answer. When a rubric + judge are
-provided, the judge scores the model's response against the reference on each
-criterion on an absolute 0-10 scale (reported normalized to 0-1), averaged
-over the dataset — NO pairwise win-rate comparison.
+One model per eval job. The judge scores the model's response against the
+reference on each rubric criterion on an absolute 0-10 scale (reported
+normalized to 0-1), averaged over the dataset — NO pairwise win-rate
+comparison. Job-health stats (error/empty rate, sample counts) are
+computed structurally; the built-in scoring metrics exact_match and
+format_validity were removed.
 
 Dataset format: jsonl or parquet with a `messages` column (list of
 {role, content} dicts). The trailing assistant message is held out as the
@@ -89,22 +89,6 @@ def split_prompt_reference(record: dict[str, Any]) -> tuple[list[dict[str, str]]
     if not prompt:
         raise ValueError("record has no prompt messages after removing reference")
     return prompt, reference
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower())
-
-
-def _extract_json(text: str) -> Any:
-    return json.loads(text)
-
-
-def _try_json(text: str) -> bool:
-    try:
-        _extract_json(text)
-        return True
-    except (ValueError, TypeError):
-        return False
 
 
 async def chat_completion(
@@ -245,25 +229,17 @@ def structural_metrics(
     references: list[str],
     errors: list[str],
 ) -> dict[str, Any]:
+    """Job-health stats only — scoring is done by the LLM judge against
+    the rubric criteria (exact_match/format_validity were removed)."""
     n = len(outputs)
     succeeded = [i for i in range(n) if not errors[i]]
     empty = sum(1 for i in succeeded if not outputs[i].strip())
-
-    ref_present = [i for i in succeeded if references[i].strip()]
-    exact = sum(1 for i in ref_present if _normalize(outputs[i]) == _normalize(references[i]))
-
-    json_refs = [i for i in ref_present if _try_json(references[i])]
-    json_valid = sum(1 for i in json_refs if _try_json(outputs[i]))
 
     return {
         "num_samples": n,
         "num_succeeded": len(succeeded),
         "error_rate": round(1 - len(succeeded) / n, 4) if n else 1.0,
         "empty_rate": round(empty / len(succeeded), 4) if succeeded else 1.0,
-        "exact_match": round(exact / len(ref_present), 4) if ref_present else None,
-        "exact_match_n": len(ref_present),
-        "format_validity": round(json_valid / len(json_refs), 4) if json_refs else None,
-        "format_validity_n": len(json_refs),
     }
 
 

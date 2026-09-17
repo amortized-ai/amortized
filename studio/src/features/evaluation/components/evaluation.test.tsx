@@ -31,7 +31,7 @@ function makeEntry(overrides: Partial<EvaluationEntry> = {}): EvaluationEntry {
     status: "succeeded",
     created_at: "2026-09-10T00:00:00Z",
     mlflow_run_id: "run-1",
-    scores: { exact_match: 0.5 },
+    scores: { factual_accuracy: 0.5 },
     num_samples: 100,
     topic: "test",
     ...overrides,
@@ -42,7 +42,7 @@ function makeGroup(overrides: Partial<EvaluationGroup> = {}): EvaluationGroup {
   return {
     id: "g1",
     dataset: { run_id: "ds-run", name: "Eval Dataset" },
-    metric_names: ["exact_match"],
+    metric_names: ["factual_accuracy"],
     evals: [makeEntry()],
     latest_created_at: "2026-09-10T00:00:00Z",
     ...overrides,

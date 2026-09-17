@@ -410,10 +410,6 @@ class EvalJobConfig(BaseModel):
             " against the reference answer"
         ),
     )
-    metrics: list[str] = Field(
-        default_factory=lambda: ["exact_match", "format_validity"],
-        description="Structural metrics to compute (exact_match, format_validity)",
-    )
     max_samples: int = Field(
         0,
         ge=0,

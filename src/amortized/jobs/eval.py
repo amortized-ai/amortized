@@ -405,7 +405,6 @@ async def build(
 
     endpoints = {"model": model_endpoint}
 
-    metrics = [m for m in (config.get("metrics") or []) if m]
     rubric = [
         c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
     ]
@@ -443,7 +442,6 @@ async def build(
     runner_config = {
         "eval_data_path": eval_data_path,
         "endpoints": endpoints,
-        "metrics": metrics,
         "rubric": rubric,
         "max_samples": config.get("max_samples", 0),
         "judge_max_samples": config.get("judge_max_samples", 0),
@@ -513,9 +511,6 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         metrics = json.loads(metrics_text).get("results", {})
 
         model_metrics = metrics.get("model", {})
-        em = model_metrics.get("exact_match")
-        if em is not None:
-            await set_mlflow_run_tag(mlflow_run_id, "eval_exact_match", str(em))
         for criterion, score in (metrics.get("scores") or {}).items():
             if score is not None:
                 await set_mlflow_run_tag(mlflow_run_id, f"eval_score_{criterion}", str(score))

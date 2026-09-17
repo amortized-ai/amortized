@@ -147,9 +147,6 @@ def _entry_from_job(
     if tags:
         if not model:
             model = tags.get("eval_model", "")
-        if tags.get("eval_exact_match"):
-            with _Suppress():
-                scores["exact_match"] = float(tags["eval_exact_match"])
         for key, value in tags.items():
             if key.startswith("eval_score_"):
                 with _Suppress():

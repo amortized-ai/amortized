@@ -33,15 +33,11 @@ model endpoint, and measures how well that model performs the task by
 scoring its answers against the reference answers:
 
 - The model generates an answer for every eval prompt (temperature 0)
-- **exact_match**: share of outputs that exactly match the reference
-  answer (for classification and short-answer tasks)
-- **format_validity**: share of outputs that are valid JSON when the
-  reference is JSON (for structured extraction tasks)
-- **custom rubric criteria**: for anything qualitative, an LLM judge
-  scores each output against the reference on a 0-1 scale per
-  criterion (absolute, not a comparison), averaged over the dataset.
-  The metrics are NOT fixed — the user decides what to measure, and
-  you design judge criteria for it (see Step 3)
+- An **LLM judge** scores each output against the reference on custom
+  **rubric criteria**, each on a 0-1 scale (absolute, not a
+  comparison), averaged over the dataset. The criteria are NOT fixed —
+  the user decides what to measure, and you design judge criteria for
+  it (see Step 3). Every eval needs at least one criterion.
 
 One eval job evaluates one model. To compare models, run one eval job
 per model and read the numbers side by side.
@@ -168,7 +164,7 @@ can relay that error to the user when it happens.
 
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
-field (`{metrics: [...], rubric: [{name, description}]}`) when any
+field (`{rubric: [{name, description}]}`) when any
 eval has run on this dataset before. If it is present, show the user
 the persisted metric set as a table (same format as a new proposal)
 and ask them to confirm reuse — do NOT silently reuse it, and do NOT
@@ -191,23 +187,20 @@ metrics matter — ask the user first:
 > "How do you want to evaluate the model? What should a good output
 > look like for this task?"
 
-Based on their answer, DESIGN a metrics list. Two kinds are available:
-
-- **Built-in metrics** — `exact_match` (categorical / short answers),
-  `format_validity` (JSON output correctness)
-- **Custom rubric criteria** — for anything qualitative. Each criterion
-  is `{name, description}` where the name is a short key (e.g.
-  `factual_accuracy`) and the description is one sentence telling the
-  judge what to check. Design these FROM what the user said matters —
-  their words, translated into checkable criteria. The judge scores
-  each criterion 0-1 against the reference answer (absolute)
+Based on their answer, DESIGN a list of **custom rubric criteria**.
+Each criterion is `{name, description}` where the name is a short key
+(e.g. `factual_accuracy`) and the description is one sentence telling
+the judge what to check. Design these FROM what the user said matters —
+their words, translated into checkable criteria. The judge scores each
+criterion 0-1 against the reference answer (absolute). An eval needs
+at least one criterion.
 
 Present the proposed list as a markdown table:
 
-| Metric | Type | What it checks |
-|---|---|---|
-| exact_match | built-in | output exactly matches the reference |
-| factual_accuracy | rubric | response states facts consistent with the reference |
+| Criterion | What it checks |
+|---|---|
+| factual_accuracy | response states facts consistent with the reference |
+| completeness | response covers everything the reference asks for |
 
 Then ask for approval with exactly two options:
 - "Looks good, continue"
@@ -216,15 +209,14 @@ Then ask for approval with exactly two options:
 **If the user suggests changes**: incorporate their feedback into the
 list (add, remove, reword, split, or merge criteria), then re-present
 the revised table and ask again. Repeat until the user approves. Never
-submit with a metrics list the user has not approved.
+submit with a criteria list the user has not approved.
 
-Judge defaults: custom rubric criteria are scored by the LLM judge.
+Judge defaults: the rubric criteria are scored by the LLM judge.
 You do NOT need to collect a judge endpoint — if the eval job has an
 SDG ancestor (directly or via the training job), the judge defaults to
 that SDG run's teacher model served through the platform gateway. Only
 ask for a judge endpoint if the user wants a different judge, or if
 there is no SDG ancestor (e.g. an uploaded dataset with no parent).
-The judge is only needed when there is a custom rubric.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
 `judge_max_samples` unset — the eval runs and judges EVERY record in
@@ -249,9 +241,7 @@ config, ALWAYS state the effective settings in one line:
 - temperature: the configured value, or "0 (default)" when unset
 - samples: the configured max_samples, or "all records (default)" when unset/0
 - judge: the configured judge model, or "auto — the dataset's teacher
-  model (from the SDG job that created it)" when a rubric is set and
-  no judge was given; "none (structural metrics only)" when there is
-  no rubric
+  model (from the SDG job that created it)" when no judge was given
 - judge samples: the configured judge_max_samples, or "all (default)" when unset/0
 
 Example line: `temperature 0 (default) · all records (default) · judge:
@@ -266,10 +256,10 @@ When the eval job completes, call `get_eval_results` with the job ID to
 fetch the aggregate metrics. Report a compact table of the model's
 scores:
 
-| Metric | Score |
+| Criterion | Score |
 |---|---|
-| exact_match | ... |
 | factual_accuracy | ... |
+| completeness | ... |
 
 Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that

@@ -3250,14 +3250,6 @@
             ],
             "description": "Optional LLM-as-judge endpoint for scoring free-form outputs against the reference answer"
           },
-          "metrics": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Metrics",
-            "description": "Structural metrics to compute (exact_match, format_validity)"
-          },
           "max_samples": {
             "type": "integer",
             "maximum": 10000.0,

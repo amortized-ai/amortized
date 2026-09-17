@@ -55,7 +55,12 @@ EVAL_BODY = {
         "model": "qwen-tuned",
     },
     "eval_data_run_id": "a" * 32,
+    "rubric": [{"name": "score_accuracy", "description": "Facts match the reference"}],
 }
+
+# Every eval carries a rubric now (built-ins removed) — builder tests
+# that aren't about judge resolution pass an explicit judge.
+JUDGE = {"base_url": "http://judge:8000/v1", "model": "gpt-judge"}
 
 
 async def _create_eval(client: httpx.AsyncClient, **overrides: object) -> httpx.Response:
@@ -79,6 +84,14 @@ class TestCreateEvalJob:
         response = await _create_eval(client, eval_data_run_id="")
         assert response.status_code == 422
         assert "parent_job_id" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_eval_job_requires_rubric(self, client: httpx.AsyncClient) -> None:
+        # The built-in structural metrics were removed — every eval
+        # needs at least one rubric criterion.
+        response = await _create_eval(client, rubric=[])
+        assert response.status_code == 422
+        assert "rubric criterion" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_create_eval_job_with_model_name(self, client: httpx.AsyncClient) -> None:
@@ -126,6 +139,7 @@ class TestEvalBuilder:
     async def test_build_generates_runner_config(self) -> None:
         config = {
             **EVAL_BODY,
+            "judge": JUDGE,
             "max_samples": 50,
             "temperature": 0.0,
         }
@@ -150,7 +164,7 @@ class TestEvalBuilder:
 
     @pytest.mark.asyncio
     async def test_build_embeds_serving_for_model_name(self) -> None:
-        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B"}
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
         del config["endpoint"]
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
@@ -194,6 +208,7 @@ class TestEvalBuilder:
             **EVAL_BODY,
             "model_name_or_path": "Qwen/Qwen3.5-4B",
             "vllm_args": ["--gpu-memory-utilization=0.5"],
+            "judge": JUDGE,
         }
         del config["endpoint"]
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
@@ -204,7 +219,11 @@ class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_endpoint_wins_over_model_source(self) -> None:
         # An explicit endpoint bypasses embedded serving entirely.
-        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B"}
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "judge": JUDGE,
+        }
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
         assert result.command[:2] == ["python3", "/app/run_eval.py"]
@@ -218,6 +237,7 @@ class TestEvalBuilder:
             "endpoint_tuned": {"base_url": "http://tuned:8000/v1", "model": "legacy-tuned"},
             "endpoint_base": {"base_url": "http://base:8000/v1", "model": "legacy-base"},
             "eval_data_run_id": "a" * 32,
+            "judge": JUDGE,
         }
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
@@ -231,6 +251,7 @@ class TestEvalBuilder:
     async def test_build_scrubs_api_keys_from_resolved_config(self) -> None:
         config = {
             **EVAL_BODY,
+            "judge": JUDGE,
             "endpoint": {
                 "base_url": "http://tuned:8000/v1",
                 "model": "qwen-tuned",
@@ -244,8 +265,11 @@ class TestEvalBuilder:
 
     @pytest.mark.asyncio
     async def test_build_no_judge_without_rubric(self) -> None:
-        # No rubric => no judge required, none configured.
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, dict(EVAL_BODY), {})
+        # No rubric => no judge required, none configured. (Rubrics are
+        # mandatory at the API layer now, but the builder still accepts
+        # rubric-free configs — e.g. retries of legacy jobs.)
+        config = {**EVAL_BODY, "rubric": []}
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
         import json
 
@@ -271,7 +295,7 @@ class TestEvalBuilder:
 
         monkeypatch.setattr(eval_builder, "_resolve_training_model", fake_resolve)
 
-        config = {**EVAL_BODY, "training_job_id": "tj-1"}
+        config = {**EVAL_BODY, "training_job_id": "tj-1", "judge": JUDGE}
         del config["endpoint"]
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
@@ -362,6 +386,7 @@ class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_requires_data_source(self) -> None:
         config = {k: v for k, v in EVAL_BODY.items() if k != "eval_data_run_id"}
+        config["judge"] = JUDGE
         with pytest.raises(eval_builder.JobBuildError, match="parent_job_id"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 

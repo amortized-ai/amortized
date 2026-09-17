@@ -68,14 +68,14 @@ class TestEntryFromJob:
         tags = {
             "r1": {
                 "eval_model": "m1-tag",
-                "eval_exact_match": "0.5",
                 "eval_score_accuracy": "0.75",
+                "eval_score_completeness": "0.6",
                 "num_samples": "100",
             }
         }
         entry = evals_api._entry_from_job(job, tags)
         assert entry["model"] == "m1"  # config endpoint wins
-        assert entry["scores"] == {"exact_match": 0.5, "accuracy": 0.75}
+        assert entry["scores"] == {"accuracy": 0.75, "completeness": 0.6}
         assert entry["num_samples"] == 100
 
     def test_model_falls_back_to_tag(self) -> None:
@@ -172,7 +172,7 @@ class TestScoredGroupFilter:
             pass
 
         async def fake_runs():
-            return {"r1": {"eval_model": "base", "eval_exact_match": "0.5"}}
+            return {"r1": {"eval_model": "base", "eval_score_accuracy": "0.5"}}
 
         monkeypatch.setattr(evals_api, "_eval_runs_by_id", fake_runs)
         monkeypatch.setattr(evals_api, "Repository", lambda conn: FakeRepo())
