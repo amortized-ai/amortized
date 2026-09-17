@@ -13,7 +13,7 @@ import httpx
 
 import amortized.config as config_mod
 from amortized._mlflow_job_sitecustomize import SITECUSTOMIZE_SOURCE
-from amortized.backends import BackendHandle, Capability, JobSpec
+from amortized.backends import BackendHandle, BackendStatus, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
 from amortized.core.jobs import deserialize_handle
 from amortized.db.repository import Repository
@@ -383,6 +383,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         env=spec_env,
         work_dir=output_dir,
         image=result.image,
+        timeout=result.timeout,
         config_files=result.config_files,
         job_type=job_type,
         user_id=job.get("user_id", ""),
@@ -405,16 +406,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         )
 
         # --- Poll until completion ---
-        poll_interval = 2.0
-        transitioned_to_running = False
-        while True:
-            status = await backend.status(handle)
-            if not status.running:
-                break
-            if not transitioned_to_running:
-                await _update_job(job_id, status=JobStatus.running.value)
-                transitioned_to_running = True
-            await asyncio.sleep(poll_interval)
+        status, timed_out = await _poll_job(backend, handle, job_id, spec.timeout)
 
         completed_at = datetime.now(UTC)
 
@@ -425,7 +417,16 @@ async def _run_job(job: dict[str, Any]) -> None:
                 logger.warning("Failed to clean up secrets for job %s", job_id, exc_info=True)
 
         # --- Completion handling ---
-        if status.exit_code == 0:
+        if timed_out:
+            await _finish_mlflow_run(mlflow_run_id, "FAILED")
+            await _update_job(
+                job_id,
+                status=JobStatus.failed.value,
+                completed_at=completed_at,
+                error=f"Job timed out after {spec.timeout} seconds.",
+            )
+            logger.warning("Job %s timed out and was cancelled", job_id)
+        elif status.exit_code == 0:
             if not mlflow_run_id:
                 mlflow_run_id = await _extract_mlflow_run_id(backend, handle)
             if mlflow_run_id:
@@ -493,6 +494,40 @@ async def _run_job(job: dict[str, Any]) -> None:
             backend_handle=fallback_handle,
         )
         logger.exception("Job %s failed with exception", job_id)
+
+
+async def _poll_job(
+    backend: Any,
+    handle: BackendHandle,
+    job_id: str,
+    timeout: int | None,
+    poll_interval: float = 2.0,
+) -> tuple[BackendStatus, bool]:
+    """Poll backend status until the job finishes.
+
+    Returns the final status and whether the job was cancelled for exceeding
+    its timeout. This is a safety net for backends without server-side
+    deadlines — on Kubernetes, ``activeDeadlineSeconds`` is the authoritative
+    mechanism and usually fires first.
+    """
+    transitioned_to_running = False
+    started_at = datetime.now(UTC)
+    while True:
+        status = await backend.status(handle)
+        if not status.running:
+            return status, False
+        if not transitioned_to_running:
+            await _update_job(job_id, status=JobStatus.running.value)
+            transitioned_to_running = True
+        if timeout is not None and (datetime.now(UTC) - started_at).total_seconds() > timeout:
+            logger.warning("Job %s exceeded %ss timeout — cancelling", job_id, timeout)
+            try:
+                await backend.cancel(handle)
+            except Exception:
+                logger.warning("Failed to cancel timed-out job %s", job_id, exc_info=True)
+            status = await backend.status(handle)
+            return status, True
+        await asyncio.sleep(poll_interval)
 
 
 # ---------------------------------------------------------------------------

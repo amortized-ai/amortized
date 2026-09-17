@@ -13,7 +13,8 @@ USER 1001
 
 ENV AMORTIZED_DATABASE_URL=postgresql://amortized:amortized@localhost:5432/amortized \
     AMORTIZED_DATA_DIR=/data \
-    AMORTIZED_RECIPES_DIR=/app
+    AMORTIZED_RECIPES_DIR=/app \
+    AMORTIZED_SUPPORTED_MODELS_DIR=/app
 
 EXPOSE 8000
 CMD ["uvicorn", "amortized.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -66,6 +66,13 @@ class TrainingJobConfig(BaseModel):
         "",
         description="1-5 word model topic for tracking (e.g. 'support ticket classification')",
     )
+    device: Literal["cpu", "gpu"] = Field(
+        "gpu",
+        description=(
+            "Compute device: 'gpu' (default) or 'cpu' — CPU is for tiny models (≤2B),"
+            " smoke tests, and low-cost experiments only"
+        ),
+    )
 
     @model_validator(mode="after")
     def check_osft_requires_urr(self) -> "TrainingJobConfig":

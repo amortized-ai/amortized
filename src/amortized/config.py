@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
+    supported_models_dir: Path | None = None
 
     api_key: str = Field(default="", description="API key for auth (empty = no auth)")
     cors_origins: str = Field(default="*", description="Comma-separated allowed CORS origins")
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     compute_backend: str = Field("local", description="Compute backend: local, ssh, kubernetes")
     compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
+    training_cpu_image_tag: str = Field(
+        "latest",
+        description="Tag for the CPU training image (CI publishes :latest; pin a sha or "
+        "semver tag for reproducibility)",
+    )
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
     mlflow_tracking_token_file: str = Field(

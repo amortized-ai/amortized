@@ -23,10 +23,13 @@ Ask the user:
 1. **What model?** — Read `skills/training/supported_models.json` for
    the list of supported models with HuggingFace IDs, sizes, and
    descriptions. Present ONLY models from that file — do NOT invent
-   other sizes or IDs. The model choice affects all other
-   hyperparameters — set them after.
-2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
-   user how many GPUs they have or offer GPU count options.
+   other sizes or IDs. The `cpu_compatible` field follows the
+   [CPU Training](#cpu-training) rules. The model choice affects all
+   other hyperparameters — set them after.
+2. **Compute** — Default to 1 GPU (`nproc_per_node: 1`). Do NOT offer
+   GPU count options. Offer `device: "cpu"` only when the user signals a
+   smoke test, a tiny model (0.8B–2B), or cost sensitivity — then follow
+   the [CPU Training](#cpu-training) rules.
 3. **Training data** — Should come from a completed SDG job. Use
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.
@@ -96,9 +99,25 @@ the SDG `schema_transform` processor produces:
 {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
 ```
 
+## CPU Training
+
+CPU (`device: "cpu"`) is for prototyping, smoke tests, and tiny models —
+it is slow by design, so state that tradeoff when offering it. Same
+rules as platform validation (`src/amortized/core/cpu_policy.py`):
+
+- **Models** — 0.8B and 2B run on CPU; 4B is very slow — expect hours,
+  suggest a GPU; 9B is too large for CPU (use ≤2B or a GPU).
+- **Methods** — SFT and LoRA (`lora_sft`) run on CPU; OSFT, GRPO/LoRA-GRPO,
+  GEPA, QLoRA/4-bit quantization, and other methods require the GPU path.
+- **Config** — set `bf16: false` (no effect on CPU; runs fp32) and
+  `nproc_per_node: 1`. Full-parameter SFT needs ~16 bytes/param of RAM —
+  prefer LoRA on CPU.
+- **Timeout** — CPU jobs default to a 60-minute timeout, configurable
+  per job via `timeout_seconds`.
+
 ## Compute Requirements
 
-- All training runs use 1 GPU
+- Default is 1 GPU; CPU jobs follow the CPU Training rules above
 - Checkpoint saved at each epoch
 
 ## After Training

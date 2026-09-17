@@ -5728,6 +5728,16 @@
             "description": "1-5 word model topic for tracking (e.g. 'support ticket classification')",
             "default": ""
           },
+          "device": {
+            "type": "string",
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "description": "Compute device: 'gpu' (default) or 'cpu' \u2014 CPU is for tiny models (\u22642B), smoke tests, and low-cost experiments only",
+            "default": "gpu"
+          },
           "parent_job_id": {
             "type": "string",
             "title": "Parent Job Id",

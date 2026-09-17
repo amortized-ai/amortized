@@ -148,6 +148,13 @@ class KubernetesBackend:
             V1VolumeMount,
         )
 
+        # Memory-medium emptyDir usage counts against the container memory
+        # limit, so a 12Gi shm with an 8Gi limit is a real conflict — keep shm
+        # within half the CPU job's memory limit (GPU pods keep the full 12Gi).
+        shm_size_limit = "12Gi"
+        if spec.resources.gpus == 0 and spec.resources.memory_gb:
+            shm_size_limit = f"{min(12, max(1, spec.resources.memory_gb // 2))}Gi"
+
         volumes = [
             V1Volume(
                 name="config",
@@ -162,7 +169,7 @@ class KubernetesBackend:
             ),
             V1Volume(
                 name="shm",
-                empty_dir=V1EmptyDirVolumeSource(medium="Memory", size_limit="12Gi"),
+                empty_dir=V1EmptyDirVolumeSource(medium="Memory", size_limit=shm_size_limit),
             ),
         ]
 
@@ -249,6 +256,10 @@ class KubernetesBackend:
             resources.setdefault("limits", {})["memory"] = mem
         if spec.resources.cpus:
             resources.setdefault("requests", {})["cpu"] = str(spec.resources.cpus)
+            if spec.resources.gpus == 0:
+                # CPU jobs get cpu request == limit so OMP_NUM_THREADS (set to
+                # the request by the builder) matches real capacity.
+                resources.setdefault("limits", {})["cpu"] = str(spec.resources.cpus)
 
         from kubernetes_asyncio.client import V1EnvFromSource, V1SecretEnvSource
 
@@ -303,13 +314,32 @@ class KubernetesBackend:
         core = CoreV1Api(api_client)
         await core.create_namespaced_secret(self._namespace, secret)
 
+    def _build_job(self, spec: JobSpec, resource_name: str, pod_spec: Any) -> Any:
+        from kubernetes_asyncio.client import V1Job, V1JobSpec, V1ObjectMeta
+
+        return V1Job(
+            metadata=V1ObjectMeta(
+                name=resource_name,
+                namespace=self._namespace,
+                labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
+            ),
+            spec=V1JobSpec(
+                template={  # type: ignore[arg-type]
+                    "metadata": {"labels": self._labels(spec.job_id, spec.job_type, spec.user_id)},
+                    "spec": pod_spec,
+                },
+                backoff_limit=0,
+                ttl_seconds_after_finished=3600,
+                # Server-enforced deadline (None for jobs without a timeout,
+                # e.g. GPU training) — authoritative even across worker restarts.
+                active_deadline_seconds=spec.timeout,
+            ),
+        )
+
     async def _submit_job(self, spec: JobSpec) -> BackendHandle:
         from kubernetes_asyncio.client import (
             BatchV1Api,
             CoreV1Api,
-            V1Job,
-            V1JobSpec,
-            V1ObjectMeta,
         )
 
         resource_name = self._resource_name(spec.job_id)
@@ -327,21 +357,7 @@ class KubernetesBackend:
         pod_spec = self._build_pod_spec(spec, resource_name, mount_gcp=mount_gcp)
         pod_spec.restart_policy = "Never"
 
-        job = V1Job(
-            metadata=V1ObjectMeta(
-                name=resource_name,
-                namespace=self._namespace,
-                labels=self._labels(spec.job_id, spec.job_type, spec.user_id),
-            ),
-            spec=V1JobSpec(
-                template={  # type: ignore[arg-type]
-                    "metadata": {"labels": self._labels(spec.job_id, spec.job_type, spec.user_id)},
-                    "spec": pod_spec,
-                },
-                backoff_limit=0,
-                ttl_seconds_after_finished=3600,
-            ),
-        )
+        job = self._build_job(spec, resource_name, pod_spec)
 
         created_job = await batch.create_namespaced_job(self._namespace, job)
 
@@ -431,6 +447,13 @@ class KubernetesBackend:
         if status.succeeded and status.succeeded > 0:
             return BackendStatus(running=False, exit_code=0)
         if status.failed and status.failed > 0:
+            for cond in status.conditions or []:
+                if cond.type == "Failed" and cond.reason == "DeadlineExceeded":
+                    return BackendStatus(
+                        running=False,
+                        exit_code=1,
+                        error="Job timed out — exceeded its configured time limit.",
+                    )
             reason = await self._get_pod_failure_reason(resource_name, api_client)
             return BackendStatus(
                 running=False,
