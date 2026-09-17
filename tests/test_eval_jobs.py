@@ -593,18 +593,17 @@ class TestRetryEvalJob:
     async def test_retry_legacy_row_strips_runtime_keys(
         self, client: httpx.AsyncClient
     ) -> None:
-        """Pre-snapshot rows fall back to config minus injected keys."""
+        """Rows whose snapshot was taken from a resolved config (the
+        migration's best-effort backfill) still lose the runtime keys —
+        the builder recomputes them."""
         job_id = await self._seed_failed_eval(client)
         import amortized.db.connection as _db_conn
 
         async with _db_conn._pool.acquire() as conn:
-            # Simulate a row created before request_config existed.
+            # Simulate the migration backfill: snapshot = resolved config
+            # (rubric present, runtime keys present).
             await conn.execute(
-                """UPDATE jobs
-                      SET request_config = request_config - 'rubric'
-                          - 'topic' - 'endpoint' - 'eval_data_run_id'
-                    WHERE id = $1""",
-                job_id,
+                "UPDATE jobs SET request_config = config WHERE id = $1", job_id
             )
         response = await client.post(f"/api/v1/jobs/{job_id}/retry")
         assert response.status_code == 201, response.text

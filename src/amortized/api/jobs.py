@@ -441,8 +441,9 @@ async def retry_job(
         )
 
     # The pre-dispatch snapshot is authoritative; legacy rows (created
-    # before the snapshot existed) carry the worker-resolved config, so
-    # strip the keys the builder recomputes.
+    # before the snapshot existed, or snapshotted from a worker-resolved
+    # config by the migration) carry runtime-injected keys, so strip
+    # them in either path — the builder recomputes all of them.
     snapshot = job.get("request_config")
     if isinstance(snapshot, str):
         try:
@@ -453,8 +454,8 @@ async def retry_job(
         config = dict(snapshot)
     else:
         config = dict(job.get("config") or {})
-        for key in _RETRY_STRIP_KEYS:
-            config.pop(key, None)
+    for key in _RETRY_STRIP_KEYS:
+        config.pop(key, None)
     config.pop("parent_job_id", None)
 
     parent_job_id = job.get("parent_job_id", "")
