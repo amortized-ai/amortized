@@ -113,6 +113,7 @@ const UI_TOOLS = new Set([
   "validate_eval_job",
   "validate_recipe_job",
   "create_job",
+  "split_dataset",
 ])
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
@@ -123,6 +124,7 @@ const JOB_CREATION_TOOLS = new Set([
   "create_eval_job",
   "submit_recipe_job",
   "create_job",
+  "split_dataset",
 ])
 
 function normalizeToolName(raw: string): string {
@@ -177,7 +179,7 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job"
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset"
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
