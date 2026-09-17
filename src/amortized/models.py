@@ -47,6 +47,14 @@ class TrainingJobConfig(BaseModel):
     data_path: str | None = Field(
         None, description="Path to training data (resolved from parent if chaining)"
     )
+    data_run_id: str = Field(
+        "",
+        description=(
+            "MLflow run holding the training dataset (generated_data artifact)"
+            " — e.g. an uploaded dataset or a split. Alternative to"
+            " parent_job_id; the worker downloads it and sets data_path"
+        ),
+    )
     output_dir: str | None = Field(None, description="Output directory")
     learning_rate: float | None = Field(None, description="Learning rate")
     num_train_epochs: int | None = Field(None, ge=1, description="Number of training epochs")
@@ -439,4 +447,37 @@ class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
 
 
+# ---------------------------------------------------------------------------
+# Dataset splits — materialized subsets of an existing dataset run
+# ---------------------------------------------------------------------------
 
+
+class DatasetSplitRequest(BaseModel):
+    """Split a dataset run into a portion (+ optionally its complement).
+
+    Both outputs are materialized as new dataset runs (full copies of the
+    selected rows), so they are immutable, self-contained, and consumable
+    by anything that takes a dataset run id (eval_data_run_id, training
+    data_run_id).
+    """
+
+    count: int = Field(
+        0, ge=0, description="Portion size in records (mutually exclusive with fraction)"
+    )
+    fraction: float = Field(
+        0.0, ge=0.0, le=1.0, description="Portion size as a fraction of the dataset"
+    )
+    strategy: Literal["random", "head", "tail"] = Field(
+        "random", description="How rows are selected for the portion"
+    )
+    seed: int = Field(42, ge=0, description="Random seed (strategy=random) for determinism")
+    name: str = Field("", description="Label for the portion dataset (default: derived)")
+    create_complement: bool = Field(
+        True,
+        description=(
+            "Also materialize the remaining rows as a second dataset (the train/eval two-way split)"
+        ),
+    )
+    complement_name: str = Field(
+        "", description="Label for the complement dataset (default: derived)"
+    )

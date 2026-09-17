@@ -139,14 +139,17 @@ async def _validate_training_data(
     parent_job_id: str,
     db: asyncpg.Connection,
 ) -> list[str]:
-    """Validate that training data is available (via parent job or data_path)."""
+    """Validate that training data is available (via parent job, run, or path)."""
     errors: list[str] = []
     data_path = config.get("data_path", "")
+    data_run_id = str(config.get("data_run_id", "") or "")
 
-    if not parent_job_id and not data_path:
+    if not parent_job_id and not data_path and not data_run_id:
         errors.append(
-            "training jobs require either parent_job_id (to chain from an"
-            " SDG job) or data_path (direct path to training data)"
+            "training jobs require parent_job_id (to chain from an SDG"
+            " job), data_run_id (an MLflow run with a generated_data"
+            " artifact, e.g. an uploaded dataset or split), or data_path"
+            " (direct path to training data)"
         )
         return errors
 
