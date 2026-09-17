@@ -67,6 +67,10 @@ RUN pip install --no-cache-dir --ignore-installed --break-system-packages s3fs f
 # read-only ConfigMap at /amortized that would shadow any image file placed there.
 COPY cpu_sft.py /usr/local/bin/cpu_sft.py
 
+# The EXECUTION smoke for the runner (kept out of the final image — only the
+# builder stage runs it).
+COPY smoke_sft.py /build/smoke_sft.py
+
 # Build-time smoke checks — every supported CPU algorithm path must import cleanly.
 # These FAIL the build on error (no `|| echo deferred` fallbacks): CPU problems must
 # surface in CI, not in a user's first job.
@@ -81,6 +85,14 @@ print(f'trl {trl.__version__}'); \
 print(f'accelerate {accelerate.__version__}'); \
 print(f'peft {peft.__version__}'); \
 " && thub --help > /dev/null && python3 -m py_compile /usr/local/bin/cpu_sft.py && echo "thub CLI + cpu_sft.py OK"
+
+# EXECUTION smoke (issue #442): py_compile only checks syntax — it missed the
+# missing-LoRA-target_modules defect (PEFT raises at adapter injection for model
+# types absent from its auto-inference mapping, e.g. Qwen3.5's 'qwen3_5').
+# smoke_sft.py runs the actual dispatched command end-to-end on a tiny
+# random-weights Qwen3.5-architecture model (no network download, ~seconds) and
+# fails the build if training does not complete and save a LoRA adapter.
+RUN python3 /build/smoke_sft.py
 
 FROM docker.io/library/ubuntu:24.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized

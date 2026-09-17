@@ -67,7 +67,8 @@ def check_cpu_policy(config: dict[str, Any]) -> tuple[list[str], list[str]]:
     ):
         warnings.append(
             "full-parameter SFT on CPU needs ~16 bytes/param of AdamW optimizer state "
-            "in RAM — consider LoRA/OSFT or a GPU"
+            "in RAM — a 0.8B model needs ~13 GB, more than the 8 GB the builder "
+            "allocates for it, so expect an OOM kill — consider LoRA/OSFT or a GPU"
         )
 
     if (config.get("nproc_per_node") or 1) > 1:

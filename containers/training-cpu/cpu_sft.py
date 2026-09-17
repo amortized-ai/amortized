@@ -21,6 +21,10 @@ Config keys (all emitted by ``amortized.jobs.training``):
 - ``lora_r``                present -> PEFT LoRA; absent -> full-param SFT
 - ``lora_alpha``            default 2 * lora_r
 - ``lora_dropout``          default 0.05
+- ``lora_target_modules``   optional explicit override; otherwise every
+                            ``torch.nn.Linear`` of the loaded model is targeted
+                            (PEFT cannot auto-infer for model types missing
+                            from its mapping, e.g. Qwen3.5)
 - ``ckpt_output_dir``       final model/adapter saved to ``<dir>/final``
 - ``gradient_checkpointing``optional
 - ``bf16``                  accepted but ignored — CPU is always fp32 here
@@ -77,6 +81,39 @@ def _load_model(model_path: str) -> Any:
     except TypeError:
         model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float32)
     return model.to("cpu")
+
+
+def _resolve_lora_target_modules(cfg: dict[str, Any], model: Any) -> list[str]:
+    """Resolve LoRA ``target_modules`` for the loaded model.
+
+    PEFT only auto-infers target modules for model types listed in its
+    ``target_module_mapping``; anything not yet in that mapping (e.g.
+    Qwen3.5's ``model_type='qwen3_5'`` in peft 0.21) raises
+    ``ValueError: Please specify target_modules`` at adapter injection —
+    before a single training step. Instead of relying on PEFT's mapping,
+    default to every linear projection of the loaded model (each named
+    module matches itself exactly in PEFT's target check), EXCLUDING the
+    output embedding layer (``lm_head``): TRL's default ``chunked_nll``
+    loss refuses a PEFT-wrapped lm_head, and PEFT's own ``all-linear``
+    mode excludes it too. An explicit ``lora_target_modules`` list in the
+    config wins if present.
+    """
+    explicit = cfg.get("lora_target_modules")
+    if explicit:
+        modules = [str(m) for m in explicit]
+    else:
+        output_embedding = model.get_output_embeddings()
+        modules = [
+            name
+            for name, module in model.named_modules()
+            if isinstance(module, torch.nn.Linear) and module is not output_embedding
+        ]
+    if not modules:
+        raise ValueError(
+            "no LoRA target modules found: the model has no torch.nn.Linear layers "
+            "and 'lora_target_modules' is not set in the config"
+        )
+    return modules
 
 
 def _build_sft_args(cfg: dict[str, Any], ckpt_output_dir: str) -> SFTConfig:
@@ -159,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             lora_dropout=float(lora_dropout) if lora_dropout is not None else 0.05,
             bias="none",
             task_type="CAUSAL_LM",
+            target_modules=_resolve_lora_target_modules(cfg, model),
         )
 
     sft_args = _build_sft_args(cfg, ckpt_output_dir)
