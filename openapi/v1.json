@@ -132,6 +132,49 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a FAILED eval job by cloning its original request config verbatim (rubric text included \u2014 the new scores land in the same Evaluation tab comparison group). Only use this to re-run an eval UNCHANGED; to change anything, assemble a new config instead. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
+        "description": "Clone a failed eval job's original config into a new job.",
+        "operationId": "retry_job",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/sdg/validate": {
       "post": {
         "tags": [
@@ -3650,6 +3693,11 @@
               }
             ],
             "title": "Completed At"
+          },
+          "retry_of": {
+            "type": "string",
+            "title": "Retry Of",
+            "default": ""
           }
         },
         "type": "object",

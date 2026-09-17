@@ -96,6 +96,7 @@ class Job(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
     completed_at: str | None = None
+    retry_of: str = ""
 
 
 class ValidatedJobConfig(BaseModel):

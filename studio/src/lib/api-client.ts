@@ -257,6 +257,13 @@ export async function getEvaluations(): Promise<EvaluationGroup[]> {
   return resp.groups
 }
 
+// --- Retry (clone a failed eval job verbatim) ---
+
+export async function retryJob(jobId: string): Promise<Job> {
+  logger.debug("retryJob", jobId)
+  return await post<Job>(`/api/v1/jobs/${jobId}/retry`, {})
+}
+
 // --- Recipes ---
 
 export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {

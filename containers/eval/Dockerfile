@@ -33,12 +33,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # vllm pulls torch, triton, and the nvidia runtime wheels it needs.
 # flash-linear-attention: Qwen3.5 hybrid attention kernels (pure triton).
+# peft: merging lora_sft adapters into the base model before serving.
 # mlflow: the job script shells out to the mlflow CLI for dataset
 # download / result upload (S3/MinIO artifacts → boto3).
 RUN pip install --no-cache-dir \
         "vllm==0.26.0" \
         "transformers==5.15.0" \
         "flash-linear-attention==0.5.2" \
+        "peft==0.20.0" \
         "httpx" \
         "pyarrow" \
         "mlflow==3.15.1" \

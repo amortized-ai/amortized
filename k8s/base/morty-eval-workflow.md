@@ -121,27 +121,14 @@ Present the model-source options as clickable choices:
    endpoint: ask for the URL and the model name it serves.
 
 Do NOT pre-decide — show the options and let the user pick. Never
-mention endpoint URLs, GPU pinning, or utilization numbers for models
-the eval serves itself; that is internal plumbing.
+mention endpoint URLs or utilization numbers for models the eval
+serves itself; that is internal plumbing.
 
-**GPU pre-flight (options 1 and 2 only).** Before creating the eval
-job, call `check_eval_gpu` (pass `training_job_id` or
-`model_name_or_path` — the same model source the eval will use). It
-returns the model's weight size, the GPU the eval would get, its free
-memory, and what is currently holding each GPU.
-
-- `fits: true` (or `model_size_gb` unknown but the assigned GPU has
-  plenty free) → proceed without mentioning GPU details.
-- `fits: false` → do NOT create the job. Tell the user plainly:
-  the model needs ~X GB and the GPU has only ~Y GB free because
-  <what is running> (use `gpus[].occupants` — job type, short job id,
-  and how long it has been running). Ask whether to (a) cancel that
-  job to free the memory (then re-check and proceed), or (b) pick a
-  different/smaller model or a gateway model. Only cancel another
-  job after the user explicitly agrees — never stop anything on your
-  own. Cancel via the `cancel_job` tool (a DELETE on the job).
-- `error: "no GPU is available..."` → tell the user every GPU is busy
-  or held by another user, and offer the gateway/endpoint options.
+Options 1 and 2 use the same GPU budget scheme as training jobs: the
+eval pod requests GPUs and the user's namespace quota bounds it. No
+GPU availability check is needed before creating the job — if the
+quota is exhausted the job stays queued/fails at scheduling, and you
+can relay that error to the user when it happens.
 
 ### Step 3 — Design the metrics (approval loop)
 
@@ -212,8 +199,31 @@ eval time or judge cost.
 
 ### Step 4 — Validate and submit
 
-Call `validate_eval_job` with the assembled config. Present the
-confirmation card. After the user confirms, the job is submitted and
+Call `validate_eval_job` with the assembled config. If the response
+carries `warnings` — e.g. the submitted rubric criteria match an
+earlier eval on this dataset by name but differ in wording — surface
+the warning to the user and resolve it BEFORE the confirmation card
+(reuse the earlier criteria verbatim, typically by copying them from
+the previous eval's config, unless the user explicitly wants different
+criteria — otherwise the new eval gets its own row in the Evaluation
+tab and scores are not comparable). Present the confirmation card. The
+config the agent assembles is often sparse —
+unset fields are resolved server-side, and the user can't tell what
+they're agreeing to from the raw JSON alone. So on the card, below the
+config, ALWAYS state the effective settings in one line:
+
+- temperature: the configured value, or "0 (default)" when unset
+- samples: the configured max_samples, or "all records (default)" when unset/0
+- judge: the configured judge model, or "auto — the dataset's teacher
+  model (from the SDG job that created it)" when a rubric is set and
+  no judge was given; "none (structural metrics only)" when there is
+  no rubric
+- judge samples: the configured judge_max_samples, or "all (default)" when unset/0
+
+Example line: `temperature 0 (default) · all records (default) · judge:
+auto — gpt-oss · judge samples: all (default)`
+
+After the user confirms, the job is submitted and
 you'll be notified when it completes.
 
 ### Step 5 — Report results
@@ -261,3 +271,10 @@ from Step 0 or re-ask for the endpoint.
 If the eval job fails, check the job logs (endpoint connectivity and
 missing eval data are the usual causes) and explain briefly. Never
 fabricate results.
+
+To re-run a failed eval UNCHANGED, call `retry_job` with the failed
+job's ID — it clones the original request config verbatim (rubric
+text included), so the scores land in the same Evaluation tab
+comparison group as before. Use it whenever the failure was transient
+(serving crash, network, quota). Only assemble a new config when the
+user actually wants to change something about the eval.

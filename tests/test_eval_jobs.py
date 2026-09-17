@@ -253,6 +253,62 @@ class TestEvalBuilder:
         assert "judge" not in runner["endpoints"]
 
     @pytest.mark.asyncio
+    async def test_build_embeds_serving_for_lora_training_job(self, monkeypatch) -> None:
+        # lora_sft: the resolved model path is a merged dir produced by
+        # merge_lora.py in a pre-command — not the $SERVE_MODEL_DIR var.
+        async def fake_resolve(config):
+            return (
+                "mdl-lora",
+                "/amortized/work/served_model/merged",
+                [
+                    "mlflow artifacts download -r run -a model"
+                    " -d /amortized/work/served_model",
+                    "python3 /amortized/merge_lora.py"
+                    " /amortized/work/served_model/model"
+                    " /amortized/work/served_model/merged",
+                ],
+            )
+
+        monkeypatch.setattr(eval_builder, "_resolve_training_model", fake_resolve)
+
+        config = {**EVAL_BODY, "training_job_id": "tj-1"}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+
+        script = result.command[2]
+        # the merged (plain) path is quoted, not the $VAR passthrough
+        assert "serve_vllm.py serve /amortized/work/served_model/merged" in script
+        assert "merge_lora.py" in "\n".join(result.pre_commands)
+        # the merge asset ships alongside the other serve assets
+        assert "merge_lora.py" in result.config_files
+
+    @pytest.mark.asyncio
+    async def test_is_lora_export_detects_adapter(self, monkeypatch) -> None:
+        class FakeClient:
+            def __init__(self, files):
+                self._files = files
+
+            async def list_artifacts(self, run_id, path):
+                return self._files
+
+        import amortized.jobs.eval as eb
+
+        monkeypatch.setattr(eb.config_mod.settings, "mlflow_tracking_uri", "http://ml")
+        monkeypatch.setattr(
+            "amortized.core.mlflow_client.MLflowClient",
+            lambda uri: FakeClient(
+                [{"path": "model/adapter_config.json"}, {"path": "model/tokenizer.json"}]
+            ),
+        )
+        assert await eb._is_lora_export("run-1") is True
+
+        monkeypatch.setattr(
+            "amortized.core.mlflow_client.MLflowClient",
+            lambda uri: FakeClient([{"path": "model/hf_format"}]),
+        )
+        assert await eb._is_lora_export("run-1") is False
+
+    @pytest.mark.asyncio
     async def test_build_rubric_implies_judge_auto_fill(self, monkeypatch) -> None:
         rubric = [
             {"name": "factual_accuracy", "description": "Facts match the reference"},
@@ -425,6 +481,173 @@ class TestScoreParsing:
         raw = '{"a": 15, "b": -3}'
         scores = m.parse_scores(raw, ["a", "b"])
         assert scores == {"a": 10.0, "b": 0.0}
+
+
+
+
+class TestRubricDriftWarning:
+    @pytest.mark.asyncio
+    async def test_validate_warns_on_paraphrased_rubric(self, client: httpx.AsyncClient) -> None:
+        # An earlier eval on this dataset used these criteria.
+        earlier = await _create_eval(
+            client,
+            rubric=[{"name": "verdict_accuracy", "description": "original text"}],
+        )
+        assert earlier.status_code == 201, earlier.text
+        job_id = earlier.json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = $1", job_id)
+
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={
+                **EVAL_BODY,
+                "rubric": [
+                    {"name": "verdict_accuracy", "description": "paraphrased text"}
+                ],
+            },
+        )
+        assert response.status_code == 200
+        warnings = response.json()["warnings"]
+        assert warnings and "NOT be comparable" in warnings[0]
+        assert "verdict_accuracy" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_validate_silent_on_exact_reuse(self, client: httpx.AsyncClient) -> None:
+        criteria = [{"name": "verdict_accuracy", "description": "original text"}]
+        earlier = await _create_eval(client, rubric=criteria)
+        job_id = earlier.json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = $1", job_id)
+
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**EVAL_BODY, "rubric": criteria},
+        )
+        assert response.status_code == 200
+        assert response.json()["warnings"] == []
+
+    @pytest.mark.asyncio
+    async def test_validate_silent_on_other_dataset(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        await _create_eval(
+            client,
+            rubric=[{"name": "verdict_accuracy", "description": "original text"}],
+        )
+        response = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={
+                **EVAL_BODY,
+                "eval_data_run_id": "b" * 32,  # different dataset
+                "rubric": [
+                    {"name": "verdict_accuracy", "description": "paraphrased text"}
+                ],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["warnings"] == []
+
+
+class TestRetryEvalJob:
+    @pytest.mark.asyncio
+    async def _seed_failed_eval(self, client: httpx.AsyncClient) -> str:
+        """A failed eval job whose stored config carries runtime keys."""
+        job_id = (await _create_eval(client, topic="rfe")).json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """UPDATE jobs
+                      SET status = 'failed',
+                          config = config
+                              || '{"eval_data_path": "/stale", "port": 8000,
+                                   "served_model_name": "stale-name"}'::jsonb
+                    WHERE id = $1""",
+                job_id,
+            )
+        return job_id
+
+    @pytest.mark.asyncio
+    async def test_retry_clones_request_config_verbatim(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        job_id = await self._seed_failed_eval(client)
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 201, response.text
+        new_job = response.json()
+        assert new_job["id"] != job_id
+        assert new_job["status"] == "queued"
+        assert new_job["retry_of"] == job_id
+        # request_config snapshot wins over the injected runtime keys
+        config = new_job["config"]
+        assert "eval_data_path" not in config
+        assert "port" not in config
+        assert config["topic"] == "rfe"
+
+    @pytest.mark.asyncio
+    async def test_retry_legacy_row_strips_runtime_keys(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Rows whose snapshot was taken from a resolved config (the
+        migration's best-effort backfill) still lose the runtime keys —
+        the builder recomputes them."""
+        job_id = await self._seed_failed_eval(client)
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            # Simulate the migration backfill: snapshot = resolved config
+            # (rubric present, runtime keys present).
+            await conn.execute(
+                "UPDATE jobs SET request_config = config WHERE id = $1", job_id
+            )
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 201, response.text
+        config = response.json()["config"]
+        assert "eval_data_path" not in config
+        assert "port" not in config
+        assert "served_model_name" not in config
+        assert config["topic"] == "rfe"  # preserved from the stored config
+
+    @pytest.mark.asyncio
+    async def test_retry_clones_rubric_verbatim(self, client: httpx.AsyncClient) -> None:
+        criteria = [{"name": "verdict_accuracy", "description": "original text"}]
+        job_id = (await _create_eval(client, rubric=criteria, topic="rfe")).json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute("UPDATE jobs SET status = 'failed' WHERE id = $1", job_id)
+        retried = (await client.post(f"/api/v1/jobs/{job_id}/retry")).json()
+        assert retried["config"]["rubric"] == criteria
+
+    @pytest.mark.asyncio
+    async def test_retry_requires_failed_status(self, client: httpx.AsyncClient) -> None:
+        job_id = (await _create_eval(client)).json()["id"]  # queued
+        response = await client.post(f"/api/v1/jobs/{job_id}/retry")
+        assert response.status_code == 422
+        assert "only failed or cancelled" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_retry_requires_eval_type(self, client: httpx.AsyncClient) -> None:
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs (id, type, status, config, created_at)
+                   VALUES ('sdg-1', 'sdg', 'failed', '{}', now())"""
+            )
+        response = await client.post("/api/v1/jobs/sdg-1/retry")
+        assert response.status_code == 422
+        assert "only eval jobs" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_retry_unknown_job_404(self, client: httpx.AsyncClient) -> None:
+        response = await client.post("/api/v1/jobs/missing/retry")
+        assert response.status_code == 404
 
 
 class TestEvalEndpointSuggestions:
