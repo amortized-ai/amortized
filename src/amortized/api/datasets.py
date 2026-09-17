@@ -282,7 +282,9 @@ async def list_datasets(
     )
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.source IN ('upload', 'split') AND attributes.status = 'FINISHED'",
+        filter_string=(
+            "(tags.source = 'upload' OR tags.source = 'split') AND attributes.status = 'FINISHED'"
+        ),
         order_by=["start_time DESC"],
         max_results=200,
     )
