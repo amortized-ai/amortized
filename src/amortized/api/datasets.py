@@ -404,18 +404,23 @@ async def get_dataset_samples(
 # ---------------------------------------------------------------------------
 
 
-async def _find_dataset_artifact(mlflow: MLflowClient, run_id: str) -> str:
-    """The dataset's data artifact path (parquet preferred, else jsonl)."""
+async def _find_dataset_artifacts(mlflow: MLflowClient, run_id: str) -> list[str]:
+    """All data file paths under generated_data, in batch order.
+
+    SDG datasets upload multiple batch files (batch_00000.parquet, ...);
+    uploads have a single data file. Consumers (run_eval.py, training-hub)
+    read the whole directory, so multi-file datasets are the normal shape.
+    """
     artifacts = await mlflow.list_artifacts(run_id, "generated_data")
-    parquet = next((a for a in artifacts if a.get("path", "").endswith(".parquet")), None)
-    jsonl = next((a for a in artifacts if a.get("path", "").endswith(".jsonl")), None)
-    target = parquet or jsonl
-    if not target:
+    paths = sorted(
+        str(a["path"]) for a in artifacts if a.get("path", "").endswith((".parquet", ".jsonl"))
+    )
+    if not paths:
         raise HTTPException(
             status_code=404,
             detail=f"Dataset run {run_id} has no parquet or JSONL artifact",
         )
-    return str(target["path"])
+    return paths
 
 
 def _parse_records(path: str, data: bytes) -> list[dict[str, Any]]:
@@ -461,18 +466,22 @@ async def _store_split_run(
     mlflow: MLflowClient,
     name: str,
     source_run: dict[str, Any],
-    source_path: str,
-    records: list[dict[str, Any]],
+    files: list[tuple[str, bytes]],
+    num_records: int,
     split: dict[str, Any],
 ) -> str:
-    """Materialize records as a new dataset run with lineage tags."""
+    """Materialize the split output as a new dataset run with lineage tags.
+
+    ``files`` keeps the source's per-file batch layout — same basenames,
+    same formats, one uploaded artifact per source data file.
+    """
     source_tags = {t["key"]: t["value"] for t in source_run.get("data", {}).get("tags", [])}
     tags: dict[str, str] = {
         "job_type": "upload",
         "dataset_name": name,
         "source": "split",
         "source_run_id": source_run.get("info", {}).get("run_id", ""),
-        "num_samples": str(len(records)),
+        "num_samples": str(num_records),
         "split": json.dumps(split, sort_keys=True),
     }
     if source_tags.get("dataset_topic"):
@@ -481,10 +490,10 @@ async def _store_split_run(
     experiment_id = await mlflow.ensure_experiment("amortized/datasets")
     run_id = await mlflow.create_run(experiment_id, name=name, tags=tags)
     try:
-        ext = source_path.rsplit(".", 1)[-1].lower()
-        await mlflow.upload_artifact(
-            run_id, f"generated_data/data.{ext}", _serialize_records(source_path, records)
-        )
+        for path, blob in files:
+            # artifact paths from list_artifacts are already run-relative
+            # (generated_data/...)
+            await mlflow.upload_artifact(run_id, path, blob)
         await mlflow.finish_run(run_id)
     except Exception:
         await mlflow.fail_run_quiet(run_id)
@@ -506,14 +515,38 @@ async def _process_dataset_split(
 
             mlflow = MLflowClient(settings.mlflow_tracking_uri, timeout=60.0)
             source_run = await mlflow.get_run(source_run_id)
-            source_path = await _find_dataset_artifact(mlflow, source_run_id)
-            data = await mlflow.get_artifact(source_run_id, source_path)
-            records = _parse_records(source_path, data)
+            source_paths = await _find_dataset_artifacts(mlflow, source_run_id)
+            file_records = [
+                (path, _parse_records(path, await mlflow.get_artifact(source_run_id, path)))
+                for path in source_paths
+            ]
+            total = sum(len(records) for _, records in file_records)
 
-            portion_idx = _split_indices(len(records), request)
-            complement_idx = [i for i in range(len(records)) if i not in set(portion_idx)]
-            portion = [records[i] for i in portion_idx]
-            complement = [records[i] for i in complement_idx]
+            # Global row selection (exact counts, deterministic) mapped back
+            # onto each source file — records are never merged across files;
+            # each output keeps the source's per-file batch layout.
+            portion_idx = set(_split_indices(total, request))
+            complement_idx = set(range(total)) - portion_idx
+            portion_files: list[tuple[str, bytes]] = []
+            complement_files: list[tuple[str, bytes]] = []
+            num_portion = 0
+            num_complement = 0
+            offset = 0
+            for path, records in file_records:
+                local = range(offset, offset + len(records))
+                offset += len(records)
+                p_sel = [i - offset + len(records) for i in local if i in portion_idx]
+                c_sel = [i - offset + len(records) for i in local if i in complement_idx]
+                if p_sel:
+                    portion_files.append(
+                        (path, _serialize_records(path, [records[i] for i in p_sel]))
+                    )
+                    num_portion += len(p_sel)
+                if c_sel:
+                    complement_files.append(
+                        (path, _serialize_records(path, [records[i] for i in c_sel]))
+                    )
+                    num_complement += len(c_sel)
 
             source_name = (
                 {t["key"]: t["value"] for t in source_run.get("data", {}).get("tags", [])}.get(
@@ -533,12 +566,17 @@ async def _process_dataset_split(
                 "fraction": request.fraction,
             }
             portion_run_id = await _store_split_run(
-                mlflow, portion_name, source_run, source_path, portion, split_meta
+                mlflow, portion_name, source_run, portion_files, num_portion, split_meta
             )
             complement_run_id = ""
             if request.create_complement:
                 complement_run_id = await _store_split_run(
-                    mlflow, complement_name, source_run, source_path, complement, split_meta
+                    mlflow,
+                    complement_name,
+                    source_run,
+                    complement_files,
+                    num_complement,
+                    split_meta,
                 )
 
             async with get_pool().acquire() as conn:
@@ -553,8 +591,8 @@ async def _process_dataset_split(
                         "source_run_id": source_run_id,
                         "split_run_id": portion_run_id,
                         "complement_run_id": complement_run_id,
-                        "num_portion": len(portion),
-                        "num_complement": len(complement),
+                        "num_portion": num_portion,
+                        "num_complement": num_complement,
                     },
                 )
         except Exception as exc:
@@ -594,7 +632,7 @@ async def split_dataset(
             raise HTTPException(status_code=404, detail=f"Dataset run {run_id} not found") from None
         raise
     # Fail fast on bad sizes before creating the job.
-    await _find_dataset_artifact(mlflow, run_id)
+    await _find_dataset_artifacts(mlflow, run_id)
     _split_indices(2, request)  # validates count/fraction exclusivity
 
     repo = Repository(db)

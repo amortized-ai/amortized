@@ -71,7 +71,12 @@ def _parse_jsonl(raw: bytes | str) -> list[dict]:
 
 class _FakeMLflow:
     """Just enough MLflow for the split flow: get_run, list_artifacts,
-    get_artifact, ensure_experiment, create_run, upload_artifact, finish_run."""
+    get_artifact, ensure_experiment, create_run, upload_artifact, finish_run.
+
+    ``files`` is a list of (artifact_path, raw_bytes) — a single
+    generated_data/data.jsonl for uploads, or multiple batch files for
+    SDG datasets.
+    """
 
     def __init__(
         self,
@@ -79,11 +84,14 @@ class _FakeMLflow:
         name: str = "source dataset",
         fmt: str = "jsonl",
         raw: bytes | None = None,
+        files: list[tuple[str, bytes]] | None = None,
     ) -> None:
-        self.records = records
         self.name = name
-        self.fmt = fmt
-        self.raw = raw
+        if files is None:
+            if raw is None:
+                raw = _jsonl_bytes(records)
+            files = [(f"generated_data/data.{fmt}", raw)]
+        self.files = dict(files)
         self.uploads: dict[str, bytes] = {}
         self.created: list[dict] = []
         self._next = 0
@@ -100,14 +108,10 @@ class _FakeMLflow:
         }
 
     async def list_artifacts(self, run_id: str, path: str = "") -> list[dict]:
-        return [{"path": f"generated_data/data.{self.fmt}", "file_size": 1}]
+        return [{"path": p, "file_size": 1} for p in self.files]
 
     async def get_artifact(self, run_id: str, path: str) -> bytes:
-        assert path == f"generated_data/data.{self.fmt}"
-        if self.fmt == "parquet":
-            assert self.raw is not None
-            return self.raw
-        return _jsonl_bytes(self.records)
+        return self.files[path]
 
     async def ensure_experiment(self, name: str) -> str:
         return "exp-1"
@@ -119,7 +123,7 @@ class _FakeMLflow:
         return run_id
 
     async def upload_artifact(self, run_id: str, path: str, data: bytes) -> None:
-        self.uploads[run_id] = data
+        self.uploads[(run_id, path)] = data
 
     async def finish_run(self, run_id: str, status: str = "FINISHED") -> None:
         pass
@@ -164,8 +168,10 @@ class TestDatasetSplit:
 
         # two materialized runs, disjoint rows, format preserved
         assert len(fake.created) == 2
-        portion = _parse_jsonl(fake.uploads[cfg["split_run_id"]].decode())
-        complement = _parse_jsonl(fake.uploads[cfg["complement_run_id"]].decode())
+        portion = _parse_jsonl(fake.uploads[(cfg["split_run_id"], "generated_data/data.jsonl")])
+        complement = _parse_jsonl(
+            fake.uploads[(cfg["complement_run_id"], "generated_data/data.jsonl")]
+        )
         assert len(portion) == 2 and len(complement) == 8
         assert {r["messages"][0]["content"] for r in portion}.isdisjoint(
             {r["messages"][0]["content"] for r in complement}
@@ -184,8 +190,12 @@ class TestDatasetSplit:
         fake2 = _FakeMLflow(_records(20))
         second = await _run_split(client, fake2, {"count": 5, "seed": 3})
 
-        a = _parse_jsonl(fake.uploads[first["config"]["split_run_id"]].decode())
-        b = _parse_jsonl(fake2.uploads[second["config"]["split_run_id"]].decode())
+        a = _parse_jsonl(
+            fake.uploads[(first["config"]["split_run_id"], "generated_data/data.jsonl")]
+        )
+        b = _parse_jsonl(
+            fake2.uploads[(second["config"]["split_run_id"], "generated_data/data.jsonl")]
+        )
         assert a == b
 
     async def test_head_and_tail_strategies(self, client: httpx.AsyncClient) -> None:
@@ -193,14 +203,18 @@ class TestDatasetSplit:
         head = await _run_split(
             client, fake, {"count": 3, "strategy": "head", "create_complement": False}
         )
-        portion = _parse_jsonl(fake.uploads[head["config"]["split_run_id"]].decode())
+        portion = _parse_jsonl(
+            fake.uploads[(head["config"]["split_run_id"], "generated_data/data.jsonl")]
+        )
         assert [r["messages"][0]["content"] for r in portion] == ["q0", "q1", "q2"]
 
         fake2 = _FakeMLflow(_records(10))
         tail = await _run_split(
             client, fake2, {"count": 3, "strategy": "tail", "create_complement": False}
         )
-        portion = _parse_jsonl(fake2.uploads[tail["config"]["split_run_id"]].decode())
+        portion = _parse_jsonl(
+            fake2.uploads[(tail["config"]["split_run_id"], "generated_data/data.jsonl")]
+        )
         assert [r["messages"][0]["content"] for r in portion] == ["q7", "q8", "q9"]
 
     async def test_no_complement(self, client: httpx.AsyncClient) -> None:
@@ -208,7 +222,14 @@ class TestDatasetSplit:
         job = await _run_split(client, fake, {"count": 4, "create_complement": False})
         assert job["config"]["complement_run_id"] == ""
         assert len(fake.created) == 1
-        assert len(_parse_jsonl(fake.uploads[job["config"]["split_run_id"]].decode())) == 4
+        assert (
+            len(
+                _parse_jsonl(
+                    fake.uploads[(job["config"]["split_run_id"], "generated_data/data.jsonl")]
+                )
+            )
+            == 4
+        )
 
     async def test_parquet_format_preserved(self, client: httpx.AsyncClient) -> None:
         import io
@@ -222,7 +243,7 @@ class TestDatasetSplit:
         fake = _FakeMLflow(records, fmt="parquet", raw=buf.getvalue())
         job = await _run_split(client, fake, {"count": 4, "create_complement": False})
 
-        data = fake.uploads[job["config"]["split_run_id"]]
+        data = fake.uploads[(job["config"]["split_run_id"], "generated_data/data.parquet")]
         assert data[:4] == b"PAR1"
         table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
         portion = table.to_pylist()
@@ -230,6 +251,65 @@ class TestDatasetSplit:
         assert {r["messages"][0]["content"] for r in portion} <= {
             r["messages"][0]["content"] for r in records
         }
+
+    async def test_multi_batch_dataset_split_all_files(self, client: httpx.AsyncClient) -> None:
+        """SDG datasets upload multiple batch files — the split must cover
+        every file, not just the first one."""
+        import io
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        # two parquet batches of 1000 rows each, like an SDG 2k dataset
+        files = []
+        for b in range(2):
+            records = [
+                {"messages": [{"role": "user", "content": f"b{b}-q{i}"}]} for i in range(1000)
+            ]
+            buf = io.BytesIO()
+            pq.write_table(pa.Table.from_pylist(records), buf)  # type: ignore[no-untyped-call]
+            files.append((f"generated_data/batch_{b:05d}.parquet", buf.getvalue()))
+        fake = _FakeMLflow([], files=files)
+
+        job = await _run_split(client, fake, {"fraction": 0.5, "seed": 42})
+        assert job["status"] == "succeeded", job.get("error")
+        cfg = job["config"]
+        # 2000 total — not the 1000 the single-artifact bug produced
+        assert cfg["num_portion"] == 1000
+        assert cfg["num_complement"] == 1000
+
+        def _read(run_id: str, fname: str) -> set[str]:
+            data = fake.uploads[(run_id, f"generated_data/{fname}")]
+            assert data[:4] == b"PAR1"
+            table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
+            return {r["messages"][0]["content"] for r in table.to_pylist()}
+
+        # both batch files present in each output, batch layout preserved
+        portion = _read(cfg["split_run_id"], "batch_00000.parquet") | _read(
+            cfg["split_run_id"], "batch_00001.parquet"
+        )
+        complement = _read(cfg["complement_run_id"], "batch_00000.parquet") | _read(
+            cfg["complement_run_id"], "batch_00001.parquet"
+        )
+        assert len(portion) == 1000 and len(complement) == 1000
+        assert portion.isdisjoint(complement)
+        assert portion | complement == {f"b{b}-q{i}" for b in range(2) for i in range(1000)}
+
+    async def test_multi_batch_jsonl_count_across_files(self, client: httpx.AsyncClient) -> None:
+        files = [
+            ("generated_data/batch_00000.jsonl", _jsonl_bytes(_records(10))),
+            ("generated_data/batch_00001.jsonl", _jsonl_bytes(_records(30))),
+        ]
+        fake = _FakeMLflow([], files=files)
+        job = await _run_split(client, fake, {"count": 8, "create_complement": False})
+
+        assert job["config"]["num_portion"] == 8
+        paths = [p for (rid, p) in fake.uploads if rid == job["config"]["split_run_id"]]
+        assert paths == ["generated_data/batch_00000.jsonl", "generated_data/batch_00001.jsonl"]
+        portion = []
+        for p in paths:
+            portion += _parse_jsonl(fake.uploads[(job["config"]["split_run_id"], p)])
+        assert len(portion) == 8
 
     async def test_count_and_fraction_are_exclusive(self, client: httpx.AsyncClient) -> None:
         fake = _FakeMLflow(_records(10))
