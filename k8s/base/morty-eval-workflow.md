@@ -86,6 +86,14 @@ message is used as the reference answer. Ask which source to use:
   `parent_job_id`
 - **An uploaded dataset** from the Datasets page — use its MLflow run
   ID as `eval_data_run_id`
+- **A split of an existing dataset** — when the user wants to hold out
+  part of the training dataset (or any existing dataset) as the eval
+  set, call `split_dataset` on its run ID (e.g. fraction 0.2,
+  strategy random). The split job materializes the portion AND its
+  complement as new dataset runs; use the finished job's
+  `config.split_run_id` as `eval_data_run_id`. Note this shares
+  records with the training data — mention the leakage trade-off if
+  the complement is (or overlaps) the training set.
 
 If the user has neither, suggest generating a held-out eval set with
 an SDG job first. If they agree, delegate: call `delegate_to_subagent`

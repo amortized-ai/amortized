@@ -964,6 +964,59 @@
         }
       }
     },
+    "/api/v1/datasets/{run_id}/split": {
+      "post": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Split Dataset",
+        "description": "Materialize a portion of a dataset (and optionally its complement).\n\nCreates a new dataset run holding the selected rows \u2014 usable anywhere\na dataset run id works (eval_data_run_id for evals, data_run_id for\ntraining). With create_complement (default) this is the two-way\ntrain/eval split: the portion is typically the eval set and the\ncomplement the training set. Read both run ids from the finished\njob's config (split_run_id / complement_run_id).",
+        "operationId": "split_dataset_api_v1_datasets__run_id__split_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetSplitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/documents/convert": {
       "post": {
         "tags": [
@@ -2584,6 +2637,64 @@
         ],
         "title": "CustomColumnConfig",
         "description": "Configuration for custom user-defined column generators.\n\nCustom columns allow users to provide their own generation logic via a callable function\ndecorated with `@custom_column_generator`. Two strategies are supported: cell_by_cell\n(default, row-based) and full_column (batch-based with DataFrame access).\n\nAttributes:\n    generator_function (required): A callable decorated with @custom_column_generator.\n    generation_strategy: \"cell_by_cell\" (row-based) or \"full_column\" (batch-based).\n    generator_params: Optional typed configuration object (Pydantic BaseModel) passed\n        as the second argument to the generator function.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "DatasetSplitRequest": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count",
+            "description": "Portion size in records (mutually exclusive with fraction)",
+            "default": 0
+          },
+          "fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Fraction",
+            "description": "Portion size as a fraction of the dataset",
+            "default": 0.0
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "random",
+              "head",
+              "tail"
+            ],
+            "title": "Strategy",
+            "description": "How rows are selected for the portion",
+            "default": "random"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Seed",
+            "description": "Random seed (strategy=random) for determinism",
+            "default": 42
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Label for the portion dataset (default: derived)",
+            "default": ""
+          },
+          "create_complement": {
+            "type": "boolean",
+            "title": "Create Complement",
+            "description": "Also materialize the remaining rows as a second dataset (the train/eval two-way split)",
+            "default": true
+          },
+          "complement_name": {
+            "type": "string",
+            "title": "Complement Name",
+            "description": "Label for the complement dataset (default: derived)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "DatasetSplitRequest",
+        "description": "Split a dataset run into a portion (+ optionally its complement).\n\nBoth outputs are materialized as new dataset runs (full copies of the\nselected rows), so they are immutable, self-contained, and consumable\nby anything that takes a dataset run id (eval_data_run_id, training\ndata_run_id)."
       },
       "DatetimeSamplerParams": {
         "properties": {
@@ -5951,6 +6062,12 @@
             ],
             "title": "Data Path",
             "description": "Path to training data (resolved from parent if chaining)"
+          },
+          "data_run_id": {
+            "type": "string",
+            "title": "Data Run Id",
+            "description": "MLflow run holding the training dataset (generated_data artifact) \u2014 e.g. an uploaded dataset or a split. Alternative to parent_job_id; the worker downloads it and sets data_path",
+            "default": ""
           },
           "output_dir": {
             "anyOf": [

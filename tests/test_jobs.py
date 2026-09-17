@@ -109,6 +109,21 @@ class TestCreateJob:
         assert response.json()["parent_job_id"] == "abc-123"
 
     @pytest.mark.asyncio
+    async def test_create_training_with_data_run_id(self, client: httpx.AsyncClient) -> None:
+        # Direct dataset run reference (uploaded dataset or materialized
+        # split) instead of parent_job_id / data_path.
+        response = await _create_training(client, data_run_id="d" * 32, data_path="")
+        assert response.status_code == 201
+        data = response.json()
+        assert data["type"] == "training"
+        assert data["config"]["data_run_id"] == "d" * 32
+
+    @pytest.mark.asyncio
+    async def test_training_requires_some_data_reference(self, client: httpx.AsyncClient) -> None:
+        response = await _create_training(client, data_path="")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_training_missing_algorithm(self, client: httpx.AsyncClient) -> None:
         response = await client.post(
             "/api/v1/jobs/training",

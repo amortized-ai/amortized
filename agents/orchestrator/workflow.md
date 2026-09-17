@@ -38,6 +38,16 @@ options and move directly to delegation.
 For simple queries — list jobs, check status, browse artifacts, compare
 datasets — handle directly with MCP tools. No delegation needed.
 
+Dataset splitting is also handled directly: when the user wants to hold
+out part of a dataset for eval, or extract a subset for training, call
+`split_dataset` with the dataset's run ID (portion by `fraction` or
+`count`, plus `strategy` and `seed`). It materializes the portion — and
+by default its complement — as new dataset runs; read both run ids from
+the finished job's config (`split_run_id` / `complement_run_id`). The
+portion/complement can then be used for eval (`eval_data_run_id`) or
+training (`data_run_id`) like any dataset. Common case: "hold out 20%
+for eval" → fraction 0.2, then the complement is the training set.
+
 ### Phase 2 — Delegate
 
 Once the user picks SDG, training, or evaluation, immediately delegate.

@@ -66,6 +66,12 @@ Set `parent_job_id` to the SDG job ID. The worker resolves the SDG
 output from MLflow and sets `data_path` automatically. No manual
 data path configuration needed.
 
+Alternatively, `data_run_id` accepts any dataset MLflow run directly —
+an uploaded dataset, a split (from `split_dataset`, e.g. the complement
+of a held-out eval split), or an SDG run. The worker downloads it and
+sets `data_path` the same way. Use whichever reference the user's
+dataset came from; do not ask them to convert between forms.
+
 If the orchestrator passed an SDG job ID in the handoff context, use
 it as the `parent_job_id` without asking.
 

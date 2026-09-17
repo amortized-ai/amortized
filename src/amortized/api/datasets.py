@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import random
 import re
 import uuid
 from datetime import UTC, datetime
@@ -21,7 +22,7 @@ from amortized.core.jobs import create_job
 from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import Job, JobType
+from amortized.models import DatasetSplitRequest, Job, JobType
 
 logger = logging.getLogger("amortized.api.datasets")
 
@@ -281,7 +282,7 @@ async def list_datasets(
     )
     upload_runs = await mlflow.search_runs(
         exp_ids,
-        filter_string="tags.source = 'upload' AND attributes.status = 'FINISHED'",
+        filter_string="tags.source IN ('upload', 'split') AND attributes.status = 'FINISHED'",
         order_by=["start_time DESC"],
         max_results=200,
     )
@@ -388,3 +389,222 @@ async def get_dataset_samples(
         ) from None
 
     return records
+
+
+# ---------------------------------------------------------------------------
+# Dataset split — materialize a portion (and complement) of an existing run
+# ---------------------------------------------------------------------------
+
+
+async def _find_dataset_artifact(mlflow: MLflowClient, run_id: str) -> str:
+    """The dataset's data artifact path (parquet preferred, else jsonl)."""
+    artifacts = await mlflow.list_artifacts(run_id, "generated_data")
+    parquet = next((a for a in artifacts if a.get("path", "").endswith(".parquet")), None)
+    jsonl = next((a for a in artifacts if a.get("path", "").endswith(".jsonl")), None)
+    target = parquet or jsonl
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset run {run_id} has no parquet or JSONL artifact",
+        )
+    return str(target["path"])
+
+
+def _parse_records(path: str, data: bytes) -> list[dict[str, Any]]:
+    if path.endswith(".parquet"):
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
+        return [dict(r) for r in table.to_pylist()]
+    lines = data.decode("utf-8").strip().split("\n")
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def _serialize_records(path: str, records: list[dict[str, Any]]) -> bytes:
+    if path.endswith(".parquet"):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        table = pa.Table.from_pylist(records)
+        buf = io.BytesIO()
+        pq.write_table(table, buf)  # type: ignore[no-untyped-call]
+        return buf.getvalue()
+    return ("\n".join(json.dumps(r) for r in records) + "\n").encode("utf-8")
+
+
+def _split_indices(total: int, request: DatasetSplitRequest) -> list[int]:
+    """Row indices for the portion, deterministic for a given request."""
+    if request.count and request.fraction:
+        raise HTTPException(status_code=422, detail="provide either count or fraction, not both")
+    if not request.count and not request.fraction:
+        raise HTTPException(status_code=422, detail="provide count or fraction")
+    n = request.count or round(total * request.fraction)
+    n = max(0, min(n, total))
+
+    if request.strategy == "head":
+        return list(range(n))
+    if request.strategy == "tail":
+        return list(range(total - n, total))
+    rng = random.Random(request.seed)
+    return sorted(rng.sample(range(total), n))
+
+
+async def _store_split_run(
+    mlflow: MLflowClient,
+    name: str,
+    source_run: dict[str, Any],
+    source_path: str,
+    records: list[dict[str, Any]],
+    split: dict[str, Any],
+) -> str:
+    """Materialize records as a new dataset run with lineage tags."""
+    source_tags = {t["key"]: t["value"] for t in source_run.get("data", {}).get("tags", [])}
+    tags: dict[str, str] = {
+        "job_type": "upload",
+        "dataset_name": name,
+        "source": "split",
+        "source_run_id": source_run.get("info", {}).get("run_id", ""),
+        "num_samples": str(len(records)),
+        "split": json.dumps(split, sort_keys=True),
+    }
+    if source_tags.get("dataset_topic"):
+        tags["dataset_topic"] = source_tags["dataset_topic"]
+
+    experiment_id = await mlflow.ensure_experiment("amortized/datasets")
+    run_id = await mlflow.create_run(experiment_id, name=name, tags=tags)
+    try:
+        ext = source_path.rsplit(".", 1)[-1].lower()
+        await mlflow.upload_artifact(
+            run_id, f"generated_data/data.{ext}", _serialize_records(source_path, records)
+        )
+        await mlflow.finish_run(run_id)
+    except Exception:
+        await mlflow.fail_run_quiet(run_id)
+        raise
+    return run_id
+
+
+async def _process_dataset_split(
+    job_id: str, source_run_id: str, request: DatasetSplitRequest
+) -> None:
+    from amortized.db.connection import get_pool
+
+    async with _upload_semaphore:
+        try:
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id, status="running", started_at=datetime.now(UTC)
+                )
+
+            mlflow = MLflowClient(settings.mlflow_tracking_uri, timeout=60.0)
+            source_run = await mlflow.get_run(source_run_id)
+            source_path = await _find_dataset_artifact(mlflow, source_run_id)
+            data = await mlflow.get_artifact(source_run_id, source_path)
+            records = _parse_records(source_path, data)
+
+            portion_idx = _split_indices(len(records), request)
+            complement_idx = [i for i in range(len(records)) if i not in set(portion_idx)]
+            portion = [records[i] for i in portion_idx]
+            complement = [records[i] for i in complement_idx]
+
+            source_name = (
+                {t["key"]: t["value"] for t in source_run.get("data", {}).get("tags", [])}.get(
+                    "dataset_name", ""
+                )
+                or source_run.get("info", {}).get("run_name", "")
+                or source_run_id[:8]
+            )
+            portion_name = request.name or f"{source_name} (split)"
+            complement_name = request.complement_name or f"{source_name} (complement)"
+
+            split_meta = {
+                "source_run_id": source_run_id,
+                "strategy": request.strategy,
+                "seed": request.seed,
+                "count": request.count,
+                "fraction": request.fraction,
+            }
+            portion_run_id = await _store_split_run(
+                mlflow, portion_name, source_run, source_path, portion, split_meta
+            )
+            complement_run_id = ""
+            if request.create_complement:
+                complement_run_id = await _store_split_run(
+                    mlflow, complement_name, source_run, source_path, complement, split_meta
+                )
+
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id,
+                    status="succeeded",
+                    mlflow_run_id=portion_run_id,
+                    mlflow_experiment="amortized/datasets",
+                    completed_at=datetime.now(UTC),
+                    config={
+                        "source": "split",
+                        "source_run_id": source_run_id,
+                        "split_run_id": portion_run_id,
+                        "complement_run_id": complement_run_id,
+                        "num_portion": len(portion),
+                        "num_complement": len(complement),
+                    },
+                )
+        except Exception as exc:
+            logger.warning("Dataset split failed for job %s: %s", job_id, exc)
+            try:
+                async with get_pool().acquire() as conn:
+                    await Repository(conn).update_job(
+                        job_id,
+                        status="failed",
+                        completed_at=datetime.now(UTC),
+                        error=_sanitize_upload_error(exc),
+                    )
+            except Exception:
+                logger.exception("Failed to mark job %s as failed", job_id)
+
+
+@router.post("/{run_id}/split", response_model=Job, status_code=202)
+async def split_dataset(
+    run_id: str,
+    request: DatasetSplitRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Any:
+    """Materialize a portion of a dataset (and optionally its complement).
+
+    Creates a new dataset run holding the selected rows — usable anywhere
+    a dataset run id works (eval_data_run_id for evals, data_run_id for
+    training). With create_complement (default) this is the two-way
+    train/eval split: the portion is typically the eval set and the
+    complement the training set. Read both run ids from the finished
+    job's config (split_run_id / complement_run_id).
+    """
+    mlflow = _mlflow_client()
+    try:
+        await mlflow.get_run(run_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Dataset run {run_id} not found") from None
+        raise
+    # Fail fast on bad sizes before creating the job.
+    await _find_dataset_artifact(mlflow, run_id)
+    _split_indices(2, request)  # validates count/fraction exclusivity
+
+    repo = Repository(db)
+    row = await create_job(
+        repo,
+        job_type=JobType.upload,
+        config={
+            "source": "split",
+            "source_run_id": run_id,
+            "strategy": request.strategy,
+            "seed": request.seed,
+            "count": request.count,
+            "fraction": request.fraction,
+            "create_complement": request.create_complement,
+        },
+    )
+    task = asyncio.create_task(_process_dataset_split(row["id"], run_id, request))
+    _upload_tasks.add(task)
+    task.add_done_callback(_upload_tasks.discard)
+
+    return row
