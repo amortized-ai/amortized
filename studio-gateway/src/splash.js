@@ -4,7 +4,7 @@
 // pastes its API key, which is POSTed to /gateway/provider before provisioning
 // proceeds. Polls /gateway/ready and reloads into the studio SPA once ready.
 
-const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic' };
+const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)' };
 
 function renderSplash(state, basePath = '') {
   const st = (state && state.state) || 'provisioning';
@@ -66,12 +66,13 @@ function renderSplash(state, basePath = '') {
   .hidden { display: none; }
   .keyform { text-align: left; }
   .keyform label { display: block; font-size: 0.85rem; margin: 16px 0 5px; font-weight: 600; }
-  .keyform select, .keyform input {
+  .keyform select, .keyform input, .keyform textarea {
     width: 100%; padding: 9px 11px; font-size: 0.9rem; border-radius: 6px;
     border: 1px solid rgba(0,0,0,0.22); background: #fff; color: inherit;
   }
+  .keyform textarea { font-family: monospace; font-size: 0.78rem; resize: vertical; min-height: 120px; }
   @media (prefers-color-scheme: dark) {
-    .keyform select, .keyform input { background: #0f1214; border-color: rgba(255,255,255,0.22); color: #e0e0e0; }
+    .keyform select, .keyform input, .keyform textarea { background: #0f1214; border-color: rgba(255,255,255,0.22); color: #e0e0e0; }
   }
   .keyform button { width: 100%; margin-top: 22px; }
   .formerr { color: #c9190b; font-size: 0.8rem; margin-top: 12px; }
@@ -90,8 +91,9 @@ function renderSplash(state, basePath = '') {
       <p>Morty needs a model API key to chat. It is stored for your account only and used solely for your sandbox.</p>
       <label for="provider">Provider</label>
       <select id="provider">${options}</select>
-      <label for="apikey">API key</label>
+      <label for="apikey" id="credlabel">API key</label>
       <input id="apikey" type="password" autocomplete="off" spellcheck="false" placeholder="paste your API key" />
+      <textarea id="adcjson" class="hidden" rows="8" autocomplete="off" spellcheck="false" placeholder="paste your Vertex ADC JSON (application_default_credentials.json)"></textarea>
       <div class="hint" id="hint"></div>
       <div class="formerr hidden" id="formerr"></div>
       <button type="submit" id="savebtn">Save &amp; continue</button>
@@ -103,11 +105,19 @@ function renderSplash(state, basePath = '') {
   var READY_URL = ${JSON.stringify(readyUrl)};
   var RETRY_URL = ${JSON.stringify(retryUrl)};
   var PROVIDER_URL = ${JSON.stringify(providerUrl)};
-  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".' };
+  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.' };
   var POLL_MS = 2500;
   function el(id){ return document.getElementById(id); }
   function show(id, on){ var e = el(id); if (e) e.classList.toggle('hidden', !on); }
-  function updateHint(){ var p = el('provider'); if (p) el('hint').textContent = HINTS[p.value] || ''; }
+  // Vertex is ADC-only: its credential is a JSON blob (textarea), not a key string (input).
+  function isAdc(p){ return p === 'vertex'; }
+  function updateHint(){
+    var p = el('provider'); if (!p) return;
+    var adc = isAdc(p.value);
+    show('apikey', !adc); show('adcjson', adc);
+    var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : 'API key';
+    el('hint').textContent = HINTS[p.value] || '';
+  }
   function showProvisioning(){
     show('keyform', false); show('err', false); show('retry', false); show('status', true);
     el('spinner').classList.remove('hidden');
@@ -152,9 +162,16 @@ function renderSplash(state, basePath = '') {
   function submitKey(ev){
     ev.preventDefault();
     var provider = el('provider').value;
-    var key = el('apikey').value;
+    var adc = isAdc(provider);
+    var key = adc ? el('adcjson').value : el('apikey').value;
     var fe = el('formerr'); fe.classList.add('hidden');
-    if (!key || key.trim().length < 8) { fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false; }
+    if (adc) {
+      var ok = false;
+      try { var o = JSON.parse(key); ok = !!o && typeof o === 'object' && !!o.type; } catch (e) { ok = false; }
+      if (!ok) { fe.textContent = 'Paste a valid Vertex ADC JSON (a Google credentials file).'; fe.classList.remove('hidden'); return false; }
+    } else if (!key || key.trim().length < 8) {
+      fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false;
+    }
     var btn = el('savebtn'); btn.disabled = true; btn.textContent = 'Saving…';
     fetch(PROVIDER_URL, {
       method: 'POST', cache: 'no-store',

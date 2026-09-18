@@ -13,10 +13,11 @@
 //
 // The OpenShell CLI usage mirrors the RHOAI opencode starter kit's documented flow
 // (`gateway add`, `sandbox create`, `service expose`). The Morty model provider is
-// per-user (bring-your-own-key): each user picks a provider (openai|anthropic) and
-// supplies its API key via the Studio splash/settings; the key is stored as a
-// per-user Secret and, at sandbox-create time, given to opencode via its env while
-// the provider's API host is opened in the sandbox egress policy.
+// per-user (bring-your-own-key): each user picks a provider (openai|anthropic|vertex)
+// and supplies its credential via the Studio splash/settings; the credential is stored
+// as a per-user Secret and, at sandbox-create time, given to opencode via its env while
+// the provider's API host is opened in the sandbox egress policy. Vertex is ADC-only
+// (a Google credentials JSON, not a key string) and Morty-chat-only — see PROVIDERS.
 //
 // Idempotent + non-blocking: ensureUserStack kicks off provisioning and returns the
 // current state immediately; callers poll getState / retry.
@@ -82,21 +83,47 @@ const MORTY_IMAGE = process.env.MORTY_IMAGE || 'ghcr.io/amortized-ai/morty:lates
 // so egress-allowlist + env-key is the delivery mechanism; the tight allowlist is
 // what bounds the key's exposure (Morty can only reach the model API, the user's own
 // server, and opencode's model catalog — no attacker-controllable host).
-//   provider -> { credential env-var opencode reads, API host to allow, opencode model }
+//   key provider -> { credential env-var opencode reads, API host to allow, model }
 // Model ids are overridable per deployment and track opencode's models.dev naming.
 const PROVIDERS = {
   openai: {
+    kind: 'key',
     credentialKey: 'OPENAI_API_KEY',
     apiHost: 'api.openai.com',
     model: process.env.MORTY_MODEL_OPENAI || 'openai/gpt-4o',
   },
   anthropic: {
+    kind: 'key',
     credentialKey: 'ANTHROPIC_API_KEY',
     apiHost: 'api.anthropic.com',
     model: process.env.MORTY_MODEL_ANTHROPIC || 'anthropic/claude-opus-4-8',
   },
+  // Claude via Google Vertex. ADC-only: the credential is a Google application-default-
+  // credentials JSON blob (not a key string), so delivery differs from the key providers
+  // (see ensureSandbox) — the JSON is written to a file in the sandbox and read via
+  // GOOGLE_APPLICATION_CREDENTIALS, project/location come from required gateway env, and
+  // the Google token-exchange + Vertex inference hosts are opened in the egress policy
+  // (see buildMortyPolicy). Chat-only: data-designer has no vertex provider, so this
+  // credential never powers the server model catalog / SDG teacher (kind 'adc' skips it).
+  vertex: {
+    kind: 'adc',
+    model: process.env.MORTY_MODEL_VERTEX || 'google-vertex-anthropic/claude-opus-4-8@default',
+    // Per-deployment (required gateway env), read under the names the rest of the
+    // opencode stack uses, with the AI-SDK-native names accepted as fallbacks. No
+    // default: unset means Vertex is not configured (validated in setUserKey).
+    project: process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_VERTEX_PROJECT || '',
+    location: process.env.VERTEX_LOCATION || process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_VERTEX_LOCATION || '',
+    // The ADC JSON is written here in-sandbox; GOOGLE_APPLICATION_CREDENTIALS points to it.
+    adcPath: '/workspace/adc.json',
+    // Google token exchange (OAuth/STS/IAM); the Vertex inference host is derived from
+    // location at policy-build time. Mirrors the validated prior egress recipe.
+    tokenHosts: ['oauth2.googleapis.com', 'accounts.google.com', 'sts.googleapis.com', 'www.googleapis.com', 'iam.googleapis.com'],
+  },
 };
 const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS);
+// Providers whose credential is a Google ADC JSON (file-delivered, Morty-chat-only)
+// rather than an env-key string. Drives the delivery + egress + server-skip branches.
+function isAdcProvider(provider) { return PROVIDERS[provider]?.kind === 'adc'; }
 
 // The gateway's own namespace: per-user model-key Secrets live here so a key
 // survives stack/sandbox recreation and is readable before amz-<user> exists.
@@ -130,9 +157,11 @@ function nsForUser(user) {
 }
 
 // Mask secret-looking `NAME=value` args (e.g. `OPENAI_API_KEY=sk-...`) so keys
-// never land in the gateway logs.
+// never land in the gateway logs. Also masks the Vertex ADC blob (ADC_B64,
+// CREDENTIALS) and the deployment-confidential Vertex project/location
+// (PROJECT/LOCATION) — the only `NAME=value` args here are sandbox `--env` pairs.
 function redactArg(a) {
-  const m = /^([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY))=.+/.exec(a);
+  const m = /^([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY|PROJECT|LOCATION|ADC_B64|CREDENTIALS))=.+/.exec(a);
   return m ? `${m[1]}=***` : a;
 }
 
@@ -286,11 +315,26 @@ async function restartServer(ns) {
   await coreApi.deleteCollectionNamespacedPod({ namespace: ns, labelSelector: 'app=amortized,component=server' });
 }
 
+// The model-API egress endpoint(s) for a provider. Key providers reach one API host;
+// the Vertex (ADC) provider needs the Google token-exchange hosts (OAuth/STS/IAM) plus
+// the Vertex inference host, derived from location (global -> aiplatform.googleapis.com;
+// a region -> <region>-aiplatform.googleapis.com).
+function modelEgressEndpoints(p) {
+  const rw = (host) => ({ host, port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
+  if (p.kind === 'adc') {
+    const aiplatform = !p.location || p.location === 'global'
+      ? 'aiplatform.googleapis.com'
+      : `${p.location}-aiplatform.googleapis.com`;
+    return [aiplatform, ...p.tokenHosts].map(rw);
+  }
+  return [rw(p.apiHost)];
+}
+
 // The OpenShell egress + landlock policy baked into the sandbox at create time.
 // Static parts (filesystem, landlock, allowed binaries) mirror the opencode kit;
-// the egress endpoints are per-provision: the chosen model API host, opencode's
+// the egress endpoints are per-provision: the chosen model API host(s), opencode's
 // model catalog + npm (for opencode itself), and the user's own amortized-server
-// (the MCP host). Nothing else is reachable, which is what bounds the in-env key.
+// (the MCP host). Nothing else is reachable, which is what bounds the in-env credential.
 function buildMortyPolicy(ns, provider) {
   const p = PROVIDERS[provider];
   return {
@@ -305,7 +349,7 @@ function buildMortyPolicy(ns, provider) {
       morty_egress: {
         name: 'morty-egress',
         endpoints: [
-          { host: p.apiHost, port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-write' },
+          ...modelEgressEndpoints(p),
           { host: 'models.opencode.ai', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
           { host: 'models.dev', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
           { host: 'registry.npmjs.org', port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-only' },
@@ -393,18 +437,48 @@ async function ensureSandbox(ns, provider, key) {
 
   // Rewrite the baked opencode.json in-sandbox: set the per-user MCP URL (amz-<user>)
   // and the provider's model. `node` (present in the image) does a robust JSON edit
-  // rather than a brittle sed; USER_NS + MORTY_MODEL are passed as sandbox env.
+  // rather than a brittle sed; USER_NS + MORTY_MODEL are passed as sandbox env. For the
+  // ADC (Vertex) provider it also materializes the credentials JSON from its base64 env
+  // (MORTY_ADC_B64) to the GOOGLE_APPLICATION_CREDENTIALS path before opencode starts —
+  // env-then-write delivery (the prior `sandbox upload` path was broken). A no-op for
+  // key providers (MORTY_ADC_B64 unset).
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
     'c.model=process.env.MORTY_MODEL;' +
     'c.mcp.amortized.url="http://amortized-server."+process.env.USER_NS+".svc.cluster.local:8000/mcp";' +
-    'fs.writeFileSync(f,JSON.stringify(c,null,2))';
+    'fs.writeFileSync(f,JSON.stringify(c,null,2));' +
+    'if(process.env.MORTY_ADC_B64){fs.writeFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,Buffer.from(process.env.MORTY_ADC_B64,"base64"))}';
   const serveCmd = `cd /workspace && node -e '${rewrite}' && HOME=/workspace opencode serve --port 4096 --hostname 0.0.0.0`;
 
   // Egress/landlock policy baked at create time (JSON is a valid YAML subset).
   const policyFile = path.join(os.tmpdir(), `policy-${ns}.json`);
   fs.writeFileSync(policyFile, JSON.stringify(buildMortyPolicy(ns, provider)));
   try {
+    // Credential delivery differs by provider kind. Key providers: opencode reads
+    // <credentialKey> from env. ADC (Vertex): the JSON is delivered base64 in env and
+    // written to a file by the bootstrap above; opencode reads it via
+    // GOOGLE_APPLICATION_CREDENTIALS, with project/location from gateway env. opencode's
+    // google-vertex-anthropic loader reads GOOGLE_CLOUD_PROJECT + VERTEX_LOCATION (and
+    // ignores opencode.json provider.options), while the underlying @ai-sdk/google-vertex
+    // reads GOOGLE_VERTEX_PROJECT/LOCATION — set both name families so it resolves
+    // regardless of the baked opencode build. All are redacted from logs by run() and
+    // reachable only to the allowlisted hosts.
+    const credEnv = [];
+    if (p.kind === 'adc') {
+      if (!p.project || !p.location) {
+        throw new Error('Vertex provider requires the project and location to be set on the gateway (GOOGLE_CLOUD_PROJECT + VERTEX_LOCATION)');
+      }
+      credEnv.push(
+        '--env', `GOOGLE_APPLICATION_CREDENTIALS=${p.adcPath}`,
+        '--env', `GOOGLE_CLOUD_PROJECT=${p.project}`,
+        '--env', `GOOGLE_VERTEX_PROJECT=${p.project}`,
+        '--env', `VERTEX_LOCATION=${p.location}`,
+        '--env', `GOOGLE_VERTEX_LOCATION=${p.location}`,
+        '--env', `MORTY_ADC_B64=${Buffer.from(key).toString('base64')}`,
+      );
+    } else {
+      credEnv.push('--env', `${p.credentialKey}=${key}`);
+    }
     const createArgs = [
       ...g, 'sandbox', 'create',
       '--name', name,
@@ -412,9 +486,7 @@ async function ensureSandbox(ns, provider, key) {
       '--policy', policyFile,
       '--env', `USER_NS=${ns}`,
       '--env', `MORTY_MODEL=${p.model}`,
-      // opencode reads <credentialKey> from its env to authenticate the provider;
-      // redacted from logs by run(), and reachable only to the allowlisted hosts.
-      '--env', `${p.credentialKey}=${key}`,
+      ...credEnv,
       '--', 'sh', '-c', serveCmd,
     ];
     try {
@@ -439,9 +511,12 @@ async function provision(ns, user, keyInfo) {
   for (const obj of residualObjects(ns, user)) await applyObject(obj);
   // 1b. Stamp the per-user model key into the ns (before Helm) so the chart wires it
   //     into the server env (list_models + SDG teacher) — the same key Morty uses.
-  if (keyInfo) await ensureServerKeySecret(ns, keyInfo);
+  //     ADC (Vertex) is Morty-chat-only (data-designer has no vertex provider), so it
+  //     never reaches the server env and does not wire teacherKeys.
+  const serverKeyInfo = keyInfo && !isAdcProvider(keyInfo.provider) ? keyInfo : null;
+  if (serverKeyInfo) await ensureServerKeySecret(ns, serverKeyInfo);
   // 2. Core stack via Helm from OCI (enterprise MLflow; opencode/studio off).
-  await helmInstall(ns, gatewayIP, !!keyInfo);
+  await helmInstall(ns, gatewayIP, !!serverKeyInfo);
   // 3. Per-user OpenShell-sandboxed Morty. Best-effort: a sandbox failure leaves the
   //    core stack (server/SDG/MLflow) usable — chat is degraded and can be retried.
   if (MORTY_ENABLED && keyInfo) {
@@ -487,7 +562,7 @@ function ensureUserStack(user) {
       // hiccup still leaves the server usable.
       if (await serverAvailable(ns)) {
         if (MORTY_ENABLED && keyInfo) {
-          await ensureServerKeySecret(ns, keyInfo);
+          if (!isAdcProvider(keyInfo.provider)) await ensureServerKeySecret(ns, keyInfo);
           try {
             await ensureSandbox(ns, keyInfo.provider, keyInfo.key);
           } catch (err) {
@@ -532,14 +607,30 @@ async function setUserKey(user, provider, key) {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
     throw new Error(`unsupported provider '${provider}' (expected ${SUPPORTED_PROVIDERS.join('|')})`);
   }
-  if (typeof key !== 'string' || key.trim().length < 8) {
-    throw new Error('invalid or missing API key');
+  if (typeof key !== 'string' || !key.trim()) {
+    throw new Error('invalid or missing credential');
   }
   if (!MORTY_ENABLED) {
     throw new Error('Morty is not enabled on this deployment (OpenShell mTLS certs not mounted)');
   }
-  const ns = nsForUser(user);
   key = key.trim();
+  if (isAdcProvider(provider)) {
+    // Vertex (ADC): the credential is a Google application-default-credentials JSON blob,
+    // and project/location must be configured on the gateway. Fail at the form boundary
+    // with an actionable message rather than deep in sandbox create.
+    const p = PROVIDERS[provider];
+    if (!p.project || !p.location) {
+      throw new Error('Vertex is not configured on this deployment (GOOGLE_CLOUD_PROJECT / VERTEX_LOCATION unset)');
+    }
+    let adc;
+    try { adc = JSON.parse(key); } catch { throw new Error('Vertex (ADC) requires a valid JSON credentials blob'); }
+    if (!adc || typeof adc !== 'object' || !adc.type) {
+      throw new Error('Vertex (ADC) JSON must be a Google credentials file (missing "type")');
+    }
+  } else if (key.length < 8) {
+    throw new Error('invalid or missing API key');
+  }
+  const ns = nsForUser(user);
   await writeUserKey(ns, provider, key);
 
   const existing = stacks.get(ns);
@@ -551,13 +642,17 @@ async function setUserKey(user, provider, key) {
   stacks.delete(ns);
 
   if (rotate) {
-    // Core stack is up: update the server-side key (list_models + SDG teacher) and
-    // restart the server, then recreate the sandbox — so the new key applies everywhere.
+    // Core stack is up: for key providers, update the server-side key (list_models + SDG
+    // teacher) and restart the server, then recreate the sandbox — so the new key applies
+    // everywhere. ADC (Vertex) never reaches the server env, so skip the server-key
+    // re-stamp + restart and only recreate the Morty sandbox with the new credential.
     const keyInfo = { provider, key, credentialKey: PROVIDERS[provider].credentialKey };
     const entry = { state: 'provisioning', error: null };
     entry.promise = (async () => {
-      await ensureServerKeySecret(ns, keyInfo);
-      await restartServer(ns);
+      if (!isAdcProvider(provider)) {
+        await ensureServerKeySecret(ns, keyInfo);
+        await restartServer(ns);
+      }
       await run(OPENSHELL_BIN, ['-g', OPENSHELL_GATEWAY, 'sandbox', 'delete', mortyName(ns)], { timeout: OPENSHELL_TIMEOUT_MS }).catch(() => {});
       await ensureSandbox(ns, provider, key);
       entry.state = 'ready';
