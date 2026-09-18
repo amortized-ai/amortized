@@ -39,8 +39,11 @@ scoring its answers against the reference answers:
   the user decides what to measure, and you design judge criteria for
   it (see Step 3). Every eval needs at least one criterion.
 
-One eval job evaluates one model. To compare models, run one eval job
-per model and read the numbers side by side.
+One eval job evaluates one model. To compare models (e.g. tuned vs
+base), run a SEPARATE eval for each — ONE AT A TIME: finish one model's
+full cycle (validate → confirm card → wait for completion → report)
+before starting the next. The Evaluation tab then lines them up side by
+side.
 
 Results (per-sample outputs and aggregate metrics) are stored in MLflow
 on the eval job's run, under `eval_results/`.
@@ -305,7 +308,12 @@ Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that
 criterion, averaged over the scored samples. Interpret the numbers
 plainly and offer next steps: evaluate another model to compare, train
-again with different data or parameters, or accept the model.
+again with different data or parameters, or accept the model. If they
+choose to evaluate another model (e.g. the base model for a tuned-vs-base
+comparison), start a FRESH eval cycle for it — assemble that model's
+config and go to Step 4 (`validate_eval_job` → confirmation card). Do NOT
+ask the user to submit it or hand you a job ID, and do NOT use
+`present_options` as a submit control.
 
 Cross-model comparisons live in the Studio **Evaluation tab**: every
 model evaluated on the same dataset with the same metric set appears
