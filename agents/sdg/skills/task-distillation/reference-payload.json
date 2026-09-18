@@ -37,8 +37,8 @@
   "model_configs": [
     {
       "alias": "text",
-      "model": "model name goes here",
-      "provider": "model provider goes here",
+      "model": "<from-list_models>",
+      "provider": "<from-list_models>",
       "skip_health_check": true,
       "inference_parameters": {
         "max_tokens": 32768,
