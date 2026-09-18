@@ -214,17 +214,29 @@ async def _build_embedded_serving(
     gpus = int(config.get("nproc_per_node", 1))
 
     # $SERVE_MODEL_DIR is our own pre-command variable (find output, no
-    # spaces) — shlex-quoting it would suppress expansion, so it goes in raw
-    # while user-provided paths (HF ids) stay quoted.
-    quoted_path = model_path if model_path.startswith("$") else shlex.quote(model_path)
+    # spaces) — shlex-quoting it would suppress expansion, so that exact
+    # sentinel goes in raw. Everything else is user-provided and stays
+    # quoted: a value starting with '$' (e.g. "$(rm -rf ~)") would
+    # otherwise run as command substitution in the pod's shell.
+    quoted_path = (
+        model_path
+        if model_path == "$SERVE_MODEL_DIR"
+        else shlex.quote(model_path)
+    )
 
     import contextlib as _cl
 
     explicit_util: float | None = None
-    for extra in config.get("vllm_args", []) or []:
-        if str(extra).startswith("--gpu-memory-utilization"):
+    vllm_args = [str(a) for a in (config.get("vllm_args") or [])]
+    for idx, extra in enumerate(vllm_args):
+        if extra == "--gpu-memory-utilization" and idx + 1 < len(vllm_args):
+            # Separate-token form: --gpu-memory-utilization 0.5
             with _cl.suppress(ValueError):
-                explicit_util = float(str(extra).split("=", 1)[-1].split()[-1])
+                explicit_util = float(vllm_args[idx + 1])
+        elif extra.startswith("--gpu-memory-utilization"):
+            # Equals form: --gpu-memory-utilization=0.5
+            with _cl.suppress(ValueError):
+                explicit_util = float(extra.split("=", 1)[-1].split()[-1])
 
     gpu_memory_utilization = explicit_util if explicit_util is not None else 0.9
     pre_commands.append(
@@ -405,7 +417,6 @@ async def build(
 
     endpoints = {"model": model_endpoint}
 
-    metrics = [m for m in (config.get("metrics") or []) if m]
     rubric = [
         c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
     ]
@@ -443,7 +454,6 @@ async def build(
     runner_config = {
         "eval_data_path": eval_data_path,
         "endpoints": endpoints,
-        "metrics": metrics,
         "rubric": rubric,
         "max_samples": config.get("max_samples", 0),
         "judge_max_samples": config.get("judge_max_samples", 0),
@@ -513,9 +523,6 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         metrics = json.loads(metrics_text).get("results", {})
 
         model_metrics = metrics.get("model", {})
-        em = model_metrics.get("exact_match")
-        if em is not None:
-            await set_mlflow_run_tag(mlflow_run_id, "eval_exact_match", str(em))
         for criterion, score in (metrics.get("scores") or {}).items():
             if score is not None:
                 await set_mlflow_run_tag(mlflow_run_id, f"eval_score_{criterion}", str(score))

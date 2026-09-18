@@ -640,6 +640,13 @@ async def _orchestrator_turn(
     return await _proxy_send_message(state.orchestrator_id, text, agent="morty", model=body.model)
 
 
+# A subagent may hand off to another subagent (e.g. eval → sdg), which
+# may hand off again. Bound the chain: each level holds an opencode
+# session open, and an agent stuck in a delegate loop would otherwise
+# grow the stack without limit.
+MAX_SUBAGENT_DEPTH = 4
+
+
 async def _maybe_delegate(
     state: SessionState,
     session_id: str,
@@ -652,6 +659,25 @@ async def _maybe_delegate(
         return morty_result
 
     target, context, resume = delegation
+
+    if len(state.subagent_stack) >= MAX_SUBAGENT_DEPTH:
+        logger.warning(
+            "Subagent delegation depth limit reached: session=%s depth=%d",
+            session_id, len(state.subagent_stack),
+        )
+        return {
+            "info": morty_result.get("info", {}),
+            "parts": [
+                {
+                    "type": "text",
+                    "text": (
+                        "I can't hand this off further — the workflow has"
+                        " nested too many agents. Let's continue here"
+                        " instead of delegating again."
+                    ),
+                }
+            ],
+        }
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 

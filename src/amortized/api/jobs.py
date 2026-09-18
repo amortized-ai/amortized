@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 import asyncpg
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -182,6 +181,32 @@ def _strip_eval_api_keys(job: Job) -> None:
             endpoint.pop("api_key", None)
 
 
+async def _validate_eval_rubric_judge(
+    config: dict[str, Any],
+    parent_job_id: str,
+) -> list[str]:
+    """Fail at the boundary when the judge can't score the rubric.
+
+    The eval builder auto-fills the judge from the SDG ancestor's teacher
+    model when the config omits one — mirror that resolution here so a
+    rubric with no judge (and no resolvable default) is a 422 at
+    validate/create time, not a dispatch-time failure.
+    """
+    rubric = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
+    if not rubric or config.get("judge"):
+        return []
+    from amortized.jobs import eval as eval_jobs
+
+    resolved = await eval_jobs._default_judge({"parent_job_id": parent_job_id})
+    if resolved is None:
+        return [
+            "judge endpoint is required to score the rubric (no judge in the"
+            " config, and no SDG ancestor with a teacher_model tag to"
+            " auto-fill one)"
+        ]
+    return []
+
+
 async def _validate_eval_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -335,12 +360,7 @@ async def _persist_metric_set(
         try:
             run = await client.get_run(dataset_run_id)
             if run.get("info", {}).get("lifecycle_stage") == "deleted":
-                async with httpx.AsyncClient(timeout=30.0) as _http:
-                    _resp = await _http.post(
-                        client._url("/api/2.0/mlflow/runs/restore"),
-                        json={"run_id": dataset_run_id},
-                    )
-                    _resp.raise_for_status()
+                await client.restore_run(dataset_run_id)
                 logger.info(
                     "Restored soft-deleted dataset run %s to persist its"
                     " eval metric set", dataset_run_id[:8],
@@ -377,6 +397,13 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors.extend(await _validate_eval_rubric_judge(config, parent_job_id))
+    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+        errors.append(
+            "eval jobs require at least one rubric criterion (custom"
+            " judge-scored metrics — the built-in structural metrics"
+            " exact_match/format_validity were removed)"
+        )
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -596,6 +623,13 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors.extend(await _validate_eval_rubric_judge(config, parent_job_id))
+    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+        errors.append(
+            "eval jobs require at least one rubric criterion (custom"
+            " judge-scored metrics — the built-in structural metrics"
+            " exact_match/format_validity were removed)"
+        )
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -814,7 +848,8 @@ async def get_job_artifacts(
     operation_id="get_eval_results",
     summary=(
         "Get aggregate eval metrics for a completed eval job: per-model"
-        " exact_match/format_validity/error rates and the judge win-rate."
+        " rubric criterion scores and job-health diagnostics (error and"
+        " empty rates)."
     ),
 )
 async def get_eval_results(

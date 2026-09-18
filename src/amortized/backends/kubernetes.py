@@ -282,7 +282,12 @@ class KubernetesBackend:
             restart_policy="Never",
             node_selector=node_selector,
             runtime_class_name=runtime_class_name,
-            security_context=V1PodSecurityContext(run_as_non_root=False),
+            # Job images run as a non-root user; fsGroup makes the
+            # shared emptyDir volumes group-writable for that uid.
+            security_context=V1PodSecurityContext(
+                run_as_non_root=True,
+                fs_group=1000,
+            ),
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
@@ -490,7 +495,10 @@ class KubernetesBackend:
         # failed for it — poll forever. Fail fast with the pod's reason.
         stuck = await self._get_stuck_pod_reason(resource_name, api_client)
         if stuck:
-            return BackendStatus(running=False, exit_code=1, error=stuck)
+            # The Job object stays active in the cluster (its controller
+            # never finishes it), so flag it for the worker to cancel —
+            # otherwise the Job and its GPU quota reservation leak.
+            return BackendStatus(running=False, exit_code=1, error=stuck, reclaim=True)
 
         return BackendStatus(running=True)
 

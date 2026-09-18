@@ -294,6 +294,17 @@ class MLflowClient:
             if resp.status_code != 404:
                 resp.raise_for_status()
 
+    async def restore_run(self, run_id: str) -> None:
+        """Restore a soft-deleted run. Silently ignores 404 (permanently
+        deleted or already active)."""
+        async with self._client() as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/restore"),
+                json={"run_id": run_id},
+            )
+            if resp.status_code != 404:
+                resp.raise_for_status()
+
     async def set_tag(self, run_id: str, key: str, value: str) -> None:
         """Set a tag on a run."""
         async with self._client() as client:

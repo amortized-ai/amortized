@@ -580,8 +580,6 @@ function EvalResultsTab({ job }: { job: Job }) {
   // ---- New single-model schema (one model per eval job, absolute scores) ----
   if (results.model) {
     const structural: { label: string; value: string }[] = [
-      ...(wantMetric("exact_match") ? [{ label: "Exact match", value: formatMetric(results.model.exact_match) }] : []),
-      ...(wantMetric("format_validity") ? [{ label: "Format validity", value: formatMetric(results.model.format_validity) }] : []),
       ...(wantMetric("error_rate") ? [{ label: "Error rate", value: formatMetric(results.model.error_rate) }] : []),
       ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
     ]
@@ -657,8 +655,6 @@ function EvalResultsTab({ job }: { job: Job }) {
   const baseModel = (job.config?.endpoint_base as Record<string, unknown> | undefined)?.model
   const tunedModel = (job.config?.endpoint_tuned as Record<string, unknown> | undefined)?.model
   const rows: { label: string; base: string; tuned: string }[] = [
-    ...(wantMetric("exact_match") ? [{ label: "Exact match", base: formatMetric(results.base?.exact_match), tuned: formatMetric(results.tuned?.exact_match) }] : []),
-    ...(wantMetric("format_validity") ? [{ label: "Format validity", base: formatMetric(results.base?.format_validity), tuned: formatMetric(results.tuned?.format_validity) }] : []),
     ...(wantMetric("error_rate") ? [{ label: "Error rate", base: formatMetric(results.base?.error_rate), tuned: formatMetric(results.tuned?.error_rate) }] : []),
     ...(wantMetric("empty_rate") ? [{ label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) }] : []),
   ]

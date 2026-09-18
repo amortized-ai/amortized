@@ -223,3 +223,63 @@ describe("useChat — split_dataset monitor flow", () => {
     expect(mockStoreValue.jobInFlight).toBeDefined()
   })
 })
+
+describe("useChat — validate retry keeps the confirmation card", () => {
+  it("builds proposedAction from the successful retry, not the errored first call", async () => {
+    // Regression: the agent's first validate_eval_job errored (422), it
+    // fixed the config and re-validated in the SAME turn. The dedup used
+    // to keep only the errored result, so no confirmation card rendered
+    // and the agent started fabricating cards with present_options.
+    const { fetchSessionMessages } = await import("@/lib/api-client")
+    mockResponse.parts = [{ type: "text", text: "The config is valid — see the card." }]
+    ;(fetchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { info: { role: "user" }, parts: [] },
+      {
+        info: { role: "assistant" },
+        parts: [
+          {
+            type: "tool",
+            tool: "amortized_validate_eval_job",
+            output: JSON.stringify({
+              code: "http_422",
+              message: "judge endpoint is required to score the rubric",
+            }),
+          },
+        ],
+      },
+      {
+        info: { role: "assistant" },
+        parts: [
+          {
+            type: "tool",
+            tool: "amortized_validate_eval_job",
+            output: JSON.stringify({
+              valid: true,
+              job_type: "eval",
+              config: { eval_data_run_id: "a".repeat(32), rubric: [{ name: "accuracy", description: "d" }] },
+              parent_job_id: "",
+              recipe: "",
+              warnings: [],
+            }),
+          },
+        ],
+      },
+    ])
+
+    const { result } = renderHook(() => useChat())
+
+    await act(async () => {
+      await result.current.sendMessage("Run the eval")
+    })
+
+    const assistantMsg = result.current.messages[1]!
+    const validates = assistantMsg.toolResults.filter((t) => t.name === "validate_eval_job")
+    // Both results survive (retries are not deduped away)
+    expect(validates).toHaveLength(2)
+    // The confirmation card is built from the successful one
+    expect(assistantMsg.proposedAction).not.toBeNull()
+    expect(assistantMsg.proposedAction!.jobType).toBe("eval")
+    expect(assistantMsg.proposedAction!.endpoint).toBe("/api/v1/jobs/eval")
+    expect(assistantMsg.proposedAction!.config!.eval_data_run_id).toBe("a".repeat(32))
+  })
+})

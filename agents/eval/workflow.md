@@ -33,15 +33,11 @@ model endpoint, and measures how well that model performs the task by
 scoring its answers against the reference answers:
 
 - The model generates an answer for every eval prompt (temperature 0)
-- **exact_match**: share of outputs that exactly match the reference
-  answer (for classification and short-answer tasks)
-- **format_validity**: share of outputs that are valid JSON when the
-  reference is JSON (for structured extraction tasks)
-- **custom rubric criteria**: for anything qualitative, an LLM judge
-  scores each output against the reference on a 0-1 scale per
-  criterion (absolute, not a comparison), averaged over the dataset.
-  The metrics are NOT fixed — the user decides what to measure, and
-  you design judge criteria for it (see Step 3)
+- An **LLM judge** scores each output against the reference on custom
+  **rubric criteria**, each on a 0-1 scale (absolute, not a
+  comparison), averaged over the dataset. The criteria are NOT fixed —
+  the user decides what to measure, and you design judge criteria for
+  it (see Step 3). Every eval needs at least one criterion.
 
 One eval job evaluates one model. To compare models, run one eval job
 per model and read the numbers side by side.
@@ -79,7 +75,30 @@ OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
 ### Step 1 — Confirm the eval dataset
 
 The eval dataset needs a `messages` column. The trailing assistant
-message is used as the reference answer. Ask which source to use:
+message is used as the reference answer.
+
+**If the eval subject is a tuned model (a training job), suggest its
+dataset first.** Call `get_job` on the training job and read the
+dataset it was trained on: the config's `data_run_id` (a dataset run
+ID) or the parent SDG job. Then look for the natural held-out set:
+
+- Call `get_dataset` on the training dataset. If its `source` is
+  `"split"`, note its `source_run_id`, then call `list_datasets` and
+  find the OTHER split output with the same `source_run_id` — that
+  sibling is the hold-out the model was NOT trained on. Suggest it as
+  the default: same distribution, zero leakage.
+- Otherwise (the model was trained on the whole dataset), suggest a
+  fresh hold-out split of the training dataset (e.g. fraction 0.2,
+  strategy random) via `split_dataset` — matched distribution, but it
+  shares records with the training data, so mention the leakage
+  trade-off.
+- Also offer a separately generated eval set (no leakage, best
+  isolation) — see the SDG delegation path below.
+
+Always present the suggestion as a choice — the user may want a
+different dataset.
+
+For any model (tuned or not), the general sources are:
 
 - **A completed SDG job** (best: a dataset generated separately from
   the training data, to avoid leakage) — use its job ID as
@@ -168,7 +187,7 @@ can relay that error to the user when it happens.
 
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
-field (`{metrics: [...], rubric: [{name, description}]}`) when any
+field (`{rubric: [{name, description}]}`) when any
 eval has run on this dataset before. If it is present, show the user
 the persisted metric set as a table (same format as a new proposal)
 and ask them to confirm reuse — do NOT silently reuse it, and do NOT
@@ -191,23 +210,20 @@ metrics matter — ask the user first:
 > "How do you want to evaluate the model? What should a good output
 > look like for this task?"
 
-Based on their answer, DESIGN a metrics list. Two kinds are available:
-
-- **Built-in metrics** — `exact_match` (categorical / short answers),
-  `format_validity` (JSON output correctness)
-- **Custom rubric criteria** — for anything qualitative. Each criterion
-  is `{name, description}` where the name is a short key (e.g.
-  `factual_accuracy`) and the description is one sentence telling the
-  judge what to check. Design these FROM what the user said matters —
-  their words, translated into checkable criteria. The judge scores
-  each criterion 0-1 against the reference answer (absolute)
+Based on their answer, DESIGN a list of **custom rubric criteria**.
+Each criterion is `{name, description}` where the name is a short key
+(e.g. `factual_accuracy`) and the description is one sentence telling
+the judge what to check. Design these FROM what the user said matters —
+their words, translated into checkable criteria. The judge scores each
+criterion 0-1 against the reference answer (absolute). An eval needs
+at least one criterion.
 
 Present the proposed list as a markdown table:
 
-| Metric | Type | What it checks |
-|---|---|---|
-| exact_match | built-in | output exactly matches the reference |
-| factual_accuracy | rubric | response states facts consistent with the reference |
+| Criterion | What it checks |
+|---|---|
+| factual_accuracy | response states facts consistent with the reference |
+| completeness | response covers everything the reference asks for |
 
 Then ask for approval with exactly two options:
 - "Looks good, continue"
@@ -216,15 +232,14 @@ Then ask for approval with exactly two options:
 **If the user suggests changes**: incorporate their feedback into the
 list (add, remove, reword, split, or merge criteria), then re-present
 the revised table and ask again. Repeat until the user approves. Never
-submit with a metrics list the user has not approved.
+submit with a criteria list the user has not approved.
 
-Judge defaults: custom rubric criteria are scored by the LLM judge.
+Judge defaults: the rubric criteria are scored by the LLM judge.
 You do NOT need to collect a judge endpoint — if the eval job has an
 SDG ancestor (directly or via the training job), the judge defaults to
 that SDG run's teacher model served through the platform gateway. Only
 ask for a judge endpoint if the user wants a different judge, or if
 there is no SDG ancestor (e.g. an uploaded dataset with no parent).
-The judge is only needed when there is a custom rubric.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
 `judge_max_samples` unset — the eval runs and judges EVERY record in
@@ -233,43 +248,58 @@ eval time or judge cost.
 
 ### Step 4 — Validate and submit
 
-Call `validate_eval_job` with the assembled config. If the response
-carries `warnings` — e.g. the submitted rubric criteria match an
-earlier eval on this dataset by name but differ in wording — surface
-the warning to the user and resolve it BEFORE the confirmation card
-(reuse the earlier criteria verbatim, typically by copying them from
-the previous eval's config, unless the user explicitly wants different
-criteria — otherwise the new eval gets its own row in the Evaluation
-tab and scores are not comparable). Present the confirmation card. The
-config the agent assembles is often sparse —
+Call `validate_eval_job` with the assembled config. If validation
+fails (422), read the error, fix the config (e.g. set a judge
+explicitly when there is no SDG ancestor to auto-fill one), and call
+`validate_eval_job` AGAIN — do not present a text summary of a config
+that failed validation.
+
+If the response carries `warnings` — e.g. the submitted rubric criteria
+match an earlier eval on this dataset by name but differ in wording —
+surface the warning to the user and resolve it BEFORE the confirmation
+card (reuse the earlier criteria verbatim, typically by copying them
+from the previous eval's config, unless the user explicitly wants
+different criteria — otherwise the new eval gets its own row in the
+Evaluation tab and scores are not comparable).
+
+**The confirmation card is rendered by the PLATFORM from the successful
+`validate_eval_job` tool result — you never render it yourself.** Do
+NOT use `present_options` (or any text/markdown) as a submit control:
+option cards only send chat text back to you, they cannot create a job.
+After a successful validate, write ONE short sentence pointing the user
+to the card. The config the agent assembles is often sparse —
 unset fields are resolved server-side, and the user can't tell what
-they're agreeing to from the raw JSON alone. So on the card, below the
-config, ALWAYS state the effective settings in one line:
+they're agreeing to from the raw JSON alone. So in that sentence, ALWAYS
+state the effective settings in one line:
 
 - temperature: the configured value, or "0 (default)" when unset
 - samples: the configured max_samples, or "all records (default)" when unset/0
 - judge: the configured judge model, or "auto — the dataset's teacher
-  model (from the SDG job that created it)" when a rubric is set and
-  no judge was given; "none (structural metrics only)" when there is
-  no rubric
+  model (from the SDG job that created it)" when no judge was given
 - judge samples: the configured judge_max_samples, or "all (default)" when unset/0
 
 Example line: `temperature 0 (default) · all records (default) · judge:
 auto — gpt-oss · judge samples: all (default)`
 
-After the user confirms, the job is submitted and
-you'll be notified when it completes.
+After the user clicks Confirm on the platform card, the job is
+submitted and you'll be notified when it completes. Never claim the job
+was submitted — check the job's existence first if in doubt.
 
 ### Step 5 — Report results
+
+After the job is submitted, WAIT — do not hand control back to the
+orchestrator while the job runs. Its `[SYSTEM EVENT]` completion
+notification arrives in YOUR session; when it does (or on failure),
+you handle it.
 
 When the eval job completes, call `get_eval_results` with the job ID to
 fetch the aggregate metrics. Report a compact table of the model's
 scores:
 
-| Metric | Score |
+| Criterion | Score |
 |---|---|
-| exact_match | ... |
 | factual_accuracy | ... |
+| completeness | ... |
 
 Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that
@@ -281,6 +311,22 @@ Cross-model comparisons live in the Studio **Evaluation tab**: every
 model evaluated on the same dataset with the same metric set appears
 as a column there — point the user to it when they want to compare
 numbers side by side.
+
+### Step 6 — Signal Completion
+
+Do NOT signal yet. After the job is submitted, stay active: the job's
+`[SYSTEM EVENT]` completion notification arrives in YOUR session, and
+Step 5 (report the scores table, then offer next steps) is your work —
+handing control back before the job finishes would hand the results
+reporting to the orchestrator, which has none of the eval context.
+
+Only after you have reported the results (Step 5) — or the job failed
+and you have explained the failure — call `signal_subagent_completion`
+to hand control back to the orchestrator. If the user expressed a next
+intent (e.g. "Evaluate another model" or "Train again"), include it in
+the summary as "User selected: ..." so the orchestrator can act on it
+directly. Do NOT instruct the orchestrator what to do — just relay the
+user's choice.
 
 ## Delegating to the SDG Agent
 

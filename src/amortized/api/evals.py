@@ -8,6 +8,7 @@ Evaluation tab's cross-model comparison table.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -147,9 +148,6 @@ def _entry_from_job(
     if tags:
         if not model:
             model = tags.get("eval_model", "")
-        if tags.get("eval_exact_match"):
-            with _Suppress():
-                scores["exact_match"] = float(tags["eval_exact_match"])
         for key, value in tags.items():
             if key.startswith("eval_score_"):
                 with _Suppress():
@@ -249,9 +247,11 @@ async def list_evaluations(
         group = groups.setdefault(
             key,
             {
+                # Stable across server restarts (str hash is salted per
+                # process) and collision-free: sha1 of the full key.
                 "id": (
                     f"{ds_run[:8] if ds_run != 'unknown' else 'unknown'}"
-                    f"-{abs(hash(key)) % 100000}"
+                    f"-{hashlib.sha1(repr(key).encode()).hexdigest()[:12]}"
                 ),
                 "dataset": {
                     "run_id": ds_run,

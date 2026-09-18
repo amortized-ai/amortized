@@ -20,9 +20,22 @@ def _serve_alive(pid: int) -> bool:
         return True
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+    # os.kill(pid, 0) also succeeds for a zombie — the process died but
+    # its parent hasn't reaped it yet (the shell that started serve and
+    # is busy running this script). A zombie server is a dead server:
+    # without this check, a serve OOM polls the full timeout.
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            # Field 3 is the state; everything after the comm in parens
+            # is space-separated.
+            rest = f.read().rsplit(")", 1)[-1].split()
+            if len(rest) >= 1 and rest[0] == "Z":
+                return False
+    except OSError:
+        pass
+    return True
 
 
 def main() -> int:

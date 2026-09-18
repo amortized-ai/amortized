@@ -17,32 +17,14 @@ async def test_restores_deleted_run_before_tagging():
 
     client = AsyncMock()
     client.get_run = AsyncMock(return_value=run)
-    client._url = lambda path: "http://mlflow" + path
-
-    restore_resp = AsyncMock()
-    restore_resp.raise_for_status = lambda: None
-
-    class FakeHttp:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, json=None):
-            assert url.endswith("/api/2.0/mlflow/runs/restore")
-            assert json == {"run_id": "run-1"}
-            return restore_resp
+    client.restore_run = AsyncMock()
 
     with patch("amortized.core.mlflow_client.MLflowClient", return_value=client), \
-         patch("amortized.api.jobs.httpx.AsyncClient", return_value=FakeHttp()), \
          patch("amortized.jobs.common.set_mlflow_run_tag", new_callable=AsyncMock) as tag, \
          patch("amortized.config.settings.mlflow_tracking_uri", "http://mlflow"):
         await _persist_metric_set(config, "parent-1", db=None)
 
+    client.restore_run.assert_awaited_once_with("run-1")
     tag.assert_awaited_once()
     args = tag.await_args.args
     assert args[0] == "run-1" and args[1] == "eval_metric_set"
@@ -58,12 +40,12 @@ async def test_skips_restore_for_active_run():
     client = AsyncMock()
     client.get_run = AsyncMock(return_value=run)
 
-    class FailHttp:
-        def __init__(self, *a, **k):
-            raise AssertionError("restore should not be called for active runs")
+    async def _fail_restore(run_id):
+        raise AssertionError("restore should not be called for active runs")
+
+    client.restore_run = _fail_restore
 
     with patch("amortized.core.mlflow_client.MLflowClient", return_value=client), \
-         patch("amortized.api.jobs.httpx.AsyncClient", side_effect=FailHttp), \
          patch("amortized.jobs.common.set_mlflow_run_tag", new_callable=AsyncMock) as tag, \
          patch("amortized.config.settings.mlflow_tracking_uri", "http://mlflow"):
         await _persist_metric_set(config, "", db=None)

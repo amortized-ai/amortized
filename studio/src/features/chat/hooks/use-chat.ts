@@ -179,7 +179,12 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name in VALIDATE_TO_CREATE_ENDPOINT
+        // Validate tools legitimately fire multiple times in one turn —
+        // the agent fixes a validation error and re-validates. Dropping
+        // the retry (the default dedup) keeps only the ERRORED result,
+        // which kills the confirmation card. The card builder below picks
+        // the last result that actually parses as a valid config.
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name.startsWith("validate_")
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -496,20 +501,26 @@ export function useChat() {
         }
 
         let proposedAction: ProposedAction | null = null
-        const validationTool = toolResults.findLast((t) => t.name in VALIDATE_TO_CREATE_ENDPOINT)
-        if (validationTool) {
-          const validated = extractValidatedJobConfig(validationTool.result)
+        // The agent may validate several times in a turn (fix an error,
+        // re-validate). Walk backwards and use the most recent result that
+        // parses as a valid config — an earlier ERRORED result must not
+        // shadow a later successful one.
+        for (let i = toolResults.length - 1; i >= 0; i--) {
+          const t = toolResults[i]!
+          if (!(t.name in VALIDATE_TO_CREATE_ENDPOINT)) continue
+          const validated = extractValidatedJobConfig(t.result)
           if (validated) {
             proposedAction = {
               action: `Create ${validated.jobType.toUpperCase()} Job`,
               description: `Submit this ${validated.jobType} job?`,
               params: validated.config,
               jobType: validated.jobType as "sdg" | "training" | "eval" | "serve",
-              endpoint: VALIDATE_TO_CREATE_ENDPOINT[validationTool.name],
+              endpoint: VALIDATE_TO_CREATE_ENDPOINT[t.name],
               config: validated.config,
               parentJobId: validated.parentJobId,
               recipe: validated.recipe,
             }
+            break
           }
         }
 

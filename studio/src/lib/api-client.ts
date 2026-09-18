@@ -178,10 +178,6 @@ export interface EvalModelMetrics {
   num_succeeded: number
   error_rate: number
   empty_rate: number
-  exact_match: number | null
-  exact_match_n: number
-  format_validity: number | null
-  format_validity_n: number
 }
 
 export interface EvalCriterionResult {
