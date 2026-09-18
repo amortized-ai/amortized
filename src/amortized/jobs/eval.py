@@ -428,6 +428,12 @@ async def build(
                 "judge endpoint is required to score a custom rubric"
                 " (no SDG ancestor with a teacher_model tag, or no gateway configured)"
             )
+        # Persist the auto-filled judge into the config so the stored (resolved)
+        # config records the judge that actually ran. The Evaluation tab merges
+        # columns by judge model, so an auto-filled judge left out of the config
+        # splits a re-run into its own column instead of merging with an
+        # explicit-judge run of the same model. (_auto is a build-time marker.)
+        config["judge"] = {k: v for k, v in judge_cfg.items() if k != "_auto"}
     if judge_cfg:
         endpoints["judge"] = _endpoint_spec(
             {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env

@@ -379,6 +379,11 @@ class TestEvalBuilder:
         assert runner["rubric"] == rubric
         assert "judge" in runner["endpoints"]
         assert runner["endpoints"]["judge"]["model"] == "gpt-teacher"
+        # the auto-filled judge is persisted into the stored config (so the
+        # Evaluation tab merges it with explicit-judge runs of the same model),
+        # scrubbed of its api_key
+        assert result.resolved_config["judge"]["model"] == "gpt-teacher"
+        assert "api_key" not in result.resolved_config["judge"]
 
     @pytest.mark.asyncio
     async def test_build_rubric_without_resolvable_judge_errors(self) -> None:
