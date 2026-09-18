@@ -175,7 +175,7 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job"
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name in VALIDATE_TO_CREATE_ENDPOINT
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -492,7 +492,7 @@ export function useChat() {
         }
 
         let proposedAction: ProposedAction | null = null
-        const validationTool = toolResults.find((t) => t.name in VALIDATE_TO_CREATE_ENDPOINT)
+        const validationTool = toolResults.findLast((t) => t.name in VALIDATE_TO_CREATE_ENDPOINT)
         if (validationTool) {
           const validated = extractValidatedJobConfig(validationTool.result)
           if (validated) {
