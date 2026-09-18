@@ -1450,9 +1450,9 @@
         "tags": [
           "evaluations"
         ],
-        "summary": "List Evaluations",
+        "summary": "List completed evaluations grouped by dataset and metric set, with the models already scored in each. Use to check whether a model was already evaluated on a dataset before running a new eval.",
         "description": "Eval jobs grouped by (dataset, metric set) with per-model scores.",
-        "operationId": "list_evaluations_api_v1_evaluations_get",
+        "operationId": "list_evaluations",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1461,7 +1461,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response List Evaluations Api V1 Evaluations Get"
+                  "title": "Response List Evaluations"
                 }
               }
             }

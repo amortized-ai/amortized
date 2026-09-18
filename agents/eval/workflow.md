@@ -251,6 +251,15 @@ eval time or judge cost.
 
 ### Step 4 — Validate and submit
 
+**First, check whether this eval already exists.** Call `list_evaluations`
+— it returns evaluation groups (one per dataset × metric set) with the
+models already scored in each. If THIS model already appears for THIS
+dataset and metric set, tell the user it's already been evaluated, show
+those scores, and ask whether to re-run anyway. Note: re-running with the
+SAME setup (temperature, sample count, judge) averages into that model's
+existing column; a different setup makes a new column. Only continue below
+if they want a fresh run.
+
 Call `validate_eval_job` with the assembled config. If validation
 fails (422), read the error, fix the config (e.g. set a judge
 explicitly when there is no SDG ancestor to auto-fill one), and call

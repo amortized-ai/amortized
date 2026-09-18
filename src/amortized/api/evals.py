@@ -176,7 +176,15 @@ class _Suppress:
         return True  # swallow ValueError etc.
 
 
-@router.get("")
+@router.get(
+    "",
+    operation_id="list_evaluations",
+    summary=(
+        "List completed evaluations grouped by dataset and metric set, with the"
+        " models already scored in each. Use to check whether a model was already"
+        " evaluated on a dataset before running a new eval."
+    ),
+)
 async def list_evaluations(
     db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
