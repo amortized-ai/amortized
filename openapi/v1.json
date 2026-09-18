@@ -3387,13 +3387,13 @@
           "provider": {
             "type": "string",
             "title": "Provider",
-            "description": "Model provider (e.g. openai, anthropic)",
+            "description": "Provider a job uses to reach the model \u2014 'gateway' for gateway-served models, else the direct provider (e.g. openai)",
             "default": ""
           },
           "model_name": {
             "type": "string",
             "title": "Model Name",
-            "description": "Underlying model (e.g. gpt-4.1-mini)",
+            "description": "Underlying model (e.g. openai/gpt-4.1-mini)",
             "default": ""
           }
         },

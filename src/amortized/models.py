@@ -132,8 +132,14 @@ class HealthResponse(BaseModel):
 
 class GatewayModel(BaseModel):
     name: str = Field(..., description="Endpoint name (use as 'model' in job config)")
-    provider: str = Field("", description="Model provider (e.g. openai, anthropic)")
-    model_name: str = Field("", description="Underlying model (e.g. gpt-4.1-mini)")
+    provider: str = Field(
+        "",
+        description=(
+            "Provider a job uses to reach the model — 'gateway' for gateway-served"
+            " models, else the direct provider (e.g. openai)"
+        ),
+    )
+    model_name: str = Field("", description="Underlying model (e.g. openai/gpt-4.1-mini)")
 
 
 class ModelsResponse(BaseModel):
