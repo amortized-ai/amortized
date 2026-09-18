@@ -287,6 +287,11 @@ was submitted — check the job's existence first if in doubt.
 
 ### Step 5 — Report results
 
+After the job is submitted, WAIT — do not hand control back to the
+orchestrator while the job runs. Its `[SYSTEM EVENT]` completion
+notification arrives in YOUR session; when it does (or on failure),
+you handle it.
+
 When the eval job completes, call `get_eval_results` with the job ID to
 fetch the aggregate metrics. Report a compact table of the model's
 scores:
@@ -309,12 +314,19 @@ numbers side by side.
 
 ### Step 6 — Signal Completion
 
-Call `signal_subagent_completion` to hand control back to the
-orchestrator. If the user expressed a next intent (e.g. "Evaluate
-another model" or "Train again"), include it in the summary as
-"User selected: ..." so the orchestrator can act on it directly.
-Do NOT instruct the orchestrator what to do — just relay the user's
-choice.
+Do NOT signal yet. After the job is submitted, stay active: the job's
+`[SYSTEM EVENT]` completion notification arrives in YOUR session, and
+Step 5 (report the scores table, then offer next steps) is your work —
+handing control back before the job finishes would hand the results
+reporting to the orchestrator, which has none of the eval context.
+
+Only after you have reported the results (Step 5) — or the job failed
+and you have explained the failure — call `signal_subagent_completion`
+to hand control back to the orchestrator. If the user expressed a next
+intent (e.g. "Evaluate another model" or "Train again"), include it in
+the summary as "User selected: ..." so the orchestrator can act on it
+directly. Do NOT instruct the orchestrator what to do — just relay the
+user's choice.
 
 ## Delegating to the SDG Agent
 
