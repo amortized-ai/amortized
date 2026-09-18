@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -16,10 +17,22 @@ import { useModelProvider, useSetModelProvider } from "../api/use-model-provider
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
+  vertex: "Vertex (ADC)",
 }
 
 function label(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider
+}
+
+// Vertex is ADC-only: its credential is a Google application-default-credentials JSON
+// blob (a multi-line file), not a single-line key string.
+function isValidAdcJson(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value) as { type?: unknown }
+    return !!parsed && typeof parsed === "object" && typeof parsed.type === "string"
+  } catch {
+    return false
+  }
 }
 
 export function ModelProviderCard() {
@@ -36,6 +49,8 @@ export function ModelProviderCard() {
   const providers = status.providers.length > 0 ? status.providers : ["openai", "anthropic"]
   const current = status.provider
   const selected = selection ?? current ?? providers[0] ?? "openai"
+  const isAdc = selected === "vertex"
+  const keyValid = isAdc ? isValidAdcJson(key) : key.trim().length >= 8
 
   function handleSave() {
     save.mutate(
@@ -94,36 +109,60 @@ export function ModelProviderCard() {
             </SelectContent>
           </Select>
 
-          <div className="flex flex-1 items-center gap-2">
-            <Input
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              placeholder={current ? "Enter a new API key…" : "Paste your API key…"}
-              type={showKey ? "text" : "password"}
-              autoComplete="off"
-              spellCheck={false}
-              className="flex-1 font-mono text-xs h-8"
-              data-testid="model-provider-key"
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setShowKey(!showKey)}
-              aria-label={showKey ? "Hide key" : "Show key"}
-            >
-              {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs"
-              onClick={handleSave}
-              disabled={key.trim().length < 8 || save.isPending}
-              data-testid="model-provider-save"
-            >
-              {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? "Update" : "Save"}
-            </Button>
-          </div>
+          {isAdc ? (
+            <div className="flex flex-1 flex-col gap-2">
+              <Textarea
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="Paste your Vertex ADC JSON (application_default_credentials.json)"
+                autoComplete="off"
+                spellCheck={false}
+                rows={8}
+                className="flex-1 font-mono text-xs"
+                data-testid="model-provider-key"
+              />
+              <Button
+                size="sm"
+                className="h-8 self-end text-xs"
+                onClick={handleSave}
+                disabled={!keyValid || save.isPending}
+                data-testid="model-provider-save"
+              >
+                {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? "Update" : "Save"}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center gap-2">
+              <Input
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder={current ? "Enter a new API key…" : "Paste your API key…"}
+                type={showKey ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 font-mono text-xs h-8"
+                data-testid="model-provider-key"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? "Hide key" : "Show key"}
+              >
+                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                onClick={handleSave}
+                disabled={!keyValid || save.isPending}
+                data-testid="model-provider-save"
+              >
+                {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : current ? "Update" : "Save"}
+              </Button>
+            </div>
+          )}
         </div>
 
         {save.isError && (
