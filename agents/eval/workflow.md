@@ -272,6 +272,15 @@ model evaluated on the same dataset with the same metric set appears
 as a column there — point the user to it when they want to compare
 numbers side by side.
 
+### Step 6 — Signal Completion
+
+Call `signal_subagent_completion` to hand control back to the
+orchestrator. If the user expressed a next intent (e.g. "Evaluate
+another model" or "Train again"), include it in the summary as
+"User selected: ..." so the orchestrator can act on it directly.
+Do NOT instruct the orchestrator what to do — just relay the user's
+choice.
+
 ## Delegating to the SDG Agent
 
 You can hand the conversation to the SDG agent when a held-out eval

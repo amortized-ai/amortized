@@ -108,8 +108,8 @@ contextual next steps via `present_options`:
   `resume: false` (fresh workflow)
 
 **After evaluation:**
-- "View results" — handle directly (report win-rate and metric
-  comparisons from the eval job)
+- "View results" — handle directly (report rubric criterion scores
+  and cross-model comparisons from the eval job)
 - "Train again" — delegate to training agent
 - "Start over" — delegate to SDG agent with `resume: false`
 

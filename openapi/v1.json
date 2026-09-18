@@ -580,7 +580,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Get aggregate eval metrics for a completed eval job: per-model exact_match/format_validity/error rates and the judge win-rate.",
+        "summary": "Get aggregate eval metrics for a completed eval job: per-model rubric criterion scores and job-health diagnostics (error and empty rates).",
         "description": "Return the parsed eval_results/metrics.json for an eval job.",
         "operationId": "get_eval_results",
         "parameters": [

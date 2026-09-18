@@ -826,7 +826,8 @@ async def get_job_artifacts(
     operation_id="get_eval_results",
     summary=(
         "Get aggregate eval metrics for a completed eval job: per-model"
-        " exact_match/format_validity/error rates and the judge win-rate."
+        " rubric criterion scores and job-health diagnostics (error and"
+        " empty rates)."
     ),
 )
 async def get_eval_results(
