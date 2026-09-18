@@ -32,11 +32,18 @@ class Repository:
         parent_job_id: str = "",
         user_id: str = "",
         k8s_namespace: str = "",
+        request_config: dict[str, Any] | None = None,
+        retry_of: str = "",
     ) -> dict[str, Any]:
+        # request_config is the pre-dispatch snapshot the worker never
+        # touches (it overwrites jobs.config with resolved/injected
+        # fields) — retry_job clones from it verbatim.
+        snapshot = request_config if request_config is not None else dict(config)
         await self.conn.execute(
             """INSERT INTO jobs
-               (id, type, status, config, recipe, parent_job_id, user_id, created_at, k8s_namespace)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)""",
+               (id, type, status, config, recipe, parent_job_id, user_id,
+                created_at, k8s_namespace, request_config, retry_of)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
@@ -46,6 +53,8 @@ class Repository:
             user_id,
             _parse_ts(created_at),
             k8s_namespace,
+            json.dumps(snapshot),
+            retry_of,
         )
         result = await self.get_job(job_id)
         assert result is not None
@@ -137,8 +146,12 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
-        # Exclude dataset uploads — they are processed by the API layer, not the worker
-        dataset_filter = """AND NOT (type = 'upload' AND config @> '{"source": "upload"}')"""
+        # Exclude dataset uploads and splits — they are processed by the
+        # API layer, not the worker (document upload jobs have no source
+        # key and remain worker-side)
+        dataset_filter = (
+            """AND NOT (type = 'upload' AND config->>'source' IN ('upload', 'split'))"""
+        )
         if k8s_namespace:
             query = f"""UPDATE jobs SET status = $1
                        WHERE id = (

@@ -13,6 +13,7 @@ class JobType(StrEnum):
     sdg = "sdg"
     upload = "upload"
     eval = "eval"
+    serve = "serve"
 
 
 class JobStatus(StrEnum):
@@ -45,6 +46,14 @@ class TrainingJobConfig(BaseModel):
     model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
     data_path: str | None = Field(
         None, description="Path to training data (resolved from parent if chaining)"
+    )
+    data_run_id: str = Field(
+        "",
+        description=(
+            "MLflow run holding the training dataset (generated_data artifact)"
+            " — e.g. an uploaded dataset or a split. Alternative to"
+            " parent_job_id; the worker downloads it and sets data_path"
+        ),
     )
     output_dir: str | None = Field(None, description="Output directory")
     learning_rate: float | None = Field(None, description="Learning rate")
@@ -95,6 +104,7 @@ class Job(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
     completed_at: str | None = None
+    retry_of: str = ""
 
 
 class ValidatedJobConfig(BaseModel):
@@ -122,8 +132,14 @@ class HealthResponse(BaseModel):
 
 class GatewayModel(BaseModel):
     name: str = Field(..., description="Endpoint name (use as 'model' in job config)")
-    provider: str = Field("", description="Model provider (e.g. openai, anthropic)")
-    model_name: str = Field("", description="Underlying model (e.g. gpt-4.1-mini)")
+    provider: str = Field(
+        "",
+        description=(
+            "Provider a job uses to reach the model — 'gateway' for gateway-served"
+            " models, else the direct provider (e.g. openai)"
+        ),
+    )
+    model_name: str = Field("", description="Underlying model (e.g. openai/gpt-4.1-mini)")
 
 
 class ModelsResponse(BaseModel):
@@ -312,3 +328,185 @@ class SDGJobRequest(BaseModel):
             raise ValueError(msg)
 
         return self
+
+
+# ---------------------------------------------------------------------------
+# Eval job models — compare two model endpoints on an eval dataset
+# ---------------------------------------------------------------------------
+
+
+class EvalEndpoint(BaseModel):
+    base_url: str = Field(
+        ...,
+        min_length=1,
+        description="OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)",
+    )
+    model: str = Field(
+        ...,
+        min_length=1,
+        description="Model name sent as 'model' in chat completion requests",
+    )
+    api_key: str = Field(
+        "",
+        description=(
+            "Optional bearer token. Never echoed in API responses;"
+            " scrubbed from the DB once the job is dispatched."
+        ),
+    )
+
+
+class EvalRubricCriterion(BaseModel):
+    name: str = Field(
+        ...,
+        min_length=1,
+        description="Short criterion name, e.g. 'factual_accuracy' (used as the results key)",
+    )
+    description: str = Field(
+        ...,
+        min_length=1,
+        description="One sentence telling the judge what to check for this criterion",
+    )
+
+
+class EvalJobConfig(BaseModel):
+    model_config = {"extra": "allow"}
+
+    rubric: list[EvalRubricCriterion] = Field(
+        default_factory=list,
+        description=(
+            "Custom judge criteria, designed with the user. The LLM judge scores"
+            " the model's response against the reference answer on each criterion"
+            " (absolute 0-1), averaged over the dataset."
+        ),
+    )
+    endpoint: EvalEndpoint | None = Field(
+        None,
+        description=(
+            "External OpenAI-compatible endpoint serving the model to evaluate"
+            " (e.g. a gateway model). When omitted, set training_job_id or"
+            " model_name_or_path and the eval job serves the model itself."
+        ),
+    )
+    training_job_id: str = Field(
+        "",
+        description=(
+            "Training job whose tuned model to evaluate. The eval job serves"
+            " the model itself (vLLM inside the job) and stops when scores"
+            " are computed. Takes precedence over model_name_or_path."
+        ),
+    )
+    model_name_or_path: str = Field(
+        "",
+        description=(
+            "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate."
+            " The eval job serves the model itself."
+        ),
+    )
+    served_model_name: str = Field(
+        "",
+        description=(
+            "Name passed as 'model' in requests. Defaults to the training"
+            " job's model_display_name (tuned models) or model_name_or_path."
+        ),
+    )
+    judge: EvalEndpoint | None = Field(
+        None,
+        description=(
+            "Optional LLM-as-judge endpoint for scoring free-form outputs"
+            " against the reference answer"
+        ),
+    )
+    max_samples: int = Field(
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max eval samples to run; 0 (default) evaluates ALL records"
+            " in the dataset — set lower only to bound eval time/cost"
+        ),
+    )
+    judge_max_samples: int = Field(
+        0,
+        ge=0,
+        le=10000,
+        description=(
+            "Max samples for LLM-judge scoring; 0 (default) judges ALL samples"
+            " — set lower only to cap judge cost/latency"
+        ),
+    )
+    temperature: float = Field(0.0, description="Sampling temperature for evaluated endpoints")
+    eval_data_run_id: str = Field(
+        "",
+        description=(
+            "MLflow run ID holding the eval dataset (alternative to parent_job_id). "
+            "Use with datasets uploaded via /api/v1/datasets."
+        ),
+    )
+    topic: str = Field("", description="1-5 word eval topic for tracking")
+
+    @model_validator(mode="after")
+    def check_model_source(self) -> "EvalJobConfig":
+        """Fail at the boundary (like TrainingJobConfig) — a config with no
+        model to evaluate would otherwise validate, create a job, and only
+        fail at dispatch."""
+        # Legacy configs evaluated two endpoints via endpoint_base/endpoint_tuned
+        # (extra fields) — still a valid model source.
+        legacy = self.model_extra or {}
+        has_legacy_endpoint = any(
+            isinstance(legacy.get(k), dict) and legacy.get(k)
+            for k in ("endpoint_base", "endpoint_tuned")
+        )
+        if not (
+            self.endpoint
+            or has_legacy_endpoint
+            or str(self.training_job_id).strip()
+            or str(self.model_name_or_path).strip()
+        ):
+            msg = (
+                "eval jobs require a model source: endpoint (external"
+                " OpenAI-compatible endpoint), training_job_id (tuned model"
+                " to serve in-job), or model_name_or_path (HF id / local"
+                " path to serve in-job)"
+            )
+            raise ValueError(msg)
+        return self
+
+
+class EvalJobRequest(EvalJobConfig):
+    parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
+
+
+# ---------------------------------------------------------------------------
+# Dataset splits — materialized subsets of an existing dataset run
+# ---------------------------------------------------------------------------
+
+
+class DatasetSplitRequest(BaseModel):
+    """Split a dataset run into a portion (+ optionally its complement).
+
+    Both outputs are materialized as new dataset runs (full copies of the
+    selected rows), so they are immutable, self-contained, and consumable
+    by anything that takes a dataset run id (eval_data_run_id, training
+    data_run_id).
+    """
+
+    count: int = Field(
+        0, ge=0, description="Portion size in records (mutually exclusive with fraction)"
+    )
+    fraction: float = Field(
+        0.0, ge=0.0, le=1.0, description="Portion size as a fraction of the dataset"
+    )
+    strategy: Literal["random", "head", "tail"] = Field(
+        "random", description="How rows are selected for the portion"
+    )
+    seed: int = Field(42, ge=0, description="Random seed (strategy=random) for determinism")
+    name: str = Field("", description="Label for the portion dataset (default: derived)")
+    create_complement: bool = Field(
+        True,
+        description=(
+            "Also materialize the remaining rows as a second dataset (the train/eval two-way split)"
+        ),
+    )
+    complement_name: str = Field(
+        "", description="Label for the complement dataset (default: derived)"
+    )

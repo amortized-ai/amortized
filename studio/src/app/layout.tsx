@@ -13,6 +13,7 @@ import {
   Moon,
   Bot,
   PanelRightClose,
+  ClipboardCheck,
 } from "lucide-react"
 import {
   Sidebar,
@@ -52,6 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Datasets", path: "/datasets", icon: Database },
   { label: "Documents", path: "/documents", icon: FileText },
   { label: "Models", path: "/models", icon: Box },
+  { label: "Evaluation", path: "/evaluation", icon: ClipboardCheck },
   { label: "Recipes", path: "/recipes", icon: BookOpen },
   { label: "Settings", path: "/settings", icon: Settings },
 ]

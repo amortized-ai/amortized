@@ -27,6 +27,7 @@ async def create_job(
     recipe: str = "",
     parent_job_id: str = "",
     user_id: str = "",
+    retry_of: str = "",
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
@@ -47,6 +48,7 @@ async def create_job(
         parent_job_id=parent_job_id,
         user_id=user_id,
         k8s_namespace=_settings.compute_namespace,
+        retry_of=retry_of,
     )
 
     logger.info("Created %s job %s", job_type.value, job_id)

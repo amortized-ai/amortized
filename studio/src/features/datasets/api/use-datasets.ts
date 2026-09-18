@@ -62,6 +62,13 @@ export function useDatasets() {
   })
 }
 
+/** Fetch a single dataset record by MLflow run id (works even for
+ *  soft-deleted runs, which listDatasets omits). */
+export async function fetchDatasetByRun(runId: string): Promise<DatasetRecord> {
+  const resp = await getMlflowRun(runId)
+  return runToDataset(resp.run)
+}
+
 export function useDataset(runId: string | null) {
   return useQuery<DatasetRecord>({
     queryKey: ["mlflow", "datasets", runId],

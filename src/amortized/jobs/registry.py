@@ -21,4 +21,8 @@ def get_builder(job_type: str) -> ModuleType | None:
         from amortized.jobs import upload
 
         return upload
+    if job_type == JobType.eval.value:
+        from amortized.jobs import eval as eval_builder
+
+        return eval_builder
     return None

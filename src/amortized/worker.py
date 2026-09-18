@@ -248,6 +248,7 @@ async def _run_job(job: dict[str, Any]) -> None:
         JobType.training.value: "training_output",
         JobType.sdg.value: "sdg_output",
         JobType.upload.value: "upload_output",
+        JobType.eval.value: "eval_output",
     }
     dir_name = output_dir_names.get(job_type, f"{job_type}_output")
     base_dir = str(config_mod.settings.data_dir / dir_name)
@@ -319,7 +320,11 @@ async def _run_job(job: dict[str, Any]) -> None:
             mlflow_run_created = True
             spec_env["MLFLOW_RUN_ID"] = mlflow_run_id
             await _update_job(job_id, mlflow_run_id=mlflow_run_id)
-        elif job_type in (JobType.sdg.value, JobType.upload.value):
+        elif job_type in (
+            JobType.sdg.value,
+            JobType.upload.value,
+            JobType.eval.value,
+        ):
             await _update_job(
                 job_id,
                 status=JobStatus.failed.value,
@@ -387,6 +392,8 @@ async def _run_job(job: dict[str, Any]) -> None:
         job_type=job_type,
         user_id=job.get("user_id", ""),
         resources=result.resources,
+        ports=result.ports,
+        run_as_non_root=result.run_as_non_root,
     )
 
     logger.info("Submitting job %s to backend %r", job_id, backend_name)
@@ -455,6 +462,19 @@ async def _run_job(job: dict[str, Any]) -> None:
             )
             logger.info("Job %s was cancelled", job_id)
         else:
+            if status.reclaim and hasattr(backend, "cancel"):
+                # The backend resource is stuck (never finishes on its
+                # own — e.g. a pod in ImagePullBackoff), so the cluster's
+                # TTL cleanup will never fire for it. Delete it now or
+                # the Job and its GPU quota reservation leak.
+                try:
+                    await backend.cancel(handle)
+                except Exception:
+                    logger.warning(
+                        "Failed to reclaim stuck backend resource for job %s",
+                        job_id,
+                        exc_info=True,
+                    )
             await _finish_mlflow_run(mlflow_run_id, "FAILED")
             error_msg = status.error or (
                 f"Job '{job_id}' failed on backend '{backend_name}'"

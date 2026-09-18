@@ -24,6 +24,13 @@ class JobBuildResult:
     resolved_config: dict[str, Any] = field(default_factory=dict)
     pre_commands: list[str] = field(default_factory=list)
     post_commands: list[str] = field(default_factory=list)
+    ports: dict[int, int] = field(default_factory=dict)
+    """Container ports to expose via a Service (long-running jobs)."""
+    run_as_non_root: bool = False
+    """Assert the pod runs as a non-root user. Only set by builders whose
+    image has a numeric non-root USER (eval). The sdg/training images run
+    as root, so this stays False for them — a global runAsNonRoot would
+    make those pods fail to start (CreateContainerConfigError)."""
 
 
 class JobBuilder(Protocol):

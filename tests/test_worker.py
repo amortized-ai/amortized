@@ -241,6 +241,44 @@ class TestResolveParentArtifacts:
         )
 
     @pytest.mark.asyncio
+    async def test_data_run_id_chains_data_path(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        # No parent job — training references a dataset run directly
+        # (uploaded dataset or materialized split).
+        training_job = {"id": "training-1", "type": "training"}
+        config: dict[str, object] = {
+            "algorithm": "sft",
+            "model_name_or_path": "test/model",
+            "data_run_id": "dataset-run-xyz",
+        }
+
+        with patch("amortized.db.connection.get_pool") as mock_pool:
+            mock_pool.assert_not_called()
+            result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
+
+        assert result_config["data_path"] == "/amortized/work/data/generated_data"
+        assert len(pre_commands) == 1
+        assert pre_commands[0] == (
+            "mlflow artifacts download -r dataset-run-xyz -a generated_data -d /amortized/work/data"
+        )
+
+    @pytest.mark.asyncio
+    async def test_explicit_data_path_wins_over_data_run_id(self) -> None:
+        from amortized.worker import _resolve_parent_artifacts
+
+        training_job = {"id": "training-1", "type": "training"}
+        config: dict[str, object] = {
+            "algorithm": "sft",
+            "data_run_id": "dataset-run-xyz",
+            "data_path": "/custom/data.jsonl",
+        }
+
+        result_config, pre_commands = await _resolve_parent_artifacts(training_job, config)
+        assert result_config["data_path"] == "/custom/data.jsonl"
+        assert pre_commands == []
+
+    @pytest.mark.asyncio
     async def test_no_parent_returns_unchanged(self) -> None:
         from amortized.worker import _resolve_parent_artifacts
 

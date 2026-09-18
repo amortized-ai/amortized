@@ -18,7 +18,7 @@ import {
   EmptyDescription,
   EmptyContent,
 } from "@/components/ui/empty"
-import { Briefcase, ArrowRight, GraduationCap, Sparkles, Upload } from "lucide-react"
+import { Briefcase, ArrowRight, ClipboardCheck, GraduationCap, Sparkles, Upload } from "lucide-react"
 import { SearchInput } from "@/components/search-input"
 import type { Job, JobType, JobStatus } from "@/types/api"
 
@@ -26,6 +26,7 @@ const TYPE_OPTIONS = [
   { value: "sdg" as JobType, label: "SDG", color: TYPE_COLORS.sdg },
   { value: "training" as JobType, label: "Training", color: TYPE_COLORS.training },
   { value: "upload" as JobType, label: "Upload", color: TYPE_COLORS.upload },
+  { value: "eval" as JobType, label: "Eval", color: TYPE_COLORS.eval },
 ]
 
 const STATUS_OPTIONS = [
@@ -67,7 +68,8 @@ export default function JobsPage() {
   }, [searchParams, setSearchParams])
 
   const filteredJobs = useMemo(() => {
-    let result = jobs
+    // Serve jobs are internal eval-time endpoints, not user-facing jobs
+    let result = jobs.filter((j) => j.type !== "serve")
     if (typeFilter.length > 0) {
       result = result.filter((j) => typeFilter.includes(j.type))
     }
@@ -98,7 +100,7 @@ export default function JobsPage() {
         <PageHeader title="Jobs" description="Track your training, data generation, and upload runs" />
 
         <div className="animate-message-in rounded-xl border bg-card p-4">
-          <div className="grid gap-3 md:grid-cols-3 mb-3">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4 mb-3">
             <div className="flex items-start gap-2.5">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#ece6ff] text-[#5e40be] dark:bg-[#1b0d33]/40 dark:text-[#876fd4]">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -124,6 +126,15 @@ export default function JobsPage() {
               <div>
                 <p className="text-sm font-medium">Upload</p>
                 <p className="text-xs text-muted-foreground">Upload documents and datasets</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#fce7f3] text-[#9d174d] dark:bg-[#500724]/40 dark:text-[#f472b6]">
+                <ClipboardCheck className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Eval</p>
+                <p className="text-xs text-muted-foreground">Score models against datasets and rubrics</p>
               </div>
             </div>
           </div>

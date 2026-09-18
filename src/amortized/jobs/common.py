@@ -64,11 +64,32 @@ async def resolve_parent_artifacts(
     The caller must place pre_commands into ``JobBuildResult.pre_commands``.
     """
     parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
-    if not parent_job_id:
-        return config, []
 
     from amortized.db.connection import get_pool
     from amortized.db.repository import Repository
+    from amortized.models import JobType
+
+    # A direct dataset run reference (uploaded dataset or split) works
+    # without a parent job — mirror the parent-based download below.
+    if not parent_job_id:
+        data_run_id = str(config.get("data_run_id", "") or "")
+        if job["type"] == JobType.training.value and data_run_id and not config.get("data_path"):
+            local_dir = "/amortized/work/data"
+            config = dict(config)
+            config["data_path"] = f"{local_dir}/generated_data"
+            download_cmd = (
+                f"mlflow artifacts download"
+                f" -r {shlex.quote(data_run_id)}"
+                f" -a generated_data"
+                f" -d {shlex.quote(local_dir)}"
+            )
+            logger.info(
+                "Will download training data from MLflow run %s to %s",
+                data_run_id,
+                local_dir,
+            )
+            return config, [download_cmd]
+        return config, []
 
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
@@ -85,7 +106,6 @@ async def resolve_parent_artifacts(
 
     pre_commands: list[str] = []
     config = dict(config)
-    from amortized.models import JobType
 
     if job["type"] == JobType.training.value and parent["type"] in ("sdg", "upload"):
         existing = config.get("data_path", "")
@@ -104,5 +124,20 @@ async def resolve_parent_artifacts(
                 parent_run_id,
                 local_dir,
             )
+    elif job["type"] == JobType.eval.value and parent["type"] in ("sdg", "upload"):
+        local_dir = "/amortized/work/eval_data"
+        pre_cmd = (
+            f"mlflow artifacts download"
+            f" -r {shlex.quote(parent_run_id)}"
+            f" -a generated_data"
+            f" -d {shlex.quote(local_dir)}"
+        )
+        pre_commands.append(pre_cmd)
+        config["eval_data_path"] = f"{local_dir}/generated_data"
+        logger.info(
+            "Will download eval data from MLflow run %s to %s",
+            parent_run_id,
+            local_dir,
+        )
 
     return config, pre_commands

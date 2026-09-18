@@ -72,6 +72,10 @@ class SessionState:
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     completed_subagents: dict[str, str] = field(default_factory=dict)
+    # (target, opencode_session_id) pairs for subagents that delegated to
+    # another subagent (e.g. eval → sdg). When the delegate completes,
+    # control returns to the delegating subagent, not the orchestrator.
+    subagent_stack: list[tuple[str, str]] = field(default_factory=list)
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     turns: dict[str, TurnState] = field(default_factory=dict)
     turn_order: list[str] = field(default_factory=list)
@@ -193,7 +197,7 @@ def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-_VALID_TARGETS = {"sdg", "training"}
+_VALID_TARGETS = {"sdg", "training", "eval"}
 
 
 def _detect_delegation(parts: list[dict[str, Any]]) -> tuple[str, str, bool] | None:
@@ -537,6 +541,7 @@ async def _handle_subagent_message(
             logger.warning("Subagent session gone, tearing down: session=%s", session_id)
             state.subagent_id = None
             state.subagent_target = None
+            state.subagent_stack.clear()
         raise
     except Exception:
         logger.exception("Subagent message failed: session=%s", session_id)
@@ -552,22 +557,79 @@ async def _handle_subagent_message(
         state.subagent_id = None
         state.subagent_target = None
 
-        resume_prompt = (
-            f"[SUBAGENT COMPLETED]\n{summary}\n\n"
-            "REQUIRED: You MUST either delegate_to_subagent (if the user "
-            "already expressed intent) or call present_options with next "
-            "steps. Do NOT respond with only text."
-        )
-        morty_result = await _orchestrator_turn(state, resume_prompt, body)
-        delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
-        resume_result = await _maybe_delegate(
-            state, session_id, delegation, resume_prompt, morty_result, body
-        )
+        if state.subagent_stack:
+            # A subagent delegated to this one (e.g. eval → sdg). Return
+            # control to the delegating subagent with the summary so it can
+            # continue its own workflow with full context.
+            resume_result = await _resume_parent_subagent(state, summary, body)
+        else:
+            resume_prompt = (
+                f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+                "REQUIRED: You MUST either delegate_to_subagent (if the user "
+                "already expressed intent) or call present_options with next "
+                "steps. Do NOT respond with only text."
+            )
+            morty_result = await _orchestrator_turn(state, resume_prompt, body)
+            delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
+            resume_result = await _maybe_delegate(
+                state, session_id, delegation, resume_prompt, morty_result, body
+            )
         response_parts = _strip_internal_tools(result.get("parts", []))
-        result["parts"] = response_parts + resume_result.get("parts", [])
+        result["parts"] = response_parts + _strip_internal_tools(resume_result.get("parts", []))
         result["info"] = resume_result.get("info", result.get("info", {}))
+        return result
+
+    # A subagent may itself delegate (e.g. the eval agent hands off to the
+    # SDG agent to build a held-out eval set). Honor it: stash the current
+    # subagent on the stack so control returns here when the new one
+    # completes, then route to the new subagent.
+    delegation = _detect_delegation(latest_parts)
+    if delegation:
+        target, _, _ = delegation
+        logger.info(
+            "Subagent delegation: session=%s %s → %s",
+            session_id, state.subagent_target, target,
+        )
+        state.subagent_stack.append((state.subagent_target, state.subagent_id))  # type: ignore[arg-type]
+        sub_result = await _maybe_delegate(state, session_id, delegation, user_text, result, body)
+        response_parts = _strip_internal_tools(result.get("parts", []))
+        sub_result["parts"] = response_parts + _strip_internal_tools(sub_result.get("parts", []))
+        return sub_result
 
     return result
+
+
+async def _resume_parent_subagent(
+    state: SessionState,
+    summary: str,
+    body: MessageRequest,
+) -> dict[str, Any]:
+    """Hand control back to the subagent that delegated, with the summary."""
+    parent_target, parent_id = state.subagent_stack.pop()
+    logger.info("Returning to parent subagent: target=%s", parent_target)
+    state.subagent_id = parent_id
+    state.subagent_target = parent_target
+
+    resume_prompt = (
+        f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+        "The delegated workflow finished. Continue your own workflow with "
+        "this result — do not restart it or re-ask the user for information "
+        "you already have."
+    )
+    parent_result = await _proxy_send_message(
+        parent_id,
+        resume_prompt,
+        agent=parent_target,
+        model=body.model
+    )
+
+    # The parent may delegate again (e.g. on to another workflow); honor it
+    # the same way as the initial subagent delegation.
+    delegation = _detect_delegation(await _fetch_all_assistant_parts(parent_id))
+    if delegation:
+        state.subagent_stack.append((parent_target, parent_id))
+        return await _maybe_delegate(state, "", delegation, resume_prompt, parent_result, body)
+    return parent_result
 
 
 async def _orchestrator_turn(
@@ -576,6 +638,13 @@ async def _orchestrator_turn(
     body: MessageRequest,
 ) -> dict[str, Any]:
     return await _proxy_send_message(state.orchestrator_id, text, agent="morty", model=body.model)
+
+
+# A subagent may hand off to another subagent (e.g. eval → sdg), which
+# may hand off again. Bound the chain: each level holds an opencode
+# session open, and an agent stuck in a delegate loop would otherwise
+# grow the stack without limit.
+MAX_SUBAGENT_DEPTH = 4
 
 
 async def _maybe_delegate(
@@ -590,6 +659,25 @@ async def _maybe_delegate(
         return morty_result
 
     target, context, resume = delegation
+
+    if len(state.subagent_stack) >= MAX_SUBAGENT_DEPTH:
+        logger.warning(
+            "Subagent delegation depth limit reached: session=%s depth=%d",
+            session_id, len(state.subagent_stack),
+        )
+        return {
+            "info": morty_result.get("info", {}),
+            "parts": [
+                {
+                    "type": "text",
+                    "text": (
+                        "I can't hand this off further — the workflow has"
+                        " nested too many agents. Let's continue here"
+                        " instead of delegating again."
+                    ),
+                }
+            ],
+        }
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 

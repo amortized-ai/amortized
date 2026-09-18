@@ -294,6 +294,17 @@ class MLflowClient:
             if resp.status_code != 404:
                 resp.raise_for_status()
 
+    async def restore_run(self, run_id: str) -> None:
+        """Restore a soft-deleted run. Silently ignores 404 (permanently
+        deleted or already active)."""
+        async with self._client() as client:
+            resp = await client.post(
+                self._url("/api/2.0/mlflow/runs/restore"),
+                json={"run_id": run_id},
+            )
+            if resp.status_code != 404:
+                resp.raise_for_status()
+
     async def set_tag(self, run_id: str, key: str, value: str) -> None:
         """Set a tag on a run."""
         async with self._client() as client:
@@ -419,18 +430,25 @@ class MLflowClient:
         endpoints = await self.list_gateway_endpoints()
         models: list[dict[str, str]] = []
         for ep in endpoints:
-            provider = ""
             model_name = ""
             for mapping in ep.get("model_mappings", []):
                 model_def = mapping.get("model_definition", {})
                 if model_def:
-                    provider = model_def.get("provider", "")
                     model_name = model_def.get("model_name", "")
                     break
             models.append(
                 {
                     "name": ep.get("name", ""),
-                    "provider": provider,
+                    # A model discovered via the gateway is served THROUGH the
+                    # gateway, so the provider a job uses to reach it is the
+                    # data-designer's builtin "gateway" provider — not the
+                    # endpoint's underlying type (e.g. "openai"). The underlying
+                    # provider/model stays in model_name ("openai/gpt-oss-120b").
+                    # This keeps the SDG skill's <from-list_models> resolvable on
+                    # gateway-only clusters; direct-key environments have no
+                    # gateway endpoints and fall back to enabled_models() with
+                    # the real provider.
+                    "provider": "gateway",
                     "model_name": model_name,
                 }
             )

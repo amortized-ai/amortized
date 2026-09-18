@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from amortized.api import agent, artifacts, costs, datasets, documents, jobs, recipes, schemas, ui
+from amortized.api import eval as eval_api
+from amortized.api import evals as evaluations_api
 from amortized.api import models as models_api
 from amortized.backends.local import LocalBackend
 from amortized.config import settings as _settings
@@ -234,6 +236,8 @@ app.include_router(costs.router)
 app.include_router(datasets.router)
 app.include_router(documents.router)
 app.include_router(artifacts.router)
+app.include_router(eval_api.router)
+app.include_router(evaluations_api.router)
 app.include_router(models_api.router)
 app.include_router(schemas.router)
 app.include_router(ui.router)
@@ -268,6 +272,14 @@ def _detect_gpu() -> dict[str, object]:
         "devices": [],
         "note": "torch not installed; nvidia-smi " + ("found" if nvidia_smi else "not found"),
     }
+
+
+def _quota_int(value: object) -> int:
+    """Parse a k8s quota quantity (e.g. "2") to int, 0 on failure."""
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 @app.get("/api/v1/health", response_model=HealthResponse, operation_id="health")

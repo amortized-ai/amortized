@@ -49,9 +49,45 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
   return rows
 }
 
+function extractEvalSummary(config: Record<string, unknown>): [string, string][] {
+  const rows: [string, string][] = []
+
+  // Current configs use `endpoint` (single model under evaluation);
+  // endpoint_base/endpoint_tuned are the legacy two-model form.
+  const endpointModel = (config.endpoint as Record<string, unknown> | undefined)?.model
+  const baseModel = (config.endpoint_base as Record<string, unknown> | undefined)?.model
+  const tunedModel = (config.endpoint_tuned as Record<string, unknown> | undefined)?.model
+  if (endpointModel) rows.push(["Model", String(endpointModel)])
+  if (baseModel) rows.push(["Base model", String(baseModel)])
+  if (tunedModel) rows.push(["Tuned model", String(tunedModel)])
+  if (config.training_job_id) rows.push(["Training job", String(config.training_job_id).slice(0, 8)])
+  if (config.model_name_or_path && !endpointModel) rows.push(["Model", String(config.model_name_or_path)])
+  if (config.eval_data_run_id) rows.push(["Eval data run", String(config.eval_data_run_id).slice(0, 8)])
+  const rubric = config.rubric as { name?: string }[] | undefined
+  if (rubric?.length) rows.push(["Rubric", rubric.map((c) => c.name).join(", ")])
+  if (config.max_samples) rows.push(["Max samples", String(config.max_samples)])
+
+  return rows
+}
+
+function extractServeSummary(config: Record<string, unknown>): [string, string][] {
+  const rows: [string, string][] = []
+
+  if (config.training_job_id)
+    rows.push(["Training job", String(config.training_job_id).slice(0, 8)])
+  if (config.model_name_or_path) rows.push(["Model", String(config.model_name_or_path)])
+  if (config.served_model_name) rows.push(["Served name", String(config.served_model_name)])
+  if (config.nproc_per_node) rows.push(["GPUs", String(config.nproc_per_node)])
+  if (config.max_model_len) rows.push(["Max model len", String(config.max_model_len)])
+
+  return rows
+}
+
 function extractConfigSummary(jobType: string | undefined, config: Record<string, unknown>): [string, string][] {
   if (jobType === "sdg") return extractSdgSummary(config)
   if (jobType === "training") return extractTrainingSummary(config)
+  if (jobType === "eval") return extractEvalSummary(config)
+  if (jobType === "serve") return extractServeSummary(config)
 
   const rows: [string, string][] = []
   for (const [key, value] of Object.entries(config)) {

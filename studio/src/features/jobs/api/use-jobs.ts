@@ -9,11 +9,14 @@ import {
   getJob,
   cancelJob,
   deleteJob,
+  retryJob,
   getJobLogs,
+  getEvalResults,
   getMlflowRun,
   getMlflowMetricHistory,
 } from "@/lib/api-client"
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
+import type { EvalResults } from "@/lib/api-client"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
 
 const ACTIVE_STATUSES = new Set(["queued", "provisioning", "running"])
@@ -79,6 +82,23 @@ export function useCancelJob() {
   })
 }
 
+export function useRetryJob() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (jobId: string) => retryJob(jobId),
+    onSuccess: (newJob) => {
+      toast.success(`Retrying as new job ${newJob.id.slice(0, 8)}`)
+    },
+    onError: (err) => {
+      toast.error(`Failed to retry job: ${err instanceof Error ? err.message : "Unknown error"}`)
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] })
+    },
+  })
+}
+
 export function useDeleteJob() {
   const queryClient = useQueryClient()
   const removeName = useEntityNamesStore((s) => s.removeName)
@@ -104,6 +124,14 @@ export function useJobLogs(jobId: string | null, isActive = false) {
     queryFn: () => getJobLogs(jobId!),
     enabled: !!jobId,
     refetchInterval: isActive ? 5000 : false,
+  })
+}
+
+export function useEvalResults(jobId: string | null, enabled = false) {
+  return useQuery<EvalResults | null>({
+    queryKey: ["jobs", jobId, "eval-results"],
+    queryFn: () => getEvalResults(jobId!),
+    enabled: !!jobId && enabled,
   })
 }
 

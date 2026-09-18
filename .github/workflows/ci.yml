@@ -66,6 +66,23 @@ jobs:
       - name: Verify OpenAPI spec is up to date
         run: git diff --exit-code openapi/v1.json
 
+      - name: Verify generated Morty prompts are not committed
+        # k8s/base/morty-*.md and the Helm morty-config/ copies are
+        # generated from agents/ via `make prompt` (gitignored) —
+        # agents/ is the single source of truth. Fail if any generated
+        # copy sneaks into the index, and fail if a committed copy (from
+        # before this rule existed) has drifted from agents/.
+        run: |
+          TRACKED=$(git ls-files k8s/base/ deploy/helm/amortized/files/ \
+            | grep -E 'morty-(prompt|identity|workflow|sdg-workflow|training-workflow|eval-workflow)\.md|morty-config/|morty-skills/' || true)
+          if [ -n "$TRACKED" ]; then
+            echo "::error::Generated Morty prompts must not be committed — run 'git rm --cached' on them. Found:"
+            echo "$TRACKED"
+            exit 1
+          fi
+          make prompt
+          git diff --exit-code -- k8s/base/ deploy/helm/
+
   studio:
     name: Studio — lint, typecheck, test, build
     runs-on: ubuntu-latest

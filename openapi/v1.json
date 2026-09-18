@@ -90,6 +90,91 @@
         }
       }
     },
+    "/api/v1/jobs/eval": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create and submit an eval job. Compares a base model endpoint against a tuned model endpoint on an eval dataset.",
+        "description": "Create a model evaluation job.",
+        "operationId": "create_eval_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a FAILED eval job by cloning its original request config verbatim (rubric text included \u2014 the new scores land in the same Evaluation tab comparison group). Only use this to re-run an eval UNCHANGED; to change anything, assemble a new config instead. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
+        "description": "Clone a failed eval job's original config into a new job.",
+        "operationId": "retry_job",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/sdg/validate": {
       "post": {
         "tags": [
@@ -191,6 +276,48 @@
                   },
                   "type": "object",
                   "title": "Response Get Job Duration Stats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/eval/validate": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Validate an eval job config and present it for user confirmation. Set parent_job_id to chain from a completed SDG job, or eval_data_run_id to use an uploaded dataset.",
+        "description": "Validate an eval job config without creating it.",
+        "operationId": "validate_eval_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidatedJobConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -431,6 +558,51 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Job Artifacts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/eval-results": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get aggregate eval metrics for a completed eval job: per-model rubric criterion scores and job-health diagnostics (error and empty rates).",
+        "description": "Return the parsed eval_results/metrics.json for an eval job.",
+        "operationId": "get_eval_results",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Results"
                 }
               }
             }
@@ -775,6 +947,59 @@
                     "additionalProperties": true
                   },
                   "title": "Response Get Dataset Samples"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/datasets/{run_id}/split": {
+      "post": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Split Dataset",
+        "description": "Materialize a portion of a dataset (and optionally its complement).\n\nCreates a new dataset run holding the selected rows \u2014 usable anywhere\na dataset run id works (eval_data_run_id for evals, data_run_id for\ntraining). With create_complement (default) this is the two-way\ntrain/eval split: the portion is typically the eval set and the\ncomplement the training set. Read both run ids from the finished\njob's config (split_run_id / complement_run_id).",
+        "operationId": "split_dataset",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetSplitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
                 }
               }
             }
@@ -1173,6 +1398,77 @@
         }
       }
     },
+    "/api/v1/eval/endpoint-suggestions": {
+      "get": {
+        "tags": [
+          "eval"
+        ],
+        "summary": "Suggest eval endpoints: model-name defaults for a training job (base from its config, tuned from its registered model) and gateway models. Eval jobs with a training_job_id or model_name_or_path serve the model themselves.",
+        "operationId": "get_eval_endpoint_suggestions",
+        "parameters": [
+          {
+            "name": "training_job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Training job ID to derive base/tuned model names from (optional)",
+              "default": "",
+              "title": "Training Job Id"
+            },
+            "description": "Training job ID to derive base/tuned model names from (optional)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Eval Endpoint Suggestions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evaluations": {
+      "get": {
+        "tags": [
+          "evaluations"
+        ],
+        "summary": "List completed evaluations grouped by dataset and metric set, with the models already scored in each. Use to check whether a model was already evaluated on a dataset before running a new eval.",
+        "description": "Eval jobs grouped by (dataset, metric set) with per-model scores.",
+        "operationId": "list_evaluations",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response List Evaluations"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models": {
       "get": {
         "tags": [
@@ -1386,7 +1682,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Delegate the conversation to a specialized workflow agent for SDG or training",
+        "summary": "Delegate the conversation to a specialized workflow agent (SDG, training, or eval)",
         "operationId": "delegate_to_subagent",
         "requestBody": {
           "content": {
@@ -2342,6 +2638,64 @@
         "title": "CustomColumnConfig",
         "description": "Configuration for custom user-defined column generators.\n\nCustom columns allow users to provide their own generation logic via a callable function\ndecorated with `@custom_column_generator`. Two strategies are supported: cell_by_cell\n(default, row-based) and full_column (batch-based with DataFrame access).\n\nAttributes:\n    generator_function (required): A callable decorated with @custom_column_generator.\n    generation_strategy: \"cell_by_cell\" (row-based) or \"full_column\" (batch-based).\n    generator_params: Optional typed configuration object (Pydantic BaseModel) passed\n        as the second argument to the generator function.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
       },
+      "DatasetSplitRequest": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count",
+            "description": "Portion size in records (mutually exclusive with fraction)",
+            "default": 0
+          },
+          "fraction": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Fraction",
+            "description": "Portion size as a fraction of the dataset",
+            "default": 0.0
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "random",
+              "head",
+              "tail"
+            ],
+            "title": "Strategy",
+            "description": "How rows are selected for the portion",
+            "default": "random"
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Seed",
+            "description": "Random seed (strategy=random) for determinism",
+            "default": 42
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Label for the portion dataset (default: derived)",
+            "default": ""
+          },
+          "create_complement": {
+            "type": "boolean",
+            "title": "Create Complement",
+            "description": "Also materialize the remaining rows as a second dataset (the train/eval two-way split)",
+            "default": true
+          },
+          "complement_name": {
+            "type": "string",
+            "title": "Complement Name",
+            "description": "Label for the complement dataset (default: derived)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "DatasetSplitRequest",
+        "description": "Split a dataset run into a portion (+ optionally its complement).\n\nBoth outputs are materialized as new dataset runs (full copies of the\nselected rows), so they are immutable, self-contained, and consumable\nby anything that takes a dataset run id (eval_data_run_id, training\ndata_run_id)."
+      },
       "DatetimeSamplerParams": {
         "properties": {
           "start": {
@@ -2390,10 +2744,11 @@
             "type": "string",
             "enum": [
               "sdg",
-              "training"
+              "training",
+              "eval"
             ],
             "title": "Target",
-            "description": "Workflow agent to delegate to: 'sdg' or 'training'"
+            "description": "Workflow agent to delegate to: 'sdg', 'training', or 'eval'"
           },
           "context": {
             "type": "string",
@@ -2817,6 +3172,151 @@
         "title": "EmbeddingInferenceParams",
         "description": "Configuration for embedding generation parameters.\n\nAttributes:\n    generation_type: Type of generation, always \"embedding\" for this class.\n    encoding_format: Format of the embedding encoding (\"float\" or \"base64\").\n    dimensions: Number of dimensions for the embedding."
       },
+      "EvalEndpoint": {
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Base Url",
+            "description": "OpenAI-compatible API base URL (e.g. http://vllm:8000/v1)"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model",
+            "description": "Model name sent as 'model' in chat completion requests"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key",
+            "description": "Optional bearer token. Never echoed in API responses; scrubbed from the DB once the job is dispatched.",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_url",
+          "model"
+        ],
+        "title": "EvalEndpoint"
+      },
+      "EvalJobRequest": {
+        "properties": {
+          "rubric": {
+            "items": {
+              "$ref": "#/components/schemas/EvalRubricCriterion"
+            },
+            "type": "array",
+            "title": "Rubric",
+            "description": "Custom judge criteria, designed with the user. The LLM judge scores the model's response against the reference answer on each criterion (absolute 0-1), averaged over the dataset."
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "External OpenAI-compatible endpoint serving the model to evaluate (e.g. a gateway model). When omitted, set training_job_id or model_name_or_path and the eval job serves the model itself."
+          },
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "Training job whose tuned model to evaluate. The eval job serves the model itself (vLLM inside the job) and stops when scores are computed. Takes precedence over model_name_or_path.",
+            "default": ""
+          },
+          "model_name_or_path": {
+            "type": "string",
+            "title": "Model Name Or Path",
+            "description": "HF hub model id (e.g. Qwen/Qwen3.5-4B) or local path to evaluate. The eval job serves the model itself.",
+            "default": ""
+          },
+          "served_model_name": {
+            "type": "string",
+            "title": "Served Model Name",
+            "description": "Name passed as 'model' in requests. Defaults to the training job's model_display_name (tuned models) or model_name_or_path.",
+            "default": ""
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvalEndpoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional LLM-as-judge endpoint for scoring free-form outputs against the reference answer"
+          },
+          "max_samples": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Max Samples",
+            "description": "Max eval samples to run; 0 (default) evaluates ALL records in the dataset \u2014 set lower only to bound eval time/cost",
+            "default": 0
+          },
+          "judge_max_samples": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Judge Max Samples",
+            "description": "Max samples for LLM-judge scoring; 0 (default) judges ALL samples \u2014 set lower only to cap judge cost/latency",
+            "default": 0
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature",
+            "description": "Sampling temperature for evaluated endpoints",
+            "default": 0.0
+          },
+          "eval_data_run_id": {
+            "type": "string",
+            "title": "Eval Data Run Id",
+            "description": "MLflow run ID holding the eval dataset (alternative to parent_job_id). Use with datasets uploaded via /api/v1/datasets.",
+            "default": ""
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic",
+            "description": "1-5 word eval topic for tracking",
+            "default": ""
+          },
+          "parent_job_id": {
+            "type": "string",
+            "title": "Parent Job Id",
+            "description": "Parent SDG/upload job ID holding the eval dataset",
+            "default": ""
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "EvalJobRequest"
+      },
+      "EvalRubricCriterion": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name",
+            "description": "Short criterion name, e.g. 'factual_accuracy' (used as the results key)"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Description",
+            "description": "One sentence telling the judge what to check for this criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "EvalRubricCriterion"
+      },
       "ExpressionColumnConfig": {
         "properties": {
           "name": {
@@ -2887,13 +3387,13 @@
           "provider": {
             "type": "string",
             "title": "Provider",
-            "description": "Model provider (e.g. openai, anthropic)",
+            "description": "Provider a job uses to reach the model \u2014 'gateway' for gateway-served models, else the direct provider (e.g. openai)",
             "default": ""
           },
           "model_name": {
             "type": "string",
             "title": "Model Name",
-            "description": "Underlying model (e.g. gpt-4.1-mini)",
+            "description": "Underlying model (e.g. openai/gpt-4.1-mini)",
             "default": ""
           }
         },
@@ -3296,6 +3796,11 @@
               }
             ],
             "title": "Completed At"
+          },
+          "retry_of": {
+            "type": "string",
+            "title": "Retry Of",
+            "default": ""
           }
         },
         "type": "object",
@@ -3322,7 +3827,8 @@
           "training",
           "sdg",
           "upload",
-          "eval"
+          "eval",
+          "serve"
         ],
         "title": "JobType"
       },
@@ -5548,6 +6054,12 @@
             ],
             "title": "Data Path",
             "description": "Path to training data (resolved from parent if chaining)"
+          },
+          "data_run_id": {
+            "type": "string",
+            "title": "Data Run Id",
+            "description": "MLflow run holding the training dataset (generated_data artifact) \u2014 e.g. an uploaded dataset or a split. Alternative to parent_job_id; the worker downloads it and sets data_path",
+            "default": ""
           },
           "output_dir": {
             "anyOf": [

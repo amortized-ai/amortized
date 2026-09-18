@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from amortized.models import SDGJobRequest, TrainingJobConfig
+from amortized.models import EvalJobConfig, SDGJobRequest, TrainingJobConfig
 
 router = APIRouter(prefix="/api/v1/schemas", tags=["schemas"])
 
@@ -15,4 +15,5 @@ async def get_schemas() -> dict[str, Any]:
     return {
         "sdg": SDGJobRequest.model_json_schema(),
         "training": TrainingJobConfig.model_json_schema(),
+        "eval": EvalJobConfig.model_json_schema(),
     }

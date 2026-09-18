@@ -1,4 +1,4 @@
-import { Bot, Cpu, Database, Rocket } from "lucide-react"
+import { Bot, Cpu, Database, FlaskConical, Rocket } from "lucide-react"
 
 interface ChatWelcomeProps {
   onPromptClick: (prompt: string) => void
@@ -32,12 +32,22 @@ const CAPABILITIES = [
     iconColor: "text-[#0066cc] dark:text-[#4394e5]",
     hoverBorder: "hover:border-[#0066cc]/30 dark:hover:border-[#4394e5]/30",
   },
+  {
+    icon: FlaskConical,
+    label: "Evaluate models",
+    detail: "Compare base vs fine-tuned",
+    prompt: "I want to evaluate a model",
+    iconBg: "bg-[#fce7f3] dark:bg-[#500724]/50",
+    iconColor: "text-[#831843] dark:text-[#f472b6]",
+    hoverBorder: "hover:border-[#f472b6]/30 dark:hover:border-[#f472b6]/30",
+  },
 ]
 
 const SUGGESTED_PROMPTS = [
   "Help me build a support ticket classifier",
   "Create an agent that extracts invoice data",
   "I want to train a model for sentiment analysis",
+  "Evaluate whether my fine-tuned model improved",
 ]
 
 export function ChatWelcome({ onPromptClick }: ChatWelcomeProps) {
