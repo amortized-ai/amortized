@@ -302,6 +302,13 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
             >
               View Model →
             </a>
+          ) : jobType === "EVAL" ? (
+            <a
+              href="/evaluation"
+              className="text-primary dark:text-primary hover:underline font-medium"
+            >
+              View Results →
+            </a>
           ) : (
             <a
               href={`/datasets?job=${encodeURIComponent(jobId)}`}

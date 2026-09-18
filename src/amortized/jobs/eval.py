@@ -214,17 +214,29 @@ async def _build_embedded_serving(
     gpus = int(config.get("nproc_per_node", 1))
 
     # $SERVE_MODEL_DIR is our own pre-command variable (find output, no
-    # spaces) — shlex-quoting it would suppress expansion, so it goes in raw
-    # while user-provided paths (HF ids) stay quoted.
-    quoted_path = model_path if model_path.startswith("$") else shlex.quote(model_path)
+    # spaces) — shlex-quoting it would suppress expansion, so that exact
+    # sentinel goes in raw. Everything else is user-provided and stays
+    # quoted: a value starting with '$' (e.g. "$(rm -rf ~)") would
+    # otherwise run as command substitution in the pod's shell.
+    quoted_path = (
+        model_path
+        if model_path == "$SERVE_MODEL_DIR"
+        else shlex.quote(model_path)
+    )
 
     import contextlib as _cl
 
     explicit_util: float | None = None
-    for extra in config.get("vllm_args", []) or []:
-        if str(extra).startswith("--gpu-memory-utilization"):
+    vllm_args = [str(a) for a in (config.get("vllm_args") or [])]
+    for idx, extra in enumerate(vllm_args):
+        if extra == "--gpu-memory-utilization" and idx + 1 < len(vllm_args):
+            # Separate-token form: --gpu-memory-utilization 0.5
             with _cl.suppress(ValueError):
-                explicit_util = float(str(extra).split("=", 1)[-1].split()[-1])
+                explicit_util = float(vllm_args[idx + 1])
+        elif extra.startswith("--gpu-memory-utilization"):
+            # Equals form: --gpu-memory-utilization=0.5
+            with _cl.suppress(ValueError):
+                explicit_util = float(extra.split("=", 1)[-1].split()[-1])
 
     gpu_memory_utilization = explicit_util if explicit_util is not None else 0.9
     pre_commands.append(

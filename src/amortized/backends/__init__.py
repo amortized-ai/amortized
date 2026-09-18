@@ -32,6 +32,10 @@ class BackendStatus:
     running: bool
     exit_code: int | None = None
     error: str | None = None
+    # True when the backend resource is still alive but will never finish
+    # (e.g. a pod stuck in ImagePullBackoff). The worker should cancel the
+    # resource — the cluster's own TTL cleanup never fires for it.
+    reclaim: bool = False
 
 
 @dataclass

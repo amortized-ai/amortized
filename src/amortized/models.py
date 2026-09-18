@@ -438,6 +438,33 @@ class EvalJobConfig(BaseModel):
     )
     topic: str = Field("", description="1-5 word eval topic for tracking")
 
+    @model_validator(mode="after")
+    def check_model_source(self) -> "EvalJobConfig":
+        """Fail at the boundary (like TrainingJobConfig) — a config with no
+        model to evaluate would otherwise validate, create a job, and only
+        fail at dispatch."""
+        # Legacy configs evaluated two endpoints via endpoint_base/endpoint_tuned
+        # (extra fields) — still a valid model source.
+        legacy = self.model_extra or {}
+        has_legacy_endpoint = any(
+            isinstance(legacy.get(k), dict) and legacy.get(k)
+            for k in ("endpoint_base", "endpoint_tuned")
+        )
+        if not (
+            self.endpoint
+            or has_legacy_endpoint
+            or str(self.training_job_id).strip()
+            or str(self.model_name_or_path).strip()
+        ):
+            msg = (
+                "eval jobs require a model source: endpoint (external"
+                " OpenAI-compatible endpoint), training_job_id (tuned model"
+                " to serve in-job), or model_name_or_path (HF id / local"
+                " path to serve in-job)"
+            )
+            raise ValueError(msg)
+        return self
+
 
 class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")

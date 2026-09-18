@@ -56,6 +56,9 @@ EVAL_BODY = {
     },
     "eval_data_run_id": "a" * 32,
     "rubric": [{"name": "score_accuracy", "description": "Facts match the reference"}],
+    # A rubric without a judge now fails at the validate/create boundary
+    # (the test env has no gateway/SDG ancestor to auto-fill one).
+    "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
 }
 
 # Every eval carries a rubric now (built-ins removed) — builder tests
@@ -92,6 +95,24 @@ class TestCreateEvalJob:
         response = await _create_eval(client, rubric=[])
         assert response.status_code == 422
         assert "rubric criterion" in response.json()["message"]
+
+    @pytest.mark.asyncio
+    async def test_create_eval_job_requires_model_source(self, client: httpx.AsyncClient) -> None:
+        # A config with no model to evaluate fails at the boundary
+        # (Pydantic model_validator), not at dispatch.
+        response = await _create_eval(client, endpoint=None)
+        assert response.status_code == 422
+        assert "model source" in str(response.json())
+
+    @pytest.mark.asyncio
+    async def test_create_eval_job_requires_judge_for_rubric(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A rubric with no judge (and no SDG ancestor to auto-fill one)
+        # fails at the boundary, not at dispatch.
+        response = await _create_eval(client, judge=None)
+        assert response.status_code == 422
+        assert "judge endpoint is required" in str(response.json())
 
     @pytest.mark.asyncio
     async def test_create_eval_job_with_model_name(self, client: httpx.AsyncClient) -> None:
@@ -268,7 +289,7 @@ class TestEvalBuilder:
         # No rubric => no judge required, none configured. (Rubrics are
         # mandatory at the API layer now, but the builder still accepts
         # rubric-free configs — e.g. retries of legacy jobs.)
-        config = {**EVAL_BODY, "rubric": []}
+        config = {**EVAL_BODY, "rubric": [], "judge": None}
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
         import json
@@ -338,7 +359,7 @@ class TestEvalBuilder:
             {"name": "factual_accuracy", "description": "Facts match the reference"},
             {"name": "reasoning_quality", "description": "Rationale is sound"},
         ]
-        config = {**EVAL_BODY, "rubric": rubric}
+        config = {**EVAL_BODY, "rubric": rubric, "judge": None}
 
         async def fake_resolve(job):
             return "gpt-teacher"
@@ -359,7 +380,7 @@ class TestEvalBuilder:
 
     @pytest.mark.asyncio
     async def test_build_rubric_without_resolvable_judge_errors(self) -> None:
-        config = {**EVAL_BODY, "rubric": [{"name": "x", "description": "y"}]}
+        config = {**EVAL_BODY, "rubric": [{"name": "x", "description": "y"}], "judge": None}
         with pytest.raises(eval_builder.JobBuildError, match="rubric"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 

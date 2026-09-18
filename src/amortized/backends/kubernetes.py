@@ -495,7 +495,10 @@ class KubernetesBackend:
         # failed for it — poll forever. Fail fast with the pod's reason.
         stuck = await self._get_stuck_pod_reason(resource_name, api_client)
         if stuck:
-            return BackendStatus(running=False, exit_code=1, error=stuck)
+            # The Job object stays active in the cluster (its controller
+            # never finishes it), so flag it for the worker to cancel —
+            # otherwise the Job and its GPU quota reservation leak.
+            return BackendStatus(running=False, exit_code=1, error=stuck, reclaim=True)
 
         return BackendStatus(running=True)
 

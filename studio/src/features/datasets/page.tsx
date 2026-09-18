@@ -32,30 +32,32 @@ export default function DatasetsPage() {
   useEffect(() => {
     const runId = searchParams.get("run")
     const jobId = searchParams.get("job")
-    if (datasets.length > 0 && (runId || jobId)) {
-      const ds = runId
-        ? datasets.find((d) => d.run_id === runId)
-        : datasets.find((d) => d.tags?.job_id === jobId)
-      if (ds) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
-        setSelectedDataset(ds)
-        setDetailOpen(true)
-        setSearchParams({}, { replace: true })
-        return
-      }
-      // Not in the list (e.g. soft-deleted run) — fetch it directly so the
-      // deep link still opens the dataset it points at.
-      if (runId) {
-        fetchDatasetByRun(runId)
-          .then((rec) => {
-            setSelectedDataset(rec)
-            setDetailOpen(true)
-          })
-          .catch(() => {
-            // run truly gone — nothing to open
-          })
-          .finally(() => setSearchParams({}, { replace: true }))
-      }
+    if (!runId && !jobId) return
+    // The list is only an initial lookup optimization — resolve the deep
+    // link independently of its cardinality (a soft-deleted or otherwise
+    // unlisted dataset has an empty list entry but is still fetchable).
+    const ds = runId
+      ? datasets.find((d) => d.run_id === runId)
+      : datasets.find((d) => d.tags?.job_id === jobId)
+    if (ds) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time URL param sync
+      setSelectedDataset(ds)
+      setDetailOpen(true)
+      setSearchParams({}, { replace: true })
+      return
+    }
+    // Not in the list (e.g. soft-deleted run) — fetch it directly so the
+    // deep link still opens the dataset it points at.
+    if (runId) {
+      fetchDatasetByRun(runId)
+        .then((rec) => {
+          setSelectedDataset(rec)
+          setDetailOpen(true)
+        })
+        .catch(() => {
+          // run truly gone — nothing to open
+        })
+        .finally(() => setSearchParams({}, { replace: true }))
     }
   }, [searchParams, datasets, setSearchParams])
 

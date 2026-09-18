@@ -461,6 +461,19 @@ async def _run_job(job: dict[str, Any]) -> None:
             )
             logger.info("Job %s was cancelled", job_id)
         else:
+            if status.reclaim and hasattr(backend, "cancel"):
+                # The backend resource is stuck (never finishes on its
+                # own — e.g. a pod in ImagePullBackoff), so the cluster's
+                # TTL cleanup will never fire for it. Delete it now or
+                # the Job and its GPU quota reservation leak.
+                try:
+                    await backend.cancel(handle)
+                except Exception:
+                    logger.warning(
+                        "Failed to reclaim stuck backend resource for job %s",
+                        job_id,
+                        exc_info=True,
+                    )
             await _finish_mlflow_run(mlflow_run_id, "FAILED")
             error_msg = status.error or (
                 f"Job '{job_id}' failed on backend '{backend_name}'"

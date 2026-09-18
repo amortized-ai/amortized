@@ -171,7 +171,7 @@ export function EvaluationDetailPanel({
                     Metric
                   </th>
                   {modelColumns.map((col) => (
-                    <th key={col.model} className="text-left font-medium px-4 py-3 min-w-[200px]">
+                    <th key={`${col.model}::${col.configKey}`} className="text-left font-medium px-4 py-3 min-w-[200px]">
                       <div className="flex flex-col gap-1">
                         {resolveModel(col.model) ? (
                           <button
@@ -261,7 +261,7 @@ export function EvaluationDetailPanel({
                     {modelColumns.map((col) => {
                       const cell = row.cells[`${col.model}::${col.configKey}`]
                       return (
-                        <td key={col.model} className="px-4 py-3">
+                        <td key={`${col.model}::${col.configKey}`} className="px-4 py-3">
                           {cell == null ? (
                             <span className="text-muted-foreground/50">--</span>
                           ) : (
