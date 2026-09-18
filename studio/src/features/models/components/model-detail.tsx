@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { getBaseUrl } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -146,8 +147,8 @@ export function ModelDetail({ name, versions, onBack, onDelete }: ModelDetailPro
             <Button variant="outline" size="sm" asChild>
               <a
                 href={runData?.run.info.experiment_id
-                  ? `/mlflow/#/experiments/${runData.run.info.experiment_id}/runs/${latest.run_id}`
-                  : `/mlflow/#/runs/${latest.run_id}`}
+                  ? `${getBaseUrl()}/mlflow/#/experiments/${runData.run.info.experiment_id}/runs/${latest.run_id}`
+                  : `${getBaseUrl()}/mlflow/#/runs/${latest.run_id}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >

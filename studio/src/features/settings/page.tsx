@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react"
+import { getBaseUrl } from "@/lib/api-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +21,8 @@ import { PageHeader } from "@/components/page-header"
 import { SearchInput } from "@/components/search-input"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { PrerequisitesCard } from "./components/prerequisites-card"
+import { ModelProviderCard } from "./components/model-provider-card"
+import { useModelProvider } from "./api/use-model-provider"
 import {
   useHealth,
   useConfig,
@@ -184,7 +187,16 @@ export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
   const { data: healthData } = useHealth({ refetchInterval: 30000 })
   const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
+  const { data: modelProvider } = useModelProvider()
   const [routeSearch, setRouteSearch] = useState("")
+  // In the hybrid gateway deployment the per-user BYOK "Model Provider" card is the
+  // key control, so hide the legacy runtime-auth "Agent Provider" section there;
+  // keep it for local/KIND (no gateway) where opencode provider auth is the path.
+  const byokGateway = modelProvider?.available === true
+  // Confirmed gateway absence (local/KIND): only then fall back to the legacy
+  // runtime-auth "Agent Provider" section. A pending or errored status is "unknown"
+  // — show neither, rather than wrongly activating the legacy flow.
+  const gatewayAbsent = modelProvider?.available === false
 
   const filteredRoutes = useMemo(() => {
     if (!routeSearch.trim()) return routes
@@ -222,7 +234,7 @@ export default function SettingsPage() {
 
         <button
           type="button"
-          onClick={() => document.getElementById("section-agent")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          onClick={() => document.getElementById(byokGateway ? "section-model" : "section-agent")?.scrollIntoView({ behavior: "smooth", block: "start" })}
           className="group flex items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-all duration-200 hover:border-[#ffb3b3] hover:shadow-sm cursor-pointer dark:hover:border-[#730303]"
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#ffe0e0] text-[#cc0000] transition-colors duration-200 group-hover:bg-[#ffb3b3] dark:bg-[#420303]/40 dark:text-[#e54343]">
@@ -270,6 +282,9 @@ export default function SettingsPage() {
         </a>
       </div>
       </div>
+
+      {/* Model Provider — per-user BYOK key that powers Morty (hybrid gateway) */}
+      <ModelProviderCard />
 
       {/* Connection Status */}
       <div id="section-system" className="scroll-mt-6">
@@ -357,8 +372,10 @@ export default function SettingsPage() {
         </Card>
       )}
 
-      {/* Agent Provider */}
-      <AgentProviderSection />
+      {/* Agent Provider — legacy runtime-auth section; shown only on confirmed gateway
+          absence (local/KIND). When BYOK is present the Model Provider card (id
+          section-model) is the Agent nav target instead. */}
+      {gatewayAbsent && <AgentProviderSection />}
 
       {/* AI Gateway */}
       <Card id="section-gateway" className="scroll-mt-6">
@@ -376,7 +393,7 @@ export default function SettingsPage() {
               <p className="text-xs text-[#1e4f18] dark:text-[#5ba352]">
                 SDG and evaluation jobs auto-route through the gateway. Manage endpoints in the{" "}
                 <a
-                  href="/mlflow/#/gateway"
+                  href={`${getBaseUrl()}/mlflow/#/gateway`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline underline-offset-2 hover:text-[#163b11] dark:hover:text-[#7ec975]"
@@ -397,7 +414,7 @@ export default function SettingsPage() {
                 </p>
               </div>
               <a
-                href="/mlflow/#/gateway"
+                href={`${getBaseUrl()}/mlflow/#/gateway`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all duration-200 hover:bg-muted hover:border-border"

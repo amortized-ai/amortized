@@ -38,8 +38,12 @@ class ApiError extends Error {
   }
 }
 
-function getBaseUrl(): string {
-  return import.meta.env.VITE_API_URL ?? ""
+// Prefix API/agent/mlflow/gateway calls with the app base (vite `base`) so they route
+// through the dashboard proxy under /amortized-studio-embed when embedded; "" standalone.
+// Exported so feature fetches that bypass request() (streaming chat, provider, gateway)
+// can prefix their paths too.
+export function getBaseUrl(): string {
+  return import.meta.env.VITE_API_URL ?? import.meta.env.BASE_URL.replace(/\/+$/, "")
 }
 
 function getAuthHeaders(): Record<string, string> {

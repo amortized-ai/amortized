@@ -15,6 +15,7 @@ vi.mock("@/lib/api-client", () => ({
   getConfig: (...args: unknown[]) => mockGetConfig(...args),
   getMlflowGatewayRoutes: (...args: unknown[]) => mockGetGatewayRoutes(...args),
   searchMlflowRuns: (...args: unknown[]) => mockSearchMlflowRuns(...args),
+  getBaseUrl: () => "",
 }))
 
 function wrapper({ children }: { children: React.ReactNode }) {
