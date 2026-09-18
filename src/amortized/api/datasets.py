@@ -232,6 +232,11 @@ def _run_to_summary(run: dict[str, Any]) -> dict[str, Any]:
         "samples": samples,
         "teacher_model": teacher,
         "job_id": tags.get("job_id", ""),
+        # For split outputs (source == "split"): the dataset this one was
+        # split FROM. Two split outputs sharing a source_run_id are the
+        # portion/complement siblings of one split — e.g. the hold-out
+        # eval set for a model trained on the other sibling.
+        "source_run_id": tags.get("source_run_id", ""),
         "experiment_id": info.get("experiment_id", ""),
         "created_at": info.get("start_time"),
         # The metric set this dataset evaluates with (if any eval has run

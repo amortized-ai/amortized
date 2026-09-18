@@ -75,7 +75,30 @@ OpenAI-compatible endpoint can be evaluated (e.g. a gateway model).
 ### Step 1 — Confirm the eval dataset
 
 The eval dataset needs a `messages` column. The trailing assistant
-message is used as the reference answer. Ask which source to use:
+message is used as the reference answer.
+
+**If the eval subject is a tuned model (a training job), suggest its
+dataset first.** Call `get_job` on the training job and read the
+dataset it was trained on: the config's `data_run_id` (a dataset run
+ID) or the parent SDG job. Then look for the natural held-out set:
+
+- Call `get_dataset` on the training dataset. If its `source` is
+  `"split"`, note its `source_run_id`, then call `list_datasets` and
+  find the OTHER split output with the same `source_run_id` — that
+  sibling is the hold-out the model was NOT trained on. Suggest it as
+  the default: same distribution, zero leakage.
+- Otherwise (the model was trained on the whole dataset), suggest a
+  fresh hold-out split of the training dataset (e.g. fraction 0.2,
+  strategy random) via `split_dataset` — matched distribution, but it
+  shares records with the training data, so mention the leakage
+  trade-off.
+- Also offer a separately generated eval set (no leakage, best
+  isolation) — see the SDG delegation path below.
+
+Always present the suggestion as a choice — the user may want a
+different dataset.
+
+For any model (tuned or not), the general sources are:
 
 - **A completed SDG job** (best: a dataset generated separately from
   the training data, to avoid leakage) — use its job ID as
