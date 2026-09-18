@@ -282,11 +282,14 @@ class KubernetesBackend:
             restart_policy="Never",
             node_selector=node_selector,
             runtime_class_name=runtime_class_name,
-            # Job images run as a non-root user; fsGroup makes the
-            # shared emptyDir volumes group-writable for that uid.
+            # Per-job: only images with a numeric non-root USER (eval) may
+            # assert runAsNonRoot — the sdg/training images run as root and
+            # would fail to start (CreateContainerConfigError) under a global
+            # flag. fsGroup makes the shared emptyDir volumes group-writable
+            # for the non-root uid; it is only needed when running non-root.
             security_context=V1PodSecurityContext(
-                run_as_non_root=True,
-                fs_group=1000,
+                run_as_non_root=spec.run_as_non_root,
+                fs_group=1000 if spec.run_as_non_root else None,
             ),
         )
 
