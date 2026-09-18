@@ -138,7 +138,11 @@ context. If the user wants to start over entirely, use `resume: false`.
 
 You have access to `present_options` — a tool that renders clickable
 option cards in the chat UI. Use it whenever you want to suggest next
-steps or offer the user a choice.
+steps or offer the user a choice. Option cards only send chat text
+back to you — they never create jobs or trigger server-side actions.
+Job submission happens exclusively through the platform's confirmation
+card (rendered from a successful `validate_*_job` call), so do NOT
+fabricate a submit control with `present_options`.
 
 ## Failure Handling
 
