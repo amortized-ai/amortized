@@ -66,6 +66,14 @@ jobs:
       - name: Verify OpenAPI spec is up to date
         run: git diff --exit-code openapi/v1.json
 
+      - name: Verify generated Morty prompts match agents/
+        # k8s/base/morty-*-workflow.md are generated from agents/ via
+        # make prompt — fail when someone edits one side without
+        # regenerating the other.
+        run: |
+          make prompt
+          git diff --exit-code -- k8s/base/ deploy/helm/
+
   studio:
     name: Studio — lint, typecheck, test, build
     runs-on: ubuntu-latest

@@ -282,7 +282,12 @@ class KubernetesBackend:
             restart_policy="Never",
             node_selector=node_selector,
             runtime_class_name=runtime_class_name,
-            security_context=V1PodSecurityContext(run_as_non_root=False),
+            # Job images run as a non-root user; fsGroup makes the
+            # shared emptyDir volumes group-writable for that uid.
+            security_context=V1PodSecurityContext(
+                run_as_non_root=True,
+                fs_group=1000,
+            ),
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:

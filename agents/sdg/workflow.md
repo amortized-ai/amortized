@@ -48,10 +48,12 @@ requirement-gathering steps, tool parameters, and prompt engineering rules.
 
 ## Teacher Model Selection
 
-ONLY show models returned by the gateway. If no models are returned,
-**stop the workflow** and tell the user to go to Settings → AI Gateway.
+ONLY show models returned by `list_models`. If no models are returned,
+**stop the workflow** and tell the user no teacher-model provider is
+configured on the server.
 
-1. Discover available models from the gateway via `list_models`
+1. Discover available teacher models via `list_models` (each has a `name`
+   and a `provider` — carry BOTH into the config; never hardcode a provider)
 2. Look up pricing for EVERY model — try the most specific name part
    first, broaden if no results
 3. Show a pricing comparison card with all collected pricing data
@@ -75,10 +77,13 @@ Always include in `model_configs` inference_parameters:
 
 ```json
 "inference_parameters": {
-  "temperature": 0.7,
   "max_parallel_requests": 32
 }
 ```
+
+Do NOT set `temperature` unless the user explicitly asks for it — some models
+(e.g. gpt-5 and other reasoning models) reject any non-default temperature and
+the job fails. Omit it and the provider default is used.
 
 ## SDG Preview Flow
 

@@ -8,6 +8,7 @@ Evaluation tab's cross-model comparison table.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -246,9 +247,11 @@ async def list_evaluations(
         group = groups.setdefault(
             key,
             {
+                # Stable across server restarts (str hash is salted per
+                # process) and collision-free: sha1 of the full key.
                 "id": (
                     f"{ds_run[:8] if ds_run != 'unknown' else 'unknown'}"
-                    f"-{abs(hash(key)) % 100000}"
+                    f"-{hashlib.sha1(repr(key).encode()).hexdigest()[:12]}"
                 ),
                 "dataset": {
                     "run_id": ds_run,
