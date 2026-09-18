@@ -59,10 +59,11 @@ COPY run_eval.py /app/run_eval.py
 # emptyDir volume the job mounts; the job spec's fsGroup (or the
 # platform's default) must allow this uid to write there — kind and
 # OpenShift both do. HOME must be writable for vllm/flashinfer JIT
-# caches, so point it at the work dir rather than /root.
+# caches, so point it at the work dir rather than /root. The USER must
+# be NUMERIC: kubelet cannot verify runAsNonRoot against a named user.
 RUN useradd --create-home --uid 1000 evaluser
 ENV HOME=/amortized/work
-USER evaluser
+USER 1000
 
 WORKDIR /amortized/work
 
