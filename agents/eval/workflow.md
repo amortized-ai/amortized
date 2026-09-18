@@ -237,12 +237,14 @@ list (add, remove, reword, split, or merge criteria), then re-present
 the revised table and ask again. Repeat until the user approves. Never
 submit with a criteria list the user has not approved.
 
-Judge defaults: the rubric criteria are scored by the LLM judge.
-You do NOT need to collect a judge endpoint — if the eval job has an
-SDG ancestor (directly or via the training job), the judge defaults to
-that SDG run's teacher model served through the platform gateway. Only
-ask for a judge endpoint if the user wants a different judge, or if
-there is no SDG ancestor (e.g. an uploaded dataset with no parent).
+Judge (required — you set it, there is no default): the rubric criteria
+are scored by an LLM judge, and you MUST set `config.judge` explicitly.
+Ask the user which model to judge with — offer a soft suggestion, e.g.
+"reuse the model we used for the SDG step as the judge, or a different
+one?" — then set the judge from their choice. Get its endpoint (base_url
++ model) from `get_eval_endpoint_suggestions` / `list_models`, the same
+way you build the model-under-eval endpoint. Never submit a rubric eval
+without `config.judge`.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
 `judge_max_samples` unset — the eval runs and judges EVERY record in
@@ -286,12 +288,12 @@ state the effective settings in one line:
 
 - temperature: the configured value, or "0 (default)" when unset
 - samples: the configured max_samples, or "all records (default)" when unset/0
-- judge: the configured judge model, or "auto — the dataset's teacher
-  model (from the SDG job that created it)" when no judge was given
+- judge: the configured judge model (a rubric eval always has one — you
+  set it explicitly)
 - judge samples: the configured judge_max_samples, or "all (default)" when unset/0
 
 Example line: `temperature 0 (default) · all records (default) · judge:
-auto — gpt-oss · judge samples: all (default)`
+gpt-oss · judge samples: all (default)`
 
 After the user clicks Confirm on the platform card, the job is
 submitted and you'll be notified when it completes. Never claim the job

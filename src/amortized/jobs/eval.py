@@ -294,70 +294,6 @@ async def _build_embedded_serving(
     return pre_commands, script, extras
 
 
-async def _resolve_teacher_model(job: dict[str, Any]) -> str:
-    """Find the teacher model used by the SDG ancestor of this eval job.
-
-    Walks the parent chain: an SDG parent directly, or a training parent
-    whose own parent is the SDG job that produced the training data.
-    Returns the parent SDG run's teacher_model tag, or '' if not found.
-    """
-    parent_id = job.get("parent_job_id", "") or job.get("config", {}).get("parent_job_id", "")
-    tracking_uri = config_mod.settings.mlflow_tracking_uri
-    if not parent_id or not tracking_uri:
-        return ""
-
-    from amortized.db.connection import get_pool
-
-    async with get_pool().acquire() as conn:
-        from amortized.db.repository import Repository
-
-        repo = Repository(conn)
-        parent = await repo.get_job(parent_id)
-        # Eval chained from training: the training job's parent is the SDG job
-        if parent and parent["type"] == "training":
-            grandparent_id = parent.get("parent_job_id", "")
-            if grandparent_id:
-                parent = await repo.get_job(grandparent_id)
-        if not parent or parent["type"] != "sdg":
-            return ""
-        parent_run_id = parent.get("mlflow_run_id", "")
-
-    if not parent_run_id:
-        return ""
-    try:
-        from amortized.core.mlflow_client import MLflowClient
-
-        client = MLflowClient(tracking_uri)
-        run = await client.get_run(parent_run_id)
-        tags = {t["key"]: t["value"] for t in run["data"].get("tags", [])}
-        teacher: str = tags.get("teacher_model", "")
-        return teacher
-    except Exception:
-        logger.debug("Failed to resolve teacher model for job %s", job.get("id"), exc_info=True)
-        return ""
-
-
-async def _default_judge(job: dict[str, Any]) -> dict[str, Any] | None:
-    """Auto-fill the judge endpoint from the SDG ancestor's teacher model.
-
-    Uses the MLflow AI Gateway (settings.gateway_url) to serve the teacher
-    model, mirroring how SDG itself calls it (any bearer token works).
-    """
-    gateway_url = config_mod.settings.gateway_url
-    if not gateway_url:
-        return None
-    teacher = await _resolve_teacher_model(job)
-    if not teacher:
-        return None
-    return {
-        "base_url": gateway_url.rstrip("/"),
-        "model": teacher,
-        # Gateway accepts any bearer token — same convention SDG uses (DD_API_KEY)
-        "api_key": "not-needed",
-        "_auto": True,
-    }
-
-
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -422,18 +358,10 @@ async def build(
     ]
     judge_cfg = config.get("judge")
     if bool(rubric) and not judge_cfg:
-        judge_cfg = await _default_judge(job)
-        if judge_cfg is None:
-            raise JobBuildError(
-                "judge endpoint is required to score a custom rubric"
-                " (no SDG ancestor with a teacher_model tag, or no gateway configured)"
-            )
-        # Persist the auto-filled judge into the config so the stored (resolved)
-        # config records the judge that actually ran. The Evaluation tab merges
-        # columns by judge model, so an auto-filled judge left out of the config
-        # splits a re-run into its own column instead of merging with an
-        # explicit-judge run of the same model. (_auto is a build-time marker.)
-        config["judge"] = {k: v for k, v in judge_cfg.items() if k != "_auto"}
+        raise JobBuildError(
+            "a judge endpoint is required to score a rubric — the eval config"
+            " must set `judge` explicitly (there is no default judge)"
+        )
     if judge_cfg:
         endpoints["judge"] = _endpoint_spec(
             {"judge": judge_cfg}, "judge", "EVAL_JUDGE_API_KEY", env

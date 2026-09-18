@@ -181,28 +181,18 @@ def _strip_eval_api_keys(job: Job) -> None:
             endpoint.pop("api_key", None)
 
 
-async def _validate_eval_rubric_judge(
-    config: dict[str, Any],
-    parent_job_id: str,
-) -> list[str]:
-    """Fail at the boundary when the judge can't score the rubric.
+def _validate_eval_rubric_judge(config: dict[str, Any]) -> list[str]:
+    """Fail at the boundary when a rubric has no judge.
 
-    The eval builder auto-fills the judge from the SDG ancestor's teacher
-    model when the config omits one — mirror that resolution here so a
-    rubric with no judge (and no resolvable default) is a 422 at
-    validate/create time, not a dispatch-time failure.
+    A rubric is scored by an LLM judge, which the caller must set
+    explicitly — there is no default. Reject a rubric with no ``judge`` as
+    a 422 at validate/create time, not a dispatch-time failure.
     """
     rubric = [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]
-    if not rubric or config.get("judge"):
-        return []
-    from amortized.jobs import eval as eval_jobs
-
-    resolved = await eval_jobs._default_judge({"parent_job_id": parent_job_id})
-    if resolved is None:
+    if rubric and not config.get("judge"):
         return [
-            "judge endpoint is required to score the rubric (no judge in the"
-            " config, and no SDG ancestor with a teacher_model tag to"
-            " auto-fill one)"
+            "a judge endpoint is required to score the rubric — set `judge`"
+            " explicitly (there is no default judge)"
         ]
     return []
 
@@ -397,7 +387,7 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
-    errors.extend(await _validate_eval_rubric_judge(config, parent_job_id))
+    errors.extend(_validate_eval_rubric_judge(config))
     if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
@@ -623,7 +613,7 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
-    errors.extend(await _validate_eval_rubric_judge(config, parent_job_id))
+    errors.extend(_validate_eval_rubric_judge(config))
     if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"

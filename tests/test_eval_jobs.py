@@ -56,8 +56,8 @@ EVAL_BODY = {
     },
     "eval_data_run_id": "a" * 32,
     "rubric": [{"name": "score_accuracy", "description": "Facts match the reference"}],
-    # A rubric without a judge now fails at the validate/create boundary
-    # (the test env has no gateway/SDG ancestor to auto-fill one).
+    # A rubric requires an explicit judge — no default; it fails at the
+    # validate/create boundary (and at build) when none is set.
     "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
 }
 
@@ -108,8 +108,8 @@ class TestCreateEvalJob:
     async def test_create_eval_job_requires_judge_for_rubric(
         self, client: httpx.AsyncClient
     ) -> None:
-        # A rubric with no judge (and no SDG ancestor to auto-fill one)
-        # fails at the boundary, not at dispatch.
+        # A rubric requires an explicit judge — with none set it fails at the
+        # boundary (422), not at dispatch.
         response = await _create_eval(client, judge=None)
         assert response.status_code == 422
         assert "judge endpoint is required" in str(response.json())
@@ -356,53 +356,18 @@ class TestEvalBuilder:
         assert await eb._is_lora_export("run-1") is False
 
     @pytest.mark.asyncio
-    async def test_build_rubric_implies_judge_auto_fill(self, monkeypatch) -> None:
-        rubric = [
-            {"name": "factual_accuracy", "description": "Facts match the reference"},
-            {"name": "reasoning_quality", "description": "Rationale is sound"},
-        ]
-        config = {**EVAL_BODY, "rubric": rubric, "judge": None}
-
-        async def fake_resolve(job):
-            return "gpt-teacher"
-
-        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
-        monkeypatch.setattr(
-            eval_builder.config_mod.settings, "gateway_url", "http://gateway:5000/gw/v1"
-        )
-
-        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
-
-        import json
-
-        runner = json.loads(result.config_files["config.json"])
-        assert runner["rubric"] == rubric
-        assert "judge" in runner["endpoints"]
-        assert runner["endpoints"]["judge"]["model"] == "gpt-teacher"
-        # the auto-filled judge is persisted into the stored config (so the
-        # Evaluation tab merges it with explicit-judge runs of the same model),
-        # scrubbed of its api_key
-        assert result.resolved_config["judge"]["model"] == "gpt-teacher"
-        assert "api_key" not in result.resolved_config["judge"]
-
-    @pytest.mark.asyncio
-    async def test_build_rubric_without_resolvable_judge_errors(self) -> None:
+    async def test_build_rubric_requires_explicit_judge(self) -> None:
         config = {**EVAL_BODY, "rubric": [{"name": "x", "description": "y"}], "judge": None}
         with pytest.raises(eval_builder.JobBuildError, match="rubric"):
             await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
     @pytest.mark.asyncio
-    async def test_build_judge_explicit_overrides_default(self, monkeypatch) -> None:
+    async def test_build_uses_explicit_judge(self) -> None:
         config = {
             **EVAL_BODY,
             "rubric": [{"name": "accuracy", "description": "matches reference"}],
             "judge": {"base_url": "http://judge:8000/v1", "model": "gpt-judge"},
         }
-
-        async def fake_resolve(job):
-            return "gpt-teacher"
-
-        monkeypatch.setattr(eval_builder, "_resolve_teacher_model", fake_resolve)
 
         result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
 
