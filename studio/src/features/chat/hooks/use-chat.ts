@@ -450,6 +450,7 @@ export function useChat() {
     if (!currentConversationId) return
     const stored = getConversationMessages(currentConversationId)
     if (stored.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guarded sync from store on hydration
       setMessages(restoreMessages(getConversationMessages, currentConversationId))
     }
   }, [messages.length, currentConversationId, getConversationMessages])
@@ -534,7 +535,7 @@ export function useChat() {
       }
     }
 
-    warmupPromiseRef.current = warmup()
+    warmupPromiseRef.current = warmup() // eslint-disable-line react-hooks/immutability -- recovery effect awaits this
     return () => { cancelled = true }
   }, [currentConversationId])
 
