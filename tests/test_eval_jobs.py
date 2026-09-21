@@ -169,8 +169,6 @@ class TestEvalBuilder:
         assert result.image == "ghcr.io/amortized-ai/eval:latest"
         assert result.command[:2] == ["python3", "/app/run_eval.py"]
         assert result.resources.gpus == 0
-        # eval image is non-root (USER 1000); sdg/training images are root
-        assert result.run_as_non_root is True
 
         import json
 

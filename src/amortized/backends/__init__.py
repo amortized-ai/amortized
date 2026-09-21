@@ -60,7 +60,6 @@ class JobSpec:
     config_files: dict[str, str] = field(default_factory=dict)
     job_type: str = ""
     user_id: str = ""
-    run_as_non_root: bool = False
 
 
 @runtime_checkable
