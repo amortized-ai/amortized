@@ -11,6 +11,7 @@ export interface PersistedMessage {
   optionCards?: { title: string; description: string; value: string }[]
   selectedOptionValue?: string
   phase?: string
+  streamStartedAt?: number
 }
 
 export interface PersistedConversation {
