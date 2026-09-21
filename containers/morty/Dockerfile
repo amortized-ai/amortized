@@ -19,6 +19,7 @@ RUN mkdir -p /workspace/.opencode/agents /workspace/skills
 COPY morty.md      /workspace/.opencode/agents/morty.md
 COPY sdg.md        /workspace/.opencode/agents/sdg.md
 COPY training.md   /workspace/.opencode/agents/training.md
+COPY eval.md       /workspace/.opencode/agents/eval.md
 COPY skills/       /workspace/skills/
 COPY opencode.json /workspace/opencode.json
 RUN chown -R 1001:0 /workspace && chmod -R g+rwX /workspace

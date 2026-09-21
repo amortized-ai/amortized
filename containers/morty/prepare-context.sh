@@ -17,6 +17,7 @@ mkdir -p "$CTX/skills"
 cp    "$REPO/k8s/base/morty-prompt.md"            "$CTX/morty.md"       # orchestrator identity+workflow
 cp    "$REPO/k8s/base/morty-sdg-workflow.md"      "$CTX/sdg.md"
 cp    "$REPO/k8s/base/morty-training-workflow.md" "$CTX/training.md"
+cp    "$REPO/k8s/base/morty-eval-workflow.md"     "$CTX/eval.md"
 cp -R "$REPO/k8s/base/morty-skills/."             "$CTX/skills/"        # sdg/ + training/ skill trees
 cp    "$HERE/opencode.json"                       "$CTX/opencode.json"
 cp    "$HERE/Dockerfile"                          "$CTX/Dockerfile"
