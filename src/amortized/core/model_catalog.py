@@ -54,6 +54,29 @@ def enabled_provider_defs() -> list[dict[str, str]]:
     return defs
 
 
+def resolve_provider(name: str) -> dict[str, str] | None:
+    """Return the enabled provider def whose ``name`` matches (case-insensitive),
+    else None. Lets an endpoint reference a provider by name (``base_url: "openai"``)
+    and get its real endpoint URL + api-key env-var name."""
+    lowered = (name or "").strip().lower()
+    if not lowered:
+        return None
+    for pdef in enabled_provider_defs():
+        if pdef.get("name", "").lower() == lowered:
+            return pdef
+    return None
+
+
+def inject_enabled_provider_keys(env: dict[str, str]) -> None:
+    """Copy every enabled provider's API key from the server env into a job's ``env``
+    dict (delivered to the pod as a per-job Secret), so the job can reach any
+    configured provider. Shared by SDG and eval so both pick up keys the same way."""
+    for pdef in enabled_provider_defs():
+        key_name = pdef.get("api_key", "")
+        if key_name.isupper() and "_" in key_name and key_name in os.environ:
+            env[key_name] = os.environ[key_name]
+
+
 def enabled_models() -> list[tuple[str, str]]:
     """``(provider, model_id)`` pairs for enabled providers, excluding embeddings.
 
