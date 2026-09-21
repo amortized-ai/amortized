@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shlex
 from typing import Any
 
 import amortized.config as config_mod
 from amortized.backends import Resources
-from amortized.core.model_catalog import enabled_provider_defs
+from amortized.core.model_catalog import enabled_provider_defs, inject_enabled_provider_keys
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
@@ -143,12 +142,8 @@ async def build(
         env["DATA_DESIGNER_HOME"] = dd_home
         # Deliver each enabled provider's key into the job (injected as a per-job
         # Secret via spec.env) so the direct-provider path does not depend on the
-        # operator also listing the key in forward_env. api_key is an env-var name
-        # for builtin providers; literal keys are already inlined in the yaml above.
-        for pdef in provider_defs:
-            key_name = pdef.get("api_key", "")
-            if key_name.isupper() and "_" in key_name and key_name in os.environ:
-                env[key_name] = os.environ[key_name]
+        # operator also listing the key in forward_env.
+        inject_enabled_provider_keys(env)
         pre_commands.append(
             f"mkdir -p {dd_home}"
             f" && cp /amortized/model_providers.yaml {dd_home}/model_providers.yaml"

@@ -730,3 +730,47 @@ class TestEvalEndpointSuggestions:
         data = response.json()
         assert data["model"] == ""
         assert "not found" in data.get("message", "")
+
+
+class TestJudgeProviderResolution:
+    """The judge/endpoint api-key wiring: a base_url naming an enabled provider
+    resolves to that provider's real endpoint + its injected key env-var, so a
+    BYOK-stripped judge authenticates with the forwarded provider key (the same
+    keys SDG forwards). A literal URL with an inline key is left untouched (KIND)."""
+
+    def test_provider_name_resolves_to_endpoint_and_injected_key(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            eval_builder,
+            "resolve_provider",
+            lambda name: {
+                "name": "openai",
+                "endpoint": "https://api.openai.com/v1",
+                "provider_type": "openai",
+                "api_key": "OPENAI_API_KEY",
+            }
+            if name == "openai"
+            else None,
+        )
+        env: dict[str, str] = {}
+        spec = eval_builder._endpoint_spec(
+            {"judge": {"base_url": "openai", "model": "gpt-5"}},
+            "judge",
+            "EVAL_JUDGE_API_KEY",
+            env,
+        )
+        assert spec["base_url"] == "https://api.openai.com/v1"
+        # points at the injected provider key var, not the bespoke (unset) one
+        assert spec["api_key_env"] == "OPENAI_API_KEY"
+
+    def test_literal_url_with_inline_key_unchanged(self, monkeypatch) -> None:
+        monkeypatch.setattr(eval_builder, "resolve_provider", lambda name: None)
+        env: dict[str, str] = {}
+        spec = eval_builder._endpoint_spec(
+            {"judge": {"base_url": "http://judge:8000/v1", "model": "m", "api_key": "sk-x"}},
+            "judge",
+            "EVAL_JUDGE_API_KEY",
+            env,
+        )
+        assert spec["base_url"] == "http://judge:8000/v1"
+        assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
+        assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
