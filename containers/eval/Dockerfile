@@ -55,15 +55,14 @@ RUN cu13=/usr/local/lib/python3.12/site-packages/nvidia/cu13 \
 
 COPY run_eval.py /app/run_eval.py
 
-# Run as a non-root user (review hardening). /amortized/work is an
-# emptyDir volume the job mounts; the job spec's fsGroup (or the
-# platform's default) must allow this uid to write there — kind and
-# OpenShift both do. HOME must be writable for vllm/flashinfer JIT
-# caches, so point it at the work dir rather than /root. The USER must
-# be NUMERIC: kubelet cannot verify runAsNonRoot against a named user.
-RUN useradd --create-home --uid 1000 evaluser
+# Mirror the sdg/training images: no fixed USER, so the platform picks the
+# uid — OpenShift's SCC assigns one from the namespace range; plain k8s/kind
+# runs as root. /amortized/work is a world-writable emptyDir the job mounts,
+# and HOME points at it so vllm/flashinfer/triton JIT caches land somewhere
+# writable whatever uid the platform assigns. (A fixed USER 1000 + fsGroup
+# 1000 previously broke eval on OpenShift — 1000 is outside the SCC range.)
+RUN mkdir -p /amortized/work && chmod 777 /amortized/work
 ENV HOME=/amortized/work
-USER 1000
 
 WORKDIR /amortized/work
 

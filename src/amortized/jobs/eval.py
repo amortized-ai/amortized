@@ -422,10 +422,6 @@ async def build(
         resources=resources,
         image=image,
         resolved_config=resolved_config,
-        # The eval image runs as a numeric non-root user (USER 1000);
-        # assert it at the pod level. sdg/training images are root and
-        # leave this False (see JobBuildResult.run_as_non_root).
-        run_as_non_root=True,
     )
 
 
