@@ -345,6 +345,52 @@ class TestCommandWrapping:
         assert "cmd1 && cmd2" in result[2]
 
 
+class TestJobLoggingWrap:
+    def test_noop_without_mlflow_run(self) -> None:
+        from amortized.worker import _wrap_job_logging
+
+        cmd = ["sh", "-c", "thub osft --config /amortized/config.yaml"]
+        assert _wrap_job_logging(cmd, mlflow_run_created=False) == cmd
+
+    def test_tees_and_uploads_always_preserving_exit(self) -> None:
+        from amortized.worker import _wrap_job_logging
+
+        cmd = ["sh", "-c", "thub osft --config /c.yaml && mlflow artifacts log-artifacts -a model"]
+        result = _wrap_job_logging(cmd, mlflow_run_created=True)
+        assert result[0:2] == ["sh", "-c"]
+        shell = result[2]
+        # inner chain preserved
+        assert "thub osft --config /c.yaml" in shell
+        # a per-job temp dir is used instead of a fixed /tmp path (no collisions,
+        # not predictable)
+        assert "mktemp -d" in shell
+        assert "/tmp/amortized-job.log" not in shell
+        # tee to the per-job file for persistence while keeping stdout for live logs
+        assert 'tee "$_amz_log"' in shell
+        # the log is uploaded to the run's logs/ artifact path
+        assert 'mlflow artifacts log-artifact --local-file "$_amz_log"' in shell
+        assert "--artifact-path logs" in shell
+        # the temp dir is cleaned up after the upload
+        assert 'rm -rf "$_amz_dir"' in shell
+        # the real exit code is captured + re-raised (not tee's)
+        assert 'exit "$rc"' in shell
+
+    def test_reapplies_auth_pre_command_to_upload(self) -> None:
+        from amortized.worker import _wrap_job_logging
+
+        result = _wrap_job_logging(
+            ["thub", "osft"], mlflow_run_created=True, auth_pre_command="export PYTHONPATH=/x"
+        )
+        # the auth export precedes the upload; the piped subshell drops the in-chain export
+        assert "export PYTHONPATH=/x && mlflow artifacts log-artifact" in result[2]
+
+    def test_upload_guarded_on_run_id(self) -> None:
+        from amortized.worker import _wrap_job_logging
+
+        result = _wrap_job_logging(["thub", "x"], mlflow_run_created=True)
+        assert 'if [ -n "$MLFLOW_RUN_ID" ]; then' in result[2]
+
+
 class TestUploadBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_pre_command(self) -> None:
