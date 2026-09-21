@@ -228,6 +228,19 @@ class MLflowClient:
             )
             resp.raise_for_status()
 
+    async def download_artifact(self, run_id: str, path: str) -> bytes | None:
+        """Download a run artifact via the mlflow-artifacts proxy. Returns None if absent (404)."""
+        prefix = await self._resolve_artifact_prefix(run_id)
+        full_path = f"{prefix}/{path}"
+        async with self._client() as client:
+            resp = await client.get(
+                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.content
+
     async def finish_run(self, run_id: str, status: str = "FINISHED") -> None:
         """Mark a run as finished or failed."""
         now_ms = int(datetime.now(UTC).timestamp() * 1000)

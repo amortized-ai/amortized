@@ -765,6 +765,28 @@ async def cancel_job(
         "Returns the last N lines (default 100)."
     ),
 )
+async def _mlflow_log_fallback(mlflow_run_id: str | None, tail: int) -> list[str] | None:
+    """Return the tail of the console log persisted to a job's MLflow run
+    (``logs/amortized-job.log``, uploaded by worker._wrap_job_logging), or None if
+    unavailable. Used when the live pod is gone (K8s TTL cleanup)."""
+    if not mlflow_run_id:
+        return None
+    from amortized.config import settings as _settings
+    from amortized.core.mlflow_client import MLflowClient
+
+    if not _settings.mlflow_tracking_uri:
+        return None
+    try:
+        client = MLflowClient(_settings.mlflow_tracking_uri)
+        content = await client.download_artifact(mlflow_run_id, "logs/amortized-job.log")
+    except Exception as exc:
+        logger.warning("MLflow log fallback failed for run %s: %s", mlflow_run_id, exc)
+        return None
+    if not content:
+        return None
+    return content.decode("utf-8", errors="replace").splitlines()[-tail:]
+
+
 async def get_job_logs(
     job_id: str,
     tail: int = 100,
@@ -775,28 +797,36 @@ async def get_job_logs(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
+    lines: list[str] = []
+    live_msg: str | None = None
     handle = deserialize_handle(row.get("backend_handle"))
     if handle is None:
-        msg = "No backend handle — job may not have started"
-        return {"job_id": job_id, "logs": [], "message": msg}
+        live_msg = "No backend handle — job may not have started"
+    else:
+        try:
+            backend = get_backend(handle.backend_name)
+        except KeyError:
+            live_msg = f"Backend {handle.backend_name!r} not available"
+        else:
+            try:
+                async for line in backend.logs(handle):
+                    lines.append(line)
+                    if len(lines) > tail:
+                        lines = lines[-tail:]
+            except Exception as exc:
+                logger.warning("Failed to fetch live logs for job %s: %s", job_id, exc)
+                live_msg = str(exc)
 
-    try:
-        backend = get_backend(handle.backend_name)
-    except KeyError:
-        msg = f"Backend {handle.backend_name!r} not available"
-        return {"job_id": job_id, "logs": [], "message": msg}
+    if lines:
+        return {"job_id": job_id, "logs": lines}
 
-    lines: list[str] = []
-    try:
-        async for line in backend.logs(handle):
-            lines.append(line)
-            if len(lines) > tail:
-                lines = lines[-tail:]
-    except Exception as exc:
-        logger.warning("Failed to fetch logs for job %s: %s", job_id, exc)
-        return {"job_id": job_id, "logs": [], "message": str(exc)}
+    # No live logs (the pod was cleaned up after the job finished) — fall back to the
+    # console log persisted to the job's MLflow run (worker._wrap_job_logging).
+    persisted = await _mlflow_log_fallback(row.get("mlflow_run_id"), tail)
+    if persisted is not None:
+        return {"job_id": job_id, "logs": persisted, "source": "mlflow"}
 
-    return {"job_id": job_id, "logs": lines}
+    return {"job_id": job_id, "logs": [], "message": live_msg or "No logs available"}
 
 
 @router.get(
