@@ -38,7 +38,7 @@ from amortized.jobs.common import set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.eval")
 
-IMAGE = "ghcr.io/amortized-ai/eval:latest"
+IMAGE = "ghcr.io/amortized-ai/eval:demo"  # TEMP demo hack: pinned tag with gpt-5 judge hack (roll back)
 
 _ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 

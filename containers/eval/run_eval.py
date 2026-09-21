@@ -108,6 +108,11 @@ async def chat_completion(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    # TEMP demo hack (roll back after demo): gpt-5 needs max_completion_tokens
+    # instead of max_tokens and rejects a non-default temperature.
+    if str(endpoint.get("model", "")).startswith("gpt-5"):
+        body["max_completion_tokens"] = body.pop("max_tokens")
+        body.pop("temperature", None)
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:

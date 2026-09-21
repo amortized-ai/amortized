@@ -116,6 +116,12 @@ async def build(
     for mc in config.get("model_configs", []):
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
+        # TEMP demo hack (roll back after demo): gpt-5 needs max_completion_tokens
+        # instead of max_tokens and rejects a non-default temperature.
+        if str(mc.get("model", "")).startswith("gpt-5"):
+            if "max_tokens" in params:
+                params["max_completion_tokens"] = params.pop("max_tokens")
+            params.pop("temperature", None)
 
     for col in config.get("columns", []):
         if "model_config_alias" in col:

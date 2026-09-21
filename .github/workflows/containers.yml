@@ -160,6 +160,7 @@ jobs:
         with:
           images: ghcr.io/amortized-ai/eval
           tags: |
+            type=raw,value=demo
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
             type=semver,pattern={{version}}
