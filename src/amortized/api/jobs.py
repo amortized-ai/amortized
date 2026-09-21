@@ -757,14 +757,6 @@ async def cancel_job(
     return _job_response(row)
 
 
-@router.get(
-    "/{job_id}/logs",
-    operation_id="get_job_logs",
-    summary=(
-        "Get container logs for a job. Use to diagnose failed jobs. "
-        "Returns the last N lines (default 100)."
-    ),
-)
 async def _mlflow_log_fallback(mlflow_run_id: str | None, tail: int) -> list[str] | None:
     """Return the tail of the console log persisted to a job's MLflow run
     (``logs/amortized-job.log``, uploaded by worker._wrap_job_logging), or None if
@@ -787,6 +779,14 @@ async def _mlflow_log_fallback(mlflow_run_id: str | None, tail: int) -> list[str
     return content.decode("utf-8", errors="replace").splitlines()[-tail:]
 
 
+@router.get(
+    "/{job_id}/logs",
+    operation_id="get_job_logs",
+    summary=(
+        "Get container logs for a job. Use to diagnose failed jobs. "
+        "Returns the last N lines (default 100)."
+    ),
+)
 async def get_job_logs(
     job_id: str,
     tail: int = 100,
