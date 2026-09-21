@@ -710,9 +710,11 @@ function startReconcile(ns, providers, { restart }) {
 }
 
 // Add or update ONE provider in the user's set (bring-your-own-keys). Non-destructive: the
-// other providers are preserved. The first provider triggers the full stack provision; when
-// the stack is already up, only the server keys (if a key provider changed) + the Morty
-// sandbox are updated — no full re-provision.
+// other providers are preserved. When the stack is already up, only the server keys (if a
+// key provider changed) + the Morty sandbox are updated — no full re-provision. On first run
+// (stack not up) it PERSISTS ONLY and defers provisioning to the /gateway/ready trigger (the
+// splash's "Continue"), so the user can add several providers first and the stack is
+// provisioned once with the full set — avoiding a provision-then-reconcile per extra key.
 async function setUserProvider(user, provider, credential) {
   if (!MORTY_ENABLED) {
     throw new Error('Morty is not enabled on this deployment (OpenShell mTLS certs not mounted)');
@@ -728,16 +730,17 @@ async function setUserProvider(user, provider, credential) {
   // in-memory state, so a change still applies after a gateway restart cleared the map.
   const existing = stacks.get(ns);
   const rotate = (existing && existing.state === 'ready') || (await serverAvailable(ns));
-  stacks.delete(ns);
 
   if (rotate) {
+    stacks.delete(ns);
     // Restart the server only when a KEY provider changed (it feeds the server env); a
     // vertex-only add never touches the server, so just recreate the sandbox.
     const entry = startReconcile(ns, providers, { restart: PROVIDERS[provider].kind === 'key' });
-    return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
+    return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
   }
-  // First provider: full provision now that the set is non-empty.
-  return ensureUserStack(user);
+  // First run: persist only — the credential is stored, but provisioning waits for the
+  // explicit /gateway/ready trigger (Continue), which provisions with the full set.
+  return { ns, state: 'needs_key', error: null, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
 }
 
 // Remove ONE provider from the user's set. Re-stamps the server keys (dropping the removed

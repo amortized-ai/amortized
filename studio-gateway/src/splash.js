@@ -1,8 +1,9 @@
 // Provisioning splash shown for the initial navigation while a user's backend
 // stack is being created (~60-90s on first visit). It also hosts the per-user
-// "bring your own key" step: on first visit a user picks a model provider and
-// pastes its API key, which is POSTed to /gateway/provider before provisioning
-// proceeds. Polls /gateway/ready and reloads into the studio SPA once ready.
+// "bring your own keys" step: on first visit a user adds one or more model
+// providers (each POSTed to /gateway/provider, which persists it), then clicks
+// Continue to provision the stack once with the full set. Polls /gateway/ready
+// and reloads into the studio SPA once ready.
 
 const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)' };
 
@@ -16,16 +17,17 @@ function renderSplash(state, basePath = '') {
   const providerUrl = `${basePath}/gateway/provider`;
   const providers = Array.isArray(state && state.providers) && state.providers.length
     ? state.providers
-    : ['openai', 'anthropic'];
+    : ['openai', 'anthropic', 'vertex'];
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';
   const options = providers
     .map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(PROVIDER_LABELS[p] || p)}</option>`)
     .join('');
-  // Escape "<" so an error string containing "</script>" can't break out of the inline
+  // Escape "<" so injected strings containing "</script>" can't break out of the inline
   // <script> below (JSON.stringify alone doesn't escape it) — markup-injection safe.
-  const initial = JSON.stringify({ state: st, error: (state && state.error) || '' }).replace(/</g, '\\u003c');
+  const esc = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+  const initial = esc({ state: st, error: (state && state.error) || '' });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -44,7 +46,7 @@ function renderSplash(state, basePath = '') {
   }
   @media (prefers-color-scheme: dark) { body { background: #0f1214; color: #e0e0e0; } .card { background: #1b1f22 !important; box-shadow: none !important; } }
   .card {
-    background: #fff; border-radius: 12px; padding: 40px 44px; max-width: 440px; width: 92%; text-align: center;
+    background: #fff; border-radius: 12px; padding: 40px 44px; max-width: 460px; width: 92%; text-align: center;
     box-shadow: 0 4px 24px rgba(0,0,0,0.08);
   }
   .spinner {
@@ -63,6 +65,12 @@ function renderSplash(state, basePath = '') {
   }
   button:hover { background: #be0000; }
   button:disabled { opacity: 0.6; cursor: default; }
+  .btn-secondary { background: transparent; color: inherit; border: 1px solid rgba(0,0,0,0.28); }
+  .btn-secondary:hover { background: rgba(0,0,0,0.05); }
+  @media (prefers-color-scheme: dark) {
+    .btn-secondary { border-color: rgba(255,255,255,0.28); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.08); }
+  }
   .hidden { display: none; }
   .keyform { text-align: left; }
   .keyform label { display: block; font-size: 0.85rem; margin: 16px 0 5px; font-weight: 600; }
@@ -75,6 +83,12 @@ function renderSplash(state, basePath = '') {
     .keyform select, .keyform input, .keyform textarea { background: #0f1214; border-color: rgba(255,255,255,0.22); color: #e0e0e0; }
   }
   .keyform button { width: 100%; margin-top: 22px; }
+  .keyform .btn-add { margin-top: 18px; }
+  .configured-label { font-size: 0.8rem; font-weight: 600; margin-top: 18px; }
+  .configured { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .chip { font-size: 0.8rem; padding: 4px 11px; border-radius: 999px;
+          background: #e9f5e8; color: #1e4f18; border: 1px solid #95d58e; }
+  @media (prefers-color-scheme: dark) { .chip { background: rgba(13,32,9,0.4); color: #5ba352; border-color: #163b11; } }
   .formerr { color: #c9190b; font-size: 0.8rem; margin-top: 12px; }
   .hint { font-size: 0.78rem; opacity: 0.7; margin-top: 6px; }
 </style>
@@ -86,9 +100,11 @@ function renderSplash(state, basePath = '') {
       <h1 id="title">Preparing your Amortized Studio…</h1>
       <p id="detail">${detail}</p>
     </div>
-    <form class="keyform hidden" id="keyform" onsubmit="return submitKey(event)">
-      <h1>Connect your model</h1>
-      <p>Morty needs a model API key to chat. It is stored for your account only and used solely for your sandbox.</p>
+    <form class="keyform hidden" id="keyform" onsubmit="return addProvider(event)">
+      <h1>Connect your models</h1>
+      <p>Add one or more model providers for Morty. Each is stored for your account only and used solely for your sandbox. You can add or change these later in Settings.</p>
+      <div class="configured-label hidden" id="configured-label">Added</div>
+      <div class="configured hidden" id="configured"></div>
       <label for="provider">Provider</label>
       <select id="provider">${options}</select>
       <label for="apikey" id="credlabel">API key</label>
@@ -96,17 +112,20 @@ function renderSplash(state, basePath = '') {
       <textarea id="adcjson" class="hidden" rows="8" autocomplete="off" spellcheck="false" placeholder="paste your Vertex ADC JSON (application_default_credentials.json)"></textarea>
       <div class="hint" id="hint"></div>
       <div class="formerr hidden" id="formerr"></div>
-      <button type="submit" id="savebtn">Save &amp; continue</button>
+      <button type="submit" id="addbtn" class="btn-secondary btn-add">Add provider</button>
+      <button type="button" id="continuebtn" class="hidden" onclick="continueProvision()">Continue</button>
     </form>
     <div class="err hidden" id="err"></div>
     <button class="hidden" id="retry" onclick="retry()">Retry</button>
   </div>
 <script>
-  var READY_URL = ${JSON.stringify(readyUrl)};
-  var RETRY_URL = ${JSON.stringify(retryUrl)};
-  var PROVIDER_URL = ${JSON.stringify(providerUrl)};
+  var READY_URL = ${esc(readyUrl)};
+  var RETRY_URL = ${esc(retryUrl)};
+  var PROVIDER_URL = ${esc(providerUrl)};
+  var LABELS = ${esc(PROVIDER_LABELS)};
   var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.' };
   var POLL_MS = 2500;
+  var CONFIGURED = {};   // provider -> true (added this session / already stored)
   function el(id){ return document.getElementById(id); }
   function show(id, on){ var e = el(id); if (e) e.classList.toggle('hidden', !on); }
   // Vertex is ADC-only: its credential is a JSON blob (textarea), not a key string (input).
@@ -118,6 +137,29 @@ function renderSplash(state, basePath = '') {
     var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : 'API key';
     el('hint').textContent = HINTS[p.value] || '';
   }
+  function renderConfigured(){
+    var names = Object.keys(CONFIGURED);
+    var box = el('configured');
+    box.innerHTML = names.map(function(p){
+      return '<span class="chip">' + (LABELS[p] || p) + '</span>';
+    }).join('');
+    show('configured', names.length > 0);
+    show('configured-label', names.length > 0);
+    show('continuebtn', names.length > 0);   // >=1 provider required before provisioning
+  }
+  function loadConfigured(){
+    // Populate already-stored providers (e.g. after a reload mid-setup).
+    fetch(PROVIDER_URL, { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(b){
+        if (b && Array.isArray(b.configured)) {
+          CONFIGURED = {};
+          b.configured.forEach(function(p){ CONFIGURED[p] = true; });
+          renderConfigured();
+        }
+      })
+      .catch(function(){});
+  }
   function showProvisioning(){
     show('keyform', false); show('err', false); show('retry', false); show('status', true);
     el('spinner').classList.remove('hidden');
@@ -128,6 +170,7 @@ function renderSplash(state, basePath = '') {
     el('spinner').classList.add('hidden');
     show('status', false); show('err', false); show('retry', false); show('keyform', true);
     updateHint();
+    loadConfigured();
   }
   function toError(msg){
     el('spinner').classList.add('hidden');
@@ -159,7 +202,9 @@ function renderSplash(state, basePath = '') {
       .then(applyState)
       .catch(function(){ setTimeout(poll, POLL_MS); });
   }
-  function submitKey(ev){
+  // Add ONE provider (persist only; does not provision yet). Stays on the form so the
+  // user can add more; Continue then provisions with the full set.
+  function addProvider(ev){
     ev.preventDefault();
     var provider = el('provider').value;
     var adc = isAdc(provider);
@@ -172,7 +217,7 @@ function renderSplash(state, basePath = '') {
     } else if (!key || key.trim().length < 8) {
       fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false;
     }
-    var btn = el('savebtn'); btn.disabled = true; btn.textContent = 'Saving…';
+    var btn = el('addbtn'); btn.disabled = true; btn.textContent = 'Adding…';
     fetch(PROVIDER_URL, {
       method: 'POST', cache: 'no-store',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -180,12 +225,28 @@ function renderSplash(state, basePath = '') {
     })
       .then(function(r){ return r.json().then(function(b){ return { ok: r.ok, body: b }; }); })
       .then(function(res){
-        btn.disabled = false; btn.textContent = 'Save & continue';
-        if (!res.ok) { fe.textContent = (res.body && res.body.error) || 'Could not save key.'; fe.classList.remove('hidden'); return; }
-        applyState(res.body);
+        btn.disabled = false; btn.textContent = 'Add provider';
+        if (!res.ok) { fe.textContent = (res.body && res.body.error) || 'Could not add provider.'; fe.classList.remove('hidden'); return; }
+        if (res.body && Array.isArray(res.body.configured)) {
+          CONFIGURED = {};
+          res.body.configured.forEach(function(p){ CONFIGURED[p] = true; });
+        } else {
+          CONFIGURED[provider] = true;
+        }
+        el('apikey').value = ''; el('adcjson').value = '';
+        renderConfigured();
       })
-      .catch(function(){ btn.disabled = false; btn.textContent = 'Save & continue'; fe.textContent = 'Network error. Try again.'; fe.classList.remove('hidden'); });
+      .catch(function(){ btn.disabled = false; btn.textContent = 'Add provider'; fe.textContent = 'Network error. Try again.'; fe.classList.remove('hidden'); });
     return false;
+  }
+  // Provision the stack with everything added so far (retry clears the needs_key entry,
+  // then ensureUserStack provisions with the full provider set).
+  function continueProvision(){
+    showProvisioning();
+    fetch(RETRY_URL, { method: 'POST', cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(applyState)
+      .catch(function(){ setTimeout(poll, POLL_MS); });
   }
   var providerSel = el('provider'); if (providerSel) providerSel.addEventListener('change', updateHint);
   applyState(${initial});
