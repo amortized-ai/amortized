@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, type CSSProperties } from "react"
 import { Link, Outlet, useLocation } from "react-router"
 import {
   Home,
@@ -27,6 +27,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarInset,
+  SidebarResizeHandle,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Separator } from "@/components/ui/separator"
@@ -163,6 +164,7 @@ function ChatToggle() {
 export function AppLayout() {
   const location = useLocation()
   const theme = useUIStore((s) => s.theme)
+  const navSidebarWidth = useUIStore((s) => s.navSidebarWidth)
   const panelOpen = useChatStore((s) => s.panelOpen)
   const panelWidth = useChatStore((s) => s.panelWidth)
   const isChatPage = location.pathname.startsWith("/chat")
@@ -174,7 +176,7 @@ export function AppLayout() {
   }, [theme])
 
   return (
-    <SidebarProvider>
+    <SidebarProvider style={{ "--sidebar-width": `${navSidebarWidth}px` } as CSSProperties}>
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <Link to="/" className="flex items-center gap-2 px-2 py-1 rounded-lg transition-colors duration-200 hover:bg-muted">
@@ -209,6 +211,7 @@ export function AppLayout() {
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
+      <SidebarResizeHandle />
       <SidebarInset className="max-h-svh">
         <header className="relative z-20 flex h-12 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger data-testid="sidebar-trigger" />
