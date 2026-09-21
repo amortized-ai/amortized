@@ -757,6 +757,11 @@ async def cancel_job(
     return _job_response(row)
 
 
+# Upper bound on how many log lines a single request may ask for, so a caller
+# cannot force an unbounded tail slice / response.
+_MAX_LOG_TAIL = 5000
+
+
 async def _mlflow_log_fallback(mlflow_run_id: str | None, tail: int) -> list[str] | None:
     """Return the tail of the console log persisted to a job's MLflow run
     (``logs/amortized-job.log``, uploaded by worker._wrap_job_logging), or None if
@@ -770,13 +775,10 @@ async def _mlflow_log_fallback(mlflow_run_id: str | None, tail: int) -> list[str
         return None
     try:
         client = MLflowClient(_settings.mlflow_tracking_uri)
-        content = await client.download_artifact(mlflow_run_id, "logs/amortized-job.log")
+        return await client.read_artifact_tail(mlflow_run_id, "logs/amortized-job.log", tail)
     except Exception as exc:
         logger.warning("MLflow log fallback failed for run %s: %s", mlflow_run_id, exc)
         return None
-    if not content:
-        return None
-    return content.decode("utf-8", errors="replace").splitlines()[-tail:]
 
 
 @router.get(
@@ -792,6 +794,7 @@ async def get_job_logs(
     tail: int = 100,
     db: asyncpg.Connection = Depends(_get_db),
 ) -> dict[str, Any]:
+    tail = max(1, min(tail, _MAX_LOG_TAIL))
     repo = Repository(db)
     row = await core_get_job(repo, job_id)
     if row is None:

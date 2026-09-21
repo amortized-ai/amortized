@@ -78,19 +78,23 @@ def _wrap_job_logging(
     if not mlflow_run_created:
         return command
     inner = command[2] if command[:2] == ["sh", "-c"] and len(command) == 3 else shlex.join(command)
-    log = "/tmp/amortized-job.log"
-    rc = "/tmp/amortized-job.rc"
+    # Per-job temp dir (mktemp) rather than a fixed /tmp path, so concurrent jobs on
+    # the local backend never clobber each other's log/rc and the path isn't
+    # predictable (CWE-377). The dir is removed after the upload.
     auth = f"{auth_pre_command} && " if auth_pre_command else ""
     upload = (
         f'if [ -n "$MLFLOW_RUN_ID" ]; then '
-        f"{auth}mlflow artifacts log-artifact --local-file {log} "
+        f'{auth}mlflow artifacts log-artifact --local-file "$_amz_log" '
         f'--run-id "$MLFLOW_RUN_ID" --artifact-path logs || true; fi'
     )
     wrapped = (
-        f'{{ {inner}; echo "$?" > {rc}; }} 2>&1 | tee {log}; '
-        f'rc="$(cat {rc} 2>/dev/null || echo 1)"; '
+        '_amz_dir="$(mktemp -d)"; '
+        '_amz_log="$_amz_dir/amortized-job.log"; _amz_rc="$_amz_dir/amortized-job.rc"; '
+        f'{{ {inner}; echo "$?" > "$_amz_rc"; }} 2>&1 | tee "$_amz_log"; '
+        'rc="$(cat "$_amz_rc" 2>/dev/null || echo 1)"; '
         f"{upload}; "
-        f'exit "$rc"'
+        'rm -rf "$_amz_dir"; '
+        'exit "$rc"'
     )
     return ["sh", "-c", wrapped]
 

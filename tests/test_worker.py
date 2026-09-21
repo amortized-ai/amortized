@@ -361,11 +361,17 @@ class TestJobLoggingWrap:
         shell = result[2]
         # inner chain preserved
         assert "thub osft --config /c.yaml" in shell
-        # tee to a file for persistence while keeping stdout for live logs
-        assert "tee /tmp/amortized-job.log" in shell
+        # a per-job temp dir is used instead of a fixed /tmp path (no collisions,
+        # not predictable)
+        assert "mktemp -d" in shell
+        assert "/tmp/amortized-job.log" not in shell
+        # tee to the per-job file for persistence while keeping stdout for live logs
+        assert 'tee "$_amz_log"' in shell
         # the log is uploaded to the run's logs/ artifact path
-        assert "mlflow artifacts log-artifact --local-file /tmp/amortized-job.log" in shell
+        assert 'mlflow artifacts log-artifact --local-file "$_amz_log"' in shell
         assert "--artifact-path logs" in shell
+        # the temp dir is cleaned up after the upload
+        assert 'rm -rf "$_amz_dir"' in shell
         # the real exit code is captured + re-raised (not tee's)
         assert 'exit "$rc"' in shell
 

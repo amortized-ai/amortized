@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -228,18 +229,25 @@ class MLflowClient:
             )
             resp.raise_for_status()
 
-    async def download_artifact(self, run_id: str, path: str) -> bytes | None:
-        """Download a run artifact via the mlflow-artifacts proxy. Returns None if absent (404)."""
+    async def read_artifact_tail(
+        self, run_id: str, path: str, max_lines: int
+    ) -> list[str] | None:
+        """Return the last ``max_lines`` lines of a text artifact via the
+        mlflow-artifacts proxy. Streams the response through a bounded deque so a
+        large artifact never fully buffers in the API worker (peak memory is
+        O(max_lines), independent of artifact size). Returns None if absent (404)."""
         prefix = await self._resolve_artifact_prefix(run_id)
         full_path = f"{prefix}/{path}"
-        async with self._client() as client:
-            resp = await client.get(
-                self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}"),
-            )
+        tail: deque[str] = deque(maxlen=max(1, max_lines))
+        async with self._client() as client, client.stream(
+            "GET", self._url(f"/api/2.0/mlflow-artifacts/artifacts/{full_path}")
+        ) as resp:
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            return resp.content
+            async for line in resp.aiter_lines():
+                tail.append(line)
+        return list(tail)
 
     async def finish_run(self, run_id: str, status: str = "FINISHED") -> None:
         """Mark a run as finished or failed."""
