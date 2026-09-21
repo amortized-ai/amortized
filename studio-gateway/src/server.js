@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const { createProxyMiddleware, responseInterceptor } = require('http-proxy-middleware');
-const { ensureUserStack, getState, markForRetry, setUserKey, getProviderStatus, nsForUser } = require('./provision');
+const { ensureUserStack, getState, markForRetry, setUserProvider, removeUserProvider, getProviderStatus, nsForUser } = require('./provision');
 const { renderSplash } = require('./splash');
 const { resolveUser, identityDebug } = require('./auth');
 
@@ -102,7 +102,8 @@ app.post('/gateway/retry', (req, res) => {
   res.json({ user, ...state });
 });
 
-// Current model-provider status for the caller (provider name only, never the key).
+// Current model-provider status for the caller: which providers are supported and which
+// the caller has configured (names only, never the credentials).
 app.get('/gateway/provider', async (req, res) => {
   const user = currentUser(req);
   if (!user) return res.status(401).json({ error: 'no authenticated user' });
@@ -114,15 +115,28 @@ app.get('/gateway/provider', async (req, res) => {
   }
 });
 
-// Set (or rotate) the caller's model provider key (bring-your-own-key). JSON body
-// is parsed only for this route so the per-user backend/MLflow proxies keep the raw
-// request stream intact. The key is never logged or echoed back.
+// Add or update ONE of the caller's model providers (bring-your-own-keys). Non-destructive:
+// the caller's other providers are preserved. JSON body is parsed only for this route so the
+// per-user backend/MLflow proxies keep the raw request stream intact. The credential is
+// never logged or echoed back.
 app.post('/gateway/provider', express.json({ limit: '16kb' }), async (req, res) => {
   const user = currentUser(req);
   if (!user) return res.status(401).json({ error: 'no authenticated user' });
   const { provider, key } = req.body || {};
   try {
-    const state = await setUserKey(user, provider, key);
+    const state = await setUserProvider(user, provider, key);
+    res.json({ user, ...state });
+  } catch (err) {
+    res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+// Remove ONE of the caller's model providers.
+app.delete('/gateway/provider/:provider', async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: 'no authenticated user' });
+  try {
+    const state = await removeUserProvider(user, req.params.provider);
     res.json({ user, ...state });
   } catch (err) {
     res.status(400).json({ error: String(err.message || err) });
