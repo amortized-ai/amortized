@@ -32,6 +32,7 @@ from typing import Any
 
 import amortized.config as config_mod
 from amortized.backends import Resources
+from amortized.core.model_catalog import inject_enabled_provider_keys, resolve_provider
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import set_mlflow_run_tag
 
@@ -56,11 +57,21 @@ def _endpoint_spec(
     endpoint = config.get(key)
     if not isinstance(endpoint, dict) or not endpoint.get("base_url") or not endpoint.get("model"):
         raise JobBuildError(f"{key}: base_url and model are required")
+    base_url = str(endpoint["base_url"])
     api_key = endpoint.get("api_key", "")
+    # A base_url that names an enabled provider (e.g. "openai") resolves to that
+    # provider's real endpoint + its injected key env-var — the same catalog SDG
+    # uses — so a BYOK-stripped judge/endpoint still authenticates with the
+    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...).
+    provider = resolve_provider(base_url)
+    if provider:
+        base_url = provider.get("endpoint", base_url)
+        if not api_key:
+            env_name = provider.get("api_key", env_name)
     if api_key:
         env[env_name] = api_key
     return {
-        "base_url": str(endpoint["base_url"]).rstrip("/"),
+        "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
         "api_key_env": env_name,
     }
@@ -300,6 +311,10 @@ async def build(
     config_files: dict[str, str],
 ) -> JobBuildResult:
     env: dict[str, str] = {}
+    # Forward every configured provider key into the job (same as SDG), so the
+    # judge (and any external endpoint) can authenticate with OPENAI_API_KEY /
+    # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
+    inject_enabled_provider_keys(env)
 
     # --- Model under evaluation: embedded serving or external endpoint ---
     has_model_source = bool(
@@ -422,10 +437,6 @@ async def build(
         resources=resources,
         image=image,
         resolved_config=resolved_config,
-        # The eval image runs as a numeric non-root user (USER 1000);
-        # assert it at the pod level. sdg/training images are root and
-        # leave this False (see JobBuildResult.run_as_non_root).
-        run_as_non_root=True,
     )
 
 

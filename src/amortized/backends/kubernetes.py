@@ -139,7 +139,6 @@ class KubernetesBackend:
             V1EmptyDirVolumeSource,
             V1EnvVar,
             V1EnvVarSource,
-            V1PodSecurityContext,
             V1PodSpec,
             V1ResourceRequirements,
             V1SecretKeySelector,
@@ -282,15 +281,12 @@ class KubernetesBackend:
             restart_policy="Never",
             node_selector=node_selector,
             runtime_class_name=runtime_class_name,
-            # Per-job: only images with a numeric non-root USER (eval) may
-            # assert runAsNonRoot — the sdg/training images run as root and
-            # would fail to start (CreateContainerConfigError) under a global
-            # flag. fsGroup makes the shared emptyDir volumes group-writable
-            # for the non-root uid; it is only needed when running non-root.
-            security_context=V1PodSecurityContext(
-                run_as_non_root=spec.run_as_non_root,
-                fs_group=1000 if spec.run_as_non_root else None,
-            ),
+            # No pod-level securityContext: every job image runs as root-in-image,
+            # so the platform picks the uid + fsGroup — OpenShift's SCC assigns
+            # both from the namespace range; plain k8s runs as root. Hardcoding
+            # fsGroup here broke eval on OpenShift (1000 is outside the allowed
+            # range). Container-level hardening (no-priv-escalation, drop caps)
+            # still applies to every job.
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
