@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Loader2, CircleCheck, XCircle } from "lucide-react"
+import { Link } from "react-router"
 import { cn } from "@/lib/utils"
 import { getJob, getJobDurationStats, getJobLogs } from "@/lib/api-client"
 import type { JobStatus } from "@/types/api"
@@ -288,34 +289,34 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
 
       {status === "succeeded" && (
         <div className="mt-3 flex items-center gap-3 text-xs">
-          <a
-            href={`/jobs?job=${encodeURIComponent(jobId)}`}
+          <Link
+            to={`/jobs?job=${encodeURIComponent(jobId)}`}
             className="text-primary dark:text-primary hover:underline font-medium"
           >
             View Job →
-          </a>
+          </Link>
           <span className="text-muted-foreground/30">|</span>
           {jobType === "TRAINING" ? (
-            <a
-              href={mlflowRunId ? `/models?run=${encodeURIComponent(mlflowRunId)}` : "/models"}
+            <Link
+              to={mlflowRunId ? `/models?run=${encodeURIComponent(mlflowRunId)}` : "/models"}
               className="text-primary dark:text-primary hover:underline font-medium"
             >
               View Model →
-            </a>
+            </Link>
           ) : jobType === "EVAL" ? (
-            <a
-              href="/evaluation"
+            <Link
+              to="/evaluation"
               className="text-primary dark:text-primary hover:underline font-medium"
             >
               View Results →
-            </a>
+            </Link>
           ) : (
-            <a
-              href={`/datasets?job=${encodeURIComponent(jobId)}`}
+            <Link
+              to={`/datasets?job=${encodeURIComponent(jobId)}`}
               className="text-primary dark:text-primary hover:underline font-medium"
             >
               View Dataset →
-            </a>
+            </Link>
           )}
         </div>
       )}

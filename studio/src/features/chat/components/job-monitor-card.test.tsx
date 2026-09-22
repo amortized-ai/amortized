@@ -1,6 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { render as rtlRender, screen, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { MemoryRouter } from "react-router"
 import { JobMonitorCard } from "./job-monitor-card"
+
+// JobMonitorCard renders react-router <Link>s in its success state, which need a
+// router context — render inside a MemoryRouter.
+function render(ui: React.ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 const getJob = vi.fn()
 const getJobLogs = vi.fn()
