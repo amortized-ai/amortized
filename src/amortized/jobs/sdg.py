@@ -43,9 +43,9 @@ _REASONING_MODEL_RE = re.compile(r"(?:gpt-5|o[1-9])", re.IGNORECASE)
 
 
 def _is_reasoning_model(model: str) -> bool:
-    """OpenAI reasoning models (gpt-5*, o1/o3/o4-series) only accept the default
-    temperature. The SDG path runs through litellm, which already maps max_tokens
-    to max_completion_tokens but rejects a non-default temperature."""
+    """OpenAI reasoning models (gpt-5*, o1/o3/o4-series) reject max_tokens and a
+    non-default temperature: they require max_completion_tokens and only accept
+    the default temperature."""
     name = (model or "").rsplit("/", 1)[-1]
     return bool(_REASONING_MODEL_RE.match(name))
 
@@ -130,6 +130,8 @@ async def build(
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
         if _is_reasoning_model(mc.get("model", "")):
+            if "max_tokens" in params:
+                params["max_completion_tokens"] = params.pop("max_tokens")
             params.pop("temperature", None)
 
     for col in config.get("columns", []):
