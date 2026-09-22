@@ -501,6 +501,49 @@ class TestScoreParsing:
         assert scores == {"a": 10.0, "b": 0.0}
 
 
+class TestReasoningModelParams:
+    """The runner sends reasoning models max_completion_tokens and no temperature."""
+
+    def _load_runner_module(self):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_detects_reasoning_family(self) -> None:
+        m = self._load_runner_module()
+        for model in [
+            "gpt-5",
+            "gpt-5.6-sol",
+            "gpt-5-mini",
+            "o1-mini",
+            "o3",
+            "o4-mini",
+            "openai/gpt-5.6",
+        ]:
+            assert m.is_reasoning_model(model), model
+        for model in ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "Qwen/Qwen3.5-2B", ""]:
+            assert not m.is_reasoning_model(model), model
+
+    def test_reasoning_body_uses_max_completion_tokens_no_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = m.build_chat_body("gpt-5.6-sol", [{"role": "user", "content": "hi"}], 0.0, 1024)
+        assert body["max_completion_tokens"] == 1024
+        assert "max_tokens" not in body
+        assert "temperature" not in body
+
+    def test_standard_body_keeps_max_tokens_and_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = m.build_chat_body("gpt-4o", [{"role": "user", "content": "hi"}], 0.2, 512)
+        assert body["max_tokens"] == 512
+        assert body["temperature"] == 0.2
+        assert "max_completion_tokens" not in body
+
+
 
 
 class TestRubricDriftWarning:

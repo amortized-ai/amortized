@@ -91,6 +91,32 @@ def split_prompt_reference(record: dict[str, Any]) -> tuple[list[dict[str, str]]
     return prompt, reference
 
 
+_REASONING_MODEL_RE = re.compile(r"(?:gpt-5|o[1-9])", re.IGNORECASE)
+
+
+def is_reasoning_model(model: str) -> bool:
+    """OpenAI reasoning models (gpt-5*, o1/o3/o4-series) reject max_tokens and a
+    non-default temperature: they require max_completion_tokens and only accept
+    the default temperature."""
+    name = (model or "").rsplit("/", 1)[-1]
+    return bool(_REASONING_MODEL_RE.match(name))
+
+
+def build_chat_body(
+    model: str,
+    messages: list[dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": model, "messages": messages}
+    if is_reasoning_model(model):
+        body["max_completion_tokens"] = max_tokens
+    else:
+        body["temperature"] = temperature
+        body["max_tokens"] = max_tokens
+    return body
+
+
 async def chat_completion(
     client: httpx.AsyncClient,
     endpoint: dict[str, Any],
@@ -102,12 +128,7 @@ async def chat_completion(
 ) -> str:
     url = endpoint["base_url"].rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    body = {
-        "model": endpoint["model"],
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
+    body = build_chat_body(endpoint["model"], messages, temperature, max_tokens)
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:

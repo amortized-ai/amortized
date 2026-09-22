@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shlex
 from typing import Any
 
@@ -36,6 +37,17 @@ _STALE_CONFIG_KEYS = (
     "document_id",
     "output_dir",
 )
+
+
+_REASONING_MODEL_RE = re.compile(r"(?:gpt-5|o[1-9])", re.IGNORECASE)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """OpenAI reasoning models (gpt-5*, o1/o3/o4-series) only accept the default
+    temperature. The SDG path runs through litellm, which already maps max_tokens
+    to max_completion_tokens but rejects a non-default temperature."""
+    name = (model or "").rsplit("/", 1)[-1]
+    return bool(_REASONING_MODEL_RE.match(name))
 
 
 class SDGBuildError(JobBuildError):
@@ -117,6 +129,8 @@ async def build(
     for mc in config.get("model_configs", []):
         params = mc.setdefault("inference_parameters", {})
         params.setdefault("max_parallel_requests", 32)
+        if _is_reasoning_model(mc.get("model", "")):
+            params.pop("temperature", None)
 
     for col in config.get("columns", []):
         if "model_config_alias" in col:
