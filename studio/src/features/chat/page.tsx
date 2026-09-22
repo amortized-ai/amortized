@@ -3,6 +3,8 @@ import { useNavigate } from "react-router"
 import { useChat } from "./hooks/use-chat"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
+import { useUIStore } from "@/stores/ui-store"
+import { useDragResize } from "@/hooks/use-drag-resize"
 import { MessageList } from "./components/message-list"
 import { ChatInput } from "./components/chat-input"
 import { ConversationList } from "./components/conversation-list"
@@ -19,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Bot } from "lucide-react"
+import { Plus, Bot, GripVertical } from "lucide-react"
 import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
 import { useProviderStatus } from "./api/use-providers"
 import { clearConversationSession } from "@/lib/api-client"
@@ -102,6 +104,15 @@ export default function ChatPage() {
   const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
     useSettingsStore()
   const { connectedProviders } = useProviderStatus()
+
+  const conversationsPanelWidth = useUIStore((s) => s.conversationsPanelWidth)
+  const setConversationsPanelWidth = useUIStore((s) => s.setConversationsPanelWidth)
+  const onResizeConversations = useDragResize({
+    getWidth: () => useUIStore.getState().conversationsPanelWidth,
+    setWidth: setConversationsPanelWidth,
+    min: 240,
+    max: 480,
+  })
 
   const activeProviders = useMemo(() => {
     return Object.entries(PROVIDER_CATALOG)
@@ -237,7 +248,17 @@ export default function ChatPage() {
         onNew={handleNewConversation}
         onDelete={handleDeleteConversation}
         onRename={updateConversationTitle}
+        width={conversationsPanelWidth}
       />
+      <div
+        onMouseDown={onResizeConversations}
+        className="group flex w-1.5 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/10 active:bg-primary/20 transition-colors"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize conversations panel"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+      </div>
       <div className="flex flex-1 flex-col min-h-0 bg-accent/20">
         <div className="flex items-center justify-between border-b bg-background/80 backdrop-blur-sm px-4 h-12">
           <div className="flex items-center gap-2">
