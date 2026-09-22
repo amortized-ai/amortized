@@ -57,6 +57,48 @@ def _wrap_command(
     return ["sh", "-c", pre_chain]
 
 
+def _wrap_job_logging(
+    command: list[str],
+    mlflow_run_created: bool,
+    auth_pre_command: str = "",
+) -> list[str]:
+    """Tee the job's console output to a file and upload it to the job's MLflow run as a
+    ``logs/`` artifact — ALWAYS, even on failure — so logs survive the pod's TTL cleanup.
+
+    Job logs are otherwise read live from the pod, and K8s deletes finished Jobs + pods
+    (ttlSecondsAfterFinished), so an overnight job's logs vanish once it finishes. This keeps
+    them in the run (AD-3: MLflow is the store). The pod's stdout is preserved via ``tee`` so
+    live monitoring still works, and the real exit code is captured and re-raised so the Job
+    status still reflects success/failure. No-op when no MLflow run exists (nowhere to upload).
+
+    The MLflow auth pre-command (a PYTHONPATH export for the shipped sitecustomize) is
+    re-applied to the upload: the tee pipeline runs the main chain in a subshell, so its
+    in-chain export does not reach the post-pipe upload.
+    """
+    if not mlflow_run_created:
+        return command
+    inner = command[2] if command[:2] == ["sh", "-c"] and len(command) == 3 else shlex.join(command)
+    # Per-job temp dir (mktemp) rather than a fixed /tmp path, so concurrent jobs on
+    # the local backend never clobber each other's log/rc and the path isn't
+    # predictable (CWE-377). The dir is removed after the upload.
+    auth = f"{auth_pre_command} && " if auth_pre_command else ""
+    upload = (
+        f'if [ -n "$MLFLOW_RUN_ID" ]; then '
+        f'{auth}mlflow artifacts log-artifact --local-file "$_amz_log" '
+        f'--run-id "$MLFLOW_RUN_ID" --artifact-path logs || true; fi'
+    )
+    wrapped = (
+        '_amz_dir="$(mktemp -d)"; '
+        '_amz_log="$_amz_dir/amortized-job.log"; _amz_rc="$_amz_dir/amortized-job.rc"; '
+        f'{{ {inner}; echo "$?" > "$_amz_rc"; }} 2>&1 | tee "$_amz_log"; '
+        'rc="$(cat "$_amz_rc" 2>/dev/null || echo 1)"; '
+        f"{upload}; "
+        'rm -rf "$_amz_dir"; '
+        'exit "$rc"'
+    )
+    return ["sh", "-c", wrapped]
+
+
 # Where the job's config ConfigMap is mounted, and where the pod's own projected
 # service-account token lives — the client env below points MLflow at both.
 _JOB_CONFIG_DIR = "/amortized"
@@ -380,6 +422,11 @@ async def _run_job(job: dict[str, Any]) -> None:
     # --- Wrap command with pre/post commands ---
     post_commands = result.post_commands if mlflow_run_created else []
     final_command = _wrap_command(result.command, all_pre_commands, post_commands)
+    # Persist the job's console log to its MLflow run so it survives the pod's TTL cleanup
+    # (finished Jobs + pods are deleted; logs are otherwise only readable live from the pod).
+    final_command = _wrap_job_logging(
+        final_command, mlflow_run_created, mlflow_auth_pre_command or ""
+    )
 
     # --- Submit ---
     spec = JobSpec(
