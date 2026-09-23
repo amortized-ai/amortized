@@ -99,6 +99,7 @@ beforeEach(() => {
   mockStoreValue.conversations = []
   subscribers.clear()
   vi.clearAllMocks()
+  mockGetConversationMessages.mockReturnValue([])
 })
 
 describe("useChat", () => {
