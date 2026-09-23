@@ -5,9 +5,13 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { useUIStore } from "@/stores/ui-store"
+import { useDragResize } from "@/hooks/use-drag-resize"
 
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 400
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -170,7 +174,7 @@ function Sidebar({
     >
       <div
         className={cn(
-          "duration-200 relative h-svh w-(--sidebar-width) bg-transparent transition-[width] ease-linear",
+          "duration-200 relative h-svh w-(--sidebar-width) bg-transparent transition-[width] ease-linear [.is-resizing_&]:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -180,7 +184,7 @@ function Sidebar({
       />
       <div
         className={cn(
-          "duration-200 fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] ease-linear md:flex",
+          "duration-200 fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] ease-linear [.is-resizing_&]:transition-none md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -199,6 +203,35 @@ function Sidebar({
         </div>
       </div>
     </div>
+  )
+}
+
+// Drag-to-resize handle for the main nav sidebar. Sits at the sidebar's right
+// edge and drives --sidebar-width (via useUIStore.navSidebarWidth, wired in the
+// layout). Only shown on desktop while expanded — collapsed/icon and mobile
+// keep their fixed widths.
+function SidebarResizeHandle() {
+  const { state, isMobile } = useSidebar()
+  const width = useUIStore((s) => s.navSidebarWidth)
+  const setNavSidebarWidth = useUIStore((s) => s.setNavSidebarWidth)
+  const onMouseDown = useDragResize({
+    getWidth: () => useUIStore.getState().navSidebarWidth,
+    setWidth: setNavSidebarWidth,
+    min: SIDEBAR_MIN_WIDTH,
+    max: SIDEBAR_MAX_WIDTH,
+  })
+
+  if (isMobile || state !== "expanded") return null
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      className="fixed bottom-0 top-12 z-30 hidden w-1.5 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-primary/20 active:bg-primary/30 md:block"
+      style={{ left: width }}
+    />
   )
 }
 
@@ -401,6 +434,7 @@ export {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarResizeHandle,
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,

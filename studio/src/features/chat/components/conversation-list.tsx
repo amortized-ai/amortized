@@ -13,6 +13,7 @@ interface ConversationListProps {
   onNew: () => void
   onDelete?: (id: string) => void
   onRename?: (id: string, title: string) => void
+  width?: number
 }
 
 export function ConversationList({
@@ -22,6 +23,7 @@ export function ConversationList({
   onNew,
   onDelete,
   onRename,
+  width = 320,
 }: ConversationListProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -54,7 +56,7 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex h-full w-80 flex-col border-r bg-muted/30" style={{ width: '320px' }}>
+    <div className="flex h-full shrink-0 flex-col border-r bg-muted/30" style={{ width }}>
       <div className="flex items-center justify-between border-b bg-background/80 backdrop-blur-sm px-3 h-12">
         <span className="text-sm font-semibold">Conversations</span>
         <div className="flex items-center gap-1">

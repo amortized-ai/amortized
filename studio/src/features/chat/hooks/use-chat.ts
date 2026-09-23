@@ -203,6 +203,33 @@ function extractSessionData(
   return { tools, text: cleanText }
 }
 
+// Build the job-confirmation card from a turn's tool results. The agent may
+// validate several times in one turn (fix an error, re-validate), so walk
+// backwards and use the most recent result that parses as a valid config — an
+// earlier ERRORED result must not shadow a later successful one. Shared by every
+// path that renders an assistant turn (user send, async poll, job-finished
+// notify) so the card is never dropped depending on how the turn was triggered.
+function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
+  for (let i = toolResults.length - 1; i >= 0; i--) {
+    const t = toolResults[i]!
+    if (!(t.name in VALIDATE_TO_CREATE_ENDPOINT)) continue
+    const validated = extractValidatedJobConfig(t.result)
+    if (validated) {
+      return {
+        action: `Create ${validated.jobType.toUpperCase()} Job`,
+        description: `Submit this ${validated.jobType} job?`,
+        params: validated.config,
+        jobType: validated.jobType as "sdg" | "training" | "eval" | "serve",
+        endpoint: VALIDATE_TO_CREATE_ENDPOINT[t.name],
+        config: validated.config,
+        parentJobId: validated.parentJobId,
+        recipe: validated.recipe,
+      }
+    }
+  }
+  return null
+}
+
 
 function startThinkingTimer(
   convId: string,
@@ -553,6 +580,7 @@ export function useChat() {
         for (const response of pending) {
           const parsed = parseOpenCodeResponse(response)
           const session = extractSessionData([response], parsed.toolResults)
+          const proposedAction = buildProposedAction(session.tools)
 
           const phaseTool = session.tools.find((t) => t.name === "signal_phase")
           let phase: string | null = null
@@ -570,7 +598,7 @@ export function useChat() {
             content: session.text || parsed.content,
             timestamp: new Date().toISOString(),
             toolResults: session.tools,
-            proposedAction: null,
+            proposedAction,
             optionCards: [],
             phase: phase ?? undefined,
           }
@@ -582,6 +610,7 @@ export function useChat() {
             content: followUp.content,
             timestamp: followUp.timestamp,
             toolResults: followUp.toolResults,
+            proposedAction,
             phase: followUp.phase,
           })
         }
@@ -715,29 +744,7 @@ export function useChat() {
           setCurrentToolCall(toolResults[toolResults.length - 1]!)
         }
 
-        let proposedAction: ProposedAction | null = null
-        // The agent may validate several times in a turn (fix an error,
-        // re-validate). Walk backwards and use the most recent result that
-        // parses as a valid config — an earlier ERRORED result must not
-        // shadow a later successful one.
-        for (let i = toolResults.length - 1; i >= 0; i--) {
-          const t = toolResults[i]!
-          if (!(t.name in VALIDATE_TO_CREATE_ENDPOINT)) continue
-          const validated = extractValidatedJobConfig(t.result)
-          if (validated) {
-            proposedAction = {
-              action: `Create ${validated.jobType.toUpperCase()} Job`,
-              description: `Submit this ${validated.jobType} job?`,
-              params: validated.config,
-              jobType: validated.jobType as "sdg" | "training" | "eval" | "serve",
-              endpoint: VALIDATE_TO_CREATE_ENDPOINT[t.name],
-              config: validated.config,
-              parentJobId: validated.parentJobId,
-              recipe: validated.recipe,
-            }
-            break
-          }
-        }
+        const proposedAction = buildProposedAction(toolResults)
 
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === assistantId)
@@ -1006,6 +1013,9 @@ export function useChat() {
         const parsed = parseOpenCodeResponse(response)
         const sessionMessages = await fetchSessionMessages(convId)
         const session = extractSessionData(sessionMessages, parsed.toolResults)
+        // A job-finished turn may self-heal and re-validate (e.g. a failed job
+        // whose config the agent then fixes), so it can carry a confirmation card.
+        const proposedAction = buildProposedAction(session.tools)
 
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === placeholderId)
@@ -1015,6 +1025,7 @@ export function useChat() {
             ...prev[idx]!,
             content: session.text || parsed.content,
             toolResults: session.tools,
+            proposedAction,
           }
           return updated
         })
@@ -1022,11 +1033,12 @@ export function useChat() {
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
           toolResults: session.tools,
+          proposedAction,
         })
 
         _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
-        setChatState("done")
+        setChatState(proposedAction ? "action_pending" : "done")
         consecutiveFailures = 0
       } catch (err) {
         _activeRequests.delete(convId)

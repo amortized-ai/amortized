@@ -66,7 +66,7 @@ export const useChatStore = create<ChatStoreState>()(
     (set, get) => ({
       currentConversationId: null,
       panelOpen: false,
-      panelWidth: 400,
+      panelWidth: 360,
       conversations: [],
       sessionMap: {},
       sessionStatus: {},

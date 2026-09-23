@@ -5,11 +5,15 @@ type Theme = "light" | "dark"
 
 interface UIState {
   sidebarCollapsed: boolean
+  navSidebarWidth: number
+  conversationsPanelWidth: number
   theme: Theme
   tutorialCompleted: boolean
   tutorialActive: boolean
   tutorialStep: number
   setSidebarCollapsed: (collapsed: boolean) => void
+  setNavSidebarWidth: (width: number) => void
+  setConversationsPanelWidth: (width: number) => void
   toggleSidebar: () => void
   setTheme: (theme: Theme) => void
   startTutorial: () => void
@@ -24,11 +28,15 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
+      navSidebarWidth: 208,
+      conversationsPanelWidth: 260,
       theme: (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches) ? "dark" : "light",
       tutorialCompleted: false,
       tutorialActive: false,
       tutorialStep: 0,
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      setNavSidebarWidth: (width) => set({ navSidebarWidth: width }),
+      setConversationsPanelWidth: (width) => set({ conversationsPanelWidth: width }),
       toggleSidebar: () =>
         set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setTheme: (theme) => set({ theme }),
@@ -50,6 +58,8 @@ export const useUIStore = create<UIState>()(
       name: "amortized-ui",
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
+        navSidebarWidth: state.navSidebarWidth,
+        conversationsPanelWidth: state.conversationsPanelWidth,
         theme: state.theme,
         tutorialCompleted: state.tutorialCompleted,
       }),

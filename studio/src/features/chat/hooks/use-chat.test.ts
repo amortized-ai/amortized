@@ -70,6 +70,7 @@ vi.mock("@/stores/chat-store", () => ({
         removeMessage: mockRemoveMessage,
         setJobInFlight: vi.fn(),
         addNotifiedJob: vi.fn(),
+        getNotifiedJobs: vi.fn(() => [] as string[]),
       }),
       subscribe: (fn: (state: typeof mockStoreValue) => void) => {
         subscribers.add(fn)
@@ -378,5 +379,65 @@ describe("useChat — validate retry keeps the confirmation card", () => {
     expect(assistantMsg.proposedAction!.jobType).toBe("eval")
     expect(assistantMsg.proposedAction!.endpoint).toBe("/api/v1/jobs/eval")
     expect(assistantMsg.proposedAction!.config!.eval_data_run_id).toBe("a".repeat(32))
+  })
+})
+
+describe("useChat — job-finished notify keeps the confirmation card", () => {
+  it("builds proposedAction when a failed job self-heals and re-validates in the notify turn", async () => {
+    // Regression: when a job finishes, the client auto-notifies the agent
+    // ("Job ... finished with status: ...") and the agent may fix the config and
+    // re-validate in that turn. That turn is handled by processJobNotifyQueue,
+    // which used to never build proposedAction — so the user saw the agent say
+    // "confirm the card" with no card, and had to ask it to resubmit.
+    const { fetchSessionMessages } = await import("@/lib/api-client")
+    mockResponse.parts = [{ type: "text", text: "Fixed the config — confirm the card to re-run." }]
+    ;(fetchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { info: { role: "user" }, parts: [{ type: "text", text: "Job job-xyz (SDG) finished with status: failed." }] },
+      {
+        info: { role: "assistant" },
+        parts: [
+          {
+            type: "tool",
+            tool: "amortized_validate_sdg_job",
+            output: "Input validation error: max_tokens not accepted by gpt-5",
+          },
+        ],
+      },
+      {
+        info: { role: "assistant" },
+        parts: [
+          {
+            type: "tool",
+            tool: "amortized_validate_sdg_job",
+            output: JSON.stringify({
+              valid: true,
+              job_type: "sdg",
+              config: { num_samples: 10 },
+              parent_job_id: "",
+              recipe: "",
+              warnings: [],
+            }),
+          },
+        ],
+      },
+    ])
+
+    mockStoreValue.currentConversationId = "conv-notify"
+    try {
+      const { result } = renderHook(() => useChat())
+
+      await act(async () => {
+        await result.current.notifyJobComplete("job-xyz", "sdg", "failed")
+      })
+
+      const last = result.current.messages[result.current.messages.length - 1]!
+      expect(last.role).toBe("assistant")
+      // The confirmation card is built from the successful re-validation
+      expect(last.proposedAction).not.toBeNull()
+      expect(last.proposedAction!.jobType).toBe("sdg")
+      expect(last.proposedAction!.endpoint).toBe("/api/v1/jobs/sdg")
+    } finally {
+      mockStoreValue.currentConversationId = null
+    }
   })
 })
