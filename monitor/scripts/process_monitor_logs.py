@@ -8,7 +8,7 @@ expected-aspect checklist, and prints:
   (a) per-run efficiency + checklist status, and
   (b) a per-model comparison table (the LLM comparison).
 
-Efficiency (turns-to-complete, total tokens, cost, wall-clock) is measured up to
+Efficiency (turns-to-complete, tokens excl. cache, cost, wall-clock) is measured up to
 the human-declared completion turn. Objective checklist rows are scored
 autonomously from the log; `human` / `llm_judge` rows are emitted as `review` and
 can be filled via `--review <csv>`.
@@ -69,7 +69,16 @@ class Run:
 
     @property
     def total_tokens(self) -> int:
-        return sum(int((t.get("tokens") or {}).get("total", 0)) for t in self.counted_turns)
+        # Headline efficiency EXCLUDES cache-read tokens (cheap, dominated by the
+        # cached system prompt): input + output + reasoning only. The raw log
+        # keeps the full breakdown incl. cache under `tokens`.
+        total = 0
+        for t in self.counted_turns:
+            tk = t.get("tokens") or {}
+            total += (
+                int(tk.get("input", 0)) + int(tk.get("output", 0)) + int(tk.get("reasoning", 0))
+            )
+        return total
 
     @property
     def total_cost(self) -> float:
@@ -277,7 +286,7 @@ def print_per_run(
         print(f"- model: `{run.agent_model or '-'}`   outcome: {run.outcome or '(not marked)'}")
         print(
             f"- turns-to-complete: **{run.turns_to_complete}**   "
-            f"total tokens: **{_fmt(run.total_tokens, 'int')}**   "
+            f"tokens excl. cache: **{_fmt(run.total_tokens, 'int')}**   "
             f"cost: {_fmt(run.total_cost, '$')}   "
             f"wall-clock: {_fmt(run.wall_clock_s, 's')}"
         )
@@ -294,7 +303,7 @@ def print_comparison(
         by_model[run.agent_model or "(unknown)"].append(run)
 
     aspects = sorted({row["aspect"] for row in checklist["rows"]})
-    header = ["model", "runs", "avg turns", "avg tokens", "avg cost", "avg time"] + [
+    header = ["model", "runs", "avg turns", "avg tokens (excl cache)", "avg cost", "avg time"] + [
         f"asp {a}" for a in aspects
     ]
     print("## Model comparison\n")
