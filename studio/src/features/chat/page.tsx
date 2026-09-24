@@ -99,7 +99,7 @@ export default function ChatPage() {
     _hasHydrated,
   } = useChatStore()
 
-  const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
+  const { chatModelSelection, setChatModelSelection, enabledProviders, enableNewlyConnected } =
     useSettingsStore()
   const { connectedProviders } = useProviderStatus()
 
@@ -126,19 +126,15 @@ export default function ChatPage() {
     [activeProviders, connectedKnownProviders, connectedProviders],
   )
 
-  // Ensure every backend-connected provider is enabled, so a newly-added one becomes
-  // selectable (e.g. the user adds Anthropic while OpenAI is already connected). We UNION
-  // rather than replace: existing choices are kept, and disconnected providers are filtered
-  // out of `usableProviders` anyway. Without this, the enabled set never picks up a second
-  // provider (the old "only when none connected" check skipped it); the first-connect
-  // switch-over (default provider not connected, another one is) still works via the union.
+  // Auto-enable a provider the FIRST time it appears connected, so a newly-added one becomes
+  // selectable (e.g. the user adds OpenAI while Vertex is already connected). The store
+  // persists which connected providers it has already observed, so this never RE-enables a
+  // provider the user later disabled — the disable sticks across reloads/remounts.
+  // (Disconnected-but-enabled providers stay filtered out of usableProviders anyway.)
   useEffect(() => {
     if (connectedKnownProviders.length === 0) return
-    const missing = connectedKnownProviders.filter((id) => !enabledProviders.includes(id))
-    if (missing.length > 0) {
-      setEnabledProviders([...enabledProviders, ...missing])
-    }
-  }, [connectedKnownProviders, enabledProviders, setEnabledProviders])
+    enableNewlyConnected(connectedKnownProviders)
+  }, [connectedKnownProviders, enableNewlyConnected])
 
   // Keep the selection on a usable provider (see usableProviders above).
   useEffect(() => {
