@@ -349,6 +349,13 @@ async def _run_job(job: dict[str, Any]) -> None:
             val = os.environ.get(s3_var, "")
             if val:
                 spec_env[s3_var] = val
+        # Move large artifacts (model weights) directly between the client and object
+        # storage via presigned URLs instead of streaming them through the tracking
+        # server, which OOMs on upload and overflows its /tmp on download for multi-GB files.
+        if config_mod.settings.mlflow_proxy_multipart_upload:
+            spec_env["MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD"] = "true"
+        if config_mod.settings.mlflow_proxy_multipart_download:
+            spec_env["MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD"] = "true"
         await _update_job(job_id, mlflow_experiment=mlflow_experiment)
 
     # --- Create MLflow run before dispatch ---

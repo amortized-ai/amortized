@@ -44,6 +44,19 @@ class Settings(BaseSettings):
     mlflow_tracking_insecure_tls: bool = Field(
         False, description="Skip TLS verification for the MLflow server (not recommended)."
     )
+    mlflow_proxy_multipart_upload: bool = Field(
+        True,
+        description="Enable MLflow proxied-multipart upload for job artifacts: the tracking "
+        "server hands out presigned URLs and the client uploads parts straight to object "
+        "storage, keeping multi-GB artifacts (model weights) out of the server's memory. "
+        "Needs serveArtifacts + an S3-backed store reachable from job pods.",
+    )
+    mlflow_proxy_multipart_download: bool = Field(
+        True,
+        description="Enable MLflow proxied-multipart download for job artifacts: parts are "
+        "pulled straight from object storage via presigned URLs, bypassing the tracking "
+        "server's /tmp staging. Disable if the MLflow server does not support it.",
+    )
 
     agent_upstream_url: str = Field(
         "http://opencode:4096", description="OpenCode upstream URL for agent session proxy"
