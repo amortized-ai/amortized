@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _log_path(session_id: str) -> Path:
     # session_id is a server-generated uuid, but guard against path traversal anyway.
     safe = session_id.replace("/", "_").replace("..", "_")
-    directory = Path(settings.monitor_log_dir).expanduser()
+    directory = Path(settings.resolved_monitor_log_dir).expanduser()
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{safe}.jsonl"
 
