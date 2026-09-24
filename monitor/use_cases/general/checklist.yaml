@@ -104,6 +104,14 @@ rows:
     adjudicate: auto
     match: { type: validate_ok, tool: validate_eval_job }
 
+  - id: eval_judge_set
+    stage: "Eval judge"
+    aspect: A
+    expected: "Eval sets an explicit judge (rubric evals require one)"
+    adjudicate: auto
+    # eval/workflow.md (240-247): "Never submit a rubric eval without config.judge"
+    match: { type: chained, tool: validate_eval_job, any_of: [judge] }
+
   # ---- Per-stage mandated actions (deterministic tool signals) --------------
   - id: sdg_models_grounded
     stage: "SDG teacher models"
