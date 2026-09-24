@@ -520,6 +520,33 @@ export async function fetchPendingMessages(
   }
 }
 
+/**
+ * Record a human-declared completion for a vibe-test run (monitor metrics).
+ * Marks the boundary for turns-to-complete / total-tokens; best-effort.
+ */
+export async function markRunComplete(
+  conversationId: string,
+  outcome: "success" | "gave_up",
+  note?: string,
+): Promise<boolean> {
+  const sessionId = useChatStore.getState().getSessionId(conversationId)
+  if (!sessionId) {
+    logger.warn("markRunComplete: no session for conversation", { conversationId })
+    return false
+  }
+  try {
+    const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/monitor/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome, note: note ?? null }),
+    })
+    return resp.ok
+  } catch (err) {
+    logger.warn("markRunComplete failed", { conversationId, err })
+    return false
+  }
+}
+
 export async function generateChatTitle(message: string): Promise<string> {
   const resp = await fetch(`${getBaseUrl()}/agent/title`, {
     method: "POST",
