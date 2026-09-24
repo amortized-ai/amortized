@@ -91,6 +91,29 @@ def split_prompt_reference(record: dict[str, Any]) -> tuple[list[dict[str, str]]
     return prompt, reference
 
 
+def adapt_body_for_param_error(body: dict[str, Any], error_text: str) -> dict[str, Any] | None:
+    """Adapt a chat-completions body after a provider 400 about unsupported params, so any
+    model works WITHOUT hardcoding model families. Reasoning models require
+    ``max_completion_tokens`` and reject a non-default ``temperature``. Returns a NEW body
+    if something changed, else None. Error-driven: it reacts to what the provider actually
+    rejected, so new/renamed model families need no code change here."""
+    text = (error_text or "").lower()
+    new = dict(body)
+    changed = False
+    if "max_completion_tokens" in text:
+        # The provider wants max_completion_tokens (a reasoning model) — remap the token
+        # param and drop temperature, which the same models reject.
+        if "max_tokens" in new:
+            new["max_completion_tokens"] = new.pop("max_tokens")
+            changed = True
+        if new.pop("temperature", None) is not None:
+            changed = True
+    elif "temperature" in text and "temperature" in new:
+        new.pop("temperature")
+        changed = True
+    return new if changed else None
+
+
 async def chat_completion(
     client: httpx.AsyncClient,
     endpoint: dict[str, Any],
@@ -102,7 +125,7 @@ async def chat_completion(
 ) -> str:
     url = endpoint["base_url"].rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    body = {
+    body: dict[str, Any] = {
         "model": endpoint["model"],
         "messages": messages,
         "temperature": temperature,
@@ -112,6 +135,14 @@ async def chat_completion(
     for attempt in range(MAX_RETRIES):
         try:
             resp = await client.post(url, json=body, headers=headers)
+            # A 400 may be an unsupported-param complaint (a reasoning model wants
+            # max_completion_tokens / rejects temperature) — adapt the body from the error
+            # text and retry immediately, without hardcoding which models need it.
+            if resp.status_code == 400:
+                adapted = adapt_body_for_param_error(body, resp.text)
+                if adapted is not None:
+                    body = adapted
+                    continue
             resp.raise_for_status()
             data = resp.json()
             return str(data["choices"][0]["message"]["content"] or "")

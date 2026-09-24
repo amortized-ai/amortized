@@ -774,3 +774,44 @@ class TestJudgeProviderResolution:
         assert spec["base_url"] == "http://judge:8000/v1"
         assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
         assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
+
+
+class TestAdaptBodyForParamError:
+    """The runner adapts a chat body from a provider's 400 (no model-family hardcoding)."""
+
+    def _load_runner_module(self):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_reasoning_error_remaps_tokens_and_drops_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "gpt-5.6-sol", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        out = m.adapt_body_for_param_error(
+            body, "use 'max_completion_tokens' instead of 'max_tokens'"
+        )
+        assert out is not None
+        assert out["max_completion_tokens"] == 1024
+        assert "max_tokens" not in out
+        assert "temperature" not in out
+        assert body["max_tokens"] == 1024  # original body not mutated
+
+    def test_temperature_only_error_drops_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "x", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        out = m.adapt_body_for_param_error(
+            body, "Unsupported value: 'temperature' does not support 0.0 with this model."
+        )
+        assert out is not None
+        assert "temperature" not in out
+        assert out["max_tokens"] == 1024
+
+    def test_unrelated_error_returns_none(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "x", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        assert m.adapt_body_for_param_error(body, "rate limit exceeded") is None

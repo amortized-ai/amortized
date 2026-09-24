@@ -16,12 +16,37 @@ gateway that does not exist here), which is why the provider file must be suppli
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import time
+
+import httpx
 
 logger = logging.getLogger("amortized.core.model_catalog")
 
 _PROVIDER_FIELDS = ("name", "endpoint", "provider_type", "api_key")
+
+# OpenAI's usable teacher/judge families. A plain startswith list (so gpt-5, gpt-5.6-sol,
+# gpt-6-astra, … all match); extend here for gpt-7 etc.
+_OPENAI_CHAT_PREFIXES = ("gpt-5", "gpt-6")
+# Substrings that mark a NON-chat model (embeddings, speech, image, moderation, rerank).
+# Used to keep only chat models across every provider — /v1/models has no capability flag.
+_NON_CHAT_MARKERS = (
+    "embed",
+    "whisper",
+    "tts",
+    "dall-e",
+    "dalle",
+    "moderation",
+    "rerank",
+    "stable-diffusion",
+    "sdxl",
+)
+_MODELS_TTL_SECONDS = 300
+# provider name -> (fetched_at_monotonic, raw model ids). Per-provider so one slow/broken
+# provider never blocks or drops the others.
+_models_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 def _key_available(api_key: str | None) -> bool:
@@ -104,3 +129,79 @@ def enabled_models() -> list[tuple[str, str]]:
             seen.add((provider, model_id))
             models.append((provider, model_id))
     return models
+
+
+def _resolve_key(api_key: str) -> str:
+    """Resolve a provider's api_key field to an actual key: an env-var name
+    (UPPER_SNAKE) is read from the environment; anything else is a literal."""
+    if not api_key:
+        return ""
+    if api_key.isupper() and "_" in api_key:
+        return os.environ.get(api_key, "")
+    return api_key
+
+
+def _keep_model(provider: str, model_id: str) -> bool:
+    """Whether a provider's model id belongs in the picker: chat models only, and for
+    the ``openai`` provider restricted to the gpt-5/gpt-6 families."""
+    if not model_id:
+        return False
+    if any(marker in model_id.lower() for marker in _NON_CHAT_MARKERS):
+        return False
+    if provider == "openai":
+        return any(model_id.startswith(p) for p in _OPENAI_CHAT_PREFIXES)
+    return True
+
+
+async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
+    """Fetch raw model ids from one provider's OpenAI-compatible ``/models`` endpoint.
+    Cached per provider (TTL); a failed fetch returns the last good value (or empty) so
+    one provider never breaks the combined list."""
+    name = pdef.get("name", "")
+    now = time.monotonic()
+    cached = _models_cache.get(name)
+    if cached and (now - cached[0]) < _MODELS_TTL_SECONDS:
+        return cached[1]
+
+    endpoint = pdef.get("endpoint", "").rstrip("/")
+    key = _resolve_key(pdef.get("api_key", ""))
+    if not endpoint or not key:
+        return cached[1] if cached else []
+
+    url = f"{endpoint}/models"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {key}"})
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+        ids = [str(m.get("id", "")) for m in data if m.get("id")]
+        _models_cache[name] = (now, ids)
+        return ids
+    except Exception:
+        logger.warning("failed to fetch models for provider %r from %s", name, url, exc_info=True)
+        return cached[1] if cached else []
+
+
+async def available_models() -> list[tuple[str, str]]:
+    """``(provider, model_id)`` chat models pulled live from each key-enabled provider's
+    ``/v1/models`` — the dynamic replacement for the static data-designer catalog.
+
+    Filters: the ``openai`` provider to the gpt-5/gpt-6 families; every provider to chat
+    models. Best-effort and deduped: a provider that fails to respond is skipped."""
+    defs = enabled_provider_defs()
+    if not defs:
+        return []
+    fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pdef, ids in zip(defs, fetched, strict=True):
+        name = pdef.get("name", "")
+        for model_id in ids:
+            if not _keep_model(name, model_id):
+                continue
+            pair = (name, model_id)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            out.append(pair)
+    return out
