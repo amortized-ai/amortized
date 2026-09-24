@@ -14,9 +14,9 @@ autonomously from the log; `human` / `llm_judge` rows are emitted as `review` an
 can be filled via `--review <csv>`.
 
 Usage:
-  process_monitor_logs.py <log-dir> --use-case rfe_assess
-  process_monitor_logs.py <log-dir> --use-case rfe_assess --emit-review review.csv
-  process_monitor_logs.py <log-dir> --use-case rfe_assess --review review.filled.csv
+  process_monitor_logs.py <log-dir> --use-case general
+  process_monitor_logs.py <log-dir> --use-case general --emit-review review.csv
+  process_monitor_logs.py <log-dir> --use-case general --review review.filled.csv
 
 Status values: met | wrong | missed | n/a | review
 """
@@ -198,10 +198,22 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
 
     if mtype == "tool_called":
         where = match.get("where") or {}
-        for c in _calls(run, match["tool"]):
+        tools = match.get("tools") or [match["tool"]]  # `tools` = any-of tool names
+        for c in run.tool_calls:
+            if c.get("tool") not in tools:
+                continue
             if all(c.get(k) == v for k, v in where.items()):
                 if match.get("status") and c.get("status") != match["status"]:
                     continue
+                return "met"
+        return "missed"
+
+    if mtype == "chained":
+        # Pipeline wiring: a validate_* call carries a non-empty upstream ref
+        # (parent_job_id / data_run_id / eval_data_run_id). Absent -> not chained.
+        keys = match.get("any_of") or ["parent_job_id", "data_run_id"]
+        for c in _calls(run, match["tool"]):
+            if any(c.get(k) for k in keys):
                 return "met"
         return "missed"
 
