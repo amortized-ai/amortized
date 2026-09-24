@@ -4,8 +4,8 @@ Personal, per-user metrics for comparing different LLMs driving Morty on a fixed
 use case (the RFE assessor). No shared service — each person's own amortized
 deploy writes its own logs, and a script turns them into numbers.
 
-Two efficiency metrics (turns-to-complete, tokens — plus cost and wall-clock)
-and per-aspect performance, scored against an **expected-aspect
+Efficiency metrics (turns-to-complete, tokens — plus cost, wall-clock, and
+per-message response latency) and per-aspect performance, scored against an **expected-aspect
 checklist** so that behaviors Morty was *supposed* to exhibit but skipped are
 counted as misses (an omission can't hide behind "nothing in the log").
 
@@ -88,6 +88,7 @@ completion record → all turns are counted.
 | tokens (excl. cache) | sum of `input + output + reasoning` across counted turns |
 | cost | sum of `cost` |
 | wall-clock | last `finished_at` − first `started_at` |
+| response latency | per user message, `duration_ms` (server receives message → response ready); reported as avg / max |
 | model | the model on orchestrator-role turns (Morty's brain — the comparison axis) |
 
 **Performance (checklist).** For each row: `auto` rows run a matcher against the
@@ -106,8 +107,8 @@ exhibited but skipped scores against it whether or not you noticed.
 
 **Output:** a per-run block (model, outcome, efficiency, each row's status) and a
 per-model comparison table — avg turns, avg tokens (excl. cache), avg cost, avg
-time, and per-aspect met-rate = `met / (met + wrong + missed)` (`review` and
-`n/a` excluded).
+time, avg latency, and per-aspect met-rate = `met / (met + wrong + missed)`
+(`review` and `n/a` excluded).
 
 **Debugging a surprising score.** If a row is `missed` but you know it happened,
 check that run's `tool_calls` in the raw JSONL — that shows whether the signal
