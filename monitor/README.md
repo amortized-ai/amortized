@@ -65,6 +65,54 @@ python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess \
 to `/data/monitor` on the server's persistent PVC; copy the logs out with
 `kubectl cp <server-pod>:/data/monitor ./logs` before scoring.
 
+## What the script computes
+
+The script only ever **reads** the JSONL logs (and your review CSV). It never
+calls the cluster or an LLM — the `auto` rows are pure deterministic
+log-matching — and never mutates the logs.
+
+**Per-file it builds a `Run`** from the `turn` records plus the `completion`
+record (last one wins), sorted by timestamp.
+
+**Completion boundary.** The platform has no "task done" signal, so the
+completion record defines the boundary: `counted_turns` = every turn up to (and
+including) the completion timestamp. All metrics below are measured over
+`counted_turns` only (turns after you clicked "complete" don't count). No
+completion record → all turns are counted.
+
+**Efficiency, per run:**
+
+| metric | how |
+|---|---|
+| turns-to-complete | number of counted turns (each proxy turn = one user message) |
+| tokens (excl. cache) | sum of `input + output + reasoning` across counted turns |
+| cost | sum of `cost` |
+| wall-clock | last `finished_at` − first `started_at` |
+| model | the model on orchestrator-role turns (Morty's brain — the comparison axis) |
+
+**Performance (checklist).** For each row: `auto` rows run a matcher against the
+run's flattened `tool_calls` (concatenated across counted turns, in order);
+`human` / `llm_judge` rows are emitted as `review`.
+
+| matcher | met | wrong | missed / other |
+|---|---|---|---|
+| `tool_called` (tool, optional `where`, e.g. `target: sdg`) | a matching call exists | — | `missed` if never called |
+| `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
+| `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
+| `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
+
+`missed` is the default when a signal is absent, so an aspect Morty *should* have
+exhibited but skipped scores against it whether or not you noticed.
+
+**Output:** a per-run block (model, outcome, efficiency, each row's status) and a
+per-model comparison table — avg turns, avg tokens (excl. cache), avg cost, avg
+time, and per-aspect met-rate = `met / (met + wrong + missed)` (`review` and
+`n/a` excluded).
+
+**Debugging a surprising score.** If a row is `missed` but you know it happened,
+check that run's `tool_calls` in the raw JSONL — that shows whether the signal
+was actually captured, or the matcher (tool name / output text) needs tuning.
+
 ## Log record shapes
 
 ```jsonc
