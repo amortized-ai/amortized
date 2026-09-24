@@ -4,8 +4,8 @@ Personal, per-user metrics for comparing different LLMs driving Morty on a fixed
 use case (the RFE assessor). No shared service — each person's own amortized
 deploy writes its own logs, and a script turns them into numbers.
 
-Two efficiency metrics (turns-to-complete, total tokens — plus cost and
-wall-clock) and per-aspect performance, scored against an **expected-aspect
+Two efficiency metrics (turns-to-complete, tokens — plus cost and wall-clock)
+and per-aspect performance, scored against an **expected-aspect
 checklist** so that behaviors Morty was *supposed* to exhibit but skipped are
 counted as misses (an omission can't hide behind "nothing in the log").
 
@@ -27,7 +27,9 @@ counted as misses (an omission can't hide behind "nothing in the log").
 
 3. **Processing (offline).** `scripts/process_monitor_logs.py` reads the logs,
    scores each run against the use-case checklist, and prints a per-run report
-   plus a per-model comparison table.
+   plus a per-model comparison table. The headline token metric **excludes
+   cache-read tokens** (cheap, dominated by the cached system prompt) — it sums
+   input + output + reasoning; the raw log keeps the full breakdown incl. cache.
 
 ## Checklist
 
