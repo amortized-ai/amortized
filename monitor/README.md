@@ -12,8 +12,9 @@ counted as misses (an omission can't hide behind "nothing in the log").
 ## How it works
 
 1. **Logging (backend).** On each turn completion the agent proxy appends a
-   `turn` record to `$AMORTIZED_MONITOR_LOG_DIR/<session_id>.jsonl`
-   (default `~/.amortized/monitor/`). Each opencode assistant message is
+   `turn` record to `$AMORTIZED_MONITOR_LOG_DIR/<session_id>.jsonl` (default
+   `<data_dir>/monitor` — `/data/monitor` on the server PVC in-cluster,
+   `./data/monitor` locally). Each opencode assistant message is
    attributed to exactly one turn (dedup by id across the orchestrator and every
    subagent session), so token totals are correct across delegation and
    multi-step tool loops.
@@ -47,20 +48,20 @@ default when a signal is absent), `n/a`, `review`.
 ```bash
 # 1. Run RFE-assessor sessions in Studio (your own deploy), click "Mark complete".
 
-# 2. Score the logs
-python monitor/scripts/process_monitor_logs.py ~/.amortized/monitor --use-case rfe_assess
+# 2. Score the logs (in-cluster, copy them out first: kubectl cp <server-pod>:/data/monitor ./logs)
+python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess
 
 # 3. (optional) adjudicate the human/LLM rows
-python monitor/scripts/process_monitor_logs.py ~/.amortized/monitor --use-case rfe_assess \
+python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess \
     --emit-review review.csv          # blank template, one row per review item
 #   ...fill the `status` column (met/wrong/missed)...
-python monitor/scripts/process_monitor_logs.py ~/.amortized/monitor --use-case rfe_assess \
+python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess \
     --review review.csv               # merge verdicts into the final metrics
 ```
 
-`AMORTIZED_MONITOR_LOG_DIR` sets the log directory (server side). For kind, run
-`amortized up` locally during vibe runs, or mount that path so the script can
-read it.
+`AMORTIZED_MONITOR_LOG_DIR` overrides the log directory. In-cluster it defaults
+to `/data/monitor` on the server's persistent PVC; copy the logs out with
+`kubectl cp <server-pod>:/data/monitor ./logs` before scoring.
 
 ## Log record shapes
 

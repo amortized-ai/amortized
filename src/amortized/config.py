@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
-    monitor_log_dir: Path = Field(
-        default=Path.home() / ".amortized" / "monitor",
-        description="Directory for per-session monitor JSONL logs (vibe-testing metrics). "
-        "One <session_id>.jsonl file per conversation.",
+    monitor_log_dir: Path | None = Field(
+        default=None,
+        description="Directory for per-session monitor JSONL logs (vibe-testing metrics), one "
+        "<session_id>.jsonl file per conversation. Defaults to <data_dir>/monitor so it lands on "
+        "the writable/persistent data volume in-cluster.",
     )
 
     api_key: str = Field(default="", description="API key for auth (empty = no auth)")
@@ -88,6 +89,10 @@ class Settings(BaseSettings):
     @property
     def resolved_default_backend(self) -> str:
         return self.default_backend or self.compute_backend or "local"
+
+    @property
+    def resolved_monitor_log_dir(self) -> Path:
+        return self.monitor_log_dir or (self.data_dir / "monitor")
 
     model_config = {
         "env_prefix": "AMORTIZED_",
