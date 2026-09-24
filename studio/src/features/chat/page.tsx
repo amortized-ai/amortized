@@ -7,6 +7,7 @@ import { MessageList } from "./components/message-list"
 import { ChatInput } from "./components/chat-input"
 import { ConversationList } from "./components/conversation-list"
 import { PlanProgress } from "./components/plan-progress"
+import { MarkCompleteButton } from "./components/mark-complete-button"
 import { DeleteConversationDialog } from "./components/delete-conversation-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -266,10 +267,13 @@ export default function ChatPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button size="sm" variant="outline" onClick={handleNewConversation} className="rounded-lg transition-all duration-300 hover:shadow-sm hover:-translate-y-px">
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            New
-          </Button>
+          <div className="flex items-center gap-2">
+            <MarkCompleteButton />
+            <Button size="sm" variant="outline" onClick={handleNewConversation} className="rounded-lg transition-all duration-300 hover:shadow-sm hover:-translate-y-px">
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              New
+            </Button>
+          </div>
         </div>
         <ChatContent key={currentConversationId ?? "empty"} />
       </div>
