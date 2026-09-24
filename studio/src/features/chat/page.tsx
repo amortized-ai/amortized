@@ -101,7 +101,7 @@ export default function ChatPage() {
     _hasHydrated,
   } = useChatStore()
 
-  const { chatModelSelection, setChatModelSelection, enabledProviders, setEnabledProviders } =
+  const { chatModelSelection, setChatModelSelection, enabledProviders, enableNewlyConnected } =
     useSettingsStore()
   const { connectedProviders } = useProviderStatus()
 
@@ -137,17 +137,15 @@ export default function ChatPage() {
     [activeProviders, connectedKnownProviders, connectedProviders],
   )
 
-  // If the backend reports connected providers but none of the enabled ones are actually
-  // connected, enable the connected ones. Without this, a deploy whose only credentialed
-  // provider differs from the hard-coded default (e.g. OpenAI-only while the default is
-  // Vertex) leaves the user stuck on a provider the agent can't serve → the first turn 500s.
+  // Auto-enable a provider the FIRST time it appears connected, so a newly-added one becomes
+  // selectable (e.g. the user adds OpenAI while Vertex is already connected). The store
+  // persists which connected providers it has already observed, so this never RE-enables a
+  // provider the user later disabled — the disable sticks across reloads/remounts.
+  // (Disconnected-but-enabled providers stay filtered out of usableProviders anyway.)
   useEffect(() => {
     if (connectedKnownProviders.length === 0) return
-    const anyEnabledConnected = enabledProviders.some((id) => connectedProviders.has(id))
-    if (!anyEnabledConnected) {
-      setEnabledProviders(connectedKnownProviders)
-    }
-  }, [connectedKnownProviders, connectedProviders, enabledProviders, setEnabledProviders])
+    enableNewlyConnected(connectedKnownProviders)
+  }, [connectedKnownProviders, enableNewlyConnected])
 
   // Keep the selection on a usable provider (see usableProviders above).
   useEffect(() => {
