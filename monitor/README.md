@@ -156,8 +156,11 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
   "role": "orchestrator|sdg|training|eval", "model": "...", "provider": "...",
   "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": 0, "total": 0 },
   "tokens_by_role": { "orchestrator": 0 }, "cost": 0.0,
-  "tool_calls": [ { "tool": "validate_sdg_job", "role": "sdg", "status": "completed",
-                    "output": "…", "target": "sdg" } ],
+  "tool_calls": [ { "tool": "validate_training_job", "role": "training", "status": "completed",
+                    "output": "…", "target": "sdg",
+                    "parent_job_id": "…", "data_run_id": "…", "eval_data_run_id": "…" } ],
+  // `target` is set on delegate_to_subagent; `parent_job_id`/`data_run_id`/
+  // `eval_data_run_id` are captured from validate_* inputs when non-empty (pipeline chaining).
   "started_at": "…", "finished_at": "…", "duration_ms": 0, "ts": "…" }
 
 // completion
