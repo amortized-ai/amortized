@@ -1,4 +1,4 @@
-# Expected-aspect checklist for the RFE-assessor vibe-test use case.
+# Expected-aspect checklist for the RFE-assessor test use case.
 #
 # The trajectory is the generic orchestrator -> sdg -> training -> eval flow;
 # "RFE assessor" is just the task the user brings to Morty. Every row exists

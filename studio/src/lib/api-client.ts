@@ -521,7 +521,7 @@ export async function fetchPendingMessages(
 }
 
 /**
- * Record a human-declared completion for a vibe-test run (monitor metrics).
+ * Record a human-declared completion for a test run (monitor metrics).
  * Marks the boundary for turns-to-complete / total-tokens; best-effort.
  */
 export async function markRunComplete(

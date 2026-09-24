@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     recipes_dir: Path | None = None
     monitor_log_dir: Path | None = Field(
         default=None,
-        description="Directory for per-session monitor JSONL logs (vibe-testing metrics), one "
+        description="Directory for per-session monitor JSONL logs (testing metrics), one "
         "<session_id>.jsonl file per conversation. Defaults to <data_dir>/monitor so it lands on "
         "the writable/persistent data volume in-cluster.",
     )

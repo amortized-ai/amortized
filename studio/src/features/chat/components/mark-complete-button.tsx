@@ -12,7 +12,7 @@ import { useChatStore } from "@/stores/chat-store"
 import { markRunComplete } from "@/lib/api-client"
 
 /**
- * Records a human-declared completion for a vibe-test run. The platform has no
+ * Records a human-declared completion for a test run. The platform has no
  * workflow-completion signal (the orchestrator loops indefinitely), so the
  * tester marks the boundary here; it defines turns-to-complete / total-tokens
  * for the monitor metrics.

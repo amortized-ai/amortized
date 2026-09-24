@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Process monitor JSONL logs into vibe-testing metrics.
+"""Process monitor JSONL logs into testing metrics.
 
 Reads per-session logs written by the amortized proxy (`<session>.jsonl`,
 default `~/.amortized/monitor/`), scores each run against a use-case
