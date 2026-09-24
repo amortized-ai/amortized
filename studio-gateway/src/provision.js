@@ -617,15 +617,15 @@ function ensureUserStack(user) {
   if (!entry) {
     entry = { state: 'provisioning', error: null };
     entry.promise = (async () => {
-      // Per-user BYOK gate: no providers -> ask for at least one (splash form) before
-      // provisioning. Skipped when Morty is disabled (no OpenShell certs mounted).
       const providers = MORTY_ENABLED ? await readUserProviders(ns) : {};
-      if (MORTY_ENABLED && Object.keys(providers).length === 0) { entry.state = 'needs_key'; return; }
-      // Fast path: backend already healthy (gateway restart / returning user). Re-stamp the
+      // Fast path: backend already healthy (gateway restart / returning user, including one who
+      // removed their last provider — the server stays up, only chat is disabled). Re-stamp the
       // server key secret and ensure the Morty sandbox exists (both idempotent) so a lost
       // in-memory entry can't leave a server-up/sandbox-gone stack. No restartServer here:
       // the stored keys already match the running server env (genuine changes go through
       // setUserProvider). Sandbox is best-effort so a Morty hiccup still leaves the server usable.
+      // Checked BEFORE the empty-provider gate so a healthy backend never regresses to needs_key
+      // on restart (which would 503 every /api call until a key is re-added).
       if (await serverAvailable(ns)) {
         if (MORTY_ENABLED && Object.keys(providers).length) {
           await ensureServerKeySecret(ns, providers);
@@ -638,6 +638,11 @@ function ensureUserStack(user) {
         entry.state = 'ready';
         return;
       }
+      // Per-user BYOK gate: no providers -> ask for at least one (splash form) before the FIRST
+      // provisioning. Only reached when the server is not already up (genuine first run); a
+      // returning user with an empty set took the fast path above. Skipped when Morty is
+      // disabled (no OpenShell certs mounted).
+      if (MORTY_ENABLED && Object.keys(providers).length === 0) { entry.state = 'needs_key'; return; }
       await provision(ns, user, providers);
       entry.state = 'ready';
     })().catch((err) => {
@@ -727,24 +732,32 @@ function startReconcile(ns, { restart }) {
   const pending = { requested: false, restart: false };
   const drive = async () => {
     let doRestart = restart;
-    for (;;) {
-      const providers = await readUserProviders(ns); // always reconcile the latest persisted set
-      try {
-        await reconcileStack(ns, providers, { restart: doRestart });
-        entry.state = 'ready';
-        entry.error = null;
-      } catch (err) {
-        const up = await serverAvailable(ns).catch(() => false);
-        entry.state = up ? 'ready' : 'error';
-        entry.error = String(err.message || err);
-        console.error(`stack reconcile for ${ns} failed (${up ? 'server up, chat degraded' : 'server down'}):`, err?.message || err);
+    try {
+      for (;;) {
+        try {
+          // Read the latest persisted set inside the try: a K8s API failure here must be handled
+          // like a reconcile failure, not reject the unobserved entry.promise (which would crash
+          // Node for every user).
+          const providers = await readUserProviders(ns);
+          await reconcileStack(ns, providers, { restart: doRestart });
+          entry.state = 'ready';
+          entry.error = null;
+        } catch (err) {
+          const up = await serverAvailable(ns).catch(() => false);
+          entry.state = up ? 'ready' : 'error';
+          entry.error = String(err.message || err);
+          console.error(`stack reconcile for ${ns} failed (${up ? 'server up, chat degraded' : 'server down'}):`, err?.message || err);
+        }
+        if (!pending.requested) break;
+        pending.requested = false;
+        doRestart = pending.restart;
+        pending.restart = false;
       }
-      if (!pending.requested) break;
-      pending.requested = false;
-      doRestart = pending.restart;
-      pending.restart = false;
+    } finally {
+      // Always deregister, even on an unexpected throw, so a later save starts a fresh driver
+      // instead of flagging a follow-up on a dead one (which would never reconcile again).
+      reconcilers.delete(ns);
     }
-    reconcilers.delete(ns);
   };
   entry.promise = drive();
   reconcilers.set(ns, { entry, pending });
