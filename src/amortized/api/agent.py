@@ -380,6 +380,11 @@ async def _record_turn_metrics(
                         val = inp.get(key)
                         if val:
                             entry[key] = val
+                    # Eval requires an explicit judge; record its model only
+                    # (never base_url/api_key) so "judge set" is checkable.
+                    judge = inp.get("judge")
+                    if isinstance(judge, dict) and judge.get("model"):
+                        entry["judge"] = judge["model"]
                 tool_calls.append(entry)
 
         started = turn.started_at

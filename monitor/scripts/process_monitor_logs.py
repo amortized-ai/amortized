@@ -209,8 +209,9 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         return "missed"
 
     if mtype == "chained":
-        # Pipeline wiring: a validate_* call carries a non-empty upstream ref
-        # (parent_job_id / data_run_id / eval_data_run_id). Absent -> not chained.
+        # A validate_* call carries a non-empty field from `any_of` — used for
+        # pipeline wiring (parent_job_id / data_run_id / eval_data_run_id) and
+        # for other required config refs (e.g. the eval `judge`). Absent -> missed.
         keys = match.get("any_of") or ["parent_job_id", "data_run_id"]
         for c in _calls(run, match["tool"]):
             if any(c.get(k) for k in keys):

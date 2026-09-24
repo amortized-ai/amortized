@@ -166,9 +166,11 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
   "tokens_by_role": { "orchestrator": 0 }, "cost": 0.0,
   "tool_calls": [ { "tool": "validate_training_job", "role": "training", "status": "completed",
                     "output": "…", "target": "sdg",
-                    "parent_job_id": "…", "data_run_id": "…", "eval_data_run_id": "…" } ],
+                    "parent_job_id": "…", "data_run_id": "…", "eval_data_run_id": "…",
+                    "judge": "…" } ],
   // `target` is set on delegate_to_subagent; `parent_job_id`/`data_run_id`/
-  // `eval_data_run_id` are captured from validate_* inputs when non-empty (pipeline chaining).
+  // `eval_data_run_id` are captured from validate_* inputs when non-empty (pipeline
+  // chaining); `judge` is the eval judge model name (from validate_eval_job; no api_key).
   "started_at": "…", "finished_at": "…", "duration_ms": 0, "ts": "…" }
 
 // completion
