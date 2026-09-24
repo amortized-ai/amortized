@@ -45,25 +45,59 @@ declares how it's judged:
 Statuses: `met`, `wrong` (did it, wrong), `missed` (should have, didn't — the
 default when a signal is absent), `n/a`, `review`.
 
-## Usage
+## End-to-end testing loop
+
+The one variable is **which LLM drives Morty**; everything else is automatic
+logging + offline scoring. Per model you compare, the interactive loop is:
+
+1. **Set the model under test** (the comparison axis). Edit the `"model"` line in
+   `containers/morty/opencode.json`, then sync it to the cluster — from the
+   `amortized-deploy` repo: `make prompt && make deploy-user USER=xyang` (restarts
+   opencode; no server/studio image rebuild needed). The model on the
+   orchestrator-role turns is what the report keys the comparison on.
+2. **Drive the task in Studio** (`localhost:31180` via the SSH tunnel). Start a
+   **new** chat and run the RFE-assessor task end-to-end: describe the assessor →
+   let the orchestrator delegate **SDG → training → eval**.
+3. **Logging is automatic** — each turn appends a `turn` record to
+   `/data/monitor/<session>.jsonl` (tokens, `tool_calls`, `duration_ms`).
+4. **Mark the boundary** — click **"Mark complete" → success** (or gave-up) in the
+   chat header. This is the only manual signal; it writes the `completion` record
+   that defines turns-to-complete / tokens / latency.
+5. **Repeat 1–4 per model.** Each run is its own session file.
+
+Then pull the logs once and score them all (below).
+
+## Scoring the logs
+
+Run on the devbox (`ssh -A shiv@169.62.17.147`), from the amortized repo. The
+server pod name changes on every deploy, so resolve it; the pod has an init
+container so `kubectl cp` needs `-c server`; and `uv run` needs a writable
+`UV_CACHE_DIR` (the shared cache isn't writable):
 
 ```bash
-# 1. Run RFE-assessor sessions in Studio (your own deploy), click "Mark complete".
+cd /mnt/4TB/workspace/shiv/xyang/amortized
 
-# 2. Score the logs (in-cluster, copy them out first: kubectl cp <server-pod>:/data/monitor ./logs)
-python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess
+# 1. pull the monitor logs off the current server pod
+SPOD=$(kubectl -n amortized-xyang get pods -o name | grep amortized-server | head -1); SPOD=${SPOD#pod/}
+rm -rf ./monitor-logs && mkdir -p ./monitor-logs
+kubectl -n amortized-xyang cp -c server "$SPOD:/data/monitor" ./monitor-logs
+
+# 2. score (UV_CACHE_DIR required — the shared uv cache isn't writable by you)
+export UV_CACHE_DIR=/mnt/4TB/workspace/shiv/xyang/tmp/uv-cache
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess
 
 # 3. (optional) adjudicate the human/LLM rows
-python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess \
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess \
     --emit-review review.csv          # blank template, one row per review item
 #   ...fill the `status` column (met/wrong/missed)...
-python monitor/scripts/process_monitor_logs.py ./logs --use-case rfe_assess \
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess \
     --review review.csv               # merge verdicts into the final metrics
 ```
 
 `AMORTIZED_MONITOR_LOG_DIR` overrides the log directory. In-cluster it defaults
-to `/data/monitor` on the server's persistent PVC; copy the logs out with
-`kubectl cp <server-pod>:/data/monitor ./logs` before scoring.
+to `/data/monitor` on the server's persistent PVC. Running the script locally
+(`./data/monitor`) needs no `UV_CACHE_DIR` override — that gotcha is
+devbox-specific.
 
 ## What the script computes
 
