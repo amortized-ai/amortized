@@ -20,6 +20,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from amortized.api import monitor_log
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class TurnState:
     error: str | None = None
     error_status: int | None = None
     consumed: bool = False
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
     task: asyncio.Task[None] | None = None
 
@@ -79,6 +81,9 @@ class SessionState:
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     turns: dict[str, TurnState] = field(default_factory=dict)
     turn_order: list[str] = field(default_factory=list)
+    # opencode assistant-message ids already attributed to a monitor turn record,
+    # so each message is counted once even across delegating turns / sessions.
+    seen_message_ids: set[str] = field(default_factory=set)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -259,6 +264,143 @@ async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str,
     except Exception:
         logger.warning("Failed to fetch session messages for %s", opencode_session_id)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Monitor metrics capture (best-effort; never breaks a turn)
+# ---------------------------------------------------------------------------
+
+
+def _coerce_int(value: Any) -> int:
+    """Best-effort int, folding dict token buckets (e.g. cache {read, write})."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, dict):
+        return sum(_coerce_int(v) for v in value.values())
+    return 0
+
+
+async def _fetch_all_messages(opencode_session_id: str) -> list[dict[str, Any]]:
+    """GET a session's full message history (info + parts), or [] on any failure."""
+    try:
+        resp = await _client().get(
+            f"{_opencode_url()}/session/{opencode_session_id}/message",
+            timeout=10.0,
+        )
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code != 200 or "application/json" not in content_type:
+            return []
+        messages = resp.json()
+        return messages if isinstance(messages, list) else []
+    except Exception:
+        logger.warning("monitor: failed to fetch messages for %s", opencode_session_id)
+        return []
+
+
+async def _record_turn_metrics(
+    state: SessionState,
+    turn: TurnState,
+    session_id: str,
+    turn_id: str,
+) -> None:
+    """Append one monitor ``turn`` record. Attributes every opencode assistant
+    message to exactly one proxy turn (dedup by id across all of the
+    conversation's sessions), which fixes both the delegation undercount (a
+    single active-session read misses subagents) and the within-turn undercount
+    (multi-step tool loops span several assistant messages).
+    """
+    try:
+        role_by_session: dict[str, str] = {state.orchestrator_id: "orchestrator"}
+        if state.subagent_id and state.subagent_target:
+            role_by_session[state.subagent_id] = state.subagent_target
+        for target, sid in state.completed_subagents.items():
+            role_by_session.setdefault(sid, target)
+        for target, sid in state.subagent_stack:
+            role_by_session.setdefault(sid, target)
+
+        new_msgs: list[tuple[int, str, dict[str, Any]]] = []
+        for sid, role in role_by_session.items():
+            for msg in await _fetch_all_messages(sid):
+                info = msg.get("info") or {}
+                if info.get("role") != "assistant":
+                    continue
+                mid = info.get("id")
+                if not mid or mid in state.seen_message_ids:
+                    continue
+                state.seen_message_ids.add(mid)
+                created = _coerce_int((info.get("time") or {}).get("created"))
+                new_msgs.append((created, role, msg))
+        new_msgs.sort(key=lambda item: item[0])
+
+        tokens = {"input": 0, "output": 0, "reasoning": 0, "cache": 0}
+        tokens_by_role: dict[str, int] = {}
+        cost = 0.0
+        model_id: str | None = None
+        provider_id: str | None = None
+        tool_calls: list[dict[str, Any]] = []
+
+        for _created, role, msg in new_msgs:
+            info = msg.get("info") or {}
+            msg_tokens = info.get("tokens") or {}
+            msg_total = 0
+            for key in ("input", "output", "reasoning", "cache"):
+                val = _coerce_int(msg_tokens.get(key))
+                tokens[key] += val
+                msg_total += val
+            tokens_by_role[role] = tokens_by_role.get(role, 0) + msg_total
+            msg_cost = info.get("cost")
+            if isinstance(msg_cost, (int, float)) and not isinstance(msg_cost, bool):
+                cost += float(msg_cost)
+            if info.get("modelID"):
+                model_id = info.get("modelID")
+            if info.get("providerID"):
+                provider_id = info.get("providerID")
+            for part in msg.get("parts") or []:
+                if part.get("type") != "tool":
+                    continue
+                name = _tool_name(part)
+                entry: dict[str, Any] = {"tool": name, "role": role}
+                part_state = part.get("state")
+                if isinstance(part_state, dict):
+                    if part_state.get("status"):
+                        entry["status"] = part_state.get("status")
+                    output = part_state.get("output")
+                    if isinstance(output, str) and output:
+                        entry["output"] = output[:500]
+                if name == "delegate_to_subagent":
+                    entry["target"] = _get_tool_input(part).get("target")
+                tool_calls.append(entry)
+
+        started = turn.started_at
+        finished = turn.finished_at
+        duration_ms = (
+            int((finished - started).total_seconds() * 1000)
+            if started is not None and finished is not None
+            else None
+        )
+        monitor_log.append_record(
+            session_id,
+            {
+                "kind": "turn",
+                "session_id": session_id,
+                "conversation_root": state.orchestrator_id,
+                "turn_id": turn_id,
+                "role": state.subagent_target if state.subagent_id else "orchestrator",
+                "model": model_id,
+                "provider": provider_id,
+                "tokens": {**tokens, "total": sum(tokens.values())},
+                "tokens_by_role": tokens_by_role,
+                "cost": cost,
+                "tool_calls": tool_calls,
+                "started_at": started.isoformat() if started else None,
+                "finished_at": finished.isoformat() if finished else None,
+                "duration_ms": duration_ms,
+            },
+        )
+    except Exception:
+        logger.warning("monitor: failed to record turn metrics turn=%s", turn_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +643,7 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
+            await _record_turn_metrics(state, turn, session_id, turn_id)
         state.last_activity = datetime.now(UTC)
 
 
@@ -520,6 +663,35 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
         "error": turn.error,
         "error_status": turn.error_status,
     }
+
+
+class CompletionRequest(BaseModel):
+    turn_id: str | None = None
+    outcome: str = "success"  # "success" | "gave_up"
+    note: str | None = None
+
+
+@router.post("/session/{session_id}/monitor/complete")
+async def mark_run_complete(session_id: str, body: CompletionRequest) -> dict[str, Any]:
+    """Record a human-declared run completion for monitor metrics.
+
+    Studio calls this when the tester marks a vibe-test run done. It defines the
+    boundary for turns-to-complete and total-tokens; the product itself has no
+    workflow-completion signal (the orchestrator loops indefinitely).
+    """
+    state = _sessions.get(session_id)
+    monitor_log.append_record(
+        session_id,
+        {
+            "kind": "completion",
+            "session_id": session_id,
+            "conversation_root": state.orchestrator_id if state else None,
+            "turn_id": body.turn_id,
+            "outcome": body.outcome,
+            "note": body.note,
+        },
+    )
+    return {"ok": True}
 
 
 async def _handle_subagent_message(
