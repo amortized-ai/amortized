@@ -126,17 +126,19 @@ export default function ChatPage() {
     [activeProviders, connectedKnownProviders, connectedProviders],
   )
 
-  // If the backend reports connected providers but none of the enabled ones are actually
-  // connected, enable the connected ones. Without this, a deploy whose only credentialed
-  // provider differs from the hard-coded default (e.g. OpenAI-only while the default is
-  // Vertex) leaves the user stuck on a provider the agent can't serve → the first turn 500s.
+  // Ensure every backend-connected provider is enabled, so a newly-added one becomes
+  // selectable (e.g. the user adds Anthropic while OpenAI is already connected). We UNION
+  // rather than replace: existing choices are kept, and disconnected providers are filtered
+  // out of `usableProviders` anyway. Without this, the enabled set never picks up a second
+  // provider (the old "only when none connected" check skipped it); the first-connect
+  // switch-over (default provider not connected, another one is) still works via the union.
   useEffect(() => {
     if (connectedKnownProviders.length === 0) return
-    const anyEnabledConnected = enabledProviders.some((id) => connectedProviders.has(id))
-    if (!anyEnabledConnected) {
-      setEnabledProviders(connectedKnownProviders)
+    const missing = connectedKnownProviders.filter((id) => !enabledProviders.includes(id))
+    if (missing.length > 0) {
+      setEnabledProviders([...enabledProviders, ...missing])
     }
-  }, [connectedKnownProviders, connectedProviders, enabledProviders, setEnabledProviders])
+  }, [connectedKnownProviders, enabledProviders, setEnabledProviders])
 
   // Keep the selection on a usable provider (see usableProviders above).
   useEffect(() => {

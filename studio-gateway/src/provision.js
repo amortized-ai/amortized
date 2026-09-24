@@ -136,6 +136,22 @@ const MORTY_ENABLED = fs.existsSync(path.join(OPENSHELL_MTLS_DIR, 'tls.crt'));
 // namespace -> { state: 'provisioning'|'ready'|'error', promise, error }
 const stacks = new Map();
 
+// Serialize per-namespace provider mutations (add/remove) so the read-merge-write of the
+// credential Secret is atomic and no concurrent save is lost. The gateway is single-replica,
+// so an in-process lock suffices. Each mutation chains onto the previous one for the ns.
+const providerLocks = new Map(); // ns -> tail promise (always resolves)
+function withProviderLock(ns, fn) {
+  const prev = providerLocks.get(ns) || Promise.resolve();
+  const result = prev.then(fn, fn); // run fn after prev regardless of prev's outcome
+  const tail = result.then(() => {}, () => {}); // tail never rejects, so the chain flows
+  providerLocks.set(ns, tail);
+  tail.then(() => { if (providerLocks.get(ns) === tail) providerLocks.delete(ns); });
+  return result;
+}
+
+// namespace -> { entry, pending: { requested, restart } } while a reconcile is in flight.
+const reconcilers = new Map();
+
 function nsForUser(user) {
   const s = String(user);
   const local = s.split('@')[0];
@@ -691,20 +707,47 @@ async function reconcileStack(ns, providers, { restart }) {
   if (Object.keys(providers).length) await ensureSandbox(ns, providers);
 }
 
-// Kick off a best-effort reconcile, tracked as the in-memory entry. Crucially, a reconcile
-// failure that leaves the SERVER up keeps the stack 'ready' (only Morty/chat is degraded) —
-// it must NOT flip the whole stack to 'error', which would make the gateway 500 every /api
-// call, not just chat. Only a genuinely-down server yields 'error'.
-function startReconcile(ns, providers, { restart }) {
+// Kick off a best-effort reconcile, tracked as the in-memory entry. A reconcile (server
+// restart + sandbox recreate) runs async; if another save lands while one is in flight we do
+// NOT start a competing reconcile — we flag a follow-up so that when the current one finishes
+// it reconciles again with the LATEST persisted set. This guarantees the stack converges to
+// the current credential set (without it, a save during a restart is persisted but never
+// applied). The set is always re-read from the Secret, so it reflects every serialized save.
+// Crucially, a reconcile failure that leaves the SERVER up keeps the stack 'ready' (only
+// Morty/chat degraded) — it must NOT flip the whole stack to 'error' (that would 500 every
+// /api call, not just chat). Only a genuinely-down server yields 'error'.
+function startReconcile(ns, { restart }) {
+  const active = reconcilers.get(ns);
+  if (active) {
+    active.pending.requested = true;
+    active.pending.restart = active.pending.restart || restart;
+    return active.entry;
+  }
   const entry = { state: 'provisioning', error: null };
-  entry.promise = reconcileStack(ns, providers, { restart })
-    .then(() => { entry.state = 'ready'; })
-    .catch(async (err) => {
-      const up = await serverAvailable(ns).catch(() => false);
-      entry.state = up ? 'ready' : 'error';
-      entry.error = String(err.message || err);
-      console.error(`stack reconcile for ${ns} failed (${up ? 'server up, chat degraded' : 'server down'}):`, err?.message || err);
-    });
+  const pending = { requested: false, restart: false };
+  const drive = async () => {
+    let doRestart = restart;
+    for (;;) {
+      const providers = await readUserProviders(ns); // always reconcile the latest persisted set
+      try {
+        await reconcileStack(ns, providers, { restart: doRestart });
+        entry.state = 'ready';
+        entry.error = null;
+      } catch (err) {
+        const up = await serverAvailable(ns).catch(() => false);
+        entry.state = up ? 'ready' : 'error';
+        entry.error = String(err.message || err);
+        console.error(`stack reconcile for ${ns} failed (${up ? 'server up, chat degraded' : 'server down'}):`, err?.message || err);
+      }
+      if (!pending.requested) break;
+      pending.requested = false;
+      doRestart = pending.restart;
+      pending.restart = false;
+    }
+    reconcilers.delete(ns);
+  };
+  entry.promise = drive();
+  reconcilers.set(ns, { entry, pending });
   stacks.set(ns, entry);
   return entry;
 }
@@ -722,25 +765,31 @@ async function setUserProvider(user, provider, credential) {
   const cred = validateCredential(provider, credential);
   const ns = nsForUser(user);
 
-  const current = await readUserProviders(ns);
-  const providers = { ...current, [provider]: cred };
-  await writeUserProviders(ns, providers);
+  // Serialize per-ns so the read-merge-write is atomic (a concurrent save can't clobber this
+  // provider's credential or be lost to a stale reconcile snapshot).
+  return withProviderLock(ns, async () => {
+    const current = await readUserProviders(ns);
+    const providers = { ...current, [provider]: cred };
+    await writeUserProviders(ns, providers);
 
-  // Rotate = the core stack is already up. Check the cluster (serverAvailable), not just the
-  // in-memory state, so a change still applies after a gateway restart cleared the map.
-  const existing = stacks.get(ns);
-  const rotate = (existing && existing.state === 'ready') || (await serverAvailable(ns));
+    // Rotate = the core stack is already up OR a reconcile is in flight. Checking the cluster
+    // (serverAvailable) keeps changes applying after a gateway restart cleared the map; the
+    // reconcilers check ensures a save that lands mid-restart queues a follow-up reconcile
+    // instead of taking the first-run persist-only path (which would never apply it).
+    const existing = stacks.get(ns);
+    const rotate = reconcilers.has(ns) || (existing && existing.state === 'ready') || (await serverAvailable(ns));
 
-  if (rotate) {
-    stacks.delete(ns);
-    // Restart the server only when a KEY provider changed (it feeds the server env); a
-    // vertex-only add never touches the server, so just recreate the sandbox.
-    const entry = startReconcile(ns, providers, { restart: PROVIDERS[provider].kind === 'key' });
-    return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
-  }
-  // First run: persist only — the credential is stored, but provisioning waits for the
-  // explicit /gateway/ready trigger (Continue), which provisions with the full set.
-  return { ns, state: 'needs_key', error: null, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
+    if (rotate) {
+      // Restart the server only when a KEY provider changed (it feeds the server env); a
+      // vertex-only add never touches the server, so just recreate the sandbox. startReconcile
+      // re-reads the latest persisted set, so it applies this write even if it coalesces.
+      const entry = startReconcile(ns, { restart: PROVIDERS[provider].kind === 'key' });
+      return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
+    }
+    // First run: persist only — the credential is stored, but provisioning waits for the
+    // explicit /gateway/ready trigger (Continue), which provisions with the full set.
+    return { ns, state: 'needs_key', error: null, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
+  });
 }
 
 // Remove ONE provider from the user's set. Re-stamps the server keys (dropping the removed
@@ -750,22 +799,24 @@ async function removeUserProvider(user, provider) {
     throw new Error('Morty is not enabled on this deployment (OpenShell mTLS certs not mounted)');
   }
   const ns = nsForUser(user);
-  const current = await readUserProviders(ns);
-  if (!(provider in current)) {
-    return { ns, state: stacks.get(ns)?.state || 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };
-  }
-  const removedKeyProvider = !!(PROVIDERS[provider] && PROVIDERS[provider].kind === 'key');
-  const providers = { ...current };
-  delete providers[provider];
-  await writeUserProviders(ns, providers);
+  // Serialize per-ns with the add path so the read-merge-write is atomic.
+  return withProviderLock(ns, async () => {
+    const current = await readUserProviders(ns);
+    if (!(provider in current)) {
+      return { ns, state: stacks.get(ns)?.state || 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };
+    }
+    const removedKeyProvider = !!(PROVIDERS[provider] && PROVIDERS[provider].kind === 'key');
+    const providers = { ...current };
+    delete providers[provider];
+    await writeUserProviders(ns, providers);
 
-  const up = stacks.get(ns)?.state === 'ready' || (await serverAvailable(ns));
-  stacks.delete(ns);
-  if (up) {
-    const entry = startReconcile(ns, providers, { restart: removedKeyProvider });
-    return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
-  }
-  return { ns, state: 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };
+    const up = reconcilers.has(ns) || stacks.get(ns)?.state === 'ready' || (await serverAvailable(ns));
+    if (up) {
+      const entry = startReconcile(ns, { restart: removedKeyProvider });
+      return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
+    }
+    return { ns, state: 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };
+  });
 }
 
 // Current provider status for the settings UI: which providers are supported and which the
