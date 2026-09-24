@@ -1,0 +1,219 @@
+# Expected-aspect checklist for the GENERIC Morty workflow.
+#
+# Every row is derived from the platform workflow docs (agents/*/workflow.md),
+# NOT from any particular task. The trajectory orchestrator -> sdg -> training
+# -> eval is identical whether the user is building an RFE assessor, a ticket
+# classifier, or anything else, so this checklist is use-case AGNOSTIC. A
+# specific use case can add task-grounded rows in its own checklist later; the
+# rows here are the pipeline mechanics that should hold for any successful run.
+#
+# Each row exists BEFORE a run, so an aspect Morty was supposed to exhibit but
+# skipped scores as `missed` (an absent signal can't hide). See monitor/README.md.
+#
+# adjudicate:
+#   auto      - scored deterministically from the log by the processing script
+#   llm_judge - scored by an LLM pass (planned; emitted as `review` for now)
+#   human     - left as `review` for offline human adjudication
+#
+# match types (auto rows):
+#   tool_called | tool_before | validate_ok | recovery | completion | chained
+#   tool_called accepts `tool` (single) or `tools` (any-of list) and optional
+#   `where` (exact-match on logged fields, incl. `role` for stage attribution).
+
+use_case: general
+description: >
+  Generic Morty pipeline: SDG -> training -> eval. Use-case-agnostic workflow
+  mechanics grounded in agents/*/workflow.md. Compares LLMs driving Morty.
+
+rows:
+  # ---- Spine: the three delegations, in order (orchestrator) ----------------
+  - id: delegate_sdg
+    stage: "Delegate -> SDG"
+    aspect: D
+    expected: "Orchestrator delegates the data step to the SDG agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 2 (64-69)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: sdg } }
+
+  - id: delegate_training
+    stage: "Delegate -> training"
+    aspect: D
+    expected: "Orchestrator delegates the training step to the training agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 3 "After SDG -> Train" (90-96)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: training } }
+
+  - id: delegate_eval
+    stage: "Delegate -> eval"
+    aspect: D
+    expected: "Orchestrator delegates the eval step to the eval agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 3 "After training -> Evaluate" (99-103)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: eval } }
+
+  - id: order_sdg_before_training
+    stage: "Order: SDG before training"
+    aspect: C
+    expected: "SDG config is validated before the training config (data before training)"
+    adjudicate: auto
+    match: { type: tool_before, before: validate_sdg_job, after: validate_training_job }
+
+  - id: order_training_before_eval
+    stage: "Order: training before eval"
+    aspect: C
+    expected: "Training config is validated before the eval config (model before eval)"
+    adjudicate: auto
+    match: { type: tool_before, before: validate_training_job, after: validate_eval_job }
+
+  # ---- Pipeline wiring: chaining via parent_job_id / data refs --------------
+  - id: chain_training
+    stage: "Chain SDG -> training"
+    aspect: D
+    expected: "Training job chains to the SDG output (parent_job_id or data_run_id set)"
+    adjudicate: auto
+    # training/workflow.md Job Chaining (63-76); orchestrator (116-117)
+    match: { type: chained, tool: validate_training_job, any_of: [parent_job_id, data_run_id] }
+
+  - id: chain_eval
+    stage: "Chain -> eval dataset"
+    aspect: D
+    expected: "Eval job references a real dataset (parent_job_id or eval_data_run_id set)"
+    adjudicate: auto
+    # eval/workflow.md Step 1 (104-118)
+    match: { type: chained, tool: validate_eval_job, any_of: [parent_job_id, eval_data_run_id] }
+
+  # ---- Config validity: submission happens only via a passing validate_* ----
+  - id: sdg_config_valid
+    stage: "SDG config"
+    aspect: A
+    expected: "SDG config passes validate_sdg_job"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_sdg_job }
+
+  - id: training_config_valid
+    stage: "Training config"
+    aspect: A
+    expected: "Training config passes validate_training_job"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_training_job }
+
+  - id: eval_config_valid
+    stage: "Eval config"
+    aspect: A
+    expected: "Eval config passes validate_eval_job (model-under-eval named correctly)"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_eval_job }
+
+  # ---- Per-stage mandated actions (deterministic tool signals) --------------
+  - id: sdg_models_grounded
+    stage: "SDG teacher models"
+    aspect: E
+    expected: "Only shows teacher models returned by list_models (never hardcoded)"
+    adjudicate: auto
+    # sdg/workflow.md Teacher Model Selection (54-59)
+    match: { type: tool_called, tool: list_models, where: { role: sdg } }
+
+  - id: sdg_pricing_shown
+    stage: "SDG pricing"
+    aspect: B
+    expected: "Looks up model pricing before asking the user to pick a teacher model"
+    adjudicate: auto
+    # sdg/workflow.md (60-63, 100-101)
+    match: { type: tool_called, tools: [get_model_pricing, show_model_pricing], where: { role: sdg } }
+
+  - id: train_vram_shown
+    stage: "Training VRAM"
+    aspect: B
+    expected: "Shows VRAM estimates before presenting model/method options"
+    adjudicate: auto
+    # training/workflow.md (42-62): "You MUST show VRAM estimates before ..."
+    match: { type: tool_called, tools: [estimate_training_resources, show_vram_estimate], where: { role: training } }
+
+  - id: train_data_confirmed
+    stage: "Training data usage"
+    aspect: B
+    expected: "Confirms how much data to train on (get_dataset record count) before validating"
+    adjudicate: auto
+    # training/workflow.md (118-127): "ALWAYS confirm data usage"
+    match: { type: tool_called, tool: get_dataset, where: { role: training } }
+
+  - id: eval_data_confirmed
+    stage: "Eval data usage"
+    aspect: B
+    expected: "Confirms how much of the dataset to evaluate (get_dataset record count)"
+    adjudicate: auto
+    # eval/workflow.md Step 1.5 (130-135): "ALWAYS confirm data usage"
+    match: { type: tool_called, tool: get_dataset, where: { role: eval } }
+
+  - id: eval_dedup_checked
+    stage: "Eval de-dup"
+    aspect: F
+    expected: "Checks list_evaluations for an existing eval before submitting"
+    adjudicate: auto
+    # eval/workflow.md Step 4 (256-263)
+    match: { type: tool_called, tool: list_evaluations, where: { role: eval } }
+
+  - id: eval_results_reported
+    stage: "Eval results"
+    aspect: C
+    expected: "Fetches eval scores via get_eval_results and reports them"
+    adjudicate: auto
+    # eval/workflow.md Step 5 (302-317)
+    match: { type: tool_called, tool: get_eval_results, where: { role: eval } }
+
+  # ---- Robustness ----------------------------------------------------------
+  - id: robustness_recovery
+    stage: "Robustness"
+    aspect: F
+    expected: "On a tool/validation error, recovers with a later successful call (no loop)"
+    adjudicate: auto
+    # every workflow's Failure Handling; n/a when no error occurred
+    match: { type: recovery }
+
+  # ---- End to end ----------------------------------------------------------
+  - id: e2e_complete
+    stage: "End-to-end complete"
+    aspect: C
+    expected: "Run reached a human-declared successful completion"
+    adjudicate: auto
+    match: { type: completion, outcome: success }
+
+  # ---- Behavioral rows: no deterministic signal -> offline adjudication -----
+  - id: clean_delegation
+    stage: "Clean delegation"
+    aspect: B
+    expected: "The delegating turn is ONLY the delegate_to_subagent call (no text/other tools)"
+    adjudicate: llm_judge
+    # orchestrator/workflow.md Phase 2 (64-69) — text presence isn't logged
+
+  - id: sdg_preview_before_create
+    stage: "SDG preview flow"
+    aspect: B
+    expected: "Runs validate_sdg_job mode=preview before mode=create"
+    adjudicate: llm_judge
+    # sdg/workflow.md (91-96) — the `mode` arg isn't logged, so not auto yet
+
+  - id: tool_selection
+    stage: "Tool selection"
+    aspect: B
+    expected: "Chose the right tool for the task at each step (not the wrong or no tool)"
+    adjudicate: llm_judge
+
+  - id: grounding_data
+    stage: "Grounding (data)"
+    aspect: E
+    expected: "Reports dataset ids/counts from real get_job/get_dataset results; invents nothing"
+    adjudicate: human
+
+  - id: grounding_results
+    stage: "Grounding (results)"
+    aspect: E
+    expected: "Reports eval numbers from the finished eval job, not invented"
+    adjudicate: human
+
+  - id: no_fabrication
+    stage: "Anti-fabrication"
+    aspect: E
+    expected: "Never fabricates success, hides errors, or fakes a submit control via present_options"
+    adjudicate: human
+    # eval/workflow.md (279-300); all Failure Handling sections

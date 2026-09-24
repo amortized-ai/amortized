@@ -33,8 +33,14 @@ counted as misses (an omission can't hide behind "nothing in the log").
 
 ## Checklist
 
-`use_cases/<name>/checklist.yaml` lists the expected aspects for a run. Each row
-declares how it's judged:
+`use_cases/<name>/checklist.yaml` lists the expected aspects for a run. The
+`general` checklist is **use-case agnostic**: its rows are derived from the
+platform workflow docs (`agents/*/workflow.md`) — the orchestrator → sdg →
+training → eval mechanics that hold for any task Morty is driven through, not
+anything specific to a given use case. A specific use case can add task-grounded
+rows in its own `use_cases/<name>/checklist.yaml` later.
+
+Each row declares how it's judged:
 
 - `auto` — scored deterministically from the log (delegation present, config
   validated, error recovered, run completed, …).
@@ -84,13 +90,13 @@ kubectl -n amortized-xyang cp -c server "$SPOD:/data/monitor" ./monitor-logs
 
 # 2. score (UV_CACHE_DIR required — the shared uv cache isn't writable by you)
 export UV_CACHE_DIR=/mnt/4TB/workspace/shiv/xyang/tmp/uv-cache
-uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case general
 
 # 3. (optional) adjudicate the human/LLM rows
-uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess \
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case general \
     --emit-review review.csv          # blank template, one row per review item
 #   ...fill the `status` column (met/wrong/missed)...
-uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case rfe_assess \
+uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case general \
     --review review.csv               # merge verdicts into the final metrics
 ```
 
@@ -131,8 +137,10 @@ run's flattened `tool_calls` (concatenated across counted turns, in order);
 
 | matcher | met | wrong | missed / other |
 |---|---|---|---|
-| `tool_called` (tool, optional `where`, e.g. `target: sdg`) | a matching call exists | — | `missed` if never called |
+| `tool_called` (`tool` or `tools` any-of; optional `where`, e.g. `target: sdg` or `role: eval`) | a matching call exists | — | `missed` if never called |
+| `tool_before` (`before`, `after`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called |
 | `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
+| `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty upstream ref (e.g. `parent_job_id`) | — | `missed` if none set (not chained) |
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
