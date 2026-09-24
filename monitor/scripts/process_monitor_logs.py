@@ -104,6 +104,27 @@ class Run:
         return (max(ends) - min(starts)).total_seconds()
 
     @property
+    def _latencies_s(self) -> list[float]:
+        # Per-message response latency: send received -> response ready
+        # (turn.duration_ms). This is the assistant response time per user message.
+        out: list[float] = []
+        for t in self.counted_turns:
+            ms = t.get("duration_ms")
+            if isinstance(ms, (int, float)):
+                out.append(float(ms) / 1000.0)
+        return out
+
+    @property
+    def avg_latency_s(self) -> float | None:
+        lat = self._latencies_s
+        return sum(lat) / len(lat) if lat else None
+
+    @property
+    def max_latency_s(self) -> float | None:
+        lat = self._latencies_s
+        return max(lat) if lat else None
+
+    @property
     def agent_model(self) -> str | None:
         models = [t.get("model") for t in self.counted_turns if t.get("role") == "orchestrator"]
         models = [m for m in models if m]
@@ -290,6 +311,10 @@ def print_per_run(
             f"cost: {_fmt(run.total_cost, '$')}   "
             f"wall-clock: {_fmt(run.wall_clock_s, 's')}"
         )
+        print(
+            f"- response latency: avg {_fmt(run.avg_latency_s, 's')}   "
+            f"max {_fmt(run.max_latency_s, 's')}   (send received -> response ready, per message)"
+        )
         for row in checklist["rows"]:
             print(f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} — {row['stage']}")
         print()
@@ -303,9 +328,15 @@ def print_comparison(
         by_model[run.agent_model or "(unknown)"].append(run)
 
     aspects = sorted({row["aspect"] for row in checklist["rows"]})
-    header = ["model", "runs", "avg turns", "avg tokens (excl cache)", "avg cost", "avg time"] + [
-        f"asp {a}" for a in aspects
-    ]
+    header = [
+        "model",
+        "runs",
+        "avg turns",
+        "avg tokens (excl cache)",
+        "avg cost",
+        "avg time",
+        "avg latency",
+    ] + [f"asp {a}" for a in aspects]
     print("## Model comparison\n")
     print("| " + " | ".join(header) + " |")
     print("|" + "|".join(["---"] * len(header)) + "|")
@@ -317,6 +348,8 @@ def print_comparison(
         avg_cost = sum(r.total_cost for r in model_runs) / n
         times = [r.wall_clock_s for r in model_runs if r.wall_clock_s is not None]
         avg_time = sum(times) / len(times) if times else None
+        lats = [r.avg_latency_s for r in model_runs if r.avg_latency_s is not None]
+        avg_latency = sum(lats) / len(lats) if lats else None
 
         aspect_cells: list[str] = []
         for aspect in aspects:
@@ -338,6 +371,7 @@ def print_comparison(
             _fmt(avg_tokens, "int"),
             _fmt(avg_cost, "$"),
             _fmt(avg_time, "s"),
+            _fmt(avg_latency, "s"),
             *aspect_cells,
         ]
         print("| " + " | ".join(row_cells) + " |")
