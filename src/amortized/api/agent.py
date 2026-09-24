@@ -675,7 +675,7 @@ class CompletionRequest(BaseModel):
 async def mark_run_complete(session_id: str, body: CompletionRequest) -> dict[str, Any]:
     """Record a human-declared run completion for monitor metrics.
 
-    Studio calls this when the tester marks a vibe-test run done. It defines the
+    Studio calls this when the tester marks a test run done. It defines the
     boundary for turns-to-complete and total-tokens; the product itself has no
     workflow-completion signal (the orchestrator loops indefinitely).
     """

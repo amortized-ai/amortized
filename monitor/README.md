@@ -1,4 +1,4 @@
-# Monitor — vibe-testing metrics for Morty
+# Monitor — testing metrics for Morty
 
 Personal, per-user metrics for comparing different LLMs driving Morty on a fixed
 use case (the RFE assessor). No shared service — each person's own amortized
