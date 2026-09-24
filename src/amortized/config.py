@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
+    monitor_log_dir: Path = Field(
+        default=Path.home() / ".amortized" / "monitor",
+        description="Directory for per-session monitor JSONL logs (vibe-testing metrics). "
+        "One <session_id>.jsonl file per conversation.",
+    )
 
     api_key: str = Field(default="", description="API key for auth (empty = no auth)")
     cors_origins: str = Field(default="*", description="Comma-separated allowed CORS origins")
