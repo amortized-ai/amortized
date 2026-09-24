@@ -1,4 +1,4 @@
-"""Append-only per-session JSONL logging for monitor (vibe-testing) metrics.
+"""Append-only per-session JSONL logging for monitor metrics.
 
 Every conversation writes to ``<monitor_log_dir>/<session_id>.jsonl``. Two record
 kinds share the file:
