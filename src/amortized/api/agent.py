@@ -371,6 +371,15 @@ async def _record_turn_metrics(
                         entry["output"] = output[:500]
                 if name == "delegate_to_subagent":
                     entry["target"] = _get_tool_input(part).get("target")
+                elif name.startswith("validate_"):
+                    # Capture pipeline-wiring inputs so chaining (SDG->training->eval
+                    # via parent_job_id) is checkable offline. Config args aren't
+                    # otherwise logged; only record the fields when present/non-empty.
+                    inp = _get_tool_input(part)
+                    for key in ("parent_job_id", "data_run_id", "eval_data_run_id"):
+                        val = inp.get(key)
+                        if val:
+                            entry[key] = val
                 tool_calls.append(entry)
 
         started = turn.started_at
