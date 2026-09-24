@@ -3,10 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { JobMonitorCard } from "./job-monitor-card"
 
-// JobMonitorCard renders react-router <Link>s in its success state, which need a
-// router context — render inside a MemoryRouter.
+// JobMonitorCard renders react-router <Link>s in its success state. Render under a NON-ROOT
+// basename so the tests can assert the success links actually route through it — that's the
+// point of the fix (an absolute <a href> would bypass the basename and 404 in the embed, and
+// would still pass a test that only provided router context).
+const BASENAME = "/amortized-studio-embed"
 function render(ui: React.ReactElement) {
-  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+  return rtlRender(
+    <MemoryRouter basename={BASENAME} initialEntries={[`${BASENAME}/`]}>
+      {ui}
+    </MemoryRouter>,
+  )
 }
 
 const getJob = vi.fn()
@@ -126,5 +133,40 @@ describe("JobMonitorCard — dataset splits", () => {
         "succeeded",
       ),
     )
+  })
+})
+
+// The point of the fix: success links must route through the router basename (react-router
+// <Link>), not absolute <a href> that bypass it and 404 in the embed. Assert each rendered
+// href is basename-prefixed so a regression to absolute anchors fails.
+describe("JobMonitorCard — success links route through the basename", () => {
+  const jobId = "34bd1852-e8bd-433c-aca0-4a42181210f4"
+
+  it("View Job (shared across job types) is basename-prefixed", async () => {
+    getJob.mockResolvedValue(job("succeeded", "eval"))
+    render(<JobMonitorCard jobId={jobId} jobType="EVAL" />)
+    const link = await screen.findByRole("link", { name: /View Job/ }, { timeout: 3000 })
+    expect(link.getAttribute("href")).toContain(`${BASENAME}/jobs`)
+  })
+
+  it("TRAINING → View Model is basename-prefixed", async () => {
+    getJob.mockResolvedValue(job("succeeded", "training"))
+    render(<JobMonitorCard jobId={jobId} jobType="TRAINING" />)
+    const link = await screen.findByRole("link", { name: /View Model/ }, { timeout: 3000 })
+    expect(link.getAttribute("href")).toContain(`${BASENAME}/models`)
+  })
+
+  it("EVAL → View Results is basename-prefixed", async () => {
+    getJob.mockResolvedValue(job("succeeded", "eval"))
+    render(<JobMonitorCard jobId={jobId} jobType="EVAL" />)
+    const link = await screen.findByRole("link", { name: /View Results/ }, { timeout: 3000 })
+    expect(link.getAttribute("href")).toBe(`${BASENAME}/evaluation`)
+  })
+
+  it("SPLIT/SDG → View Dataset is basename-prefixed", async () => {
+    getJob.mockResolvedValue(job("succeeded", "upload"))
+    render(<JobMonitorCard jobId={jobId} jobType="SPLIT" />)
+    const link = await screen.findByRole("link", { name: /View Dataset/ }, { timeout: 3000 })
+    expect(link.getAttribute("href")).toContain(`${BASENAME}/datasets`)
   })
 })
