@@ -172,7 +172,7 @@ tradeoff — subagent sessions are ephemeral anyway.
 2. **Session persistence** — In-memory state. Server restart = all
    active subagent sessions lost. Could persist to DB if needed.
 
-3. **Deploy repo sync** — `amortized-deploy` repo's `base-internal/`
+3. **Deploy repo sync** — `amortized-kind-deploy` repo's `base-internal/`
    has OpenCode resources that now conflict with the ones in this repo.
    The `base-internal/kustomization.yaml` needs updating to remove
    duplicates.

@@ -8,7 +8,7 @@ agent is unreachable — Studio connects but gets no responses.
 ## Root Cause
 
 Commit `fe34ee4` ("remove Claude Code agent deployment") in
-`amortized-deploy` removed OpenCode resources from
+`amortized-kind-deploy` removed OpenCode resources from
 `k8s/base-internal/kustomization.yaml`:
 
 ```diff
