@@ -7,7 +7,16 @@ export interface PersistedMessage {
   content: string
   timestamp: string
   toolResults?: { name: string; result: string; collapsed: boolean }[]
-  proposedAction?: { action: string; description: string; params: Record<string, unknown> } | null
+  proposedAction?: {
+    action: string
+    description: string
+    params: Record<string, unknown>
+    jobType?: "sdg" | "training" | "eval" | "serve"
+    endpoint?: string
+    config?: Record<string, unknown>
+    parentJobId?: string
+    recipe?: string
+  } | null
   optionCards?: { title: string; description: string; value: string }[]
   selectedOptionValue?: string
   phase?: string
