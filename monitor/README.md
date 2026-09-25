@@ -52,9 +52,13 @@ Each row declares how it's judged:
 
 - `auto` — scored deterministically from the log (delegation present, config
   validated, error recovered, run completed, …).
-- `llm_judge` — scored by an LLM pass (planned; emitted as `review` for now).
-- `human` — left as `review` for offline adjudication (right-tool correctness,
-  anti-fabrication — a log can't judge these).
+- `llm_judge` — scored by an LLM pass over the transcript (`--llm-judge`, default
+  model `claude-opus-4-8` = what Morty runs on); emitted as `review` without the
+  flag. Assistant text and full (untruncated) tool output are both logged, so
+  grounding and anti-fabrication rows (claim-vs-source) are judged from the log
+  alone. The judge returns `met`/`wrong`/`n/a`, or `review` when it lacks evidence.
+- `human` — left as `review` for offline human adjudication. No `general` rows
+  use this today; it stays available for use cases that need a person in the loop.
 
 Statuses: `met`, `wrong` (did it, wrong), `missed` (should have, didn't — the
 default when a signal is absent), `n/a`, `review`.
@@ -100,7 +104,14 @@ kubectl -n amortized-xyang cp -c server "$SPOD:/data/monitor" ./monitor-logs
 export UV_CACHE_DIR=/mnt/4TB/workspace/shiv/xyang/tmp/uv-cache
 uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case general
 
-# 3. (optional) adjudicate the human/LLM rows
+# 3a. (optional) score the llm_judge rows with an LLM pass (default: claude-opus-4-8,
+#     what Morty runs on). Needs the `monitor` extra (anthropic) and creds from the
+#     env: ANTHROPIC_VERTEX_PROJECT_ID (+ CLOUD_ML_REGION) for Vertex, else
+#     ANTHROPIC_API_KEY.
+uv run --extra monitor python monitor/scripts/process_monitor_logs.py ./monitor-logs \
+    --use-case general --llm-judge    # prints an "LLM-judge rationale" section too
+
+# 3b. (optional) adjudicate by hand — a filled --review CSV overrides the LLM
 uv run python monitor/scripts/process_monitor_logs.py ./monitor-logs --use-case general \
     --emit-review review.csv          # blank template, one row per review item
 #   ...fill the `status` column (met/wrong/missed)...
@@ -146,9 +157,12 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 | matcher | met | wrong | missed / other |
 |---|---|---|---|
 | `tool_called` (`tool` or `tools` any-of; optional `where` e.g. `role: eval`, and `output_contains` substring e.g. `skills/sdg/`) | a matching call exists | — | `missed` if never called |
-| `tool_before` (`before`, `after`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called |
+| `tool_before` (`before`, `after`; each a bare tool name **or** `{tool, where}` to order by an arg e.g. `mode: preview`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called; `review` if the `where` arg is absent from the log |
 | `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
 | `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty field (e.g. `parent_job_id`, `judge`) | — | `missed` if none set |
+| `scores_present` (tool, default `get_eval_results`) | a call output carries a non-null numeric rubric score | fetched but every score null (`scores_n=0`) | `missed` if never fetched |
+| `no_error_calls` (optional `tools` filter) | no matching call ended in `status=error` | some call errored | — |
+| `solo_delegation` (optional `target`) | every `delegate_to_subagent` message was the delegate call alone | some delegating message had text/other tools | `missed` if no delegation; `review` if `solo` absent from the log |
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
@@ -189,7 +203,7 @@ Four checklist rows (verbatim from `use_cases/general/checklist.yaml`):
 
 - id: grounding_data           # D
   aspect: E
-  adjudicate: human
+  adjudicate: llm_judge
 ```
 
 **How each row flows through the steps.**
@@ -206,7 +220,7 @@ row's `adjudicate` decides routing and its `match` selects the matcher:
 | **A** `sdg_pricing_shown` | `auto` | `tool_called`: find a call whose tool ∈ {`get_model_pricing`,`show_model_pricing`} and `role==sdg` → finds `get_model_pricing` | met |
 | **B** `chain_training` | `auto` | `chained`: find a `validate_training_job` call with `parent_job_id` or `data_run_id` non-empty → `parent_job_id="sdg-42"` | met |
 | **C** `order_training_before_eval` | `auto` | `tool_before`: index of `validate_training_job` vs `validate_eval_job` → no `validate_eval_job` in log | missed |
-| **D** `grounding_data` | `human` | not `auto` → skipped | review |
+| **D** `grounding_data` | `llm_judge` | not `auto` → skipped (deferred to the LLM/CSV round-trip) | review |
 
 The row's `match.type` picks the function; `match`'s other keys (`tools`,
 `where`, `any_of`, `before`/`after`) are the parameters that function scans the
@@ -278,12 +292,17 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
   "tokens": { "input": 0, "output": 0, "reasoning": 0, "cache": 0, "total": 0 },
   "tokens_by_role": { "orchestrator": 0 }, "cost": 0.0,
   "tool_calls": [ { "tool": "validate_training_job", "role": "training", "status": "completed",
-                    "output": "…", "target": "sdg",
+                    "output": "…", "target": "sdg", "solo": true, "mode": "preview",
                     "parent_job_id": "…", "data_run_id": "…", "eval_data_run_id": "…",
                     "judge": "…" } ],
-  // `target` is set on delegate_to_subagent; `parent_job_id`/`data_run_id`/
-  // `eval_data_run_id` are captured from validate_* inputs when non-empty (pipeline
-  // chaining); `judge` is the eval judge model name (from validate_eval_job; no api_key).
+  // `output` is the full tool output (not truncated). `target`/`solo` are set on
+  // delegate_to_subagent (`solo` = the delegating message was that call alone —
+  // clean_delegation); `mode` (preview/create), `parent_job_id`/`data_run_id`/
+  // `eval_data_run_id` are captured from validate_* inputs when non-empty; `judge`
+  // is the eval judge model name (from validate_eval_job; no api_key).
+  "texts": [ { "role": "orchestrator", "text": "…assistant prose this turn…" } ],
+  // `texts` = assistant natural-language messages, chronological, for the LLM-judge
+  // grounding/anti-fabrication rows (claim checked against tool_calls output).
   "started_at": "…", "finished_at": "…", "duration_ms": 0, "ts": "…" }
 
 // completion
