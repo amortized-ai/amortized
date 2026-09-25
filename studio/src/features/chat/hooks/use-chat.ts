@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl } from "@/lib/api-client"
-import { useChatStore } from "@/stores/chat-store"
+import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { getLogger } from "@/lib/logger"
 
@@ -18,15 +18,19 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-const _sendLock = { held: false }
+// Conversations with a send in flight. Module-level so it survives the keyed
+// unmount/remount that happens when navigating between conversations mid-stream:
+// the send closure keeps writing to the store after its component unmounts, and the
+// remounted hook reads this Set to know it should still show "streaming".
+const _activeRequests = new Set<string>()
 
-function restoreMessages(
-  getConversationMessages: (id: string) => import("@/stores/chat-store").PersistedMessage[],
-  conversationId: string | null,
-): ChatMessage[] {
-  if (!conversationId) return []
-  const persisted = getConversationMessages(conversationId)
-  return persisted.map((m) => ({
+// Guards concurrent sends to the SAME conversation (double-submit). Keyed by convId and
+// always released under that same key (see sendMessage) so it can never leak.
+const _sendLock = new Set<string>()
+
+// Map a persisted message (the single source of truth) to the ChatMessage the UI renders.
+function toChatMessage(m: PersistedMessage): ChatMessage {
+  return {
     id: m.id,
     role: m.role,
     content: m.content,
@@ -36,7 +40,8 @@ function restoreMessages(
     optionCards: m.optionCards ?? [],
     selectedOptionValue: m.selectedOptionValue,
     phase: m.phase,
-  }))
+    streamStartedAt: m.streamStartedAt,
+  }
 }
 
 const TOOL_BLOCK_RE =
@@ -227,16 +232,34 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
   return null
 }
 
+// Derive the current phase label (`phase` or `phase:step`) from a turn's signal_phase
+// tool result. Extracted so the four render paths (send, async poll, job-notify,
+// mount reconcile) stay in sync.
+function extractPhase(toolResults: ToolResult[]): string | undefined {
+  const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
+  if (!phaseTool?.result) return undefined
+  try {
+    const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
+    if (p?.phase) return p.step ? `${p.phase}:${p.step}` : p.phase
+  } catch { /* ignore */ }
+  return undefined
+}
 
 function startThinkingTimer(
   convId: string,
   setStep: (s: string | null) => void,
+  startTime?: number,
 ): () => void {
-  const start = Date.now()
+  const start = startTime ?? Date.now()
   let acting = false
   let pollDone = false
 
-  setStep("Thinking...")
+  const elapsed = (Date.now() - start) / 1000
+  if (elapsed > 15) {
+    setStep("Still working...")
+  } else {
+    setStep("Thinking...")
+  }
 
   const timerId = setInterval(() => {
     const elapsed = (Date.now() - start) / 1000
@@ -271,39 +294,103 @@ function startThinkingTimer(
 }
 
 /**
- * Chat hook. Designed to be mounted inside a keyed component so that
- * React handles conversation switching via unmount/remount — no
- * effect-based message restoration needed.
+ * Chat hook. `messages` is derived directly from the zustand store (the single source
+ * of truth), so unmounting mid-stream loses nothing: the in-flight send closure keeps
+ * writing to the store and the remounted hook re-derives from it. Mounted inside a
+ * component keyed by conversation id, so React handles conversation switching via
+ * unmount/remount.
  */
 export function useChat() {
-  const {
-    currentConversationId,
-    setCurrentConversationId,
-    addConversation,
-    addMessage,
-    updateConversationTitle,
-    getConversationMessages,
-  } = useChatStore()
+  const currentConversationId = useChatStore((s) => s.currentConversationId)
+  const setCurrentConversationId = useChatStore((s) => s.setCurrentConversationId)
+  const addConversation = useChatStore((s) => s.addConversation)
+  const addMessage = useChatStore((s) => s.addMessage)
+  const updateConversationTitle = useChatStore((s) => s.updateConversationTitle)
 
-  const [chatState, setChatState] = useState<ChatState>("idle")
+  // Single source of truth: select the raw persisted array (a stable reference that only
+  // changes when THIS conversation's messages change), then map to ChatMessage. No local
+  // copy, no manual store<->local sync.
+  const persisted = useChatStore((s) => {
+    const conv = s.conversations.find((c) => c.id === s.currentConversationId)
+    return conv?.messages
+  })
+  const messages = useMemo<ChatMessage[]>(
+    () => (persisted ? persisted.map(toChatMessage) : []),
+    [persisted],
+  )
+
   const [error, setError] = useState<string | null>(null)
   const [thinkingStep, setThinkingStep] = useState<string | null>(null)
   const stopThinkingRef = useRef<(() => void) | null>(null)
 
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    return restoreMessages(getConversationMessages, currentConversationId)
-  })
-
-  const messagesRef = useRef(messages)
-  useEffect(() => { messagesRef.current = messages }, [messages])
-
+  // chatState is per-mount UI state. On mount, if a send for this conversation is still in
+  // flight (the module-level Set survives the keyed remount), start in "streaming".
+  const [chatState, setChatState] = useState<ChatState>(() =>
+    currentConversationId && _activeRequests.has(currentConversationId) ? "streaming" : "idle",
+  )
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
   const chatStateRef = useRef(chatState)
   useEffect(() => { chatStateRef.current = chatState }, [chatState])
 
+  // Always stop any thinking timer when this hook unmounts, so a send whose component
+  // unmounted mid-stream can't leave the 1s/3s intervals running.
+  useEffect(() => () => {
+    stopThinkingRef.current?.()
+    stopThinkingRef.current = null
+  }, [])
+
   const warmupPromiseRef = useRef<Promise<void> | null>(null)
 
+  // On mount, reconcile a conversation that was mid-stream.
+  useEffect(() => {
+    const convId = currentConversationId
+    if (!convId) return
+
+    // Case 1 — a send is still in flight (navigated away and back within the app). The
+    // detached send closure keeps writing to the store, so messages are already correct;
+    // we only mirror "streaming" until the request clears, then settle chatState from the
+    // final stored turn. Both the timer and the poll are cleaned up on unmount.
+    if (_activeRequests.has(convId)) {
+      const stored = useChatStore.getState().getConversationMessages(convId)
+      const last = stored[stored.length - 1]
+      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep, last?.streamStartedAt)
+      let cancelled = false
+      const pollId = setInterval(() => {
+        if (cancelled) return
+        if (_activeRequests.has(convId)) return
+        clearInterval(pollId)
+        stopThinkingRef.current?.()
+        stopThinkingRef.current = null
+        const msgs = useChatStore.getState().getConversationMessages(convId)
+        const lastMsg = msgs[msgs.length - 1]
+        const action = lastMsg ? buildProposedAction(lastMsg.toolResults ?? []) : null
+        setChatState(action ? "action_pending" : "done")
+      }, 500)
+      return () => {
+        cancelled = true
+        clearInterval(pollId)
+        stopThinkingRef.current?.()
+        stopThinkingRef.current = null
+      }
+    }
+
+    // Case 2 — no in-flight send, but the last turn is an empty assistant placeholder with
+    // no tool output: an orphan from a send whose in-memory continuation was lost (a full
+    // page reload). Mark it interrupted so the turn reads honestly and the user can resend.
+    // A completed tool-only turn has toolResults, so it is left untouched.
+    const stored = useChatStore.getState().getConversationMessages(convId)
+    const last = stored[stored.length - 1]
+    if (last && last.role === "assistant" && !last.content && (last.toolResults?.length ?? 0) === 0) {
+      useChatStore.getState().updateMessageFields(convId, last.id, {
+        content: "Response was interrupted. Send a new message to continue.",
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only reconciliation
+  }, [])
+
+  // Session warmup: verify the OpenCode session is still live, else rebuild it and replay
+  // context. Recorded in a ref so a send awaits it before firing.
   useEffect(() => {
     if (!currentConversationId) return
     const sessionId = useChatStore.getState().getSessionId(currentConversationId)
@@ -366,6 +453,8 @@ export function useChat() {
     return () => { cancelled = true }
   }, [currentConversationId])
 
+  // Poll for asynchronous follow-up turns the agent produced out of band, appending them
+  // to the store (the derived selector renders them).
   useEffect(() => {
     if (!currentConversationId) return
     const convId = currentConversationId
@@ -382,36 +471,14 @@ export function useChat() {
           const session = extractSessionData([response], parsed.toolResults)
           const proposedAction = buildProposedAction(session.tools)
 
-          const phaseTool = session.tools.find((t) => t.name === "signal_phase")
-          let phase: string | null = null
-          if (phaseTool?.result) {
-            try {
-              const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-              if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-            } catch { /* ignore */ }
-          }
-
-          const msgId = generateId()
-          const followUp: ChatMessage = {
-            id: msgId,
+          addMessage(convId, {
+            id: generateId(),
             role: "assistant",
             content: session.text || parsed.content,
             timestamp: new Date().toISOString(),
             toolResults: session.tools,
             proposedAction,
-            optionCards: [],
-            phase: phase ?? undefined,
-          }
-
-          setMessages((prev) => [...prev, followUp])
-          addMessage(convId, {
-            id: msgId,
-            role: "assistant",
-            content: followUp.content,
-            timestamp: followUp.timestamp,
-            toolResults: followUp.toolResults,
-            proposedAction,
-            phase: followUp.phase,
+            phase: extractPhase(session.tools),
           })
         }
       } catch {
@@ -423,171 +490,159 @@ export function useChat() {
     return () => clearInterval(interval)
   }, [currentConversationId, addMessage])
 
+  const clearProposedActions = useCallback(() => {
+    const convId = currentConversationId
+    if (!convId) return
+    const store = useChatStore.getState()
+    for (const m of store.getConversationMessages(convId)) {
+      if (m.proposedAction) {
+        store.updateMessageFields(convId, m.id, { proposedAction: null })
+      }
+    }
+  }, [currentConversationId])
+
+  const selectOption = useCallback((messageId: string, value: string) => {
+    if (currentConversationId) {
+      useChatStore.getState().updateMessageFields(currentConversationId, messageId, { selectedOptionValue: value })
+    }
+  }, [currentConversationId])
+
   const sendMessage = useCallback(
     async (content: string) => {
-      if (chatState === "streaming" || _sendLock.held) return
-      _sendLock.held = true
+      // Resolve the conversation id synchronously up front (generate one for a new
+      // conversation) so the lock is keyed consistently and acquired BEFORE any await —
+      // no check-then-act gap, and the same key is released in `finally`.
+      const existingConvId = currentConversationId ?? useChatStore.getState().currentConversationId
+      const convId = existingConvId ?? `conv-${Date.now()}`
+      const isNewConversation = !existingConvId
 
-      try {
-      if (warmupPromiseRef.current) {
-        await warmupPromiseRef.current
-        warmupPromiseRef.current = null
-      }
-
-      setError(null)
-      setCurrentToolCall(null)
-
-      if (chatState === "action_pending") {
-        clearProposedActions()
-      }
-
-      const userMessage: ChatMessage = {
-        id: generateId(),
-        role: "user",
-        content,
-        timestamp: new Date().toISOString(),
-        toolResults: [],
-        proposedAction: null,
-        optionCards: [],
-      }
+      if (chatState === "streaming" || _sendLock.has(convId)) return
+      _sendLock.add(convId)
 
       const assistantId = generateId()
-      const assistantMessage: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date().toISOString(),
-        toolResults: [],
-        proposedAction: null,
-        optionCards: [],
-      }
-
-      let convId = currentConversationId ?? useChatStore.getState().currentConversationId
-      let needsAutoTitle = false
-      let isNewConversation = false
-      if (!convId) {
-        convId = `conv-${Date.now()}`
-        addConversation({
-          id: convId,
-          title: "New conversation",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          messages: [],
-        })
-        isNewConversation = true
-        needsAutoTitle = true
-      } else {
-        const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
-        const userMessageCount = conv?.messages.filter(m => m.role === "user").length || 0
-        if (conv && conv.title === "New conversation" && userMessageCount === 0) {
-          needsAutoTitle = true
-        }
-      }
-
-      addMessage(convId, {
-        id: userMessage.id,
-        role: "user",
-        content: userMessage.content,
-        timestamp: userMessage.timestamp,
-      })
-
-      setMessages((prev) => [...prev, userMessage, assistantMessage])
-      setChatState("streaming")
-
-      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep)
-
       try {
-        const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
-        logger.info("sending to OpenCode", { conversationId: convId })
-        const { chatModelSelection } = useSettingsStore.getState()
-        const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
-        stopThinkingRef.current?.()
-        stopThinkingRef.current = null
-        logger.info("OpenCode response received", {
-          provider: response.info?.providerID,
-          model: response.info?.modelID,
-          parts: response.parts?.length,
-        })
+        setError(null)
+        setCurrentToolCall(null)
+        if (chatState === "action_pending") clearProposedActions()
 
-        const parsed = parseOpenCodeResponse(response)
-
-        const sessionMessages = await fetchSessionMessages(convId)
-        const session = extractSessionData(sessionMessages, parsed.toolResults)
-        const toolResults = session.tools
-
-        let phase: string | null = null
-        const phaseTool = [...toolResults].reverse().find((t) => t.name === "signal_phase")
-        if (phaseTool?.result) {
-          try {
-            const p = typeof phaseTool.result === "string" ? JSON.parse(phaseTool.result) : phaseTool.result
-            if (p?.phase) phase = p.step ? `${p.phase}:${p.step}` : p.phase
-          } catch { /* ignore */ }
-        }
-        const responseContent = session.text || parsed.content
-
-        if (toolResults.length > 0) {
-          setCurrentToolCall(toolResults[toolResults.length - 1]!)
-        }
-
-        const proposedAction = buildProposedAction(toolResults)
-
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === assistantId)
-          if (idx === -1) return prev
-          const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
-            content: responseContent,
-            toolResults,
-            proposedAction,
-            phase: phase ?? undefined,
+        let needsAutoTitle = false
+        if (isNewConversation) {
+          addConversation({
+            id: convId,
+            title: "New conversation",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            messages: [],
+          })
+          needsAutoTitle = true
+        } else {
+          const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+          const userMessageCount = conv?.messages.filter((m) => m.role === "user").length || 0
+          if (conv && conv.title === "New conversation" && userMessageCount === 0) {
+            needsAutoTitle = true
           }
-          return updated
-        })
+        }
 
+        // Count history BEFORE this turn's messages so the "rebuilt" status below can tell a
+        // real session rebuild (existing history, no live session) from a new conversation's
+        // first send (no history) — the latter must not be flagged as rebuilt.
+        const priorMessageCount = useChatStore.getState().getConversationMessages(convId).length
+
+        const streamStart = Date.now()
+        addMessage(convId, {
+          id: generateId(),
+          role: "user",
+          content,
+          timestamp: new Date().toISOString(),
+        })
         addMessage(convId, {
           id: assistantId,
           role: "assistant",
-          content: responseContent,
+          content: "",
           timestamp: new Date().toISOString(),
-          toolResults,
-          proposedAction,
-          phase: phase ?? undefined,
+          streamStartedAt: streamStart,
         })
+        _activeRequests.add(convId)
 
-        if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
-          useChatStore.getState().setJobInFlight(convId, true)
+        // Make this conversation current now so the keyed view shows the new turn
+        // immediately (the messages selector keys off currentConversationId).
+        if (isNewConversation) setCurrentConversationId(convId)
+
+        setChatState("streaming")
+        stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep, streamStart)
+
+        if (warmupPromiseRef.current) {
+          await warmupPromiseRef.current
+          warmupPromiseRef.current = null
         }
 
-        setChatState(proposedAction ? "action_pending" : "done")
-        useChatStore.getState().setSessionStatus(convId, "connected")
-
-        if (!hadPriorSession && messagesRef.current.length > 1) {
-          useChatStore.getState().setSessionStatus(convId, "rebuilt")
-        }
-
-        if (needsAutoTitle && convId) {
-          const titleConvId = convId
-          generateChatTitle(content).then((title) => {
-            updateConversationTitle(titleConvId, title)
-          }).catch(() => {
-            updateConversationTitle(titleConvId, content.slice(0, 40) + (content.length > 40 ? "..." : ""))
+        try {
+          const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
+          logger.info("sending to OpenCode", { conversationId: convId })
+          const { chatModelSelection } = useSettingsStore.getState()
+          const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+          stopThinkingRef.current?.()
+          stopThinkingRef.current = null
+          logger.info("OpenCode response received", {
+            provider: response.info?.providerID,
+            model: response.info?.modelID,
+            parts: response.parts?.length,
           })
-        }
-      } catch (err) {
-        stopThinkingRef.current?.()
-        stopThinkingRef.current = null
-        logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId))
-        setError(err instanceof Error ? err.message : "Unknown error")
-        setChatState("error")
-      }
 
-      if (isNewConversation) {
-        setCurrentConversationId(convId)
-      }
+          const parsed = parseOpenCodeResponse(response)
+          const sessionMessages = await fetchSessionMessages(convId)
+          const session = extractSessionData(sessionMessages, parsed.toolResults)
+          const toolResults = session.tools
+          const responseContent = session.text || parsed.content
+
+          if (toolResults.length > 0) {
+            setCurrentToolCall(toolResults[toolResults.length - 1]!)
+          }
+
+          const proposedAction = buildProposedAction(toolResults)
+
+          useChatStore.getState().updateMessageFields(convId, assistantId, {
+            content: responseContent,
+            toolResults,
+            proposedAction,
+            phase: extractPhase(toolResults),
+          })
+
+          _activeRequests.delete(convId)
+
+          if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
+            useChatStore.getState().setJobInFlight(convId, true)
+          }
+
+          setChatState(proposedAction ? "action_pending" : "done")
+          useChatStore.getState().setSessionStatus(convId, "connected")
+
+          if (!hadPriorSession && priorMessageCount > 0) {
+            useChatStore.getState().setSessionStatus(convId, "rebuilt")
+          }
+
+          if (needsAutoTitle) {
+            generateChatTitle(content).then((title) => {
+              updateConversationTitle(convId, title)
+            }).catch(() => {
+              updateConversationTitle(convId, content.slice(0, 40) + (content.length > 40 ? "..." : ""))
+            })
+          }
+        } catch (err) {
+          stopThinkingRef.current?.()
+          stopThinkingRef.current = null
+          _activeRequests.delete(convId)
+          logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
+          // Keep the assistant placeholder and persist the error into it, so the failed
+          // turn survives navigation instead of vanishing.
+          useChatStore.getState().updateMessageFields(convId, assistantId, {
+            content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+          })
+          setError(err instanceof Error ? err.message : "Unknown error")
+          setChatState("error")
+        }
       } finally {
-        _sendLock.held = false
+        _sendLock.delete(convId)
       }
     },
     [
@@ -597,40 +652,18 @@ export function useChat() {
       addMessage,
       updateConversationTitle,
       setCurrentConversationId,
+      clearProposedActions,
     ],
   )
 
-  const clearProposedActions = useCallback(() => {
-    setMessages((prev: ChatMessage[]) =>
-      prev.map((m: ChatMessage) => m.proposedAction ? { ...m, proposedAction: null } : m),
-    )
-    if (currentConversationId) {
-      const store = useChatStore.getState()
-      const msgs = store.getConversationMessages(currentConversationId)
-      for (const m of msgs) {
-        if (m.proposedAction) {
-          store.updateMessageFields(currentConversationId, m.id, { proposedAction: null })
-        }
-      }
-    }
-  }, [currentConversationId])
-
-  const selectOption = useCallback((messageId: string, value: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === messageId ? { ...m, selectedOptionValue: value } : m,
-      ),
-    )
-    if (currentConversationId) {
-      useChatStore.getState().updateMessageFields(currentConversationId, messageId, { selectedOptionValue: value })
-    }
-  }, [currentConversationId])
-
   const confirmAction = useCallback(async () => {
-    const actionMsg = [...messagesRef.current].reverse().find((m) => m.proposedAction !== null)
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (!convId) return
+    const msgs = useChatStore.getState().getConversationMessages(convId)
+    const actionMsg = [...msgs].reverse().find((m) => m.proposedAction)
     if (!actionMsg?.proposedAction) return
 
-    const { endpoint, config, parentJobId, recipe, jobType } = actionMsg.proposedAction
+    const { endpoint, config, parentJobId, recipe, jobType } = actionMsg.proposedAction as ProposedAction
     if (!endpoint) return
 
     let body: Record<string, unknown>
@@ -652,58 +685,14 @@ export function useChat() {
         collapsed: true,
       }
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === actionMsg.id
-            ? { ...m, proposedAction: null, toolResults: [...m.toolResults, jobToolResult] }
-            : m,
-        ),
-      )
+      const store = useChatStore.getState()
+      store.setJobInFlight(convId, true)
+      store.updateMessageFields(convId, actionMsg.id, {
+        proposedAction: null,
+        toolResults: [...(actionMsg.toolResults ?? []), jobToolResult],
+      })
 
-      if (currentConversationId) {
-        useChatStore.getState().setJobInFlight(currentConversationId, true)
-        useChatStore.getState().updateMessageFields(currentConversationId, actionMsg.id, {
-          proposedAction: null,
-          toolResults: [...actionMsg.toolResults, jobToolResult],
-        })
-
-        const sessionId = useChatStore.getState().getSessionId(currentConversationId)
-        if (sessionId) {
-          try {
-            const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                agent: "morty",
-                parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
-              }),
-            })
-            if (!resp.ok) {
-              logger.warn("morty notification failed", { status: resp.status })
-            }
-          } catch (notifyErr) {
-            logger.warn("morty notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
-          }
-        }
-      }
-
-      setChatState("done")
-    } catch (err) {
-      if (currentConversationId) {
-        useChatStore.getState().setJobInFlight(currentConversationId, false)
-      }
-      setError(err instanceof Error ? err.message : "Failed to submit job")
-      setChatState("error")
-    }
-  }, [currentConversationId])
-
-  const rejectAction = useCallback(async () => {
-    if (!messagesRef.current.some((m) => m.proposedAction)) return
-
-    clearProposedActions()
-
-    if (currentConversationId) {
-      const sessionId = useChatStore.getState().getSessionId(currentConversationId)
+      const sessionId = store.getSessionId(convId)
       if (sessionId) {
         try {
           const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
@@ -711,15 +700,49 @@ export function useChat() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               agent: "morty",
-              parts: [{ type: "text", text: "Job submission was cancelled by the user. Ask what they'd like to change." }],
+              parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
             }),
           })
           if (!resp.ok) {
-            logger.warn("morty rejection notification failed", { status: resp.status })
+            logger.warn("morty notification failed", { status: resp.status })
           }
         } catch (notifyErr) {
-          logger.warn("morty rejection notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
+          logger.warn("morty notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
         }
+      }
+
+      setChatState("done")
+    } catch (err) {
+      useChatStore.getState().setJobInFlight(convId, false)
+      setError(err instanceof Error ? err.message : "Failed to submit job")
+      setChatState("error")
+    }
+  }, [currentConversationId])
+
+  const rejectAction = useCallback(async () => {
+    const convId = currentConversationId ?? useChatStore.getState().currentConversationId
+    if (!convId) return
+    const hasAction = useChatStore.getState().getConversationMessages(convId).some((m) => m.proposedAction)
+    if (!hasAction) return
+
+    clearProposedActions()
+
+    const sessionId = useChatStore.getState().getSessionId(convId)
+    if (sessionId) {
+      try {
+        const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agent: "morty",
+            parts: [{ type: "text", text: "Job submission was cancelled by the user. Ask what they'd like to change." }],
+          }),
+        })
+        if (!resp.ok) {
+          logger.warn("morty rejection notification failed", { status: resp.status })
+        }
+      } catch (notifyErr) {
+        logger.warn("morty rejection notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
       }
     }
 
@@ -740,7 +763,8 @@ export function useChat() {
     let waitedMs = 0
 
     while (jobNotifyQueueRef.current.length > 0) {
-      if (_sendLock.held || BLOCKED_STATES.has(chatStateRef.current)) {
+      const nextConvId = jobNotifyQueueRef.current[0]!.convId
+      if (_sendLock.has(nextConvId) || BLOCKED_STATES.has(chatStateRef.current)) {
         if (waitedMs >= MAX_WAIT_MS) {
           logger.warn("job notify queue timed out waiting for idle state")
           jobNotifyQueueRef.current.length = 0
@@ -762,18 +786,16 @@ export function useChat() {
       useChatStore.getState().setJobInFlight(convId, false)
 
       const placeholderId = generateId()
-      const placeholder: ChatMessage = {
+      _sendLock.add(convId)
+      setChatState("streaming")
+
+      addMessage(convId, {
         id: placeholderId,
         role: "assistant",
         content: "",
         timestamp: new Date().toISOString(),
-        toolResults: [],
-        proposedAction: null,
-        optionCards: [],
-      }
-      setMessages((prev) => [...prev, placeholder])
-      _sendLock.held = true
-      setChatState("streaming")
+      })
+      _activeRequests.add(convId)
 
       try {
         const response = await sendOpenCodeMessage(
@@ -788,47 +810,27 @@ export function useChat() {
         // whose config the agent then fixes), so it can carry a confirmation card.
         const proposedAction = buildProposedAction(session.tools)
 
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === placeholderId)
-          if (idx === -1) return prev
-          const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
-            content: session.text || parsed.content,
-            toolResults: session.tools,
-            proposedAction,
-          }
-          return updated
-        })
-
-        addMessage(convId, {
-          id: placeholderId,
-          role: "assistant",
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
-          timestamp: new Date().toISOString(),
           toolResults: session.tools,
           proposedAction,
+          phase: extractPhase(session.tools),
         })
 
+        _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
         setChatState(proposedAction ? "action_pending" : "done")
         consecutiveFailures = 0
       } catch (err) {
-        setMessages((prev) => {
-          const idx = prev.findIndex((m) => m.id === placeholderId)
-          if (idx === -1) return prev.filter((m) => m.id !== placeholderId)
-          const updated = [...prev]
-          updated[idx] = {
-            ...prev[idx]!,
-            content: "I wasn't able to suggest next steps. You can ask me what to do next.",
-          }
-          return updated
+        _activeRequests.delete(convId)
+        useChatStore.getState().updateMessageFields(convId, placeholderId, {
+          content: "I wasn't able to suggest next steps. You can ask me what to do next.",
         })
         setChatState("done")
         consecutiveFailures++
         logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
       } finally {
-        _sendLock.held = false
+        _sendLock.delete(convId)
       }
     }
 

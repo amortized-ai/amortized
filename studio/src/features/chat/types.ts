@@ -31,6 +31,7 @@ export interface ChatMessage {
   optionCards: OptionCard[]
   selectedOptionValue?: string
   phase?: string
+  streamStartedAt?: number
 }
 
 export type ChatState =
