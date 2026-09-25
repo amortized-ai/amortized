@@ -37,8 +37,16 @@ counted as misses (an omission can't hide behind "nothing in the log").
 `general` checklist is **use-case agnostic**: its rows are derived from the
 platform workflow docs (`agents/*/workflow.md`) — the orchestrator → sdg →
 training → eval mechanics that hold for any task Morty is driven through, not
-anything specific to a given use case. A specific use case can add task-grounded
-rows in its own `use_cases/<name>/checklist.yaml` later.
+anything specific to a given use case.
+
+A specific use case adds task-grounded rows via an **overlay**: its
+`use_cases/<name>/checklist.yaml` sets `extends: general` and lists only the
+task-specific rows. The script merges them — all `general` rows apply, plus the
+overlay's rows (an overlay row with the same `id` overrides the general one).
+Example: `use_cases/rfe_assess` extends `general` and adds
+`sdg_skill_is_task_distillation` (RFE is a rubric/structured-eval task, so the
+correct SDG sub-skill is `task-distillation`), while `general` only asserts that
+*some* sub-skill guide was loaded (`sdg_skill_loaded` / `train_skill_loaded`).
 
 Each row declares how it's judged:
 
@@ -137,7 +145,7 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 
 | matcher | met | wrong | missed / other |
 |---|---|---|---|
-| `tool_called` (`tool` or `tools` any-of; optional `where`, e.g. `target: sdg` or `role: eval`) | a matching call exists | — | `missed` if never called |
+| `tool_called` (`tool` or `tools` any-of; optional `where` e.g. `role: eval`, and `output_contains` substring e.g. `skills/sdg/`) | a matching call exists | — | `missed` if never called |
 | `tool_before` (`before`, `after`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called |
 | `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
 | `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty field (e.g. `parent_job_id`, `judge`) | — | `missed` if none set |

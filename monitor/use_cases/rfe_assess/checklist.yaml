@@ -1,0 +1,26 @@
+# RFE-assessor task overlay.
+#
+# This is NOT a standalone checklist — it `extends: general` (the use-case-
+# agnostic workflow-mechanics checklist) and adds only the rows that are
+# specific to the RFE-assessor task. The script merges them: all `general`
+# rows apply, plus the task rows below (an overlay row with the same id as a
+# general row overrides it).
+#
+# An RFE assessor is a rubric / structured-evaluation task, so the correct SDG
+# sub-skill is task-distillation (sdg/workflow.md:39). The generic checklist
+# only asserts that *some* sub-skill guide was loaded; this overlay asserts the
+# *right* one for this task.
+
+extends: general
+use_case: rfe_assess
+description: >
+  RFE assessor: rubric/structured-eval task on top of the generic Morty
+  pipeline. Adds task-specific grounding to use_cases/general.
+
+rows:
+  - id: sdg_skill_is_task_distillation
+    stage: "SDG sub-skill (RFE)"
+    aspect: B
+    expected: "Loads the task-distillation SDG sub-skill (correct for a rubric/structured-eval task)"
+    adjudicate: auto
+    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "task-distillation/guide.md" }

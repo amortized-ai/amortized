@@ -129,6 +129,23 @@ rows:
     # sdg/workflow.md (60-63, 100-101)
     match: { type: tool_called, tools: [get_model_pricing, show_model_pricing], where: { role: sdg } }
 
+  - id: sdg_skill_loaded
+    stage: "SDG sub-skill"
+    aspect: B
+    expected: "Reads an SDG sub-skill guide (skills/sdg/.../guide.md) before building the config"
+    adjudicate: auto
+    # sdg/workflow.md (49, 127-128): read skills/sdg/<sub-skill>/guide.md before config.
+    # WHICH sub-skill is correct is task-specific -> that lives in a use-case overlay.
+    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "skills/sdg/" }
+
+  - id: train_skill_loaded
+    stage: "Training sub-skill"
+    aspect: B
+    expected: "Reads the training sub-skill guide (skills/training/.../guide.md) before building the config"
+    adjudicate: auto
+    # training/workflow.md (35, 96-101): Route to Sub-Skill -> read skills/training/.../osft/guide.md
+    match: { type: tool_called, tool: read, where: { role: training }, output_contains: "skills/training/" }
+
   - id: train_vram_shown
     stage: "Training VRAM"
     aspect: B
