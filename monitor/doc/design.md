@@ -81,11 +81,13 @@ Then pull the logs once and score them all.
 
 ## How the script evaluates a run against the checklist
 
-Pure offline: `(logs, checklist) → one status per row per run`. The script only
-**reads** the JSONL logs (and your review CSV) — it never calls the cluster for
-`auto` rows, and never mutates the logs. It runs in five steps.
+This is **what one `process_monitor_logs.py` invocation does internally** — a
+single command, not a manual procedure you follow. Pure offline:
+`(logs, checklist) → one status per row per run`. The script only **reads** the
+JSONL logs (and your review CSV) — it never calls the cluster for `auto` rows, and
+never mutates the logs. Conceptually the data flows through five stages.
 
-### Step 1 — Build a `Run` from each log file
+### Stage 1 — Build a `Run` from each log file
 
 Each `<session>.jsonl` becomes one `Run`: its `turn` records plus the
 `completion` record (last one wins), sorted by timestamp. The completion record
@@ -103,11 +105,11 @@ across `counted_turns`. Efficiency metrics are measured over `counted_turns`:
 | response latency | per user message, `duration_ms` (server receives message → response ready); reported as avg / max |
 | model | the model on orchestrator-role turns (Morty's brain — the comparison axis) |
 
-### Step 2 — Score every checklist row against the `Run`
+### Stage 2 — Score every checklist row against the `Run`
 
 For each row: if `adjudicate: auto` **and** the row has a `match:`, run the
 matcher (a deterministic scan of `tool_calls` / the completion record).
-Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4
+Otherwise (`llm_judge` / `human`) the status is `review`, deferred to stage 4
 (or filled in-process by `--llm-judge`).
 
 | matcher | met | wrong | missed / other |
@@ -124,7 +126,7 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4
 
 #### Worked example
 
-**The inputs.** A tiny log (`sess-x.jsonl`), after Step 1 flattens it into
+**The inputs.** A tiny log (`sess-x.jsonl`), after stage 1 flattens it into
 `Run.tool_calls`:
 
 ```jsonc
@@ -162,13 +164,13 @@ Four checklist rows (verbatim from `use_cases/general/checklist.yaml`):
   adjudicate: llm_judge
 ```
 
-**How each row flows through the steps.**
+**How each row flows through the stages.**
 
-*Step 1 — build Run.* Checklist untouched. Produces
+*Stage 1 — build Run.* Checklist untouched. Produces
 `Run.tool_calls = [get_model_pricing, validate_sdg_job, validate_training_job]`
 (chronological, role-tagged) + `Run.outcome = "success"`.
 
-*Step 2 — score each row.* `score_run` loops `checklist["rows"]`. For each, the
+*Stage 2 — score each row.* `score_run` loops `checklist["rows"]`. For each, the
 row's `adjudicate` decides routing and its `match` selects the matcher:
 
 | row | `adjudicate` | matcher reads `match:` → scans log | outcome |
@@ -209,13 +211,13 @@ Cross-turn order is trustworthy (turns are timestamp-sorted); within a single
 turn it follows the logged call order. Calls after the completion boundary are
 excluded from the scan.
 
-### Step 3 — Resolve to one of five statuses
+### Stage 3 — Resolve to one of five statuses
 
 `met`, `wrong` (did it, but wrong), `missed`, `n/a`, `review`. **`missed` is the
 default when a signal is absent**, so an aspect Morty *should* have exhibited but
 skipped scores against it whether or not you noticed — an omission can't hide.
 
-### Step 4 — Fill `review` rows
+### Stage 4 — Fill `review` rows
 
 `llm_judge` rows can be scored in-process with `--llm-judge` (an LLM pass over the
 transcript; default model `claude-opus-4-8`). Otherwise `llm_judge` / `human`
@@ -224,7 +226,7 @@ template (one row per review item per run), you fill the `status` column, and
 `--review` merges those verdicts back in. A filled `--review` CSV overrides the
 LLM.
 
-### Step 5 — Aggregate
+### Stage 5 — Aggregate
 
 A per-run block (model, outcome, efficiency, each row's status) and a per-model
 comparison table — avg turns, avg tokens (excl. cache), avg cost, avg time, avg
