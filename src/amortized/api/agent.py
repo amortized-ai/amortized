@@ -340,6 +340,10 @@ async def _record_turn_metrics(
         model_id: str | None = None
         provider_id: str | None = None
         tool_calls: list[dict[str, Any]] = []
+        # Assistant prose, in chronological message order. Lets an offline LLM
+        # judge check grounding/fabrication (claim-vs-tool-output) from the log
+        # alone, instead of a human reading the live transcript.
+        texts: list[dict[str, Any]] = []
 
         for _created, role, msg in new_msgs:
             info = msg.get("info") or {}
@@ -357,7 +361,20 @@ async def _record_turn_metrics(
                 model_id = info.get("modelID")
             if info.get("providerID"):
                 provider_id = info.get("providerID")
-            for part in msg.get("parts") or []:
+            msg_parts = msg.get("parts") or []
+            # Per-message signals for `clean_delegation`: whether this assistant
+            # message emitted any text and how many tool parts it carried. Phase 2
+            # requires the delegating message to be ONLY the delegate call.
+            msg_text = "\n".join(
+                p["text"].strip()
+                for p in msg_parts
+                if p.get("type") == "text" and (p.get("text") or "").strip()
+            )
+            msg_has_text = bool(msg_text)
+            msg_tool_count = sum(1 for p in msg_parts if p.get("type") == "tool")
+            if msg_has_text:
+                texts.append({"role": role, "text": msg_text})
+            for part in msg_parts:
                 if part.get("type") != "tool":
                     continue
                 name = _tool_name(part)
@@ -368,9 +385,11 @@ async def _record_turn_metrics(
                         entry["status"] = part_state.get("status")
                     output = part_state.get("output")
                     if isinstance(output, str) and output:
-                        entry["output"] = output[:500]
+                        entry["output"] = output
                 if name == "delegate_to_subagent":
                     entry["target"] = _get_tool_input(part).get("target")
+                    # solo = the delegating message was the delegate call alone.
+                    entry["solo"] = (not msg_has_text) and msg_tool_count == 1
                 elif name.startswith("validate_"):
                     # Capture pipeline-wiring inputs so chaining (SDG->training->eval
                     # via parent_job_id) is checkable offline. Config args aren't
@@ -380,6 +399,11 @@ async def _record_turn_metrics(
                         val = inp.get(key)
                         if val:
                             entry[key] = val
+                    # `mode` (preview/create) makes the SDG preview-before-create
+                    # ordering checkable offline.
+                    mode = inp.get("mode")
+                    if mode:
+                        entry["mode"] = mode
                     # Eval requires an explicit judge; record its model only
                     # (never base_url/api_key) so "judge set" is checkable.
                     judge = inp.get("judge")
@@ -408,6 +432,7 @@ async def _record_turn_metrics(
                 "tokens_by_role": tokens_by_role,
                 "cost": cost,
                 "tool_calls": tool_calls,
+                "texts": texts,
                 "started_at": started.isoformat() if started else None,
                 "finished_at": finished.isoformat() if finished else None,
                 "duration_ms": duration_ms,
