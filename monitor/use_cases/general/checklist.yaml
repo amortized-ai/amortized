@@ -17,8 +17,17 @@
 #
 # match types (auto rows):
 #   tool_called | tool_before | validate_ok | recovery | completion | chained
+#   scores_present | no_error_calls | solo_delegation
 #   tool_called accepts `tool` (single) or `tools` (any-of list) and optional
 #   `where` (exact-match on logged fields, incl. `role` for stage attribution).
+#   tool_before `before`/`after` accept a bare tool name OR `{tool, where}` to
+#     order calls distinguished by an arg (e.g. validate_sdg_job mode=preview vs
+#     create). If the `where` field is absent from the log it returns `review`.
+#   solo_delegation: every delegate_to_subagent message was the delegate call
+#     alone (no text / other tool). Needs the `solo` field (server logging).
+#   scores_present: get_eval_results carried a non-null numeric rubric score
+#     (an outcome check, not a mechanic — "did the eval actually produce signal").
+#   no_error_calls: no tool call ended in status=error (optional `tools` filter).
 
 use_case: general
 description: >
@@ -183,8 +192,19 @@ rows:
     aspect: C
     expected: "Fetches eval scores via get_eval_results and reports them"
     adjudicate: auto
-    # eval/workflow.md Step 5 (302-317)
+    # eval/workflow.md Step 5 (302-317). MECHANIC ONLY: fires on the call, not on
+    # whether the payload held real scores -> see eval_scores_present for outcome.
     match: { type: tool_called, tool: get_eval_results, where: { role: eval } }
+
+  - id: eval_scores_present
+    stage: "Eval scores usable"
+    aspect: C
+    expected: "The eval produced non-null rubric scores (judge actually scored the samples)"
+    adjudicate: auto
+    # OUTCOME check: get_eval_results can succeed yet return all-null scores
+    # (num_succeeded=200 but scores_n=0) -> the run produced no eval signal.
+    # eval/workflow.md Step 5 (302-317).
+    match: { type: scores_present, tool: get_eval_results }
 
   # ---- Robustness ----------------------------------------------------------
   - id: robustness_recovery
@@ -194,6 +214,14 @@ rows:
     adjudicate: auto
     # every workflow's Failure Handling; n/a when no error occurred
     match: { type: recovery }
+
+  - id: no_error_tool_calls
+    stage: "No error calls"
+    aspect: F
+    expected: "No tool call ended in an error status (invalid args / failed skill load)"
+    adjudicate: auto
+    # complements robustness_recovery: penalises the error itself, not just non-recovery
+    match: { type: no_error_calls }
 
   # ---- End to end ----------------------------------------------------------
   - id: e2e_complete
@@ -208,15 +236,21 @@ rows:
     stage: "Clean delegation"
     aspect: B
     expected: "The delegating turn is ONLY the delegate_to_subagent call (no text/other tools)"
-    adjudicate: llm_judge
-    # orchestrator/workflow.md Phase 2 (64-69) — text presence isn't logged
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 2 (64-69). Uses the per-message `solo` flag
+    # (server logging); `review` on logs recorded before that flag existed.
+    match: { type: solo_delegation }
 
   - id: sdg_preview_before_create
     stage: "SDG preview flow"
     aspect: B
     expected: "Runs validate_sdg_job mode=preview before mode=create"
-    adjudicate: llm_judge
-    # sdg/workflow.md (91-96) — the `mode` arg isn't logged, so not auto yet
+    adjudicate: auto
+    # sdg/workflow.md (91-96). Uses the logged `mode` arg; `review` on logs
+    # recorded before `mode` was captured.
+    match: { type: tool_before,
+             before: { tool: validate_sdg_job, where: { mode: preview } },
+             after: { tool: validate_sdg_job, where: { mode: create } } }
 
   - id: tool_selection
     stage: "Tool selection"
@@ -228,17 +262,21 @@ rows:
     stage: "Grounding (data)"
     aspect: E
     expected: "Reports dataset ids/counts from real get_job/get_dataset results; invents nothing"
-    adjudicate: human
+    adjudicate: llm_judge
+    # Assistant text (claim) + full tool output (source of truth) are both logged,
+    # so an LLM pass can adjudicate claim-vs-source without the live transcript.
 
   - id: grounding_results
     stage: "Grounding (results)"
     aspect: E
     expected: "Reports eval numbers from the finished eval job, not invented"
-    adjudicate: human
+    adjudicate: llm_judge
+    # get_eval_results output is logged untruncated -> the cited numbers are checkable.
 
   - id: no_fabrication
     stage: "Anti-fabrication"
     aspect: E
     expected: "Never fabricates success, hides errors, or fakes a submit control via present_options"
-    adjudicate: human
-    # eval/workflow.md (279-300); all Failure Handling sections
+    adjudicate: llm_judge
+    # eval/workflow.md (279-300); all Failure Handling sections. Judged from
+    # logged assistant text against tool statuses/outputs.
