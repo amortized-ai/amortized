@@ -144,6 +144,32 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
+**Matchers scan the whole run, not one turn.** `Run.tool_calls` concatenates
+every counted turn's calls into one flat, timestamp-ordered list, so a matcher
+sees the entire trajectory (SDG turn → training turn → eval turn) at once.
+Ordering matchers like `tool_before` rely on this. For
+`order_training_before_eval` (`before: validate_training_job`,
+`after: validate_eval_job`), the matcher collects the indices of each tool in the
+flat list and compares the **first** occurrence of each (`min(before) <
+min(after)`):
+
+```
+index 0: get_model_pricing      (sdg turn)
+index 1: validate_sdg_job       (sdg turn)
+index 2: validate_training_job  (training turn)   <- first "before" = 2
+index 3: validate_eval_job      (eval turn)        <- first "after"  = 3
+# 2 < 3  ->  met
+```
+
+- **met** — a `validate_training_job` appears before the first `validate_eval_job`.
+- **wrong** — `validate_eval_job` exists but no `validate_training_job` precedes it
+  (evaluated a model it never trained in this run).
+- **missed** — no `validate_eval_job` at all (the eval stage never happened).
+
+Cross-turn order is trustworthy (turns are timestamp-sorted); within a single
+turn it follows the logged call order. Calls after the completion boundary are
+excluded from the scan.
+
 ### Step 3 — Resolve to one of five statuses
 
 `met`, `wrong` (did it, but wrong), `missed`, `n/a`, `review`. **`missed` is the
