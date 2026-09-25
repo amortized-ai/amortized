@@ -142,6 +142,20 @@ describe("useChat", () => {
     expect(result.current.messages[2]!.content).toBe("Second")
   })
 
+  // Regression: a new conversation's first send has no prior history, so it must settle to
+  // "connected", not "rebuilt" (which would show a spurious context-rebuilt warning).
+  it("does not mark a new conversation's first send as rebuilt", async () => {
+    mockResponse.parts = [{ type: "text", text: "hi" }]
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("hello")
+    })
+
+    const convId = useChatStore.getState().currentConversationId!
+    expect(useChatStore.getState().getSessionStatus(convId)).toBe("connected")
+  })
+
   // The PR's purpose (Issue #401): a mid-response unmount/remount must not lose messages.
   it("preserves messages across unmount/remount (store is the source of truth)", async () => {
     mockResponse.parts = [{ type: "text", text: "kept" }]

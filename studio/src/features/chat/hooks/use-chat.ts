@@ -543,6 +543,11 @@ export function useChat() {
           }
         }
 
+        // Count history BEFORE this turn's messages so the "rebuilt" status below can tell a
+        // real session rebuild (existing history, no live session) from a new conversation's
+        // first send (no history) — the latter must not be flagged as rebuilt.
+        const priorMessageCount = useChatStore.getState().getConversationMessages(convId).length
+
         const streamStart = Date.now()
         addMessage(convId, {
           id: generateId(),
@@ -612,7 +617,7 @@ export function useChat() {
           setChatState(proposedAction ? "action_pending" : "done")
           useChatStore.getState().setSessionStatus(convId, "connected")
 
-          if (!hadPriorSession && useChatStore.getState().getConversationMessages(convId).length > 1) {
+          if (!hadPriorSession && priorMessageCount > 0) {
             useChatStore.getState().setSessionStatus(convId, "rebuilt")
           }
 
