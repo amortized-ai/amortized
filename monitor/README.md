@@ -105,22 +105,20 @@ to `/data/monitor` on the server's persistent PVC. Running the script locally
 (`./data/monitor`) needs no `UV_CACHE_DIR` override — that gotcha is
 devbox-specific.
 
-## What the script computes
+## How the script evaluates a run against the checklist
 
-The script only ever **reads** the JSONL logs (and your review CSV). It never
-calls the cluster or an LLM — the `auto` rows are pure deterministic
-log-matching — and never mutates the logs.
+Pure offline: `(logs, checklist) → one status per row per run`. The script only
+**reads** the JSONL logs (and your review CSV) — it never calls the cluster or an
+LLM for `auto` rows, and never mutates the logs. It runs in five steps.
 
-**Per-file it builds a `Run`** from the `turn` records plus the `completion`
-record (last one wins), sorted by timestamp.
+### Step 1 — Build a `Run` from each log file
 
-**Completion boundary.** The platform has no "task done" signal, so the
-completion record defines the boundary: `counted_turns` = every turn up to (and
-including) the completion timestamp. All metrics below are measured over
-`counted_turns` only (turns after you clicked "complete" don't count). No
-completion record → all turns are counted.
-
-**Efficiency, per run:**
+Each `<session>.jsonl` becomes one `Run`: its `turn` records plus the
+`completion` record (last one wins), sorted by timestamp. The completion record
+sets the **boundary** — `counted_turns` = every turn up to (and including) the
+completion timestamp (no completion record → all turns counted). `Run.tool_calls`
+is then the flattened, chronological, role-attributed list of every tool call
+across `counted_turns`. Efficiency metrics are measured over `counted_turns`:
 
 | metric | how |
 |---|---|
@@ -131,26 +129,46 @@ completion record → all turns are counted.
 | response latency | per user message, `duration_ms` (server receives message → response ready); reported as avg / max |
 | model | the model on orchestrator-role turns (Morty's brain — the comparison axis) |
 
-**Performance (checklist).** For each row: `auto` rows run a matcher against the
-run's flattened `tool_calls` (concatenated across counted turns, in order);
-`human` / `llm_judge` rows are emitted as `review`.
+### Step 2 — Score every checklist row against the `Run`
+
+For each row: if `adjudicate: auto` **and** the row has a `match:`, run the
+matcher (a deterministic scan of `tool_calls` / the completion record).
+Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 
 | matcher | met | wrong | missed / other |
 |---|---|---|---|
 | `tool_called` (`tool` or `tools` any-of; optional `where`, e.g. `target: sdg` or `role: eval`) | a matching call exists | — | `missed` if never called |
 | `tool_before` (`before`, `after`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called |
 | `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
-| `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty upstream ref (e.g. `parent_job_id`) | — | `missed` if none set (not chained) |
+| `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty field (e.g. `parent_job_id`, `judge`) | — | `missed` if none set |
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
-`missed` is the default when a signal is absent, so an aspect Morty *should* have
-exhibited but skipped scores against it whether or not you noticed.
+### Step 3 — Resolve to one of five statuses
 
-**Output:** a per-run block (model, outcome, efficiency, each row's status) and a
-per-model comparison table — avg turns, avg tokens (excl. cache), avg cost, avg
-time, avg latency, and per-aspect met-rate = `met / (met + wrong + missed)`
-(`review` and `n/a` excluded).
+`met`, `wrong` (did it, but wrong), `missed`, `n/a`, `review`. **`missed` is the
+default when a signal is absent**, so an aspect Morty *should* have exhibited but
+skipped scores against it whether or not you noticed — an omission can't hide.
+
+### Step 4 — Fill `review` rows offline
+
+`llm_judge` / `human` rows stay `review` until the CSV round-trip:
+`--emit-review` writes a blank template (one row per review item per run), you
+fill the `status` column, and `--review` merges those verdicts back in.
+
+### Step 5 — Aggregate
+
+A per-run block (model, outcome, efficiency, each row's status) and a per-model
+comparison table — avg turns, avg tokens (excl. cache), avg cost, avg time, avg
+latency, and per-aspect met-rate = `met / (met + wrong + missed)` (`review` and
+`n/a` excluded).
+
+> **The one hard constraint:** a row can only be `auto` if its signal was
+> **captured at logging time** — the matcher only sees the fields in
+> `tool_calls`. That is why chaining (`parent_job_id`) and the eval `judge` had
+> to be added to the logger before they could move from `llm_judge` to `auto`.
+> If a fact isn't logged, it can't be matched, and the row must fall back to
+> `review`.
 
 **Debugging a surprising score.** If a row is `missed` but you know it happened,
 check that run's `tool_calls` in the raw JSONL — that shows whether the signal
