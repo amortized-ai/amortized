@@ -172,7 +172,20 @@ def load_checklist(use_case: str) -> dict[str, Any]:
     path = CHECKLIST_DIR / use_case / "checklist.yaml"
     if not path.exists():
         sys.exit(f"No checklist for use-case {use_case!r} at {path}")
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    # A use-case may `extends: general` — a task overlay on top of the generic
+    # workflow checklist. Merge: base rows in order (overlay overrides by id),
+    # then overlay-only rows appended.
+    parent = data.get("extends")
+    if parent:
+        base_rows = load_checklist(parent).get("rows", [])
+        overlay_rows = data.get("rows", [])
+        overlay_by_id = {r["id"]: r for r in overlay_rows}
+        base_ids = {r["id"] for r in base_rows}
+        merged = [overlay_by_id.get(r["id"], r) for r in base_rows]
+        merged += [r for r in overlay_rows if r["id"] not in base_ids]
+        data["rows"] = merged
+    return data
 
 
 # --------------------------------------------------------------------------- #
@@ -199,13 +212,17 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
     if mtype == "tool_called":
         where = match.get("where") or {}
         tools = match.get("tools") or [match["tool"]]  # `tools` = any-of tool names
+        needle = match.get("output_contains")  # optional substring test on tool output
         for c in run.tool_calls:
             if c.get("tool") not in tools:
                 continue
-            if all(c.get(k) == v for k, v in where.items()):
-                if match.get("status") and c.get("status") != match["status"]:
-                    continue
-                return "met"
+            if not all(c.get(k) == v for k, v in where.items()):
+                continue
+            if match.get("status") and c.get("status") != match["status"]:
+                continue
+            if needle and needle not in (c.get("output") or ""):
+                continue
+            return "met"
         return "missed"
 
     if mtype == "chained":
