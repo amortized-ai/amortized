@@ -144,27 +144,66 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
-**Worked example — each row is a query, the log is the data.** Take a run whose
-`Run.tool_calls` (after Step 1) is:
+#### Worked example
 
+**The inputs.** A tiny log (`sess-x.jsonl`), after Step 1 flattens it into
+`Run.tool_calls`:
+
+```jsonc
+// turn (role=sdg)
+{"kind":"turn","role":"sdg","tool_calls":[
+   {"tool":"get_model_pricing","role":"sdg","status":"completed"},
+   {"tool":"validate_sdg_job","role":"sdg","status":"completed","output":"ok"}]}
+// turn (role=training)
+{"kind":"turn","role":"training","tool_calls":[
+   {"tool":"validate_training_job","role":"training","status":"completed","parent_job_id":"sdg-42"}]}
+// completion
+{"kind":"completion","outcome":"success"}
 ```
-get_model_pricing (role=sdg) | validate_sdg_job (role=sdg) | validate_training_job (role=training, parent_job_id="sdg-42")
+
+Four checklist rows (verbatim from `use_cases/general/checklist.yaml`):
+
+```yaml
+- id: sdg_pricing_shown        # A
+  aspect: B
+  adjudicate: auto
+  match: { type: tool_called, tools: [get_model_pricing, show_model_pricing], where: { role: sdg } }
+
+- id: chain_training           # B
+  aspect: D
+  adjudicate: auto
+  match: { type: chained, tool: validate_training_job, any_of: [parent_job_id, data_run_id] }
+
+- id: order_training_before_eval   # C
+  aspect: C
+  adjudicate: auto
+  match: { type: tool_before, before: validate_training_job, after: validate_eval_job }
+
+- id: grounding_data           # D
+  aspect: E
+  adjudicate: human
 ```
 
-with `Run.outcome = "success"` and no eval calls. Four checklist rows score
-against it like this — the row's `match.type` picks the matcher, the other
-`match` keys are the parameters it scans the log with:
+**How each row flows through the steps.**
 
-| row (`aspect`) | `adjudicate` | `match` → what it scans for | result |
+*Step 1 — build Run.* Checklist untouched. Produces
+`Run.tool_calls = [get_model_pricing, validate_sdg_job, validate_training_job]`
+(chronological, role-tagged) + `Run.outcome = "success"`.
+
+*Step 2 — score each row.* `score_run` loops `checklist["rows"]`. For each, the
+row's `adjudicate` decides routing and its `match` selects the matcher:
+
+| row | `adjudicate` | matcher reads `match:` → scans log | outcome |
 |---|---|---|---|
-| `sdg_pricing_shown` (B) | `auto` | `tool_called`: a call with tool ∈ {`get_model_pricing`,`show_model_pricing`} **and** `role=sdg` → finds `get_model_pricing` | **met** |
-| `chain_training` (D) | `auto` | `chained`: a `validate_training_job` call with `parent_job_id` **or** `data_run_id` non-empty → `parent_job_id="sdg-42"` | **met** |
-| `order_training_before_eval` (C) | `auto` | `tool_before`: needs a `validate_eval_job` after `validate_training_job` → **no `validate_eval_job` in the log** | **missed** |
-| `grounding_data` (E) | `human` | not `auto` → not scanned | **review** |
+| **A** `sdg_pricing_shown` | `auto` | `tool_called`: find a call whose tool ∈ {`get_model_pricing`,`show_model_pricing`} and `role==sdg` → finds `get_model_pricing` | met |
+| **B** `chain_training` | `auto` | `chained`: find a `validate_training_job` call with `parent_job_id` or `data_run_id` non-empty → `parent_job_id="sdg-42"` | met |
+| **C** `order_training_before_eval` | `auto` | `tool_before`: index of `validate_training_job` vs `validate_eval_job` → no `validate_eval_job` in log | missed |
+| **D** `grounding_data` | `human` | not `auto` → skipped | review |
 
-`order_training_before_eval` is **missed** — not skipped — precisely because the
-row pre-exists: the checklist declared eval was expected, so its absence from the
-log is scored (an omission can't hide). See Step 3.
+The row's `match.type` picks the function; `match`'s other keys (`tools`,
+`where`, `any_of`, `before`/`after`) are the parameters that function scans the
+log with. That's the core of "how the checklist plays a role" — **each row is a
+query, the log is the data.**
 
 **Matchers scan the whole run, not one turn.** `Run.tool_calls` concatenates
 every counted turn's calls into one flat, timestamp-ordered list, so a matcher
