@@ -144,6 +144,28 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to Step 4.
 | `recovery` | an error-status call followed later by a successful one | error but no later success | `n/a` if no error at all |
 | `completion` (outcome) | completion record matches the outcome | outcome differs | `missed` if no completion record |
 
+**Worked example — each row is a query, the log is the data.** Take a run whose
+`Run.tool_calls` (after Step 1) is:
+
+```
+get_model_pricing (role=sdg) | validate_sdg_job (role=sdg) | validate_training_job (role=training, parent_job_id="sdg-42")
+```
+
+with `Run.outcome = "success"` and no eval calls. Four checklist rows score
+against it like this — the row's `match.type` picks the matcher, the other
+`match` keys are the parameters it scans the log with:
+
+| row (`aspect`) | `adjudicate` | `match` → what it scans for | result |
+|---|---|---|---|
+| `sdg_pricing_shown` (B) | `auto` | `tool_called`: a call with tool ∈ {`get_model_pricing`,`show_model_pricing`} **and** `role=sdg` → finds `get_model_pricing` | **met** |
+| `chain_training` (D) | `auto` | `chained`: a `validate_training_job` call with `parent_job_id` **or** `data_run_id` non-empty → `parent_job_id="sdg-42"` | **met** |
+| `order_training_before_eval` (C) | `auto` | `tool_before`: needs a `validate_eval_job` after `validate_training_job` → **no `validate_eval_job` in the log** | **missed** |
+| `grounding_data` (E) | `human` | not `auto` → not scanned | **review** |
+
+`order_training_before_eval` is **missed** — not skipped — precisely because the
+row pre-exists: the checklist declared eval was expected, so its absence from the
+log is scored (an omission can't hide). See Step 3.
+
 **Matchers scan the whole run, not one turn.** `Run.tool_calls` concatenates
 every counted turn's calls into one flat, timestamp-ordered list, so a matcher
 sees the entire trajectory (SDG turn → training turn → eval turn) at once.
