@@ -5,7 +5,7 @@
 // Continue to provision the stack once with the full set. Polls /gateway/ready
 // and reloads into the studio SPA once ready.
 
-const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS' };
+const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS', glm: 'GLM (RITS)' };
 
 function renderSplash(state, basePath = '') {
   const st = (state && state.state) || 'provisioning';
@@ -17,7 +17,7 @@ function renderSplash(state, basePath = '') {
   const providerUrl = `${basePath}/gateway/provider`;
   const providers = Array.isArray(state && state.providers) && state.providers.length
     ? state.providers
-    : ['openai', 'anthropic', 'vertex', 'maas'];
+    : ['openai', 'anthropic', 'vertex', 'maas', 'glm'];
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';
@@ -125,7 +125,7 @@ function renderSplash(state, basePath = '') {
   var RETRY_URL = ${esc(retryUrl)};
   var PROVIDER_URL = ${esc(providerUrl)};
   var LABELS = ${esc(PROVIDER_LABELS)};
-  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).' };
+  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).', glm: 'Your RITS LiteLLM key (starts with "sk-"). Stored for your account only.' };
   var POLL_MS = 2500;
   var CONFIGURED = {};   // provider -> true (added this session / already stored)
   function el(id){ return document.getElementById(id); }

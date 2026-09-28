@@ -16,6 +16,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
   vertex: "Vertex (ADC)",
   maas: "MaaS",
+  glm: "GLM (RITS)",
 }
 
 function label(provider: string): string {

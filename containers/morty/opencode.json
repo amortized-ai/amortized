@@ -1,6 +1,19 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "google-vertex-anthropic/claude-opus-4-8@default",
+  "provider": {
+    "glm": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "GLM (RITS)",
+      "options": {
+        "baseURL": "{env:GLM_BASE_URL}",
+        "apiKey": "{env:GLM_API_KEY}"
+      },
+      "models": {
+        "rits/zai-org/glm-5-3": { "name": "GLM-5.3" }
+      }
+    }
+  },
   "mcp": {
     "amortized": {
       "type": "remote",

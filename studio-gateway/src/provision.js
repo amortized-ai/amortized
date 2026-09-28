@@ -99,6 +99,24 @@ const PROVIDERS = {
     apiHost: 'api.anthropic.com',
     model: process.env.MORTY_MODEL_ANTHROPIC || 'anthropic/claude-opus-4-8',
   },
+  // GLM via the RITS LiteLLM gateway (Anthropic-compatible). Like vertex, the
+  // endpoint is deployment-config, not a repo literal: the base URL and the team
+  // CONNECT proxy the RITS host sits behind come from required gateway env. The
+  // baked opencode `glm` provider block reads GLM_BASE_URL + GLM_API_KEY; when a
+  // proxy is set, HTTPS_PROXY routes opencode's fetch through it and egress opens
+  // the proxy host:port (all model traffic tunnels through it) instead of a direct
+  // API host. Validated on the kind path; the sandbox/OpenShell proxy path is
+  // best-effort (untested against RHOAI network egress).
+  glm: {
+    kind: 'key',
+    credentialKey: 'GLM_API_KEY',
+    model: process.env.MORTY_MODEL_GLM || 'glm/rits/zai-org/glm-5-3',
+    baseURL: process.env.GLM_BASE_URL || '',
+    proxy: process.env.GLM_HTTPS_PROXY || '',
+    // Direct API host, used for egress only when no proxy is configured. With a
+    // proxy set, modelEgressEndpoints opens the proxy host:port instead.
+    apiHost: process.env.GLM_API_HOST || '',
+  },
   // Claude via Google Vertex. ADC-only: the credential is a Google application-default-
   // credentials JSON blob (not a key string), so delivery differs from the key providers
   // (see ensureSandbox) — the JSON is written to a file in the sandbox and read via
@@ -197,10 +215,12 @@ function nsForUser(user) {
 
 // Mask secret-looking `NAME=value` args (e.g. `OPENAI_API_KEY=sk-...`) so keys
 // never land in the gateway logs. Also masks the Vertex ADC blob (ADC_B64,
-// CREDENTIALS) and the deployment-confidential Vertex project/location
-// (PROJECT/LOCATION) — the only `NAME=value` args here are sandbox `--env` pairs.
+// CREDENTIALS), the deployment-confidential Vertex project/location
+// (PROJECT/LOCATION), and the GLM CONNECT proxy (PROXY — carries the master key in
+// its userinfo) + base URL (BASE_URL — the confidential RITS endpoint). The only
+// `NAME=value` args here are sandbox `--env` pairs.
 function redactArg(a) {
-  const m = /^([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY|PROJECT|LOCATION|ADC_B64|CREDENTIALS))=.+/.exec(a);
+  const m = /^([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY|PROJECT|LOCATION|ADC_B64|CREDENTIALS|PROXY|BASE_URL))=.+/.exec(a);
   return m ? `${m[1]}=***` : a;
 }
 
@@ -401,9 +421,10 @@ async function restartServer(ns) {
 
 // The model-API egress endpoint(s) for a configured provider. Key providers reach one fixed API
 // host; OpenAI-compatible (MaaS) reaches the host parsed from its per-user base URL (so the
-// credential is needed, not just the static def); the Vertex (ADC) provider needs the Google
-// token-exchange hosts (OAuth/STS/IAM) plus the Vertex inference host, derived from location
-// (global -> aiplatform.googleapis.com; a region -> <region>-aiplatform.googleapis.com).
+// credential is needed, not just the static def); a key provider behind a CONNECT proxy (GLM/RITS)
+// reaches the proxy host:port; the Vertex (ADC) provider needs the Google token-exchange hosts
+// (OAuth/STS/IAM) plus the Vertex inference host, derived from location (global ->
+// aiplatform.googleapis.com; a region -> <region>-aiplatform.googleapis.com).
 function modelEgressEndpoints(name, credential) {
   const p = PROVIDERS[name];
   const rw = (host, port = 443) => ({ host, port, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
@@ -422,6 +443,17 @@ function modelEgressEndpoints(name, credential) {
       // opens the port Morty actually reaches; URL.port is '' for the scheme default (443).
       return [rw(u.hostname, u.port ? Number(u.port) : 443)];
     } catch { return []; }
+  }
+  // A key provider whose model host sits behind a CONNECT proxy (e.g. GLM/RITS):
+  // model traffic tunnels through the proxy, so open the proxy host:port rather
+  // than the direct API host.
+  if (p.proxy) {
+    try {
+      const u = new URL(p.proxy);
+      return [rw(u.hostname, Number(u.port) || 443)];
+    } catch {
+      /* malformed proxy URL — fall through to the direct host */
+    }
   }
   return [rw(p.apiHost)];
 }
@@ -661,6 +693,19 @@ async function ensureSandbox(ns, providers) {
         );
       } else {
         credEnv.push('--env', `${p.credentialKey}=${providers[n]}`);
+        // Anthropic-compatible custom endpoints (e.g. GLM/RITS) need their base URL
+        // delivered to opencode (the baked provider block reads {env:GLM_BASE_URL}),
+        // and — when the model host is only reachable via a CONNECT proxy — the proxy
+        // so opencode's fetch tunnels through it. NO_PROXY keeps the in-cluster MCP
+        // host direct. Both are redacted from logs by run() (see redactArg).
+        if (p.baseURL) credEnv.push('--env', `GLM_BASE_URL=${p.baseURL}`);
+        if (p.proxy) {
+          credEnv.push(
+            '--env', `HTTPS_PROXY=${p.proxy}`,
+            '--env', `HTTP_PROXY=${p.proxy}`,
+            '--env', `NO_PROXY=localhost,127.0.0.1,::1,.svc,.svc.cluster.local,.cluster.local,amortized-server.${ns}.svc.cluster.local`,
+          );
+        }
       }
     }
     const createArgs = [
