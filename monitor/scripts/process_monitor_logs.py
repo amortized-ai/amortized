@@ -568,6 +568,7 @@ def print_comparison(
         aspect_cells: list[str] = []
         for aspect in aspects:
             met = total = 0
+            pending = False  # any `review` row (judge not run / failed / deferred)
             for row in checklist["rows"]:
                 if row["aspect"] != aspect:
                     continue
@@ -575,7 +576,12 @@ def print_comparison(
                 if status in ("met", "wrong", "missed"):
                     total += 1
                     met += status == "met"
-            aspect_cells.append(f"{met}/{total}" if total else "-")
+                elif status == "review":
+                    pending = True
+            cell = f"{met}/{total}" if total else "-"
+            if pending:
+                cell += "*"  # fraction omits unadjudicated rows
+            aspect_cells.append(cell)
 
         row_cells = [
             run.agent_model or "(unknown)",
@@ -592,7 +598,9 @@ def print_comparison(
     print()
     print(
         "_One row per run. Aspect cells = met / (met+wrong+missed); "
-        "`review` rows excluded until adjudicated._"
+        "`review` rows excluded until adjudicated. `*` = the aspect has "
+        "unadjudicated (`review`) rows, so its fraction is auto-only and not "
+        "comparable to a fully-scored run._"
     )
 
 
