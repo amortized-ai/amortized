@@ -71,6 +71,38 @@ spec:
                   key: vertex-location
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: /app/gcp/credentials.json
+            # GLM (RITS) provider — optional. When the opencode-glm secret is absent
+            # (or its keys empty) these resolve to nothing and Morty stays on the Opus
+            # default. The RITS host is only reachable via the team CONNECT proxy, so
+            # HTTPS_PROXY routes opencode's (Bun) fetch through it while NO_PROXY keeps
+            # the in-cluster MCP + service traffic direct. Create the secret out-of-band
+            # (see amortized-kind-deploy k8s/base-internal/opencode-secret.yaml).
+            - name: GLM_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm
+                  key: base-url
+                  optional: true
+            - name: GLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm
+                  key: api-key
+                  optional: true
+            - name: HTTPS_PROXY
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm
+                  key: https-proxy
+                  optional: true
+            - name: HTTP_PROXY
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm
+                  key: https-proxy
+                  optional: true
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,::1,.svc,.svc.cluster.local,.cluster.local"
           volumeMounts:
             - name: opencode-config
               mountPath: /app/workspace/opencode.json
