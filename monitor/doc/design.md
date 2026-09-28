@@ -21,7 +21,7 @@ For commands, see [`../README.md`](../README.md).
 
 3. **Processing (offline).** `scripts/process_monitor_logs.py` reads the logs,
    scores each run against the use-case checklist, and prints a per-run report
-   plus a per-model comparison table. The headline token metric **excludes
+   plus a per-run comparison table. The headline token metric **excludes
    cache-read tokens** (cheap, dominated by the cached system prompt) — it sums
    input + output + reasoning; the raw log keeps the full breakdown incl. cache.
 
@@ -226,12 +226,14 @@ template (one row per review item per run), you fill the `status` column, and
 `--review` merges those verdicts back in. A filled `--review` CSV overrides the
 LLM.
 
-### Stage 5 — Aggregate
+### Stage 5 — Report
 
-A per-run block (model, outcome, efficiency, each row's status) and a per-model
-comparison table — avg turns, avg tokens (excl. cache), avg cost, avg time, avg
-latency, and per-aspect met-rate = `met / (met + wrong + missed)` (`review` and
-`n/a` excluded).
+A per-run block (model, outcome, efficiency, each row's status) and a **per-run
+comparison table** — one row per run (model, session, outcome, turns, tokens
+(excl. cache), cost, time, latency) with per-aspect met-rate = `met / (met +
+wrong + missed)` (`review` and `n/a` excluded). Rows are grouped by model so
+multiple runs of the same model sit together; nothing is averaged, so
+run-to-run variance stays visible.
 
 > **The one hard constraint:** a row can only be `auto` if its signal was
 > **captured at logging time** — the matcher only sees the fields in

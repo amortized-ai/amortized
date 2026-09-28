@@ -34,7 +34,6 @@ import csv
 import json
 import re
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -548,61 +547,51 @@ def print_per_run(
 def print_comparison(
     runs: list[Run], scores: dict[str, dict[str, str]], checklist: dict[str, Any]
 ) -> None:
-    by_model: dict[str, list[Run]] = defaultdict(list)
-    for run in runs:
-        by_model[run.agent_model or "(unknown)"].append(run)
-
     aspects = sorted({row["aspect"] for row in checklist["rows"]})
     header = [
         "model",
-        "runs",
-        "avg turns",
-        "avg tokens (excl cache)",
-        "avg cost",
-        "avg time",
-        "avg latency",
+        "session",
+        "outcome",
+        "turns",
+        "tokens (excl cache)",
+        "cost",
+        "time",
+        "latency",
     ] + [f"asp {a}" for a in aspects]
-    print("## Model comparison\n")
+    print("## Per-run comparison\n")
     print("| " + " | ".join(header) + " |")
     print("|" + "|".join(["---"] * len(header)) + "|")
 
-    for model, model_runs in sorted(by_model.items()):
-        n = len(model_runs)
-        avg_turns = sum(r.turns_to_complete for r in model_runs) / n
-        avg_tokens = sum(r.total_tokens for r in model_runs) / n
-        avg_cost = sum(r.total_cost for r in model_runs) / n
-        times = [r.wall_clock_s for r in model_runs if r.wall_clock_s is not None]
-        avg_time = sum(times) / len(times) if times else None
-        lats = [r.avg_latency_s for r in model_runs if r.avg_latency_s is not None]
-        avg_latency = sum(lats) / len(lats) if lats else None
-
+    # One row per run (no averaging), grouped by model for readability.
+    for run in sorted(runs, key=lambda r: (r.agent_model or "(unknown)", r.session_id)):
+        sc = scores[run.session_id]
         aspect_cells: list[str] = []
         for aspect in aspects:
             met = total = 0
-            for run in model_runs:
-                for row in checklist["rows"]:
-                    if row["aspect"] != aspect:
-                        continue
-                    status = scores[run.session_id][row["id"]]
-                    if status in ("met", "wrong", "missed"):
-                        total += 1
-                        met += status == "met"
+            for row in checklist["rows"]:
+                if row["aspect"] != aspect:
+                    continue
+                status = sc[row["id"]]
+                if status in ("met", "wrong", "missed"):
+                    total += 1
+                    met += status == "met"
             aspect_cells.append(f"{met}/{total}" if total else "-")
 
         row_cells = [
-            model,
-            str(n),
-            f"{avg_turns:.1f}",
-            _fmt(avg_tokens, "int"),
-            _fmt(avg_cost, "$"),
-            _fmt(avg_time, "s"),
-            _fmt(avg_latency, "s"),
+            run.agent_model or "(unknown)",
+            run.session_id[:8],
+            run.outcome or "(not marked)",
+            str(run.turns_to_complete),
+            _fmt(run.total_tokens, "int"),
+            _fmt(run.total_cost, "$"),
+            _fmt(run.wall_clock_s, "s"),
+            _fmt(run.avg_latency_s, "s"),
             *aspect_cells,
         ]
         print("| " + " | ".join(row_cells) + " |")
     print()
     print(
-        "_Aspect cells = met / (met+wrong+missed) across runs; "
+        "_One row per run. Aspect cells = met / (met+wrong+missed); "
         "`review` rows excluded until adjudicated._"
     )
 
