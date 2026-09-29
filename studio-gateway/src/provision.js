@@ -117,6 +117,19 @@ const PROVIDERS = {
     // proxy set, modelEgressEndpoints opens the proxy host:port instead.
     apiHost: process.env.GLM_API_HOST || '',
   },
+  // GLM-5.3 Flash via a self-hosted LiteLLM (Anthropic-compatible) on a private GPU
+  // node. Like glm, the endpoint is deployment-config (base URL + direct API host from
+  // gateway env), not a repo literal; unlike glm there is no CONNECT proxy — the node is
+  // reached over an SSH tunnel — so egress opens the direct apiHost. The baked opencode
+  // `glm-flash` provider block reads GLM_FLASH_BASE_URL + GLM_FLASH_API_KEY. Validated on
+  // the kind path; the sandbox/OpenShell egress path is best-effort.
+  'glm-flash': {
+    kind: 'key',
+    credentialKey: 'GLM_FLASH_API_KEY',
+    model: process.env.MORTY_MODEL_GLM_FLASH || 'glm-flash/glm-5-3-flash',
+    baseURL: process.env.GLM_FLASH_BASE_URL || '',
+    apiHost: process.env.GLM_FLASH_API_HOST || '',
+  },
   // Claude via Google Vertex. ADC-only: the credential is a Google application-default-
   // credentials JSON blob (not a key string), so delivery differs from the key providers
   // (see ensureSandbox) — the JSON is written to a file in the sandbox and read via

@@ -17,6 +17,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   vertex: "Vertex (ADC)",
   maas: "MaaS",
   glm: "GLM (RITS)",
+  "glm-flash": "GLM-5.3 Flash",
 }
 
 function label(provider: string): string {
