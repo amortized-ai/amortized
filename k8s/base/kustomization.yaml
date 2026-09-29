@@ -30,6 +30,10 @@ configMapGenerator:
     namespace: amortized
     files:
       - sdg__classification__guide.md=morty-skills/sdg/classification/guide.md
+      - sdg__embedding-classifier__guide.md=morty-skills/sdg/embedding-classifier/guide.md
+      - sdg__embedding-classifier__reference-payload.json=morty-skills/sdg/embedding-classifier/reference-payload.json
+      - training__embedding-classifier__guide.md=morty-skills/training/embedding-classifier/guide.md
+      - training__embedding-classifier__reference-payload.json=morty-skills/training/embedding-classifier/reference-payload.json
       - sdg__knowledge-ingestion__guide.md=morty-skills/sdg/knowledge-ingestion/guide.md
       - sdg__knowledge-ingestion__reference-payload.json=morty-skills/sdg/knowledge-ingestion/reference-payload.json
       - sdg__task-distillation__guide.md=morty-skills/sdg/task-distillation/guide.md

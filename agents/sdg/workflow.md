@@ -35,14 +35,19 @@ for deep expertise before building the config.
 | Sub-Skill | Path | Best For |
 |-----------|------|----------|
 | knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
-| classification | `skills/sdg/classification/` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
+| embedding-classifier | `skills/sdg/embedding-classifier/` | Text classifiers / intent routers / sentiment as a compact **embedding** model (flat `text,category` data → `embedding_sft`) — the recommended default for classification |
+| classification | `skills/sdg/classification/` | A **generative** (LLM/SFT) classifier that emits the label as text (`messages` data). Use only when the user specifically wants an LLM to do the classifying |
 | task-distillation | `skills/sdg/task-distillation/` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
 
 ### How to Choose
 
 - **User has documents they want a model to answer questions about** →
   `knowledge-ingestion`
-- **User wants to sort/label/categorize text** → `classification`
+- **User wants to sort/label/categorize/route text** → `embedding-classifier`
+  (the default: a small, fast embedding classifier trained with `embedding_sft`,
+  producing flat `text,category` data). Only use `classification` instead when
+  the user explicitly wants a **generative/LLM** classifier that outputs the
+  label as text (`messages` data for SFT).
 - **User wants to distill a frontier-model task into a smaller model** →
   `task-distillation`
 
@@ -120,9 +125,12 @@ change. Do NOT restart from Phase 1.
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine whether this is a classification, knowledge-ingestion, or
-task-distillation task. Use the context provided by the orchestrator to
-make this decision. If the context does not make it clear, ask the user.
+Determine whether this is an embedding-classifier (default for
+classify/route/label tasks), a generative classification, knowledge-ingestion,
+or task-distillation task. Use the context provided by the orchestrator to
+make this decision. If the context does not make it clear, ask the user —
+in particular, for a classifier confirm whether they want a compact embedding
+classifier (recommended) or a generative/LLM one.
 
 Once determined, read the sub-skill's `guide.md` from
 `skills/sdg/<sub-skill>/guide.md`.
