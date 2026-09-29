@@ -12,6 +12,17 @@
       "models": {
         "rits/zai-org/glm-5-3": { "name": "GLM-5.3" }
       }
+    },
+    "glm-flash": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "GLM-5.3 Flash",
+      "options": {
+        "baseURL": "{env:GLM_FLASH_BASE_URL}",
+        "apiKey": "{env:GLM_FLASH_API_KEY}"
+      },
+      "models": {
+        "glm-5-3-flash": { "name": "GLM-5.3 Flash" }
+      }
     }
   },
   "mcp": {

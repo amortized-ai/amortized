@@ -5,7 +5,7 @@
 // Continue to provision the stack once with the full set. Polls /gateway/ready
 // and reloads into the studio SPA once ready.
 
-const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', glm: 'GLM (RITS)' };
+const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', glm: 'GLM (RITS)', 'glm-flash': 'GLM-5.3 Flash' };
 
 function renderSplash(state, basePath = '') {
   const st = (state && state.state) || 'provisioning';
@@ -17,7 +17,7 @@ function renderSplash(state, basePath = '') {
   const providerUrl = `${basePath}/gateway/provider`;
   const providers = Array.isArray(state && state.providers) && state.providers.length
     ? state.providers
-    : ['openai', 'anthropic', 'vertex', 'glm'];
+    : ['openai', 'anthropic', 'vertex', 'glm', 'glm-flash'];
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';

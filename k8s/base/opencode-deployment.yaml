@@ -101,8 +101,27 @@ spec:
                   name: opencode-glm
                   key: https-proxy
                   optional: true
+            # GLM-5.3 Flash provider — optional, independent of GLM (RITS). Points at a
+            # self-hosted LiteLLM (Anthropic-compatible) on a private GPU node reached over
+            # an SSH tunnel terminating on the kind host, so the base URL is the host
+            # gateway (no proxy). Absent secret -> Morty stays on the Opus default. Create
+            # opencode-glm-flash out-of-band (see amortized-kind-deploy opencode-secret.yaml).
+            - name: GLM_FLASH_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm-flash
+                  key: base-url
+                  optional: true
+            - name: GLM_FLASH_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencode-glm-flash
+                  key: api-key
+                  optional: true
+            # 172.18.0.1 = the kind docker-bridge gateway (the host, where the flash SSH
+            # tunnel binds). Kept out of any CONNECT proxy so flash traffic stays direct.
             - name: NO_PROXY
-              value: "localhost,127.0.0.1,::1,.svc,.svc.cluster.local,.cluster.local"
+              value: "localhost,127.0.0.1,::1,172.18.0.1,.svc,.svc.cluster.local,.cluster.local"
           volumeMounts:
             - name: opencode-config
               mountPath: /app/workspace/opencode.json
