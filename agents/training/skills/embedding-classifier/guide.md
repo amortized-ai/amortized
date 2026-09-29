@@ -13,7 +13,12 @@ This flow is different from the LLM training sub-skills (OSFT/SFT/LoRA):
 - The base is a small **sentence-transformers** model, so **skip the VRAM cards**
   and student-model-size comparison — they don't apply. Just pick a base model.
 
-## Requirement gathering (ONE question at a time)
+## Requirement gathering (STRICT one-question-per-turn)
+
+Ask these **one at a time**. Send ONE question, then **STOP and wait for the
+user's reply** before the next — never write the user's answer yourself, never
+simulate a "user:" turn, and never advance to `validate_training_job` in the same
+message. Skip a question only if the answer is already known from context.
 
 1. **Training data** — should come from a completed classification SDG job via
    `parent_job_id` (or a dataset `data_run_id`). If the orchestrator passed an SDG

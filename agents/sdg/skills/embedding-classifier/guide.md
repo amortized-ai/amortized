@@ -21,18 +21,29 @@ Gather requirements, then call `validate_sdg_job`. The config samples a
 `algorithm="embedding_sft"`, `text_column="text"`, `label_column="category"`
 (embedding_sft label-encodes string categories to integers automatically).
 
-## Requirement gathering (one question at a time, numbered options)
+## Requirement gathering (STRICT one-question-per-turn)
+
+Ask these **one at a time**. Send ONE question, then **STOP and wait for the
+user's reply** before asking the next. Never write the user's answer yourself,
+never simulate a "user:" turn, and never advance to later steps (or to preview /
+`validate_sdg_job`) in the same message — output only the current question and
+end your turn. Use the user's real answers; if they add a requirement (e.g. ESL
+typos), acknowledge it and fold it into the prompt, then continue from where you
+are — do not restart.
 
 1. **Domain** — what content will the classifier handle? (e.g. support tickets,
    user intents, log lines). Substitute it for `[DOMAIN]` in the text column's
-   `system_prompt`.
+   `system_prompt`. **STOP — wait for the reply.**
 2. **Categories** — the class labels (3–8 works well). Put them in the `category`
    sampler's `params.values` (lowercase, snake_case). These become the classes.
-3. **Teacher model** — call `list_models`; use a returned `name`/`provider` in
-   `model_configs`. If none are returned, stop (no teacher configured).
+   **STOP — wait for the reply.**
+3. **Teacher model** — call `list_models`; present ONLY returned models; use a
+   chosen `name`/`provider` in `model_configs`. If none are returned, stop (no
+   teacher configured). **STOP — wait for the reply.**
 4. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
-   Generate a second, smaller run (different topic/seed, same categories) as a
-   held-out **eval** dataset for the classification eval.
+   **STOP — wait for the reply.** Only after the user answers, proceed to build
+   the config and run the preview. Also generate a second, smaller run (different
+   topic/seed, same categories) as a held-out **eval** dataset for the eval.
 
 ## Tool parameters
 
