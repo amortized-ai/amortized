@@ -388,7 +388,9 @@ async def create_eval_job(
 
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(_validate_eval_rubric_judge(config))
-    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+    if config.get("eval_mode") != "classification" and not [
+        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
+    ]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
             " judge-scored metrics — the built-in structural metrics"
@@ -614,7 +616,9 @@ async def validate_eval_job(
 
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(_validate_eval_rubric_judge(config))
-    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+    if config.get("eval_mode") != "classification" and not [
+        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
+    ]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
             " judge-scored metrics — the built-in structural metrics"

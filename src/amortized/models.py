@@ -444,6 +444,58 @@ class EvalJobConfig(BaseModel):
     )
     topic: str = Field("", description="1-5 word eval topic for tracking")
 
+    # --- Classification / embedding eval (eval_mode="classification") ---
+    eval_mode: Literal["generative", "classification"] = Field(
+        "generative",
+        description=(
+            "Evaluation mode. 'generative' (default) serves the model and scores"
+            " free-form outputs with an LLM judge against a rubric. 'classification'"
+            " evaluates an embedding classifier/router: the held-out labeled dataset"
+            " is split into per-class anchors and query examples, and the tuned"
+            " embedding model routes each query to its nearest class (accuracy /"
+            " macro-F1 / confusion). No judge or rubric is used."
+        ),
+    )
+    class_labels: list[str] | None = Field(
+        None,
+        description=(
+            "Optional human-readable class names indexed by integer label"
+            " (classification mode). When omitted, labels are shown as their"
+            " integer values."
+        ),
+    )
+    text_column: str = Field(
+        "text", description="Name of the text column in the eval dataset (classification mode)"
+    )
+    label_column: str = Field(
+        "label", description="Name of the integer label column in the eval dataset (classification mode)"
+    )
+    anchors_per_class: int = Field(
+        16,
+        ge=1,
+        le=512,
+        description=(
+            "How many labeled examples per class to hold out as routing anchors"
+            " (classification mode); the rest of the dataset becomes queries."
+        ),
+    )
+    top_k: int = Field(
+        3,
+        ge=1,
+        le=64,
+        description="Per-class score = mean of the top-k anchor similarities (classification mode)",
+    )
+    tau: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence threshold (classification mode): a query whose best class"
+            " score is below tau routes to a fallback/abstain bucket. 0 (default)"
+            " never abstains."
+        ),
+    )
+
     @model_validator(mode="after")
     def check_model_source(self) -> "EvalJobConfig":
         """Fail at the boundary (like TrainingJobConfig) — a config with no

@@ -73,6 +73,16 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_seq_len", 2048)
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
+    elif algorithm == "embedding_sft":
+        # Contrastive embedding fine-tuning (classifiers/routers). It uses
+        # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
+        # sequence-packing knobs, so drop the fields the generic map produced
+        # that embedding_sft would only warn-and-ignore.
+        batch = thub_config.pop("micro_batch_size", None)
+        if batch is not None:
+            thub_config.setdefault("batch_size", batch)
+        for irrelevant in ("max_seq_len", "data_output_dir"):
+            thub_config.pop(irrelevant, None)
 
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result
@@ -86,7 +96,13 @@ async def build(
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
-    algo_aliases = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
+    algo_aliases = {
+        "lora": "lora_sft",
+        "qlora": "lora_sft",
+        "qlora_sft": "lora_sft",
+        "classifier": "embedding_sft",
+        "embedding": "embedding_sft",
+    }
     algorithm = config.get("algorithm", "sft")
     algorithm = algo_aliases.get(algorithm, algorithm)
 

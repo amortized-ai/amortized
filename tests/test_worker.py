@@ -198,6 +198,47 @@ class TestTrainingHubConfig:
             assert parsed["model_path"] == "test"
             assert "algorithm" not in parsed
 
+    def test_thub_config_yaml_embedding_sft(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.parquet",
+            "num_train_epochs": 40,
+            "per_device_train_batch_size": 32,
+            "learning_rate": 2e-5,
+            "loss_type": "batch_all_triplet",
+            "batch_sampler": "group_by_label",
+            "text_column": "text",
+            "label_column": "label",
+            "output_dir": "/output",
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("embedding_sft", config))
+        assert parsed["model_path"] == "sentence-transformers/all-MiniLM-L6-v2"
+        assert parsed["num_epochs"] == 40
+        assert parsed["batch_size"] == 32  # per_device_train_batch_size → batch_size
+        assert parsed["loss_type"] == "batch_all_triplet"
+        assert parsed["batch_sampler"] == "group_by_label"
+        assert parsed["ckpt_output_dir"] == "/output"
+        # SFT/OSFT-only knobs must not leak into an embedding_sft config
+        assert "micro_batch_size" not in parsed
+        assert "max_seq_len" not in parsed
+        assert "effective_batch_size" not in parsed
+        assert "data_output_dir" not in parsed
+
+    async def test_embedding_sft_aliases_map_to_subcommand(self) -> None:
+        from amortized.jobs.training import build
+
+        for alias in ("embedding_sft", "classifier", "embedding"):
+            cfg = {
+                "algorithm": alias,
+                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "data_path": "/data/train.parquet",
+            }
+            result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
+            assert result.command == ["thub", "embedding-sft", "--config", "/amortized/config.yaml"]
+
 
 class TestResolveParentArtifacts:
     @pytest.mark.asyncio

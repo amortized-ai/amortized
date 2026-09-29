@@ -155,6 +155,59 @@ class TestCreateEvalJob:
 
 
 
+class TestClassificationEvalBuilder:
+    @pytest.mark.asyncio
+    async def test_build_classification_eval_base_model(self) -> None:
+        import json
+
+        config = {
+            "eval_mode": "classification",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "eval_data_run_id": "run123",
+            "class_labels": ["A", "B", "C"],
+            "anchors_per_class": 8,
+            "top_k": 3,
+            "tau": 0.0,
+        }
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+
+        # Runs the self-contained classifier eval in the training image (has
+        # sentence-transformers), not the vLLM serve/judge path.
+        assert result.command == [
+            "python3", "/amortized/classify_eval.py", "--config", "/amortized/config.json",
+        ]
+        assert result.image == "ghcr.io/amortized-ai/training:latest"
+        assert result.resources.gpus == 0
+        assert "classify_eval.py" in result.config_files
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["model_path"] == "sentence-transformers/all-MiniLM-L6-v2"
+        assert runner["eval_data_path"] == "/amortized/work/eval_data/generated_data"
+        assert runner["class_labels"] == ["A", "B", "C"]
+        assert runner["anchors_per_class"] == 8
+        assert any("generated_data" in c for c in result.pre_commands)
+        assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
+
+    @pytest.mark.asyncio
+    async def test_build_classification_eval_requires_model_and_data(self) -> None:
+        from amortized.jobs.base import JobBuildError
+
+        # No model source
+        with pytest.raises(JobBuildError):
+            await eval_builder.build(
+                {"id": "e1", "type": "eval"},
+                {"eval_mode": "classification", "eval_data_run_id": "r1"},
+                {},
+            )
+        # No eval data
+        with pytest.raises(JobBuildError):
+            await eval_builder.build(
+                {"id": "e1", "type": "eval"},
+                {"eval_mode": "classification", "model_name_or_path": "m"},
+                {},
+            )
+
+
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:
