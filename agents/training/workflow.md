@@ -29,12 +29,21 @@ about internal delegation.
 | Sub-Skill | Path | Best For |
 |-----------|------|----------|
 | knowledge-ingestion/osft | `skills/training/knowledge-ingestion/osft/` | Knowledge ingestion, FAQ bots, doc-grounded QA |
+| embedding-classifier | `skills/training/embedding-classifier/` | Text classifiers, intent routers, topic/sentiment tagging |
 
-**How to choose:** Knowledge ingestion → OSFT (default, recommended).
+**How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
+recommended). Classify text into a fixed set of categories (intent routing,
+ticket/topic/sentiment) → embedding-classifier (`embedding_sft`).
 
-Read `skills/training/knowledge-ingestion/osft/guide.md` for detailed
-requirement-gathering steps, tool parameters, and hyperparameter
-guidance.
+Read `skills/training/knowledge-ingestion/osft/guide.md` for OSFT, or
+`skills/training/embedding-classifier/guide.md` for the embedding classifier —
+each has detailed requirement-gathering steps, tool parameters, and
+hyperparameter guidance.
+
+**Embedding classifier differs from the LLM sub-skills:** the algorithm is fixed
+to `embedding_sft` (no lora/qlora/osft/sft method choice) and the base is a small
+sentence-transformers model — so **skip the Student Model Selection and Training
+Method Selection VRAM steps below**; they apply only to the LLM sub-skills.
 
 ## Student Model Selection
 
@@ -95,10 +104,12 @@ change. Do NOT restart from Phase 1.
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine which training sub-skill to use based on the handoff context.
-Currently only OSFT for knowledge-ingestion. Read
-`skills/training/knowledge-ingestion/osft/guide.md` for detailed
-guidance.
+Determine which training sub-skill to use based on the handoff context:
+knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
+classifying text into a fixed set of categories. Read the matching guide
+(`skills/training/knowledge-ingestion/osft/guide.md` or
+`skills/training/embedding-classifier/guide.md`) for detailed guidance. For the
+embedding classifier, skip the VRAM/model-size/method steps.
 
 ### Phase 2 — Gather Requirements
 

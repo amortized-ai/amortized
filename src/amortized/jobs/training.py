@@ -151,6 +151,16 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         await set_mlflow_run_tag(mlflow_run_id, "model_display_name", display_name)
         await client.set_registered_model_tag(model_name, "model_display_name", display_name)
 
+        # Tag the model kind so eval steers embedding models to classification
+        # eval (a generative/judge eval would fail on a sentence-transformers model).
+        model_type = (
+            "embedding"
+            if algorithm in ("embedding_sft", "classifier", "embedding")
+            else "generative"
+        )
+        await set_mlflow_run_tag(mlflow_run_id, "model_type", model_type)
+        await client.set_registered_model_tag(model_name, "model_type", model_type)
+
         topic = config.get("topic", "")
         if not topic:
             parent_id = job.get("parent_job_id", "")

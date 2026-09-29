@@ -208,6 +208,57 @@ class TestClassificationEvalBuilder:
             )
 
 
+class TestClassificationEvalModeGuardrail:
+    @staticmethod
+    def _patch_training_job(monkeypatch, algorithm: str) -> None:
+        from amortized.api import jobs as jobs_api
+
+        class _FakeRepo:
+            def __init__(self, _db):
+                pass
+
+            async def get_job(self, _jid):
+                return {"type": "training", "config": {"algorithm": algorithm}}
+
+        monkeypatch.setattr(jobs_api, "Repository", _FakeRepo)
+
+    @pytest.mark.asyncio
+    async def test_auto_sets_classification_for_embedding_model(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "embedding_sft")
+        config = {"training_job_id": "t1"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors == []
+        assert config["eval_mode"] == "classification"
+
+    @pytest.mark.asyncio
+    async def test_rejects_generative_eval_on_embedding_model(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "embedding_sft")
+        config = {"training_job_id": "t1", "eval_mode": "generative"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "classification" in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_rejects_classification_eval_on_llm(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "osft")
+        config = {"training_job_id": "t1", "eval_mode": "classification"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "embedding model" in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_noop_without_training_job(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        config = {"model_name_or_path": "some/model"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors == [] and "eval_mode" not in config
+
+
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:
