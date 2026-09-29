@@ -1,0 +1,38 @@
+{
+  "_meta": {
+    "name": "Embedding Classifier Data",
+    "description": "Generate labeled (text, category) examples to train a compact embedding classifier/router with embedding_sft — no messages/SFT transform."
+  },
+  "num_records": 400,
+  "topic": "custom classifier",
+  "columns": [
+    {
+      "column_type": "sampler",
+      "name": "category",
+      "sampler_type": "category",
+      "params": {
+        "values": ["category_a", "category_b", "category_c", "category_d"]
+      }
+    },
+    {
+      "column_type": "llm-text",
+      "name": "text",
+      "model_alias": "text",
+      "system_prompt": "You generate a single short, realistic message that a real user would send in the [DOMAIN] setting. Vary phrasing, length, and vocabulary across generations so the dataset is diverse. Output ONLY the message text — no labels, quotes, or preamble.",
+      "prompt": "Write one realistic user message that clearly and unambiguously belongs to the category: {{ category }}.\n\nIt must be classifiable as {{ category }} from the text alone, without mentioning the category name."
+    }
+  ],
+  "model_configs": [
+    {
+      "alias": "text",
+      "model": "<from-list_models>",
+      "provider": "<from-list_models>",
+      "skip_health_check": true,
+      "inference_parameters": {
+        "max_tokens": 512,
+        "max_parallel_requests": 32
+      }
+    }
+  ],
+  "processors": []
+}
