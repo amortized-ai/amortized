@@ -41,7 +41,7 @@ gh workflow run morty-image.yml --ref <branch>    # pushes ghcr.io/amortized-ai/
 | Knob | Where | Default | Notes |
 |---|---|---|---|
 | `BASE_IMAGE` | Dockerfile ARG | `quay.io/aipcc/agentic-ci/openshell:0.3.27` | bump on base upgrades |
-| `OPENCODE_VERSION` | Dockerfile ARG | `1.17.1` | pinned for reproducibility |
+| `OPENCODE_VERSION` | Dockerfile ARG | `1.18.33` | pinned for reproducibility; 1.17.1 mishandled OpenAI Responses-API tool calls (gpt-5.6 reasoning models returned empty) |
 | default model | `opencode.json` | `google-vertex-anthropic/claude-opus-4-8@default` | matches the core chart; overridable per-sandbox |
 | MCP url | `opencode.json` | `amortized-server.amortized.svc…:8000/mcp` | **single-tenant default**; the provisioner overrides it per user (`amz-<user>`) |
 | registry/repo | workflow | `ghcr.io/amortized-ai/morty` | tags `:latest` (main) + `:sha-<commit>` |
