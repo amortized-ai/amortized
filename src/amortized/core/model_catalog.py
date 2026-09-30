@@ -59,23 +59,45 @@ def _key_available(api_key: str | None) -> bool:
     return True
 
 
+def _maas_provider_def() -> dict[str, str] | None:
+    """A BYOK Red Hat MaaS endpoint as an OpenAI-compatible provider.
+
+    Unlike the data-designer builtins (hardcoded endpoints), MaaS is user-supplied, so
+    its base URL comes from ``MAAS_BASE_URL`` and its key from ``MAAS_API_KEY`` — both
+    injected per-user from the user's BYOK secret. Surfaced only when both are set.
+    """
+    base_url = os.environ.get("MAAS_BASE_URL", "").strip().rstrip("/")
+    if not base_url or not os.environ.get("MAAS_API_KEY"):
+        return None
+    return {
+        "name": "maas",
+        "endpoint": base_url,
+        "provider_type": "openai",
+        "api_key": "MAAS_API_KEY",
+    }
+
+
 def enabled_provider_defs() -> list[dict[str, str]]:
-    """Builtin data-designer providers whose API key is configured on the server.
+    """Providers whose API key is configured on the server: the builtin data-designer
+    catalog plus a BYOK MaaS endpoint (when configured).
 
     Returns provider dicts (name/endpoint/provider_type/api_key) ready to serialize
     into a data-designer ``model_providers.yaml``. ``api_key`` stays the env-var name
     so the job pod resolves the forwarded key at runtime.
     """
+    defs: list[dict[str, str]] = []
     try:
         from data_designer.config.utils.constants import PREDEFINED_PROVIDERS
+
+        for provider in PREDEFINED_PROVIDERS:
+            if _key_available(provider.get("api_key")):
+                defs.append({k: provider[k] for k in _PROVIDER_FIELDS if k in provider})
     except Exception:
         logger.warning("data-designer provider catalog unavailable", exc_info=True)
-        return []
 
-    defs: list[dict[str, str]] = []
-    for provider in PREDEFINED_PROVIDERS:
-        if _key_available(provider.get("api_key")):
-            defs.append({k: provider[k] for k in _PROVIDER_FIELDS if k in provider})
+    maas = _maas_provider_def()
+    if maas:
+        defs.append(maas)
     return defs
 
 
