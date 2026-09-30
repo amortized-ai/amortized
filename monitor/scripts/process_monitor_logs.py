@@ -576,8 +576,12 @@ def _fmt(value: Any, kind: str) -> str:
 
 
 def print_per_run(
-    runs: list[Run], scores: dict[str, dict[str, str]], checklist: dict[str, Any]
+    runs: list[Run],
+    scores: dict[str, dict[str, str]],
+    checklist: dict[str, Any],
+    reasons: dict[tuple[str, str], str] | None = None,
 ) -> None:
+    reasons = reasons or {}
     print("## Per-run\n")
     for run in runs:
         sc = scores[run.session_id]
@@ -594,7 +598,12 @@ def print_per_run(
             f"max {_fmt(run.max_latency_s, 's')}   (send received -> response ready, per message)"
         )
         for row in checklist["rows"]:
-            print(f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} — {row['stage']}")
+            reason = reasons.get((run.session_id, row["id"]), "")
+            suffix = f"  |  {reason}" if reason else ""
+            print(
+                f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} "
+                f"— {row['stage']}{suffix}"
+            )
         print()
 
 
@@ -663,23 +672,6 @@ def print_comparison(
 # --------------------------------------------------------------------------- #
 
 
-def print_judge_rationale(
-    runs: list[Run],
-    checklist: dict[str, Any],
-    scores: dict[str, dict[str, str]],
-    reasons: dict[tuple[str, str], str],
-    model: str,
-) -> None:
-    rows = [r for r in checklist["rows"] if r.get("adjudicate") == "llm_judge"]
-    print(f"\n## LLM-judge rationale  (model: `{model}`)")
-    for run in runs:
-        print(f"\n### {run.session_id}")
-        for r in rows:
-            status = scores[run.session_id].get(r["id"], "review")
-            reason = reasons.get((run.session_id, r["id"]), "")
-            print(f"- [{status:>6}] {r['id']} — {reason or '(no reason)'}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log_dir", type=Path, help="Directory of <session>.jsonl monitor logs")
@@ -729,9 +721,7 @@ def main() -> None:
                 if key in overrides:
                     scores[run.session_id][row["id"]] = overrides[key]
 
-    print_per_run(runs, scores, checklist)
-    if judge_reasons:
-        print_judge_rationale(runs, checklist, scores, judge_reasons, args.judge_model)
+    print_per_run(runs, scores, checklist, judge_reasons)
     print_comparison(runs, scores, checklist)
 
 
