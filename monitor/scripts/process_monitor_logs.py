@@ -351,9 +351,41 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
     return "review"
 
 
+def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
+    """Evaluate a row-level `requires` precondition against the run. A row whose
+    precondition is unmet scores `n/a` and (for llm_judge rows) is not sent to
+    the judge — used to gate skill-adherence rows to runs where that sub-skill
+    was actually loaded, so a classification run doesn't get judged against the
+    task-distillation guide.
+
+    Currently supports `type: skill_loaded` — a `read` whose output echoes the
+    guide path (`path_contains`), optionally scoped to a subagent `role` (the
+    sub-skills belong to subagents, so role-scoping disambiguates which agent
+    loaded which guide). Reuses the same read/output_contains detection as the
+    auto `skill_loaded` mechanic rows. Unknown types don't gate (return True)."""
+    if not requires:
+        return True
+    if requires.get("type") == "skill_loaded":
+        role = requires.get("role")
+        needle = requires.get("path_contains")
+        for c in run.tool_calls:
+            if c.get("tool") != "read":
+                continue
+            if role and c.get("role") != role:
+                continue
+            if needle and needle not in (c.get("output") or ""):
+                continue
+            return True
+        return False
+    return True  # unknown precondition -> do not gate
+
+
 def score_run(run: Run, checklist: dict[str, Any]) -> dict[str, str]:
     result: dict[str, str] = {}
     for row in checklist["rows"]:
+        if not _requires_met(run, row.get("requires")):
+            result[row["id"]] = "n/a"  # precondition absent -> row doesn't apply
+            continue
         mode = row.get("adjudicate", "human")
         if mode == "auto" and row.get("match"):
             result[row["id"]] = score_auto(run, row["match"])
@@ -402,7 +434,13 @@ _JUDGE_SYSTEM = (
     '"unknown" (the transcript lacks the evidence to decide — e.g. the assistant '
     "messages were not captured). Prefer \"unknown\" over guessing. For grounding "
     "rows, a claim is grounded only if the cited ids/numbers actually appear in a "
-    "tool output. Respond with ONLY a JSON object mapping each row_id to "
+    "tool output.\n"
+    "For rows about a specific workflow step: if the run ended before that step "
+    "could occur (it was abandoned or errored out earlier in the pipeline), answer "
+    '"n/a" — do NOT penalise a step the run never reached. Reserve "wrong" for a '
+    "step the run actually reached but did incorrectly, or clearly skipped despite "
+    "progressing past the point where it should have happened.\n"
+    "Respond with ONLY a JSON object mapping each row_id to "
     '{"verdict": <one of the four>, "reason": "<=200 chars"}. No prose outside JSON.'
 )
 
@@ -489,15 +527,22 @@ def llm_judge_runs(
     if not rows:
         return verdicts, reasons
     call = _make_judge_call(model)
-    rubric = json.dumps([{"row_id": r["id"], "expected": r["expected"]} for r in rows], indent=2)
     for run in runs:
+        # Only judge rows whose precondition holds for this run; gated-out rows
+        # keep the `n/a` score_run already assigned (skill not loaded here).
+        active = [r for r in rows if _requires_met(run, r.get("requires"))]
+        if not active:
+            continue
+        rubric = json.dumps(
+            [{"row_id": r["id"], "expected": r["expected"]} for r in active], indent=2
+        )
         prompt = f"RUBRIC (judge each row_id):\n{rubric}\n\nTRANSCRIPT:\n{_judge_evidence(run)}"
         try:
             data = _parse_judge_json(call(_JUDGE_SYSTEM, prompt))
         except Exception as exc:  # noqa: BLE001 - report and leave rows as review
             print(f"  ! llm-judge failed for {run.session_id}: {exc}", file=sys.stderr)
             data = {}
-        for r in rows:
+        for r in active:
             entry = data.get(r["id"]) or {}
             verdicts[(run.session_id, r["id"])] = _norm_verdict(entry.get("verdict"))
             reasons[(run.session_id, r["id"])] = str(entry.get("reason", "")).strip()

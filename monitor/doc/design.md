@@ -42,6 +42,30 @@ Example: `use_cases/rfe_assess` extends `general` and adds
 correct SDG sub-skill is `task-distillation`), while `general` only asserts that
 *some* sub-skill guide was loaded (`sdg_skill_loaded` / `train_skill_loaded`).
 
+**Overlay convention — pin the expected sub-skill.** The aspect-G skill-adherence
+rows answer *"given it loaded skill X, did it follow X's guide?"* — deliberately
+**not** *"was X the right skill for this task?"*. `general` can't know the right
+skill (it's task-specific), so a run that loads the *wrong* skill would still get
+its aspect-G rows scored against that wrong skill (and could even score `met`).
+Wrong-skill selection is therefore a **per-scenario** check: every new overlay
+should pin its expected sub-skill with a one-line `auto` row (aspect B), mirroring
+RFE's `sdg_skill_is_task_distillation`:
+
+```yaml
+# use_cases/<scenario>/checklist.yaml
+extends: general
+rows:
+  - id: sdg_skill_is_<skill>
+    stage: "SDG sub-skill = <skill>"
+    aspect: B
+    expected: "Loads the <skill> SDG sub-skill (correct for this task)"
+    adjudicate: auto
+    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "<skill>/guide.md" }
+```
+
+The gating + `n/a`-excluded denominator (below) already generalize to any scenario
+on their own — the sub-skill pin is the one piece that must be added per use case.
+
 Each row declares how it's judged:
 
 - `auto` — scored deterministically from the log (delegation present, config
@@ -56,6 +80,38 @@ Each row declares how it's judged:
 
 Statuses: `met`, `wrong` (did it, wrong), `missed` (should have, didn't — the
 default when a signal is absent), `n/a`, `review`.
+
+### Conditional rows — `requires`
+
+A row may carry a `requires:` precondition. When it isn't satisfied for a run the
+row scores `n/a` (and, for `llm_judge` rows, is *not* sent to the judge). Today the
+only type is `skill_loaded` — a `read` whose output echoes a guide path
+(`path_contains`), optionally scoped to a subagent `role` (sub-skills belong to
+subagents, so the role disambiguates which agent loaded which guide):
+
+```yaml
+requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+```
+
+This gates the **skill-adherence** rows (aspect **G**). On top of the auto
+skill-*loading* rows (`sdg_skill_loaded` / `train_skill_loaded`, which only assert
+that *some* guide was read), the aspect-G rows check whether the workflow actually
+**followed** the loaded guide's content — curated per sub-skill from
+`agents/*/skills/**/guide.md` (classification, knowledge-ingestion,
+task-distillation, and training OSFT). Each fires only on the run that loaded its
+guide, so a classification run is never judged against the task-distillation guide.
+They are judged from assistant prose + `present_options` outputs + tool outputs
+(tool *inputs* / submitted configs aren't in the transcript), so each criterion is
+one observable there.
+
+### Redundancy rows (aspect F)
+
+Two `llm_judge` rows guard against repetitive prompting, judged from the logged
+`present_options` prompts (the question + options live in the tool *output*):
+`no_repeated_decisions` (Morty re-asks a point the user already decided in a
+previous/recent turn) and `no_duplicate_options` (a single prompt offers two
+options that mean the same thing). User replies aren't logged, so the judge treats
+a decision as already-made when the same choice was presented/recorded earlier.
 
 ## End-to-end testing loop
 
