@@ -37,9 +37,13 @@ are — do not restart.
 2. **Categories** — the class labels (3–8 works well). Put them in the `category`
    sampler's `params.values` (lowercase, snake_case). These become the classes.
    **STOP — wait for the reply.**
-3. **Teacher model** — call `list_models`; present ONLY returned models; use a
-   chosen `name`/`provider` in `model_configs`. If none are returned, stop (no
-   teacher configured). **STOP — wait for the reply.**
+3. **Teacher model** — call `list_models`; present ONLY returned models. In
+   `model_configs`, set `model` to the model's exact **`name`** field verbatim
+   (e.g. `gpt-oss`) and `provider` to its `provider` field (e.g. `gateway`) —
+   do NOT use the `model_name` field or a provider-prefixed id like
+   `openai/gpt-oss-120b`; the gateway resolves the short `name`, and a fuller id
+   fails with "model could not be found". If none are returned, stop (no teacher
+   configured). **STOP — wait for the reply.**
 4. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
    **STOP — wait for the reply.** Only after the user answers, proceed to build
    the config and run the preview. Also generate a second, smaller run (different
