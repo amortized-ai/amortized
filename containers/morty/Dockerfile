@@ -10,7 +10,7 @@ USER 0
 
 # The aipcc base has no node — add it (mirrors the RHOAI Containerfile.openshell).
 RUN dnf install -y --nodocs nodejs npm && dnf clean all
-ARG OPENCODE_VERSION=1.17.1
+ARG OPENCODE_VERSION=1.18.33
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} && opencode --version
 
 # Persona baked under /workspace (this base has no /sandbox and no fixed sandbox user).
