@@ -71,6 +71,30 @@ class TrainingJobConfig(BaseModel):
     unfreeze_rank_ratio: float | None = Field(
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )
+    # Embedding classifier (embedding_sft) fields. Declared explicitly (not just
+    # via extra="allow") so the validate_training_job MCP tool exposes them as
+    # parameters — otherwise the agent can't pass e.g. label_column and the worker
+    # falls back to a 'label' column that a {text, category} dataset doesn't have.
+    text_column: str | None = Field(
+        None, description="embedding_sft: text column name in the dataset (default 'text')"
+    )
+    label_column: str | None = Field(
+        None,
+        description=(
+            "embedding_sft: label/category column name (default 'label'). Set to"
+            " 'category' for the embedding-classifier SDG datasets."
+        ),
+    )
+    loss_type: str | None = Field(
+        None,
+        description="embedding_sft contrastive loss: batch_all_triplet, batch_hard_triplet, or mnrl",
+    )
+    batch_sampler: str | None = Field(
+        None,
+        description="embedding_sft batch sampler: group_by_label, no_duplicates, or default",
+    )
+    warmup_ratio: float | None = Field(None, description="embedding_sft: warmup fraction of total steps")
+    seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
     topic: str = Field(
         "",
         description="1-5 word model topic for tracking (e.g. 'support ticket classification')",

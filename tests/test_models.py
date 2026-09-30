@@ -24,6 +24,30 @@ class TestTrainingJobConfig:
         assert config.learning_rate is None
         assert config.lora_r is None
 
+    def test_embedding_classifier_fields_are_first_class(self) -> None:
+        # These must be declared fields (not just extra="allow"), so the
+        # validate_training_job MCP tool exposes them as parameters — otherwise
+        # label_column can't be threaded through and the worker fails on a
+        # {text, category} dataset.
+        from amortized.models import TrainingJobRequest
+
+        props = TrainingJobRequest.model_json_schema()["properties"]
+        for field in ("label_column", "text_column", "loss_type", "batch_sampler"):
+            assert field in props, f"{field} must be a named schema property"
+
+        config = TrainingJobConfig(
+            algorithm="embedding_sft",
+            model_name_or_path="sentence-transformers/all-MiniLM-L6-v2",
+            label_column="category",
+            text_column="text",
+            loss_type="batch_all_triplet",
+            batch_sampler="group_by_label",
+        )
+        assert config.label_column == "category"
+        # round-trips through model_dump (what the API/worker receive)
+        dumped = config.model_dump(exclude_none=True)
+        assert dumped["label_column"] == "category" and dumped["text_column"] == "text"
+
     def test_full_config(self) -> None:
         config = TrainingJobConfig(
             algorithm="sft",
