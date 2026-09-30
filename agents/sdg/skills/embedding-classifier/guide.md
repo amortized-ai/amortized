@@ -37,14 +37,23 @@ are — do not restart.
 2. **Categories** — the class labels (3–8 works well). Put them in the `category`
    sampler's `params.values` (lowercase, snake_case). These become the classes.
    **STOP — wait for the reply.**
-3. **Teacher model** — call `list_models`; present ONLY returned models. In
+3. **Seed examples (important — this sets the style)** — ask the user to paste a
+   few **real** example messages for each category (2–5 each is plenty),
+   **exactly as they actually appear** — including shorthand, abbreviations,
+   informal phrasing, or typos. These ground the generation so the synthetic data
+   matches the real distribution instead of the model's guess at what the messages
+   look like. Do NOT invent the style yourself; source it from the user. If the
+   user genuinely has no examples, say quality will be lower and offer to proceed
+   with the model's best guess (or to look at a real sample first).
+   **STOP — wait for the reply.**
+4. **Teacher model** — call `list_models`; present ONLY returned models. In
    `model_configs`, set `model` to the model's exact **`name`** field verbatim
    (e.g. `gpt-oss`) and `provider` to its `provider` field (e.g. `gateway`) —
    do NOT use the `model_name` field or a provider-prefixed id like
    `openai/gpt-oss-120b`; the gateway resolves the short `name`, and a fuller id
    fails with "model could not be found". If none are returned, stop (no teacher
    configured). **STOP — wait for the reply.**
-4. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
+5. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
    **STOP — wait for the reply.** Only after the user answers, proceed to build
    the config and run the preview. Also generate a second, smaller run (different
    topic/seed, same categories) as a held-out **eval** dataset for the eval.
@@ -55,9 +64,21 @@ Call `validate_sdg_job` with the columns/model_configs/processors from
 `reference-payload.json`, customizing:
 - `category` sampler `params.values` → the user's categories (optionally add
   `weights` for a non-uniform distribution).
-- `text` column `system_prompt` → replace `[DOMAIN]`.
+- `text` column `system_prompt` → replace `[DOMAIN]`, and replace
+  `[SEED_EXAMPLES]` with the user's real examples grouped by category, e.g.:
+  ```
+  - telemetry: "any channels acting up in the last 5?"; "whats the bus V looking like"
+  - propulsion: "engine chamber press trend?"; "how much prop we got left for the burn"
+  - ...
+  ```
+  The prompt tells the model to match the style of the current `{{ category }}`'s
+  examples — so the synthetic data inherits the real register/brevity/shorthand.
 - `model_configs[0].model`/`provider` → from `list_models`.
 - `processors` → leave `[]` (no `messages` transform — we want raw `text,category`).
+
+Grounding the generation in the user's real examples (rather than a synthetic
+"style" knob) is what makes the classifier learn the *actual* distribution — and
+it's what lets fine-tuning beat the base model on the messy real phrasings.
 
 ## Downstream
 

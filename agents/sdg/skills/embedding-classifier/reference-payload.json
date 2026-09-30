@@ -18,8 +18,8 @@
       "column_type": "llm-text",
       "name": "text",
       "model_alias": "text",
-      "system_prompt": "You generate a single short, realistic message that a real user would send in the [DOMAIN] setting. Vary phrasing, length, and vocabulary across generations so the dataset is diverse. Output ONLY the message text — no labels, quotes, or preamble.",
-      "prompt": "Write one realistic user message that clearly and unambiguously belongs to the category: {{ category }}.\n\nIt must be classifiable as {{ category }} from the text alone, without mentioning the category name."
+      "system_prompt": "You generate realistic messages that users actually send in the [DOMAIN] setting. Match the real style, brevity, vocabulary, and phrasing of the example messages for each category below — including any shorthand, abbreviations, informal phrasing, or typos the examples show. Do NOT make messages cleaner, longer, or more explicit than the examples, and do not name the category in the text. Output ONLY the message text — no labels, quotes, or preamble.\n\nExample messages by category:\n[SEED_EXAMPLES]",
+      "prompt": "Generate ONE new, distinct message for the category: {{ category }}.\n\nMatch the register, brevity, and phrasing of the '{{ category }}' examples above. Vary the wording and content — do not copy any example verbatim — but keep it genuinely a {{ category }} message."
     }
   ],
   "model_configs": [
