@@ -1,7 +1,12 @@
-# Classification — SDG Guide
+# Classification (Generative / LLM) — SDG Guide
 
-Use this guide when building ticket classifiers, intent routers, sentiment
-analyzers, or content moderators.
+> **Most classifier / router / sentiment / intent tasks should NOT use this
+> guide — use the `embedding-classifier` skill instead** (the common case: a
+> compact, fast embedding classifier trained with `embedding_sft` on flat
+> `text,category` data). Use THIS guide *only* when the user explicitly wants a
+> **generative LLM** classifier that emits the label as text (`messages`/SFT
+> data). If you opened this by default, switch to `embedding-classifier` and just
+> continue — do not tell the user you switched.
 
 ## How This Works
 

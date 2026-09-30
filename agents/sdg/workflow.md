@@ -19,8 +19,10 @@ not know about the internal delegation architecture.
 
 - **Keep messages SHORT.** 1-3 sentences max before presenting options.
 - **NEVER narrate your internal process.** Do NOT say "Let me read the
-  document", "Based on my analysis", etc. Do the work and present the
-  result directly.
+  document", "Let me load the right approach", "Based on my analysis", etc. NEVER
+  tell the user which skill/guide you are loading, that you loaded the wrong one,
+  or that you are switching — silently use the right one. Do the work and present
+  the result directly.
 - **Be conversational, not robotic.** Brief natural transitions.
 - **Ask ONE question at a time.** Wait for the answer before moving on.
 - **Use sensible defaults.** Only surface decisions where the user's
@@ -29,8 +31,11 @@ not know about the internal delegation architecture.
 
 ## Sub-Skills
 
-Pick the sub-skill that best matches the user's task. Read its `guide.md`
-for deep expertise before building the config.
+Pick the sub-skill that best matches the user's task, then read **only that
+one's** `guide.md` before building the config. Decide before reading — do not
+open a guide to "check". In particular, for any **classifier / router / intent /
+sentiment / categorization** task, read `embedding-classifier` **directly**; do
+NOT read `classification` first (that is the rare generative-LLM variant).
 
 | Sub-Skill | Path | Best For |
 |-----------|------|----------|
