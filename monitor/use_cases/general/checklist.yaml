@@ -15,6 +15,11 @@
 #   llm_judge - scored by an LLM pass (planned; emitted as `review` for now)
 #   human     - left as `review` for offline human adjudication
 #
+# requires (optional gate): a row scores `n/a` (and is not sent to the judge)
+#   unless its precondition holds. type `skill_loaded` matches a role-scoped
+#   `read` of a guide path (`path_contains`) -> used to activate the aspect-G
+#   skill-adherence rows only on runs that loaded that sub-skill's guide.
+#
 # match types (auto rows):
 #   tool_called | tool_before | validate_ok | recovery | completion | chained
 #   scores_present | no_error_calls | solo_delegation
@@ -280,3 +285,228 @@ rows:
     adjudicate: llm_judge
     # eval/workflow.md (279-300); all Failure Handling sections. Judged from
     # logged assistant text against tool statuses/outputs.
+
+  # ---- Redundancy (LLM-judge; de-dup of decisions & options) ----------------
+  # Both judge from the logged present_options prompts (question + options are in
+  # the tool OUTPUT) and assistant prose. User replies are NOT logged, so the
+  # judge treats a decision as already-made when the same choice was presented /
+  # recorded earlier in the session.
+  - id: no_repeated_decisions
+    stage: "No re-asking decided points"
+    aspect: F
+    expected: >
+      Morty does not ask the user to decide a point that was already decided
+      earlier in the session. Flag `wrong` if a later present_options prompt (or
+      assistant question) re-requests a choice the user already made in a
+      previous/recent turn — e.g. the same step/question offered again after it
+      was answered. Do NOT flag legitimate refinements the user explicitly asked
+      to change, or distinct new decisions. `met` if no already-decided point is
+      re-asked; `n/a` if the run contains no user-facing decision prompts.
+    adjudicate: llm_judge
+
+  - id: no_duplicate_options
+    stage: "No semantically-duplicate options"
+    aspect: F
+    expected: >
+      Within any single set of options Morty presents to the user (a
+      present_options prompt), no two options mean the same thing. Flag `wrong`
+      if a prompt offers two or more options that are semantically equivalent —
+      the same practical choice worded differently, so picking either leads to
+      the same outcome. Genuinely distinct options (even if related) are fine.
+      `met` if every option set has distinct choices; `n/a` if no options were
+      presented.
+    adjudicate: llm_judge
+
+  # ---- Skill adherence (aspect G) -------------------------------------------
+  # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
+  # which only assert a guide was read), these check whether the workflow FOLLOWED
+  # the guide's content. Curated per skill from agents/*/skills/**/guide.md. Each
+  # row is gated by `requires: skill_loaded` (role-scoped read of that guide) so it
+  # is `n/a` unless that sub-skill was actually loaded in the run; only then is it
+  # sent to the judge. Skills belong to subagents, so `role` scopes the gate.
+  # Judged from assistant prose + present_options outputs + tool outputs ONLY
+  # (tool INPUTS / submitted configs are not in the transcript), so criteria are
+  # limited to guide steps observable there.
+
+  # -- SDG: classification (agents/sdg/skills/classification/guide.md) --
+  - id: skill_classification_stepwise_questions
+    stage: "Skill: classification requirement flow"
+    aspect: G
+    expected: >
+      The SDG agent gathers classification requirements ONE question at a time via
+      present_options (not all at once), covering the guide's steps in order:
+      domain, then categories, then urgency, then sample count, then teacher model
+      (present_options steps sdg-domain / sdg-categories / sdg-urgency /
+      sdg-samples / sdg-teacher-model). `wrong` if it dumps every question in one
+      turn or skips the staged flow.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_suggests_categories
+    stage: "Skill: classification suggests labels"
+    aspect: G
+    expected: >
+      For the chosen domain the agent SUGGESTS concrete category labels (3-6
+      relevant ones) as options rather than leaving the user to invent them from
+      nothing, and offers a custom/"define my own" path. Seen in the
+      sdg-categories present_options options. `wrong` if it just asks the user to
+      type labels with no suggestions.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_urgency_offered
+    stage: "Skill: classification urgency step"
+    aspect: G
+    expected: >
+      The agent offers an urgency choice (e.g. 3 levels / 4 levels / no urgency) as
+      its own decision point (sdg-urgency), per the guide. `wrong` if urgency is
+      never surfaced to the user.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_teacher_from_list_models
+    stage: "Skill: classification teacher options"
+    aspect: G
+    expected: >
+      Teacher-model options are exactly the models returned by list_models (no
+      invented/hardcoded models) AND the guide-mandated last option "Configure a
+      model" is included. Cross-check the list_models output against the
+      sdg-teacher-model options. `wrong` if options include a model not in
+      list_models or omit the configure-a-model fallback.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  # -- SDG: knowledge-ingestion (agents/sdg/skills/knowledge-ingestion/guide.md) --
+  - id: skill_knowledge_grounds_on_documents
+    stage: "Skill: knowledge doc grounding"
+    aspect: G
+    expected: >
+      Before proposing sample counts the agent establishes the actual documents
+      via list_documents / get_document_chunks (real doc ids and chunk/token
+      stats), rather than proceeding without inspecting the uploaded documents.
+      `wrong` if it never inspects the documents.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_samples_from_chunk_stats
+    stage: "Skill: knowledge sample-count math"
+    aspect: G
+    expected: >
+      The proposed num_samples is derived from the document's chunk statistics
+      (coverage x mean_chunk_tokens / avg_qa_tokens x num_chunks) and the agent
+      SHOWS the user the numbers — the multiplier, chunk stats, and resulting
+      sample count — not a bare round guess. Seen in assistant prose / the
+      coverage-tier present_options. `wrong` if sample count is picked with no
+      chunk-based reasoning shown.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_coverage_tiers
+    stage: "Skill: knowledge coverage tiers"
+    aspect: G
+    expected: >
+      The agent presents three source-coverage tiers (about 3x / 5x / 8x) with the
+      computed sample count for each, recommending the 5x default. `wrong` if it
+      offers a single number or tiers without the computed counts.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_no_user_system_prompt
+    stage: "Skill: knowledge generates system prompt"
+    aspect: G
+    expected: >
+      The agent does NOT ask the user to write the trained model's system prompt;
+      it generates a domain-specific default itself and only surfaces it in the
+      confirmation table for optional adjustment. `wrong` if it asks the user to
+      author the system prompt.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  # -- SDG: task-distillation (agents/sdg/skills/task-distillation/guide.md) --
+  - id: skill_distillation_asks_examples_first
+    stage: "Skill: distillation examples-first"
+    aspect: G
+    expected: >
+      The agent asks for examples (ICL / demonstration or, for rubric assessment,
+      calibration pairs) early to extract format and task criteria, instead of
+      interrogating the user for every detail. `wrong` if it never requests
+      examples and asks for all fields piecemeal.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_confirms_output_format
+    stage: "Skill: distillation format confirmation"
+    aspect: G
+    expected: >
+      The agent extracts/derives the output format and presents a concrete demo of
+      it (placeholder content) for the user to confirm BEFORE building the config.
+      `wrong` if it proceeds to validate_sdg_job without ever showing the output
+      format for confirmation.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_corpus_inferred_silently
+    stage: "Skill: distillation reuses real corpus"
+    aspect: G
+    expected: >
+      When the user's examples reveal an existing corpus of real inputs (a backlog
+      of tickets/RFEs/docs), the agent infers it silently and reuses that corpus —
+      it does NOT ask the user to choose between "generate inputs" vs "use your
+      own". `wrong` if it poses that generate-vs-use question despite a real-input
+      corpus; `n/a` if no real-input corpus is evident.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_teacher_name_verbatim
+    stage: "Skill: distillation teacher name verbatim"
+    aspect: G
+    expected: >
+      Teacher-model options come from list_models and the model `name` string is
+      used verbatim — not shortened, re-prefixed, or otherwise modified (e.g.
+      "openai/openai/gpt-oss-120b" stays intact). Compare the list_models output
+      to the model shown in options/confirmation. `wrong` if the name is altered.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  # -- Training: OSFT (agents/training/skills/knowledge-ingestion/osft/guide.md) --
+  - id: skill_osft_model_from_supported_file
+    stage: "Skill: OSFT model list"
+    aspect: G
+    expected: >
+      The training agent presents ONLY models from skills/training/
+      supported_models.json (it reads that file) and does not invent other sizes
+      or HuggingFace IDs. `wrong` if a presented model is not from that file.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_key_params_in_table
+    stage: "Skill: OSFT confirmation params"
+    aspect: G
+    expected: >
+      The confirmation table shown to the user includes the OSFT-critical
+      parameters the guide says to ALWAYS show — unfreeze_rank_ratio and
+      effective_batch_size — even when at defaults. `wrong` if the confirmation
+      omits unfreeze_rank_ratio or effective_batch_size.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_params_justified
+    stage: "Skill: OSFT param reasoning"
+    aspect: G
+    expected: >
+      The agent justifies its hyperparameter choices to the user (e.g. epochs and
+      learning_rate tied to dataset size and model size, max_length tied to the
+      SDG task) rather than presenting static defaults with no reasoning. `wrong`
+      if values are shown with no rationale.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_single_gpu_no_gpu_question
+    stage: "Skill: OSFT 1-GPU default"
+    aspect: G
+    expected: >
+      The agent uses a single GPU (nproc_per_node 1) and does NOT ask the user how
+      many GPUs they have or offer GPU-count options, per the guide. `wrong` if it
+      asks the user to choose a GPU count.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
