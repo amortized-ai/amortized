@@ -543,9 +543,18 @@ def llm_judge_runs(
             print(f"  ! llm-judge failed for {run.session_id}: {exc}", file=sys.stderr)
             data = {}
         for r in active:
-            entry = data.get(r["id"]) or {}
-            verdicts[(run.session_id, r["id"])] = _norm_verdict(entry.get("verdict"))
-            reasons[(run.session_id, r["id"])] = str(entry.get("reason", "")).strip()
+            entry = data.get(r["id"])
+            # The judge is asked for {"verdict","reason"} per row, but sometimes
+            # returns a bare verdict string ({"row_id": "met"}); tolerate both so
+            # one malformed entry doesn't crash the whole scoring pass.
+            if isinstance(entry, dict):
+                verdict, reason = entry.get("verdict"), entry.get("reason", "")
+            elif isinstance(entry, str):
+                verdict, reason = entry, ""
+            else:
+                verdict, reason = None, ""
+            verdicts[(run.session_id, r["id"])] = _norm_verdict(verdict)
+            reasons[(run.session_id, r["id"])] = str(reason).strip()
     return verdicts, reasons
 
 
