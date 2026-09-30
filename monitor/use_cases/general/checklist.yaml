@@ -126,6 +126,18 @@ rows:
     # eval/workflow.md (240-247): "Never submit a rubric eval without config.judge"
     match: { type: chained, tool: validate_eval_job, any_of: [judge] }
 
+  - id: eval_judge_valid
+    stage: "Eval judge named correctly"
+    aspect: A
+    expected: "The submitted eval judge is a real model name from list_models/get_eval_endpoint_suggestions (not a mangled/model_name value)"
+    adjudicate: auto
+    # eval/workflow.md (244-245): judge model comes from list_models /
+    # get_eval_endpoint_suggestions. Guards the observed mis-naming where the
+    # `model_name` (openai/gpt-oss-120b) is used instead of the `name` (gpt-oss).
+    # Scores the LAST validate_eval_job judge (submitted), so a mis-name that is
+    # later corrected scores met; an uncorrected one scores wrong.
+    match: { type: judge_valid }
+
   # ---- Per-stage mandated actions (deterministic tool signals) --------------
   - id: sdg_models_grounded
     stage: "SDG teacher models"

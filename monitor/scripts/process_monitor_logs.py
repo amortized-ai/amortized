@@ -218,6 +218,29 @@ def _calls(run: Run, tool: str) -> list[dict[str, Any]]:
     return [c for c in run.tool_calls if c.get("tool") == tool]
 
 
+def _catalog_names(run: Run) -> set[str]:
+    """The set of valid model identifiers the eval judge may name, taken from the
+    `name` field of list_models / get_eval_endpoint_suggestions outputs (eval
+    workflow: judge model comes from these). Deliberately the `name`, NOT
+    `model_name`: config.judge.model is the `name` (e.g. "gpt-oss"), and using the
+    `model_name` instead (e.g. "openai/gpt-oss-120b") is exactly the mis-naming
+    this guards — a substring test would let it slip, so match `name` exactly."""
+    names: set[str] = set()
+    for tool in ("list_models", "get_eval_endpoint_suggestions"):
+        for c in _calls(run, tool):
+            try:
+                data = json.loads(c.get("output") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            for key in ("models", "known_endpoints"):
+                for e in data.get(key) or []:
+                    if isinstance(e, dict) and e.get("name"):
+                        names.add(str(e["name"]))
+    return names
+
+
 def _spec_match(call: dict[str, Any], spec: Any) -> bool:
     """A tool_before endpoint is either a bare tool name (str) or a
     ``{tool, where}`` dict that also matches on logged arg fields (e.g. mode)."""
@@ -347,6 +370,22 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
             if c.get("status") == "error":
                 return "wrong"
         return "met"
+
+    if mtype == "judge_valid":
+        # The eval judge model must be a real model name from the catalog
+        # (list_models / get_eval_endpoint_suggestions). We score the LAST
+        # validate_eval_job's `judge` — the submitted config — so a run that
+        # mis-names the judge then corrects it (as the reference did:
+        # openai/gpt-oss-120b -> gpt-oss) scores `met`, while one that leaves an
+        # invalid name scores `wrong`. `judge` is promoted at log time, so no
+        # config-input logging is needed.
+        judges = [c.get("judge") for c in _calls(run, "validate_eval_job") if c.get("judge")]
+        if not judges:
+            return "missed"  # no judge recorded (eval never validated / judge unset)
+        valid = _catalog_names(run)
+        if not valid:
+            return "review"  # catalog not captured -> can't decide, defer
+        return "met" if judges[-1] in valid else "wrong"
 
     return "review"
 
