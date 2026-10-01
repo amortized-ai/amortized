@@ -226,7 +226,7 @@ function renderSplash(state, basePath = '') {
       var baseUrl = el('maasbaseurl').value;
       if (!isValidUrl(baseUrl)) { fe.textContent = 'Enter a valid MaaS base URL (https://…).'; fe.classList.remove('hidden'); return false; }
       if (!key || key.trim().length < 8) { fe.textContent = 'Enter a valid MaaS API key.'; fe.classList.remove('hidden'); return false; }
-      key = JSON.stringify({ baseURL: baseUrl.trim().replace(/\/+$/, ''), apiKey: key.trim() });
+      key = JSON.stringify({ baseURL: baseUrl.trim(), apiKey: key.trim() });
     } else if (!key || key.trim().length < 8) {
       fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false;
     }
