@@ -38,8 +38,6 @@ from amortized.jobs.common import set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.eval")
 
-IMAGE = "ghcr.io/amortized-ai/eval:latest"
-
 _ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 DEFAULT_SERVE_PORT = 8000
@@ -321,6 +319,10 @@ async def build(
     # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
     inject_enabled_provider_keys(env)
 
+    # Eval job image — the tag is configurable (settings.eval_image_tag, default "latest") so a
+    # specific commit can be pinned to test or roll back the eval backend without moving :latest.
+    image = f"{config_mod.settings.image_registry}/eval:{config_mod.settings.eval_image_tag}"
+
     # --- Model under evaluation: embedded serving or external endpoint ---
     has_model_source = bool(
         str(config.get("training_job_id", "")).strip()
@@ -337,7 +339,6 @@ async def build(
             # Embedded vLLM is OpenAI-compatible.
             "provider_type": "openai",
         }
-        image = IMAGE
         # GPU budget like a training job: the pod requests nvidia.com/gpu
         # and the namespace ResourceQuota bounds it.
         resources = Resources(gpus=int(extras.get("gpus", 1)), cpus=4, memory_gb=16)
@@ -369,7 +370,6 @@ async def build(
         model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
         pre_commands = []
         extras = {}
-        image = IMAGE
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
         command = ["python3", "/app/run_eval.py", "--config", "/amortized/config.json"]
 
