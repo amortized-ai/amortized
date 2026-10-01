@@ -57,9 +57,34 @@ async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse
     return PresentOptionsResponse(
         step=body.step,
         question=body.question,
-        options=body.options,
+        options=_dedup_options(body.options),
         rendered=True,
     )
+
+
+def _dedup_options(options: list[OptionItem]) -> list[OptionItem]:
+    """Drop duplicate option cards within a single call.
+
+    A model under protocol stress sometimes lists the same choice twice (same
+    click-text, or same label with cosmetic wording tweaks), which renders as
+    redundant cards the user cannot tell apart. Dedup by the click `value` and by
+    the display `title`, preserving first-seen order, so each distinct choice
+    appears once. (Cross-turn re-asking of an identical option set is a separate,
+    client-side concern — these cards are rendered from the session message
+    history, not this response alone.)
+    """
+    seen_values: set[str] = set()
+    seen_titles: set[str] = set()
+    deduped: list[OptionItem] = []
+    for opt in options:
+        value_key = opt.value.strip().lower()
+        title_key = opt.title.strip().lower()
+        if value_key in seen_values or title_key in seen_titles:
+            continue
+        seen_values.add(value_key)
+        seen_titles.add(title_key)
+        deduped.append(opt)
+    return deduped
 
 
 class ModelPricingItem(BaseModel):

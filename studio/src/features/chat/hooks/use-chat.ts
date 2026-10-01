@@ -245,6 +245,49 @@ function extractPhase(toolResults: ToolResult[]): string | undefined {
   return undefined
 }
 
+// Stable signature of a turn's present_options card: the question plus its option
+// click-values, lowercased and order-independent. null when the turn has no
+// present_options. Lets us tell "the model re-asked the exact same thing" apart
+// from a legitimately different prompt.
+function presentOptionsSignature(toolResults: ToolResult[]): string | null {
+  const tool = toolResults.find((t) => t.name === "present_options")
+  if (!tool?.result) return null
+  try {
+    const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+    if (!parsed?.options || !Array.isArray(parsed.options)) return null
+    const values = (parsed.options as { title?: string; value?: string }[])
+      .map((o) => (o.value ?? o.title ?? "").trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+    if (values.length === 0) return null
+    const question = typeof parsed.question === "string" ? parsed.question.trim().toLowerCase() : ""
+    return `${question}||${values.join("|")}`
+  } catch {
+    return null
+  }
+}
+
+// Morty under protocol stress sometimes re-asks a question it just asked, with the
+// same options, rendering a duplicate card. If this turn's present_options is
+// identical to the previous populated assistant turn's, drop it — the earlier card
+// is still on screen and clickable. Only consecutive repeats are suppressed (a
+// later context change may legitimately re-surface the same choice), and every
+// other tool result (job cards, phase signals) is kept intact.
+function dedupeConsecutiveOptions(convId: string, toolResults: ToolResult[]): ToolResult[] {
+  const sig = presentOptionsSignature(toolResults)
+  if (!sig) return toolResults
+  const msgs = useChatStore.getState().getConversationMessages(convId)
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]!
+    if (m.role !== "assistant") continue
+    // Skip the current turn's empty placeholder assistant message.
+    if (!m.content && (m.toolResults?.length ?? 0) === 0) continue
+    const prevSig = presentOptionsSignature(m.toolResults ?? [])
+    return prevSig === sig ? toolResults.filter((t) => t.name !== "present_options") : toolResults
+  }
+  return toolResults
+}
+
 function startThinkingTimer(
   convId: string,
   setStep: (s: string | null) => void,
@@ -469,16 +512,17 @@ export function useChat() {
         for (const response of pending) {
           const parsed = parseOpenCodeResponse(response)
           const session = extractSessionData([response], parsed.toolResults)
-          const proposedAction = buildProposedAction(session.tools)
+          const pendingToolResults = dedupeConsecutiveOptions(convId, session.tools)
+          const proposedAction = buildProposedAction(pendingToolResults)
 
           addMessage(convId, {
             id: generateId(),
             role: "assistant",
             content: session.text || parsed.content,
             timestamp: new Date().toISOString(),
-            toolResults: session.tools,
+            toolResults: pendingToolResults,
             proposedAction,
-            phase: extractPhase(session.tools),
+            phase: extractPhase(pendingToolResults),
           })
         }
       } catch {
@@ -592,7 +636,7 @@ export function useChat() {
           const parsed = parseOpenCodeResponse(response)
           const sessionMessages = await fetchSessionMessages(convId)
           const session = extractSessionData(sessionMessages, parsed.toolResults)
-          const toolResults = session.tools
+          const toolResults = dedupeConsecutiveOptions(convId, session.tools)
           const responseContent = session.text || parsed.content
 
           if (toolResults.length > 0) {
@@ -808,15 +852,16 @@ export function useChat() {
         const parsed = parseOpenCodeResponse(response)
         const sessionMessages = await fetchSessionMessages(convId)
         const session = extractSessionData(sessionMessages, parsed.toolResults)
+        const notifyToolResults = dedupeConsecutiveOptions(convId, session.tools)
         // A job-finished turn may self-heal and re-validate (e.g. a failed job
         // whose config the agent then fixes), so it can carry a confirmation card.
-        const proposedAction = buildProposedAction(session.tools)
+        const proposedAction = buildProposedAction(notifyToolResults)
 
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
-          toolResults: session.tools,
+          toolResults: notifyToolResults,
           proposedAction,
-          phase: extractPhase(session.tools),
+          phase: extractPhase(notifyToolResults),
         })
 
         _activeRequests.delete(convId)
