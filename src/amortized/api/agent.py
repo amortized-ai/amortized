@@ -725,8 +725,10 @@ async def list_providers() -> dict[str, Any]:
     """Provider catalog + connection status from OpenCode, for the Studio settings/model picker.
 
     Proxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the
-    configured API key into the matching provider entry, so only id/name is surfaced per
-    provider — the key (and every other field) is dropped before it reaches the browser.
+    configured API key into the matching provider entry, so only id/name/models is surfaced per
+    provider — credentials and every other field are dropped before it reaches the browser. The
+    per-provider models (normalized to [{id, name}]) let the picker offer per-user models that
+    aren't in the static Studio catalog (e.g. a BYOK MaaS endpoint).
     """
     empty: dict[str, Any] = {"all": [], "default": {}, "connected": []}
     try:
@@ -742,9 +744,28 @@ async def list_providers() -> dict[str, Any]:
         logger.exception("Bad JSON on GET /provider")
         return empty
     raw_all = data.get("all")
+
+    def _models_for(p: dict[str, Any]) -> list[dict[str, str]]:
+        # OpenCode reports a provider's models as a map (modelId -> info) or a list; normalize to
+        # [{id, name}] so the Studio picker can render per-user models (e.g. a MaaS endpoint whose
+        # models are not in the static catalog). Credentials and other fields are dropped.
+        raw = p.get("models")
+        out: list[dict[str, str]] = []
+        if isinstance(raw, dict):
+            for key, val in raw.items():
+                m = val if isinstance(val, dict) else {}
+                mid = str(m.get("id") or key)
+                if mid:
+                    out.append({"id": mid, "name": str(m.get("name") or mid)})
+        elif isinstance(raw, list):
+            for m in raw:
+                if isinstance(m, dict) and m.get("id"):
+                    out.append({"id": str(m["id"]), "name": str(m.get("name") or m["id"])})
+        return out
+
     safe_all = (
         [
-            {"id": p["id"], "name": p.get("name", p["id"])}
+            {"id": p["id"], "name": p.get("name", p["id"]), "models": _models_for(p)}
             for p in raw_all
             if isinstance(p, dict) and p.get("id")
         ]

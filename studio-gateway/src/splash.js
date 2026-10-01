@@ -5,7 +5,7 @@
 // Continue to provision the stack once with the full set. Polls /gateway/ready
 // and reloads into the studio SPA once ready.
 
-const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)' };
+const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS' };
 
 function renderSplash(state, basePath = '') {
   const st = (state && state.state) || 'provisioning';
@@ -17,7 +17,7 @@ function renderSplash(state, basePath = '') {
   const providerUrl = `${basePath}/gateway/provider`;
   const providers = Array.isArray(state && state.providers) && state.providers.length
     ? state.providers
-    : ['openai', 'anthropic', 'vertex'];
+    : ['openai', 'anthropic', 'vertex', 'maas'];
   const detail = isError
     ? escapeHtml(state.error || 'Provisioning failed.')
     : 'Setting up your isolated workspace (server, database, and compute namespace). This usually takes about a minute on first launch.';
@@ -107,6 +107,8 @@ function renderSplash(state, basePath = '') {
       <div class="configured hidden" id="configured"></div>
       <label for="provider">Provider</label>
       <select id="provider">${options}</select>
+      <label for="maasbaseurl" id="baseurllabel" class="hidden">MaaS base URL</label>
+      <input id="maasbaseurl" class="hidden" type="text" autocomplete="off" spellcheck="false" placeholder="https://maas.example.com/v1" />
       <label for="apikey" id="credlabel">API key</label>
       <input id="apikey" type="password" autocomplete="off" spellcheck="false" placeholder="paste your API key" />
       <textarea id="adcjson" class="hidden" rows="8" autocomplete="off" spellcheck="false" placeholder="paste your Vertex ADC JSON (application_default_credentials.json)"></textarea>
@@ -123,18 +125,23 @@ function renderSplash(state, basePath = '') {
   var RETRY_URL = ${esc(retryUrl)};
   var PROVIDER_URL = ${esc(providerUrl)};
   var LABELS = ${esc(PROVIDER_LABELS)};
-  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.' };
+  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).' };
   var POLL_MS = 2500;
   var CONFIGURED = {};   // provider -> true (added this session / already stored)
   function el(id){ return document.getElementById(id); }
   function show(id, on){ var e = el(id); if (e) e.classList.toggle('hidden', !on); }
   // Vertex is ADC-only: its credential is a JSON blob (textarea), not a key string (input).
   function isAdc(p){ return p === 'vertex'; }
+  // MaaS is OpenAI-compatible BYOK: a base URL + a key (two inputs), combined into a JSON blob.
+  function isOpenAICompat(p){ return p === 'maas'; }
+  function isValidUrl(v){ try { var u = new URL(String(v).trim()); return u.protocol === 'http:' || u.protocol === 'https:'; } catch (e) { return false; } }
   function updateHint(){
     var p = el('provider'); if (!p) return;
     var adc = isAdc(p.value);
+    var compat = isOpenAICompat(p.value);
     show('apikey', !adc); show('adcjson', adc);
-    var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : 'API key';
+    show('maasbaseurl', compat); show('baseurllabel', compat);
+    var lbl = el('credlabel'); if (lbl) lbl.textContent = adc ? 'Vertex ADC JSON' : (compat ? 'MaaS API key' : 'API key');
     el('hint').textContent = HINTS[p.value] || '';
   }
   function renderConfigured(){
@@ -208,12 +215,18 @@ function renderSplash(state, basePath = '') {
     ev.preventDefault();
     var provider = el('provider').value;
     var adc = isAdc(provider);
+    var compat = isOpenAICompat(provider);
     var key = adc ? el('adcjson').value : el('apikey').value;
     var fe = el('formerr'); fe.classList.add('hidden');
     if (adc) {
       var ok = false;
       try { var o = JSON.parse(key); ok = !!o && typeof o === 'object' && !!o.type; } catch (e) { ok = false; }
       if (!ok) { fe.textContent = 'Paste a valid Vertex ADC JSON (a Google credentials file).'; fe.classList.remove('hidden'); return false; }
+    } else if (compat) {
+      var baseUrl = el('maasbaseurl').value;
+      if (!isValidUrl(baseUrl)) { fe.textContent = 'Enter a valid MaaS base URL (https://…).'; fe.classList.remove('hidden'); return false; }
+      if (!key || key.trim().length < 8) { fe.textContent = 'Enter a valid MaaS API key.'; fe.classList.remove('hidden'); return false; }
+      key = JSON.stringify({ baseURL: baseUrl.trim().replace(/\/+$/, ''), apiKey: key.trim() });
     } else if (!key || key.trim().length < 8) {
       fe.textContent = 'Enter a valid API key.'; fe.classList.remove('hidden'); return false;
     }
@@ -233,7 +246,7 @@ function renderSplash(state, basePath = '') {
         } else {
           CONFIGURED[provider] = true;
         }
-        el('apikey').value = ''; el('adcjson').value = '';
+        el('apikey').value = ''; el('adcjson').value = ''; el('maasbaseurl').value = '';
         renderConfigured();
       })
       .catch(function(){ btn.disabled = false; btn.textContent = 'Add provider'; fe.textContent = 'Network error. Try again.'; fe.classList.remove('hidden'); });

@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Plus, Bot, GripVertical } from "lucide-react"
-import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
+import { PROVIDER_CATALOG, encodeModelSelection, type ProviderInfo } from "./models"
 import { useProviderStatus } from "./api/use-providers"
 import { clearConversationSession } from "@/lib/api-client"
 
@@ -103,7 +103,7 @@ export default function ChatPage() {
 
   const { chatModelSelection, setChatModelSelection, enabledProviders, enableNewlyConnected } =
     useSettingsStore()
-  const { connectedProviders } = useProviderStatus()
+  const { connectedProviders, providerCatalog } = useProviderStatus()
 
   const conversationsPanelWidth = useUIStore((s) => s.conversationsPanelWidth)
   const setConversationsPanelWidth = useUIStore((s) => s.setConversationsPanelWidth)
@@ -114,16 +114,30 @@ export default function ChatPage() {
     max: 480,
   })
 
+  // Merge the curated static catalog with any provider OpenCode reports that isn't curated — e.g. a
+  // per-user BYOK MaaS endpoint, whose models are user-specific and so can't be hardcoded. Known
+  // providers keep their curated model lists + labels; a dynamic provider contributes its live models.
+  const mergedCatalog = useMemo(() => {
+    const merged: Record<string, ProviderInfo> = { ...PROVIDER_CATALOG }
+    for (const p of providerCatalog) {
+      if (!p?.id || merged[p.id]) continue
+      const models = (p.models ?? []).map((m) => ({ providerID: p.id, modelID: m.id, label: m.name || m.id }))
+      if (models.length === 0) continue
+      merged[p.id] = { label: p.name || p.id, requiresApiKey: true, models }
+    }
+    return merged
+  }, [providerCatalog])
+
   const activeProviders = useMemo(() => {
-    return Object.entries(PROVIDER_CATALOG)
+    return Object.entries(mergedCatalog)
       .filter(([id]) => enabledProviders.includes(id))
       .map(([id, info]) => ({ providerID: id, ...info }))
-  }, [enabledProviders])
+  }, [mergedCatalog, enabledProviders])
 
   // Providers the backend actually has credentials for, limited to ones we render.
   const connectedKnownProviders = useMemo(
-    () => Object.keys(PROVIDER_CATALOG).filter((id) => connectedProviders.has(id)),
-    [connectedProviders],
+    () => Object.keys(mergedCatalog).filter((id) => connectedProviders.has(id)),
+    [mergedCatalog, connectedProviders],
   )
 
   // Providers the user can actually pick. When connectivity is known, restrict to
