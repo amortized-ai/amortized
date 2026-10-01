@@ -49,7 +49,10 @@ def _load_rows(path: str, text_column: str, label_column: str) -> list[dict]:
         label = r[label_column]
         if label is None or r[text_column] is None:
             continue
-        rows.append({"text": str(r[text_column]), "label": int(label)})
+        # Keep the label as-is — int index OR category string (e.g. "telemetry").
+        # The router groups by label value, so both work; do NOT force int() (the
+        # SDG datasets store string category names).
+        rows.append({"text": str(r[text_column]), "label": label})
     if not rows:
         raise ValueError("eval dataset has no usable (text, label) rows")
     return rows
@@ -83,8 +86,10 @@ def main() -> None:
     output_dir = cfg.get("output_dir", "/amortized/work/results")
     os.makedirs(output_dir, exist_ok=True)
 
-    def name(label: int) -> str:
-        if class_labels and 0 <= label < len(class_labels):
+    def name(label) -> str:
+        # Map an integer index through class_labels when provided; a string
+        # category label (the common case) is already its own display name.
+        if class_labels and isinstance(label, int) and 0 <= label < len(class_labels):
             return str(class_labels[label])
         return str(label)
 
