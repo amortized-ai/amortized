@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import ssl
 import uuid
 from dataclasses import dataclass, field
@@ -396,9 +397,9 @@ async def _record_turn_metrics(
                     # otherwise logged; only record the fields when present/non-empty.
                     inp = _get_tool_input(part)
                     for key in ("parent_job_id", "data_run_id", "eval_data_run_id"):
-                        val = inp.get(key)
-                        if val:
-                            entry[key] = val
+                        cfg_val = inp.get(key)
+                        if cfg_val:
+                            entry[key] = cfg_val
                     # `mode` (preview/create) makes the SDG preview-before-create
                     # ordering checkable offline.
                     mode = inp.get("mode")
@@ -440,6 +441,161 @@ async def _record_turn_metrics(
         )
     except Exception:
         logger.warning("monitor: failed to record turn metrics turn=%s", turn_id, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Anti-fabrication provenance gate
+# ---------------------------------------------------------------------------
+#
+# An identifier the assistant states to the user must have appeared somewhere the
+# model legitimately saw it — a tool result, a system event, a user message, or a
+# delegation handoff. One that appears nowhere in the whole conversation's tool
+# I/O or user/system text is fabricated (the GLM-5.3-flash run invented a job id
+# `a1b2c3d4`, a model `mixtral`, and a `0.92` score — the id was the clean tell).
+#
+# Deliberately conservative: only ID-shaped hex/UUID tokens are checked (not
+# free-form metrics or model names, which cannot be flagged without false
+# positives), a token is grounded by *substring* match (so an abbreviated prefix
+# of a real UUID still passes), and pure-decimal numbers are never treated as
+# identifiers. On a violation we block + force-correct: suppress the message and
+# make the model re-answer grounded; if it still can't, we replace it outright
+# rather than relay an unverified claim.
+
+# UUID, or any hex run of >=8 chars (job/run ids are UUIDs; models often surface a
+# short prefix). Anchored so pure-prose words can't match (hex letters are a-f).
+_ID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}"
+)
+
+
+def _extract_id_candidates(text: str) -> set[str]:
+    out: set[str] = set()
+    for tok in _ID_RE.findall(text.lower()):
+        # Require a hex letter so plain decimal counts / numbers (e.g. "12345678"
+        # records) are never mistaken for identifiers — keeps the gate conservative.
+        if any(c in "abcdef" for c in tok):
+            out.add(tok)
+    return out
+
+
+def _result_text(result: dict[str, Any]) -> str:
+    """The user-facing assistant prose for a turn (what Studio renders)."""
+    return "\n".join(
+        str(p.get("text") or "")
+        for p in result.get("parts", [])
+        if p.get("type") == "text" and (p.get("text") or "").strip()
+    )
+
+
+async def _grounded_corpus(state: SessionState) -> str:
+    """Everything the model legitimately saw this conversation, lowercased.
+
+    Union over every role session of: user/system message text (user input,
+    `[SYSTEM EVENT]`s, and the delegation handoff relayed as user text) plus every
+    tool call's input and output. An id the assistant states that is a substring
+    of this corpus is grounded; one that is not is fabricated.
+    """
+    sessions = {state.orchestrator_id}
+    if state.subagent_id:
+        sessions.add(state.subagent_id)
+    sessions.update(state.completed_subagents.values())
+    sessions.update(sid for _t, sid in state.subagent_stack)
+
+    chunks: list[str] = []
+    for sid in sessions:
+        for msg in await _fetch_all_messages(sid):
+            role = (msg.get("info") or {}).get("role")
+            for part in msg.get("parts") or []:
+                ptype = part.get("type")
+                if role == "user" and ptype == "text":
+                    chunks.append(str(part.get("text") or ""))
+                elif ptype == "tool":
+                    chunks.append(str(_get_tool_input(part)))
+                    part_state = part.get("state")
+                    if isinstance(part_state, dict):
+                        output = part_state.get("output")
+                        if isinstance(output, str):
+                            chunks.append(output)
+    return "\n".join(chunks).lower()
+
+
+# How many times to force-correct a reply that states a fabricated identifier
+# before giving up and replacing it outright. Each attempt re-grounds against a
+# freshly-fetched corpus (a correction may call a tool that surfaces the id for
+# real), so a legitimately-recoverable turn usually self-heals on the first pass.
+MAX_PROVENANCE_RETRIES = 3
+
+
+async def _ungrounded_ids(state: SessionState, result: dict[str, Any]) -> list[str]:
+    """Identifier tokens in the reply that appear nowhere the model could have seen."""
+    candidates = _extract_id_candidates(_result_text(result))
+    if not candidates:
+        return []
+    corpus = await _grounded_corpus(state)
+    return sorted(c for c in candidates if c not in corpus)
+
+
+async def _apply_provenance_gate(
+    state: SessionState,
+    result: dict[str, Any],
+    body: MessageRequest,
+) -> dict[str, Any]:
+    """Block + force-correct fabricated identifiers before they reach the user."""
+    try:
+        violations = await _ungrounded_ids(state, result)
+        if not violations:
+            return result
+
+        active_id = state.subagent_id or state.orchestrator_id
+        agent = state.subagent_target if state.subagent_id else "morty"
+        current = result
+        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
+            logger.warning(
+                "Provenance gate: ungrounded identifier(s) %s session=%s agent=%s "
+                "(correction %d/%d)",
+                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+            )
+            correction = (
+                "[GROUNDING VIOLATION — internal system check, not from the user]\n"
+                "Your previous reply stated identifier(s) that appear in NO tool result, "
+                f"system event, or user message in this conversation: {', '.join(violations)}.\n"
+                "Do NOT invent job IDs, run IDs, dataset IDs, model names, or metrics. "
+                "Re-send your reply to the user using ONLY values that came from a tool "
+                "result in this session. If you do not have a real value, do not state "
+                "one — call the appropriate tool to fetch it first, or tell the user you "
+                "don't have it yet."
+            )
+            current = await _proxy_send_message(
+                active_id, correction, agent=agent, model=body.model
+            )
+            # Re-ground each attempt: a correction may call a tool that now surfaces
+            # the id legitimately.
+            violations = await _ungrounded_ids(state, current)
+            if not violations:
+                return current
+
+        # Exhausted every retry and the model still fabricates — block outright
+        # rather than relay an unverified claim.
+        logger.warning(
+            "Provenance gate: still ungrounded after %d corrections %s session=%s",
+            MAX_PROVENANCE_RETRIES, violations, active_id,
+        )
+        return {
+            "info": current.get("info", result.get("info", {})),
+            "parts": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Sorry — I don't have verified details for that yet. "
+                        "Let me pull the latest from the platform before I give "
+                        "you specifics."
+                    ),
+                }
+            ],
+        }
+    except Exception:
+        logger.warning("Provenance gate failed (passing through)", exc_info=True)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +818,7 @@ async def _run_turn(
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
+            result = await _apply_provenance_gate(state, result, body)
         if turn:
             turn.result = result
     except httpx.HTTPStatusError as exc:

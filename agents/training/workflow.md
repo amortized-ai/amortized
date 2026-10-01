@@ -1,3 +1,11 @@
+---
+# Role-scoped tools: the training subagent may validate ONLY training jobs.
+# SDG/eval validation belongs to their own subagents (enforced, not just prose).
+tools:
+  amortized_validate_sdg_job: false
+  amortized_validate_eval_job: false
+---
+
 # Training Workflow
 
 ## Identity
