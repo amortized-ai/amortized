@@ -114,18 +114,20 @@ export default function ChatPage() {
     max: 480,
   })
 
-  // Merge the curated static catalog with any provider OpenCode reports that isn't curated — e.g. a
-  // per-user BYOK MaaS endpoint, whose models are user-specific and so can't be hardcoded. Known
-  // providers keep their curated model lists + labels; a dynamic provider contributes its live models.
+  // Build the picker from OpenCode's live, capability-filtered catalog (per connected provider), so
+  // models are never a stale hardcoded list — a new OpenAI/Anthropic/MaaS model appears as soon as the
+  // provider serves it, with no code change. OpenCode's own model id is used verbatim (it already
+  // carries variant suffixes where needed, e.g. vertex `...@default`). The curated static catalog is
+  // only a label hint + an offline fallback (used when /agent/provider is unreachable).
   const mergedCatalog = useMemo(() => {
-    const merged: Record<string, ProviderInfo> = { ...PROVIDER_CATALOG }
+    const merged: Record<string, ProviderInfo> = {}
     for (const p of providerCatalog) {
-      if (!p?.id || merged[p.id]) continue
+      if (!p?.id) continue
       const models = (p.models ?? []).map((m) => ({ providerID: p.id, modelID: m.id, label: m.name || m.id }))
       if (models.length === 0) continue
-      merged[p.id] = { label: p.name || p.id, requiresApiKey: true, models }
+      merged[p.id] = { label: PROVIDER_CATALOG[p.id]?.label || p.name || p.id, requiresApiKey: true, models }
     }
-    return merged
+    return Object.keys(merged).length > 0 ? merged : { ...PROVIDER_CATALOG }
   }, [providerCatalog])
 
   const activeProviders = useMemo(() => {

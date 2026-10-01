@@ -722,13 +722,14 @@ async def get_pending(session_id: str) -> dict[str, Any]:
 
 @router.get("/provider")
 async def list_providers() -> dict[str, Any]:
-    """Provider catalog + connection status from OpenCode, for the Studio settings/model picker.
+    """Provider catalog + connection status from OpenCode, for the Studio model picker.
 
-    Proxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the
-    configured API key into the matching provider entry, so only id/name/models is surfaced per
-    provider — credentials and every other field are dropped before it reaches the browser. The
-    per-provider models (normalized to [{id, name}]) let the picker offer per-user models that
-    aren't in the static Studio catalog (e.g. a BYOK MaaS endpoint).
+    Proxies OpenCode's ``/provider`` ({all, default, connected}) and reduces it to what the chat
+    picker needs: only the ``connected`` providers (those with credentials — ``all`` is the entire
+    models.dev catalog of ~225 providers / thousands of models, far too big to ship), each with its
+    chat-usable models (normalized to [{id, name}]). "Chat-usable" is judged purely by OpenCode's
+    capability flags (emits text + supports tool calls), so the filter is provider-agnostic and new
+    models appear automatically. Credentials and all other fields are dropped before the browser.
     """
     empty: dict[str, Any] = {"all": [], "default": {}, "connected": []}
     try:
@@ -744,40 +745,50 @@ async def list_providers() -> dict[str, Any]:
         logger.exception("Bad JSON on GET /provider")
         return empty
     raw_all = data.get("all")
+    connected_raw = data.get("connected")
+    connected = (
+        [c for c in connected_raw if isinstance(c, str)]
+        if isinstance(connected_raw, list)
+        else []
+    )
+    connected_set = set(connected)
 
-    def _models_for(p: dict[str, Any]) -> list[dict[str, str]]:
-        # OpenCode reports a provider's models as a map (modelId -> info) or a list; normalize to
-        # [{id, name}] so the Studio picker can render per-user models (e.g. a MaaS endpoint whose
-        # models are not in the static catalog). Credentials and other fields are dropped.
+    def _chat_models(p: dict[str, Any]) -> list[dict[str, str]]:
+        # Chat-usable models only, via OpenCode's own capability flags (provider-agnostic, no
+        # per-provider/name rules): must emit text AND support tool calls (Morty is an agent).
+        # Drops embeddings/image/audio uniformly; new models appear automatically (models.dev).
         raw = p.get("models")
-        out: list[dict[str, str]] = []
         if isinstance(raw, dict):
-            for key, val in raw.items():
-                m = val if isinstance(val, dict) else {}
-                mid = str(m.get("id") or key)
-                if mid:
-                    out.append({"id": mid, "name": str(m.get("name") or mid)})
+            items = list(raw.values())
         elif isinstance(raw, list):
-            for m in raw:
-                if isinstance(m, dict) and m.get("id"):
-                    out.append({"id": str(m["id"]), "name": str(m.get("name") or m["id"])})
+            items = raw
+        else:
+            items = []
+        out: list[dict[str, str]] = []
+        for m in items:
+            if not isinstance(m, dict) or not m.get("id"):
+                continue
+            cap = m.get("capabilities")
+            cap = cap if isinstance(cap, dict) else {}
+            out_mods = cap.get("output")
+            out_mods = out_mods if isinstance(out_mods, dict) else {}
+            if not (out_mods.get("text") and cap.get("toolcall")):
+                continue
+            out.append({"id": str(m["id"]), "name": str(m.get("name") or m["id"])})
         return out
 
+    # Scope to providers the user has credentials for (`connected`): `all` is the full models.dev
+    # catalog (hundreds of providers), too big to ship; the picker only shows connected anyway.
     safe_all = (
         [
-            {"id": p["id"], "name": p.get("name", p["id"]), "models": _models_for(p)}
+            {"id": p["id"], "name": p.get("name", p["id"]), "models": _chat_models(p)}
             for p in raw_all
-            if isinstance(p, dict) and p.get("id")
+            if isinstance(p, dict) and p.get("id") and p["id"] in connected_set
         ]
         if isinstance(raw_all, list)
         else []
     )
-    connected = data.get("connected")
-    return {
-        "all": safe_all,
-        "default": {},
-        "connected": connected if isinstance(connected, list) else [],
-    }
+    return {"all": safe_all, "default": {}, "connected": connected}
 
 
 @router.post("/title")
