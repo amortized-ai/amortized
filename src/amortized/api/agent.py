@@ -759,6 +759,14 @@ async def list_providers() -> dict[str, Any]:
     )
     connected_set = set(connected)
 
+    # Access-filter: a provider's own /v1/models = what the user's key can actually use
+    # (OpenCode's /provider is the whole models.dev catalog). Intersecting drops models the
+    # key isn't entitled to. Providers with no server key (vertex ADC) are absent here and
+    # left unfiltered; an empty intersection (differing id conventions) also stays unfiltered.
+    from amortized.core.model_catalog import accessible_model_ids
+
+    access = await accessible_model_ids()
+
     def _chat_models(p: dict[str, Any]) -> list[dict[str, str]]:
         # Chat-usable models only, via OpenCode's own capability flags (provider-agnostic, no
         # per-provider/name rules): must emit text AND support tool calls (Morty is an agent).
@@ -781,6 +789,14 @@ async def list_providers() -> dict[str, Any]:
             if not (out_mods.get("text") and cap.get("toolcall")):
                 continue
             out.append({"id": str(m["id"]), "name": str(m.get("name") or m["id"])})
+        # Keep only models the user's key can reach (its own /v1/models). Fall back to the full list
+        # when there's no access list for this provider, or the intersection is empty (its id
+        # convention differs from models.dev) — never hide everything.
+        allowed = access.get(str(p.get("id") or ""))
+        if allowed:
+            filtered = [m for m in out if m["id"] in allowed]
+            if filtered:
+                out = filtered
         return out
 
     # Scope to providers the user has credentials for (`connected`): `all` is the full models.dev

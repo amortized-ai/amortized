@@ -231,6 +231,27 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
         return cached[1] if cached else []
 
 
+async def accessible_model_ids() -> dict[str, set[str]]:
+    """``{provider_name: {raw model ids the configured key can access}}`` — pulled from each enabled
+    provider's OWN ``/v1/models`` (not models.dev), so the set reflects real entitlement.
+
+    Used to access-filter the Morty picker: intersect OpenCode's resolvable catalog with this so a
+    model the user's key can't actually use never shows. Best-effort + cached per provider (see
+    :func:`_fetch_provider_models`); a provider that can't be reached yields an empty set, and
+    callers fall back to the unfiltered list rather than hiding everything.
+    """
+    defs = enabled_provider_defs()
+    if not defs:
+        return {}
+    fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
+    out: dict[str, set[str]] = {}
+    for pdef, ids in zip(defs, fetched, strict=True):
+        name = pdef.get("name", "")
+        if name:
+            out[name] = set(ids)
+    return out
+
+
 async def available_models() -> list[tuple[str, str]]:
     """``(provider, model_id)`` chat models pulled live from each key-enabled provider's
     ``/v1/models`` — the dynamic replacement for the static data-designer catalog.
