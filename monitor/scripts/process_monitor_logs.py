@@ -218,6 +218,29 @@ def _calls(run: Run, tool: str) -> list[dict[str, Any]]:
     return [c for c in run.tool_calls if c.get("tool") == tool]
 
 
+def _catalog_names(run: Run) -> set[str]:
+    """The set of valid model identifiers the eval judge may name, taken from the
+    `name` field of list_models / get_eval_endpoint_suggestions outputs (eval
+    workflow: judge model comes from these). Deliberately the `name`, NOT
+    `model_name`: config.judge.model is the `name` (e.g. "gpt-oss"), and using the
+    `model_name` instead (e.g. "openai/gpt-oss-120b") is exactly the mis-naming
+    this guards — a substring test would let it slip, so match `name` exactly."""
+    names: set[str] = set()
+    for tool in ("list_models", "get_eval_endpoint_suggestions"):
+        for c in _calls(run, tool):
+            try:
+                data = json.loads(c.get("output") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            for key in ("models", "known_endpoints"):
+                for e in data.get(key) or []:
+                    if isinstance(e, dict) and e.get("name"):
+                        names.add(str(e["name"]))
+    return names
+
+
 def _spec_match(call: dict[str, Any], spec: Any) -> bool:
     """A tool_before endpoint is either a bare tool name (str) or a
     ``{tool, where}`` dict that also matches on logged arg fields (e.g. mode)."""
@@ -348,12 +371,60 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
                 return "wrong"
         return "met"
 
+    if mtype == "judge_valid":
+        # The eval judge model must be a real model name from the catalog
+        # (list_models / get_eval_endpoint_suggestions). We score the LAST
+        # validate_eval_job's `judge` — the submitted config — so a run that
+        # mis-names the judge then corrects it (as the reference did:
+        # openai/gpt-oss-120b -> gpt-oss) scores `met`, while one that leaves an
+        # invalid name scores `wrong`. `judge` is promoted at log time, so no
+        # config-input logging is needed.
+        judges = [c.get("judge") for c in _calls(run, "validate_eval_job") if c.get("judge")]
+        if not judges:
+            return "missed"  # no judge recorded (eval never validated / judge unset)
+        valid = _catalog_names(run)
+        if not valid:
+            return "review"  # catalog not captured -> can't decide, defer
+        return "met" if judges[-1] in valid else "wrong"
+
     return "review"
+
+
+def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
+    """Evaluate a row-level `requires` precondition against the run. A row whose
+    precondition is unmet scores `n/a` and (for llm_judge rows) is not sent to
+    the judge — used to gate skill-adherence rows to runs where that sub-skill
+    was actually loaded, so a classification run doesn't get judged against the
+    task-distillation guide.
+
+    Currently supports `type: skill_loaded` — a `read` whose output echoes the
+    guide path (`path_contains`), optionally scoped to a subagent `role` (the
+    sub-skills belong to subagents, so role-scoping disambiguates which agent
+    loaded which guide). Reuses the same read/output_contains detection as the
+    auto `skill_loaded` mechanic rows. Unknown types don't gate (return True)."""
+    if not requires:
+        return True
+    if requires.get("type") == "skill_loaded":
+        role = requires.get("role")
+        needle = requires.get("path_contains")
+        for c in run.tool_calls:
+            if c.get("tool") != "read":
+                continue
+            if role and c.get("role") != role:
+                continue
+            if needle and needle not in (c.get("output") or ""):
+                continue
+            return True
+        return False
+    return True  # unknown precondition -> do not gate
 
 
 def score_run(run: Run, checklist: dict[str, Any]) -> dict[str, str]:
     result: dict[str, str] = {}
     for row in checklist["rows"]:
+        if not _requires_met(run, row.get("requires")):
+            result[row["id"]] = "n/a"  # precondition absent -> row doesn't apply
+            continue
         mode = row.get("adjudicate", "human")
         if mode == "auto" and row.get("match"):
             result[row["id"]] = score_auto(run, row["match"])
@@ -402,7 +473,13 @@ _JUDGE_SYSTEM = (
     '"unknown" (the transcript lacks the evidence to decide — e.g. the assistant '
     "messages were not captured). Prefer \"unknown\" over guessing. For grounding "
     "rows, a claim is grounded only if the cited ids/numbers actually appear in a "
-    "tool output. Respond with ONLY a JSON object mapping each row_id to "
+    "tool output.\n"
+    "For rows about a specific workflow step: if the run ended before that step "
+    "could occur (it was abandoned or errored out earlier in the pipeline), answer "
+    '"n/a" — do NOT penalise a step the run never reached. Reserve "wrong" for a '
+    "step the run actually reached but did incorrectly, or clearly skipped despite "
+    "progressing past the point where it should have happened.\n"
+    "Respond with ONLY a JSON object mapping each row_id to "
     '{"verdict": <one of the four>, "reason": "<=200 chars"}. No prose outside JSON.'
 )
 
@@ -489,18 +566,34 @@ def llm_judge_runs(
     if not rows:
         return verdicts, reasons
     call = _make_judge_call(model)
-    rubric = json.dumps([{"row_id": r["id"], "expected": r["expected"]} for r in rows], indent=2)
     for run in runs:
+        # Only judge rows whose precondition holds for this run; gated-out rows
+        # keep the `n/a` score_run already assigned (skill not loaded here).
+        active = [r for r in rows if _requires_met(run, r.get("requires"))]
+        if not active:
+            continue
+        rubric = json.dumps(
+            [{"row_id": r["id"], "expected": r["expected"]} for r in active], indent=2
+        )
         prompt = f"RUBRIC (judge each row_id):\n{rubric}\n\nTRANSCRIPT:\n{_judge_evidence(run)}"
         try:
             data = _parse_judge_json(call(_JUDGE_SYSTEM, prompt))
         except Exception as exc:  # noqa: BLE001 - report and leave rows as review
             print(f"  ! llm-judge failed for {run.session_id}: {exc}", file=sys.stderr)
             data = {}
-        for r in rows:
-            entry = data.get(r["id"]) or {}
-            verdicts[(run.session_id, r["id"])] = _norm_verdict(entry.get("verdict"))
-            reasons[(run.session_id, r["id"])] = str(entry.get("reason", "")).strip()
+        for r in active:
+            entry = data.get(r["id"])
+            # The judge is asked for {"verdict","reason"} per row, but sometimes
+            # returns a bare verdict string ({"row_id": "met"}); tolerate both so
+            # one malformed entry doesn't crash the whole scoring pass.
+            if isinstance(entry, dict):
+                verdict, reason = entry.get("verdict"), entry.get("reason", "")
+            elif isinstance(entry, str):
+                verdict, reason = entry, ""
+            else:
+                verdict, reason = None, ""
+            verdicts[(run.session_id, r["id"])] = _norm_verdict(verdict)
+            reasons[(run.session_id, r["id"])] = str(reason).strip()
     return verdicts, reasons
 
 
@@ -522,8 +615,12 @@ def _fmt(value: Any, kind: str) -> str:
 
 
 def print_per_run(
-    runs: list[Run], scores: dict[str, dict[str, str]], checklist: dict[str, Any]
+    runs: list[Run],
+    scores: dict[str, dict[str, str]],
+    checklist: dict[str, Any],
+    reasons: dict[tuple[str, str], str] | None = None,
 ) -> None:
+    reasons = reasons or {}
     print("## Per-run\n")
     for run in runs:
         sc = scores[run.session_id]
@@ -540,7 +637,12 @@ def print_per_run(
             f"max {_fmt(run.max_latency_s, 's')}   (send received -> response ready, per message)"
         )
         for row in checklist["rows"]:
-            print(f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} — {row['stage']}")
+            reason = reasons.get((run.session_id, row["id"]), "")
+            suffix = f"  |  {reason}" if reason else ""
+            print(
+                f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} "
+                f"— {row['stage']}{suffix}"
+            )
         print()
 
 
@@ -609,23 +711,6 @@ def print_comparison(
 # --------------------------------------------------------------------------- #
 
 
-def print_judge_rationale(
-    runs: list[Run],
-    checklist: dict[str, Any],
-    scores: dict[str, dict[str, str]],
-    reasons: dict[tuple[str, str], str],
-    model: str,
-) -> None:
-    rows = [r for r in checklist["rows"] if r.get("adjudicate") == "llm_judge"]
-    print(f"\n## LLM-judge rationale  (model: `{model}`)")
-    for run in runs:
-        print(f"\n### {run.session_id}")
-        for r in rows:
-            status = scores[run.session_id].get(r["id"], "review")
-            reason = reasons.get((run.session_id, r["id"]), "")
-            print(f"- [{status:>6}] {r['id']} — {reason or '(no reason)'}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("log_dir", type=Path, help="Directory of <session>.jsonl monitor logs")
@@ -675,9 +760,7 @@ def main() -> None:
                 if key in overrides:
                     scores[run.session_id][row["id"]] = overrides[key]
 
-    print_per_run(runs, scores, checklist)
-    if judge_reasons:
-        print_judge_rationale(runs, checklist, scores, judge_reasons, args.judge_model)
+    print_per_run(runs, scores, checklist, judge_reasons)
     print_comparison(runs, scores, checklist)
 
 

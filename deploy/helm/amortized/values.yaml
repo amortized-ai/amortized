@@ -28,17 +28,20 @@ security:
 
 # Container images for the application components.
 images:
+  # 0.2.1 is a PINNED/frozen release: server + studio are locked to sha-6e09476
+  # (the build that includes the greenlet fix, #472). Bump these deliberately per
+  # release; the moving 0.2.0/:latest chart is unchanged for bleeding-edge installs.
   server:
     repository: ghcr.io/amortized-ai/amortized
-    tag: latest
-    pullPolicy: ""        # empty => Kubernetes default (Always for :latest)
+    tag: sha-6e09476      # pinned; K8s default pullPolicy for a non-latest tag is IfNotPresent
+    pullPolicy: ""
   studio:
     repository: ghcr.io/amortized-ai/studio
-    tag: latest
+    tag: sha-6e09476      # pinned
     pullPolicy: ""
   opencode:
     repository: ghcr.io/anomalyco/opencode
-    tag: latest
+    tag: latest           # third-party (anomalyco); publishes only :latest, so not sha-pinned here
     pullPolicy: Always    # matches the base manifest
 
 server:

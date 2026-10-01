@@ -57,7 +57,7 @@ at the **same Vertex project Morty uses** (from the `opencode-llm` secret), plus
 export ANTHROPIC_VERTEX_PROJECT_ID=<VERTEX_PROJECT>   # must have access to the model
 export CLOUD_ML_REGION=<VERTEX_REGION>
 uv run --extra monitor python monitor/scripts/process_monitor_logs.py ./monitor-logs \
-    --use-case general --llm-judge    # also prints an "LLM-judge rationale" section
+    --use-case general --llm-judge    # judge verdict + reason shown inline per row in Per-run
 ```
 
 ### 4. (optional) Adjudicate by hand
