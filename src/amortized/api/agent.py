@@ -302,6 +302,35 @@ async def _proxy_create_session() -> str:
     return str(data["id"])
 
 
+class AgentTurnError(Exception):
+    """A provider/model error during a turn, already mapped to a user-facing message."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def _friendly_provider_error(raw: str, name: str = "") -> str:
+    """Map a raw provider/opencode error to a short, user-facing chat message. Falls back to the
+    raw text (capped) so an unmapped error is still more useful than a generic one."""
+    text = f"{raw} {name}".lower()
+    if "tool" in text and ("choice" in text or "parser" in text or "enable-auto-tool" in text):
+        return (
+            "This model's server doesn't have tool-calling enabled, which Morty needs. "
+            "Pick a tool-calling-capable model."
+        )
+    auth = ("providerautherror", "unauthorized", "forbidden", "permission", "invalid api key")
+    missing = ("not found", "does not exist", "providermodelnotfound", "no such model")
+    limited = ("rate limit", "too many requests", "quota")
+    if any(s in text for s in auth):
+        return "That model isn't available with your API key or project (auth/permission)."
+    if any(s in text for s in missing):
+        return "That model isn't available on this provider/endpoint."
+    if any(s in text for s in limited):
+        return "The provider is rate-limiting or out of quota — try again shortly."
+    return (raw or "").strip()[:180] or "The model provider returned an error."
+
+
 async def _proxy_send_message(
     session_id: str,
     text: str,
@@ -319,6 +348,15 @@ async def _proxy_send_message(
     )
     resp.raise_for_status()
     result: dict[str, Any] = resp.json()
+    # OpenCode returns provider/generation errors as HTTP 200 with the error on the assistant
+    # message (info.error) — surface it, else the turn looks blank/successful to the user.
+    info = result.get("info")
+    err = info.get("error") if isinstance(info, dict) else None
+    if isinstance(err, dict):
+        data = err.get("data")
+        data = data if isinstance(data, dict) else {}
+        raw = str(data.get("message") or "")
+        raise AgentTurnError(_friendly_provider_error(raw, str(err.get("name") or "")))
     return result
 
 
@@ -483,6 +521,11 @@ async def _run_turn(
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
         if turn:
             turn.result = result
+    except AgentTurnError as exc:
+        logger.warning("Agent turn provider error: session=%s turn=%s", session_id, turn_id)
+        if turn:
+            turn.error = str(exc)
+            turn.error_status = exc.status
     except httpx.HTTPStatusError as exc:
         logger.warning("Agent turn upstream error: session=%s turn=%s", session_id, turn_id)
         if turn:
