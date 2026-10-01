@@ -3,10 +3,13 @@
 This MLflow distribution has no AI Gateway, so instead of routing through it we use
 providers directly via dropped-in API keys. Data-designer ships a builtin provider
 catalog whose ``api_key`` is an env-var *name* resolved at runtime; we surface the
-providers whose key is set on the server. The same catalog drives two things, so
-they always agree:
+providers whose key is set on the server, plus a native Anthropic provider and a BYOK
+MaaS endpoint the builtin catalog lacks. That provider set drives two things:
 
-- ``list_models`` (what Morty can pick), via :func:`enabled_models`.
+- ``list_models`` — the SDG-teacher + eval-judge choices — via :func:`available_models`
+  (pulled live from each provider's ``/v1/models``), falling back to the static
+  :func:`enabled_models`. (Morty's chat picker is separate: it reads OpenCode's
+  ``/provider``; see :mod:`amortized.api.agent`.)
 - the ``model_providers.yaml`` written into each SDG job pod (so data-designer can
   actually reach the provider), via :func:`enabled_provider_defs`.
 
