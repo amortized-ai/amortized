@@ -720,6 +720,12 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     return result
 
 
+# OpenCode bundles a built-in "opencode" provider (its hosted "Zen" free models) that is always
+# "connected" even though the user never configured it — and in this deployment the sandbox egress
+# only allows the user's own providers, so those models aren't reachable. Hide it from the picker.
+_SUPPRESSED_PROVIDERS = frozenset({"opencode"})
+
+
 @router.get("/provider")
 async def list_providers() -> dict[str, Any]:
     """Provider catalog + connection status from OpenCode, for the Studio model picker.
@@ -747,7 +753,7 @@ async def list_providers() -> dict[str, Any]:
     raw_all = data.get("all")
     connected_raw = data.get("connected")
     connected = (
-        [c for c in connected_raw if isinstance(c, str)]
+        [c for c in connected_raw if isinstance(c, str) and c not in _SUPPRESSED_PROVIDERS]
         if isinstance(connected_raw, list)
         else []
     )
