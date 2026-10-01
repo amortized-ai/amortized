@@ -48,6 +48,8 @@ MAX_PARALLEL = 16
 REQUEST_TIMEOUT = 300.0
 MAX_RETRIES = 3
 SCORE_SCALE = 10  # judge scores each criterion 0..SCORE_SCALE; reported /SCALE
+# Anthropic Messages API version header (stable); mirrors Data Designer's anthropic adapter.
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 def load_records(eval_data_path: str) -> list[dict[str, Any]]:
@@ -152,6 +154,92 @@ async def chat_completion(
     raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
 
 
+async def anthropic_messages(
+    client: httpx.AsyncClient,
+    endpoint: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    api_key: str,
+) -> str:
+    """Call Anthropic's native Messages API — the paradigm Data Designer uses for
+    provider_type 'anthropic', so an Anthropic judge/model works identically to the SDG
+    teacher. OpenAI-style messages are adapted: `system` turns are hoisted into the
+    top-level ``system`` field; the rest stay as user/assistant turns."""
+    base = endpoint["base_url"].rstrip("/")
+    url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
+    system = "\n\n".join(
+        str(m.get("content", "")) for m in messages if m.get("role") == "system"
+    )
+    turns = [
+        {"role": m["role"], "content": str(m.get("content", ""))}
+        for m in messages
+        if m.get("role") in ("user", "assistant")
+    ]
+    body: dict[str, Any] = {
+        "model": endpoint["model"],
+        "max_tokens": max_tokens,
+        "messages": turns,
+        "temperature": temperature,
+    }
+    if system:
+        body["system"] = system
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            parts = data.get("content") or []
+            return "\n".join(
+                str(p.get("text", ""))
+                for p in parts
+                if isinstance(p, dict) and p.get("type") == "text"
+            )
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(2.0 * (attempt + 1))
+    raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
+
+
+async def call_model(
+    client: httpx.AsyncClient,
+    endpoint: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    api_key: str,
+) -> str:
+    """Dispatch to the provider's calling paradigm — Anthropic Messages for
+    provider_type 'anthropic', OpenAI chat/completions otherwise (openai + any
+    OpenAI-compatible endpoint, e.g. MaaS/vLLM) — so the eval runner supports exactly
+    the providers Data Designer (the SDG teacher) does."""
+    if endpoint.get("provider_type") == "anthropic":
+        return await anthropic_messages(
+            client,
+            endpoint,
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=api_key,
+        )
+    return await chat_completion(
+        client,
+        endpoint,
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_key=api_key,
+    )
+
+
 async def eval_endpoint(
     client: httpx.AsyncClient,
     endpoint: dict[str, Any],
@@ -164,7 +252,7 @@ async def eval_endpoint(
     async def run_one(sample: dict[str, Any]) -> dict[str, Any]:
         async with semaphore:
             try:
-                output = await chat_completion(
+                output = await call_model(
                     client,
                     endpoint,
                     sample["prompt"],
@@ -239,7 +327,7 @@ async def score_one(
     )
     names = [c["name"] for c in rubric]
     try:
-        raw = await chat_completion(
+        raw = await call_model(
             client,
             judge,
             [

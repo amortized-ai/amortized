@@ -44,6 +44,8 @@ _NON_CHAT_MARKERS = (
     "sdxl",
 )
 _MODELS_TTL_SECONDS = 300
+# Anthropic authenticates with x-api-key + this version header (not OpenAI's Bearer).
+_ANTHROPIC_VERSION = "2023-06-01"
 # provider name -> (fetched_at_monotonic, raw model ids). Per-provider so one slow/broken
 # provider never blocks or drops the others.
 _models_cache: dict[str, tuple[float, list[str]]] = {}
@@ -77,9 +79,24 @@ def _maas_provider_def() -> dict[str, str] | None:
     }
 
 
+def _anthropic_provider_def() -> dict[str, str] | None:
+    """A native Anthropic provider. Data Designer ships the anthropic *adapter* but no
+    predefined anthropic provider, so we register one when ``ANTHROPIC_API_KEY`` is set —
+    unlocking Claude as an SDG teacher + eval judge (not just Morty chat). ``provider_type``
+    'anthropic' routes DD's AnthropicClient and the eval runner to the Messages API."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    return {
+        "name": "anthropic",
+        "endpoint": "https://api.anthropic.com/v1",
+        "provider_type": "anthropic",
+        "api_key": "ANTHROPIC_API_KEY",
+    }
+
+
 def enabled_provider_defs() -> list[dict[str, str]]:
     """Providers whose API key is configured on the server: the builtin data-designer
-    catalog plus a BYOK MaaS endpoint (when configured).
+    catalog plus a native Anthropic provider and a BYOK MaaS endpoint (when configured).
 
     Returns provider dicts (name/endpoint/provider_type/api_key) ready to serialize
     into a data-designer ``model_providers.yaml``. ``api_key`` stays the env-var name
@@ -95,9 +112,13 @@ def enabled_provider_defs() -> list[dict[str, str]]:
     except Exception:
         logger.warning("data-designer provider catalog unavailable", exc_info=True)
 
-    maas = _maas_provider_def()
-    if maas:
-        defs.append(maas)
+    # Inject providers DD's builtin catalog lacks (it ships only openai-type providers): a native
+    # Anthropic provider and a BYOK MaaS endpoint, each when its key is configured. Skip any whose
+    # name a DD builtin already supplied, so a future DD catalog update wins without duplicating.
+    names = {d.get("name") for d in defs}
+    for extra in (_anthropic_provider_def(), _maas_provider_def()):
+        if extra and extra["name"] not in names:
+            defs.append(extra)
     return defs
 
 
@@ -191,9 +212,15 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
         return cached[1] if cached else []
 
     url = f"{endpoint}/models"
+    # Anthropic authenticates with x-api-key + a version header (not OpenAI's Bearer); its
+    # /v1/models returns the same {"data": [{"id": ...}]} shape, so only the headers differ.
+    if pdef.get("provider_type") == "anthropic":
+        headers = {"x-api-key": key, "anthropic-version": _ANTHROPIC_VERSION}
+    else:
+        headers = {"Authorization": f"Bearer {key}"}
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers={"Authorization": f"Bearer {key}"})
+            resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json().get("data", [])
         ids = [str(m.get("id", "")) for m in data if m.get("id")]

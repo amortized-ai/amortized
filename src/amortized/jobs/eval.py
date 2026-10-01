@@ -62,10 +62,14 @@ def _endpoint_spec(
     # A base_url that names an enabled provider (e.g. "openai") resolves to that
     # provider's real endpoint + its injected key env-var — the same catalog SDG
     # uses — so a BYOK-stripped judge/endpoint still authenticates with the
-    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...).
+    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). The
+    # provider_type (openai|anthropic) selects the runner's calling paradigm so the
+    # judge supports exactly what the SDG teacher does (incl. native Anthropic).
+    provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
+        provider_type = provider.get("provider_type") or "openai"
         if not api_key:
             env_name = provider.get("api_key", env_name)
     if api_key:
@@ -74,6 +78,7 @@ def _endpoint_spec(
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
         "api_key_env": env_name,
+        "provider_type": provider_type,
     }
 
 
@@ -329,6 +334,8 @@ async def build(
             "base_url": f"http://localhost:{extras['port']}/v1",
             "model": extras["served_model_name"],
             "api_key_env": "EVAL_MODEL_API_KEY",
+            # Embedded vLLM is OpenAI-compatible.
+            "provider_type": "openai",
         }
         image = IMAGE
         # GPU budget like a training job: the pod requests nvidia.com/gpu
