@@ -187,11 +187,11 @@ rows:
   - id: eval_phase_signaled
     stage: "Progress: eval phase"
     aspect: B
-    expected: "The eval stage signals phase=eval so the UI shows Evaluation (not a stuck Training bar)"
+    expected: "The eval stage signals its own phase (eval), so the progress UI reflects the current stage"
     adjudicate: auto
-    # eval/workflow.md Progress Signal + ui.py signal_phase. Guards the observed
-    # bug where eval signalled phase=training. n/a when there is no eval stage;
-    # review when the log predates phase capture.
+    # eval/workflow.md Progress Signal + ui.py signal_phase: each stage must
+    # signal its own phase so the UI tracks the live stage. n/a when there is no
+    # eval stage; review when the log predates phase capture.
     match: { type: eval_phase }
 
   - id: sdg_skill_loaded
