@@ -309,6 +309,7 @@ async def _classification_training_run_id(training_job_id: str) -> str:
     """Resolve the MLflow run id of a completed training job."""
     from amortized.db.connection import get_pool
     from amortized.db.repository import Repository
+    from amortized.models import JobStatus
 
     async with get_pool().acquire() as conn:
         parent = await Repository(conn).get_job(training_job_id)
@@ -316,6 +317,12 @@ async def _classification_training_run_id(training_job_id: str) -> str:
         raise JobBuildError(f"training_job_id {training_job_id!r} not found")
     if parent.get("type") != "training":
         raise JobBuildError(f"training_job_id {training_job_id!r} is not a training job")
+    status = str(parent.get("status", "") or "")
+    if status != JobStatus.succeeded.value:
+        raise JobBuildError(
+            f"training job {training_job_id[:8]} has not succeeded (status: "
+            f"{status or 'unknown'}) — cannot evaluate its model"
+        )
     run_id = str(parent.get("mlflow_run_id", "") or "")
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")

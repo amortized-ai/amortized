@@ -58,12 +58,14 @@ def _load_rows(path: str, text_column: str, label_column: str) -> list[dict]:
     return rows
 
 
-def _macro_f1(confusion: dict[int, dict[int, int]], labels: list[int]) -> tuple[float, dict[int, float]]:
-    per_class: dict[int, float] = {}
+def _macro_f1(confusion: dict, labels: list) -> tuple[float, dict]:
+    per_class: dict = {}
     for i in labels:
         tp = confusion[i][i]
         fp = sum(confusion[o][i] for o in labels if o != i)
-        fn = sum(confusion[i][o] for o in labels if o != i)
+        # fn sums over ALL predicted columns (incl. the FALLBACK/abstain column),
+        # so abstentions count as false negatives for the true class.
+        fn = sum(c for o, c in confusion[i].items() if o != i)
         prec = tp / (tp + fp) if (tp + fp) else 0.0
         rec = tp / (tp + fn) if (tp + fn) else 0.0
         per_class[i] = 2 * prec * rec / (prec + rec) if (prec + rec) else 0.0
@@ -74,7 +76,8 @@ def _macro_f1(confusion: dict[int, dict[int, int]], labels: list[int]) -> tuple[
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
-    cfg = json.load(open(ap.parse_args().config))
+    with open(ap.parse_args().config) as _cfg_f:
+        cfg = json.load(_cfg_f)
 
     text_col = cfg.get("text_column", "text")
     label_col = cfg.get("label_column", "label")
@@ -132,12 +135,16 @@ def main() -> None:
     query_texts = [q["text"] for q in queries]
     query_emb = model.encode(query_texts, normalize_embeddings=True)
 
-    confusion: dict[int, dict[int, int]] = {i: {j: 0 for j in labels} for i in labels}
+    # Confusion columns include a FALLBACK (abstain) bucket so abstentions are
+    # counted as misses (false negatives for the true class), not as best_label.
+    confusion: dict = {i: {j: 0 for j in labels} for i in labels}
+    for i in labels:
+        confusion[i][FALLBACK] = 0
     correct = 0
     abstained = 0
     results = []
-    for q, emb in zip(queries, query_emb):
-        scores: dict[int, float] = {}
+    for q, emb in zip(queries, query_emb, strict=True):
+        scores: dict = {}
         for label in labels:
             sims = anchor_emb[label] @ emb
             k = min(top_k, len(sims))
@@ -147,16 +154,18 @@ def main() -> None:
         abstain = best_score < tau
         if abstain:
             abstained += 1
-        pred_label = best_label  # for accuracy/confusion, an abstain still counts as best_label
-        confusion[q["label"]][pred_label] += 1
-        is_correct = pred_label == q["label"]
+        # An abstention predicts FALLBACK (never the true class) — count it as a
+        # miss and record it in the FALLBACK column.
+        pred_key = FALLBACK if abstain else best_label
+        confusion[q["label"]][pred_key] += 1
+        is_correct = (not abstain) and (best_label == q["label"])
         correct += int(is_correct)
         results.append({
             "text": q["text"],
             "actual": q["label"],
             "actual_name": name(q["label"]),
-            "predicted": FALLBACK if abstain else pred_label,
-            "predicted_name": FALLBACK if abstain else name(pred_label),
+            "predicted": FALLBACK if abstain else best_label,
+            "predicted_name": FALLBACK if abstain else name(best_label),
             "score": round(best_score, 4),
             "correct": is_correct,
         })
@@ -175,7 +184,13 @@ def main() -> None:
             "macro_f1": round(macro_f1, 4),
             "per_class_f1": {name(i): round(per_class_f1[i], 4) for i in labels},
             "confusion": {
-                name(i): {name(j): confusion[i][j] for j in labels} for i in labels
+                name(i): {
+                    **{name(j): confusion[i][j] for j in labels},
+                    # Only surface the abstain column when it's non-trivial, so the
+                    # common tau=0 output stays a plain NxN matrix.
+                    **({FALLBACK: confusion[i][FALLBACK]} if abstained else {}),
+                }
+                for i in labels
             },
             "num_classes": len(labels),
             "num_anchors_per_class": {name(i): len(anchors[i]) for i in labels},

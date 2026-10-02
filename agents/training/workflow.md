@@ -39,7 +39,11 @@ about internal delegation.
 
 **How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
 recommended). Classify text into a fixed set of categories (intent routing,
-ticket/topic/sentiment) → embedding-classifier (`embedding_sft`).
+ticket/topic/sentiment) → embedding-classifier (`embedding_sft`) — the
+recommended default for classification. **Exception:** if the user explicitly
+wants a **generative/LLM** classifier (an LLM that emits the label as text, e.g.
+with a free-form explanation, trained on `messages` data), that is a normal LLM
+fine-tune — use the OSFT sub-skill, not embedding-classifier.
 
 Read `skills/training/knowledge-ingestion/osft/guide.md` for OSFT, or
 `skills/training/embedding-classifier/guide.md` for the embedding classifier —
@@ -112,8 +116,11 @@ change. Do NOT restart from Phase 1.
 
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
-classifying text into a fixed set of categories. Read the matching guide
-(`skills/training/knowledge-ingestion/osft/guide.md` or
+classifying text into a fixed set of categories. For classification tasks,
+embedding-classifier is the default — **unless** the user explicitly wants a
+**generative/LLM** classifier (an LLM that emits the label as text on `messages`
+data), which is a normal LLM fine-tune and routes to OSFT instead. Read the
+matching guide (`skills/training/knowledge-ingestion/osft/guide.md` or
 `skills/training/embedding-classifier/guide.md`) for detailed guidance. For the
 embedding classifier, skip the VRAM/model-size/method steps.
 

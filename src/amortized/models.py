@@ -87,13 +87,20 @@ class TrainingJobConfig(BaseModel):
     )
     loss_type: str | None = Field(
         None,
-        description="embedding_sft contrastive loss: batch_all_triplet, batch_hard_triplet, or mnrl",
+        description=(
+            "embedding_sft contrastive loss: batch_all_triplet, "
+            "batch_hard_triplet, or mnrl"
+        ),
     )
     batch_sampler: str | None = Field(
         None,
-        description="embedding_sft batch sampler: group_by_label, no_duplicates, or default",
+        description=(
+            "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
+        ),
     )
-    warmup_ratio: float | None = Field(None, description="embedding_sft: warmup fraction of total steps")
+    warmup_ratio: float | None = Field(
+        None, description="embedding_sft: warmup fraction of total steps"
+    )
     seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
     topic: str = Field(
         "",
@@ -489,10 +496,14 @@ class EvalJobConfig(BaseModel):
         ),
     )
     text_column: str = Field(
-        "text", description="Name of the text column in the eval dataset (classification mode)"
+        "text",
+        description="Name of the text column in the eval dataset (classification mode)",
     )
     label_column: str = Field(
-        "label", description="Name of the integer label column in the eval dataset (classification mode)"
+        "label",
+        description=(
+            "Name of the label column in the eval dataset (classification mode)"
+        ),
     )
     anchors_per_class: int = Field(
         16,

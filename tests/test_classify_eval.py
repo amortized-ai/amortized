@@ -95,6 +95,30 @@ def test_string_category_labels(tmp_path, monkeypatch):
     assert set(res["confusion"]) == set(cats)
 
 
+def test_abstentions_count_as_misses(tmp_path, monkeypatch):
+    # tau above the max achievable score forces every query to abstain. An
+    # abstention must NOT be credited to its (correct) best_label: accuracy and
+    # macro-F1 go to 0, every query lands in the FALLBACK confusion column.
+    cats = ["telemetry", "propulsion", "other"]
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in cats for i in range(20)]
+    mod = _load_classify_eval(rows, monkeypatch)
+    res = _run(
+        mod,
+        {"model_path": "x", "eval_data_path": "y", "text_column": "text",
+         "label_column": "category", "class_labels": cats,
+         "anchors_per_class": 8, "tau": 1.1},
+        tmp_path, monkeypatch,
+    )
+    assert res["accuracy"] == 0.0
+    assert res["macro_f1"] == 0.0
+    assert res["abstained"] == res["num_queries"]
+    # every true class routed only to the FALLBACK bucket
+    for cat in cats:
+        row = res["confusion"][cat]
+        assert row[mod.FALLBACK] > 0
+        assert sum(v for k, v in row.items() if k != mod.FALLBACK) == 0
+
+
 def test_integer_labels_still_work(tmp_path, monkeypatch):
     rows = [{"text": f"{c}_ex{i}", "category": c} for c in [0, 1, 2] for i in range(20)]
     mod = _load_classify_eval(rows, monkeypatch)
