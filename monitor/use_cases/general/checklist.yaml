@@ -177,7 +177,11 @@ rows:
     # sdg task-distillation guide Step 8: render the prompt with show_prompt
     # before asking for approval. Guards the observed "here's the prompt … review
     # it" where the prompt was never shown (lived only in the SDG job config).
-    # n/a when no prompt review was solicited.
+    # The prompt-generate-and-approve step exists ONLY in the task-distillation
+    # skill (no other SDG sub-skill composes a prompt for the user), so gate on
+    # that guide being loaded — like the aspect-G task-distillation rows. n/a when
+    # the skill was not loaded, or when no prompt review was solicited.
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
     match: { type: prompt_review }
 
   - id: eval_phase_signaled
