@@ -36,11 +36,10 @@ about the internal delegation architecture.
 
 ## Progress Signal
 
-Call `signal_phase` with `phase: "eval"` once on every response, at the
-current step (understand_task, load_skill, gather_requirements,
-estimate_cost, confirm, execute, review). This drives the UI progress bar —
-ALWAYS use `phase: "eval"`, never `"training"` or `"sdg"`, so the user sees
-the Evaluation phase rather than a stuck Training bar.
+Call `signal_phase` once on every response, at the current step
+(understand_task, load_skill, gather_requirements, estimate_cost, confirm,
+execute, review). You are the eval workflow, so your phase is always
+`"eval"`.
 
 ## What an Eval Job Does
 
