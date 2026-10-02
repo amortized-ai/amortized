@@ -22,12 +22,13 @@ np = pytest.importorskip("numpy")
 ASSET = Path(__file__).resolve().parent.parent / "src/amortized/jobs/assets/classify_eval.py"
 
 
-def _load_classify_eval(rows, monkeypatch):
+def _load_classify_eval(rows, monkeypatch, encode_fn=None):
     """Load the asset module with training_hub/sentence_transformers stubbed.
 
-    The fake encoder returns a one-hot per class (perfect separation), so a
-    correct router scores 100% — the test asserts the pipeline runs and handles
-    the label type, not model quality.
+    The default fake encoder returns a one-hot per class (perfect separation), so
+    a correct router scores 100% — the test asserts the pipeline runs and handles
+    the label type, not model quality. Pass ``encode_fn`` to craft specific
+    similarity geometry (e.g. all-negative cosines).
     """
     labels_in_order = sorted({r["category"] for r in rows}, key=lambda x: str(x))
     _idx_by_str = {str(lbl): i for i, lbl in enumerate(labels_in_order)}
@@ -54,6 +55,8 @@ def _load_classify_eval(rows, monkeypatch):
             pass
 
         def encode(self, texts, normalize_embeddings=True):
+            if encode_fn is not None:
+                return encode_fn(texts, labels_in_order, _idx_by_str)
             vecs = []
             for t in texts:
                 cls = t.rsplit("_", 1)[0]
@@ -117,6 +120,37 @@ def test_abstentions_count_as_misses(tmp_path, monkeypatch):
         row = res["confusion"][cat]
         assert row[mod.FALLBACK] > 0
         assert sum(v for k, v in row.items() if k != mod.FALLBACK) == 0
+
+
+def test_tau_zero_never_abstains_even_with_negative_similarity(tmp_path, monkeypatch):
+    # Cosine similarities can be negative; tau=0 must still disable abstention
+    # (per the EvalJobConfig contract) rather than abstaining on best_score < 0.
+    cats = ["telemetry", "propulsion", "other"]
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in cats for i in range(20)]
+
+    def neg_encoder(texts, labels_in_order, idx_by_str):
+        n = len(labels_in_order)
+        classes = {t.rsplit("_", 1)[0] for t in texts}
+        if len(classes) == 1:  # single-class batch == anchors for that class
+            v = np.zeros(n)
+            v[idx_by_str[next(iter(classes))]] = 1.0
+            return np.array([v for _ in texts])
+        # query batch (mixed classes): point opposite every anchor → all cosines < 0
+        v = -np.ones(n) / np.sqrt(n)
+        return np.array([v for _ in texts])
+
+    mod = _load_classify_eval(rows, monkeypatch, encode_fn=neg_encoder)
+    res = _run(
+        mod,
+        {"model_path": "x", "eval_data_path": "y", "text_column": "text",
+         "label_column": "category", "class_labels": cats,
+         "anchors_per_class": 8, "tau": 0.0},
+        tmp_path, monkeypatch,
+    )
+    assert res["abstained"] == 0
+    # tau=0 → plain NxN matrix, no FALLBACK column
+    for cat in cats:
+        assert mod.FALLBACK not in res["confusion"][cat]
 
 
 def test_integer_labels_still_work(tmp_path, monkeypatch):

@@ -27,6 +27,12 @@ import random
 
 import numpy as np
 
+# Internal confusion-matrix key for abstentions. An object() sentinel can never
+# collide with a dataset label (string OR int), so a dataset that happens to use
+# the literal "__fallback__" as a class name is still scored correctly (its real
+# column stays separate from the abstain bucket). FALLBACK is only the display
+# name used in the emitted metrics/results.
+_ABSTAIN = object()
 FALLBACK = "__fallback__"
 
 
@@ -139,7 +145,7 @@ def main() -> None:
     # counted as misses (false negatives for the true class), not as best_label.
     confusion: dict = {i: {j: 0 for j in labels} for i in labels}
     for i in labels:
-        confusion[i][FALLBACK] = 0
+        confusion[i][_ABSTAIN] = 0
     correct = 0
     abstained = 0
     results = []
@@ -151,12 +157,15 @@ def main() -> None:
             scores[label] = float(np.sort(sims)[-k:].mean())
         best_label = max(scores, key=scores.get)
         best_score = scores[best_label]
-        abstain = best_score < tau
+        # tau=0 disables abstention (per the EvalJobConfig contract). Guard the
+        # threshold so a query with all-negative cosine similarities doesn't
+        # abstain when abstention is meant to be off.
+        abstain = tau > 0.0 and best_score < tau
         if abstain:
             abstained += 1
-        # An abstention predicts FALLBACK (never the true class) — count it as a
-        # miss and record it in the FALLBACK column.
-        pred_key = FALLBACK if abstain else best_label
+        # An abstention predicts the abstain bucket (never the true class) — count
+        # it as a miss and record it in the FALLBACK column.
+        pred_key = _ABSTAIN if abstain else best_label
         confusion[q["label"]][pred_key] += 1
         is_correct = (not abstain) and (best_label == q["label"])
         correct += int(is_correct)
@@ -188,7 +197,7 @@ def main() -> None:
                     **{name(j): confusion[i][j] for j in labels},
                     # Only surface the abstain column when it's non-trivial, so the
                     # common tau=0 output stays a plain NxN matrix.
-                    **({FALLBACK: confusion[i][FALLBACK]} if abstained else {}),
+                    **({FALLBACK: confusion[i][_ABSTAIN]} if abstained else {}),
                 }
                 for i in labels
             },
