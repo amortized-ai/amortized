@@ -39,6 +39,7 @@ import glob
 import json
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -116,6 +117,46 @@ def adapt_body_for_param_error(body: dict[str, Any], error_text: str) -> dict[st
     return new if changed else None
 
 
+async def _post_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    *,
+    extract: Callable[[dict[str, Any]], str],
+    label: str,
+) -> str:
+    """POST a chat/messages body with two independent retry budgets: up to MAX_RETRIES for
+    transient failures, plus a one-shot body adaptation when the provider 400s about an
+    unsupported param (reasoning models want ``max_completion_tokens`` / reject a non-default
+    ``temperature``; Anthropic models after Opus 4.6 reject ``temperature`` too). The
+    adaptation retry does NOT consume the transient budget, so a recoverable param error that
+    arrives after a transient failure still gets its adapted body sent."""
+    body = dict(body)
+    last_error: Exception | None = None
+    adapted = False
+    attempt = 0
+    while attempt < MAX_RETRIES:
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+            # A 400 may be an unsupported-param complaint — adapt the body from the error text
+            # and retry (once) without hardcoding which models need it. The retry is free so a
+            # transient failure beforehand can't swallow the one adapted attempt.
+            if resp.status_code == 400 and not adapted:
+                new_body = adapt_body_for_param_error(body, resp.text)
+                if new_body is not None:
+                    body = new_body
+                    adapted = True
+                    continue
+            resp.raise_for_status()
+            return extract(resp.json())
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(2.0 * (attempt + 1))
+        attempt += 1
+    raise RuntimeError(f"endpoint {label}: {last_error}")
+
+
 async def chat_completion(
     client: httpx.AsyncClient,
     endpoint: dict[str, Any],
@@ -133,25 +174,14 @@ async def chat_completion(
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            resp = await client.post(url, json=body, headers=headers)
-            # A 400 may be an unsupported-param complaint (a reasoning model wants
-            # max_completion_tokens / rejects temperature) — adapt the body from the error
-            # text and retry immediately, without hardcoding which models need it.
-            if resp.status_code == 400:
-                adapted = adapt_body_for_param_error(body, resp.text)
-                if adapted is not None:
-                    body = adapted
-                    continue
-            resp.raise_for_status()
-            data = resp.json()
-            return str(data["choices"][0]["message"]["content"] or "")
-        except Exception as exc:
-            last_error = exc
-            await asyncio.sleep(2.0 * (attempt + 1))
-    raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
+    return await _post_with_retries(
+        client,
+        url,
+        headers,
+        body,
+        extract=lambda data: str(data["choices"][0]["message"]["content"] or ""),
+        label=endpoint["model"],
+    )
 
 
 async def anthropic_messages(
@@ -166,7 +196,8 @@ async def anthropic_messages(
     """Call Anthropic's native Messages API — the paradigm Data Designer uses for
     provider_type 'anthropic', so an Anthropic judge/model works identically to the SDG
     teacher. OpenAI-style messages are adapted: `system` turns are hoisted into the
-    top-level ``system`` field; the rest stay as user/assistant turns."""
+    top-level ``system`` field; the rest stay as user/assistant turns. ``temperature`` is sent
+    but adapted away on a 400 — models after Opus 4.6 reject a non-default value."""
     base = endpoint["base_url"].rstrip("/")
     url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
     headers = {
@@ -190,22 +221,18 @@ async def anthropic_messages(
     }
     if system:
         body["system"] = system
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            resp = await client.post(url, json=body, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            parts = data.get("content") or []
-            return "\n".join(
-                str(p.get("text", ""))
-                for p in parts
-                if isinstance(p, dict) and p.get("type") == "text"
-            )
-        except Exception as exc:
-            last_error = exc
-            await asyncio.sleep(2.0 * (attempt + 1))
-    raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
+
+    def _extract(data: dict[str, Any]) -> str:
+        parts = data.get("content") or []
+        return "\n".join(
+            str(p.get("text", ""))
+            for p in parts
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
+
+    return await _post_with_retries(
+        client, url, headers, body, extract=_extract, label=endpoint["model"]
+    )
 
 
 async def call_model(

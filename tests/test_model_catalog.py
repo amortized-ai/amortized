@@ -90,6 +90,13 @@ class TestProviderInjection:
         monkeypatch.delenv("MAAS_API_KEY", raising=False)
         assert model_catalog._maas_provider_def() is None
 
+    def test_maas_def_absent_when_not_https(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The server sends the bearer key to this URL — a plaintext endpoint is refused so the
+        # credential never crosses http.
+        monkeypatch.setenv("MAAS_BASE_URL", "http://maas.example.com/v1")
+        monkeypatch.setenv("MAAS_API_KEY", "sk-oai-x")
+        assert model_catalog._maas_provider_def() is None
+
     def test_anthropic_def_when_key_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
         d = model_catalog._anthropic_provider_def()

@@ -74,6 +74,11 @@ def _maas_provider_def() -> dict[str, str] | None:
     base_url = os.environ.get("MAAS_BASE_URL", "").strip().rstrip("/")
     if not base_url or not os.environ.get("MAAS_API_KEY"):
         return None
+    # The server sends the bearer key to this URL, so require HTTPS: an http:// endpoint would
+    # transmit the credential in cleartext and allow server-side requests to internal hosts.
+    if not base_url.lower().startswith("https://"):
+        logger.warning("ignoring non-HTTPS MAAS_BASE_URL (credentials must not cross plaintext)")
+        return None
     return {
         "name": "maas",
         "endpoint": base_url,
@@ -222,7 +227,9 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
     else:
         headers = {"Authorization": f"Bearer {key}"}
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # follow_redirects stays off (httpx's default, made explicit): never replay the bearer
+        # key to a redirect target the provider URL points at.
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
             resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json().get("data", [])

@@ -405,19 +405,22 @@ async function restartServer(ns) {
 // (global -> aiplatform.googleapis.com; a region -> <region>-aiplatform.googleapis.com).
 function modelEgressEndpoints(name, credential) {
   const p = PROVIDERS[name];
-  const rw = (host) => ({ host, port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
+  const rw = (host, port = 443) => ({ host, port, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
   if (!p) return [];
   if (p.kind === 'adc') {
     const aiplatform = !p.location || p.location === 'global'
       ? 'aiplatform.googleapis.com'
       : `${p.location}-aiplatform.googleapis.com`;
-    return [aiplatform, ...p.tokenHosts].map(rw);
+    return [aiplatform, ...p.tokenHosts].map((h) => rw(h));
   }
   if (p.kind === 'openai-compat') {
     const { baseURL } = parseOpenAICompatCredential(credential);
-    let host = '';
-    try { host = new URL(baseURL).hostname; } catch { host = ''; }
-    return host ? [rw(host)] : [];
+    try {
+      const u = new URL(baseURL);
+      // Preserve a non-default port (e.g. https://maas.example:8443/v1) so the egress policy
+      // opens the port Morty actually reaches; URL.port is '' for the scheme default (443).
+      return [rw(u.hostname, u.port ? Number(u.port) : 443)];
+    } catch { return []; }
   }
   return [rw(p.apiHost)];
 }
@@ -530,17 +533,20 @@ function configureOpenshell() {
 async function discoverOpenAICompatModels(baseURL, apiKey) {
   const base = String(baseURL || '').replace(/\/$/, '');
   if (!base || !apiKey) return [];
+  const ctrl = new AbortController();
+  // Keep the abort timer armed until the body is parsed: a response that returns headers but
+  // stalls mid-body must still be bounded, or ensureSandbox can hang past the 10s budget.
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
     const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal });
-    clearTimeout(timer);
     if (!res.ok) return [];
     const body = await res.json();
     const data = Array.isArray(body?.data) ? body.data : [];
     return data.map((m) => String(m?.id || '')).filter(Boolean);
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -802,8 +808,10 @@ function validateCredential(provider, credential) {
     const apiKey = String(obj?.apiKey || '').trim();
     let host = '';
     try { host = new URL(baseURL).hostname; } catch { host = ''; }
-    if (!/^https?:\/\//.test(baseURL) || !host) {
-      throw new Error('MaaS base URL must be a valid http(s) URL');
+    // Require HTTPS: the stored key is later sent in an Authorization header to this URL (server
+    // catalog + sandbox discovery), so a plaintext http:// endpoint would leak the credential.
+    if (!/^https:\/\//i.test(baseURL) || !host) {
+      throw new Error('MaaS base URL must be a valid HTTPS URL (the API key is sent to it)');
     }
     if (apiKey.length < 8) {
       throw new Error('MaaS API key looks too short');
