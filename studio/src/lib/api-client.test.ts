@@ -28,6 +28,7 @@ import {
   getJobLogs,
   searchMlflowRuns,
   getMlflowGatewayRoutes,
+  shouldKeepSessionOnError,
   ApiError,
 } from "@/lib/api-client"
 
@@ -209,6 +210,25 @@ describe("API Client", () => {
         expect(apiErr.status).toBe(404)
         expect(apiErr.body).toEqual({ detail: "not found" })
       }
+    })
+  })
+
+  describe("shouldKeepSessionOnError", () => {
+    it("keeps the session on a provider/model error (400) or a busy session (429)", () => {
+      // The chosen model was rejected but the opencode session is intact, so switching back to a
+      // working model should resume the same conversation rather than start a fresh one.
+      expect(
+        shouldKeepSessionOnError(new ApiError(400, "Agent turn failed", "That model isn't available.")),
+      ).toBe(true)
+      expect(shouldKeepSessionOnError(new ApiError(429, "Too Many Requests", null))).toBe(true)
+    })
+
+    it("resets the session on session/upstream failures and non-ApiError errors", () => {
+      for (const status of [404, 500, 502, 503]) {
+        expect(shouldKeepSessionOnError(new ApiError(status, "x", null))).toBe(false)
+      }
+      expect(shouldKeepSessionOnError(new TypeError("fetch failed"))).toBe(false)
+      expect(shouldKeepSessionOnError(null)).toBe(false)
     })
   })
 })
