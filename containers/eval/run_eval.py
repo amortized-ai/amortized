@@ -39,6 +39,7 @@ import glob
 import json
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,8 @@ MAX_PARALLEL = 16
 REQUEST_TIMEOUT = 300.0
 MAX_RETRIES = 3
 SCORE_SCALE = 10  # judge scores each criterion 0..SCORE_SCALE; reported /SCALE
+# Anthropic Messages API version header (stable); mirrors Data Designer's anthropic adapter.
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 def load_records(eval_data_path: str) -> list[dict[str, Any]]:
@@ -91,6 +94,69 @@ def split_prompt_reference(record: dict[str, Any]) -> tuple[list[dict[str, str]]
     return prompt, reference
 
 
+def adapt_body_for_param_error(body: dict[str, Any], error_text: str) -> dict[str, Any] | None:
+    """Adapt a chat-completions body after a provider 400 about unsupported params, so any
+    model works WITHOUT hardcoding model families. Reasoning models require
+    ``max_completion_tokens`` and reject a non-default ``temperature``. Returns a NEW body
+    if something changed, else None. Error-driven: it reacts to what the provider actually
+    rejected, so new/renamed model families need no code change here."""
+    text = (error_text or "").lower()
+    new = dict(body)
+    changed = False
+    if "max_completion_tokens" in text:
+        # The provider wants max_completion_tokens (a reasoning model) — remap the token
+        # param and drop temperature, which the same models reject.
+        if "max_tokens" in new:
+            new["max_completion_tokens"] = new.pop("max_tokens")
+            changed = True
+        if new.pop("temperature", None) is not None:
+            changed = True
+    elif "temperature" in text and "temperature" in new:
+        new.pop("temperature")
+        changed = True
+    return new if changed else None
+
+
+async def _post_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    *,
+    extract: Callable[[dict[str, Any]], str],
+    label: str,
+) -> str:
+    """POST a chat/messages body with two independent retry budgets: up to MAX_RETRIES for
+    transient failures, plus a one-shot body adaptation when the provider 400s about an
+    unsupported param (reasoning models want ``max_completion_tokens`` / reject a non-default
+    ``temperature``; Anthropic models after Opus 4.6 reject ``temperature`` too). The
+    adaptation retry does NOT consume the transient budget, so a recoverable param error that
+    arrives after a transient failure still gets its adapted body sent."""
+    body = dict(body)
+    last_error: Exception | None = None
+    adapted = False
+    attempt = 0
+    while attempt < MAX_RETRIES:
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+            # A 400 may be an unsupported-param complaint — adapt the body from the error text
+            # and retry (once) without hardcoding which models need it. The retry is free so a
+            # transient failure beforehand can't swallow the one adapted attempt.
+            if resp.status_code == 400 and not adapted:
+                new_body = adapt_body_for_param_error(body, resp.text)
+                if new_body is not None:
+                    body = new_body
+                    adapted = True
+                    continue
+            resp.raise_for_status()
+            return extract(resp.json())
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(2.0 * (attempt + 1))
+        attempt += 1
+    raise RuntimeError(f"endpoint {label}: {last_error}")
+
+
 async def chat_completion(
     client: httpx.AsyncClient,
     endpoint: dict[str, Any],
@@ -102,23 +168,103 @@ async def chat_completion(
 ) -> str:
     url = endpoint["base_url"].rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    body = {
+    body: dict[str, Any] = {
         "model": endpoint["model"],
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            resp = await client.post(url, json=body, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            return str(data["choices"][0]["message"]["content"] or "")
-        except Exception as exc:
-            last_error = exc
-            await asyncio.sleep(2.0 * (attempt + 1))
-    raise RuntimeError(f"endpoint {endpoint['model']}: {last_error}")
+    return await _post_with_retries(
+        client,
+        url,
+        headers,
+        body,
+        extract=lambda data: str(data["choices"][0]["message"]["content"] or ""),
+        label=endpoint["model"],
+    )
+
+
+async def anthropic_messages(
+    client: httpx.AsyncClient,
+    endpoint: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    api_key: str,
+) -> str:
+    """Call Anthropic's native Messages API — the paradigm Data Designer uses for
+    provider_type 'anthropic', so an Anthropic judge/model works identically to the SDG
+    teacher. OpenAI-style messages are adapted: `system` turns are hoisted into the
+    top-level ``system`` field; the rest stay as user/assistant turns. ``temperature`` is sent
+    but adapted away on a 400 — models after Opus 4.6 reject a non-default value."""
+    base = endpoint["base_url"].rstrip("/")
+    url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": ANTHROPIC_VERSION,
+        "content-type": "application/json",
+    }
+    system = "\n\n".join(
+        str(m.get("content", "")) for m in messages if m.get("role") == "system"
+    )
+    turns = [
+        {"role": m["role"], "content": str(m.get("content", ""))}
+        for m in messages
+        if m.get("role") in ("user", "assistant")
+    ]
+    body: dict[str, Any] = {
+        "model": endpoint["model"],
+        "max_tokens": max_tokens,
+        "messages": turns,
+        "temperature": temperature,
+    }
+    if system:
+        body["system"] = system
+
+    def _extract(data: dict[str, Any]) -> str:
+        parts = data.get("content") or []
+        return "\n".join(
+            str(p.get("text", ""))
+            for p in parts
+            if isinstance(p, dict) and p.get("type") == "text"
+        )
+
+    return await _post_with_retries(
+        client, url, headers, body, extract=_extract, label=endpoint["model"]
+    )
+
+
+async def call_model(
+    client: httpx.AsyncClient,
+    endpoint: dict[str, Any],
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    api_key: str,
+) -> str:
+    """Dispatch to the provider's calling paradigm — Anthropic Messages for
+    provider_type 'anthropic', OpenAI chat/completions otherwise (openai + any
+    OpenAI-compatible endpoint, e.g. MaaS/vLLM) — so the eval runner supports exactly
+    the providers Data Designer (the SDG teacher) does."""
+    if endpoint.get("provider_type") == "anthropic":
+        return await anthropic_messages(
+            client,
+            endpoint,
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=api_key,
+        )
+    return await chat_completion(
+        client,
+        endpoint,
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_key=api_key,
+    )
 
 
 async def eval_endpoint(
@@ -133,7 +279,7 @@ async def eval_endpoint(
     async def run_one(sample: dict[str, Any]) -> dict[str, Any]:
         async with semaphore:
             try:
-                output = await chat_completion(
+                output = await call_model(
                     client,
                     endpoint,
                     sample["prompt"],
@@ -208,7 +354,7 @@ async def score_one(
     )
     names = [c["name"] for c in rubric]
     try:
-        raw = await chat_completion(
+        raw = await call_model(
             client,
             judge,
             [

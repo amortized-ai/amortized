@@ -3,10 +3,13 @@
 This MLflow distribution has no AI Gateway, so instead of routing through it we use
 providers directly via dropped-in API keys. Data-designer ships a builtin provider
 catalog whose ``api_key`` is an env-var *name* resolved at runtime; we surface the
-providers whose key is set on the server. The same catalog drives two things, so
-they always agree:
+providers whose key is set on the server, plus a native Anthropic provider and a BYOK
+MaaS endpoint the builtin catalog lacks. That provider set drives two things:
 
-- ``list_models`` (what Morty can pick), via :func:`enabled_models`.
+- ``list_models`` — the SDG-teacher + eval-judge choices — via :func:`available_models`
+  (pulled live from each provider's ``/v1/models``), falling back to the static
+  :func:`enabled_models`. (Morty's chat picker is separate: it reads OpenCode's
+  ``/provider``; see :mod:`amortized.api.agent`.)
 - the ``model_providers.yaml`` written into each SDG job pod (so data-designer can
   actually reach the provider), via :func:`enabled_provider_defs`.
 
@@ -16,12 +19,39 @@ gateway that does not exist here), which is why the provider file must be suppli
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import time
+
+import httpx
 
 logger = logging.getLogger("amortized.core.model_catalog")
 
 _PROVIDER_FIELDS = ("name", "endpoint", "provider_type", "api_key")
+
+# OpenAI's usable teacher/judge families. A plain startswith list (so gpt-5, gpt-5.6-sol,
+# gpt-6-astra, … all match); extend here for gpt-7 etc.
+_OPENAI_CHAT_PREFIXES = ("gpt-5", "gpt-6")
+# Substrings that mark a NON-chat model (embeddings, speech, image, moderation, rerank).
+# Used to keep only chat models across every provider — /v1/models has no capability flag.
+_NON_CHAT_MARKERS = (
+    "embed",
+    "whisper",
+    "tts",
+    "dall-e",
+    "dalle",
+    "moderation",
+    "rerank",
+    "stable-diffusion",
+    "sdxl",
+)
+_MODELS_TTL_SECONDS = 300
+# Anthropic authenticates with x-api-key + this version header (not OpenAI's Bearer).
+_ANTHROPIC_VERSION = "2023-06-01"
+# provider name -> (fetched_at_monotonic, raw model ids). Per-provider so one slow/broken
+# provider never blocks or drops the others.
+_models_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 def _key_available(api_key: str | None) -> bool:
@@ -34,23 +64,69 @@ def _key_available(api_key: str | None) -> bool:
     return True
 
 
+def _maas_provider_def() -> dict[str, str] | None:
+    """A BYOK Red Hat MaaS endpoint as an OpenAI-compatible provider.
+
+    Unlike the data-designer builtins (hardcoded endpoints), MaaS is user-supplied, so
+    its base URL comes from ``MAAS_BASE_URL`` and its key from ``MAAS_API_KEY`` — both
+    injected per-user from the user's BYOK secret. Surfaced only when both are set.
+    """
+    base_url = os.environ.get("MAAS_BASE_URL", "").strip().rstrip("/")
+    if not base_url or not os.environ.get("MAAS_API_KEY"):
+        return None
+    # The server sends the bearer key to this URL, so require HTTPS: an http:// endpoint would
+    # transmit the credential in cleartext and allow server-side requests to internal hosts.
+    if not base_url.lower().startswith("https://"):
+        logger.warning("ignoring non-HTTPS MAAS_BASE_URL (credentials must not cross plaintext)")
+        return None
+    return {
+        "name": "maas",
+        "endpoint": base_url,
+        "provider_type": "openai",
+        "api_key": "MAAS_API_KEY",
+    }
+
+
+def _anthropic_provider_def() -> dict[str, str] | None:
+    """A native Anthropic provider. Data Designer ships the anthropic *adapter* but no
+    predefined anthropic provider, so we register one when ``ANTHROPIC_API_KEY`` is set —
+    unlocking Claude as an SDG teacher + eval judge (not just Morty chat). ``provider_type``
+    'anthropic' routes DD's AnthropicClient and the eval runner to the Messages API."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    return {
+        "name": "anthropic",
+        "endpoint": "https://api.anthropic.com/v1",
+        "provider_type": "anthropic",
+        "api_key": "ANTHROPIC_API_KEY",
+    }
+
+
 def enabled_provider_defs() -> list[dict[str, str]]:
-    """Builtin data-designer providers whose API key is configured on the server.
+    """Providers whose API key is configured on the server: the builtin data-designer
+    catalog plus a native Anthropic provider and a BYOK MaaS endpoint (when configured).
 
     Returns provider dicts (name/endpoint/provider_type/api_key) ready to serialize
     into a data-designer ``model_providers.yaml``. ``api_key`` stays the env-var name
     so the job pod resolves the forwarded key at runtime.
     """
+    defs: list[dict[str, str]] = []
     try:
         from data_designer.config.utils.constants import PREDEFINED_PROVIDERS
+
+        for provider in PREDEFINED_PROVIDERS:
+            if _key_available(provider.get("api_key")):
+                defs.append({k: provider[k] for k in _PROVIDER_FIELDS if k in provider})
     except Exception:
         logger.warning("data-designer provider catalog unavailable", exc_info=True)
-        return []
 
-    defs: list[dict[str, str]] = []
-    for provider in PREDEFINED_PROVIDERS:
-        if _key_available(provider.get("api_key")):
-            defs.append({k: provider[k] for k in _PROVIDER_FIELDS if k in provider})
+    # Inject providers DD's builtin catalog lacks (it ships only openai-type providers): a native
+    # Anthropic provider and a BYOK MaaS endpoint, each when its key is configured. Skip any whose
+    # name a DD builtin already supplied, so a future DD catalog update wins without duplicating.
+    names = {d.get("name") for d in defs}
+    for extra in (_anthropic_provider_def(), _maas_provider_def()):
+        if extra and extra["name"] not in names:
+            defs.append(extra)
     return defs
 
 
@@ -104,3 +180,108 @@ def enabled_models() -> list[tuple[str, str]]:
             seen.add((provider, model_id))
             models.append((provider, model_id))
     return models
+
+
+def _resolve_key(api_key: str) -> str:
+    """Resolve a provider's api_key field to an actual key: an env-var name
+    (UPPER_SNAKE) is read from the environment; anything else is a literal."""
+    if not api_key:
+        return ""
+    if api_key.isupper() and "_" in api_key:
+        return os.environ.get(api_key, "")
+    return api_key
+
+
+def _keep_model(provider: str, model_id: str) -> bool:
+    """Whether a provider's model id belongs in the picker: chat models only, and for
+    the ``openai`` provider restricted to the gpt-5/gpt-6 families."""
+    if not model_id:
+        return False
+    if any(marker in model_id.lower() for marker in _NON_CHAT_MARKERS):
+        return False
+    if provider == "openai":
+        return any(model_id.startswith(p) for p in _OPENAI_CHAT_PREFIXES)
+    return True
+
+
+async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
+    """Fetch raw model ids from one provider's OpenAI-compatible ``/models`` endpoint.
+    Cached per provider (TTL); a failed fetch returns the last good value (or empty) so
+    one provider never breaks the combined list."""
+    name = pdef.get("name", "")
+    now = time.monotonic()
+    cached = _models_cache.get(name)
+    if cached and (now - cached[0]) < _MODELS_TTL_SECONDS:
+        return cached[1]
+
+    endpoint = pdef.get("endpoint", "").rstrip("/")
+    key = _resolve_key(pdef.get("api_key", ""))
+    if not endpoint or not key:
+        return cached[1] if cached else []
+
+    url = f"{endpoint}/models"
+    # Anthropic authenticates with x-api-key + a version header (not OpenAI's Bearer); its
+    # /v1/models returns the same {"data": [{"id": ...}]} shape, so only the headers differ.
+    if pdef.get("provider_type") == "anthropic":
+        headers = {"x-api-key": key, "anthropic-version": _ANTHROPIC_VERSION}
+    else:
+        headers = {"Authorization": f"Bearer {key}"}
+    try:
+        # follow_redirects stays off (httpx's default, made explicit): never replay the bearer
+        # key to a redirect target the provider URL points at.
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+        ids = [str(m.get("id", "")) for m in data if m.get("id")]
+        _models_cache[name] = (now, ids)
+        return ids
+    except Exception:
+        logger.warning("failed to fetch models for provider %r from %s", name, url, exc_info=True)
+        return cached[1] if cached else []
+
+
+async def accessible_model_ids() -> dict[str, set[str]]:
+    """``{provider_name: {raw model ids the configured key can access}}`` — pulled from each enabled
+    provider's OWN ``/v1/models`` (not models.dev), so the set reflects real entitlement.
+
+    Used to access-filter the Morty picker: intersect OpenCode's resolvable catalog with this so a
+    model the user's key can't actually use never shows. Best-effort + cached per provider (see
+    :func:`_fetch_provider_models`); a provider that can't be reached yields an empty set, and
+    callers fall back to the unfiltered list rather than hiding everything.
+    """
+    defs = enabled_provider_defs()
+    if not defs:
+        return {}
+    fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
+    out: dict[str, set[str]] = {}
+    for pdef, ids in zip(defs, fetched, strict=True):
+        name = pdef.get("name", "")
+        if name:
+            out[name] = set(ids)
+    return out
+
+
+async def available_models() -> list[tuple[str, str]]:
+    """``(provider, model_id)`` chat models pulled live from each key-enabled provider's
+    ``/v1/models`` — the dynamic replacement for the static data-designer catalog.
+
+    Filters: the ``openai`` provider to the gpt-5/gpt-6 families; every provider to chat
+    models. Best-effort and deduped: a provider that fails to respond is skipped."""
+    defs = enabled_provider_defs()
+    if not defs:
+        return []
+    fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for pdef, ids in zip(defs, fetched, strict=True):
+        name = pdef.get("name", "")
+        for model_id in ids:
+            if not _keep_model(name, model_id):
+                continue
+            pair = (name, model_id)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            out.append(pair)
+    return out
