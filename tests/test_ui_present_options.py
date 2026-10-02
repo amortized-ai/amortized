@@ -6,8 +6,12 @@ from typing import Any
 from amortized.api.ui import (
     OptionItem,
     PresentOptionsRequest,
+    ShowPromptRequest,
+    SignalPhaseRequest,
     _dedup_options,
     present_options,
+    show_prompt,
+    signal_phase,
 )
 
 
@@ -45,3 +49,17 @@ def test_endpoint_dedups() -> None:
     )
     resp = _run(present_options(body))
     assert len(resp.options) == 1
+
+
+def test_show_prompt_echoes_full_text() -> None:
+    prompt = "You are an RFE assessor.\nScore 5 criteria, 7/10 PASS."
+    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt=prompt)))
+    assert resp.rendered is True
+    assert resp.prompt == prompt
+    assert resp.title == "Assessor prompt"
+
+
+def test_signal_phase_accepts_eval() -> None:
+    resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="review")))
+    assert resp.phase == "eval"
+    assert resp.step == "review"
