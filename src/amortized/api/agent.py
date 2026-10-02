@@ -410,6 +410,17 @@ async def _record_turn_metrics(
                     judge = inp.get("judge")
                     if isinstance(judge, dict) and judge.get("model"):
                         entry["judge"] = judge["model"]
+                elif name == "signal_phase":
+                    # Capture phase/step so the UI progress signal is checkable
+                    # offline (e.g. the eval stage must signal phase=eval, not
+                    # a stale training phase).
+                    inp = _get_tool_input(part)
+                    phase = inp.get("phase")
+                    if phase:
+                        entry["phase"] = phase
+                    step = inp.get("step")
+                    if step:
+                        entry["step"] = step
                 tool_calls.append(entry)
 
         started = turn.started_at

@@ -169,6 +169,27 @@ rows:
       where: { role: sdg }
       na_if_reused: { tool: get_job, where: { role: sdg }, output_contains: '"type": "sdg"' }
 
+  - id: prompt_shown_for_review
+    stage: "Prompt shown for review"
+    aspect: B
+    expected: "When asking the user to review/approve a generated prompt, the prompt is actually rendered (show_prompt), not just referenced"
+    adjudicate: auto
+    # sdg task-distillation guide Step 8: render the prompt with show_prompt
+    # before asking for approval. Guards the observed "here's the prompt … review
+    # it" where the prompt was never shown (lived only in the SDG job config).
+    # n/a when no prompt review was solicited.
+    match: { type: prompt_review }
+
+  - id: eval_phase_signaled
+    stage: "Progress: eval phase"
+    aspect: B
+    expected: "The eval stage signals phase=eval so the UI shows Evaluation (not a stuck Training bar)"
+    adjudicate: auto
+    # eval/workflow.md Progress Signal + ui.py signal_phase. Guards the observed
+    # bug where eval signalled phase=training. n/a when there is no eval stage;
+    # review when the log predates phase capture.
+    match: { type: eval_phase }
+
   - id: sdg_skill_loaded
     stage: "SDG sub-skill"
     aspect: B
