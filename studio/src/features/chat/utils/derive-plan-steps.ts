@@ -33,6 +33,7 @@ const TOOL_LABELS: Record<string, string> = {
   "show_vram_estimate": "Estimating GPU requirements",
   "create_sdg_job": "Submitting SDG job",
   "create_training_job": "Submitting training job",
+  "create_eval_job": "Submitting eval job",
   "get_job_detail": "Checking job status",
   "get_job_logs": "Reading job logs",
 }
@@ -47,6 +48,7 @@ const PHASE_STEP_LABELS: Record<string, string> = {
 
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
+  let latestStep = ""
   const seenLabels = new Set<string>()
   const steps: Array<{ label: string }> = []
 
@@ -64,6 +66,8 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
           steps.length = 0
         }
         latestPhase = phase
+
+        latestStep = step
 
         const label = PHASE_STEP_LABELS[step]
         if (label && !seenLabels.has(label)) {
@@ -83,12 +87,16 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
 
   if (!latestPhase || steps.length === 0) return null
 
+  // When the last signalled step is "review", the workflow has reached its
+  // terminal step — mark every step complete so the bar isn't left spinning.
+  const done = latestStep === "review"
+
   return {
     phase: latestPhase,
     label: PHASE_LABELS[latestPhase],
     steps: steps.map((s, i): PlanStep => ({
       label: s.label,
-      status: i < steps.length - 1 ? "completed" : "active",
+      status: done || i < steps.length - 1 ? "completed" : "active",
     })),
   }
 }
@@ -118,9 +126,20 @@ const TRAINING_STEPS: StepDef[] = [
   { label: "Checking results", matchSteps: ["review"] },
 ]
 
+const EVAL_STEPS: StepDef[] = [
+  { label: "Understanding your task", matchSteps: ["understand_task"] },
+  { label: "Loading eval guide", matchSteps: ["load_skill"] },
+  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
+  { label: "Selecting judge & metrics", matchSteps: ["estimate_cost"] },
+  { label: "Reviewing configuration", matchSteps: ["confirm"] },
+  { label: "Submitting eval job", matchSteps: ["execute"] },
+  { label: "Checking results", matchSteps: ["review"] },
+]
+
 const STATIC_PHASE_CONFIG: Partial<Record<PlanPhase, { label: string; steps: StepDef[] }>> = {
   sdg: { label: "Data Generation", steps: SDG_STEPS },
   training: { label: "Model Training", steps: TRAINING_STEPS },
+  eval: { label: "Evaluation", steps: EVAL_STEPS },
 }
 
 function resolveStepIndex(stepDefs: StepDef[], currentStep: string): number {

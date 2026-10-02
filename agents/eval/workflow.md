@@ -36,6 +36,14 @@ about the internal delegation architecture.
   domain knowledge matters.
 - **Show results in markdown tables** when listing jobs or configs.
 
+## Progress Signal
+
+Call `signal_phase` with `phase: "eval"` once on every response, at the
+current step (understand_task, load_skill, gather_requirements,
+estimate_cost, confirm, execute, review). This drives the UI progress bar —
+ALWAYS use `phase: "eval"`, never `"training"` or `"sdg"`, so the user sees
+the Evaluation phase rather than a stuck Training bar.
+
 ## What an Eval Job Does
 
 An eval job takes an **eval dataset** and **one** OpenAI-compatible

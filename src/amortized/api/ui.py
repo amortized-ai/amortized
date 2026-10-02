@@ -87,6 +87,50 @@ def _dedup_options(options: list[OptionItem]) -> list[OptionItem]:
     return deduped
 
 
+class ShowPromptRequest(BaseModel):
+    title: str = Field(
+        "System prompt",
+        description="Short card heading (e.g. 'Assessor system prompt')",
+    )
+    prompt: str = Field(
+        ...,
+        description="The FULL prompt text to display verbatim for the user to review",
+        min_length=1,
+    )
+    purpose: str = Field(
+        "",
+        description="One-line note on what the prompt is used for (optional)",
+    )
+
+
+class ShowPromptResponse(BaseModel):
+    title: str
+    prompt: str
+    purpose: str
+    rendered: bool = Field(True)
+
+
+@router.post(
+    "/show_prompt",
+    response_model=ShowPromptResponse,
+    operation_id="show_prompt",
+    summary=(
+        "Render a prompt in a review card in the chat UI. Call this with the "
+        "FULL prompt text WHENEVER you ask the user to review or approve a "
+        "prompt (e.g. a generated system/assessor prompt) — the prompt text is "
+        "otherwise never shown to the user. Never say 'here is the prompt' or "
+        "'the prompt above' without calling this tool in the same response."
+    ),
+)
+async def show_prompt(body: ShowPromptRequest) -> ShowPromptResponse:
+    return ShowPromptResponse(
+        title=body.title,
+        prompt=body.prompt,
+        purpose=body.purpose,
+        rendered=True,
+    )
+
+
 class ModelPricingItem(BaseModel):
     model_id: str = Field(..., description="Model ID (e.g. 'openai/gpt-4o-mini')")
     name: str = Field(..., description="Display name")
@@ -156,7 +200,8 @@ class SignalPhaseRequest(BaseModel):
         ...,
         description=(
             "Current workflow phase: 'sdg' for data generation workflows, "
-            "'training' for model training workflows"
+            "'training' for model training workflows, 'eval' for model "
+            "evaluation workflows"
         ),
     )
     step: str = Field(
@@ -186,9 +231,9 @@ class SignalPhaseResponse(BaseModel):
     operation_id="signal_phase",
     summary=(
         "Update the UI progress bar. You MUST call this once on every response "
-        "during an SDG or training workflow. Set phase to 'sdg' or 'training' "
-        "based on the current workflow. Call once per response at the current "
-        "step — do not batch or skip."
+        "during an SDG, training, or eval workflow. Set phase to 'sdg', "
+        "'training', or 'eval' based on the current workflow. Call once per "
+        "response at the current step — do not batch or skip."
     ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:

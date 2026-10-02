@@ -103,9 +103,12 @@ Compose the task system prompt combining:
    sections."
 
 
-Present to the user for review. Same prompt is used in both the
-output-generating column `system_prompt` and the SFT processor system
-message.
+Render the FULL prompt for the user with the `show_prompt` tool (pass the
+complete prompt text), then ask them to approve or adjust it. NEVER say
+"here's the prompt" / "the prompt above" without calling `show_prompt` in
+that same response — the prompt text is otherwise never shown to the user.
+The same prompt is used in both the output-generating column `system_prompt`
+and the SFT processor system message.
 
 ### Step 9 — Generate outputs for raw inputs (optional)
 

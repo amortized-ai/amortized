@@ -1554,6 +1554,47 @@
         }
       }
     },
+    "/api/v1/ui/show_prompt": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Render a prompt in a review card in the chat UI. Call this with the FULL prompt text WHENEVER you ask the user to review or approve a prompt (e.g. a generated system/assessor prompt) \u2014 the prompt text is otherwise never shown to the user. Never say 'here is the prompt' or 'the prompt above' without calling this tool in the same response.",
+        "operationId": "show_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowPromptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShowPromptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ui/show_model_pricing": {
       "post": {
         "tags": [
@@ -1641,7 +1682,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG or training workflow. Set phase to 'sdg' or 'training' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
+        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG, training, or eval workflow. Set phase to 'sdg', 'training', or 'eval' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
         "operationId": "signal_phase",
         "requestBody": {
           "content": {
@@ -1913,6 +1954,61 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Get Turn Agent Session  Session Id  Turn  Turn Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/session/{session_id}/monitor/complete": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Mark Run Complete",
+        "description": "Record a human-declared run completion for monitor metrics.\n\nStudio calls this when the tester marks a test run done. It defines the\nboundary for turns-to-complete and total-tokens; the product itself has no\nworkflow-completion signal (the orchestrator loops indefinitely).",
+        "operationId": "mark_run_complete_agent_session__session_id__monitor_complete_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mark Run Complete Agent Session  Session Id  Monitor Complete Post"
                 }
               }
             }
@@ -2488,6 +2584,39 @@
         ],
         "title": "ColumnInequalityConstraint",
         "description": "Constrain a sampler column to be less/greater than another sampler column.\n\nOnly applies to sampler columns.\n\nAttributes:\n    rhs (required): Name of the other sampler column to compare against.\n    operator (required): Comparison operator (lt, le, gt, ge).\n\nInherited Attributes:\n    target_column (required): Name of the sampler column this constraint applies to."
+      },
+      "CompletionRequest": {
+        "properties": {
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": "success"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "CompletionRequest"
       },
       "ConfigResponse": {
         "properties": {
@@ -5683,6 +5812,61 @@
         ],
         "title": "ShowModelPricingResponse"
       },
+      "ShowPromptRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short card heading (e.g. 'Assessor system prompt')",
+            "default": "System prompt"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Prompt",
+            "description": "The FULL prompt text to display verbatim for the user to review"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "description": "One-line note on what the prompt is used for (optional)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "ShowPromptRequest"
+      },
+      "ShowPromptResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "rendered": {
+            "type": "boolean",
+            "title": "Rendered",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "prompt",
+          "purpose"
+        ],
+        "title": "ShowPromptResponse"
+      },
       "ShowVRAMEstimateRequest": {
         "properties": {
           "estimates": {
@@ -5727,7 +5911,7 @@
           "phase": {
             "type": "string",
             "title": "Phase",
-            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows"
+            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows, 'eval' for model evaluation workflows"
           },
           "step": {
             "type": "string",
