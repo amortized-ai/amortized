@@ -215,6 +215,16 @@ rows:
     # training/workflow.md (42-62): "You MUST show VRAM estimates before ..."
     match: { type: tool_called, tools: [estimate_training_resources, show_vram_estimate], where: { role: training } }
 
+  - id: train_model_choice_offered
+    stage: "Training model choice"
+    aspect: B
+    expected: "Presents the base-model options and waits — never auto-picks a default"
+    adjudicate: auto
+    # training/workflow.md (47-55): "present the models as options and wait for
+    # the user to choose — never auto-select a model". Verified via a
+    # present_options (training role) that names a model.
+    match: { type: model_choice }
+
   - id: train_data_confirmed
     stage: "Training data usage"
     aspect: B
