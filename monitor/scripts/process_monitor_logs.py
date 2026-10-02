@@ -232,6 +232,21 @@ _PROMPT_REVIEW_MARKERS = (
     "review the system prompt",
 )
 
+# Substrings that identify a base-model name in present_options titles, so the
+# model_choice check recognises a model list even when the question itself does
+# not contain the word "model". Lowercased family names, not exact ids, so new
+# sizes/variants still match.
+_MODEL_NAME_MARKERS = (
+    "qwen",
+    "llama",
+    "granite",
+    "mistral",
+    "gemma",
+    "phi-",
+    "smol",
+    "deepseek",
+)
+
 
 def _is_ok_output(status: str | None, output: str | None) -> bool:
     if status == "error":
@@ -453,6 +468,35 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         if not any("phase" in c for c in eval_signals):
             return "review"  # log predates phase capture (logging-dependency)
         return "met" if any(c.get("phase") == "eval" for c in eval_signals) else "wrong"
+
+    if mtype == "model_choice":
+        # The training stage must let the user CHOOSE the base model — present it
+        # as options and wait, never auto-pick a recommended default. Checkable
+        # via a present_options (training role) whose question or option titles
+        # name a model. n/a when there is no training stage; review when the log
+        # predates present_options content capture.
+        if not _calls(run, "validate_training_job"):
+            return "n/a"  # no training stage in this run
+        present = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options" and c.get("role") == "training"
+        ]
+        for c in present:
+            question = (c.get("question") or "").lower()
+            titles = " ".join(c.get("options") or []).lower()
+            if "model" in question or any(m in titles for m in _MODEL_NAME_MARKERS):
+                return "met"
+        # Distinguish "never offered a model choice" from "log predates the
+        # option-content capture": if no present_options anywhere carries the
+        # question/options fields, we cannot tell -> defer to review.
+        if not any(
+            "question" in c or "options" in c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options"
+        ):
+            return "review"
+        return "wrong"  # training ran but never offered a model choice
 
     if mtype == "judge_valid":
         # The eval judge model must be a real model name from the catalog

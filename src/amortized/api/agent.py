@@ -421,6 +421,25 @@ async def _record_turn_metrics(
                     step = inp.get("step")
                     if step:
                         entry["step"] = step
+                elif name == "present_options":
+                    # Capture the question and option titles so "a real choice
+                    # was offered" (e.g. the training base-model list) is
+                    # checkable offline — the option content is not otherwise
+                    # logged, so without this the monitor cannot tell whether
+                    # Morty presented options or auto-picked.
+                    inp = _get_tool_input(part)
+                    question = inp.get("question")
+                    if question:
+                        entry["question"] = question
+                    options = inp.get("options")
+                    if isinstance(options, list):
+                        titles = [
+                            opt["title"]
+                            for opt in options
+                            if isinstance(opt, dict) and opt.get("title")
+                        ]
+                        if titles:
+                            entry["options"] = titles
                 tool_calls.append(entry)
 
         started = turn.started_at
