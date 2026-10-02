@@ -148,6 +148,16 @@ class Run:
     def outcome(self) -> str | None:
         return self.completion.get("outcome") if self.completion else None
 
+    @property
+    def assistant_text(self) -> str:
+        """All assistant-authored text across counted turns, lowercased."""
+        chunks: list[str] = []
+        for t in self.counted_turns:
+            for tx in t.get("texts") or []:
+                if tx.get("role") != "user":
+                    chunks.append(str(tx.get("text") or ""))
+        return "\n".join(chunks).lower()
+
 
 def _parse_dt(value: Any) -> datetime | None:
     if not value:
@@ -205,6 +215,22 @@ def load_checklist(use_case: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 _ERROR_MARKERS = ('"errors"', "validation_error", "is required", "invalid", "must be")
+
+# Phrases that indicate the assistant is soliciting review/approval of a prompt
+# it generated (for the prompt_review integrity check). Deliberately specific to
+# a generated prompt so generic "approve"/"review" job confirmations don't match.
+_PROMPT_REVIEW_MARKERS = (
+    "the prompt above",
+    "here's the prompt",
+    "here is the prompt",
+    "prompt i'll use",
+    "prompt i will use",
+    "assessor system prompt",
+    "approve the prompt",
+    "approve the system prompt",
+    "review the prompt",
+    "review the system prompt",
+)
 
 
 def _is_ok_output(status: str | None, output: str | None) -> bool:
@@ -399,6 +425,34 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
             if c.get("status") == "error":
                 return "wrong"
         return "met"
+
+    if mtype == "prompt_review":
+        # Integrity: if the assistant solicits review/approval of a prompt it
+        # generated, it must actually render that prompt with show_prompt. The
+        # observed failure is "here's the prompt … review it" with the prompt
+        # never shown (it lived only in the SDG job config). Solicited but not
+        # shown -> wrong; shown -> met; never solicited -> n/a.
+        text = run.assistant_text
+        if not any(m in text for m in _PROMPT_REVIEW_MARKERS):
+            return "n/a"
+        return "met" if _calls(run, "show_prompt") else "wrong"
+
+    if mtype == "eval_phase":
+        # UI progress: the eval stage must signal phase=eval so the bar shows
+        # "Evaluation". The observed bug was eval signalling phase=training,
+        # leaving the bar stuck on Model Training.
+        if not _calls(run, "validate_eval_job"):
+            return "n/a"  # no eval stage in this run
+        eval_signals = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "signal_phase" and c.get("role") == "eval"
+        ]
+        if not eval_signals:
+            return "missed"  # eval ran but never signalled a phase
+        if not any("phase" in c for c in eval_signals):
+            return "review"  # log predates phase capture (logging-dependency)
+        return "met" if any(c.get("phase") == "eval" for c in eval_signals) else "wrong"
 
     if mtype == "judge_valid":
         # The eval judge model must be a real model name from the catalog
