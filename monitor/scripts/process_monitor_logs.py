@@ -225,7 +225,6 @@ _PROMPT_REVIEW_MARKERS = (
     "here is the prompt",
     "prompt i'll use",
     "prompt i will use",
-    "assessor system prompt",
     "approve the prompt",
     "approve the system prompt",
     "review the prompt",
