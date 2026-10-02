@@ -83,7 +83,8 @@ options.
 
 1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
-3. THEN present model options
+3. THEN present the models as options and wait for the user to choose —
+   never auto-select a model, even if you have a recommended default
 
 ## Training Method Selection
 
