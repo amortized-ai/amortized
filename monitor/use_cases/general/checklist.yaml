@@ -70,7 +70,14 @@ rows:
     aspect: C
     expected: "SDG config is validated before the training config (data before training)"
     adjudicate: auto
-    match: { type: tool_before, before: validate_sdg_job, after: validate_training_job }
+    # na_if_after_chained: resume/reuse — when training chains to a pre-existing
+    # SDG dataset (parent_job_id set) and no SDG validate precedes it in this log,
+    # the within-log ordering rule does not apply -> n/a (not wrong).
+    match:
+      type: tool_before
+      before: validate_sdg_job
+      after: validate_training_job
+      na_if_after_chained: parent_job_id
 
   - id: order_training_before_eval
     stage: "Order: training before eval"
@@ -153,7 +160,14 @@ rows:
     expected: "Looks up model pricing before asking the user to pick a teacher model"
     adjudicate: auto
     # sdg/workflow.md (60-63, 100-101)
-    match: { type: tool_called, tools: [get_model_pricing, show_model_pricing], where: { role: sdg } }
+    # na_if_reused: when SDG inherits a prior job's config (get_job returns an
+    # sdg-type job under the sdg role), no fresh teacher selection happened, so
+    # there is no pricing step to show -> n/a (not missed).
+    match:
+      type: tool_called
+      tools: [get_model_pricing, show_model_pricing]
+      where: { role: sdg }
+      na_if_reused: { tool: get_job, where: { role: sdg }, output_contains: '"type": "sdg"' }
 
   - id: sdg_skill_loaded
     stage: "SDG sub-skill"
