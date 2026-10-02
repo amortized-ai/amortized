@@ -279,6 +279,23 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
             if needle and needle not in (c.get("output") or ""):
                 continue
             return "met"
+        # Reuse/resume: the step legitimately did not run because the agent
+        # inherited config from a prior job (e.g. SDG reused a prior job's teacher,
+        # so there was no teacher selection and hence no pricing to show). The
+        # `na_if_reused` probe identifies that prior-config load -> n/a, not missed.
+        na = match.get("na_if_reused")
+        if na:
+            na_tools = na.get("tools") or [na["tool"]]
+            na_where = na.get("where") or {}
+            na_needle = na.get("output_contains")
+            for c in run.tool_calls:
+                if c.get("tool") not in na_tools:
+                    continue
+                if not all(c.get(k) == v for k, v in na_where.items()):
+                    continue
+                if na_needle and na_needle not in (c.get("output") or ""):
+                    continue
+                return "n/a"
         return "missed"
 
     if mtype == "chained":
@@ -309,6 +326,18 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         after = [i for i, c in enumerate(run.tool_calls) if _spec_match(c, after_spec)]
         if not after:
             return "missed"
+        # Resume/reuse: when the earliest `after` call chains to an artifact built
+        # in a prior session (its `na_if_after_chained` field is set) and no
+        # `before` call precedes it in THIS log, the within-log ordering rule does
+        # not apply (e.g. training resumed from a pre-existing SDG dataset). A
+        # genuinely out-of-order run with no such chain still falls through to wrong.
+        na_field = match.get("na_if_after_chained")
+        if na_field:
+            first_after = min(after)
+            if not any(i < first_after for i in before) and run.tool_calls[first_after].get(
+                na_field
+            ):
+                return "n/a"
         if not before or min(before) > min(after):
             return "wrong"
         return "met"
