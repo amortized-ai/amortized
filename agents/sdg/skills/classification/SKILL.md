@@ -1,3 +1,15 @@
+---
+name: sdg-classification
+description: >-
+  Generate synthetic labeled training data for text classifiers. Use for
+  ticket classifiers, intent routers, sentiment analysis, and content
+  moderation, where each sample is input text plus a category (and optional
+  urgency) label. Covers category/urgency design, sample counts, and SFT
+  formatting.
+metadata:
+  stage: sdg
+---
+
 # Classification — SDG Guide
 
 Use this guide when building ticket classifiers, intent routers, sentiment
@@ -103,5 +115,5 @@ ALWAYS add as the last option:
 
 ## After SDG — Training
 
-Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md`
-for the training config. Chain via `parent_job_id`.
+Recommend OSFT training, chained via `parent_job_id`. Training is handled by a
+separate step — do not build the training config here; just hand off.

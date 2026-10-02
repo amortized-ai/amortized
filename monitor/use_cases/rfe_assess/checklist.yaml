@@ -7,9 +7,9 @@
 # general row overrides it).
 #
 # An RFE assessor is a rubric / structured-evaluation task, so the correct SDG
-# sub-skill is task-distillation (sdg/workflow.md:39). The generic checklist
-# only asserts that *some* sub-skill guide was loaded; this overlay asserts the
-# *right* one for this task.
+# sub-skill is sdg-task-distillation. The generic checklist only asserts that
+# *some* SDG sub-skill was loaded; this overlay asserts the *right* one for this
+# task.
 
 extends: general
 use_case: rfe_assess
@@ -21,6 +21,9 @@ rows:
   - id: sdg_skill_is_task_distillation
     stage: "SDG sub-skill (RFE)"
     aspect: B
-    expected: "Loads the task-distillation SDG sub-skill (correct for a rubric/structured-eval task)"
+    expected: "Loads the sdg-task-distillation skill (correct for a rubric/structured-eval task)"
     adjudicate: auto
-    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "task-distillation/guide.md" }
+    # The skill tool's output echoes the loaded skill name as
+    # <skill_content name="sdg-task-distillation">; that name is defined in
+    # agents/sdg/skills/task-distillation/SKILL.md frontmatter.
+    match: { type: tool_called, tool: skill, where: { role: sdg }, output_contains: 'name="sdg-task-distillation"' }

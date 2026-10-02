@@ -397,18 +397,18 @@ def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
     was actually loaded, so a classification run doesn't get judged against the
     task-distillation guide.
 
-    Currently supports `type: skill_loaded` — a `read` whose output echoes the
-    guide path (`path_contains`), optionally scoped to a subagent `role` (the
-    sub-skills belong to subagents, so role-scoping disambiguates which agent
-    loaded which guide). Reuses the same read/output_contains detection as the
-    auto `skill_loaded` mechanic rows. Unknown types don't gate (return True)."""
+    Currently supports `type: skill_loaded` — a `skill` tool call whose output
+    echoes the loaded skill name (`skill`), optionally scoped to a subagent
+    `role` (the sub-skills belong to subagents, so role-scoping disambiguates
+    which agent loaded which skill). Mirrors the auto `*_skill_loaded` mechanic
+    rows (tool_called on the `skill` tool). Unknown types don't gate (True)."""
     if not requires:
         return True
     if requires.get("type") == "skill_loaded":
         role = requires.get("role")
-        needle = requires.get("path_contains")
+        needle = requires.get("skill")  # skill name, echoed in the skill-tool output
         for c in run.tool_calls:
-            if c.get("tool") != "read":
+            if c.get("tool") != "skill":
                 continue
             if role and c.get("role") != role:
                 continue

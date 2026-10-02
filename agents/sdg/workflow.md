@@ -29,24 +29,27 @@ not know about the internal delegation architecture.
 
 ## Sub-Skills
 
-Pick the sub-skill that best matches the user's task. Read its `guide.md`
-for deep expertise before building the config.
+Your SDG expertise is packaged as **skills**, loaded with the `skill` tool.
+Pick the one that best matches the user's task and load it. You MUST load the
+matching skill before gathering requirements or building the config — do not
+call `validate_sdg_job` until you have.
 
-| Sub-Skill | Path | Best For |
-|-----------|------|----------|
-| knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
-| classification | `skills/sdg/classification/` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
-| task-distillation | `skills/sdg/task-distillation/` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
+| Skill | Best For |
+|-------|----------|
+| `sdg-knowledge-ingestion` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
+| `sdg-classification` | Ticket classifiers, intent routers, sentiment analysis, content moderation |
+| `sdg-task-distillation` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
 
 ### How to Choose
 
 - **User has documents they want a model to answer questions about** →
-  `knowledge-ingestion`
-- **User wants to sort/label/categorize text** → `classification`
+  `sdg-knowledge-ingestion`
+- **User wants to sort/label/categorize text** → `sdg-classification`
 - **User wants to distill a frontier-model task into a smaller model** →
-  `task-distillation`
+  `sdg-task-distillation`
 
-Once determined, read `skills/sdg/<sub-skill>/guide.md` for the detailed
+Once determined, load it with the `skill` tool (e.g.
+`skill({ name: "sdg-task-distillation" })`) for the detailed
 requirement-gathering steps, tool parameters, and prompt engineering rules.
 
 ## Teacher Model Selection
@@ -124,8 +127,9 @@ Determine whether this is a classification, knowledge-ingestion, or
 task-distillation task. Use the context provided by the orchestrator to
 make this decision. If the context does not make it clear, ask the user.
 
-Once determined, read the sub-skill's `guide.md` from
-`skills/sdg/<sub-skill>/guide.md`.
+Once determined, load the matching skill with the `skill` tool (e.g.
+`skill({ name: "sdg-task-distillation" })`). You MUST load it before
+Phase 2 — it contains the exact requirement-gathering steps and config rules.
 
 ### Phase 2 — Gather Requirements
 

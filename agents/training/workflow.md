@@ -26,20 +26,25 @@ about internal delegation.
 
 ## Sub-Skills
 
-| Sub-Skill | Path | Best For |
-|-----------|------|----------|
-| knowledge-ingestion/osft | `skills/training/knowledge-ingestion/osft/` | Knowledge ingestion, FAQ bots, doc-grounded QA |
+Your training expertise is packaged as a **skill**, loaded with the `skill`
+tool. You MUST load it before gathering requirements or building the config —
+do not call `validate_training_job` until you have.
+
+| Skill | Best For |
+|-------|----------|
+| `training-knowledge-ingestion-osft` | Knowledge ingestion, FAQ bots, doc-grounded QA |
 
 **How to choose:** Knowledge ingestion → OSFT (default, recommended).
 
-Read `skills/training/knowledge-ingestion/osft/guide.md` for detailed
-requirement-gathering steps, tool parameters, and hyperparameter
-guidance.
+Load it with `skill({ name: "training-knowledge-ingestion-osft" })` for detailed
+requirement-gathering steps, tool parameters, and hyperparameter guidance.
+The skill bundles the supported-model list and a config template.
 
 ## Student Model Selection
 
-Read `skills/training/supported_models.json` for the list of candidate
-models. You MUST show VRAM estimates before presenting model options.
+Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osft` skill) for the
+list of candidate models. You MUST show VRAM estimates before presenting model
+options.
 
 1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
@@ -96,9 +101,9 @@ change. Do NOT restart from Phase 1.
 ### Phase 1 — Route to Sub-Skill
 
 Determine which training sub-skill to use based on the handoff context.
-Currently only OSFT for knowledge-ingestion. Read
-`skills/training/knowledge-ingestion/osft/guide.md` for detailed
-guidance.
+Currently only OSFT for knowledge-ingestion. Load it with
+`skill({ name: "training-knowledge-ingestion-osft" })`. You MUST load it before Phase 2 — it
+contains the detailed guidance and bundles the supported-model list.
 
 ### Phase 2 — Gather Requirements
 

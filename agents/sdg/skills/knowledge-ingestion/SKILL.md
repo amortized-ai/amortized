@@ -1,3 +1,14 @@
+---
+name: sdg-knowledge-ingestion
+description: >-
+  Generate synthetic question-answer training data grounded in uploaded
+  documents. Use for FAQ bots, QA assistants, document-grounded chat, and RAG
+  knowledge models. Covers document chunk analysis, sample-count computation
+  from coverage, groundedness constraints, and SFT formatting.
+metadata:
+  stage: sdg
+---
+
 # Knowledge Ingestion — SDG Guide
 
 Use this guide when building FAQ bots, QA assistants, document-grounded chat,
@@ -244,6 +255,6 @@ Before submitting the job, verify:
 
 ## After SDG — Training
 
-Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md` for the
-training config. The SDG job's output (stored in MLflow) becomes the
-training job's `data_path` via parent job chaining.
+Recommend OSFT training, chained via `parent_job_id`. The SDG job's output
+(stored in MLflow) becomes the training job's `data_path` automatically.
+Training is handled by a separate step — just hand off.

@@ -39,11 +39,11 @@ task-specific rows. The script merges them — all `general` rows apply, plus th
 overlay's rows (an overlay row with the same `id` overrides the general one).
 Example: `use_cases/rfe_assess` extends `general` and adds
 `sdg_skill_is_task_distillation` (RFE is a rubric/structured-eval task, so the
-correct SDG sub-skill is `task-distillation`), while `general` only asserts that
-*some* sub-skill guide was loaded (`sdg_skill_loaded` / `train_skill_loaded`).
+correct SDG sub-skill is `sdg-task-distillation`), while `general` only asserts
+that *some* domain sub-skill was loaded (`sdg_skill_loaded` / `train_skill_loaded`).
 
 **Overlay convention — pin the expected sub-skill.** The aspect-G skill-adherence
-rows answer *"given it loaded skill X, did it follow X's guide?"* — deliberately
+rows answer *"given it loaded skill X, did it follow X's content?"* — deliberately
 **not** *"was X the right skill for this task?"*. `general` can't know the right
 skill (it's task-specific), so a run that loads the *wrong* skill would still get
 its aspect-G rows scored against that wrong skill (and could even score `met`).
@@ -58,9 +58,9 @@ rows:
   - id: sdg_skill_is_<skill>
     stage: "SDG sub-skill = <skill>"
     aspect: B
-    expected: "Loads the <skill> SDG sub-skill (correct for this task)"
+    expected: "Loads the sdg-<skill> SDG sub-skill (correct for this task)"
     adjudicate: auto
-    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "<skill>/guide.md" }
+    match: { type: tool_called, tool: skill, where: { role: sdg }, output_contains: 'name="sdg-<skill>"' }
 ```
 
 The gating + `n/a`-excluded denominator (below) already generalize to any scenario
@@ -85,21 +85,21 @@ default when a signal is absent), `n/a`, `review`.
 
 A row may carry a `requires:` precondition. When it isn't satisfied for a run the
 row scores `n/a` (and, for `llm_judge` rows, is *not* sent to the judge). Today the
-only type is `skill_loaded` — a `read` whose output echoes a guide path
-(`path_contains`), optionally scoped to a subagent `role` (sub-skills belong to
-subagents, so the role disambiguates which agent loaded which guide):
+only type is `skill_loaded` — a `skill` tool call whose output echoes the loaded
+skill name (`skill`), optionally scoped to a subagent `role` (sub-skills belong to
+subagents, so the role disambiguates which agent loaded which skill):
 
 ```yaml
-requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 ```
 
 This gates the **skill-adherence** rows (aspect **G**). On top of the auto
 skill-*loading* rows (`sdg_skill_loaded` / `train_skill_loaded`, which only assert
-that *some* guide was read), the aspect-G rows check whether the workflow actually
-**followed** the loaded guide's content — curated per sub-skill from
-`agents/*/skills/**/guide.md` (classification, knowledge-ingestion,
+that *some* domain sub-skill was loaded), the aspect-G rows check whether the
+workflow actually **followed** the loaded skill's content — curated per sub-skill
+from `agents/*/skills/**/SKILL.md` (classification, knowledge-ingestion,
 task-distillation, and training OSFT). Each fires only on the run that loaded its
-guide, so a classification run is never judged against the task-distillation guide.
+skill, so a classification run is never judged against the task-distillation skill.
 They are judged from assistant prose + `present_options` outputs + tool outputs
 (tool *inputs* / submitted configs aren't in the transcript), so each criterion is
 one observable there.
@@ -170,7 +170,7 @@ Otherwise (`llm_judge` / `human`) the status is `review`, deferred to stage 4
 
 | matcher | met | wrong | missed / other |
 |---|---|---|---|
-| `tool_called` (`tool` or `tools` any-of; optional `where` e.g. `role: eval`, and `output_contains` substring e.g. `skills/sdg/`) | a matching call exists | — | `missed` if never called |
+| `tool_called` (`tool` or `tools` any-of; optional `where` e.g. `role: eval`, and `output_contains` substring e.g. `name="sdg-`) | a matching call exists | — | `missed` if never called |
 | `tool_before` (`before`, `after`; each a bare tool name **or** `{tool, where}` to order by an arg e.g. `mode: preview`) | a `before` call precedes the first `after` call | `after` exists but no earlier `before` | `missed` if `after` never called; `review` if the `where` arg is absent from the log |
 | `validate_ok` (tool) | a `validate_*` call whose output isn't an error | only failing calls exist | `missed` if never called |
 | `chained` (tool, `any_of` fields) | a `validate_*` call carries a non-empty field (e.g. `parent_job_id`, `judge`) | — | `missed` if none set |

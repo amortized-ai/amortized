@@ -17,8 +17,9 @@
 #
 # requires (optional gate): a row scores `n/a` (and is not sent to the judge)
 #   unless its precondition holds. type `skill_loaded` matches a role-scoped
-#   `read` of a guide path (`path_contains`) -> used to activate the aspect-G
-#   skill-adherence rows only on runs that loaded that sub-skill's guide.
+#   `skill` tool call whose output echoes the loaded skill name (`skill`) ->
+#   used to activate the aspect-G skill-adherence rows only on runs that loaded
+#   that sub-skill.
 #
 # match types (auto rows):
 #   tool_called | tool_before | validate_ok | recovery | completion | chained
@@ -158,19 +159,22 @@ rows:
   - id: sdg_skill_loaded
     stage: "SDG sub-skill"
     aspect: B
-    expected: "Reads an SDG sub-skill guide (skills/sdg/.../guide.md) before building the config"
+    expected: "Loads an SDG sub-skill (sdg-*) via the skill tool before building the config"
     adjudicate: auto
-    # sdg/workflow.md (49, 127-128): read skills/sdg/<sub-skill>/guide.md before config.
+    # sdg/workflow.md Sub-Skills + Phase 1: skill({ name: "sdg-<sub-skill>" }) before config.
+    # Scope to our sdg-* skills (output echoes <skill_content name="sdg-...">) so a
+    # built-in opencode skill (e.g. customize-opencode) doesn't count as loaded.
     # WHICH sub-skill is correct is task-specific -> that lives in a use-case overlay.
-    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "skills/sdg/" }
+    match: { type: tool_called, tool: skill, where: { role: sdg }, output_contains: 'name="sdg-' }
 
   - id: train_skill_loaded
     stage: "Training sub-skill"
     aspect: B
-    expected: "Reads the training sub-skill guide (skills/training/.../guide.md) before building the config"
+    expected: "Loads the training sub-skill (training-knowledge-ingestion-osft) via the skill tool before building the config"
     adjudicate: auto
-    # training/workflow.md (35, 96-101): Route to Sub-Skill -> read skills/training/.../osft/guide.md
-    match: { type: tool_called, tool: read, where: { role: training }, output_contains: "skills/training/" }
+    # training/workflow.md Sub-Skills + Phase 1: skill({ name: "training-knowledge-ingestion-osft" }) before config.
+    # Scope to our training-* skill so a built-in opencode skill doesn't count.
+    match: { type: tool_called, tool: skill, where: { role: training }, output_contains: 'name="training-' }
 
   - id: train_vram_shown
     stage: "Training VRAM"
@@ -331,16 +335,16 @@ rows:
 
   # ---- Skill adherence (aspect G) -------------------------------------------
   # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
-  # which only assert a guide was read), these check whether the workflow FOLLOWED
-  # the guide's content. Curated per skill from agents/*/skills/**/guide.md. Each
-  # row is gated by `requires: skill_loaded` (role-scoped read of that guide) so it
-  # is `n/a` unless that sub-skill was actually loaded in the run; only then is it
-  # sent to the judge. Skills belong to subagents, so `role` scopes the gate.
+  # which only assert a skill was loaded), these check whether the workflow FOLLOWED
+  # the skill's content. Curated per skill from agents/*/skills/**/SKILL.md. Each
+  # row is gated by `requires: skill_loaded` (role-scoped skill-tool call for that
+  # skill) so it is `n/a` unless that sub-skill was actually loaded in the run; only
+  # then is it sent to the judge. Skills belong to subagents, so `role` scopes the gate.
   # Judged from assistant prose + present_options outputs + tool outputs ONLY
   # (tool INPUTS / submitted configs are not in the transcript), so criteria are
   # limited to guide steps observable there.
 
-  # -- SDG: classification (agents/sdg/skills/classification/guide.md) --
+  # -- SDG: classification (agents/sdg/skills/classification/SKILL.md) --
   - id: skill_classification_stepwise_questions
     stage: "Skill: classification requirement flow"
     aspect: G
@@ -352,7 +356,7 @@ rows:
       sdg-samples / sdg-teacher-model). `wrong` if it dumps every question in one
       turn or skips the staged flow.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-classification" }
 
   - id: skill_classification_suggests_categories
     stage: "Skill: classification suggests labels"
@@ -364,7 +368,7 @@ rows:
       sdg-categories present_options options. `wrong` if it just asks the user to
       type labels with no suggestions.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-classification" }
 
   - id: skill_classification_urgency_offered
     stage: "Skill: classification urgency step"
@@ -374,7 +378,7 @@ rows:
       its own decision point (sdg-urgency), per the guide. `wrong` if urgency is
       never surfaced to the user.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-classification" }
 
   - id: skill_classification_teacher_from_list_models
     stage: "Skill: classification teacher options"
@@ -386,9 +390,9 @@ rows:
       sdg-teacher-model options. `wrong` if options include a model not in
       list_models or omit the configure-a-model fallback.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-classification" }
 
-  # -- SDG: knowledge-ingestion (agents/sdg/skills/knowledge-ingestion/guide.md) --
+  # -- SDG: knowledge-ingestion (agents/sdg/skills/knowledge-ingestion/SKILL.md) --
   - id: skill_knowledge_grounds_on_documents
     stage: "Skill: knowledge doc grounding"
     aspect: G
@@ -398,7 +402,7 @@ rows:
       stats), rather than proceeding without inspecting the uploaded documents.
       `wrong` if it never inspects the documents.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-knowledge-ingestion" }
 
   - id: skill_knowledge_samples_from_chunk_stats
     stage: "Skill: knowledge sample-count math"
@@ -411,7 +415,7 @@ rows:
       coverage-tier present_options. `wrong` if sample count is picked with no
       chunk-based reasoning shown.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-knowledge-ingestion" }
 
   - id: skill_knowledge_coverage_tiers
     stage: "Skill: knowledge coverage tiers"
@@ -421,7 +425,7 @@ rows:
       computed sample count for each, recommending the 5x default. `wrong` if it
       offers a single number or tiers without the computed counts.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-knowledge-ingestion" }
 
   - id: skill_knowledge_no_user_system_prompt
     stage: "Skill: knowledge generates system prompt"
@@ -432,9 +436,9 @@ rows:
       confirmation table for optional adjustment. `wrong` if it asks the user to
       author the system prompt.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-knowledge-ingestion" }
 
-  # -- SDG: task-distillation (agents/sdg/skills/task-distillation/guide.md) --
+  # -- SDG: task-distillation (agents/sdg/skills/task-distillation/SKILL.md) --
   - id: skill_distillation_asks_examples_first
     stage: "Skill: distillation examples-first"
     aspect: G
@@ -444,7 +448,7 @@ rows:
       interrogating the user for every detail. `wrong` if it never requests
       examples and asks for all fields piecemeal.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 
   - id: skill_distillation_confirms_output_format
     stage: "Skill: distillation format confirmation"
@@ -455,7 +459,7 @@ rows:
       `wrong` if it proceeds to validate_sdg_job without ever showing the output
       format for confirmation.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 
   - id: skill_distillation_corpus_inferred_silently
     stage: "Skill: distillation reuses real corpus"
@@ -467,7 +471,7 @@ rows:
       own". `wrong` if it poses that generate-vs-use question despite a real-input
       corpus; `n/a` if no real-input corpus is evident.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 
   - id: skill_distillation_teacher_name_verbatim
     stage: "Skill: distillation teacher name verbatim"
@@ -478,18 +482,19 @@ rows:
       "openai/openai/gpt-oss-120b" stays intact). Compare the list_models output
       to the model shown in options/confirmation. `wrong` if the name is altered.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 
-  # -- Training: OSFT (agents/training/skills/knowledge-ingestion/osft/guide.md) --
+  # -- Training: OSFT (agents/training/skills/knowledge-ingestion/osft/SKILL.md) --
   - id: skill_osft_model_from_supported_file
     stage: "Skill: OSFT model list"
     aspect: G
     expected: >
-      The training agent presents ONLY models from skills/training/
-      supported_models.json (it reads that file) and does not invent other sizes
-      or HuggingFace IDs. `wrong` if a presented model is not from that file.
+      The training agent presents ONLY models from the supported_models.json
+      bundled with the training-knowledge-ingestion-osft skill (it reads that file) and does not
+      invent other sizes or HuggingFace IDs. `wrong` if a presented model is not
+      from that file.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+    requires: { type: skill_loaded, role: training, skill: "training-knowledge-ingestion-osft" }
 
   - id: skill_osft_key_params_in_table
     stage: "Skill: OSFT confirmation params"
@@ -500,7 +505,7 @@ rows:
       effective_batch_size — even when at defaults. `wrong` if the confirmation
       omits unfreeze_rank_ratio or effective_batch_size.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+    requires: { type: skill_loaded, role: training, skill: "training-knowledge-ingestion-osft" }
 
   - id: skill_osft_params_justified
     stage: "Skill: OSFT param reasoning"
@@ -511,7 +516,7 @@ rows:
       SDG task) rather than presenting static defaults with no reasoning. `wrong`
       if values are shown with no rationale.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+    requires: { type: skill_loaded, role: training, skill: "training-knowledge-ingestion-osft" }
 
   - id: skill_osft_single_gpu_no_gpu_question
     stage: "Skill: OSFT 1-GPU default"
@@ -521,4 +526,4 @@ rows:
       many GPUs they have or offer GPU-count options, per the guide. `wrong` if it
       asks the user to choose a GPU count.
     adjudicate: llm_judge
-    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+    requires: { type: skill_loaded, role: training, skill: "training-knowledge-ingestion-osft" }
