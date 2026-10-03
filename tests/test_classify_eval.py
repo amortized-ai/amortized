@@ -153,6 +153,28 @@ def test_tau_zero_never_abstains_even_with_negative_similarity(tmp_path, monkeyp
         assert mod.FALLBACK not in res["confusion"][cat]
 
 
+def test_real_fallback_class_column_preserved(tmp_path, monkeypatch):
+    # A dataset with a real class literally named "__fallback__": when queries
+    # abstain, the abstain confusion column must NOT overwrite that real class's
+    # column in the emitted metrics (output collision, distinct from scoring).
+    cats = ["a", "b", "__fallback__"]
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in cats for i in range(20)]
+    mod = _load_classify_eval(rows, monkeypatch)
+    res = _run(
+        mod,
+        {"model_path": "x", "eval_data_path": "y", "text_column": "text",
+         "label_column": "category", "anchors_per_class": 8, "tau": 1.1},  # all abstain
+        tmp_path, monkeypatch,
+    )
+    assert res["abstained"] == res["num_queries"]
+    for row in res["confusion"].values():
+        # the real class column is still present (and, since all abstained, zero)
+        assert row["__fallback__"] == 0
+        # the abstain bucket got a distinct, non-colliding display key
+        assert "___fallback__" in row
+        assert row["___fallback__"] > 0
+
+
 def test_integer_labels_still_work(tmp_path, monkeypatch):
     rows = [{"text": f"{c}_ex{i}", "category": c} for c in [0, 1, 2] for i in range(20)]
     mod = _load_classify_eval(rows, monkeypatch)

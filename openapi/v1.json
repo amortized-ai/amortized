@@ -6322,7 +6322,12 @@
           "loss_type": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "batch_all_triplet",
+                  "batch_hard_triplet",
+                  "mnrl"
+                ]
               },
               {
                 "type": "null"
@@ -6334,7 +6339,12 @@
           "batch_sampler": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "group_by_label",
+                  "no_duplicates",
+                  "default"
+                ]
               },
               {
                 "type": "null"
@@ -6346,14 +6356,16 @@
           "warmup_ratio": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Warmup Ratio",
-            "description": "embedding_sft: warmup fraction of total steps"
+            "description": "embedding_sft: warmup fraction of total steps (0.0-1.0)"
           },
           "seed": {
             "anyOf": [

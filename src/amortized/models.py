@@ -85,21 +85,26 @@ class TrainingJobConfig(BaseModel):
             " 'category' for the embedding-classifier SDG datasets."
         ),
     )
-    loss_type: str | None = Field(
-        None,
-        description=(
-            "embedding_sft contrastive loss: batch_all_triplet, "
-            "batch_hard_triplet, or mnrl"
-        ),
+    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
+        Field(
+            None,
+            description=(
+                "embedding_sft contrastive loss: batch_all_triplet, "
+                "batch_hard_triplet, or mnrl"
+            ),
+        )
     )
-    batch_sampler: str | None = Field(
+    batch_sampler: Literal["group_by_label", "no_duplicates", "default"] | None = Field(
         None,
         description=(
             "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
         ),
     )
     warmup_ratio: float | None = Field(
-        None, description="embedding_sft: warmup fraction of total steps"
+        None,
+        ge=0.0,
+        le=1.0,
+        description="embedding_sft: warmup fraction of total steps (0.0-1.0)",
     )
     seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
     topic: str = Field(
@@ -530,6 +535,25 @@ class EvalJobConfig(BaseModel):
             " never abstains."
         ),
     )
+
+    @model_validator(mode="after")
+    def check_class_labels_unique(self) -> "EvalJobConfig":
+        """Duplicate display names collapse per-class F1 / confusion keys (two
+        integer classes mapping to the same name would silently merge in the
+        metrics), so reject them at the boundary."""
+        if self.class_labels is not None:
+            seen: set[str] = set()
+            dupes: set[str] = set()
+            for n in self.class_labels:
+                if n in seen:
+                    dupes.add(n)
+                seen.add(n)
+            if dupes:
+                raise ValueError(
+                    "class_labels must be unique; duplicate name(s) would merge"
+                    f" per-class metrics: {sorted(dupes)}"
+                )
+        return self
 
     @model_validator(mode="after")
     def check_model_source(self) -> "EvalJobConfig":

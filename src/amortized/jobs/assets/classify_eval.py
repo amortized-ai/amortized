@@ -122,6 +122,15 @@ def main() -> None:
         by_label.setdefault(r["label"], []).append(r["text"])
     labels = sorted(by_label)
 
+    # Display name for the abstain bucket in the emitted metrics/results. The
+    # internal key is the _ABSTAIN sentinel (so scoring never collides), but the
+    # output uses a string — pick one that doesn't clash with a real class named
+    # "__fallback__", or its confusion column would overwrite that class's.
+    class_display_names = {name(i) for i in labels}
+    abstain_name = FALLBACK
+    while abstain_name in class_display_names:
+        abstain_name = "_" + abstain_name
+
     # Stratified anchors/queries split (disjoint per class). Cap anchors at half
     # the class so query count scales with the eval size — a fixed
     # anchors_per_class would otherwise leave small classes with only a query or
@@ -195,8 +204,8 @@ def main() -> None:
             "text": q["text"],
             "actual": q["label"],
             "actual_name": name(q["label"]),
-            "predicted": FALLBACK if abstain else best_label,
-            "predicted_name": FALLBACK if abstain else name(best_label),
+            "predicted": abstain_name if abstain else best_label,
+            "predicted_name": abstain_name if abstain else name(best_label),
             "score": round(best_score, 4),
             "correct": is_correct,
         })
@@ -222,8 +231,9 @@ def main() -> None:
                 name(i): {
                     **{name(j): confusion[i][j] for j in labels},
                     # Only surface the abstain column when it's non-trivial, so the
-                    # common tau=0 output stays a plain NxN matrix.
-                    **({FALLBACK: confusion[i][_ABSTAIN]} if abstained else {}),
+                    # common tau=0 output stays a plain NxN matrix. abstain_name is
+                    # collision-free even if a real class is named "__fallback__".
+                    **({abstain_name: confusion[i][_ABSTAIN]} if abstained else {}),
                 }
                 for i in labels
             },

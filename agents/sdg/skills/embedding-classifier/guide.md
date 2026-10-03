@@ -65,7 +65,7 @@ for the general shape); only two things are specific to this skill — a `catego
       "column_type": "llm-text",
       "name": "text",
       "model_alias": "text",
-      "system_prompt": "You generate realistic messages that users actually send in the <domain> setting. Match the real style, brevity, vocabulary, and phrasing of the example messages for each category below — including any shorthand, abbreviations, or typos. Do NOT make messages cleaner or longer than the examples, and do not name the category in the text. Output ONLY the message text.\n\nExample messages by category:\n- <cat_a>: \"<seed>\"; \"<seed>\"\n- <cat_b>: \"<seed>\"; \"<seed>\"",
+      "system_prompt": "You generate realistic messages that users actually send in the <domain> setting. Match the real style, brevity, vocabulary, and phrasing of the example messages for each category below — including any shorthand, abbreviations, or typos. Do NOT make messages cleaner or longer than the examples, and do not name the category in the text. Output ONLY the message text.\n\nExample messages by category:\n- <cat_a>: \"<seed>\"; \"<seed>\"\n- <cat_b>: \"<seed>\"; \"<seed>\"\n- <cat_c>: \"<seed>\"; \"<seed>\"",
       "prompt": "Generate ONE new, distinct message for the category: {{ category }}. Match the register and phrasing of the '{{ category }}' examples above; vary the wording — do not copy any example verbatim."
     }
   ],

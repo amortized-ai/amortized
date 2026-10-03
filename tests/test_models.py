@@ -48,6 +48,21 @@ class TestTrainingJobConfig:
         dumped = config.model_dump(exclude_none=True)
         assert dumped["label_column"] == "category" and dumped["text_column"] == "text"
 
+    def test_invalid_embedding_options_rejected(self) -> None:
+        # loss_type / batch_sampler are constrained to the values embedding_sft
+        # accepts, and warmup_ratio to [0, 1], so a bad config fails at the API
+        # boundary instead of only after the job starts.
+        base = dict(
+            algorithm="embedding_sft",
+            model_name_or_path="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        with pytest.raises(ValidationError):
+            TrainingJobConfig(**base, loss_type="not_a_loss")
+        with pytest.raises(ValidationError):
+            TrainingJobConfig(**base, batch_sampler="not_a_sampler")
+        with pytest.raises(ValidationError):
+            TrainingJobConfig(**base, warmup_ratio=1.5)
+
     def test_full_config(self) -> None:
         config = TrainingJobConfig(
             algorithm="sft",
@@ -145,6 +160,30 @@ class TestOSFTValidation:
             model_name_or_path="test",
         )
         assert req.unfreeze_rank_ratio is None
+
+
+class TestEvalJobConfig:
+    def test_duplicate_class_labels_rejected(self) -> None:
+        # Two integer classes mapping to the same display name would silently
+        # merge per-class F1 / confusion keys — reject at the boundary.
+        from amortized.models import EvalJobConfig
+
+        with pytest.raises(ValidationError, match="class_labels must be unique"):
+            EvalJobConfig(
+                eval_mode="classification",
+                training_job_id="abc",
+                class_labels=["billing", "billing", "shipping"],
+            )
+
+    def test_unique_class_labels_accepted(self) -> None:
+        from amortized.models import EvalJobConfig
+
+        cfg = EvalJobConfig(
+            eval_mode="classification",
+            training_job_id="abc",
+            class_labels=["billing", "shipping"],
+        )
+        assert cfg.class_labels == ["billing", "shipping"]
 
 
 class TestEnums:
