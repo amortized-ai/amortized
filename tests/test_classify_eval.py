@@ -166,3 +166,45 @@ def test_integer_labels_still_work(tmp_path, monkeypatch):
     assert res["accuracy"] == 1.0
     # integer labels map through class_labels by position
     assert set(res["per_class_f1"]) == {"a", "b", "c"}
+
+
+def test_single_example_class_excluded_from_macro(tmp_path, monkeypatch):
+    # Two full classes + one single-example class. The single-example class has no
+    # queries (anchor only) and must NOT drag macro-F1 down: a perfect model
+    # should report accuracy 1.0 AND macro_f1 1.0 (not 0.667).
+    full = ["telemetry", "propulsion"]
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in full for i in range(20)]
+    rows.append({"text": "solo_ex0", "category": "solo"})
+    mod = _load_classify_eval(rows, monkeypatch)
+    res = _run(
+        mod,
+        {"model_path": "x", "eval_data_path": "y", "text_column": "text",
+         "label_column": "category", "anchors_per_class": 8, "tau": 0.0},
+        tmp_path, monkeypatch,
+    )
+    assert res["accuracy"] == 1.0
+    assert res["macro_f1"] == 1.0
+    assert res["skipped_single_example_classes"] == ["solo"]
+    # the skipped class is excluded from the macro/per-class set
+    assert "solo" not in res["per_class_f1"]
+    assert res["num_scored_classes"] == 2
+
+
+def test_anchors_capped_at_half_class(tmp_path, monkeypatch):
+    # anchors_per_class larger than half a class must be capped so queries remain.
+    # 20/class with anchors_per_class=16 → cap at 10, leaving ~10 queries/class
+    # (the old min(16, len-1) would have left only 4).
+    cats = ["telemetry", "propulsion", "other"]
+    rows = [{"text": f"{c}_ex{i}", "category": c} for c in cats for i in range(20)]
+    mod = _load_classify_eval(rows, monkeypatch)
+    res = _run(
+        mod,
+        {"model_path": "x", "eval_data_path": "y", "text_column": "text",
+         "label_column": "category", "class_labels": cats,
+         "anchors_per_class": 16, "tau": 0.0},
+        tmp_path, monkeypatch,
+    )
+    for cat in cats:
+        assert res["num_anchors_per_class"][cat] == 10  # capped at len//2
+    assert res["num_queries"] == 30  # 10 queries/class
+    assert res["low_query_classes"] == []

@@ -43,7 +43,9 @@ ticket/topic/sentiment) → embedding-classifier (`embedding_sft`) — the
 recommended default for classification. **Exception:** if the user explicitly
 wants a **generative/LLM** classifier (an LLM that emits the label as text, e.g.
 with a free-form explanation, trained on `messages` data), that is a normal LLM
-fine-tune — use the OSFT sub-skill, not embedding-classifier.
+fine-tune — use the OSFT sub-skill (its guide's **Scope** note covers
+`messages`-based fine-tunes; skip the document-specific steps), not
+embedding-classifier.
 
 Read `skills/training/knowledge-ingestion/osft/guide.md` for OSFT, or
 `skills/training/embedding-classifier/guide.md` for the embedding classifier —

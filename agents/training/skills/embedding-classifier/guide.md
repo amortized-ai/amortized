@@ -3,7 +3,7 @@
 Use this sub-skill to train a **compact embedding classifier / router** with
 `embedding_sft` (contrastive fine-tuning of a sentence-transformers model). Best
 for intent routing, ticket/topic classification, and sentiment — small, fast, and
-cheap to serve. Pair it with the **Embedding Classifier** SDG template, which
+cheap to serve. Pair it with the **Embedding Classifier** SDG skill, which
 produces `(text, category)` data.
 
 This flow is different from the LLM training sub-skills (OSFT/SFT/LoRA):
@@ -13,26 +13,31 @@ This flow is different from the LLM training sub-skills (OSFT/SFT/LoRA):
 - The base is a small **sentence-transformers** model, so **skip the VRAM cards**
   and student-model-size comparison — they don't apply. Just pick a base model.
 
-## Requirement gathering (STRICT one-question-per-turn)
+## Requirement gathering
 
-Ask these **one at a time**. Send ONE question, then **STOP and wait for the
-user's reply** before the next — never write the user's answer yourself, never
-simulate a "user:" turn, and never advance to `validate_training_job` in the same
-message. Skip a question only if the answer is already known from context.
+Follow the workflow's one-question-per-turn rules. Gather:
 
 1. **Training data** — should come from a completed classification SDG job via
    `parent_job_id` (or a dataset `data_run_id`). If the orchestrator passed an SDG
-   job ID, use it without asking. The dataset must have a text column and a
-   category/label column; set `label_column` to the category column name
-   (`category` for the SDG template) and `text_column` to the text column
-   (`text`). String categories are label-encoded to integers automatically.
+   job ID, use it without asking. Set `label_column` to the category column name
+   (`category` for the SDG skill) and `text_column` to the text column (`text`).
+   String categories are label-encoded to integers automatically.
 2. **Base model** — default `sentence-transformers/all-MiniLM-L6-v2` (small, fast,
-   strong general-purpose). Only surface alternatives if the user asks
-   (e.g. a multilingual or larger sentence-transformers model).
-3. **Epochs** — default 25 for a few-hundred-example dataset; suggest more for
-   small datasets, fewer for large ones. Don't ask about learning rate / batch
-   size / loss unless the user brings them up (defaults: `batch_all_triplet` loss,
-   `group_by_label` sampler, lr 2e-5, batch 32).
+   strong general-purpose). Only surface alternatives if the user asks (e.g. a
+   multilingual or larger sentence-transformers model).
+3. **Epochs** — default 25 for a few-hundred-example dataset; more for small
+   datasets, fewer for large ones. Don't ask about learning rate / batch size /
+   loss unless the user brings them up.
+
+## Config
+
+`validate_training_job` already exposes every field you need as a first-class
+parameter — `algorithm`, `model_name_or_path`, `text_column`, `label_column`,
+`num_train_epochs`, `parent_job_id`/`data_run_id`, and the optional
+`loss_type` / `batch_sampler` / `warmup_ratio` / `seed`. Pull the structure from
+that schema and set `algorithm="embedding_sft"`; sensible defaults apply
+(`batch_all_triplet` loss, `group_by_label` sampler, lr 2e-5, batch 32) if you
+leave the optional knobs unset. No VRAM card is needed for this sub-skill.
 
 ## Hold-out for evaluation
 
@@ -40,16 +45,6 @@ Classifier quality is measured by the **classification eval**, which needs a
 **held-out** labeled set. Confirm data usage as usual: either generate a separate
 small eval SDG run (same categories), or use `split_dataset` to hold out a portion
 of this dataset. Keep the held-out dataset's run ID — the eval uses it.
-
-## Config
-
-Assemble from `reference-payload.json`:
-- `algorithm: "embedding_sft"`, `model_name_or_path` (base ST model),
-  `label_column` (the category column), `text_column`, `num_train_epochs`,
-  `parent_job_id`/`data_run_id` (training dataset).
-
-Call `validate_training_job`; the UI renders a confirmation card. No VRAM card is
-needed for this sub-skill.
 
 ## After training — evaluate
 

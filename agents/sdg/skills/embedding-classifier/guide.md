@@ -15,66 +15,63 @@ output is labeled `(text, category)` examples — one row per example, no
 
 ## How this works
 
-Gather requirements, then call `validate_sdg_job`. The config samples a
-`category` per row and generates a realistic `text` for it. Output parquet has
-`category` (string) and `text` columns — feed it straight to training with
-`algorithm="embedding_sft"`, `text_column="text"`, `label_column="category"`
-(embedding_sft label-encodes string categories to integers automatically).
+Gather requirements, then call `validate_sdg_job` (pull the exact field structure
+from its schema — don't restate it here). The config samples a `category` per row
+and generates a realistic `text` for it. Output parquet has `category` (string)
+and `text` columns — feed it straight to training with `algorithm="embedding_sft"`,
+`text_column="text"`, `label_column="category"` (embedding_sft label-encodes string
+categories to integers automatically).
 
-## Requirement gathering (STRICT one-question-per-turn)
+## Requirement gathering
 
-Ask these **one at a time**. Send ONE question, then **STOP and wait for the
-user's reply** before asking the next. Never write the user's answer yourself,
-never simulate a "user:" turn, and never advance to later steps (or to preview /
-`validate_sdg_job`) in the same message — output only the current question and
-end your turn. Use the user's real answers; if they add a requirement (e.g. ESL
-typos), acknowledge it and fold it into the prompt, then continue from where you
-are — do not restart.
+Follow the workflow's one-question-per-turn rules. Gather, in order:
 
 1. **Domain** — what content will the classifier handle? (e.g. support tickets,
-   user intents, log lines). Substitute it for `[DOMAIN]` in the text column's
-   `system_prompt`. **STOP — wait for the reply.**
-2. **Categories** — the class labels (3–8 works well). Put them in the `category`
-   sampler's `params.values` (lowercase, snake_case). These become the classes.
-   **STOP — wait for the reply.**
+   user intents, log lines). Folds into the `text` column's `system_prompt`.
+2. **Categories** — the class labels (3–8 works well), lowercase snake_case. These
+   become the `category` sampler's values.
 3. **Seed examples (important — this sets the style)** — ask the user to paste a
-   few **real** example messages for each category (2–5 each is plenty),
-   **exactly as they actually appear** — including shorthand, abbreviations,
-   informal phrasing, or typos. These ground the generation so the synthetic data
-   matches the real distribution instead of the model's guess at what the messages
-   look like. Do NOT invent the style yourself; source it from the user. If the
-   user genuinely has no examples, say quality will be lower and offer to proceed
-   with the model's best guess (or to look at a real sample first).
-   **STOP — wait for the reply.**
-4. **Teacher model** — call `list_models`; present ONLY returned models. In
-   `model_configs`, set `model` to the model's exact **`name`** field verbatim
-   (e.g. `gpt-oss`) and `provider` to its `provider` field (e.g. `gateway`) —
-   do NOT use the `model_name` field or a provider-prefixed id like
-   `openai/gpt-oss-120b`; the gateway resolves the short `name`, and a fuller id
-   fails with "model could not be found". If none are returned, stop (no teacher
-   configured). **STOP — wait for the reply.**
+   few **real** example messages for each category (2–5 each is plenty), **exactly
+   as they actually appear** — including shorthand, abbreviations, informal
+   phrasing, or typos. Fold them into the `text` column's `system_prompt` grouped
+   by category. This grounds the generation so synthetic data matches the real
+   distribution instead of the model's guess. Do NOT invent the style yourself. If
+   the user genuinely has no examples, say quality will be lower and offer to
+   proceed with the model's best guess (or to look at a real sample first).
+4. **Teacher model** — per the workflow's `list_models` rules.
 5. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
-   **STOP — wait for the reply.** Only after the user answers, proceed to build
-   the config and run the preview. Also generate a second, smaller run (different
-   topic/seed, same categories) as a held-out **eval** dataset for the eval.
+   Then also generate a second, smaller run (different seed, same categories) as a
+   held-out **eval** dataset.
 
-## Tool parameters
+## Minimal worked example
 
-Call `validate_sdg_job` with the columns/model_configs/processors from
-`reference-payload.json`, customizing:
-- `category` sampler `params.values` → the user's categories (optionally add
-  `weights` for a non-uniform distribution).
-- `text` column `system_prompt` → replace `[DOMAIN]`, and replace
-  `[SEED_EXAMPLES]` with the user's real examples grouped by category, e.g.:
-  ```
-  - telemetry: "any channels acting up in the last 5?"; "whats the bus V looking like"
-  - propulsion: "engine chamber press trend?"; "how much prop we got left for the burn"
-  - ...
-  ```
-  The prompt tells the model to match the style of the current `{{ category }}`'s
-  examples — so the synthetic data inherits the real register/brevity/shorthand.
-- `model_configs[0].model`/`provider` → from `list_models`.
-- `processors` → leave `[]` (no `messages` transform — we want raw `text,category`).
+The structure is standard `validate_sdg_job` (see the knowledge-ingestion guide
+for the general shape); only two things are specific to this skill — a `category`
+**sampler** and a single `llm-text` column with the seed examples folded into the
+`system_prompt`. Note `processors: []` — unlike the other skills, there is **no
+`schema_transform`**; we want raw `text,category`, not `messages`.
+
+```json
+{
+  "num_records": 400,
+  "columns": [
+    {
+      "column_type": "sampler",
+      "name": "category",
+      "sampler_type": "category",
+      "params": { "values": ["<cat_a>", "<cat_b>", "<cat_c>"] }
+    },
+    {
+      "column_type": "llm-text",
+      "name": "text",
+      "model_alias": "text",
+      "system_prompt": "You generate realistic messages that users actually send in the <domain> setting. Match the real style, brevity, vocabulary, and phrasing of the example messages for each category below — including any shorthand, abbreviations, or typos. Do NOT make messages cleaner or longer than the examples, and do not name the category in the text. Output ONLY the message text.\n\nExample messages by category:\n- <cat_a>: \"<seed>\"; \"<seed>\"\n- <cat_b>: \"<seed>\"; \"<seed>\"",
+      "prompt": "Generate ONE new, distinct message for the category: {{ category }}. Match the register and phrasing of the '{{ category }}' examples above; vary the wording — do not copy any example verbatim."
+    }
+  ],
+  "processors": []
+}
+```
 
 Grounding the generation in the user's real examples (rather than a synthetic
 "style" knob) is what makes the classifier learn the *actual* distribution — and
