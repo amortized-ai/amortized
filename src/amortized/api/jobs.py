@@ -233,6 +233,54 @@ async def _validate_eval_data(
     return errors
 
 
+_EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
+
+
+async def _apply_classification_eval_mode(
+    config: dict[str, Any],
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Keep eval_mode consistent with the model being evaluated.
+
+    An embedding model (trained with embedding_sft) can only be evaluated as a
+    classifier, and the classification eval only works on an embedding model.
+    When a tuned model is referenced, default/validate eval_mode against the
+    training job's algorithm so users don't hit a confusing dispatch-time failure.
+    Mutates ``config`` (may set eval_mode) and returns any errors.
+    """
+    training_job_id = str(config.get("training_job_id", "") or "").strip()
+    if not training_job_id:
+        return []
+    parent = await Repository(db).get_job(training_job_id)
+    if not parent or parent.get("type") != "training":
+        return []
+    parent_config = parent.get("config") or {}
+    if isinstance(parent_config, str):
+        try:
+            parent_config = json.loads(parent_config)
+        except (ValueError, TypeError):
+            parent_config = {}
+    algorithm = str(parent_config.get("algorithm", "")).replace("-", "_")
+    is_embedding = algorithm in _EMBEDDING_ALGORITHMS
+    eval_mode = config.get("eval_mode")
+
+    if is_embedding:
+        if not eval_mode:
+            config["eval_mode"] = "classification"  # the only mode that fits
+        elif eval_mode != "classification":
+            return [
+                "training_job_id is an embedding model (embedding_sft); its eval_mode"
+                " must be 'classification' (a generative/judge eval cannot score an"
+                " embedding model)"
+            ]
+    elif eval_mode == "classification":
+        return [
+            "eval_mode='classification' requires an embedding model — train with"
+            " algorithm='embedding_sft' (or 'classifier') first"
+        ]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Job creation endpoints (one per job type)
 # ---------------------------------------------------------------------------
@@ -387,8 +435,11 @@ async def create_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
-    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+    if config.get("eval_mode") != "classification" and not [
+        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
+    ]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
             " judge-scored metrics — the built-in structural metrics"
@@ -613,8 +664,11 @@ async def validate_eval_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
+    errors.extend(await _apply_classification_eval_mode(config, db))
     errors.extend(_validate_eval_rubric_judge(config))
-    if not [c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")]:
+    if config.get("eval_mode") != "classification" and not [
+        c for c in (config.get("rubric") or []) if isinstance(c, dict) and c.get("name")
+    ]:
         errors.append(
             "eval jobs require at least one rubric criterion (custom"
             " judge-scored metrics — the built-in structural metrics"

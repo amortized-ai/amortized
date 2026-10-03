@@ -580,10 +580,14 @@ function EvalResultsTab({ job }: { job: Job }) {
 
   // ---- New single-model schema (one model per eval job, absolute scores) ----
   if (results.model) {
-    const structural: { label: string; value: string }[] = [
-      ...(wantMetric("error_rate") ? [{ label: "Error rate", value: formatMetric(results.model.error_rate) }] : []),
-      ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
-    ]
+    const isClassification =
+      job.config?.eval_mode === "classification" || !!results.confusion
+    const structural: { label: string; value: string }[] = isClassification
+      ? []
+      : [
+          ...(wantMetric("error_rate") ? [{ label: "Error rate", value: formatMetric(results.model.error_rate) }] : []),
+          ...(wantMetric("empty_rate") ? [{ label: "Empty rate", value: formatMetric(results.model.empty_rate) }] : []),
+        ]
     const scoreEntries = Object.entries(results.scores ?? {}).filter(
       ([name]) => rubricNames.size === 0 || rubricNames.has(name),
     )
@@ -641,6 +645,13 @@ function EvalResultsTab({ job }: { job: Job }) {
               </tbody>
             </table>
           </div>
+        )}
+
+        {isClassification && results.per_class_f1 && (
+          <PerClassF1Table perClassF1={results.per_class_f1} />
+        )}
+        {isClassification && results.confusion && (
+          <ConfusionMatrix confusion={results.confusion} />
         )}
 
         <p className="text-xs text-muted-foreground">
@@ -751,6 +762,82 @@ function EvalResultsTab({ job }: { job: Job }) {
         {results.num_records} records ({results.num_skipped} skipped). Per-sample outputs are in
         the MLflow run under eval_results/.
       </p>
+    </div>
+  )
+}
+
+function PerClassF1Table({ perClassF1 }: { perClassF1: Record<string, number> }) {
+  const rows = Object.entries(perClassF1)
+  if (rows.length === 0) return null
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/40">
+            <th className="px-4 py-2.5 text-left font-medium">Class</th>
+            <th className="px-4 py-2.5 text-right font-medium">F1</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([cls, f1]) => (
+            <tr key={cls} className="border-b last:border-0 border-border/40">
+              <td className="px-4 py-2.5 font-mono text-xs">{cls}</td>
+              <td className="px-4 py-2.5 text-right font-mono text-xs">
+                {(f1 * 100).toFixed(1)}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ConfusionMatrix({ confusion }: { confusion: Record<string, Record<string, number>> }) {
+  const classes = Object.keys(confusion)
+  if (classes.length === 0) return null
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">
+        Confusion matrix (rows = actual, columns = predicted)
+      </p>
+      <div className="rounded-xl border bg-card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="px-3 py-2 text-left font-medium">actual \ pred</th>
+              {classes.map((c) => (
+                <th key={c} className="px-3 py-2 text-right font-mono text-xs font-medium">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {classes.map((actual) => (
+              <tr key={actual} className="border-b last:border-0 border-border/40">
+                <td className="px-3 py-2 font-mono text-xs font-medium">{actual}</td>
+                {classes.map((pred) => {
+                  const count = confusion[actual]?.[pred] ?? 0
+                  const onDiagonal = actual === pred
+                  return (
+                    <td
+                      key={pred}
+                      className={`px-3 py-2 text-right font-mono text-xs ${
+                        count === 0
+                          ? "text-muted-foreground/40"
+                          : onDiagonal
+                            ? "font-semibold text-emerald-600 dark:text-emerald-400"
+                            : "text-rh-danger"
+                      }`}
+                    >
+                      {count}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

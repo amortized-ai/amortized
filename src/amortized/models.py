@@ -71,6 +71,42 @@ class TrainingJobConfig(BaseModel):
     unfreeze_rank_ratio: float | None = Field(
         None, description="OSFT: fraction of weights trainable (default 0.2)"
     )
+    # Embedding classifier (embedding_sft) fields. Declared explicitly (not just
+    # via extra="allow") so the validate_training_job MCP tool exposes them as
+    # parameters — otherwise the agent can't pass e.g. label_column and the worker
+    # falls back to a 'label' column that a {text, category} dataset doesn't have.
+    text_column: str | None = Field(
+        None, description="embedding_sft: text column name in the dataset (default 'text')"
+    )
+    label_column: str | None = Field(
+        None,
+        description=(
+            "embedding_sft: label/category column name (default 'label'). Set to"
+            " 'category' for the embedding-classifier SDG datasets."
+        ),
+    )
+    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
+        Field(
+            None,
+            description=(
+                "embedding_sft contrastive loss: batch_all_triplet, "
+                "batch_hard_triplet, or mnrl"
+            ),
+        )
+    )
+    batch_sampler: Literal["group_by_label", "no_duplicates", "default"] | None = Field(
+        None,
+        description=(
+            "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
+        ),
+    )
+    warmup_ratio: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="embedding_sft: warmup fraction of total steps (0.0-1.0)",
+    )
+    seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
     topic: str = Field(
         "",
         description="1-5 word model topic for tracking (e.g. 'support ticket classification')",
@@ -443,6 +479,81 @@ class EvalJobConfig(BaseModel):
         ),
     )
     topic: str = Field("", description="1-5 word eval topic for tracking")
+
+    # --- Classification / embedding eval (eval_mode="classification") ---
+    eval_mode: Literal["generative", "classification"] = Field(
+        "generative",
+        description=(
+            "Evaluation mode. 'generative' (default) serves the model and scores"
+            " free-form outputs with an LLM judge against a rubric. 'classification'"
+            " evaluates an embedding classifier/router: the held-out labeled dataset"
+            " is split into per-class anchors and query examples, and the tuned"
+            " embedding model routes each query to its nearest class (accuracy /"
+            " macro-F1 / confusion). No judge or rubric is used."
+        ),
+    )
+    class_labels: list[str] | None = Field(
+        None,
+        description=(
+            "Optional human-readable class names indexed by integer label"
+            " (classification mode). When omitted, labels are shown as their"
+            " integer values."
+        ),
+    )
+    text_column: str = Field(
+        "text",
+        description="Name of the text column in the eval dataset (classification mode)",
+    )
+    label_column: str = Field(
+        "label",
+        description=(
+            "Name of the label column in the eval dataset (classification mode)"
+        ),
+    )
+    anchors_per_class: int = Field(
+        16,
+        ge=1,
+        le=512,
+        description=(
+            "How many labeled examples per class to hold out as routing anchors"
+            " (classification mode); the rest of the dataset becomes queries."
+        ),
+    )
+    top_k: int = Field(
+        3,
+        ge=1,
+        le=64,
+        description="Per-class score = mean of the top-k anchor similarities (classification mode)",
+    )
+    tau: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Confidence threshold (classification mode): a query whose best class"
+            " score is below tau routes to a fallback/abstain bucket. 0 (default)"
+            " never abstains."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def check_class_labels_unique(self) -> "EvalJobConfig":
+        """Duplicate display names collapse per-class F1 / confusion keys (two
+        integer classes mapping to the same name would silently merge in the
+        metrics), so reject them at the boundary."""
+        if self.class_labels is not None:
+            seen: set[str] = set()
+            dupes: set[str] = set()
+            for n in self.class_labels:
+                if n in seen:
+                    dupes.add(n)
+                seen.add(n)
+            if dupes:
+                raise ValueError(
+                    "class_labels must be unique; duplicate name(s) would merge"
+                    f" per-class metrics: {sorted(dupes)}"
+                )
+        return self
 
     @model_validator(mode="after")
     def check_model_source(self) -> "EvalJobConfig":

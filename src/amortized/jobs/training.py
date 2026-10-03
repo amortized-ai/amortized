@@ -73,6 +73,16 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("max_seq_len", 2048)
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
+    elif algorithm == "embedding_sft":
+        # Contrastive embedding fine-tuning (classifiers/routers). It uses
+        # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
+        # sequence-packing knobs, so drop the fields the generic map produced
+        # that embedding_sft would only warn-and-ignore.
+        batch = thub_config.pop("micro_batch_size", None)
+        if batch is not None:
+            thub_config.setdefault("batch_size", batch)
+        for irrelevant in ("max_seq_len", "data_output_dir"):
+            thub_config.pop(irrelevant, None)
 
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result
@@ -86,7 +96,13 @@ async def build(
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
-    algo_aliases = {"lora": "lora_sft", "qlora": "lora_sft", "qlora_sft": "lora_sft"}
+    algo_aliases = {
+        "lora": "lora_sft",
+        "qlora": "lora_sft",
+        "qlora_sft": "lora_sft",
+        "classifier": "embedding_sft",
+        "embedding": "embedding_sft",
+    }
     algorithm = config.get("algorithm", "sft")
     algorithm = algo_aliases.get(algorithm, algorithm)
 
@@ -134,6 +150,16 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         display_name = f"mdl-{run_name}"
         await set_mlflow_run_tag(mlflow_run_id, "model_display_name", display_name)
         await client.set_registered_model_tag(model_name, "model_display_name", display_name)
+
+        # Tag the model kind so eval steers embedding models to classification
+        # eval (a generative/judge eval would fail on a sentence-transformers model).
+        model_type = (
+            "embedding"
+            if algorithm in ("embedding_sft", "classifier", "embedding")
+            else "generative"
+        )
+        await set_mlflow_run_tag(mlflow_run_id, "model_type", model_type)
+        await client.set_registered_model_tag(model_name, "model_type", model_type)
 
         topic = config.get("topic", "")
         if not topic:
