@@ -402,15 +402,20 @@ export function shouldKeepSessionOnError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 400 || error.status === 429)
 }
 
-export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string): Promise<OpenCodeResponse> {
+export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string, event?: string): Promise<OpenCodeResponse> {
   if (!conversationId) {
     throw new ApiError(400, "No active conversation", null)
   }
   let sessionId = await getOrCreateSession(conversationId)
-  logger.info("sendOpenCodeMessage", { conversationId, sessionId, modelSelection })
+  logger.info("sendOpenCodeMessage", { conversationId, sessionId, modelSelection, event })
   const body: Record<string, unknown> = {
     agent: "morty",
     parts: [{ type: "text", text }],
+  }
+  // Mark system-generated turns (e.g. a job-monitor completion) so the server can
+  // steer them — notably, tell an active subagent to hand back instead of looping.
+  if (event) {
+    body.event = event
   }
   if (modelSelection) {
     const { parseModelSelection } = await import("@/features/chat/models")

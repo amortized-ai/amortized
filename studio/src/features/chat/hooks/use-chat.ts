@@ -855,6 +855,8 @@ export function useChat() {
         const response = await sendOpenCodeMessage(
           convId,
           `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          undefined,
+          "job_complete",
         )
 
         const parsed = parseOpenCodeResponse(response)

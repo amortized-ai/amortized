@@ -181,6 +181,19 @@ async def _session_cleanup_loop() -> None:
 
 INTERNAL_TOOLS = {"delegate_to_subagent", "signal_subagent_completion"}
 
+# Injected in place of the generic job-completion nudge when an ACTIVE SUBAGENT's
+# delegated job finishes successfully — a terminal instruction to hand control
+# back now, so a weaker model doesn't keep calling read-only tools (get_job,
+# get_dataset_samples, …) and never signal completion.
+_SUBAGENT_JOB_DONE_PROMPT = (
+    "[SYSTEM EVENT] Your delegated job finished successfully. Your task for this "
+    "delegation is complete. Your ONLY next action is to call "
+    "signal_subagent_completion with a short summary that includes the job ID. "
+    "Do NOT call any other tools (no get_job, list_jobs, get_dataset, "
+    "get_dataset_samples, or present_options) and do NOT inspect or re-verify the "
+    "dataset — hand control back now."
+)
+
 
 def _tool_name(part: dict[str, Any]) -> str:
     raw = part.get("tool") or part.get("toolName") or ""
@@ -754,6 +767,10 @@ class MessageRequest(BaseModel):
     agent: str | None = None
     parts: list[MessagePart]
     model: MessageModel | None = None
+    # Set by the client to mark a non-user, system-generated turn (e.g.
+    # "job_complete" when a job-monitor card fires). The server uses it to steer
+    # the turn — e.g. tell an active subagent to hand back instead of continuing.
+    event: str | None = None
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -977,6 +994,13 @@ async def _handle_subagent_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
+    # A subagent whose delegated job just finished successfully is done: steer it
+    # to hand control back immediately, instead of the generic "suggest next
+    # steps" nudge (which left weaker models looping on post-job inspection calls
+    # and never signalling completion). Only on success — a failed job still needs
+    # the subagent's own failure handling.
+    if body.event == "job_complete" and "status: succeeded" in user_text.lower():
+        user_text = _SUBAGENT_JOB_DONE_PROMPT
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(

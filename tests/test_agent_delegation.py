@@ -88,8 +88,10 @@ def _run(coro: Any) -> Any:
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
-def _body(text: str = "hi") -> agent.MessageRequest:
-    return agent.MessageRequest(parts=[agent.MessagePart(type="text", text=text)])
+def _body(text: str = "hi", event: str | None = None) -> agent.MessageRequest:
+    return agent.MessageRequest(
+        parts=[agent.MessagePart(type="text", text=text)], event=event
+    )
 
 
 class TestSubagentDelegation:
@@ -196,3 +198,42 @@ class TestSubagentDelegation:
             p for p in result["parts"] if p.get("type") == "tool"
         ]
         assert tools == []
+
+
+class TestJobCompleteHandback:
+    """When an active subagent's delegated job finishes, the server steers it to
+    hand control back instead of letting it loop on post-job inspection calls."""
+
+    def _active_sdg(self, router: _Router) -> agent.SessionState:
+        # Subagent responds with plain text (no completion signal) so the handler
+        # returns normally and we can inspect what text was forwarded to it.
+        sdg_id = router.add_session([[_text_part("ok")]])
+        state = _make_state(router)
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+        return state
+
+    def test_success_event_rewrites_to_handback(self, router: _Router) -> None:
+        state = self._active_sdg(router)
+        _run(
+            agent._handle_subagent_message(
+                state,
+                "s1",
+                "Job d6be24ce (sdg) finished with status: succeeded. Use present_options to suggest next steps to the user.",
+                _body(event="job_complete"),
+            )
+        )
+        forwarded = router.sent[0][1]
+        assert forwarded == agent._SUBAGENT_JOB_DONE_PROMPT
+        assert "signal_subagent_completion" in forwarded
+
+    def test_failed_job_not_rewritten(self, router: _Router) -> None:
+        state = self._active_sdg(router)
+        text = "Job d6be24ce (sdg) finished with status: failed. Use present_options to suggest next steps to the user."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        assert router.sent[0][1] == text  # untouched — subagent handles the failure
+
+    def test_normal_message_not_rewritten(self, router: _Router) -> None:
+        state = self._active_sdg(router)
+        _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
+        assert router.sent[0][1] == "confirm"
