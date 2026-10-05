@@ -215,12 +215,13 @@ class TestJobCompleteHandback:
 
     def test_success_event_rewrites_to_handback(self, router: _Router) -> None:
         state = self._active_sdg(router)
+        text = (
+            "Job d6be24ce (sdg) finished with status: succeeded."
+            " Use present_options to suggest next steps to the user."
+        )
         _run(
             agent._handle_subagent_message(
-                state,
-                "s1",
-                "Job d6be24ce (sdg) finished with status: succeeded. Use present_options to suggest next steps to the user.",
-                _body(event="job_complete"),
+                state, "s1", text, _body(event="job_complete")
             )
         )
         forwarded = router.sent[0][1]
@@ -229,7 +230,10 @@ class TestJobCompleteHandback:
 
     def test_failed_job_not_rewritten(self, router: _Router) -> None:
         state = self._active_sdg(router)
-        text = "Job d6be24ce (sdg) finished with status: failed. Use present_options to suggest next steps to the user."
+        text = (
+            "Job d6be24ce (sdg) finished with status: failed."
+            " Use present_options to suggest next steps to the user."
+        )
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
         assert router.sent[0][1] == text  # untouched — subagent handles the failure
 
