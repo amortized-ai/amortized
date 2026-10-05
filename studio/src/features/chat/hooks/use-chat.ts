@@ -108,6 +108,7 @@ const UI_TOOLS = new Set([
   "signal_phase",
   "get_model_pricing",
   "show_model_pricing",
+  "show_prompt",
   "estimate_training_resources",
   "show_vram_estimate",
   "submit_recipe_job",
@@ -158,7 +159,14 @@ function extractSessionData(
     ? sessionMessages.slice(lastUserIdx + 1)
     : sessionMessages
 
-  for (const msg of sessionMessages) {
+  // signal_phase drives the progress bar, so only collect it from the CURRENT
+  // turn — not the whole session history. Each get_session_messages fetch builds
+  // one assistant message; scanning all history re-attributes a session's first
+  // phase signal to its latest turn. When control returns to the orchestrator
+  // after the subagents finish, that would re-emit the orchestrator's stale
+  // opening phase (e.g. training) as the last signal, snapping the bar back from
+  // Evaluation. The turn's own phase is the one it signalled this turn.
+  for (const msg of currentTurnMessages) {
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
 

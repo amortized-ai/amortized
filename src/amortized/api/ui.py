@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import re
+from typing import Any, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _coerce_number(value: Any) -> Any:
+    """Pull the first number out of a string like '$0.037', '0.17/1M tokens'.
+
+    The pricing card is a display-only convenience; an agent that passes a cost as
+    a formatted string (observed with GLM) should still render the card rather than
+    hard-fail validation. Non-string / unparseable values pass through untouched so
+    pydantic reports a normal error for genuinely bad input.
+    """
+    if isinstance(value, str):
+        match = _NUM_RE.search(value.replace(",", ""))
+        if match:
+            return match.group(0)
+    return value
 
 
 class OptionItem(BaseModel):
@@ -137,6 +155,13 @@ class ModelPricingItem(BaseModel):
     prompt_cost_per_1m: float = Field(..., description="Input cost per 1M tokens")
     completion_cost_per_1m: float = Field(..., description="Output cost per 1M tokens")
     context_length: int = Field(0, description="Context window size")
+
+    @field_validator(
+        "prompt_cost_per_1m", "completion_cost_per_1m", "context_length", mode="before"
+    )
+    @classmethod
+    def _accept_numeric_strings(cls, value: Any) -> Any:
+        return _coerce_number(value)
 
 
 class ShowModelPricingRequest(BaseModel):

@@ -4,12 +4,15 @@ import asyncio
 from typing import Any
 
 from amortized.api.ui import (
+    ModelPricingItem,
     OptionItem,
     PresentOptionsRequest,
+    ShowModelPricingRequest,
     ShowPromptRequest,
     SignalPhaseRequest,
     _dedup_options,
     present_options,
+    show_model_pricing,
     show_prompt,
     signal_phase,
 )
@@ -63,3 +66,25 @@ def test_signal_phase_accepts_eval() -> None:
     resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="review")))
     assert resp.phase == "eval"
     assert resp.step == "review"
+
+
+def test_show_model_pricing_coerces_formatted_numbers() -> None:
+    # An agent that passes costs as formatted strings should still render the card
+    # rather than 422 (observed with GLM dropping the pricing card on first try).
+    body = ShowModelPricingRequest(
+        models=[
+            ModelPricingItem(
+                model_id="openai/gpt-oss-120b",
+                name="gpt-oss",
+                prompt_cost_per_1m="$0.037",  # type: ignore[arg-type]
+                completion_cost_per_1m="0.17/1M tokens",  # type: ignore[arg-type]
+                context_length="131072",  # type: ignore[arg-type]
+            )
+        ]
+    )
+    resp = _run(show_model_pricing(body))
+    assert resp.rendered is True
+    item = resp.models[0]
+    assert item.prompt_cost_per_1m == 0.037
+    assert item.completion_cost_per_1m == 0.17
+    assert item.context_length == 131072
