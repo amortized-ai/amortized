@@ -173,8 +173,9 @@ present its record count, then ask:
 - "Hold out a portion first" (the user gives a count or fraction to
   set aside — typically for a later eval)
 
-Skip this question ONLY if the user already specified the portion in
-this conversation. If they want a hold-out: call `split_dataset` with
+Skip only the all-vs-hold-out *question* if the user already specified
+the portion in this conversation — still call `get_dataset` and show the
+record count. If they want a hold-out: call `split_dataset` with
 their count or fraction (strategy random, seed 42 by default,
 `create_complement` true) on the dataset run — the complement becomes
 the training set and the portion the held-out set. Tell the user the
@@ -187,6 +188,14 @@ be notified when it finishes. When the split job completes, call
 anything already decided.
 
 ### Phase 3 — Validate and Confirm
+
+**Precondition — data usage confirmed.** Before `validate_training_job`,
+you MUST have already called `get_dataset` on the training data's run ID
+and shown the user its record count. This holds even when the data came
+in via `parent_job_id` — resolving the data automatically does NOT
+confirm it. If you have not done this yet, do it now and confirm how
+much to train on before continuing. Never reach validation without the
+user having seen how many records the job will train on.
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
