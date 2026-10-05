@@ -208,6 +208,13 @@ export interface EvalResults {
   scores?: Record<string, number | null>
   scores_n?: Record<string, number>
   num_scored?: number
+  // Classification eval (eval_mode="classification"):
+  eval_mode?: string
+  accuracy?: number
+  macro_f1?: number
+  per_class_f1?: Record<string, number>
+  confusion?: Record<string, Record<string, number>>
+  num_queries?: number
   // Legacy pairwise schema (older eval jobs):
   base?: EvalModelMetrics
   tuned?: EvalModelMetrics
