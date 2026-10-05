@@ -382,9 +382,28 @@ and the conversation returns to you.
 
 When delegating, pass a `context` that lets the SDG agent work without
 re-asking the user what you already know: the eval subject (model and
-endpoint), the training job ID and its parent SDG job ID (so the eval
-set can mirror the training data's task, schema, and size), and that
-the goal is a held-out eval set the user will use for evaluation.
+endpoint), the training job ID, and the goal is a held-out eval set the
+user will use to evaluate that model.
+
+**When the eval subject is a trained model, the eval set MUST be built
+from the SAME SDG pipeline that produced the model's training data —
+not from any prior or unrelated dataset.** A model can only be fairly
+scored on the task it was trained for, so the eval set has to be
+generated the same way the training set was: same assessor system
+prompt, same teacher model, same output format/schema. Pass the
+training job ID AND its parent SDG job ID in the context, and instruct
+the SDG agent to:
+
+- `get_job` the training job, follow it to its parent SDG job, and
+  `get_job` that SDG config — this is the single source of truth for
+  the eval set's design.
+- Reuse that config VERBATIM: the same assessor/system prompt, the same
+  `model_configs` teacher model, and the same output columns/schema.
+- Regenerate only fresh inputs (new sampler seed / fresh source rows)
+  so the eval set is held-out, with no record overlap with training.
+- NEVER anchor the prompt or teacher to "prior eval batches", another
+  dataset, or a remembered default — if the training SDG config is
+  unavailable, say so and stop; do not improvise one.
 
 After the SDG job completes, resume YOUR workflow at Step 3 (metrics
 design) using the new SDG job ID as `parent_job_id` — do not restart

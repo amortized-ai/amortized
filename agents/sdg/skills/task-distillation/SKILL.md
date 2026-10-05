@@ -25,6 +25,38 @@ rather than asking for every detail.
 
 ## Requirement Gathering
 
+### Step 0 — Eval set for a trained model? (clone, don't redesign)
+
+If the handoff context says the goal is a **held-out eval set for a
+trained model** (it will carry a training job ID and that training job's
+parent SDG job ID), do NOT run fresh requirement gathering and do NOT
+design a new prompt, teacher, or format. The model can only be scored
+fairly on the task it was trained for, so the eval set must come from the
+SAME pipeline that produced its training data:
+
+1. `get_job` the training job and follow it to its parent SDG job
+   (its config's `parent_job_id`, or the SDG job ID given in the
+   handoff). `get_job` that SDG job — its `config` is the source of
+   truth.
+2. Reuse that config VERBATIM:
+   - the **teacher model** from its `model_configs` (Step 6 — do not
+     re-pick),
+   - the **output column `system_prompt`** / assessor prompt and the
+     SFT processor system message (Step 8 — copy it exactly; still
+     render it with `show_prompt` so the user sees what will be used),
+   - the **output columns / format and schema** (Step 3).
+3. Change ONLY what makes the set held-out: a fresh sampler seed and/or
+   fresh source rows, so there is no record overlap with the training
+   data. Keep the sample count to what the user/eval asked for.
+4. Then go straight to preview/create (`validate_sdg_job`).
+
+Never compose a new prompt, pick a different teacher, or anchor to a
+prior/other eval dataset's config. If you cannot retrieve the training
+pipeline's SDG config, stop and say so rather than improvising one.
+
+For any OTHER goal (a fresh training set, or an eval set with no trained
+model to mirror), continue with Step 1 below.
+
 ### Step 1 — What is the task?
 
 Identify the task type (assessment, classification, extraction,

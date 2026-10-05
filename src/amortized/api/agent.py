@@ -396,7 +396,15 @@ async def _record_turn_metrics(
                     # via parent_job_id) is checkable offline. Config args aren't
                     # otherwise logged; only record the fields when present/non-empty.
                     inp = _get_tool_input(part)
-                    for key in ("parent_job_id", "data_run_id", "eval_data_run_id"):
+                    # `training_job_id` on an eval config = the subject under eval is
+                    # a tuned model (not a base/gateway model) — lets the monitor gate
+                    # "eval set must mirror the training pipeline" checks on that case.
+                    for key in (
+                        "parent_job_id",
+                        "data_run_id",
+                        "eval_data_run_id",
+                        "training_job_id",
+                    ):
                         cfg_val = inp.get(key)
                         if cfg_val:
                             entry[key] = cfg_val

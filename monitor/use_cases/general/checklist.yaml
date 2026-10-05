@@ -347,6 +347,30 @@ rows:
     # eval/workflow.md (279-300); all Failure Handling sections. Judged from
     # logged assistant text against tool statuses/outputs.
 
+  - id: eval_set_mirrors_training_sdg
+    stage: "Eval set mirrors training SDG"
+    aspect: F
+    # Gated: only applies when the eval subject is a TUNED model (its config
+    # carries training_job_id). Base-model / gateway-model evals -> n/a.
+    requires: { type: eval_for_trained_model }
+    expected: >
+      When building a NEW eval set for a trained model, the eval-data SDG mirrors
+      the SAME pipeline that produced the model's training data: it reuses that
+      pipeline's assessor system_prompt VERBATIM, the SAME teacher model, and the
+      SAME output format/schema — regenerating only fresh inputs for leakage
+      isolation. `met` if the eval-set SDG is grounded in the training model's own
+      SDG config (e.g. the agent traced the training job to its parent SDG and
+      copied that prompt/teacher). `wrong` if it instead anchors the prompt/teacher
+      to a prior or unrelated dataset (e.g. "the prompt stays identical to your
+      prior eval batches") rather than to THIS model's training pipeline, or uses a
+      different teacher model. `n/a` if the eval reused an existing held-out split
+      (no new SDG set was generated) or the needed config was not observable.
+    adjudicate: llm_judge
+    # Semantic check: the agent may call get_job on *an* SDG job yet copy the WRONG
+    # one (observed: anchored to prior platform RFE datasets). Only a transcript
+    # pass can tell whether the reused config is the training model's. Gated by the
+    # eval_for_trained_model precondition (validate_eval_job carries training_job_id).
+
   # ---- Redundancy (LLM-judge; de-dup of decisions & options) ----------------
   # Both judge from the logged present_options prompts (question + options are in
   # the tool OUTPUT) and assistant prose. User replies are NOT logged, so the

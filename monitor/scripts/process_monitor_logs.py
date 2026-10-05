@@ -501,11 +501,20 @@ def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
     was actually loaded, so a classification run doesn't get judged against the
     task-distillation guide.
 
-    Currently supports `type: skill_loaded` — a `read` whose output echoes the
-    guide path (`path_contains`), optionally scoped to a subagent `role` (the
-    sub-skills belong to subagents, so role-scoping disambiguates which agent
-    loaded which guide). Reuses the same read/output_contains detection as the
-    auto `skill_loaded` mechanic rows. Unknown types don't gate (return True)."""
+    Supports:
+
+    - `type: skill_loaded` — a `read` whose output echoes the guide path
+      (`path_contains`), optionally scoped to a subagent `role` (the sub-skills
+      belong to subagents, so role-scoping disambiguates which agent loaded which
+      guide). Reuses the same read/output_contains detection as the auto
+      `skill_loaded` mechanic rows.
+    - `type: eval_for_trained_model` — the run validated an eval job whose config
+      carries a `training_job_id` (the subject under eval is a tuned model, not a
+      base/gateway model). Gates rows that only apply when an eval set is being
+      built FOR a trained model (where it must mirror the training pipeline's SDG
+      config), so base-model or gateway-model evals don't get judged against them.
+
+    Unknown types don't gate (return True)."""
     if not requires:
         return True
     if requires.get("type") == "skill_loaded":
@@ -520,6 +529,10 @@ def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
                 continue
             return True
         return False
+    if requires.get("type") == "eval_for_trained_model":
+        return any(
+            c.get("training_job_id") for c in _calls(run, "validate_eval_job")
+        )
     return True  # unknown precondition -> do not gate
 
 
