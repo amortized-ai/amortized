@@ -148,16 +148,6 @@ class Run:
     def outcome(self) -> str | None:
         return self.completion.get("outcome") if self.completion else None
 
-    @property
-    def assistant_text(self) -> str:
-        """All assistant-authored text across counted turns, lowercased."""
-        chunks: list[str] = []
-        for t in self.counted_turns:
-            for tx in t.get("texts") or []:
-                if tx.get("role") != "user":
-                    chunks.append(str(tx.get("text") or ""))
-        return "\n".join(chunks).lower()
-
 
 def _parse_dt(value: Any) -> datetime | None:
     if not value:
@@ -215,21 +205,6 @@ def load_checklist(use_case: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 _ERROR_MARKERS = ('"errors"', "validation_error", "is required", "invalid", "must be")
-
-# Phrases that indicate the assistant is soliciting review/approval of a prompt
-# it generated (for the prompt_review integrity check). Deliberately specific to
-# a generated prompt so generic "approve"/"review" job confirmations don't match.
-_PROMPT_REVIEW_MARKERS = (
-    "the prompt above",
-    "here's the prompt",
-    "here is the prompt",
-    "prompt i'll use",
-    "prompt i will use",
-    "approve the prompt",
-    "approve the system prompt",
-    "review the prompt",
-    "review the system prompt",
-)
 
 # Substrings that identify a base-model name in present_options titles, so the
 # model_choice check recognises a model list even when the question itself does
@@ -441,15 +416,18 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         return "met"
 
     if mtype == "prompt_review":
-        # Integrity: if the assistant solicits review/approval of a prompt it
-        # generated, it must actually render that prompt with show_prompt. The
-        # observed failure is "here's the prompt … review it" with the prompt
-        # never shown (it lived only in the SDG job config). Solicited but not
-        # shown -> wrong; shown -> met; never solicited -> n/a.
-        text = run.assistant_text
-        if not any(m in text for m in _PROMPT_REVIEW_MARKERS):
-            return "n/a"
-        return "met" if _calls(run, "show_prompt") else "wrong"
+        # Integrity: task-distillation Step 8 composes a system prompt and must
+        # render it with show_prompt before asking the user to approve it (the row
+        # is gated on that skill being loaded). Scored structurally, not on the
+        # phrasing of the ask: show_prompt called -> met (the prompt was shown,
+        # however the agent worded the request); not called but an SDG config was
+        # built -> wrong (a prompt was composed and the user never saw it); neither
+        # -> n/a (the prompt-composition step was not reached this run).
+        if _calls(run, "show_prompt"):
+            return "met"
+        if _calls(run, "validate_sdg_job"):
+            return "wrong"
+        return "n/a"
 
     if mtype == "eval_phase":
         # UI progress: the eval stage must signal phase=eval so the bar shows
