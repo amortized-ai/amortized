@@ -53,7 +53,7 @@ for the general shape); only two things are specific to this skill — a `catego
 
 ```json
 {
-  "num_records": 400,
+  "num_records": 300,
   "columns": [
     {
       "column_type": "sampler",
@@ -72,6 +72,11 @@ for the general shape); only two things are specific to this skill — a `catego
   "processors": []
 }
 ```
+
+This snippet is intentionally partial — `model_configs` (defining the `text`
+alias → teacher model/provider) is omitted; add it per the teacher-model step.
+`num_records` is illustrative (3 categories × 100); compute it from the real
+category count.
 
 Grounding the generation in the user's real examples (rather than a synthetic
 "style" knob) is what makes the classifier learn the *actual* distribution — and

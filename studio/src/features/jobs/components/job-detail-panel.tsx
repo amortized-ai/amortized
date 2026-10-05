@@ -794,8 +794,16 @@ function PerClassF1Table({ perClassF1 }: { perClassF1: Record<string, number> })
 }
 
 function ConfusionMatrix({ confusion }: { confusion: Record<string, Record<string, number>> }) {
-  const classes = Object.keys(confusion)
-  if (classes.length === 0) return null
+  const rowClasses = Object.keys(confusion)
+  if (rowClasses.length === 0) return null
+  // Columns = union of every predicted key across rows, so an abstain/FALLBACK
+  // column (present in each row but with no matching row when tau > 0) still
+  // renders — otherwise the abstained counts silently drop. Row classes keep
+  // their order; any extra predicted-only columns (the abstain bucket) append.
+  const extraCols = Array.from(
+    new Set(rowClasses.flatMap((r) => Object.keys(confusion[r] ?? {}))),
+  ).filter((c) => !rowClasses.includes(c))
+  const columns = [...rowClasses, ...extraCols]
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground">
@@ -806,16 +814,16 @@ function ConfusionMatrix({ confusion }: { confusion: Record<string, Record<strin
           <thead>
             <tr className="border-b bg-muted/40">
               <th className="px-3 py-2 text-left font-medium">actual \ pred</th>
-              {classes.map((c) => (
+              {columns.map((c) => (
                 <th key={c} className="px-3 py-2 text-right font-mono text-xs font-medium">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {classes.map((actual) => (
+            {rowClasses.map((actual) => (
               <tr key={actual} className="border-b last:border-0 border-border/40">
                 <td className="px-3 py-2 font-mono text-xs font-medium">{actual}</td>
-                {classes.map((pred) => {
+                {columns.map((pred) => {
                   const count = confusion[actual]?.[pred] ?? 0
                   const onDiagonal = actual === pred
                   return (
