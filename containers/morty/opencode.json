@@ -12,7 +12,7 @@
   "agent": {
     "build": { "disable": true },
     "plan": { "disable": true },
-    "sdg": { "permission": { "skill": { "sdg-*": "allow", "*": "deny" } } },
-    "training": { "permission": { "skill": { "training-*": "allow", "*": "deny" } } }
+    "sdg": { "permission": { "skill": { "*": "deny", "sdg-*": "allow" } } },
+    "training": { "permission": { "skill": { "*": "deny", "training-*": "allow" } } }
   }
 }
