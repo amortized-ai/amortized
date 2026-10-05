@@ -206,6 +206,21 @@ def load_checklist(use_case: str) -> dict[str, Any]:
 
 _ERROR_MARKERS = ('"errors"', "validation_error", "is required", "invalid", "must be")
 
+# Substrings that identify a base-model name in present_options titles, so the
+# model_choice check recognises a model list even when the question itself does
+# not contain the word "model". Lowercased family names, not exact ids, so new
+# sizes/variants still match.
+_MODEL_NAME_MARKERS = (
+    "qwen",
+    "llama",
+    "granite",
+    "mistral",
+    "gemma",
+    "phi-",
+    "smol",
+    "deepseek",
+)
+
 
 def _is_ok_output(status: str | None, output: str | None) -> bool:
     if status == "error":
@@ -279,6 +294,23 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
             if needle and needle not in (c.get("output") or ""):
                 continue
             return "met"
+        # Reuse/resume: the step legitimately did not run because the agent
+        # inherited config from a prior job (e.g. SDG reused a prior job's teacher,
+        # so there was no teacher selection and hence no pricing to show). The
+        # `na_if_reused` probe identifies that prior-config load -> n/a, not missed.
+        na = match.get("na_if_reused")
+        if na:
+            na_tools = na.get("tools") or [na["tool"]]
+            na_where = na.get("where") or {}
+            na_needle = na.get("output_contains")
+            for c in run.tool_calls:
+                if c.get("tool") not in na_tools:
+                    continue
+                if not all(c.get(k) == v for k, v in na_where.items()):
+                    continue
+                if na_needle and na_needle not in (c.get("output") or ""):
+                    continue
+                return "n/a"
         return "missed"
 
     if mtype == "chained":
@@ -309,6 +341,18 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         after = [i for i, c in enumerate(run.tool_calls) if _spec_match(c, after_spec)]
         if not after:
             return "missed"
+        # Resume/reuse: when the earliest `after` call chains to an artifact built
+        # in a prior session (its `na_if_after_chained` field is set) and no
+        # `before` call precedes it in THIS log, the within-log ordering rule does
+        # not apply (e.g. training resumed from a pre-existing SDG dataset). A
+        # genuinely out-of-order run with no such chain still falls through to wrong.
+        na_field = match.get("na_if_after_chained")
+        if na_field:
+            first_after = min(after)
+            if not any(i < first_after for i in before) and run.tool_calls[first_after].get(
+                na_field
+            ):
+                return "n/a"
         if not before or min(before) > min(after):
             return "wrong"
         return "met"
@@ -371,6 +415,66 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
                 return "wrong"
         return "met"
 
+    if mtype == "prompt_review":
+        # Integrity: task-distillation Step 8 composes a system prompt and must
+        # render it with show_prompt before asking the user to approve it (the row
+        # is gated on that skill being loaded). Scored structurally, not on the
+        # phrasing of the ask: show_prompt called -> met (the prompt was shown,
+        # however the agent worded the request); not called but an SDG config was
+        # built -> wrong (a prompt was composed and the user never saw it); neither
+        # -> n/a (the prompt-composition step was not reached this run).
+        if _calls(run, "show_prompt"):
+            return "met"
+        if _calls(run, "validate_sdg_job"):
+            return "wrong"
+        return "n/a"
+
+    if mtype == "eval_phase":
+        # UI progress: the eval stage must signal phase=eval so the bar shows
+        # "Evaluation". The observed bug was eval signalling phase=training,
+        # leaving the bar stuck on Model Training.
+        if not _calls(run, "validate_eval_job"):
+            return "n/a"  # no eval stage in this run
+        eval_signals = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "signal_phase" and c.get("role") == "eval"
+        ]
+        if not eval_signals:
+            return "missed"  # eval ran but never signalled a phase
+        if not any("phase" in c for c in eval_signals):
+            return "review"  # log predates phase capture (logging-dependency)
+        return "met" if any(c.get("phase") == "eval" for c in eval_signals) else "wrong"
+
+    if mtype == "model_choice":
+        # The training stage must let the user CHOOSE the base model — present it
+        # as options and wait, never auto-pick a recommended default. Checkable
+        # via a present_options (training role) whose question or option titles
+        # name a model. n/a when there is no training stage; review when the log
+        # predates present_options content capture.
+        if not _calls(run, "validate_training_job"):
+            return "n/a"  # no training stage in this run
+        present = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options" and c.get("role") == "training"
+        ]
+        for c in present:
+            question = (c.get("question") or "").lower()
+            titles = " ".join(c.get("options") or []).lower()
+            if "model" in question or any(m in titles for m in _MODEL_NAME_MARKERS):
+                return "met"
+        # Distinguish "never offered a model choice" from "log predates the
+        # option-content capture": if no present_options anywhere carries the
+        # question/options fields, we cannot tell -> defer to review.
+        if not any(
+            "question" in c or "options" in c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options"
+        ):
+            return "review"
+        return "wrong"  # training ran but never offered a model choice
+
     if mtype == "judge_valid":
         # The eval judge model must be a real model name from the catalog
         # (list_models / get_eval_endpoint_suggestions). We score the LAST
@@ -397,11 +501,20 @@ def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
     was actually loaded, so a classification run doesn't get judged against the
     task-distillation guide.
 
-    Currently supports `type: skill_loaded` — a `skill` tool call whose output
-    echoes the loaded skill name (`skill`), optionally scoped to a subagent
-    `role` (the sub-skills belong to subagents, so role-scoping disambiguates
-    which agent loaded which skill). Mirrors the auto `*_skill_loaded` mechanic
-    rows (tool_called on the `skill` tool). Unknown types don't gate (True)."""
+    Supports:
+
+    - `type: skill_loaded` — a `skill` tool call whose output echoes the loaded
+      skill name (`skill`), optionally scoped to a subagent `role` (the sub-skills
+      belong to subagents, so role-scoping disambiguates which agent loaded which
+      skill). Mirrors the auto `*_skill_loaded` mechanic rows (tool_called on the
+      `skill` tool).
+    - `type: eval_for_trained_model` — the run validated an eval job whose config
+      carries a `training_job_id` (the subject under eval is a tuned model, not a
+      base/gateway model). Gates rows that only apply when an eval set is being
+      built FOR a trained model (where it must mirror the training pipeline's SDG
+      config), so base-model or gateway-model evals don't get judged against them.
+
+    Unknown types don't gate (return True)."""
     if not requires:
         return True
     if requires.get("type") == "skill_loaded":
@@ -416,6 +529,10 @@ def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
                 continue
             return True
         return False
+    if requires.get("type") == "eval_for_trained_model":
+        return any(
+            c.get("training_job_id") for c in _calls(run, "validate_eval_job")
+        )
     return True  # unknown precondition -> do not gate
 
 

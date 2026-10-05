@@ -71,7 +71,14 @@ rows:
     aspect: C
     expected: "SDG config is validated before the training config (data before training)"
     adjudicate: auto
-    match: { type: tool_before, before: validate_sdg_job, after: validate_training_job }
+    # na_if_after_chained: resume/reuse — when training chains to a pre-existing
+    # SDG dataset (parent_job_id set) and no SDG validate precedes it in this log,
+    # the within-log ordering rule does not apply -> n/a (not wrong).
+    match:
+      type: tool_before
+      before: validate_sdg_job
+      after: validate_training_job
+      na_if_after_chained: parent_job_id
 
   - id: order_training_before_eval
     stage: "Order: training before eval"
@@ -154,7 +161,39 @@ rows:
     expected: "Looks up model pricing before asking the user to pick a teacher model"
     adjudicate: auto
     # sdg/workflow.md (60-63, 100-101)
-    match: { type: tool_called, tools: [get_model_pricing, show_model_pricing], where: { role: sdg } }
+    # na_if_reused: when SDG inherits a prior job's config (get_job returns an
+    # sdg-type job under the sdg role), no fresh teacher selection happened, so
+    # there is no pricing step to show -> n/a (not missed).
+    match:
+      type: tool_called
+      tools: [get_model_pricing, show_model_pricing]
+      where: { role: sdg }
+      na_if_reused: { tool: get_job, where: { role: sdg }, output_contains: '"type": "sdg"' }
+
+  - id: prompt_shown_for_review
+    stage: "Prompt shown for review"
+    aspect: B
+    expected: "When asking the user to review/approve a generated prompt, the prompt is actually rendered (show_prompt), not just referenced"
+    adjudicate: auto
+    # sdg task-distillation guide Step 8: render the prompt with show_prompt
+    # before asking for approval. Guards the observed "here's the prompt … review
+    # it" where the prompt was never shown (lived only in the SDG job config).
+    # The prompt-generate-and-approve step exists ONLY in the task-distillation
+    # skill (no other SDG sub-skill composes a prompt for the user), so gate on
+    # that guide being loaded — like the aspect-G task-distillation rows. n/a when
+    # the skill was not loaded, or when no prompt review was solicited.
+    requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
+    match: { type: prompt_review }
+
+  - id: eval_phase_signaled
+    stage: "Progress: eval phase"
+    aspect: B
+    expected: "The eval stage signals its own phase (eval), so the progress UI reflects the current stage"
+    adjudicate: auto
+    # eval/workflow.md Progress Signal + ui.py signal_phase: each stage must
+    # signal its own phase so the UI tracks the live stage. n/a when there is no
+    # eval stage; review when the log predates phase capture.
+    match: { type: eval_phase }
 
   - id: sdg_skill_loaded
     stage: "SDG sub-skill"
@@ -183,6 +222,16 @@ rows:
     adjudicate: auto
     # training/workflow.md (42-62): "You MUST show VRAM estimates before ..."
     match: { type: tool_called, tools: [estimate_training_resources, show_vram_estimate], where: { role: training } }
+
+  - id: train_model_choice_offered
+    stage: "Training model choice"
+    aspect: B
+    expected: "Presents the base-model options and waits — never auto-picks a default"
+    adjudicate: auto
+    # training/workflow.md (47-55): "present the models as options and wait for
+    # the user to choose — never auto-select a model". Verified via a
+    # present_options (training role) that names a model.
+    match: { type: model_choice }
 
   - id: train_data_confirmed
     stage: "Training data usage"
@@ -301,6 +350,49 @@ rows:
     adjudicate: llm_judge
     # eval/workflow.md (279-300); all Failure Handling sections. Judged from
     # logged assistant text against tool statuses/outputs.
+
+  - id: eval_set_mirrors_training_sdg
+    stage: "Eval set mirrors training SDG"
+    aspect: F
+    # Gated: only applies when the eval subject is a TUNED model (its config
+    # carries training_job_id). Base-model / gateway-model evals -> n/a.
+    requires: { type: eval_for_trained_model }
+    expected: >
+      When building a NEW eval set for a trained model, the eval-data SDG mirrors
+      the SAME pipeline that produced the model's training data: it reuses that
+      pipeline's assessor system_prompt VERBATIM, the SAME teacher model, and the
+      SAME output format/schema — regenerating only fresh inputs for leakage
+      isolation. `met` if the eval-set SDG is grounded in the training model's own
+      SDG config (e.g. the agent traced the training job to its parent SDG and
+      copied that prompt/teacher). `wrong` if it instead anchors the prompt/teacher
+      to a prior or unrelated dataset (e.g. "the prompt stays identical to your
+      prior eval batches") rather than to THIS model's training pipeline, or uses a
+      different teacher model. `n/a` if the eval reused an existing held-out split
+      (no new SDG set was generated) or the needed config was not observable.
+    adjudicate: llm_judge
+    # Semantic check: the agent may call get_job on *an* SDG job yet copy the WRONG
+    # one (observed: anchored to prior platform RFE datasets). Only a transcript
+    # pass can tell whether the reused config is the training model's. Gated by the
+    # eval_for_trained_model precondition (validate_eval_job carries training_job_id).
+
+  - id: sdg_sample_count_user_chosen
+    stage: "SDG sample count chosen by user"
+    aspect: B
+    expected: >
+      For EACH dataset Morty generates via SDG, the number of
+      records/examples is a choice offered to the user (e.g. a
+      present_options question like "how many examples?"), not a number
+      Morty picks on its own. `met` if every generated dataset's size was
+      put to the user as a decision. `wrong` if Morty selected a size
+      unilaterally and only asked the user to CONFIRM its own chosen count
+      (e.g. "proceed with the full 40-record run?") without ever offering
+      the size as a choice — this applies especially to a held-out eval
+      set, whose size is a fresh decision even when the rest of the SDG
+      config is cloned from the training pipeline. `n/a` if no SDG dataset
+      was generated.
+    adjudicate: llm_judge
+    # present_options content (question + option titles) is logged, so the
+    # judge can tell a size-decision prompt from a mere confirm-my-number one.
 
   # ---- Redundancy (LLM-judge; de-dup of decisions & options) ----------------
   # Both judge from the logged present_options prompts (question + options are in
