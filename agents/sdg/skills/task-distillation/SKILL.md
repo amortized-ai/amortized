@@ -51,8 +51,11 @@ SAME pipeline that produced its training data:
    sensible default; never pick the size yourself. Only skip the question
    if the handoff/user already named a size in this conversation.
 4. Change ONLY what makes the set held-out: the user-chosen size plus a
-   fresh sampler seed and/or fresh source rows, so there is no record
-   overlap with the training data.
+   fresh sampler seed and/or fresh source rows. Fresh inputs ARE the
+   isolation — do NOT try to prove non-overlap afterward by fetching and
+   comparing datasets (that is an open-ended loop). The platform checks
+   the generated set against the training data when the eval job is
+   validated and flags any overlap.
 5. Then go to preview/create (`validate_sdg_job`).
 
 Never compose a new prompt, pick a different teacher, or anchor to a

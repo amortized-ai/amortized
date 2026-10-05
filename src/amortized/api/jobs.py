@@ -1,5 +1,6 @@
 """Job management endpoints."""
 
+import hashlib
 import json
 import logging
 from typing import Any
@@ -684,6 +685,7 @@ async def validate_eval_job(
     # on this dataset but the descriptions differ.
     warnings = await _rubric_drift_warning(config, parent_job_id, db)
     warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, db))
+    warnings.extend(await _eval_overlap_warning(config, parent_job_id, db))
 
     return ValidatedJobConfig(
         job_type=JobType.eval,
@@ -834,6 +836,125 @@ async def _training_sdg_mirror_warning(
         " A tuned model should be scored on the task it was trained for — reuse"
         f" the training SDG config (job {train_sdg_id}) verbatim: same teacher"
         " model and assessor system prompt, regenerating only fresh inputs."
+    ]
+
+
+def _record_input_signature(rec: dict[str, Any]) -> str:
+    """A stable hash of a record's INPUT content, for overlap detection.
+
+    SDG datasets are the SFT `messages` shape, so the input the model saw is the
+    user turn(s); two records with the same user content are the same example
+    regardless of the generated answer. Falls back to the whole record when there
+    is no `messages` column, so it still works on other dataset shapes."""
+    msgs = rec.get("messages")
+    if isinstance(msgs, list):
+        user = "\n".join(
+            str(m.get("content", ""))
+            for m in msgs
+            if isinstance(m, dict) and m.get("role") == "user"
+        ).strip()
+        if user:
+            return hashlib.sha256(user.encode("utf-8")).hexdigest()
+    blob = json.dumps(rec, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+async def _input_signatures(run_id: str) -> set[str]:
+    """Input signatures of every record in an MLflow dataset run."""
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    mlflow = _mlflow_client()
+    paths = await _find_dataset_artifacts(mlflow, run_id)
+    sigs: set[str] = set()
+    for path in paths:
+        for rec in _parse_records(path, await mlflow.get_artifact(run_id, path)):
+            sigs.add(_record_input_signature(rec))
+    return sigs
+
+
+async def _resolve_data_run(
+    repo: Repository, parent_job_id: str, data_run_id: str
+) -> str:
+    """MLflow run holding a dataset, from either a parent job or a direct run id."""
+    if parent_job_id:
+        job = await repo.get_job(parent_job_id)
+        if job:
+            return str(job.get("mlflow_run_id") or "")
+    return data_run_id
+
+
+async def _resolve_training_data_run(repo: Repository, training_job_id: str) -> str:
+    """MLflow run holding the data a training job actually trained on.
+
+    Prefer the exact `data_run_id` the job used (e.g. a split complement), else
+    the parent SDG job's MLflow run."""
+    training = await repo.get_job(training_job_id)
+    if not training:
+        return ""
+    cfg = training.get("config") or {}
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except ValueError:
+            cfg = {}
+    data_run_id = str((cfg or {}).get("data_run_id") or "")
+    if data_run_id:
+        return data_run_id
+    return await _resolve_data_run(repo, str(training.get("parent_job_id") or ""), "")
+
+
+async def _eval_overlap_warning(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """Warn when an eval set for a trained model reuses the model's training inputs.
+
+    Resolves the eval dataset and the model's training dataset to their MLflow
+    runs, loads both, and intersects per-record input signatures. Any overlap
+    means the model would be scored on inputs it already trained on (leakage).
+    Warn — do not block.
+
+    Best-effort: silent when either dataset can't be resolved or loaded (the same
+    lineage gaps as the mirror check), so a transient MLflow error never blocks
+    an otherwise-valid eval."""
+    training_job_id = str(config.get("training_job_id") or "")
+    if not training_job_id:
+        return []  # not an eval for a trained model
+
+    repo = Repository(db)
+    eval_run = await _resolve_data_run(
+        repo, parent_job_id, str(config.get("eval_data_run_id") or "")
+    )
+    train_run = await _resolve_training_data_run(repo, training_job_id)
+    if not eval_run or not train_run:
+        return []
+
+    if eval_run == train_run:
+        return [
+            "the eval dataset is the model's training dataset — the model would be"
+            " scored entirely on data it trained on. Use a held-out eval set."
+        ]
+
+    try:
+        eval_sigs = await _input_signatures(eval_run)
+        train_sigs = await _input_signatures(train_run)
+    except Exception:
+        logger.warning("eval overlap check: failed to load datasets", exc_info=True)
+        return []
+    if not eval_sigs or not train_sigs:
+        return []
+
+    overlap = eval_sigs & train_sigs
+    if not overlap:
+        return []
+    return [
+        f"{len(overlap)} of {len(eval_sigs)} eval records reuse inputs the model"
+        " already saw in training — the eval would be scored partly on its own"
+        " training data (leakage). Regenerate the held-out set with fresh inputs"
+        " before evaluating."
     ]
 
 

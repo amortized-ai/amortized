@@ -399,8 +399,10 @@ the SDG agent to:
   the eval set's design.
 - Reuse that config VERBATIM: the same assessor/system prompt, the same
   `model_configs` teacher model, and the same output columns/schema.
-- Regenerate only fresh inputs (new sampler seed / fresh source rows)
-  so the eval set is held-out, with no record overlap with training.
+- Regenerate only fresh inputs (new sampler seed / fresh source rows) —
+  fresh inputs ARE the held-out isolation; do not verify non-overlap by
+  comparing datasets afterward (the platform flags any overlap when the
+  eval job is validated).
 - NEVER anchor the prompt or teacher to "prior eval batches", another
   dataset, or a remembered default — if the training SDG config is
   unavailable, say so and stop; do not improvise one.

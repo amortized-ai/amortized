@@ -127,3 +127,150 @@ class TestTrainingSdgMirrorWarning:
             {"training_job_id": "train-job"}, "", db=None
         )
         assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Eval-vs-training record overlap (leakage) guardrail
+# ---------------------------------------------------------------------------
+
+
+def _msg_rec(user: str, answer: str) -> dict:
+    """An SFT `messages` record — the shape SDG datasets use."""
+    return {
+        "messages": [
+            {"role": "system", "content": "assess the ticket"},
+            {"role": "user", "content": user},
+            {"role": "assistant", "content": answer},
+        ]
+    }
+
+
+class TestRecordInputSignature:
+    def test_keys_on_user_content_not_the_answer(self) -> None:
+        # Same input, different generated answer -> same signature (still leakage).
+        assert jobs._record_input_signature(
+            _msg_rec("ticket A", "9")
+        ) == jobs._record_input_signature(_msg_rec("ticket A", "7"))
+
+    def test_different_input_differs(self) -> None:
+        assert jobs._record_input_signature(
+            _msg_rec("ticket A", "9")
+        ) != jobs._record_input_signature(_msg_rec("ticket B", "9"))
+
+    def test_falls_back_to_whole_record_without_messages(self) -> None:
+        a = jobs._record_input_signature({"input": "x", "label": "p"})
+        b = jobs._record_input_signature({"input": "x", "label": "q"})
+        assert a != b  # no messages column -> whole-record hash distinguishes them
+
+
+class TestEvalOverlapWarning:
+    @pytest.fixture
+    def patch(self, monkeypatch):
+        def _install(jobs_by_id: dict, sigs_by_run: dict) -> None:
+            monkeypatch.setattr(jobs, "Repository", lambda _db: _FakeRepo(jobs_by_id))
+
+            async def _fake_sigs(run_id: str):
+                return sigs_by_run[run_id]
+
+            monkeypatch.setattr(jobs, "_input_signatures", _fake_sigs)
+
+        return _install
+
+    @pytest.mark.asyncio
+    async def test_warns_on_reused_inputs(self, patch) -> None:
+        patch(
+            {
+                "train-job": {"config": {}, "parent_job_id": "train-sdg"},
+                "train-sdg": {"mlflow_run_id": "run-train"},
+                "eval-sdg": {"mlflow_run_id": "run-eval"},
+            },
+            {"run-train": {"a", "b"}, "run-eval": {"a", "c"}},  # 'a' reused
+        )
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings and "1 of 2 eval records reuse inputs" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_silent_on_fresh_eval_set(self, patch) -> None:
+        patch(
+            {
+                "train-job": {"config": {}, "parent_job_id": "train-sdg"},
+                "train-sdg": {"mlflow_run_id": "run-train"},
+                "eval-sdg": {"mlflow_run_id": "run-eval"},
+            },
+            {"run-train": {"a", "b"}, "run-eval": {"c", "d"}},
+        )
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_flags_eval_on_the_training_dataset_itself(self, patch) -> None:
+        # Eval data resolves to the SAME run as training -> total leakage.
+        patch(
+            {
+                "train-job": {"config": {"data_run_id": "run-shared"}},
+                "eval-sdg": {"mlflow_run_id": "run-shared"},
+            },
+            {"run-shared": {"a", "b"}},
+        )
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings and "is the model's training dataset" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_prefers_training_data_run_id_over_parent(self, patch) -> None:
+        # Model trained on a split complement (data_run_id), not the full SDG.
+        patch(
+            {
+                "train-job": {
+                    "config": {"data_run_id": "run-complement"},
+                    "parent_job_id": "train-sdg",
+                },
+                "eval-sdg": {"mlflow_run_id": "run-eval"},
+            },
+            {"run-complement": {"a"}, "run-eval": {"a", "z"}},  # overlaps complement
+        )
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings and "1 of 2 eval records reuse inputs" in warnings[0]
+
+    @pytest.mark.asyncio
+    async def test_silent_when_not_for_a_trained_model(self, patch) -> None:
+        patch({}, {})
+        assert await jobs._eval_overlap_warning({}, "eval-sdg", db=None) == []
+
+    @pytest.mark.asyncio
+    async def test_silent_when_dataset_unresolvable(self, patch) -> None:
+        patch({"train-job": {"config": {}, "parent_job_id": "missing"}}, {})
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_silent_on_dataset_load_error(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            jobs,
+            "Repository",
+            lambda _db: _FakeRepo(
+                {
+                    "train-job": {"config": {}, "parent_job_id": "train-sdg"},
+                    "train-sdg": {"mlflow_run_id": "run-train"},
+                    "eval-sdg": {"mlflow_run_id": "run-eval"},
+                }
+            ),
+        )
+
+        async def _boom(run_id: str):
+            raise RuntimeError("mlflow down")
+
+        monkeypatch.setattr(jobs, "_input_signatures", _boom)
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job"}, "eval-sdg", db=None
+        )
+        assert warnings == []
