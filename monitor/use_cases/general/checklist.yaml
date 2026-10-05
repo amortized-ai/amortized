@@ -371,6 +371,25 @@ rows:
     # pass can tell whether the reused config is the training model's. Gated by the
     # eval_for_trained_model precondition (validate_eval_job carries training_job_id).
 
+  - id: sdg_sample_count_user_chosen
+    stage: "SDG sample count chosen by user"
+    aspect: B
+    expected: >
+      For EACH dataset Morty generates via SDG, the number of
+      records/examples is a choice offered to the user (e.g. a
+      present_options question like "how many examples?"), not a number
+      Morty picks on its own. `met` if every generated dataset's size was
+      put to the user as a decision. `wrong` if Morty selected a size
+      unilaterally and only asked the user to CONFIRM its own chosen count
+      (e.g. "proceed with the full 40-record run?") without ever offering
+      the size as a choice — this applies especially to a held-out eval
+      set, whose size is a fresh decision even when the rest of the SDG
+      config is cloned from the training pipeline. `n/a` if no SDG dataset
+      was generated.
+    adjudicate: llm_judge
+    # present_options content (question + option titles) is logged, so the
+    # judge can tell a size-decision prompt from a mere confirm-my-number one.
+
   # ---- Redundancy (LLM-judge; de-dup of decisions & options) ----------------
   # Both judge from the logged present_options prompts (question + options are in
   # the tool OUTPUT) and assistant prose. User replies are NOT logged, so the
