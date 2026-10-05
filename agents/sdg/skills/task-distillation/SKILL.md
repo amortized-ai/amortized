@@ -45,10 +45,15 @@ SAME pipeline that produced its training data:
      SFT processor system message (Step 8 — copy it exactly; still
      render it with `show_prompt` so the user sees what will be used),
    - the **output columns / format and schema** (Step 3).
-3. Change ONLY what makes the set held-out: a fresh sampler seed and/or
-   fresh source rows, so there is no record overlap with the training
-   data. Keep the sample count to what the user/eval asked for.
-4. Then go straight to preview/create (`validate_sdg_job`).
+3. **ASK the user how many records the eval set should have** — this is
+   the ONE decision that is genuinely fresh (the cloned config settles
+   everything else). Present it as a choice (`present_options`) with a
+   sensible default; never pick the size yourself. Only skip the question
+   if the handoff/user already named a size in this conversation.
+4. Change ONLY what makes the set held-out: the user-chosen size plus a
+   fresh sampler seed and/or fresh source rows, so there is no record
+   overlap with the training data.
+5. Then go to preview/create (`validate_sdg_job`).
 
 Never compose a new prompt, pick a different teacher, or anchor to a
 prior/other eval dataset's config. If you cannot retrieve the training
