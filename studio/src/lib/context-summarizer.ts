@@ -9,9 +9,14 @@ export function summarizeConversation(messages: PersistedMessage[]): string {
   const lines: string[] = []
 
   for (const msg of messages) {
-    // A failed turn produced no real assistant reply — its content is the error text. Don't
-    // replay it, or the restored session is told the assistant "said" an error.
-    if (msg.error) continue
+    // A failed turn's content is the raw error text. Don't replay that verbatim (it would read as
+    // the assistant having "said" an error), but keep the history accurate with a neutral marker
+    // rather than dropping the turn silently.
+    if (msg.error) {
+      lines.push("[Assistant] (previous attempt failed to produce a response)")
+      lines.push("")
+      continue
+    }
     if (msg.role === "user") {
       lines.push(`[User] ${msg.content}`)
     } else {

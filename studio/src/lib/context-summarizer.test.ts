@@ -21,7 +21,7 @@ describe("summarizeConversation", () => {
     expect(out).toContain("[Assistant] Sure — here is how.")
   })
 
-  it("skips a failed (error-flagged) turn but keeps the surrounding conversation", () => {
+  it("marks a failed (error-flagged) turn without replaying the error text", () => {
     const out = summarizeConversation([
       msg({ role: "user", content: "train a model" }),
       msg({ role: "assistant", content: "Sure — here is how." }),
@@ -36,7 +36,9 @@ describe("summarizeConversation", () => {
     expect(out).toContain("[User] train a model")
     expect(out).toContain("[Assistant] Sure — here is how.")
     expect(out).toContain("[User] use claude via vertex")
-    // ...but the failed turn's error text is not replayed as assistant content
+    // ...the failed turn is kept as a neutral marker (history stays accurate)...
+    expect(out).toContain("(previous attempt failed to produce a response)")
+    // ...but the raw error text is never replayed as assistant content
     expect(out).not.toContain("Error:")
     expect(out).not.toContain("isn't available")
   })
