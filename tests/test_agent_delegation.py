@@ -19,6 +19,10 @@ def _text_part(text: str) -> dict[str, Any]:
     return {"type": "text", "text": text}
 
 
+def _fresh_state() -> agent.SessionState:
+    return agent.SessionState(orchestrator_id="orch")
+
+
 class _Router:
     """Stands in for OpenCode: scripted responses per session."""
 
@@ -261,7 +265,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("validate_sdg_job", {"mode": "preview"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools.count("present_options") == 1  # exactly one question survives
         assert "validate_sdg_job" not in tools  # premature confirm card dropped
@@ -279,7 +283,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("present_options", {"question": "Approve this metric set?"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["present_options"]  # the duplicate question is stripped
         texts = [p for p in out["parts"] if p.get("type") == "text"]
@@ -296,7 +300,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("present_options", {"question": "Submit this job?"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert "present_options" not in tools  # no options under the confirm card
         assert tools == ["validate_training_job", "show_vram_estimate", "signal_phase"]
@@ -310,7 +314,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("validate_training_job", {"algorithm": "osft"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["validate_training_job"]
 
@@ -327,7 +331,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("validate_sdg_job", {"mode": "preview"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert "validate_sdg_job" not in tools  # job confirm deferred to next turn
         assert tools == ["signal_phase", "show_prompt", "get_model_pricing"]
@@ -342,13 +346,56 @@ class TestEnforceSingleInteraction:
                 _tool_part("present_options", {"question": "Approve this prompt?"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["show_prompt", "present_options"]
 
+    def test_review_gate_does_not_livelock_on_a_reviewed_prompt(self) -> None:
+        # First turn gates (prompt unseen); after the user has seen it, a driver that
+        # re-shows the SAME prompt before validate must be able to confirm — the
+        # confirm proceeds and the now-redundant review card is dropped instead.
+        state = _fresh_state()
+        prompt = {"title": "Assessor system prompt", "prompt": "You are a reviewer."}
+        turn1 = {
+            "parts": [
+                _tool_part("show_prompt", dict(prompt)),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+            ]
+        }
+        out1 = agent._enforce_single_interaction(turn1, state)
+        t1 = [agent._tool_name(p) for p in out1["parts"] if p.get("type") == "tool"]
+        assert t1 == ["show_prompt"]  # first time: confirm deferred, prompt reviewed
+
+        turn2 = {
+            "parts": [
+                _tool_part("show_prompt", dict(prompt)),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+            ]
+        }
+        out2 = agent._enforce_single_interaction(turn2, state)
+        t2 = [agent._tool_name(p) for p in out2["parts"] if p.get("type") == "tool"]
+        assert t2 == ["validate_sdg_job"]  # reviewed: confirm proceeds, re-show dropped
+
+    def test_edited_prompt_re_gates(self) -> None:
+        # An edited prompt is a new artifact (new signature) and must be reviewed
+        # again, even though an earlier version was already shown.
+        state = _fresh_state()
+        state.reviewed_card_sigs.add(
+            agent._review_card_signature(_tool_part("show_prompt", {"prompt": "v1"}))
+        )
+        turn = {
+            "parts": [
+                _tool_part("show_prompt", {"prompt": "v2 edited"}),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(turn, state)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["show_prompt"]  # new content re-gates the confirm
+
     def test_noop_without_any_interaction(self) -> None:
         result = {"parts": [_text_part("working"), _tool_part("list_models", {})]}
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         assert out["parts"] == result["parts"]
         assert out is result  # unchanged object when nothing to cut
 
@@ -359,7 +406,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("present_options", {"question": "which?"}),
             ]
         }
-        out = agent._enforce_single_interaction(result)
+        out = agent._enforce_single_interaction(result, _fresh_state())
         assert len(out["parts"]) == 2
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import re
@@ -90,6 +91,12 @@ class SessionState:
     # signal_phase the server can backfill the UI progress bar at the right step
     # instead of snapping it back to the start of the phase.
     last_signal_step: str = ""
+    # Content signatures of review cards (e.g. an assessor prompt) already rendered
+    # to the user standalone. The review gate fires only for a prompt NOT in this
+    # set; once shown, a later confirm that re-includes the same prompt is allowed
+    # (the redundant review card is dropped), so a driver that re-shows the prompt
+    # before every validate_* can't livelock. See _enforce_single_interaction.
+    reviewed_card_sigs: set[str] = field(default_factory=set)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -259,8 +266,25 @@ _CONFIRM_CARD_TOOLS = {
     "validate_sdg_job",
 }
 
+# Tools whose result renders a card the user must REVIEW/approve before the job it
+# gates is confirmed (e.g. an assessor/system prompt that ships in the training
+# data). Unlike purely informational show_* cards (VRAM, pricing) — which belong on
+# the confirm card — a review card must get its own turn. Add future review cards
+# here; the gate in _enforce_single_interaction treats the category uniformly.
+_REVIEW_CARD_TOOLS = {"show_prompt"}
 
-def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
+
+def _review_card_signature(part: dict[str, Any]) -> str:
+    """Stable content signature of a review card, so an edited prompt re-gates but
+    an unchanged re-show of an already-reviewed prompt does not."""
+    inp = _get_tool_input(part)
+    text = str(inp.get("prompt") or inp.get("title") or "")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _enforce_single_interaction(
+    result: dict[str, Any], state: SessionState
+) -> dict[str, Any]:
     """A turn either ASKS the user one question or CONFIRMS one job — never both.
 
     present_options asks a question and MUST end the turn; a validate_* renders a
@@ -275,12 +299,16 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
       with redundant option buttons stacked underneath it (observed: a "full
       SFT" confirm card with "Confirm & train / Adjust settings" options below).
       Fix: the card wins; the stacked question is stripped.
-    - show_prompt (an assessor/system prompt review card) then a validate_* —
-      the driver shows the prompt that will ship in the training data and in the
-      SAME turn stacks the job confirmation under it, so the user confirms the
-      job before reviewing the prompt. Fix: the prompt review wins; the confirm
-      card is stripped, leaving the prompt on its own turn. The model re-confirms
-      the job on the NEXT turn (the prompt is still in the config either way).
+    - a review card (show_prompt — an assessor/system prompt that ships in the
+      training data) then a validate_* — the driver shows the prompt and in the
+      SAME turn stacks the job confirmation under it, so the user confirms before
+      reviewing the prompt. Fix: the review wins; the confirm card is stripped,
+      leaving the prompt on its own turn. The gate fires ONLY for a prompt the
+      user has not already seen (tracked by content signature in session state);
+      once reviewed, a later confirm that re-includes the same prompt proceeds and
+      the now-redundant review card is dropped instead — so a driver that re-shows
+      the prompt before every validate_* can't livelock. An edited prompt (new
+      signature) re-gates.
 
     Whichever interaction LEADS the turn is kept; every OTHER interactive element
     (extra questions, repeat/stacked confirm cards) is stripped. Passive content
@@ -290,39 +318,54 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
     monitor log is recorded from the raw opencode parts, not this result, so the
     batching stays visible/measurable there."""
     parts = result.get("parts") or []
-    first_q = first_card = first_prompt = None
+    first_q = first_card = first_review = None
     for i, part in enumerate(parts):
         name = _tool_name(part)
         if first_q is None and name == "present_options":
             first_q = i
         if first_card is None and name in _CONFIRM_CARD_TOOLS:
             first_card = i
-        if first_prompt is None and name == "show_prompt":
-            first_prompt = i
+        if first_review is None and name in _REVIEW_CARD_TOOLS:
+            first_review = i
     if first_q is None and first_card is None:
         return result
 
-    # Whichever interaction leads the turn is the one the model is really making;
-    # keep exactly that one and strip every OTHER interactive element (extra
-    # questions, repeat/stacked confirm cards). Passive parts — explanatory text,
-    # show_* display cards, signal_phase — are ALWAYS kept, even after the kept
-    # interaction: a weak driver often writes the content the question is about
-    # (e.g. the proposed metric-set table) as trailing text, and dropping it left
-    # the user staring at option buttons with no metrics to approve.
     ask_turn = first_q is not None and (first_card is None or first_q < first_card)
-    # A show_prompt is a review gate: an assessor/system prompt must be reviewed on
-    # its own turn, never under a job confirmation card (it ships in the training
-    # data). When a turn batches show_prompt + a confirm card and no question leads
-    # it, drop the confirm card so the prompt stands alone for review; a present_
-    # options review question, if any, still leads normally (ask_turn below).
-    prompt_gate = not ask_turn and first_card is not None and first_prompt is not None
-    keep_index = None if prompt_gate else (first_q if ask_turn else first_card)
+
+    # Review gate: a review card must be reviewed on its own turn before the job it
+    # gates is confirmed — but only the FIRST time the user sees that prompt, so a
+    # driver re-showing it before every confirm can't livelock.
+    review_sig = _review_card_signature(parts[first_review]) if first_review is not None else None
+    new_review = review_sig is not None and review_sig not in state.reviewed_card_sigs
+    prompt_gate = not ask_turn and first_card is not None and new_review
+
+    if prompt_gate:
+        # No interaction leads: keep passive parts (incl. the review card); drop the
+        # confirm card so the prompt stands alone. The job is confirmed next turn.
+        keep_index: int | None = None
+        drop_review = False
+    else:
+        # Whichever interaction leads the turn is the one the model is really making;
+        # keep exactly that one and strip every OTHER interactive element. If a
+        # confirm proceeds with an already-reviewed prompt stacked on it, drop the
+        # now-redundant review card (its text is already inside the confirm card).
+        keep_index = first_q if ask_turn else first_card
+        drop_review = not ask_turn and first_card is not None and review_sig is not None
+
     kept = [
         part
         for i, part in enumerate(parts)
         if i == keep_index
-        or (_tool_name(part) != "present_options" and _tool_name(part) not in _CONFIRM_CARD_TOOLS)
+        or (
+            _tool_name(part) != "present_options"
+            and _tool_name(part) not in _CONFIRM_CARD_TOOLS
+            and not (drop_review and _tool_name(part) in _REVIEW_CARD_TOOLS)
+        )
     ]
+    # Mark the prompt reviewed once it is actually rendered to the user this turn,
+    # so the next confirm that re-includes it proceeds instead of re-gating.
+    if review_sig is not None and not drop_review:
+        state.reviewed_card_sigs.add(review_sig)
     if len(kept) == len(parts):
         return result
     return {**result, "parts": kept}
@@ -1029,7 +1072,7 @@ async def _run_turn(
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
             result = await _apply_provenance_gate(state, result, body)
-            result = _enforce_single_interaction(result)
+            result = _enforce_single_interaction(result, state)
         if turn:
             turn.result = result
     except AgentTurnError as exc:
