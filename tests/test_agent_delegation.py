@@ -248,8 +248,9 @@ class TestEnforceSingleInteraction:
     interaction leads the turn wins; the other kind (and repeats) is stripped so
     the UI never shows a question batched with a confirm card."""
 
-    def test_ask_turn_drops_everything_after_first_present_options(self) -> None:
-        # question(s) first, then a premature confirm card -> keep only the first Q.
+    def test_ask_turn_keeps_only_first_question_but_preserves_passive_parts(self) -> None:
+        # Extra questions and a premature confirm card are stripped, but passive
+        # content (text, show_* cards) is kept so the user still sees context.
         result = {
             "parts": [
                 _text_part("here are your options"),
@@ -262,8 +263,27 @@ class TestEnforceSingleInteraction:
         }
         out = agent._enforce_single_interaction(result)
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
-        assert tools == ["present_options"]  # only the FIRST question survives
-        assert len(out["parts"]) == 2  # the lead text + the one question
+        assert tools.count("present_options") == 1  # exactly one question survives
+        assert "validate_sdg_job" not in tools  # premature confirm card dropped
+        assert "show_prompt" in tools  # passive display card preserved
+        assert any(p.get("type") == "text" for p in out["parts"])  # text preserved
+
+    def test_ask_turn_preserves_text_written_after_the_question(self) -> None:
+        # Regression: a driver wrote the proposed metric-set table as text AFTER
+        # the approval question; it must not be dropped, or the user approves
+        # option buttons with no metrics shown.
+        result = {
+            "parts": [
+                _tool_part("present_options", {"question": "Approve this metric set?"}),
+                _text_part("| Criterion | What it checks |\n|---|---|\n| accuracy | ... |"),
+                _tool_part("present_options", {"question": "Approve this metric set?"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["present_options"]  # the duplicate question is stripped
+        texts = [p for p in out["parts"] if p.get("type") == "text"]
+        assert texts and "Criterion" in texts[0]["text"]  # the metric table survives
 
     def test_confirm_turn_drops_options_stacked_under_the_card(self) -> None:
         # validate_* first, then a redundant "confirm?" present_options -> the

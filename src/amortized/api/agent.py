@@ -269,17 +269,20 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
 
     - question(s) first, then a premature validate_* — the user never gets to
       pick (the sample-size / system-prompt choices get steamrolled by a confirm
-      card). Fix: the first question wins; drop everything after it.
+      card). Fix: the first question wins; the extra questions and the confirm
+      card are stripped.
     - validate_* first, then a present_options — the confirmation card renders
       with redundant option buttons stacked underneath it (observed: a "full
       SFT" confirm card with "Confirm & train / Adjust settings" options below).
-      Fix: the card wins; drop the stacked question.
+      Fix: the card wins; the stacked question is stripped.
 
-    So: whichever interaction LEADS the turn is kept; the other interaction kind
-    (and any repeat) is stripped. An ASK turn also drops anything after the
-    question; a CONFIRM turn keeps its passive cards (VRAM/pricing, signal_phase)
-    but never a question. The monitor log is recorded from the raw opencode
-    parts, not this result, so the batching stays visible/measurable there."""
+    Whichever interaction LEADS the turn is kept; every OTHER interactive element
+    (extra questions, repeat/stacked confirm cards) is stripped. Passive content
+    — explanatory text, show_* display cards, signal_phase — is ALWAYS kept, even
+    after the kept interaction, so content the question is about (e.g. a proposed
+    metric-set table the driver wrote as trailing text) is never dropped. The
+    monitor log is recorded from the raw opencode parts, not this result, so the
+    batching stays visible/measurable there."""
     parts = result.get("parts") or []
     first_q = first_card = None
     for i, part in enumerate(parts):
@@ -291,23 +294,21 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
     if first_q is None and first_card is None:
         return result
 
-    if first_q is not None and (first_card is None or first_q < first_card):
-        # ASK turn: the question is terminal — keep up to and including it.
-        kept = parts[: first_q + 1]
-    else:
-        # CONFIRM turn: the card is terminal — drop every stacked question and
-        # any repeat confirm card, keeping passive parts in order.
-        kept = []
-        seen_card = False
-        for part in parts:
-            name = _tool_name(part)
-            if name == "present_options":
-                continue
-            if name in _CONFIRM_CARD_TOOLS:
-                if seen_card:
-                    continue
-                seen_card = True
-            kept.append(part)
+    # Whichever interaction leads the turn is the one the model is really making;
+    # keep exactly that one and strip every OTHER interactive element (extra
+    # questions, repeat/stacked confirm cards). Passive parts — explanatory text,
+    # show_* display cards, signal_phase — are ALWAYS kept, even after the kept
+    # interaction: a weak driver often writes the content the question is about
+    # (e.g. the proposed metric-set table) as trailing text, and dropping it left
+    # the user staring at option buttons with no metrics to approve.
+    ask_turn = first_q is not None and (first_card is None or first_q < first_card)
+    keep_index = first_q if ask_turn else first_card
+    kept = [
+        part
+        for i, part in enumerate(parts)
+        if i == keep_index
+        or (_tool_name(part) != "present_options" and _tool_name(part) not in _CONFIRM_CARD_TOOLS)
+    ]
     if len(kept) == len(parts):
         return result
     return {**result, "parts": kept}
