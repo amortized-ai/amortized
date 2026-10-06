@@ -53,6 +53,7 @@ function readOwnNamespace() {
 // --- Helm: the core chart is pulled from OCI; the version is pinned by the deployer ---
 const HELM_BIN = process.env.HELM_BIN || 'helm';
 const CHART_OCI = process.env.AMORTIZED_CHART_OCI || 'oci://ghcr.io/amortized-ai/charts/amortized';
+// Empty => install the newest published core chart (track latest structure); set to pin a version.
 const CHART_VERSION = process.env.AMORTIZED_CHART_VERSION || '';
 const HELM_TIMEOUT = process.env.HELM_TIMEOUT || '5m';
 
@@ -492,13 +493,15 @@ async function serverAvailable(ns) {
 // `helm upgrade --install` the core chart (pulled from OCI) for this user.
 // Values are written as JSON (a valid YAML subset) so no YAML serializer is needed.
 async function helmInstall(ns, gatewayIP, hasModelKey) {
-  if (!CHART_VERSION) throw new Error('AMORTIZED_CHART_VERSION is not set — pin the core chart version');
   const valuesFile = path.join(os.tmpdir(), `values-${ns}.json`);
   fs.writeFileSync(valuesFile, JSON.stringify(userValues(ns, { mortyEnabled: MORTY_ENABLED, gatewayIP, hasModelKey }), null, 2));
   try {
+    // CHART_VERSION empty => omit --version so helm installs the newest published chart (track the
+    // latest structure); set it to pin a specific structure version for a reproducible release.
+    const versionArgs = CHART_VERSION ? ['--version', CHART_VERSION] : [];
     await run(HELM_BIN, [
       'upgrade', '--install', 'amortized', CHART_OCI,
-      '--version', CHART_VERSION, '-n', ns, '-f', valuesFile, '--timeout', HELM_TIMEOUT,
+      ...versionArgs, '-n', ns, '-f', valuesFile, '--timeout', HELM_TIMEOUT,
     ]);
   } finally {
     try { fs.unlinkSync(valuesFile); } catch { /* best-effort cleanup */ }
