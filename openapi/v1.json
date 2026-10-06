@@ -5257,6 +5257,11 @@
             "title": "Rendered",
             "description": "Indicates the frontend rendered these as cards",
             "default": true
+          },
+          "agent_instruction": {
+            "type": "string",
+            "title": "Agent Instruction",
+            "default": "You have presented this question to the user. STOP NOW \u2014 this ENDS your turn. Do NOT call any more tools (no further present_options, show_prompt, validate_*, create_*, or any read), and write no more text. Wait for the user's selection; act on it in your NEXT turn."
           }
         },
         "type": "object",
