@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import asyncpg
 from fastapi import APIRouter, Depends
@@ -21,6 +21,9 @@ from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
 from amortized.models import JobStatus, JobType
+
+if TYPE_CHECKING:
+    from amortized.api.jobs import _SdgSignature
 
 logger = logging.getLogger("amortized.api.evals")
 
@@ -326,7 +329,7 @@ async def list_evaluations(
 
 async def _training_recipe_signature(
     repo: Repository, training_job_id: str
-) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+) -> _SdgSignature | None:
     """The (teacher, prompts) SDG recipe signature of a trained model's task.
 
     A tuned model is only comparable on the task it was trained for, so the

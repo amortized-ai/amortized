@@ -608,7 +608,8 @@ def _assessor_prompt(config: dict[str, Any]) -> str | None:
         for msg in messages:
             if not isinstance(msg, dict) or msg.get("role") != "assistant":
                 continue
-            content = msg.get("content") if isinstance(msg.get("content"), str) else ""
+            raw_content = msg.get("content")
+            content = raw_content if isinstance(raw_content, str) else ""
             ref = re.search(r"\{\{\s*(\w+)\s*\}\}", content)
             if not ref:
                 continue
