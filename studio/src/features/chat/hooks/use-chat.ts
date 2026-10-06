@@ -119,6 +119,7 @@ const UI_TOOLS = new Set([
   "validate_recipe_job",
   "create_job",
   "split_dataset",
+  "merge_datasets",
 ])
 
 const ALL_TURN_TOOLS = new Set(["signal_phase"])
@@ -130,6 +131,7 @@ const JOB_CREATION_TOOLS = new Set([
   "submit_recipe_job",
   "create_job",
   "split_dataset",
+  "merge_datasets",
 ])
 
 function normalizeToolName(raw: string): string {
@@ -189,7 +191,7 @@ function extractSessionData(
         // the retry (the default dedup) keeps only the ERRORED result,
         // which kills the confirmation card. The card builder below picks
         // the last result that actually parses as a valid config.
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name.startsWith("validate_")
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name === "merge_datasets" || name.startsWith("validate_")
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
