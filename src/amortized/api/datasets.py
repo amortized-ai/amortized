@@ -22,7 +22,7 @@ from amortized.core.jobs import create_job
 from amortized.core.mlflow_client import MLflowClient
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
-from amortized.models import DatasetSplitRequest, Job, JobType
+from amortized.models import DatasetMergeRequest, DatasetSplitRequest, Job, JobType
 
 logger = logging.getLogger("amortized.api.datasets")
 
@@ -299,9 +299,15 @@ async def list_datasets(
         order_by=["start_time DESC"],
         max_results=200,
     )
+    merge_runs = await mlflow.search_runs(
+        exp_ids,
+        filter_string="tags.source = 'merge' AND attributes.status = 'FINISHED'",
+        order_by=["start_time DESC"],
+        max_results=200,
+    )
     seen: set[str] = set()
     runs: list[dict[str, Any]] = []
-    for r in sdg_runs + upload_runs + split_runs:
+    for r in sdg_runs + upload_runs + split_runs + merge_runs:
         rid = r.get("info", {}).get("run_id", "")
         if rid and rid not in seen:
             seen.add(rid)
@@ -660,6 +666,171 @@ async def split_dataset(
         },
     )
     task = asyncio.create_task(_process_dataset_split(row["id"], run_id, request))
+    _upload_tasks.add(task)
+    task.add_done_callback(_upload_tasks.discard)
+
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Dataset merge — concatenate multiple datasets into one
+# ---------------------------------------------------------------------------
+
+
+async def _store_merged_run(
+    mlflow: MLflowClient,
+    name: str,
+    source_run_ids: list[str],
+    files: list[tuple[str, bytes]],
+    num_records: int,
+) -> str:
+    """Create a new MLflow run holding the merged dataset."""
+    tags: dict[str, str] = {
+        "job_type": "upload",
+        "dataset_name": name,
+        "source": "merge",
+        "source_run_ids": json.dumps(source_run_ids),
+        "num_samples": str(num_records),
+    }
+
+    experiment_id = await mlflow.ensure_experiment("amortized/datasets")
+    run_id = await mlflow.create_run(experiment_id, name=name, tags=tags)
+    try:
+        for path, blob in files:
+            await mlflow.upload_artifact(run_id, path, blob)
+        await mlflow.finish_run(run_id)
+    except Exception:
+        await mlflow.fail_run_quiet(run_id)
+        raise
+    return run_id
+
+
+async def _process_dataset_merge(
+    job_id: str,
+    request: DatasetMergeRequest,
+) -> None:
+    from amortized.db.connection import get_pool
+
+    async with _upload_semaphore:
+        try:
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id, status="running", started_at=datetime.now(UTC)
+                )
+
+            mlflow = MLflowClient(settings.mlflow_tracking_uri, timeout=60.0)
+
+            # Collect records from all source datasets, in order.
+            all_records: list[dict[str, Any]] = []
+            source_names: list[str] = []
+            output_format = ".jsonl"
+
+            for run_id in request.run_ids:
+                source_run = await mlflow.get_run(run_id)
+                source_tags = {
+                    t["key"]: t["value"]
+                    for t in source_run.get("data", {}).get("tags", [])
+                }
+                source_names.append(
+                    source_tags.get("dataset_name", "")
+                    or source_run.get("info", {}).get("run_name", "")
+                    or run_id[:8]
+                )
+
+                paths = await _find_dataset_artifacts(mlflow, run_id)
+                if any(p.endswith(".parquet") for p in paths):
+                    output_format = ".parquet"
+                for path in paths:
+                    data = await mlflow.get_artifact(run_id, path)
+                    all_records.extend(_parse_records(path, data))
+
+            temp_names = [n for n in source_names if not n.startswith(("ds-", "run-"))]
+            if request.name:
+                merged_name = request.name
+            elif temp_names:
+                merged_name = " + ".join(temp_names)
+            else:
+                merged_name = f"Merged dataset ({len(request.run_ids)} sources)"
+            artifact_path = f"generated_data/data{output_format}"
+            blob = _serialize_records(artifact_path, all_records)
+
+            merged_run_id = await _store_merged_run(
+                mlflow,
+                merged_name,
+                request.run_ids,
+                [(artifact_path, blob)],
+                len(all_records),
+            )
+
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job(
+                    job_id,
+                    status="succeeded",
+                    mlflow_run_id=merged_run_id,
+                    mlflow_experiment="amortized/datasets",
+                    completed_at=datetime.now(UTC),
+                    config={
+                        "source": "merge",
+                        "source_run_ids": request.run_ids,
+                        "merged_run_id": merged_run_id,
+                        "num_records": len(all_records),
+                    },
+                )
+        except Exception as exc:
+            logger.warning("Dataset merge failed for job %s: %s", job_id, exc)
+            try:
+                async with get_pool().acquire() as conn:
+                    await Repository(conn).update_job(
+                        job_id,
+                        status="failed",
+                        completed_at=datetime.now(UTC),
+                        error=_sanitize_upload_error(exc),
+                    )
+            except Exception:
+                logger.exception("Failed to mark job %s as failed", job_id)
+
+
+@router.post(
+    "/merge",
+    response_model=Job,
+    status_code=202,
+    operation_id="merge_datasets",
+    summary="Merge multiple datasets into one.",
+)
+async def merge_datasets(
+    request: DatasetMergeRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> Any:
+    """Concatenate multiple datasets into a single new dataset.
+
+    All rows from the source datasets are combined in order. The merged
+    dataset is a new MLflow run usable anywhere a dataset run ID is
+    accepted (training data_run_id, eval eval_data_run_id, etc.).
+    Read the merged run ID from the finished job's config (merged_run_id).
+    """
+    mlflow = _mlflow_client()
+
+    for run_id in request.run_ids:
+        try:
+            await mlflow.get_run(run_id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                raise HTTPException(
+                    status_code=404, detail=f"Dataset run {run_id} not found"
+                ) from None
+            raise
+        await _find_dataset_artifacts(mlflow, run_id)
+
+    repo = Repository(db)
+    row = await create_job(
+        repo,
+        job_type=JobType.upload,
+        config={
+            "source": "merge",
+            "source_run_ids": request.run_ids,
+        },
+    )
+    task = asyncio.create_task(_process_dataset_merge(row["id"], request))
     _upload_tasks.add(task)
     task.add_done_callback(_upload_tasks.discard)
 
