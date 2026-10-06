@@ -11,6 +11,8 @@ data:
   AMORTIZED_DATA_DIR: {{ .Values.server.dataDir | quote }}
   AMORTIZED_COMPUTE_BACKEND: "kubernetes"
   AMORTIZED_COMPUTE_NAMESPACE: {{ .Values.jobsNamespace | quote }}
+  AMORTIZED_MAX_CONCURRENT_JOBS: {{ .Values.server.maxConcurrentJobs | quote }}
+  AMORTIZED_GPU_BUDGET: {{ .Values.server.gpuBudget | quote }}
   AMORTIZED_IMAGE_REGISTRY: {{ .Values.server.imageRegistry | quote }}
   AMORTIZED_EXTERNAL_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
   AMORTIZED_AGENT_SERVER_URL: "http://{{ include "amortized.serverFqdn" . }}:8000"
