@@ -275,6 +275,12 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
       with redundant option buttons stacked underneath it (observed: a "full
       SFT" confirm card with "Confirm & train / Adjust settings" options below).
       Fix: the card wins; the stacked question is stripped.
+    - show_prompt (an assessor/system prompt review card) then a validate_* —
+      the driver shows the prompt that will ship in the training data and in the
+      SAME turn stacks the job confirmation under it, so the user confirms the
+      job before reviewing the prompt. Fix: the prompt review wins; the confirm
+      card is stripped, leaving the prompt on its own turn. The model re-confirms
+      the job on the NEXT turn (the prompt is still in the config either way).
 
     Whichever interaction LEADS the turn is kept; every OTHER interactive element
     (extra questions, repeat/stacked confirm cards) is stripped. Passive content
@@ -284,13 +290,15 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
     monitor log is recorded from the raw opencode parts, not this result, so the
     batching stays visible/measurable there."""
     parts = result.get("parts") or []
-    first_q = first_card = None
+    first_q = first_card = first_prompt = None
     for i, part in enumerate(parts):
         name = _tool_name(part)
         if first_q is None and name == "present_options":
             first_q = i
         if first_card is None and name in _CONFIRM_CARD_TOOLS:
             first_card = i
+        if first_prompt is None and name == "show_prompt":
+            first_prompt = i
     if first_q is None and first_card is None:
         return result
 
@@ -302,7 +310,13 @@ def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
     # (e.g. the proposed metric-set table) as trailing text, and dropping it left
     # the user staring at option buttons with no metrics to approve.
     ask_turn = first_q is not None and (first_card is None or first_q < first_card)
-    keep_index = first_q if ask_turn else first_card
+    # A show_prompt is a review gate: an assessor/system prompt must be reviewed on
+    # its own turn, never under a job confirmation card (it ships in the training
+    # data). When a turn batches show_prompt + a confirm card and no question leads
+    # it, drop the confirm card so the prompt stands alone for review; a present_
+    # options review question, if any, still leads normally (ask_turn below).
+    prompt_gate = not ask_turn and first_card is not None and first_prompt is not None
+    keep_index = None if prompt_gate else (first_q if ask_turn else first_card)
     kept = [
         part
         for i, part in enumerate(parts)

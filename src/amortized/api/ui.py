@@ -137,11 +137,26 @@ class ShowPromptRequest(BaseModel):
     )
 
 
+_SHOW_PROMPT_REVIEW = (
+    "The prompt is now shown for review. Do NOT submit or confirm a job in this"
+    " same turn (no validate_*/create_*) — the user must review this prompt first,"
+    " because it ships in the training data. Ask them to approve it or request"
+    " edits (present_options), then STOP and wait; build/confirm the job in your"
+    " NEXT turn, after they approve."
+)
+
+
 class ShowPromptResponse(BaseModel):
     title: str
     prompt: str
     purpose: str
     rendered: bool = Field(True)
+    # Server directive the model reads in the tool result. A weaker driver shows
+    # the assessor prompt and stacks a validate_* confirm card under it in the same
+    # turn, so the user confirms the job before reviewing the prompt. A tool result
+    # outranks the system prompt; the proxy also drops the stacked confirm card as
+    # a backstop (see _enforce_single_interaction in agent.py).
+    agent_instruction: str = Field(default=_SHOW_PROMPT_REVIEW, exclude=False)
 
 
 @router.post(
@@ -162,6 +177,7 @@ async def show_prompt(body: ShowPromptRequest) -> ShowPromptResponse:
         prompt=body.prompt,
         purpose=body.purpose,
         rendered=True,
+        agent_instruction=_SHOW_PROMPT_REVIEW,
     )
 
 

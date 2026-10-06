@@ -314,6 +314,38 @@ class TestEnforceSingleInteraction:
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["validate_training_job"]
 
+    def test_show_prompt_gate_drops_confirm_card_stacked_under_the_prompt(self) -> None:
+        # The exact observed batch: show the assessor prompt, then stack the SDG
+        # confirmation (repeated) under it in the same turn. The prompt review wins;
+        # every confirm card is dropped so the prompt stands alone for review.
+        result = {
+            "parts": [
+                _tool_part("signal_phase", {"phase": "sdg", "step": "confirm"}),
+                _tool_part("show_prompt", {"title": "Assessor system prompt"}),
+                _tool_part("get_model_pricing", {}),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert "validate_sdg_job" not in tools  # job confirm deferred to next turn
+        assert tools == ["signal_phase", "show_prompt", "get_model_pricing"]
+
+    def test_show_prompt_with_review_question_keeps_the_question(self) -> None:
+        # The CORRECT flow: show the prompt, then ask approve/edit. This is an ask
+        # turn — the present_options leads and the prompt rides along as passive
+        # context. The gate must NOT fire here.
+        result = {
+            "parts": [
+                _tool_part("show_prompt", {"title": "Assessor system prompt"}),
+                _tool_part("present_options", {"question": "Approve this prompt?"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["show_prompt", "present_options"]
+
     def test_noop_without_any_interaction(self) -> None:
         result = {"parts": [_text_part("working"), _tool_part("list_models", {})]}
         out = agent._enforce_single_interaction(result)
