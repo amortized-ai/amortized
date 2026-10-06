@@ -344,9 +344,7 @@ async def _build_classification_eval(
     to its nearest class, and reports accuracy / macro-F1 / confusion. Runs in
     the training image (which ships sentence-transformers).
     """
-    # Training image has sentence-transformers + datasets + training_hub.
-    from amortized.jobs.training import IMAGE as TRAINING_IMAGE
-
+    # Runs in the training image (ships sentence-transformers + datasets + training_hub).
     pre_commands: list[str] = []
 
     # 1. Model to evaluate: a tuned model (training_job_id) or a base ST model.
@@ -419,7 +417,7 @@ async def _build_classification_eval(
         post_commands=[post_cmd],
         # Encoding a small eval set is fast; GPU optional (0 = CPU, no quota).
         resources=Resources(gpus=int(config.get("nproc_per_node", 0)), cpus=4, memory_gb=8),
-        image=TRAINING_IMAGE,
+        image=config_mod.job_image("training"),
         resolved_config=resolved_config,
     )
 
@@ -438,9 +436,9 @@ async def build(
     # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
     inject_enabled_provider_keys(env)
 
-    # Eval job image — the tag is configurable (settings.eval_image_tag, default "latest") so a
-    # specific commit can be pinned to test or roll back the eval backend without moving :latest.
-    image = f"{config_mod.settings.image_registry}/eval:{config_mod.settings.eval_image_tag}"
+    # Eval job image — job_image_tag (default "latest") pins every job backend; set it to a commit
+    # sha for a reproducible release, or leave "latest" to track main.
+    image = config_mod.job_image("eval")
 
     # --- Model under evaluation: embedded serving or external endpoint ---
     has_model_source = bool(

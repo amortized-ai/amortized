@@ -1058,3 +1058,23 @@ class TestEndpointRetries:
         assert "temperature" not in seen[-1]
         assert "max_tokens" not in seen[-1]
         assert seen[-1].get("max_completion_tokens") == 64
+
+
+class TestJobImageTag:
+    """A single job_image_tag pins every job backend for a reproducible release."""
+
+    @pytest.mark.asyncio
+    async def test_job_image_tag_pins_all_job_images(self, monkeypatch) -> None:
+        import amortized.config as config_mod
+
+        reg = "ghcr.io/amortized-ai"
+        monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
+        # the shared helper composes any job image at the pinned tag
+        assert config_mod.job_image("data-designer") == f"{reg}/data-designer:sha-abc123"
+        assert config_mod.job_image("training") == f"{reg}/training:sha-abc123"
+        assert config_mod.job_image("document") == f"{reg}/document:sha-abc123"
+        # and the eval builder picks it up end-to-end
+        result = await eval_builder.build(
+            {"id": "j1", "type": "eval"}, {**EVAL_BODY, "judge": JUDGE}, {}
+        )
+        assert result.image == f"{reg}/eval:sha-abc123"

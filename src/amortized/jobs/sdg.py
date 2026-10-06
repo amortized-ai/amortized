@@ -15,8 +15,6 @@ from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.sdg")
 
-IMAGE = "ghcr.io/amortized-ai/data-designer:latest"
-
 _STALE_CONFIG_KEYS = (
     "model",
     "api_base",
@@ -188,7 +186,7 @@ async def build(
         pre_commands=pre_commands,
         post_commands=[post_cmd],
         resources=Resources(gpus=0),
-        image=IMAGE,
+        image=config_mod.job_image("data-designer"),
         resolved_config=resolved_config,
     )
 
