@@ -189,3 +189,43 @@ class TestJobCRUD:
         jobs = await repo.list_jobs(status=JobStatus.queued, job_type=JobType.training)
         assert len(jobs) == 1
         assert jobs[0]["id"] == "f1"
+
+    @pytest.mark.asyncio
+    async def test_list_queued_candidates_orders_and_excludes(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="q1", job_type=JobType.training, config={},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        await repo.create_job(
+            job_id="q2", job_type=JobType.sdg, config={},
+            created_at="2026-01-01T00:00:01+00:00",
+        )
+        # Dataset uploads/splits are processed API-side — excluded. Document
+        # uploads stay worker-side — included.
+        await repo.create_job(
+            job_id="dataset1", job_type=JobType.upload, config={"source": "upload"},
+            created_at="2026-01-01T00:00:02+00:00",
+        )
+        await repo.create_job(
+            job_id="doc1", job_type=JobType.upload, config={"source": "document"},
+            created_at="2026-01-01T00:00:03+00:00",
+        )
+
+        rows = await repo.list_queued_candidates("", 100)
+        assert [r["id"] for r in rows] == ["q1", "q2", "doc1"]
+
+    @pytest.mark.asyncio
+    async def test_claim_job_is_atomic(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="c1", job_type=JobType.training, config={},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        first = await repo.claim_job("c1")
+        assert first is not None
+        assert first["status"] == "provisioning"
+        # A second claim of the same job loses the race → None (never double-run).
+        assert await repo.claim_job("c1") is None
+
+    @pytest.mark.asyncio
+    async def test_claim_job_missing_returns_none(self, repo: Repository) -> None:
+        assert await repo.claim_job("nope") is None

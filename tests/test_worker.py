@@ -79,6 +79,47 @@ class TestWorkerJobExecution:
         assert job is None
 
 
+class TestResourceAwareAdmission:
+    @pytest.mark.asyncio
+    async def test_cpu_job_runs_past_unfittable_gpu_job(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """With no GPU budget free, a queued CPU job (SDG) is claimed ahead of an
+        older GPU job (training) that does not fit — the core unblocker. When a GPU
+        frees, the older training job is then admitted."""
+        import amortized.config as config_mod
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _claim_runnable_job
+
+        ns = config_mod.settings.compute_namespace
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="train-old", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.create_job(
+                job_id="sdg-new", job_type=JobType.sdg, config={},
+                created_at="2026-01-01T00:00:01+00:00", k8s_namespace=ns,
+            )
+
+        # Budget exhausted: skip the training job (needs 1 GPU), claim the CPU job.
+        claimed = await _claim_runnable_job(ns, gpu_free=0)
+        assert claimed is not None
+        assert claimed["id"] == "sdg-new"
+        assert claimed["status"] == "provisioning"
+
+        # A GPU is free now: the training job is the oldest that fits, so it wins.
+        claimed = await _claim_runnable_job(ns, gpu_free=1)
+        assert claimed is not None
+        assert claimed["id"] == "train-old"
+
+        # Both claimed — nothing runnable remains.
+        assert await _claim_runnable_job(ns, gpu_free=1) is None
+
+
 class TestOrphanedJobCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_orphaned_jobs(self, client: httpx.AsyncClient) -> None:

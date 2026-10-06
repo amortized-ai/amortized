@@ -19,6 +19,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger("amortized.core.jobs")
 
 
+def estimate_gpu_demand(job: dict[str, Any]) -> int:
+    """Best-effort count of GPUs a job's pod will request, from its (type, config).
+
+    The worker gates admission on the namespace GPU budget, but a job's real GPU
+    count is only known after the (async, side-effecting) builder runs. This mirrors
+    the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
+    building. Keep in sync with ``amortized.jobs.*``:
+      - training        -> nproc_per_node (default 1)
+      - sdg / upload     -> 0
+      - eval, classification mode        -> nproc_per_node (default 0)
+      - eval, embedded serving (training_job_id / model_name_or_path, no endpoint)
+                                          -> nproc_per_node (default 1)
+      - eval, external endpoint          -> 0
+    """
+    config = job.get("config") or {}
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except (ValueError, TypeError):
+            config = {}
+
+    def _nproc(default: int) -> int:
+        try:
+            return max(0, int(config.get("nproc_per_node", default)))
+        except (TypeError, ValueError):
+            return default
+
+    job_type = job.get("type")
+    if job_type == JobType.training.value:
+        return _nproc(1)
+    if job_type == JobType.eval.value:
+        if config.get("eval_mode") == "classification":
+            return _nproc(0)
+        has_model_source = bool(
+            str(config.get("training_job_id", "")).strip()
+            or str(config.get("model_name_or_path", "")).strip()
+        )
+        if has_model_source and not config.get("endpoint"):
+            return _nproc(1)
+        return 0
+    return 0
+
+
 async def create_job(
     repo: Repository,
     *,
