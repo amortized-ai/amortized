@@ -31,8 +31,9 @@ images:
   # This chart tracks latest by default: server + studio default to :latest, so a no-override
   # install follows main (may be unstable). Pin for stability by overriding these tags
   # (images.server.tag=sha-<commit>, or the install chart's serverImageTag), or install a frozen
-  # release chart (e.g. 0.2.1, which locks server+studio to sha-6e09476). pullPolicy "" lets K8s
-  # choose: Always for :latest, IfNotPresent for a pinned non-latest tag.
+  # release chart (e.g. 0.2.1, which locks server+studio to sha-6e09476). pullPolicy "" is
+  # tag-aware: the chart renders Always for :latest and IfNotPresent for a pinned tag (always
+  # emitted so a helm upgrade that switches tags can't retain a stale policy); set it to force one.
   server:
     repository: ghcr.io/amortized-ai/amortized
     tag: latest
