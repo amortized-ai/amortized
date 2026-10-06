@@ -431,15 +431,18 @@ function modelEgressEndpoints(name, credential) {
 // model catalog + npm (for opencode itself), and the user's own amortized-server
 // (the MCP host). Nothing else is reachable, which is what bounds the in-env credential.
 function buildMortyPolicy(ns, providers) {
-  // Union the egress endpoints of every configured provider (deduped by host), so a
-  // multi-provider sandbox can reach each model API it has a credential for.
+  // Union the egress endpoints of every configured provider (deduped by host+port), so a
+  // multi-provider sandbox can reach each model API it has a credential for. Keying on host+port
+  // (not host alone) keeps two endpoints that share a host but differ in port — e.g. a MaaS URL on
+  // a non-default port alongside a key provider on 443.
   const modelEndpoints = [];
   const seen = new Set();
   for (const name of Object.keys(providers)) {
     if (!PROVIDERS[name]) continue;
     for (const ep of modelEgressEndpoints(name, providers[name])) {
-      if (seen.has(ep.host)) continue;
-      seen.add(ep.host);
+      const key = `${ep.host}:${ep.port}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       modelEndpoints.push(ep);
     }
   }
@@ -585,6 +588,13 @@ async function ensureSandbox(ns, providers) {
   if (PROVIDERS[preferred].kind === 'openai-compat') {
     const first = (discoveredModels[preferred] || [])[0];
     defaultModel = first ? `${PROVIDERS[preferred].opencodeProvider}/${first}` : '';
+  }
+  if (!defaultModel) {
+    // No usable default — e.g. a MaaS-only user whose /v1/models discovery returned nothing. The
+    // baked opencode.json default points at a provider with no credentials here, so a turn that
+    // doesn't set a model would dead-end. Studio chat always sends an explicit model, so warn
+    // (rather than hard-fail) to keep this degraded state (unreachable MaaS endpoint) diagnosable.
+    console.log(`  WARNING: no default model for ${ns} — provider '${preferred}' returned no models; Morty needs an explicitly selected model until its endpoint is reachable`);
   }
 
   // Rewrite the baked opencode.json in-sandbox: set the per-user MCP URL (amz-<user>) and the

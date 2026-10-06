@@ -204,20 +204,22 @@ def _keep_model(provider: str, model_id: str) -> bool:
     return True
 
 
-async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
+async def _fetch_provider_models(pdef: dict[str, str]) -> tuple[list[str], bool]:
     """Fetch raw model ids from one provider's OpenAI-compatible ``/models`` endpoint.
-    Cached per provider (TTL); a failed fetch returns the last good value (or empty) so
-    one provider never breaks the combined list."""
+
+    Returns ``(ids, ok)``; ``ok`` is False ONLY when the live fetch actually errored, so callers
+    can tell a legitimately-empty result from an unreachable provider. Cached per provider (TTL);
+    a failed fetch returns the last good value (or empty) so one provider never breaks the list."""
     name = pdef.get("name", "")
     now = time.monotonic()
     cached = _models_cache.get(name)
     if cached and (now - cached[0]) < _MODELS_TTL_SECONDS:
-        return cached[1]
+        return cached[1], True
 
     endpoint = pdef.get("endpoint", "").rstrip("/")
     key = _resolve_key(pdef.get("api_key", ""))
     if not endpoint or not key:
-        return cached[1] if cached else []
+        return (cached[1] if cached else []), True
 
     url = f"{endpoint}/models"
     # Anthropic authenticates with x-api-key + a version header (not OpenAI's Bearer); its
@@ -235,10 +237,10 @@ async def _fetch_provider_models(pdef: dict[str, str]) -> list[str]:
             data = resp.json().get("data", [])
         ids = [str(m.get("id", "")) for m in data if m.get("id")]
         _models_cache[name] = (now, ids)
-        return ids
+        return ids, True
     except Exception:
         logger.warning("failed to fetch models for provider %r from %s", name, url, exc_info=True)
-        return cached[1] if cached else []
+        return (cached[1] if cached else []), False
 
 
 async def accessible_model_ids() -> dict[str, set[str]]:
@@ -255,26 +257,33 @@ async def accessible_model_ids() -> dict[str, set[str]]:
         return {}
     fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
     out: dict[str, set[str]] = {}
-    for pdef, ids in zip(defs, fetched, strict=True):
+    for pdef, (ids, _ok) in zip(defs, fetched, strict=True):
         name = pdef.get("name", "")
         if name:
             out[name] = set(ids)
     return out
 
 
-async def available_models() -> list[tuple[str, str]]:
-    """``(provider, model_id)`` chat models pulled live from each key-enabled provider's
+async def available_models() -> tuple[list[tuple[str, str]], bool]:
+    """``((provider, model_id) chat models, live_ok)`` pulled live from each key-enabled provider's
     ``/v1/models`` — the dynamic replacement for the static data-designer catalog.
+
+    ``live_ok`` is False when any provider's live fetch errored, so callers can distinguish a
+    legitimately-empty result (e.g. a key with no gpt-5/gpt-6 access) from an all-unreachable one
+    and only fall back to the static catalog in the latter case.
 
     Filters: the ``openai`` provider to the gpt-5/gpt-6 families; every provider to chat
     models. Best-effort and deduped: a provider that fails to respond is skipped."""
     defs = enabled_provider_defs()
     if not defs:
-        return []
+        return [], True
     fetched = await asyncio.gather(*[_fetch_provider_models(d) for d in defs])
     out: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for pdef, ids in zip(defs, fetched, strict=True):
+    live_ok = True
+    for pdef, (ids, ok) in zip(defs, fetched, strict=True):
+        if not ok:
+            live_ok = False
         name = pdef.get("name", "")
         for model_id in ids:
             if not _keep_model(name, model_id):
@@ -284,4 +293,4 @@ async def available_models() -> list[tuple[str, str]]:
                 continue
             seen.add(pair)
             out.append(pair)
-    return out
+    return out, live_ok

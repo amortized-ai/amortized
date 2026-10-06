@@ -910,3 +910,47 @@ class TestEndpointRetries:
         assert out == "done"
         assert calls["n"] == 4
         assert "temperature" not in seen[-1]
+
+    @pytest.mark.asyncio
+    async def test_adapts_two_distinct_param_errors_in_sequence(self, monkeypatch) -> None:
+        # A reasoning model can reject temperature AND the token param in separate 400s. The old
+        # one-shot guard stopped after the first adaptation and the second 400 then failed the call.
+        import json as _json
+
+        m = self._load_runner_module()
+
+        async def _no_sleep(*_a: object, **_k: object) -> None:
+            return None
+
+        monkeypatch.setattr(m.asyncio, "sleep", _no_sleep)
+
+        seen: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = _json.loads(request.content)
+            seen.append(body)
+            if "temperature" in body:  # first complaint
+                return httpx.Response(
+                    400, json={"error": {"message": "temperature is not supported"}}
+                )
+            if "max_tokens" in body:  # second, distinct complaint
+                return httpx.Response(
+                    400, json={"error": {"message": "max_completion_tokens is required"}}
+                )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            out = await m.chat_completion(
+                http,
+                {"base_url": "http://judge:8000/v1", "model": "reasoner"},
+                [{"role": "user", "content": "q"}],
+                temperature=0.0,
+                max_tokens=64,
+                api_key="k",
+            )
+
+        assert out == "done"
+        # both params were adapted across the two 400s
+        assert "temperature" not in seen[-1]
+        assert "max_tokens" not in seen[-1]
+        assert seen[-1].get("max_completion_tokens") == 64

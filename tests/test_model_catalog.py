@@ -53,23 +53,48 @@ async def test_available_models_pulls_filters_and_dedups(monkeypatch: pytest.Mon
     }
     monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: defs)
 
-    async def fake_fetch(pdef: dict) -> list[str]:
-        return raw[pdef["name"]]
+    async def fake_fetch(pdef: dict) -> tuple[list[str], bool]:
+        return raw[pdef["name"]], True
 
     monkeypatch.setattr(model_catalog, "_fetch_provider_models", fake_fetch)
 
-    out = await model_catalog.available_models()
+    out, live_ok = await model_catalog.available_models()
     # openai filtered to gpt-5/gpt-6 (gpt-4o + embedding dropped) and deduped; nvidia chat only.
     assert out == [
         ("openai", "gpt-5.6-sol"),
         ("openai", "gpt-6-astra"),
         ("nvidia", "nvidia/nemotron-3-super-120b-a12b"),
     ]
+    assert live_ok is True
 
 
 async def test_available_models_empty_when_no_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: [])
-    assert await model_catalog.available_models() == []
+    assert await model_catalog.available_models() == ([], True)
+
+
+async def test_available_models_reports_live_ok_for_empty_vs_errored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Empty-but-healthy (e.g. a key with no gpt-5/gpt-6 access) reports live_ok=True, so list_models
+    # keeps the empty list; an errored pull reports False, so it falls back to the static catalog.
+    defs = [
+        {"name": "openai", "endpoint": "https://api.openai.com/v1",
+         "provider_type": "openai", "api_key": "OPENAI_API_KEY"},
+    ]
+    monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: defs)
+
+    async def empty_ok(pdef: dict) -> tuple[list[str], bool]:
+        return [], True
+
+    monkeypatch.setattr(model_catalog, "_fetch_provider_models", empty_ok)
+    assert await model_catalog.available_models() == ([], True)
+
+    async def errored(pdef: dict) -> tuple[list[str], bool]:
+        return [], False
+
+    monkeypatch.setattr(model_catalog, "_fetch_provider_models", errored)
+    assert await model_catalog.available_models() == ([], False)
 
 
 class TestProviderInjection:
@@ -133,8 +158,8 @@ async def test_accessible_model_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
     monkeypatch.setattr(model_catalog, "enabled_provider_defs", lambda: defs)
 
-    async def fake_fetch(pdef: dict) -> list[str]:
-        return ["gpt-5.6-sol", "gpt-4o"]
+    async def fake_fetch(pdef: dict) -> tuple[list[str], bool]:
+        return ["gpt-5.6-sol", "gpt-4o"], True
 
     monkeypatch.setattr(model_catalog, "_fetch_provider_models", fake_fetch)
     assert await model_catalog.accessible_model_ids() == {"openai": {"gpt-5.6-sol", "gpt-4o"}}

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import ssl
 import uuid
 from dataclasses import dataclass, field
@@ -768,6 +769,15 @@ async def get_pending(session_id: str) -> dict[str, Any]:
 # only allows the user's own providers, so those models aren't reachable. Hide it from the picker.
 _SUPPRESSED_PROVIDERS = frozenset({"opencode"})
 
+# Model ids differ in convention across sources: OpenCode/models.dev use aliases (claude-sonnet-4-5)
+# while a provider's own /v1/models may return dated snapshots (claude-sonnet-4-5-20250929). Strip a
+# trailing dated suffix so the two compare equal when access-filtering the picker.
+_DATE_SUFFIX_RE = re.compile(r"-\d{8}$|-\d{4}-\d{2}-\d{2}$")
+
+
+def _strip_date_suffix(model_id: str) -> str:
+    return _DATE_SUFFIX_RE.sub("", model_id)
+
 
 @router.get("/provider")
 async def list_providers() -> dict[str, Any]:
@@ -837,7 +847,14 @@ async def list_providers() -> dict[str, Any]:
         # convention differs from models.dev) — never hide everything.
         allowed = access.get(str(p.get("id") or ""))
         if allowed:
-            filtered = [m for m in out if m["id"] in allowed]
+            # Match on the raw id OR a date-normalized form, so an alias id (claude-sonnet-4-5)
+            # still matches a dated id (claude-sonnet-4-5-20250929) and a reachable model whose
+            # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
+            allowed_base = {_strip_date_suffix(a) for a in allowed}
+            filtered = [
+                m for m in out
+                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+            ]
             if filtered:
                 out = filtered
         return out

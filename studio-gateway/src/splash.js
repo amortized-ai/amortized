@@ -134,7 +134,9 @@ function renderSplash(state, basePath = '') {
   function isAdc(p){ return p === 'vertex'; }
   // MaaS is OpenAI-compatible BYOK: a base URL + a key (two inputs), combined into a JSON blob.
   function isOpenAICompat(p){ return p === 'maas'; }
-  function isValidUrl(v){ try { var u = new URL(String(v).trim()); return u.protocol === 'http:' || u.protocol === 'https:'; } catch (e) { return false; } }
+  // HTTPS only: the server rejects http:// MaaS URLs (the key is sent to this endpoint), so match
+  // that here and give the user an inline reason instead of a late generic network error.
+  function isValidUrl(v){ try { return new URL(String(v).trim()).protocol === 'https:'; } catch (e) { return false; } }
   function updateHint(){
     var p = el('provider'); if (!p) return;
     var adc = isAdc(p.value);

@@ -48,6 +48,9 @@ import httpx
 MAX_PARALLEL = 16
 REQUEST_TIMEOUT = 300.0
 MAX_RETRIES = 3
+# Distinct param adaptations allowed per request: a reasoning model can reject BOTH a non-default
+# temperature AND max_tokens, in either order, so one adaptation isn't always enough.
+MAX_PARAM_ADAPTATIONS = 2
 SCORE_SCALE = 10  # judge scores each criterion 0..SCORE_SCALE; reported /SCALE
 # Anthropic Messages API version header (stable); mirrors Data Designer's anthropic adapter.
 ANTHROPIC_VERSION = "2023-06-01"
@@ -127,26 +130,28 @@ async def _post_with_retries(
     label: str,
 ) -> str:
     """POST a chat/messages body with two independent retry budgets: up to MAX_RETRIES for
-    transient failures, plus a one-shot body adaptation when the provider 400s about an
-    unsupported param (reasoning models want ``max_completion_tokens`` / reject a non-default
-    ``temperature``; Anthropic models after Opus 4.6 reject ``temperature`` too). The
-    adaptation retry does NOT consume the transient budget, so a recoverable param error that
-    arrives after a transient failure still gets its adapted body sent."""
+    transient failures, plus up to MAX_PARAM_ADAPTATIONS body adaptations when the provider 400s
+    about an unsupported param (reasoning models want ``max_completion_tokens`` / reject a
+    non-default ``temperature``; Anthropic models after Opus 4.6 reject ``temperature`` too). A
+    model may reject more than one param in separate 400s, so more than one adaptation is allowed;
+    the adaptation retries do NOT consume the transient budget, and ``adapt_body_for_param_error``
+    returns None once nothing is left to change, so the loop is bounded."""
     body = dict(body)
     last_error: Exception | None = None
-    adapted = False
+    adaptations = 0
     attempt = 0
     while attempt < MAX_RETRIES:
         try:
             resp = await client.post(url, json=body, headers=headers)
-            # A 400 may be an unsupported-param complaint — adapt the body from the error text
-            # and retry (once) without hardcoding which models need it. The retry is free so a
-            # transient failure beforehand can't swallow the one adapted attempt.
-            if resp.status_code == 400 and not adapted:
+            # A 400 may be an unsupported-param complaint — adapt the body from the error text and
+            # retry without hardcoding which models need it. Allow more than one adaptation (a model
+            # can reject temperature AND the token param in separate 400s); each retry is free so a
+            # transient failure beforehand can't swallow it.
+            if resp.status_code == 400 and adaptations < MAX_PARAM_ADAPTATIONS:
                 new_body = adapt_body_for_param_error(body, resp.text)
                 if new_body is not None:
                     body = new_body
-                    adapted = True
+                    adaptations += 1
                     continue
             resp.raise_for_status()
             return extract(resp.json())

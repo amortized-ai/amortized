@@ -36,7 +36,9 @@ function isOpenAICompat(provider: string): boolean {
 
 function isValidUrl(value: string): boolean {
   const v = value.trim()
-  if (!/^https?:\/\//.test(v)) return false
+  // HTTPS only: the server rejects http:// MaaS URLs (the key is sent to the endpoint), so reject
+  // them here too rather than let the request fail late with a generic network error.
+  if (!/^https:\/\//i.test(v)) return false
   try {
     new URL(v)
     return true

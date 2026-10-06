@@ -44,10 +44,13 @@ async def list_models() -> ModelsResponse:
 
     # Gateway unavailable or empty — fall back to direct providers (dropped-in keys),
     # pulled live from each provider's /v1/models (filtered to chat models; openai to the
-    # gpt-5/gpt-6 families). If the live pull yields nothing (all providers unreachable),
-    # fall back to the static data-designer catalog so the list never goes empty transiently.
-    pairs = await available_models()
-    if not pairs:
+    # gpt-5/gpt-6 families).
+    pairs, live_ok = await available_models()
+    # Only fall back to the static data-designer catalog when the live pull actually ERRORED
+    # (providers unreachable). An empty-but-healthy result is legitimate (e.g. an OpenAI-only key
+    # with no gpt-5/gpt-6 access) and must stay empty — the static catalog would re-add the very
+    # gpt-4o-class models the dynamic filter is meant to exclude.
+    if not pairs and not live_ok:
         pairs = enabled_models()
     direct = [
         GatewayModel(name=model, provider=provider, model_name=model) for provider, model in pairs
