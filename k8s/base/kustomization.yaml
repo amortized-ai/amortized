@@ -29,6 +29,8 @@ configMapGenerator:
   # Native opencode skills. The build-skills-tree init container expands the
   # flat keys (name__file -> name/file) into .opencode/skills/<skill>/SKILL.md,
   # which opencode auto-discovers. Each skill dir name == its frontmatter name.
+  # NOTE: files are listed explicitly here (the Helm chart globs them instead),
+  # so a new skill won't ship via kustomize unless it is also added below.
   - name: morty-skills
     namespace: amortized
     files:

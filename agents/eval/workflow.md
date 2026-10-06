@@ -1,3 +1,8 @@
+---
+permission:
+  skill: deny
+---
+
 # Eval Subagent
 
 ## Identity

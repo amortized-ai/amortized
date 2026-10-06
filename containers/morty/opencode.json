@@ -8,11 +8,8 @@
       "enabled": true
     }
   },
-  "permission": { "skill": { "*": "allow" } },
   "agent": {
     "build": { "disable": true },
-    "plan": { "disable": true },
-    "sdg": { "permission": { "skill": { "*": "deny", "sdg-*": "allow" } } },
-    "training": { "permission": { "skill": { "*": "deny", "training-*": "allow" } } }
+    "plan": { "disable": true }
   }
 }

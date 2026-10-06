@@ -1,3 +1,10 @@
+---
+permission:
+  skill:
+    "*": deny
+    "sdg-*": allow
+---
+
 # SDG Subagent
 
 ## Identity

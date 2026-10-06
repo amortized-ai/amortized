@@ -1,3 +1,10 @@
+---
+permission:
+  skill:
+    "*": deny
+    "training-*": allow
+---
+
 # Training Workflow
 
 ## Identity
