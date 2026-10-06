@@ -153,7 +153,7 @@ class Repository:
         # it in queued) and rescues any such jobs created before source was set.
         dataset_filter = (
             """AND NOT (type = 'upload' """
-            """AND COALESCE(config->>'source', '') IN ('upload', 'split'))"""
+            """AND COALESCE(config->>'source', '') IN ('upload', 'split', 'merge'))"""
         )
         if k8s_namespace:
             query = f"""UPDATE jobs SET status = $1
