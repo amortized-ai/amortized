@@ -449,7 +449,15 @@ def _serialize_records(path: str, records: list[dict[str, Any]]) -> bytes:
         import pyarrow as pa
         import pyarrow.parquet as pq
 
-        table = pa.Table.from_pylist(records)
+        # Collect the union of all field names so records from different
+        # sources with varying schemas don't silently drop fields (pyarrow
+        # infers the schema from the first record only).
+        all_keys: dict[str, None] = {}
+        for r in records:
+            for k in r:
+                all_keys.setdefault(k, None)
+        normalized = [{k: r.get(k) for k in all_keys} for r in records]
+        table = pa.Table.from_pylist(normalized)
         buf = io.BytesIO()
         pq.write_table(table, buf)  # type: ignore[no-untyped-call]
         return buf.getvalue()
