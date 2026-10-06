@@ -55,9 +55,7 @@ spec:
         # does not create its schema.
         - name: migrate
           image: {{ include "amortized.image" .Values.images.server }}
-          {{- with .Values.images.server.pullPolicy }}
-          imagePullPolicy: {{ . }}
-          {{- end }}
+          imagePullPolicy: {{ include "amortized.pullPolicy" .Values.images.server }}
           command: ["sh", "-c", "cd /app && alembic upgrade head"]
           envFrom:
             - secretRef:
@@ -69,9 +67,7 @@ spec:
       containers:
         - name: server
           image: {{ include "amortized.image" .Values.images.server }}
-          {{- with .Values.images.server.pullPolicy }}
-          imagePullPolicy: {{ . }}
-          {{- end }}
+          imagePullPolicy: {{ include "amortized.pullPolicy" .Values.images.server }}
           ports:
             - name: http
               containerPort: 8000

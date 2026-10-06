@@ -155,6 +155,21 @@ Empty output when no teacher keys are configured (falsy in `if`/`with`).
 {{- printf "%s:%s" .repository (.tag | toString) -}}
 {{- end -}}
 
+{{/* Pull policy for an images.<component> block: an explicit pullPolicy override, else tag-aware
+     (Always for :latest, IfNotPresent for a pinned tag). Always rendered (never omitted) so helm
+     manages the field on upgrade — otherwise the API-server-defaulted value from the previous tag
+     persists (e.g. a pinned sha's IfNotPresent sticking after a switch to :latest, running a stale
+     cached image). */}}
+{{- define "amortized.pullPolicy" -}}
+{{- if .pullPolicy -}}
+{{- .pullPolicy -}}
+{{- else if or (eq (.tag | toString) "latest") (eq (.tag | toString) "") -}}
+Always
+{{- else -}}
+IfNotPresent
+{{- end -}}
+{{- end -}}
+
 {{/* storageClassName line for PVCs / volumeClaimTemplates (omitted when empty). */}}
 {{- define "amortized.storageClass" -}}
 {{- if .Values.global.storageClass }}
