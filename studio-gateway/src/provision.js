@@ -619,7 +619,8 @@ async function ensureSandbox(ns, providers) {
     // google-vertex-anthropic loader reads GOOGLE_CLOUD_PROJECT + VERTEX_LOCATION (and
     // ignores opencode.json provider.options), while the underlying @ai-sdk/google-vertex
     // reads GOOGLE_VERTEX_PROJECT/LOCATION — set both name families so it resolves
-    // regardless of the baked opencode build. All are redacted from logs by run() and
+    // regardless of the baked opencode build. Secret values are redacted from logs by run()
+    // (the MaaS base URL, which is logged, is validated to embed no credential), and all are
     // reachable only to the allowlisted hosts.
     const credEnv = [];
     for (const n of names) {
@@ -801,21 +802,27 @@ function validateCredential(provider, credential) {
     }
   } else if (isOpenAICompatProvider(provider)) {
     // MaaS: a {baseURL, apiKey} blob — the base URL is per-user (no fixed apiHost). Validate both
-    // and return canonical JSON (base URL trimmed, no trailing slash) so the stored form is stable.
+    // and return canonical JSON (origin + path only, no trailing slash) so the stored form is stable.
     let obj;
     try { obj = JSON.parse(cred); } catch { throw new Error('MaaS requires a JSON object with a baseURL and apiKey'); }
-    const baseURL = String(obj?.baseURL || '').trim().replace(/\/$/, '');
     const apiKey = String(obj?.apiKey || '').trim();
-    let host = '';
-    try { host = new URL(baseURL).hostname; } catch { host = ''; }
+    let url;
+    try { url = new URL(String(obj?.baseURL || '').trim()); } catch { url = null; }
     // Require HTTPS: the stored key is later sent in an Authorization header to this URL (server
     // catalog + sandbox discovery), so a plaintext http:// endpoint would leak the credential.
-    if (!/^https:\/\//i.test(baseURL) || !host) {
+    if (!url || url.protocol !== 'https:') {
       throw new Error('MaaS base URL must be a valid HTTPS URL (the API key is sent to it)');
+    }
+    // Reject secrets embedded in the URL itself: the base URL is logged alongside the sandbox args,
+    // so userinfo (user:pass@) or a query/hash token would leak into the gateway logs — the key
+    // belongs in the apiKey field. Store only the canonical origin + path.
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error('MaaS base URL must not embed credentials or query parameters — put the key in the API key field');
     }
     if (apiKey.length < 8) {
       throw new Error('MaaS API key looks too short');
     }
+    const baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
     return JSON.stringify({ baseURL, apiKey });
   } else if (cred.length < 8) {
     throw new Error('invalid or missing API key');
