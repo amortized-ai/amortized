@@ -278,9 +278,13 @@ are scored by an LLM judge, and you MUST set `config.judge` explicitly.
 Ask the user which model to judge with — offer a soft suggestion, e.g.
 "reuse the model we used for the SDG step as the judge, or a different
 one?" — then set the judge from their choice. Get its endpoint (base_url
-+ model) from `list_models` — the available provider models, the same
-source the SDG teacher is picked from. Never submit a rubric eval
-without `config.judge`.
++ model) from `get_eval_endpoint_suggestions` / `list_models`, the same
+way you build the model-under-eval endpoint. For a gateway judge, set
+`judge.model` to the endpoint's gateway **name** (e.g. `gpt-oss`), NOT its
+underlying provider id (`openai/gpt-oss-120b`) — the gateway resolves by
+endpoint name, and the provider id 404s and yields zero scores. (The
+`known_endpoints` entries give both: use `name`, not `model_name`.) Never
+submit a rubric eval without `config.judge`.
 
 Use sensible defaults: `temperature` 0. Leave `max_samples` and
 `judge_max_samples` unset — the eval runs and judges EVERY record in

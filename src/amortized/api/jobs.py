@@ -199,6 +199,82 @@ def _validate_eval_rubric_judge(config: dict[str, Any]) -> list[str]:
     return []
 
 
+async def _resolve_eval_judge(config: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Validate the rubric judge against the MLflow AI Gateway, auto-correcting
+    the common mix-up that silently zeroes every eval score.
+
+    The gateway resolves a model only by its ENDPOINT NAME (e.g. ``gpt-oss``),
+    but the judge is easily set to the endpoint's UNDERLYING provider id (e.g.
+    ``openai/gpt-oss-120b`` — the SDG teacher's catalog id). The wrong id 404s on
+    every judge call, so the job "succeeds" with zero scored samples and the
+    model's column reads 0. Here we rewrite a provider id back to its gateway
+    endpoint name (and point base_url at the gateway); an id that matches no
+    endpoint at all becomes a hard error instead of a silent 0.
+
+    Returns (errors, warnings) and mutates ``config['judge']`` in place.
+    Best-effort: when no gateway is configured (direct-key clusters), or the
+    judge is clearly a direct endpoint (its own base_url + api_key), this stays
+    silent and leaves the judge untouched."""
+    judge = config.get("judge")
+    if not isinstance(judge, dict):
+        return [], []
+    model = str(judge.get("model") or "")
+    if not model:
+        return [], []
+
+    from amortized.config import settings as _settings
+
+    gateway_url = _settings.gateway_url
+    if not (_settings.mlflow_tracking_uri and gateway_url):
+        return [], []  # no gateway to validate against
+
+    base_url = str(judge.get("base_url") or "")
+    if judge.get("api_key") and base_url and gateway_url not in base_url:
+        return [], []  # a direct, non-gateway judge endpoint — leave it alone
+
+    from amortized.core.mlflow_client import MLflowClient
+
+    try:
+        gw = await MLflowClient(_settings.mlflow_tracking_uri).list_gateway_models()
+    except Exception:
+        logger.warning("judge validation: failed to list gateway models", exc_info=True)
+        return [], []
+    if not gw:
+        return [], []
+
+    names = {m.get("name", "") for m in gw if m.get("name")}
+    by_underlying = {
+        m.get("model_name", ""): m.get("name", "")
+        for m in gw
+        if m.get("model_name") and m.get("name")
+    }
+
+    if model in names:
+        if gateway_url not in base_url:  # address a gateway endpoint via the gateway
+            judge["base_url"] = gateway_url
+        return [], []
+
+    if model in by_underlying:
+        corrected = by_underlying[model]
+        judge["model"] = corrected
+        judge["base_url"] = gateway_url
+        return [], [
+            f"judge '{model}' is the provider model id, not a gateway endpoint name"
+            f" — corrected to '{corrected}'. The provider id 404s on the gateway, so"
+            " the judge would have recorded zero scores for every criterion."
+        ]
+
+    valid = ", ".join(sorted(n for n in names if n)) or "(none configured)"
+    return (
+        [
+            f"judge '{model}' is not a known MLflow gateway endpoint, so the judge"
+            " would 404 and record zero scores for every sample. Use a gateway"
+            f" endpoint name: {valid}."
+        ],
+        [],
+    )
+
+
 async def _validate_eval_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -447,6 +523,10 @@ async def create_eval_job(
             " judge-scored metrics — the built-in structural metrics"
             " exact_match/format_validity were removed)"
         )
+    # Auto-correct / validate the judge endpoint so a provider-id judge can't
+    # silently 404 and record zero scores (corrections mutate config in place).
+    judge_errors, _ = await _resolve_eval_judge(config)
+    errors.extend(judge_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -800,6 +880,8 @@ async def validate_eval_job(
             " judge-scored metrics — the built-in structural metrics"
             " exact_match/format_validity were removed)"
         )
+    judge_errors, judge_warnings = await _resolve_eval_judge(config)
+    errors.extend(judge_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -808,7 +890,8 @@ async def validate_eval_job(
     # fork the dataset's row in the Evaluation tab. Warn — do not
     # block — when the submitted criterion names match an earlier eval
     # on this dataset but the descriptions differ.
-    warnings = await _rubric_drift_warning(config, parent_job_id, db)
+    warnings = list(judge_warnings)
+    warnings.extend(await _rubric_drift_warning(config, parent_job_id, db))
     warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, db))
     warnings.extend(await _eval_overlap_warning(config, parent_job_id, db))
 
