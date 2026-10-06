@@ -25,10 +25,10 @@ const OPENSHELL_MTLS_DIR = process.env.OPENSHELL_MTLS_DIR || '/etc/openshell-mtl
 
 // Optional overrides passed through to the chart.
 const SERVER_IMAGE_TAG = process.env.AMORTIZED_SERVER_IMAGE_TAG || '';
-// Optional eval JOB image tag (ghcr.io/amortized-ai/eval:<tag>), forwarded into the per-user
-// server env (AMORTIZED_EVAL_IMAGE_TAG) so the server dispatches a pinned eval backend. Empty
-// => the server's default (:latest).
-const EVAL_IMAGE_TAG = process.env.AMORTIZED_EVAL_IMAGE_TAG || '';
+// Optional job-image tag, forwarded into the per-user server env (AMORTIZED_JOB_IMAGE_TAG) so the
+// server dispatches pinned job backends (eval, data-designer/SDG, training, document) as
+// <registry>/<name>:<tag>. Empty => the server's default (:latest).
+const JOB_IMAGE_TAG = process.env.AMORTIZED_JOB_IMAGE_TAG || '';
 // SDG teacher keys: a dir of provider-env-name files (e.g. OPENAI_API_KEY) the
 // gateway mounts and stamps into each user ns as `amortized-teacher-keys`, then
 // references via the chart's teacherKeys.existingSecret. Empty => no teacher keys.
@@ -104,13 +104,13 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = fa
       extraVolumeMounts: [{ name: 'openshell-mtls', mountPath: OPENSHELL_MTLS_DIR, readOnly: true }],
     };
   }
-  // Forward the eval-job image tag into the server env (creating the server block if Morty is
-  // off), so the server dispatches the pinned eval backend. Appends to any mTLS extraEnv above.
-  if (EVAL_IMAGE_TAG) {
+  // Forward the job-image tag into the server env (creating the server block if Morty is off), so
+  // the server dispatches pinned job backends. Appends to any mTLS extraEnv above.
+  if (JOB_IMAGE_TAG) {
     values.server = values.server || {};
     values.server.extraEnv = [
       ...(values.server.extraEnv || []),
-      { name: 'AMORTIZED_EVAL_IMAGE_TAG', value: EVAL_IMAGE_TAG },
+      { name: 'AMORTIZED_JOB_IMAGE_TAG', value: JOB_IMAGE_TAG },
     ];
   }
   // The per-user BYOK key (stamped into MODEL_KEY_SECRET) powers the server's model

@@ -88,9 +88,6 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
     return result
 
 
-IMAGE = "ghcr.io/amortized-ai/training:latest"
-
-
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
@@ -120,7 +117,7 @@ async def build(
         config_files=config_files,
         post_commands=[post_cmd],
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
-        image=IMAGE,
+        image=config_mod.job_image("training"),
         resolved_config=dict(config),
     )
 
