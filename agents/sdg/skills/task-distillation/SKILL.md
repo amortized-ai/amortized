@@ -28,39 +28,30 @@ rather than asking for every detail.
 ### Step 0 — Eval set for a trained model? (clone, don't redesign)
 
 If the handoff context says the goal is a **held-out eval set for a
-trained model** (it will carry a training job ID and that training job's
-parent SDG job ID), do NOT run fresh requirement gathering and do NOT
-design a new prompt, teacher, or format. The model can only be scored
-fairly on the task it was trained for, so the eval set must come from the
-SAME pipeline that produced its training data:
+trained model** (it carries a training job ID), do NOT run fresh
+requirement gathering and do NOT design a new prompt, teacher, or format.
+The model can only be scored fairly on the task it was trained for, so the
+eval set must come from the SAME pipeline that produced its training data:
 
-1. `get_job` the training job and follow it to its parent SDG job
-   (its config's `parent_job_id`, or the SDG job ID given in the
-   handoff). `get_job` that SDG job — its `config` is the source of
-   truth.
-2. Reuse that config VERBATIM:
-   - the **teacher model** from its `model_configs` (Step 6 — do not
-     re-pick),
-   - the **output column `system_prompt`** / assessor prompt and the
-     SFT processor system message (Step 8 — copy it exactly; still
-     render it with `show_prompt` so the user sees what will be used),
-   - the **output columns / format and schema** (Step 3).
-3. **ASK the user how many records the eval set should have** — this is
-   the ONE decision that is genuinely fresh (the cloned config settles
-   everything else). Present it as a choice (`present_options`) with a
+1. **ASK the user how many records the eval set should have** — the ONE
+   decision that is genuinely fresh (everything else is settled by the
+   training recipe). Present it as a choice (`present_options`) with a
    sensible default; never pick the size yourself. Only skip the question
    if the handoff/user already named a size in this conversation.
-4. Change ONLY what makes the set held-out: the user-chosen size plus a
-   fresh sampler seed and/or fresh source rows. Fresh inputs ARE the
-   isolation — do NOT try to prove non-overlap afterward by fetching and
-   comparing datasets (that is an open-ended loop). The platform checks
-   the generated set against the training data when the eval job is
-   validated and flags any overlap.
-5. Then go to preview/create (`validate_sdg_job`).
+2. Call `clone_sdg_config_for_eval(training_job_id, num_records)`. It
+   resolves the training job's parent SDG and returns an eval SDG config
+   that mirrors the training recipe exactly — teacher model, every prompt,
+   and the SFT format — with only the record count changed. Do NOT
+   reassemble this by hand (that is where teacher/prompt drift creeps in).
+3. Pass the returned `config` straight to preview/create
+   (`validate_sdg_job`). Fresh generation yields fresh held-out inputs —
+   that fresh sampling IS the isolation, so do NOT fetch and compare
+   datasets afterward to "prove" non-overlap (an open-ended loop). The
+   platform checks the generated set against the training data when the
+   eval job is validated and flags any overlap.
 
-Never compose a new prompt, pick a different teacher, or anchor to a
-prior/other eval dataset's config. If you cannot retrieve the training
-pipeline's SDG config, stop and say so rather than improvising one.
+If `clone_sdg_config_for_eval` reports the training job has no parent SDG
+to mirror, say so rather than improvising a new pipeline.
 
 For any OTHER goal (a fresh training set, or an eval set with no trained
 model to mirror), continue with Step 1 below.

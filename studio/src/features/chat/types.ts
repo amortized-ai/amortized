@@ -13,6 +13,7 @@ export interface ProposedAction {
   config?: Record<string, unknown>
   parentJobId?: string
   recipe?: string
+  dataRecordCount?: number | null
 }
 
 export interface ToolResult {

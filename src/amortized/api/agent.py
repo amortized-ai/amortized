@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import ssl
@@ -85,6 +86,10 @@ class SessionState:
     # opencode assistant-message ids already attributed to a monitor turn record,
     # so each message is counted once even across delegating turns / sessions.
     seen_message_ids: set[str] = field(default_factory=set)
+    # Last workflow step a subagent actually signalled, so when it forgets to call
+    # signal_phase the server can backfill the UI progress bar at the right step
+    # instead of snapping it back to the start of the phase.
+    last_signal_step: str = ""
 
 
 _sessions: dict[str, SessionState] = {}
@@ -245,6 +250,42 @@ def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
 
 def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
+
+
+# Active subagent → the workflow phase its turns belong to (UI progress bar).
+_PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
+
+
+def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
+    """Guarantee the UI progress bar reflects the active subagent's phase.
+
+    The bar is driven by signal_phase tool results. A weaker driver sometimes
+    forgets to call it, leaving the bar on a stale phase (the loop that stranded
+    the eval stage on the training bar). When a subagent is active and its turn
+    carries no signal_phase, backfill one from the server-known subagent_target,
+    carrying the last step the model actually signalled. UI only — this is NOT
+    recorded to the monitor log, which must still reflect what the model did."""
+    phase = _PHASE_FOR_TARGET.get(state.subagent_target or "")
+    if not phase:
+        return result
+    parts = result.get("parts") or []
+    for part in parts:
+        if _tool_name(part) == "signal_phase":
+            step = _get_tool_input(part).get("step")
+            if step:
+                state.last_signal_step = str(step)
+            return result  # model signalled this turn; nothing to backfill
+    payload = {"phase": phase, "step": state.last_signal_step}
+    result["parts"] = [
+        *parts,
+        {
+            "type": "tool",
+            "tool": "mcp_amortized__signal_phase",
+            "input": payload,
+            "output": json.dumps(payload),
+        },
+    ]
+    return result
 
 
 async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str, Any]]:
@@ -1069,7 +1110,7 @@ async def _handle_subagent_message(
         sub_result["parts"] = response_parts + _strip_internal_tools(sub_result.get("parts", []))
         return sub_result
 
-    return result
+    return _ensure_phase_signal(state, result)
 
 
 async def _resume_parent_subagent(

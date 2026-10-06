@@ -234,6 +234,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         config: validated.config,
         parentJobId: validated.parentJobId,
         recipe: validated.recipe,
+        dataRecordCount: validated.dataRecordCount,
       }
     }
   }

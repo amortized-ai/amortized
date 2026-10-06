@@ -8,6 +8,38 @@ import { Button } from "@/components/ui/button"
 import { Loader2, ChevronDown, ChevronRight, Rocket } from "lucide-react"
 import type { ProposedAction } from "../types"
 
+const PROMPT_PREVIEW_LEN = 220
+
+// The "assessor" prompt — the task instructions the teacher follows — is the
+// system_prompt of the column whose output becomes the assistant turn in the
+// SFT processor. Surfacing it on the card lets the user confirm the eval set
+// mirrors the model's training prompt without expanding the full config.
+function findAssessorPrompt(config: Record<string, unknown>): string | null {
+  const columns = config.columns as Array<Record<string, unknown>> | undefined
+  if (!columns?.length) return null
+
+  const processors = config.processors as Array<Record<string, unknown>> | undefined
+  for (const proc of processors ?? []) {
+    const template = proc.template as Record<string, unknown> | undefined
+    const messages = template?.messages as Array<Record<string, unknown>> | undefined
+    const assistant = messages?.find((m) => m.role === "assistant")
+    const content = typeof assistant?.content === "string" ? assistant.content : ""
+    const ref = content.match(/\{\{\s*([\w]+)\s*\}\}/)?.[1]
+    if (ref) {
+      const col = columns.find((c) => c.name === ref)
+      const prompt = col?.system_prompt
+      if (typeof prompt === "string" && prompt.trim()) return prompt.trim()
+    }
+  }
+
+  // Fallback: the last column that defines a system_prompt.
+  for (let i = columns.length - 1; i >= 0; i--) {
+    const prompt = columns[i]?.system_prompt
+    if (typeof prompt === "string" && prompt.trim()) return prompt.trim()
+  }
+  return null
+}
+
 function extractSdgSummary(config: Record<string, unknown>): [string, string][] {
   const rows: [string, string][] = []
 
@@ -26,6 +58,15 @@ function extractSdgSummary(config: Record<string, unknown>): [string, string][] 
   if (config.num_records) rows.push(["Samples", String(config.num_records)])
   if (config.mode) rows.push(["Mode", String(config.mode)])
   if (config.topic) rows.push(["Topic", String(config.topic)])
+
+  const assessorPrompt = findAssessorPrompt(config)
+  if (assessorPrompt) {
+    const preview =
+      assessorPrompt.length > PROMPT_PREVIEW_LEN
+        ? `${assessorPrompt.slice(0, PROMPT_PREVIEW_LEN)}…`
+        : assessorPrompt
+    rows.push(["Assessor prompt", preview])
+  }
 
   const docIds = config.document_ids as string[] | undefined
   if (docIds?.length) rows.push(["Documents", `${docIds.length} document${docIds.length > 1 ? "s" : ""}`])
@@ -116,6 +157,11 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   }
 
   const summary = action.config ? extractConfigSummary(action.jobType, action.config) : []
+  // The training dataset's record count is resolved by the backend (not in the
+  // config), so the user always sees how many records they're about to train on.
+  if (action.jobType === "training" && typeof action.dataRecordCount === "number") {
+    summary.push(["Training records", action.dataRecordCount.toLocaleString()])
+  }
 
   return (
     <Card className="border-primary/30 bg-primary/5 overflow-hidden">

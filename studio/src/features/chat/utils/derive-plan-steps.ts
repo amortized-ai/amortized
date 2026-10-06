@@ -85,7 +85,26 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
     }
   }
 
-  if (!latestPhase || steps.length === 0) return null
+  if (!latestPhase) return null
+
+  // The phase is known but no recognizable step was collected — e.g. the server
+  // backfilled a phase-only signal because the driver forgot to call signal_phase.
+  // Render the static plan for the phase so the bar still shows the right section
+  // (this also covers "eval", which parsePhaseTag's static path does not accept).
+  if (steps.length === 0) {
+    const cfg = STATIC_PHASE_CONFIG[latestPhase]
+    if (!cfg) return null
+    const activeIdx = resolveStepIndex(cfg.steps, latestStep)
+    const done = latestStep === "review"
+    return {
+      phase: latestPhase,
+      label: cfg.label,
+      steps: cfg.steps.map((def, i): PlanStep => ({
+        label: def.label,
+        status: done || i < activeIdx ? "completed" : i === activeIdx ? "active" : "pending",
+      })),
+    }
+  }
 
   // When the last signalled step is "review", the workflow has reached its
   // terminal step — mark every step complete so the bar isn't left spinning.

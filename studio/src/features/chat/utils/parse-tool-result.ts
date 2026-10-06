@@ -60,6 +60,7 @@ export interface ValidatedJobConfig {
   parentJobId: string
   recipe: string
   warnings: string[]
+  dataRecordCount: number | null
 }
 
 export function extractValidatedJobConfig(result: string): ValidatedJobConfig | null {
@@ -74,6 +75,8 @@ export function extractValidatedJobConfig(result: string): ValidatedJobConfig | 
       parentJobId: (obj.parent_job_id as string) ?? "",
       recipe: (obj.recipe as string) ?? "",
       warnings: (obj.warnings as string[]) ?? [],
+      dataRecordCount:
+        typeof obj.data_record_count === "number" ? obj.data_record_count : null,
     }
   }
   return null

@@ -336,11 +336,9 @@ Rubric criteria are absolute 0-1 scores (shown as percentages) — the
 share of the reference-level quality the model reached on that
 criterion, averaged over the scored samples.
 
-**Report only what `get_eval_results` returns.** If it reports `num_scored`
-of 0 (or null/empty scores), the eval produced no usable results — say so
-plainly, check the job logs, and diagnose the cause. Never invent scores,
-job IDs, model names, or success, and never state a number or ID that did
-not come from a tool result in this session.
+If `get_eval_results` reports `num_scored` of 0 (or null/empty scores),
+the eval produced no usable results — say so plainly, check the job logs,
+and diagnose the cause.
 
 Interpret the numbers
 plainly and offer next steps: evaluate another model to compare, train
@@ -385,27 +383,16 @@ re-asking the user what you already know: the eval subject (model and
 endpoint), the training job ID, and the goal is a held-out eval set the
 user will use to evaluate that model.
 
-**When the eval subject is a trained model, the eval set MUST be built
-from the SAME SDG pipeline that produced the model's training data —
-not from any prior or unrelated dataset.** A model can only be fairly
-scored on the task it was trained for, so the eval set has to be
-generated the same way the training set was: same assessor system
-prompt, same teacher model, same output format/schema. Pass the
-training job ID AND its parent SDG job ID in the context, and instruct
-the SDG agent to:
-
-- `get_job` the training job, follow it to its parent SDG job, and
-  `get_job` that SDG config — this is the single source of truth for
-  the eval set's design.
-- Reuse that config VERBATIM: the same assessor/system prompt, the same
-  `model_configs` teacher model, and the same output columns/schema.
-- Regenerate only fresh inputs (new sampler seed / fresh source rows) —
-  fresh inputs ARE the held-out isolation; do not verify non-overlap by
-  comparing datasets afterward (the platform flags any overlap when the
-  eval job is validated).
-- NEVER anchor the prompt or teacher to "prior eval batches", another
-  dataset, or a remembered default — if the training SDG config is
-  unavailable, say so and stop; do not improvise one.
+**When the eval subject is a trained model, the eval set must mirror the
+model's training SDG recipe** (same assessor prompt, teacher model, and
+output format) so the model is scored on the task it was trained for. You
+do not need to spell this out: pass the training job ID in the context and
+tell the SDG agent the goal is a held-out eval set for that trained model.
+The SDG agent clones the training recipe deterministically
+(`clone_sdg_config_for_eval`) — only fresh inputs change, and those fresh
+inputs ARE the held-out isolation, so do not ask it to verify non-overlap
+by comparing datasets afterward (the platform flags any overlap when the
+eval job is validated).
 
 After the SDG job completes, resume YOUR workflow at Step 3 (metrics
 design) using the new SDG job ID as `parent_job_id` — do not restart

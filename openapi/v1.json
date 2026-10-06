@@ -216,6 +216,48 @@
         }
       }
     },
+    "/api/v1/jobs/sdg/clone-for-eval": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Build the eval-set SDG config for a trained model by mirroring its training SDG recipe verbatim (teacher model, prompts, SFT format); only num_records changes. Running it generates FRESH inputs \u2014 that fresh sampling IS the held-out isolation, so there is NOTHING to verify afterward. Pass the returned `config` straight to validate_sdg_job. Use this instead of hand-assembling an eval SDG.",
+        "description": "Deterministically mirror a model's training SDG recipe for its eval set.\n\nReplaces the error-prone manual clone: resolving the training job's parent\nSDG and copying its teacher/prompts/format by hand is exactly where a weak\ndriver drifts (wrong teacher, reworded prompt) or loops (polling get_job to\n'verify' overlap). This returns the mirrored config in one call.",
+        "operationId": "clone_sdg_config_for_eval",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneSdgForEvalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClonedSdgConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/training/validate": {
       "post": {
         "tags": [
@@ -2502,6 +2544,53 @@
         ],
         "title": "ChunkerType"
       },
+      "CloneSdgForEvalRequest": {
+        "properties": {
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "The completed training job the eval set is for. Its parent SDG recipe (teacher model, prompts, SFT format) is mirrored exactly."
+          },
+          "num_records": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Num Records",
+            "description": "Number of held-out eval records the user asked for."
+          }
+        },
+        "type": "object",
+        "required": [
+          "training_job_id",
+          "num_records"
+        ],
+        "title": "CloneSdgForEvalRequest"
+      },
+      "ClonedSdgConfig": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "A ready-to-validate SDG config mirroring the training SDG recipe."
+          },
+          "train_sdg_job_id": {
+            "type": "string",
+            "title": "Train Sdg Job Id",
+            "description": "The SDG job this config was cloned from (the model's training SDG)."
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config",
+          "train_sdg_job_id",
+          "note"
+        ],
+        "title": "ClonedSdgConfig"
+      },
       "CodeLang": {
         "type": "string",
         "enum": [
@@ -4711,6 +4800,17 @@
                 "type": "null"
               }
             ]
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event"
           }
         },
         "type": "object",
@@ -6771,6 +6871,17 @@
             },
             "type": "array",
             "title": "Warnings"
+          },
+          "data_record_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Record Count"
           }
         },
         "type": "object",

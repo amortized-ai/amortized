@@ -1,5 +1,6 @@
 """Job management endpoints."""
 
+import copy
 import hashlib
 import json
 import logging
@@ -8,7 +9,7 @@ from typing import Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
@@ -583,6 +584,123 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     )
 
 
+class CloneSdgForEvalRequest(BaseModel):
+    training_job_id: str = Field(
+        ...,
+        description=(
+            "The completed training job the eval set is for. Its parent SDG"
+            " recipe (teacher model, prompts, SFT format) is mirrored exactly."
+        ),
+    )
+    num_records: int = Field(
+        ...,
+        gt=0,
+        description="Number of held-out eval records the user asked for.",
+    )
+
+
+class ClonedSdgConfig(BaseModel):
+    config: dict[str, Any] = Field(
+        description="A ready-to-validate SDG config mirroring the training SDG recipe."
+    )
+    train_sdg_job_id: str = Field(
+        description="The SDG job this config was cloned from (the model's training SDG)."
+    )
+    note: str
+
+
+def _coerce_config(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+@router.post(
+    "/sdg/clone-for-eval",
+    response_model=ClonedSdgConfig,
+    operation_id="clone_sdg_config_for_eval",
+    summary=(
+        "Build the eval-set SDG config for a trained model by mirroring its"
+        " training SDG recipe verbatim (teacher model, prompts, SFT format);"
+        " only num_records changes. Running it generates FRESH inputs — that"
+        " fresh sampling IS the held-out isolation, so there is NOTHING to"
+        " verify afterward. Pass the returned `config` straight to"
+        " validate_sdg_job. Use this instead of hand-assembling an eval SDG."
+    ),
+)
+async def clone_sdg_config_for_eval(
+    request: CloneSdgForEvalRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ClonedSdgConfig:
+    """Deterministically mirror a model's training SDG recipe for its eval set.
+
+    Replaces the error-prone manual clone: resolving the training job's parent
+    SDG and copying its teacher/prompts/format by hand is exactly where a weak
+    driver drifts (wrong teacher, reworded prompt) or loops (polling get_job to
+    'verify' overlap). This returns the mirrored config in one call."""
+    repo = Repository(db)
+    training = await repo.get_job(request.training_job_id)
+    if not training:
+        raise HTTPException(
+            status_code=404,
+            detail=f"training job {request.training_job_id[:8]} not found",
+        )
+    train_sdg_id = str(training.get("parent_job_id") or "")
+    if not train_sdg_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "training job has no parent SDG job, so its teacher/prompt/format"
+                " cannot be cloned automatically — build the eval SDG from the"
+                " training config manually"
+            ),
+        )
+    sdg = await repo.get_job(train_sdg_id)
+    if not sdg:
+        raise HTTPException(
+            status_code=404,
+            detail=f"parent SDG job {train_sdg_id[:8]} not found",
+        )
+    cfg = _coerce_config(sdg.get("config"))
+    # Mirror the generation recipe verbatim; only the sample count changes. The
+    # columns/model_configs/processors carry the teacher model, every prompt, and
+    # the SFT message shape, so copying them guarantees the eval matches training.
+    mirror_keys = (
+        "columns",
+        "model_configs",
+        "processors",
+        "topic",
+        "document_ids",
+        "seed_config",
+    )
+    cloned: dict[str, Any] = {
+        key: copy.deepcopy(cfg[key]) for key in mirror_keys if cfg.get(key) is not None
+    }
+    if not cloned.get("columns"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"parent SDG job {train_sdg_id[:8]} has no columns to mirror —"
+                " its config is empty or in an unexpected shape"
+            ),
+        )
+    cloned["num_records"] = request.num_records
+    return ClonedSdgConfig(
+        config=cloned,
+        train_sdg_job_id=train_sdg_id,
+        note=(
+            "Mirrors the training SDG recipe (teacher, prompts, SFT format)"
+            " verbatim; only num_records changed. Pass `config` to"
+            " validate_sdg_job. Fresh generation yields fresh held-out inputs —"
+            " do NOT compare datasets afterward; the platform flags any input"
+            " overlap when you validate the eval job."
+        ),
+    )
+
+
 @router.post(
     "/training/validate",
     response_model=ValidatedJobConfig,
@@ -607,10 +725,17 @@ async def validate_training_job(
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
+    repo = Repository(db)
+    data_run = await _resolve_data_run(
+        repo, parent_job_id, str(config.get("data_run_id") or "")
+    )
+    record_count = await _dataset_record_count(data_run)
+
     return ValidatedJobConfig(
         job_type=JobType.training,
         config=config,
         parent_job_id=parent_job_id,
+        data_record_count=record_count,
     )
 
 
@@ -874,6 +999,33 @@ async def _input_signatures(run_id: str) -> set[str]:
         for rec in _parse_records(path, await mlflow.get_artifact(run_id, path)):
             sigs.add(_record_input_signature(rec))
     return sigs
+
+
+async def _dataset_record_count(run_id: str) -> int | None:
+    """Number of records in an MLflow dataset run, or None if it can't be loaded.
+
+    Best-effort: a transient MLflow error must never block an otherwise-valid
+    confirmation card, so the count is simply omitted on failure."""
+    if not run_id:
+        return None
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    try:
+        mlflow = _mlflow_client()
+        paths = await _find_dataset_artifacts(mlflow, run_id)
+        total = 0
+        for path in paths:
+            total += sum(
+                1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path))
+            )
+        return total if paths else None
+    except Exception:
+        logger.warning("record count: failed to load dataset %s", run_id[:8], exc_info=True)
+        return None
 
 
 async def _resolve_data_run(

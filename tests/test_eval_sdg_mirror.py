@@ -130,6 +130,85 @@ class TestTrainingSdgMirrorWarning:
 
 
 # ---------------------------------------------------------------------------
+# clone_sdg_config_for_eval — deterministic eval-SDG mirror
+# ---------------------------------------------------------------------------
+
+
+class TestCloneSdgConfigForEval:
+    @pytest.mark.asyncio
+    async def test_mirrors_recipe_and_sets_record_count(self, patch_repo) -> None:
+        cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        cfg["topic"] = "support tickets"
+        cfg["processors"] = [{"processor_type": "schema_transform"}]
+        patch_repo(
+            {
+                "train-job": {"parent_job_id": "train-sdg"},
+                "train-sdg": {"config": cfg},
+            }
+        )
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
+        result = await jobs.clone_sdg_config_for_eval(req, db=None)
+
+        assert result.train_sdg_job_id == "train-sdg"
+        assert result.config["num_records"] == 40  # user-chosen eval size, not 100
+        # teacher + prompts + format copied verbatim -> same signature as training
+        assert jobs._sdg_signature(result.config) == jobs._sdg_signature(cfg)
+        assert result.config["topic"] == "support tickets"
+        assert result.config["processors"] == cfg["processors"]
+
+    @pytest.mark.asyncio
+    async def test_accepts_json_string_config(self, patch_repo) -> None:
+        import json
+
+        cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        patch_repo(
+            {
+                "train-job": {"parent_job_id": "train-sdg"},
+                "train-sdg": {"config": json.dumps(cfg)},
+            }
+        )
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=25)
+        result = await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert result.config["num_records"] == 25
+        assert jobs._sdg_signature(result.config) == jobs._sdg_signature(cfg)
+
+    @pytest.mark.asyncio
+    async def test_404_when_training_job_missing(self, patch_repo) -> None:
+        from fastapi import HTTPException
+
+        patch_repo({})
+        req = jobs.CloneSdgForEvalRequest(training_job_id="nope", num_records=40)
+        with pytest.raises(HTTPException) as exc:
+            await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_422_when_training_has_no_parent_sdg(self, patch_repo) -> None:
+        from fastapi import HTTPException
+
+        patch_repo({"train-job": {"parent_job_id": None}})
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
+        with pytest.raises(HTTPException) as exc:
+            await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert exc.value.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_422_when_parent_sdg_config_empty(self, patch_repo) -> None:
+        from fastapi import HTTPException
+
+        patch_repo(
+            {
+                "train-job": {"parent_job_id": "train-sdg"},
+                "train-sdg": {"config": {}},
+            }
+        )
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
+        with pytest.raises(HTTPException) as exc:
+            await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert exc.value.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # Eval-vs-training record overlap (leakage) guardrail
 # ---------------------------------------------------------------------------
 

@@ -241,3 +241,49 @@ class TestJobCompleteHandback:
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
         assert router.sent[0][1] == "confirm"
+
+
+def _signal_phase_results(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [p for p in parts if agent._tool_name(p) == "signal_phase"]
+
+
+class TestPhaseBackfill:
+    """When an active subagent's turn carries no signal_phase, the server
+    backfills one from subagent_target so the UI progress bar is never stale."""
+
+    def test_backfills_phase_when_subagent_forgets(self, router: _Router) -> None:
+        sdg_id = router.add_session([[_text_part("working on it")]])
+        state = _make_state(router)
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
+
+        signals = _signal_phase_results(result["parts"])
+        assert len(signals) == 1
+        assert agent._get_tool_input(signals[0]).get("phase") == "sdg"
+
+    def test_does_not_duplicate_when_subagent_signals(self, router: _Router) -> None:
+        sdg_id = router.add_session(
+            [[_tool_part("signal_phase", {"phase": "sdg", "step": "gather_requirements"})]]
+        )
+        state = _make_state(router)
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
+
+        assert len(_signal_phase_results(result["parts"])) == 1
+        assert state.last_signal_step == "gather_requirements"  # remembered for next turn
+
+    def test_backfill_carries_last_signalled_step(self, router: _Router) -> None:
+        sdg_id = router.add_session([[_text_part("still working")]])
+        state = _make_state(router)
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+        state.last_signal_step = "confirm"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
+
+        signals = _signal_phase_results(result["parts"])
+        assert agent._get_tool_input(signals[0]).get("step") == "confirm"

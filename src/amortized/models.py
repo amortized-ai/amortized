@@ -150,6 +150,10 @@ class ValidatedJobConfig(BaseModel):
     parent_job_id: str = ""
     recipe: str = ""
     warnings: list[str] = Field(default_factory=list)
+    # Backend-resolved display facts the confirmation card shows verbatim, so the
+    # user always sees them even when the model omits them from its prose. Kept out
+    # of `config` so they are never re-submitted to the create endpoint.
+    data_record_count: int | None = None
 
 
 class RecipeSummary(BaseModel):
