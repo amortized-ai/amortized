@@ -54,6 +54,17 @@ def test_endpoint_dedups() -> None:
     assert len(resp.options) == 1
 
 
+def test_present_options_carries_halt_directive() -> None:
+    # The tool result must tell the model to end its turn, so a weaker driver
+    # can't batch more questions + a validate_* behind one present_options.
+    body = PresentOptionsRequest(step="s", question="q?", options=[_opt("Yes", "do it")])
+    resp = _run(present_options(body))
+    assert "STOP" in resp.agent_instruction
+    assert "NEXT turn" in resp.agent_instruction
+    dumped = resp.model_dump()
+    assert dumped["agent_instruction"] == resp.agent_instruction  # serialized to the model
+
+
 def test_show_prompt_echoes_full_text() -> None:
     prompt = "You are an RFE assessor.\nScore 5 criteria, 7/10 PASS."
     resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt=prompt)))

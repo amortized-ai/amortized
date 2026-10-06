@@ -53,11 +53,25 @@ class PresentOptionsRequest(BaseModel):
     )
 
 
+_PRESENT_OPTIONS_HALT = (
+    "You have presented this question to the user. STOP NOW — this ENDS your turn."
+    " Do NOT call any more tools (no further present_options, show_prompt,"
+    " validate_*, create_*, or any read), and write no more text. Wait for the"
+    " user's selection; act on it in your NEXT turn."
+)
+
+
 class PresentOptionsResponse(BaseModel):
     step: str
     question: str
     options: list[OptionItem]
     rendered: bool = Field(True, description="Indicates the frontend rendered these as cards")
+    # Authoritative server directive the model reads in the tool result. The system
+    # prompt already says "ask one question, then wait", but weaker drivers batch
+    # several present_options + a validate_* into one turn and never wait; a tool
+    # result outranks the prompt, so repeat the stop here. The proxy also truncates
+    # the turn at the first present_options as a backstop (see agent.py).
+    agent_instruction: str = Field(default=_PRESENT_OPTIONS_HALT, exclude=False)
 
 
 @router.post(

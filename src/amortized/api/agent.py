@@ -252,6 +252,29 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
+def _truncate_after_present_options(result: dict[str, Any]) -> dict[str, Any]:
+    """Make present_options terminal: drop anything the model emitted after the
+    first one in a turn.
+
+    present_options asks the user a question and MUST end the turn, but a weaker
+    driver batches several present_options + show_prompt + a validate_* into one
+    turn and never waits — so the user can't actually pick (the size question and
+    the system-prompt confirmation get steamrolled by a premature confirm card).
+    The model is also told to stop in the tool result (see present_options), but
+    this guarantees the UI shows exactly ONE question and no premature cards even
+    when the model ignores that. The monitor log is recorded from the raw opencode
+    parts, not this result, so the batching stays visible/measurable there."""
+    parts = result.get("parts") or []
+    cut: list[dict[str, Any]] = []
+    for part in parts:
+        cut.append(part)
+        if _tool_name(part) == "present_options":
+            break
+    if len(cut) == len(parts):
+        return result
+    return {**result, "parts": cut}
+
+
 # Active subagent → the workflow phase its turns belong to (UI progress bar).
 _PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
 
@@ -953,6 +976,7 @@ async def _run_turn(
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
             result = await _apply_provenance_gate(state, result, body)
+            result = _truncate_after_present_options(result)
         if turn:
             turn.result = result
     except AgentTurnError as exc:

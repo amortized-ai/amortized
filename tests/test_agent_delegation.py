@@ -243,6 +243,44 @@ class TestJobCompleteHandback:
         assert router.sent[0][1] == "confirm"
 
 
+class TestTruncateAfterPresentOptions:
+    """present_options must end the turn: anything the model emits after the first
+    one (more questions, show_prompt, a premature validate_* confirm card) is
+    dropped so the user sees exactly one question and gets to answer it."""
+
+    def test_drops_everything_after_first_present_options(self) -> None:
+        result = {
+            "parts": [
+                _text_part("here are your options"),
+                _tool_part("present_options", {"question": "which teacher?"}),
+                _tool_part("present_options", {"question": "how many records?"}),
+                _tool_part("show_prompt", {}),
+                _tool_part("present_options", {"question": "prompt ok?"}),
+                _tool_part("validate_sdg_job", {"mode": "preview"}),
+            ]
+        }
+        out = agent._truncate_after_present_options(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["present_options"]  # only the FIRST question survives
+        assert len(out["parts"]) == 2  # the lead text + the one question
+
+    def test_noop_without_present_options(self) -> None:
+        result = {"parts": [_text_part("working"), _tool_part("list_models", {})]}
+        out = agent._truncate_after_present_options(result)
+        assert out["parts"] == result["parts"]
+        assert out is result  # unchanged object when nothing to cut
+
+    def test_noop_when_present_options_is_last(self) -> None:
+        result = {
+            "parts": [
+                _text_part("pick one"),
+                _tool_part("present_options", {"question": "which?"}),
+            ]
+        }
+        out = agent._truncate_after_present_options(result)
+        assert len(out["parts"]) == 2
+
+
 def _signal_phase_results(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if agent._tool_name(p) == "signal_phase"]
 
