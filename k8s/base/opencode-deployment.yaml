@@ -121,10 +121,14 @@ spec:
                   name: opencode-glm-flash
                   key: api-key
                   optional: true
-            # 172.18.0.1 = the kind docker-bridge gateway (the host, where the flash SSH
-            # tunnel binds). Kept out of any CONNECT proxy so flash traffic stays direct.
+            # NO_PROXY keeps traffic OUT of the team CONNECT proxy. HTTPS_PROXY is
+            # container-wide, so without these the Opus/Vertex default would also
+            # tunnel through the RITS proxy whenever the opencode-glm secret is present
+            # — breaking the "switch back to Opus" baseline. 172.18.0.1 = the kind
+            # docker-bridge gateway (the host, where the flash SSH tunnel binds).
+            # *.googleapis.com = Vertex; keep Opus egress direct.
             - name: NO_PROXY
-              value: "localhost,127.0.0.1,::1,172.18.0.1,.svc,.svc.cluster.local,.cluster.local"
+              value: "localhost,127.0.0.1,::1,172.18.0.1,.svc,.svc.cluster.local,.cluster.local,aiplatform.googleapis.com,.googleapis.com"
           volumeMounts:
             - name: opencode-config
               mountPath: /app/workspace/opencode.json
