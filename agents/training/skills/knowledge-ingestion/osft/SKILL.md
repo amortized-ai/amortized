@@ -18,6 +18,15 @@ OSFT (Optimized Supervised Fine-Tuning) is the recommended training method
 for knowledge ingestion. It outperforms standard SFT by 30+ percentage
 points in open-book settings.
 
+> **Scope.** This guide is written around document-grounded QA, but OSFT/SFT also
+> covers any plain **`messages`-based** fine-tune — including a **generative (LLM)
+> classifier** trained on `sdg-classification`-skill data. For those non-document
+> tasks, skip the document-specific steps below (uploads, chunk/coverage math) and
+> take the training data from the SDG `parent_job_id` as usual; the model,
+> epochs, and learning-rate guidance still apply. (Note: most classifier tasks
+> want the **`sdg-embedding-classifier`** sub-skill instead — this generative path is
+> the rare case where the user explicitly wants an LLM to emit the label.)
+
 ## How This Works
 
 You will gather requirements and call `validate_training_job` with the

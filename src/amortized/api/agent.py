@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import ssl
 import uuid
 from dataclasses import dataclass, field
@@ -302,6 +303,35 @@ async def _proxy_create_session() -> str:
     return str(data["id"])
 
 
+class AgentTurnError(Exception):
+    """A provider/model error during a turn, already mapped to a user-facing message."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def _friendly_provider_error(raw: str, name: str = "") -> str:
+    """Map a raw provider/opencode error to a short, user-facing chat message. Falls back to the
+    raw text (capped) so an unmapped error is still more useful than a generic one."""
+    text = f"{raw} {name}".lower()
+    if "tool" in text and ("choice" in text or "parser" in text or "enable-auto-tool" in text):
+        return (
+            "This model's server doesn't have tool-calling enabled, which Morty needs. "
+            "Pick a tool-calling-capable model."
+        )
+    auth = ("providerautherror", "unauthorized", "forbidden", "permission", "invalid api key")
+    missing = ("not found", "does not exist", "providermodelnotfound", "no such model")
+    limited = ("rate limit", "too many requests", "quota")
+    if any(s in text for s in auth):
+        return "That model isn't available with your API key or project (auth/permission)."
+    if any(s in text for s in missing):
+        return "That model isn't available on this provider/endpoint."
+    if any(s in text for s in limited):
+        return "The provider is rate-limiting or out of quota — try again shortly."
+    return (raw or "").strip()[:180] or "The model provider returned an error."
+
+
 async def _proxy_send_message(
     session_id: str,
     text: str,
@@ -319,6 +349,15 @@ async def _proxy_send_message(
     )
     resp.raise_for_status()
     result: dict[str, Any] = resp.json()
+    # OpenCode returns provider/generation errors as HTTP 200 with the error on the assistant
+    # message (info.error) — surface it, else the turn looks blank/successful to the user.
+    info = result.get("info")
+    err = info.get("error") if isinstance(info, dict) else None
+    if isinstance(err, dict):
+        data = err.get("data")
+        data = data if isinstance(data, dict) else {}
+        raw = str(data.get("message") or "")
+        raise AgentTurnError(_friendly_provider_error(raw, str(err.get("name") or "")))
     return result
 
 
@@ -483,6 +522,11 @@ async def _run_turn(
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
         if turn:
             turn.result = result
+    except AgentTurnError as exc:
+        logger.warning("Agent turn provider error: session=%s turn=%s", session_id, turn_id)
+        if turn:
+            turn.error = str(exc)
+            turn.error_status = exc.status
     except httpx.HTTPStatusError as exc:
         logger.warning("Agent turn upstream error: session=%s turn=%s", session_id, turn_id)
         if turn:
@@ -720,13 +764,31 @@ async def get_pending(session_id: str) -> dict[str, Any]:
     return result
 
 
+# OpenCode bundles a built-in "opencode" provider (its hosted "Zen" free models) that is always
+# "connected" even though the user never configured it — and in this deployment the sandbox egress
+# only allows the user's own providers, so those models aren't reachable. Hide it from the picker.
+_SUPPRESSED_PROVIDERS = frozenset({"opencode"})
+
+# Model ids differ in convention across sources: OpenCode/models.dev use aliases (claude-sonnet-4-5)
+# while a provider's own /v1/models may return dated snapshots (claude-sonnet-4-5-20250929). Strip a
+# trailing dated suffix so the two compare equal when access-filtering the picker.
+_DATE_SUFFIX_RE = re.compile(r"-\d{8}$|-\d{4}-\d{2}-\d{2}$")
+
+
+def _strip_date_suffix(model_id: str) -> str:
+    return _DATE_SUFFIX_RE.sub("", model_id)
+
+
 @router.get("/provider")
 async def list_providers() -> dict[str, Any]:
-    """Provider catalog + connection status from OpenCode, for the Studio settings/model picker.
+    """Provider catalog + connection status from OpenCode, for the Studio model picker.
 
-    Proxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the
-    configured API key into the matching provider entry, so only id/name is surfaced per
-    provider — the key (and every other field) is dropped before it reaches the browser.
+    Proxies OpenCode's ``/provider`` ({all, default, connected}) and reduces it to what the chat
+    picker needs: only the ``connected`` providers (those with credentials — ``all`` is the entire
+    models.dev catalog of ~225 providers / thousands of models, far too big to ship), each with its
+    chat-usable models (normalized to [{id, name}]). "Chat-usable" is judged purely by OpenCode's
+    capability flags (emits text + supports tool calls), so the filter is provider-agnostic and new
+    models appear automatically. Credentials and all other fields are dropped before the browser.
     """
     empty: dict[str, Any] = {"all": [], "default": {}, "connected": []}
     try:
@@ -742,21 +804,73 @@ async def list_providers() -> dict[str, Any]:
         logger.exception("Bad JSON on GET /provider")
         return empty
     raw_all = data.get("all")
+    connected_raw = data.get("connected")
+    connected = (
+        [c for c in connected_raw if isinstance(c, str) and c not in _SUPPRESSED_PROVIDERS]
+        if isinstance(connected_raw, list)
+        else []
+    )
+    connected_set = set(connected)
+
+    # Access-filter: a provider's own /v1/models = what the user's key can actually use
+    # (OpenCode's /provider is the whole models.dev catalog). Intersecting drops models the
+    # key isn't entitled to. Providers with no server key (vertex ADC) are absent here and
+    # left unfiltered; an empty intersection (differing id conventions) also stays unfiltered.
+    from amortized.core.model_catalog import accessible_model_ids
+
+    access = await accessible_model_ids()
+
+    def _chat_models(p: dict[str, Any]) -> list[dict[str, str]]:
+        # Chat-usable models only, via OpenCode's own capability flags (provider-agnostic, no
+        # per-provider/name rules): must emit text AND support tool calls (Morty is an agent).
+        # Drops embeddings/image/audio uniformly; new models appear automatically (models.dev).
+        raw = p.get("models")
+        if isinstance(raw, dict):
+            items = list(raw.values())
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = []
+        out: list[dict[str, str]] = []
+        for m in items:
+            if not isinstance(m, dict) or not m.get("id"):
+                continue
+            cap = m.get("capabilities")
+            cap = cap if isinstance(cap, dict) else {}
+            out_mods = cap.get("output")
+            out_mods = out_mods if isinstance(out_mods, dict) else {}
+            if not (out_mods.get("text") and cap.get("toolcall")):
+                continue
+            out.append({"id": str(m["id"]), "name": str(m.get("name") or m["id"])})
+        # Keep only models the user's key can reach (its own /v1/models). Fall back to the full list
+        # when there's no access list for this provider, or the intersection is empty (its id
+        # convention differs from models.dev) — never hide everything.
+        allowed = access.get(str(p.get("id") or ""))
+        if allowed:
+            # Match on the raw id OR a date-normalized form, so an alias id (claude-sonnet-4-5)
+            # still matches a dated id (claude-sonnet-4-5-20250929) and a reachable model whose
+            # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
+            allowed_base = {_strip_date_suffix(a) for a in allowed}
+            filtered = [
+                m for m in out
+                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+            ]
+            if filtered:
+                out = filtered
+        return out
+
+    # Scope to providers the user has credentials for (`connected`): `all` is the full models.dev
+    # catalog (hundreds of providers), too big to ship; the picker only shows connected anyway.
     safe_all = (
         [
-            {"id": p["id"], "name": p.get("name", p["id"])}
+            {"id": p["id"], "name": p.get("name", p["id"]), "models": _chat_models(p)}
             for p in raw_all
-            if isinstance(p, dict) and p.get("id")
+            if isinstance(p, dict) and p.get("id") and p["id"] in connected_set
         ]
         if isinstance(raw_all, list)
         else []
     )
-    connected = data.get("connected")
-    return {
-        "all": safe_all,
-        "default": {},
-        "connected": connected if isinstance(connected, list) else [],
-    }
+    return {"all": safe_all, "default": {}, "connected": connected}
 
 
 @router.post("/title")

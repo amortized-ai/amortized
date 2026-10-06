@@ -13,7 +13,7 @@
 //
 // The OpenShell CLI usage mirrors the RHOAI opencode starter kit's documented flow
 // (`gateway add`, `sandbox create`, `service expose`). The Morty model provider is
-// per-user (bring-your-own-key): each user picks a provider (openai|anthropic|vertex)
+// per-user (bring-your-own-key): each user picks a provider (openai|anthropic|vertex|maas)
 // and supplies its credential via the Studio splash/settings; the credential is stored
 // as a per-user Secret and, at sandbox-create time, given to opencode via its env while
 // the provider's API host is opened in the sandbox egress policy. Vertex is ADC-only
@@ -119,11 +119,33 @@ const PROVIDERS = {
     // location at policy-build time. Mirrors the validated prior egress recipe.
     tokenHosts: ['oauth2.googleapis.com', 'accounts.google.com', 'sts.googleapis.com', 'www.googleapis.com', 'iam.googleapis.com'],
   },
+  // Red Hat Models-as-a-Service (MaaS): an OpenAI-compatible endpoint the user brings. Its
+  // base URL is per-user (NOT a fixed apiHost like openai/anthropic), so the credential carries
+  // BOTH the base URL and the sk-oai key as a small JSON blob ({baseURL, apiKey}) — the way
+  // vertex's ADC JSON occupies the single credential slot. OpenAI-compatible, so (unlike vertex)
+  // it ALSO powers the server catalog + SDG teacher + eval judge: ensureServerKeySecret writes
+  // MAAS_API_KEY + MAAS_BASE_URL into the server env (model_catalog reads both). In the sandbox
+  // it is injected as an opencode `provider.maas` (@ai-sdk/openai-compatible) block whose models
+  // are discovered from the endpoint's /models at create time (see ensureSandbox).
+  maas: {
+    kind: 'openai-compat',
+    credentialKey: 'MAAS_API_KEY',
+    baseUrlEnv: 'MAAS_BASE_URL',
+    opencodeNpm: '@ai-sdk/openai-compatible',
+    opencodeProvider: 'maas',
+  },
 };
 const SUPPORTED_PROVIDERS = Object.keys(PROVIDERS);
 // Providers whose credential is a Google ADC JSON (file-delivered, Morty-chat-only)
 // rather than an env-key string. Drives the delivery + egress + server-skip branches.
 function isAdcProvider(provider) { return PROVIDERS[provider]?.kind === 'adc'; }
+// OpenAI-compatible BYOK endpoints (MaaS): credential is a {baseURL, apiKey} JSON blob, and —
+// like key providers, unlike ADC — they power the server catalog + SDG teacher + eval judge.
+function isOpenAICompatProvider(provider) { return PROVIDERS[provider]?.kind === 'openai-compat'; }
+// Providers whose credential(s) are written into the server teacher-key secret (model_catalog
+// -> list_models + SDG teacher + eval judge): key providers and OpenAI-compatible ones. ADC
+// (vertex) is Morty-chat-only and contributes nothing server-side.
+function isServerProvider(provider) { const k = PROVIDERS[provider]?.kind; return k === 'key' || k === 'openai-compat'; }
 
 // The gateway's own namespace: per-user model-key Secrets live here so a key
 // survives stack/sandbox recreation and is readable before amz-<user> exists.
@@ -269,11 +291,27 @@ async function readUserProviders(ns) {
   }
 }
 
-// Names of the configured providers whose credential is an env-key (openai/anthropic),
-// i.e. the ones that also power the server model catalog + SDG teacher. Vertex (ADC) is
-// Morty-chat-only and excluded.
-function keyProviderNames(providers) {
-  return Object.keys(providers).filter((n) => PROVIDERS[n] && PROVIDERS[n].kind === 'key');
+// Parse an OpenAI-compatible (MaaS) credential blob -> { baseURL, apiKey }. The stored form is
+// the normalized JSON produced by validateCredential (base URL trimmed, no trailing slash).
+function parseOpenAICompatCredential(cred) {
+  let obj;
+  try { obj = JSON.parse(cred); } catch { return { baseURL: '', apiKey: '' }; }
+  return { baseURL: String(obj?.baseURL || '').trim().replace(/\/$/, ''), apiKey: String(obj?.apiKey || '').trim() };
+}
+
+// The env entries one provider contributes to the server teacher-key secret (env-var -> value),
+// consumed by the chart's envFrom so they reach the server (model_catalog -> list_models + SDG
+// teacher + eval judge). Key providers contribute their single credential key; OpenAI-compatible
+// (MaaS) contributes its key AND base URL; ADC (vertex) contributes nothing (Morty-chat-only).
+function serverEnvForProvider(name, credential) {
+  const p = PROVIDERS[name];
+  if (!p) return {};
+  if (p.kind === 'key') return { [p.credentialKey]: credential };
+  if (p.kind === 'openai-compat') {
+    const { baseURL, apiKey } = parseOpenAICompatCredential(credential);
+    return { [p.credentialKey]: apiKey, [p.baseUrlEnv]: baseURL };
+  }
+  return {};
 }
 
 // Create the Secret, or replace it if it already exists. A full replace (PUT) must
@@ -332,8 +370,10 @@ async function writeUserProviders(ns, providers) {
 // (re)written — possibly empty — so it exists for the chart's envFrom (see helmInstall).
 async function ensureServerKeySecret(ns, providers) {
   const data = {};
-  for (const name of keyProviderNames(providers)) {
-    data[PROVIDERS[name].credentialKey] = Buffer.from(providers[name]).toString('base64');
+  for (const [name, cred] of Object.entries(providers)) {
+    for (const [envName, val] of Object.entries(serverEnvForProvider(name, cred))) {
+      if (val) data[envName] = Buffer.from(val).toString('base64');
+    }
   }
   const body = {
     apiVersion: 'v1',
@@ -358,17 +398,29 @@ async function restartServer(ns) {
   await coreApi.deleteCollectionNamespacedPod({ namespace: ns, labelSelector: 'app=amortized,component=server' });
 }
 
-// The model-API egress endpoint(s) for a provider. Key providers reach one API host;
-// the Vertex (ADC) provider needs the Google token-exchange hosts (OAuth/STS/IAM) plus
-// the Vertex inference host, derived from location (global -> aiplatform.googleapis.com;
-// a region -> <region>-aiplatform.googleapis.com).
-function modelEgressEndpoints(p) {
-  const rw = (host) => ({ host, port: 443, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
+// The model-API egress endpoint(s) for a configured provider. Key providers reach one fixed API
+// host; OpenAI-compatible (MaaS) reaches the host parsed from its per-user base URL (so the
+// credential is needed, not just the static def); the Vertex (ADC) provider needs the Google
+// token-exchange hosts (OAuth/STS/IAM) plus the Vertex inference host, derived from location
+// (global -> aiplatform.googleapis.com; a region -> <region>-aiplatform.googleapis.com).
+function modelEgressEndpoints(name, credential) {
+  const p = PROVIDERS[name];
+  const rw = (host, port = 443) => ({ host, port, protocol: 'rest', enforcement: 'enforce', access: 'read-write' });
+  if (!p) return [];
   if (p.kind === 'adc') {
     const aiplatform = !p.location || p.location === 'global'
       ? 'aiplatform.googleapis.com'
       : `${p.location}-aiplatform.googleapis.com`;
-    return [aiplatform, ...p.tokenHosts].map(rw);
+    return [aiplatform, ...p.tokenHosts].map((h) => rw(h));
+  }
+  if (p.kind === 'openai-compat') {
+    const { baseURL } = parseOpenAICompatCredential(credential);
+    try {
+      const u = new URL(baseURL);
+      // Preserve a non-default port (e.g. https://maas.example:8443/v1) so the egress policy
+      // opens the port Morty actually reaches; URL.port is '' for the scheme default (443).
+      return [rw(u.hostname, u.port ? Number(u.port) : 443)];
+    } catch { return []; }
   }
   return [rw(p.apiHost)];
 }
@@ -379,15 +431,18 @@ function modelEgressEndpoints(p) {
 // model catalog + npm (for opencode itself), and the user's own amortized-server
 // (the MCP host). Nothing else is reachable, which is what bounds the in-env credential.
 function buildMortyPolicy(ns, providers) {
-  // Union the egress endpoints of every configured provider (deduped by host), so a
-  // multi-provider sandbox can reach each model API it has a credential for.
+  // Union the egress endpoints of every configured provider (deduped by host+port), so a
+  // multi-provider sandbox can reach each model API it has a credential for. Keying on host+port
+  // (not host alone) keeps two endpoints that share a host but differ in port — e.g. a MaaS URL on
+  // a non-default port alongside a key provider on 443.
   const modelEndpoints = [];
   const seen = new Set();
   for (const name of Object.keys(providers)) {
     if (!PROVIDERS[name]) continue;
-    for (const ep of modelEgressEndpoints(PROVIDERS[name])) {
-      if (seen.has(ep.host)) continue;
-      seen.add(ep.host);
+    for (const ep of modelEgressEndpoints(name, providers[name])) {
+      const key = `${ep.host}:${ep.port}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       modelEndpoints.push(ep);
     }
   }
@@ -475,6 +530,29 @@ function configureOpenshell() {
   return openshellConfigured;
 }
 
+// Best-effort: list model ids from an OpenAI-compatible endpoint's /models (Bearer auth). The
+// GATEWAY (not the sandbox) makes this call, so a private in-cluster MaaS route is reachable;
+// returns [] on any failure so a flaky or slow endpoint never blocks sandbox creation.
+async function discoverOpenAICompatModels(baseURL, apiKey) {
+  const base = String(baseURL || '').replace(/\/$/, '');
+  if (!base || !apiKey) return [];
+  const ctrl = new AbortController();
+  // Keep the abort timer armed until the body is parsed: a response that returns headers but
+  // stalls mid-body must still be bounded, or ensureSandbox can hang past the 10s budget.
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: ctrl.signal });
+    if (!res.ok) return [];
+    const body = await res.json();
+    const data = Array.isArray(body?.data) ? body.data : [];
+    return data.map((m) => String(m?.id || '')).filter(Boolean);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Create + wire the per-user Morty sandbox through the cluster OpenShell gateway with the
 // user's FULL provider set: every configured provider's credential is delivered via the
 // sandbox env (opencode auto-loads each) and egress to each provider's model API (plus
@@ -491,23 +569,51 @@ async function ensureSandbox(ns, providers) {
   const name = mortyName(ns);
   const g = ['-g', OPENSHELL_GATEWAY];
 
-  // opencode.json needs a default model; the chat UI selects per-request so this is only
-  // the fallback. Prefer a Claude-capable provider (vertex, then anthropic) then whatever
-  // is configured — matching Studio's catalog ordering.
-  const preferred = ['vertex', 'anthropic', 'openai'].find((n) => names.includes(n)) || names[0];
-  const defaultModel = PROVIDERS[preferred].model;
+  // For OpenAI-compatible (MaaS) providers, discover the endpoint's models now (gateway-side, so a
+  // private in-cluster MaaS route is reachable) — opencode can't resolve a private endpoint via
+  // models.dev, so its opencode.json provider block must declare the models explicitly. name -> [ids].
+  const discoveredModels = {};
+  for (const n of names) {
+    if (PROVIDERS[n].kind === 'openai-compat') {
+      const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
+      discoveredModels[n] = await discoverOpenAICompatModels(baseURL, apiKey);
+    }
+  }
 
-  // Rewrite the baked opencode.json in-sandbox: set the per-user MCP URL (amz-<user>)
-  // and the provider's model. `node` (present in the image) does a robust JSON edit
-  // rather than a brittle sed; USER_NS + MORTY_MODEL are passed as sandbox env. For the
-  // ADC (Vertex) provider it also materializes the credentials JSON from its base64 env
-  // (MORTY_ADC_B64) to the GOOGLE_APPLICATION_CREDENTIALS path before opencode starts —
-  // env-then-write delivery (the prior `sandbox upload` path was broken). A no-op for
-  // key providers (MORTY_ADC_B64 unset).
+  // opencode.json needs a default model; the chat UI selects per-request so this is only
+  // the fallback. Prefer a Claude-capable provider (vertex, then anthropic), then openai, then a
+  // discovered MaaS model — matching Studio's catalog ordering.
+  const preferred = ['vertex', 'anthropic', 'openai', 'maas'].find((n) => names.includes(n)) || names[0];
+  let defaultModel = PROVIDERS[preferred].model || '';
+  if (PROVIDERS[preferred].kind === 'openai-compat') {
+    const first = (discoveredModels[preferred] || [])[0];
+    defaultModel = first ? `${PROVIDERS[preferred].opencodeProvider}/${first}` : '';
+  }
+  if (!defaultModel) {
+    // No usable default — e.g. a MaaS-only user whose /v1/models discovery returned nothing. The
+    // baked opencode.json default points at a provider with no credentials here, so a turn that
+    // doesn't set a model would dead-end. Studio chat always sends an explicit model, so warn
+    // (rather than hard-fail) to keep this degraded state (unreachable MaaS endpoint) diagnosable.
+    console.log(`  WARNING: no default model for ${ns} — provider '${preferred}' returned no models; Morty needs an explicitly selected model until its endpoint is reachable`);
+  }
+
+  // Rewrite the baked opencode.json in-sandbox: set the per-user MCP URL (amz-<user>) and the
+  // default model. `node` (present in the image) does a robust JSON edit rather than a brittle sed;
+  // USER_NS + MORTY_MODEL are passed as sandbox env. For the ADC (Vertex) provider it also
+  // materializes the credentials JSON from its base64 env (MORTY_ADC_B64) to the
+  // GOOGLE_APPLICATION_CREDENTIALS path before opencode starts (a no-op for the others). For a
+  // MaaS (OpenAI-compatible) provider — which models.dev can't resolve — it writes an explicit
+  // `provider.maas` block (@ai-sdk/openai-compatible) with the per-user base URL and the discovered
+  // models, so opencode reports maas in /provider (connected) and resolves `maas/<model>` turns.
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
-    'c.model=process.env.MORTY_MODEL;' +
+    'if(process.env.MORTY_MODEL){c.model=process.env.MORTY_MODEL;}' +
     'c.mcp.amortized.url="http://amortized-server."+process.env.USER_NS+".svc.cluster.local:8000/mcp";' +
+    'if(process.env.MAAS_BASE_URL&&process.env.MAAS_API_KEY){' +
+    'var mm={};JSON.parse(Buffer.from(process.env.MAAS_MODELS_B64||"W10=","base64").toString()).forEach(function(id){mm[id]={};});' +
+    'c.provider=c.provider||{};' +
+    'c.provider.maas={npm:"@ai-sdk/openai-compatible",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
+    '}' +
     'fs.writeFileSync(f,JSON.stringify(c,null,2));' +
     'if(process.env.MORTY_ADC_B64){fs.writeFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,Buffer.from(process.env.MORTY_ADC_B64,"base64"))}';
   const serveCmd = `cd /workspace && node -e '${rewrite}' && HOME=/workspace opencode serve --port 4096 --hostname 0.0.0.0`;
@@ -523,7 +629,8 @@ async function ensureSandbox(ns, providers) {
     // google-vertex-anthropic loader reads GOOGLE_CLOUD_PROJECT + VERTEX_LOCATION (and
     // ignores opencode.json provider.options), while the underlying @ai-sdk/google-vertex
     // reads GOOGLE_VERTEX_PROJECT/LOCATION — set both name families so it resolves
-    // regardless of the baked opencode build. All are redacted from logs by run() and
+    // regardless of the baked opencode build. Secret values are redacted from logs by run()
+    // (the MaaS base URL, which is logged, is validated to embed no credential), and all are
     // reachable only to the allowlisted hosts.
     const credEnv = [];
     for (const n of names) {
@@ -539,6 +646,15 @@ async function ensureSandbox(ns, providers) {
           '--env', `VERTEX_LOCATION=${p.location}`,
           '--env', `GOOGLE_VERTEX_LOCATION=${p.location}`,
           '--env', `MORTY_ADC_B64=${Buffer.from(providers[n]).toString('base64')}`,
+        );
+      } else if (p.kind === 'openai-compat') {
+        // MaaS: the key + base URL + discovered models (base64 JSON) feed the opencode.json rewrite
+        // above, which writes them into the provider.maas block (@ai-sdk/openai-compatible).
+        const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
+        credEnv.push(
+          '--env', `${p.credentialKey}=${apiKey}`,
+          '--env', `${p.baseUrlEnv}=${baseURL}`,
+          '--env', `MAAS_MODELS_B64=${Buffer.from(JSON.stringify(discoveredModels[n] || [])).toString('base64')}`,
         );
       } else {
         credEnv.push('--env', `${p.credentialKey}=${providers[n]}`);
@@ -694,6 +810,30 @@ function validateCredential(provider, credential) {
     if (!adc || typeof adc !== 'object' || !adc.type) {
       throw new Error('Vertex (ADC) JSON must be a Google credentials file (missing "type")');
     }
+  } else if (isOpenAICompatProvider(provider)) {
+    // MaaS: a {baseURL, apiKey} blob — the base URL is per-user (no fixed apiHost). Validate both
+    // and return canonical JSON (origin + path only, no trailing slash) so the stored form is stable.
+    let obj;
+    try { obj = JSON.parse(cred); } catch { throw new Error('MaaS requires a JSON object with a baseURL and apiKey'); }
+    const apiKey = String(obj?.apiKey || '').trim();
+    let url;
+    try { url = new URL(String(obj?.baseURL || '').trim()); } catch { url = null; }
+    // Require HTTPS: the stored key is later sent in an Authorization header to this URL (server
+    // catalog + sandbox discovery), so a plaintext http:// endpoint would leak the credential.
+    if (!url || url.protocol !== 'https:') {
+      throw new Error('MaaS base URL must be a valid HTTPS URL (the API key is sent to it)');
+    }
+    // Reject secrets embedded in the URL itself: the base URL is logged alongside the sandbox args,
+    // so userinfo (user:pass@) or a query/hash token would leak into the gateway logs — the key
+    // belongs in the apiKey field. Store only the canonical origin + path.
+    if (url.username || url.password || url.search || url.hash) {
+      throw new Error('MaaS base URL must not embed credentials or query parameters — put the key in the API key field');
+    }
+    if (apiKey.length < 8) {
+      throw new Error('MaaS API key looks too short');
+    }
+    const baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
+    return JSON.stringify({ baseURL, apiKey });
   } else if (cred.length < 8) {
     throw new Error('invalid or missing API key');
   }
@@ -793,10 +933,10 @@ async function setUserProvider(user, provider, credential) {
     const rotate = reconcilers.has(ns) || (existing && existing.state === 'ready') || (await serverAvailable(ns));
 
     if (rotate) {
-      // Restart the server only when a KEY provider changed (it feeds the server env); a
-      // vertex-only add never touches the server, so just recreate the sandbox. startReconcile
-      // re-reads the latest persisted set, so it applies this write even if it coalesces.
-      const entry = startReconcile(ns, { restart: PROVIDERS[provider].kind === 'key' });
+      // Restart the server only when a provider that feeds the server env changed (key providers +
+      // MaaS); a vertex-only add never touches the server, so just recreate the sandbox.
+      // startReconcile re-reads the latest persisted set, so it applies this write even if it coalesces.
+      const entry = startReconcile(ns, { restart: isServerProvider(provider) });
       return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS, configured: Object.keys(providers) };
     }
     // First run: persist only — the credential is stored, but provisioning waits for the
@@ -818,14 +958,14 @@ async function removeUserProvider(user, provider) {
     if (!(provider in current)) {
       return { ns, state: stacks.get(ns)?.state || 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };
     }
-    const removedKeyProvider = !!(PROVIDERS[provider] && PROVIDERS[provider].kind === 'key');
+    const removedServerProvider = isServerProvider(provider);
     const providers = { ...current };
     delete providers[provider];
     await writeUserProviders(ns, providers);
 
     const up = reconcilers.has(ns) || stacks.get(ns)?.state === 'ready' || (await serverAvailable(ns));
     if (up) {
-      const entry = startReconcile(ns, { restart: removedKeyProvider });
+      const entry = startReconcile(ns, { restart: removedServerProvider });
       return { ns, state: entry.state, error: entry.error, providers: SUPPORTED_PROVIDERS };
     }
     return { ns, state: 'unprovisioned', error: null, providers: SUPPORTED_PROVIDERS };

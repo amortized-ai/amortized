@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Plus, Bot, GripVertical } from "lucide-react"
-import { PROVIDER_CATALOG, encodeModelSelection } from "./models"
+import { PROVIDER_CATALOG, encodeModelSelection, type ProviderInfo } from "./models"
 import { useProviderStatus } from "./api/use-providers"
 import { clearConversationSession } from "@/lib/api-client"
 
@@ -103,7 +103,7 @@ export default function ChatPage() {
 
   const { chatModelSelection, setChatModelSelection, enabledProviders, enableNewlyConnected } =
     useSettingsStore()
-  const { connectedProviders } = useProviderStatus()
+  const { connectedProviders, providerCatalog } = useProviderStatus()
 
   const conversationsPanelWidth = useUIStore((s) => s.conversationsPanelWidth)
   const setConversationsPanelWidth = useUIStore((s) => s.setConversationsPanelWidth)
@@ -114,16 +114,32 @@ export default function ChatPage() {
     max: 480,
   })
 
+  // Build the picker from OpenCode's live, capability-filtered catalog (per connected provider), so
+  // models are never a stale hardcoded list — a new OpenAI/Anthropic/MaaS model appears as soon as the
+  // provider serves it, with no code change. OpenCode's own model id is used verbatim (it already
+  // carries variant suffixes where needed, e.g. vertex `...@default`). The curated static catalog is
+  // only a label hint + an offline fallback (used when /agent/provider is unreachable).
+  const mergedCatalog = useMemo(() => {
+    const merged: Record<string, ProviderInfo> = {}
+    for (const p of providerCatalog) {
+      if (!p?.id) continue
+      const models = (p.models ?? []).map((m) => ({ providerID: p.id, modelID: m.id, label: m.name || m.id }))
+      if (models.length === 0) continue
+      merged[p.id] = { label: PROVIDER_CATALOG[p.id]?.label || p.name || p.id, requiresApiKey: true, models }
+    }
+    return Object.keys(merged).length > 0 ? merged : { ...PROVIDER_CATALOG }
+  }, [providerCatalog])
+
   const activeProviders = useMemo(() => {
-    return Object.entries(PROVIDER_CATALOG)
+    return Object.entries(mergedCatalog)
       .filter(([id]) => enabledProviders.includes(id))
       .map(([id, info]) => ({ providerID: id, ...info }))
-  }, [enabledProviders])
+  }, [mergedCatalog, enabledProviders])
 
   // Providers the backend actually has credentials for, limited to ones we render.
   const connectedKnownProviders = useMemo(
-    () => Object.keys(PROVIDER_CATALOG).filter((id) => connectedProviders.has(id)),
-    [connectedProviders],
+    () => Object.keys(mergedCatalog).filter((id) => connectedProviders.has(id)),
+    [mergedCatalog, connectedProviders],
   )
 
   // Providers the user can actually pick. When connectivity is known, restrict to

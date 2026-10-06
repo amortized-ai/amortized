@@ -1,5 +1,11 @@
 # Training container — universal (all algorithms, CUDA-enabled)
-# Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa
+# Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa, embedding_sft
+#
+# Built from Red-Hat-AI-Innovation-Team/training_hub@main (upstream) so the CLI
+# (#103), parquet support (#151), and the embedding-sft subcommand (#152) are all
+# present. The [embedding] extra pulls sentence-transformers, which both
+# `thub embedding-sft` training and the classification eval (classify_eval.py)
+# import at runtime.
 FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,19 +19,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-# Install training-hub base + grpo + gepa (pulls torch, transformers, etc.)
+# Install training-hub base + grpo + gepa + embedding (pulls torch, transformers,
+# sentence-transformers, etc.)
 # Skip lora extra — it pulls unsloth which caps transformers<5
 # --ignore-installed needed to bypass distutils system packages
 RUN pip install --no-cache-dir --ignore-installed --break-system-packages \
-    "training-hub[grpo,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
+    "training-hub[grpo,gepa,embedding] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 
 # Install CUDA extensions (flash-attn, mamba-ssm, etc.) — torch is already installed above
 RUN pip install --no-cache-dir --no-build-isolation --break-system-packages \
-    "training-hub[grpo,gepa,cuda] @ git+https://github.com/amortized-ai/training_hub.git@main"
+    "training-hub[grpo,gepa,cuda,embedding] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 
 # Reinstall training-hub cleanly (first install with --ignore-installed may be partial)
 RUN pip install --no-cache-dir --force-reinstall --no-deps --break-system-packages \
-    "training-hub[grpo,gepa] @ git+https://github.com/amortized-ai/training_hub.git@main"
+    "training-hub[grpo,gepa,embedding] @ git+https://github.com/Red-Hat-AI-Innovation-Team/training_hub.git@main"
 
 # Install lora deps manually — trl and xformers without unsloth's caps
 RUN pip install --no-cache-dir --break-system-packages "trl>=0.18.0" "xformers>=0.0.33.post1"
@@ -51,13 +58,21 @@ RUN pip install --no-cache-dir --break-system-packages s3fs fsspec mlflow boto3
 RUN pip install --no-cache-dir --no-build-isolation --no-deps --no-binary causal-conv1d,flash-attn \
     --force-reinstall --break-system-packages "causal-conv1d>=1.4.0" "flash-attn>=2.7.0"
 
-# Verify key versions
+# Verify key versions — hard gate (build fails if any of these are missing,
+# incl. sentence-transformers from the [embedding] extra)
 RUN python3 -c "\
-import transformers, trl, torch; \
+import transformers, trl, torch, sentence_transformers; \
 print(f'transformers {transformers.__version__}'); \
 print(f'trl {trl.__version__}'); \
 print(f'torch {torch.__version__}'); \
-" && python3 -c "import unsloth; print(f'unsloth {unsloth.__version__}')" || echo "unsloth import check deferred to GPU runtime"
+print(f'sentence-transformers {sentence_transformers.__version__}'); \
+"
+
+# Verify the embedding-sft CLI subcommand (#152) is present — hard gate
+RUN thub embedding-sft --help > /dev/null && echo "thub embedding-sft OK"
+
+# Soft check — unsloth may only import on a GPU runtime
+RUN python3 -c "import unsloth; print(f'unsloth {unsloth.__version__}')" || echo "unsloth import check deferred to GPU runtime"
 
 FROM docker.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 LABEL org.opencontainers.image.source=https://github.com/amortized-ai/amortized

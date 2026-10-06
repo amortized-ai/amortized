@@ -1980,7 +1980,7 @@
           "agent"
         ],
         "summary": "List Providers",
-        "description": "Provider catalog + connection status from OpenCode, for the Studio settings/model picker.\n\nProxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the\nconfigured API key into the matching provider entry, so only id/name is surfaced per\nprovider \u2014 the key (and every other field) is dropped before it reaches the browser.",
+        "description": "Provider catalog + connection status from OpenCode, for the Studio model picker.\n\nProxies OpenCode's ``/provider`` ({all, default, connected}) and reduces it to what the chat\npicker needs: only the ``connected`` providers (those with credentials \u2014 ``all`` is the entire\nmodels.dev catalog of ~225 providers / thousands of models, far too big to ship), each with its\nchat-usable models (normalized to [{id, name}]). \"Chat-usable\" is judged purely by OpenCode's\ncapability flags (emits text + supports tool calls), so the filter is provider-agnostic and new\nmodels appear automatically. Credentials and all other fields are dropped before the browser.",
         "operationId": "list_providers_agent_provider_get",
         "responses": {
           "200": {
@@ -3283,6 +3283,67 @@
             "title": "Topic",
             "description": "1-5 word eval topic for tracking",
             "default": ""
+          },
+          "eval_mode": {
+            "type": "string",
+            "enum": [
+              "generative",
+              "classification"
+            ],
+            "title": "Eval Mode",
+            "description": "Evaluation mode. 'generative' (default) serves the model and scores free-form outputs with an LLM judge against a rubric. 'classification' evaluates an embedding classifier/router: the held-out labeled dataset is split into per-class anchors and query examples, and the tuned embedding model routes each query to its nearest class (accuracy / macro-F1 / confusion). No judge or rubric is used.",
+            "default": "generative"
+          },
+          "class_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Labels",
+            "description": "Optional human-readable class names indexed by integer label (classification mode). When omitted, labels are shown as their integer values."
+          },
+          "text_column": {
+            "type": "string",
+            "title": "Text Column",
+            "description": "Name of the text column in the eval dataset (classification mode)",
+            "default": "text"
+          },
+          "label_column": {
+            "type": "string",
+            "title": "Label Column",
+            "description": "Name of the label column in the eval dataset (classification mode)",
+            "default": "label"
+          },
+          "anchors_per_class": {
+            "type": "integer",
+            "maximum": 512.0,
+            "minimum": 1.0,
+            "title": "Anchors Per Class",
+            "description": "How many labeled examples per class to hold out as routing anchors (classification mode); the rest of the dataset becomes queries.",
+            "default": 16
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "description": "Per-class score = mean of the top-k anchor similarities (classification mode)",
+            "default": 3
+          },
+          "tau": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Tau",
+            "description": "Confidence threshold (classification mode): a query whose best class score is below tau routes to a fallback/abstain bucket. 0 (default) never abstains.",
+            "default": 0.0
           },
           "parent_job_id": {
             "type": "string",
@@ -6233,6 +6294,91 @@
             ],
             "title": "Unfreeze Rank Ratio",
             "description": "OSFT: fraction of weights trainable (default 0.2)"
+          },
+          "text_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Column",
+            "description": "embedding_sft: text column name in the dataset (default 'text')"
+          },
+          "label_column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Column",
+            "description": "embedding_sft: label/category column name (default 'label'). Set to 'category' for the embedding-classifier SDG datasets."
+          },
+          "loss_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "batch_all_triplet",
+                  "batch_hard_triplet",
+                  "mnrl"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Type",
+            "description": "embedding_sft contrastive loss: batch_all_triplet, batch_hard_triplet, or mnrl"
+          },
+          "batch_sampler": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "group_by_label",
+                  "no_duplicates",
+                  "default"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Sampler",
+            "description": "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
+          },
+          "warmup_ratio": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup Ratio",
+            "description": "embedding_sft: warmup fraction of total steps (0.0-1.0)"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed",
+            "description": "embedding_sft: random seed"
           },
           "topic": {
             "type": "string",

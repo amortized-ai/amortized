@@ -155,6 +155,110 @@ class TestCreateEvalJob:
 
 
 
+class TestClassificationEvalBuilder:
+    @pytest.mark.asyncio
+    async def test_build_classification_eval_base_model(self) -> None:
+        import json
+
+        config = {
+            "eval_mode": "classification",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "eval_data_run_id": "run123",
+            "class_labels": ["A", "B", "C"],
+            "anchors_per_class": 8,
+            "top_k": 3,
+            "tau": 0.0,
+        }
+        result = await eval_builder.build({"id": "e1", "type": "eval"}, dict(config), {})
+
+        # Runs the self-contained classifier eval in the training image (has
+        # sentence-transformers), not the vLLM serve/judge path.
+        assert result.command == [
+            "python3", "/amortized/classify_eval.py", "--config", "/amortized/config.json",
+        ]
+        assert result.image == "ghcr.io/amortized-ai/training:latest"
+        assert result.resources.gpus == 0
+        assert "classify_eval.py" in result.config_files
+
+        runner = json.loads(result.config_files["config.json"])
+        assert runner["model_path"] == "sentence-transformers/all-MiniLM-L6-v2"
+        assert runner["eval_data_path"] == "/amortized/work/eval_data/generated_data"
+        assert runner["class_labels"] == ["A", "B", "C"]
+        assert runner["anchors_per_class"] == 8
+        assert any("generated_data" in c for c in result.pre_commands)
+        assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
+
+    @pytest.mark.asyncio
+    async def test_build_classification_eval_requires_model_and_data(self) -> None:
+        from amortized.jobs.base import JobBuildError
+
+        # No model source
+        with pytest.raises(JobBuildError):
+            await eval_builder.build(
+                {"id": "e1", "type": "eval"},
+                {"eval_mode": "classification", "eval_data_run_id": "r1"},
+                {},
+            )
+        # No eval data
+        with pytest.raises(JobBuildError):
+            await eval_builder.build(
+                {"id": "e1", "type": "eval"},
+                {"eval_mode": "classification", "model_name_or_path": "m"},
+                {},
+            )
+
+
+class TestClassificationEvalModeGuardrail:
+    @staticmethod
+    def _patch_training_job(monkeypatch, algorithm: str) -> None:
+        from amortized.api import jobs as jobs_api
+
+        class _FakeRepo:
+            def __init__(self, _db):
+                pass
+
+            async def get_job(self, _jid):
+                return {"type": "training", "config": {"algorithm": algorithm}}
+
+        monkeypatch.setattr(jobs_api, "Repository", _FakeRepo)
+
+    @pytest.mark.asyncio
+    async def test_auto_sets_classification_for_embedding_model(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "embedding_sft")
+        config = {"training_job_id": "t1"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors == []
+        assert config["eval_mode"] == "classification"
+
+    @pytest.mark.asyncio
+    async def test_rejects_generative_eval_on_embedding_model(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "embedding_sft")
+        config = {"training_job_id": "t1", "eval_mode": "generative"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "classification" in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_rejects_classification_eval_on_llm(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "osft")
+        config = {"training_job_id": "t1", "eval_mode": "classification"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "embedding model" in errors[0]
+
+    @pytest.mark.asyncio
+    async def test_noop_without_training_job(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        config = {"model_name_or_path": "some/model"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors == [] and "eval_mode" not in config
+
+
 class TestEvalBuilder:
     @pytest.mark.asyncio
     async def test_build_generates_runner_config(self) -> None:
@@ -774,3 +878,183 @@ class TestJudgeProviderResolution:
         assert spec["base_url"] == "http://judge:8000/v1"
         assert spec["api_key_env"] == "EVAL_JUDGE_API_KEY"
         assert env["EVAL_JUDGE_API_KEY"] == "sk-x"
+
+
+class TestAdaptBodyForParamError:
+    """The runner adapts a chat body from a provider's 400 (no model-family hardcoding)."""
+
+    def _load_runner_module(self):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_reasoning_error_remaps_tokens_and_drops_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "gpt-5.6-sol", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        out = m.adapt_body_for_param_error(
+            body, "use 'max_completion_tokens' instead of 'max_tokens'"
+        )
+        assert out is not None
+        assert out["max_completion_tokens"] == 1024
+        assert "max_tokens" not in out
+        assert "temperature" not in out
+        assert body["max_tokens"] == 1024  # original body not mutated
+
+    def test_temperature_only_error_drops_temperature(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "x", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        out = m.adapt_body_for_param_error(
+            body, "Unsupported value: 'temperature' does not support 0.0 with this model."
+        )
+        assert out is not None
+        assert "temperature" not in out
+        assert out["max_tokens"] == 1024
+
+    def test_unrelated_error_returns_none(self) -> None:
+        m = self._load_runner_module()
+        body = {"model": "x", "messages": [], "temperature": 0.0, "max_tokens": 1024}
+        assert m.adapt_body_for_param_error(body, "rate limit exceeded") is None
+
+
+class TestEndpointRetries:
+    """The runner's retry loop (over a real httpx client + MockTransport): an Anthropic 400
+    about temperature is adapted away (models after Opus 4.6 reject a non-default value), and an
+    adapted retry still fires even after transient failures consumed part of the retry budget."""
+
+    def _load_runner_module(self):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent.parent / "containers" / "eval" / "run_eval.py"
+        spec = importlib.util.spec_from_file_location("run_eval", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @pytest.mark.asyncio
+    async def test_anthropic_messages_adapts_temperature_400(self) -> None:
+        import json as _json
+
+        m = self._load_runner_module()
+        seen: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = _json.loads(request.content)
+            seen.append(body)
+            if "temperature" in body:
+                return httpx.Response(
+                    400,
+                    json={
+                        "type": "error",
+                        "error": {
+                            "type": "invalid_request_error",
+                            "message": "`temperature` is deprecated for this model.",
+                        },
+                    },
+                )
+            return httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            out = await m.anthropic_messages(
+                http,
+                {"base_url": "https://api.anthropic.com/v1", "model": "claude-opus-4-8"},
+                [{"role": "user", "content": "hi"}],
+                temperature=0.0,
+                max_tokens=64,
+                api_key="sk-ant",
+            )
+
+        assert out == "ok"
+        assert "temperature" in seen[0]  # first body 400'd on temperature
+        assert "temperature" not in seen[1]  # adapted retry dropped it
+
+    @pytest.mark.asyncio
+    async def test_adapt_retry_survives_prior_transient_failures(self, monkeypatch) -> None:
+        import json as _json
+
+        m = self._load_runner_module()
+
+        async def _no_sleep(*_a: object, **_k: object) -> None:
+            return None
+
+        monkeypatch.setattr(m.asyncio, "sleep", _no_sleep)
+
+        calls = {"n": 0}
+        seen: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            body = _json.loads(request.content)
+            seen.append(body)
+            if calls["n"] <= 2:  # two transient failures first
+                return httpx.Response(503, json={"error": "upstream unavailable"})
+            if "temperature" in body:  # then a recoverable param error
+                return httpx.Response(
+                    400, json={"error": {"message": "temperature is not supported"}}
+                )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            out = await m.chat_completion(
+                http,
+                {"base_url": "http://judge:8000/v1", "model": "reasoner"},
+                [{"role": "user", "content": "q"}],
+                temperature=0.0,
+                max_tokens=64,
+                api_key="k",
+            )
+
+        # Two 503s used attempts, the 400 was adapted, and the free retry succeeded — the old
+        # loop would have exhausted MAX_RETRIES on the `continue` and never sent the adapted body.
+        assert out == "done"
+        assert calls["n"] == 4
+        assert "temperature" not in seen[-1]
+
+    @pytest.mark.asyncio
+    async def test_adapts_two_distinct_param_errors_in_sequence(self, monkeypatch) -> None:
+        # A reasoning model can reject temperature AND the token param in separate 400s. The old
+        # one-shot guard stopped after the first adaptation and the second 400 then failed the call.
+        import json as _json
+
+        m = self._load_runner_module()
+
+        async def _no_sleep(*_a: object, **_k: object) -> None:
+            return None
+
+        monkeypatch.setattr(m.asyncio, "sleep", _no_sleep)
+
+        seen: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = _json.loads(request.content)
+            seen.append(body)
+            if "temperature" in body:  # first complaint
+                return httpx.Response(
+                    400, json={"error": {"message": "temperature is not supported"}}
+                )
+            if "max_tokens" in body:  # second, distinct complaint
+                return httpx.Response(
+                    400, json={"error": {"message": "max_completion_tokens is required"}}
+                )
+            return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            out = await m.chat_completion(
+                http,
+                {"base_url": "http://judge:8000/v1", "model": "reasoner"},
+                [{"role": "user", "content": "q"}],
+                temperature=0.0,
+                max_tokens=64,
+                api_key="k",
+            )
+
+        assert out == "done"
+        # both params were adapted across the two 400s
+        assert "temperature" not in seen[-1]
+        assert "max_tokens" not in seen[-1]
+        assert seen[-1].get("max_completion_tokens") == 64

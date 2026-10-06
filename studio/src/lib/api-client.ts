@@ -208,6 +208,13 @@ export interface EvalResults {
   scores?: Record<string, number | null>
   scores_n?: Record<string, number>
   num_scored?: number
+  // Classification eval (eval_mode="classification"):
+  eval_mode?: string
+  accuracy?: number
+  macro_f1?: number
+  per_class_f1?: Record<string, number>
+  confusion?: Record<string, Record<string, number>>
+  num_queries?: number
   // Legacy pairwise schema (older eval jobs):
   base?: EvalModelMetrics
   tuned?: EvalModelMetrics
@@ -350,6 +357,7 @@ interface TurnOutcome {
   ok: boolean
   result?: OpenCodeResponse
   status?: number
+  error?: string
 }
 
 /**
@@ -377,10 +385,21 @@ async function pollTurn(sessionId: string, turnId: string): Promise<TurnOutcome>
       await sleep(TURN_POLL_INTERVAL_MS)
       continue
     }
-    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500 }
+    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500, error: data.error as string }
     return { ok: true, result: data.result as OpenCodeResponse }
   }
   return { ok: false, status: 504 }
+}
+
+/**
+ * Whether a failed send should KEEP the opencode session rather than reset it. A provider/model
+ * error (400 — the chosen model was rejected) or a busy session (429) leaves the session itself
+ * healthy, so keeping it lets the user switch back to a working model and resume the same
+ * conversation. Anything else (session gone, server/upstream error, network) may have left the
+ * session unusable, so it is reset.
+ */
+export function shouldKeepSessionOnError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 400 || error.status === 429)
 }
 
 export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string): Promise<OpenCodeResponse> {
@@ -426,7 +445,9 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
         return outcome.result as OpenCodeResponse
       }
       status = outcome.status ?? 500
-      lastError = new ApiError(status, "Agent turn failed", null)
+      // Surface the server's mapped provider-error message (shown in the chat Alert) instead of a
+      // generic one; a short string becomes the ApiError detail (see ApiError).
+      lastError = new ApiError(status, "Agent turn failed", outcome.error ?? null)
     } else {
       status = resp.status
       lastError = new ApiError(status, resp.statusText, null)
@@ -467,7 +488,12 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
     }
     break
   }
-  useChatStore.getState().clearSessionId(conversationId)
+  // A provider/model error (400) means only the chosen model was rejected — the opencode session
+  // is still healthy, so keep it: switching back to a working model then resumes this conversation
+  // instead of starting a fresh one. Reset only when the session/upstream may be unusable.
+  if (!shouldKeepSessionOnError(lastError)) {
+    useChatStore.getState().clearSessionId(conversationId)
+  }
   if (lastError instanceof ApiError && (lastError.status === 502 || lastError.status === 503)) {
     throw new ApiError(lastError.status, lastError.statusText, "Cannot reach Morty. Make sure the agent service is running.")
   }

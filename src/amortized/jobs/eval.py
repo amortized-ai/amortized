@@ -38,8 +38,6 @@ from amortized.jobs.common import set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.eval")
 
-IMAGE = "ghcr.io/amortized-ai/eval:latest"
-
 _ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 DEFAULT_SERVE_PORT = 8000
@@ -62,10 +60,14 @@ def _endpoint_spec(
     # A base_url that names an enabled provider (e.g. "openai") resolves to that
     # provider's real endpoint + its injected key env-var — the same catalog SDG
     # uses — so a BYOK-stripped judge/endpoint still authenticates with the
-    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...).
+    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). The
+    # provider_type (openai|anthropic) selects the runner's calling paradigm so the
+    # judge supports exactly what the SDG teacher does (incl. native Anthropic).
+    provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
+        provider_type = provider.get("provider_type") or "openai"
         if not api_key:
             env_name = provider.get("api_key", env_name)
     if api_key:
@@ -74,6 +76,7 @@ def _endpoint_spec(
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
         "api_key_env": env_name,
+        "provider_type": provider_type,
     }
 
 
@@ -305,16 +308,139 @@ async def _build_embedded_serving(
     return pre_commands, script, extras
 
 
+async def _classification_training_run_id(training_job_id: str) -> str:
+    """Resolve the MLflow run id of a completed training job."""
+    from amortized.db.connection import get_pool
+    from amortized.db.repository import Repository
+    from amortized.models import JobStatus
+
+    async with get_pool().acquire() as conn:
+        parent = await Repository(conn).get_job(training_job_id)
+    if not parent:
+        raise JobBuildError(f"training_job_id {training_job_id!r} not found")
+    if parent.get("type") != "training":
+        raise JobBuildError(f"training_job_id {training_job_id!r} is not a training job")
+    status = str(parent.get("status", "") or "")
+    if status != JobStatus.succeeded.value:
+        raise JobBuildError(
+            f"training job {training_job_id[:8]} has not succeeded (status: "
+            f"{status or 'unknown'}) — cannot evaluate its model"
+        )
+    run_id = str(parent.get("mlflow_run_id", "") or "")
+    if not run_id:
+        raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
+    return run_id
+
+
+async def _build_classification_eval(
+    job: dict[str, Any],
+    config: dict[str, Any],
+    config_files: dict[str, str],
+) -> JobBuildResult:
+    """Evaluate an embedding classifier/router — no serving, no judge.
+
+    Loads the tuned sentence-transformers model directly, splits the held-out
+    labeled dataset into per-class anchors + query examples, routes each query
+    to its nearest class, and reports accuracy / macro-F1 / confusion. Runs in
+    the training image (which ships sentence-transformers).
+    """
+    # Training image has sentence-transformers + datasets + training_hub.
+    from amortized.jobs.training import IMAGE as TRAINING_IMAGE
+
+    pre_commands: list[str] = []
+
+    # 1. Model to evaluate: a tuned model (training_job_id) or a base ST model.
+    training_job_id = str(config.get("training_job_id", "")).strip()
+    model_name_or_path = str(config.get("model_name_or_path", "")).strip()
+    if training_job_id:
+        run_id = await _classification_training_run_id(training_job_id)
+        local_dir = "/amortized/work/eval_model"
+        pre_commands.append(
+            f"mlflow artifacts download -r {shlex.quote(run_id)}"
+            f" -a model -d {shlex.quote(local_dir)}"
+        )
+        model_path = f"{local_dir}/model"
+    elif model_name_or_path:
+        model_path = model_name_or_path  # base model baseline (HF id / local path)
+    else:
+        raise JobBuildError(
+            "classification eval requires training_job_id (tuned model) or"
+            " model_name_or_path (base model baseline)"
+        )
+
+    # 2. Held-out labeled dataset. resolve_parent_artifacts already sets
+    #    eval_data_path for a parent sdg/upload job; else download by run id.
+    eval_data_path = config.get("eval_data_path", "")
+    eval_data_run_id = str(config.get("eval_data_run_id", "") or "")
+    if not eval_data_path and eval_data_run_id:
+        local_dir = "/amortized/work/eval_data"
+        pre_commands.append(
+            f"mlflow artifacts download -r {shlex.quote(eval_data_run_id)}"
+            f" -a generated_data -d {shlex.quote(local_dir)}"
+        )
+        eval_data_path = f"{local_dir}/generated_data"
+    if not eval_data_path:
+        raise JobBuildError(
+            "classification eval requires parent_job_id (a completed SDG/upload"
+            " job with a labeled dataset) or eval_data_run_id"
+        )
+
+    runner_config = {
+        "model_path": model_path,
+        "eval_data_path": eval_data_path,
+        "text_column": config.get("text_column", "text"),
+        "label_column": config.get("label_column", "label"),
+        "class_labels": config.get("class_labels"),
+        "anchors_per_class": int(config.get("anchors_per_class", 16)),
+        "top_k": int(config.get("top_k", 3)),
+        "tau": float(config.get("tau", 0.0)),
+        "seed": int(config.get("seed", 42)),
+        "output_dir": "/amortized/work/results",
+    }
+    config_files["config.json"] = json.dumps(runner_config)
+    with open(os.path.join(_ASSETS_DIR, "classify_eval.py")) as f:
+        config_files["classify_eval.py"] = f.read()
+
+    post_cmd = (
+        "mlflow artifacts log-artifacts"
+        " -l /amortized/work/results"
+        " -r $MLFLOW_RUN_ID"
+        " -a eval_results"
+    )
+
+    resolved_config = dict(config)
+    resolved_config["eval_data_path"] = eval_data_path
+    resolved_config["model_path"] = model_path
+
+    return JobBuildResult(
+        command=["python3", "/amortized/classify_eval.py", "--config", "/amortized/config.json"],
+        config_files=config_files,
+        pre_commands=pre_commands,
+        post_commands=[post_cmd],
+        # Encoding a small eval set is fast; GPU optional (0 = CPU, no quota).
+        resources=Resources(gpus=int(config.get("nproc_per_node", 0)), cpus=4, memory_gb=8),
+        image=TRAINING_IMAGE,
+        resolved_config=resolved_config,
+    )
+
+
 async def build(
     job: dict[str, Any],
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
+    if config.get("eval_mode") == "classification":
+        return await _build_classification_eval(job, config, config_files)
+
     env: dict[str, str] = {}
     # Forward every configured provider key into the job (same as SDG), so the
     # judge (and any external endpoint) can authenticate with OPENAI_API_KEY /
     # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
     inject_enabled_provider_keys(env)
+
+    # Eval job image — the tag is configurable (settings.eval_image_tag, default "latest") so a
+    # specific commit can be pinned to test or roll back the eval backend without moving :latest.
+    image = f"{config_mod.settings.image_registry}/eval:{config_mod.settings.eval_image_tag}"
 
     # --- Model under evaluation: embedded serving or external endpoint ---
     has_model_source = bool(
@@ -329,8 +455,9 @@ async def build(
             "base_url": f"http://localhost:{extras['port']}/v1",
             "model": extras["served_model_name"],
             "api_key_env": "EVAL_MODEL_API_KEY",
+            # Embedded vLLM is OpenAI-compatible.
+            "provider_type": "openai",
         }
-        image = IMAGE
         # GPU budget like a training job: the pod requests nvidia.com/gpu
         # and the namespace ResourceQuota bounds it.
         resources = Resources(gpus=int(extras.get("gpus", 1)), cpus=4, memory_gb=16)
@@ -362,7 +489,6 @@ async def build(
         model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
         pre_commands = []
         extras = {}
-        image = IMAGE
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
         command = ["python3", "/app/run_eval.py", "--config", "/amortized/config.json"]
 
