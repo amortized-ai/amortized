@@ -235,6 +235,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         parentJobId: validated.parentJobId,
         recipe: validated.recipe,
         dataRecordCount: validated.dataRecordCount,
+        assessorPrompt: validated.assessorPrompt,
       }
     }
   }
@@ -858,6 +859,7 @@ export function useChat() {
           `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
           undefined,
           "job_complete",
+          status,
         )
 
         const parsed = parseOpenCodeResponse(response)

@@ -10,37 +10,14 @@ import type { ProposedAction } from "../types"
 
 const PROMPT_PREVIEW_LEN = 220
 
-// The "assessor" prompt — the task instructions the teacher follows — is the
-// system_prompt of the column whose output becomes the assistant turn in the
-// SFT processor. Surfacing it on the card lets the user confirm the eval set
-// mirrors the model's training prompt without expanding the full config.
-function findAssessorPrompt(config: Record<string, unknown>): string | null {
-  const columns = config.columns as Array<Record<string, unknown>> | undefined
-  if (!columns?.length) return null
-
-  const processors = config.processors as Array<Record<string, unknown>> | undefined
-  for (const proc of processors ?? []) {
-    const template = proc.template as Record<string, unknown> | undefined
-    const messages = template?.messages as Array<Record<string, unknown>> | undefined
-    const assistant = messages?.find((m) => m.role === "assistant")
-    const content = typeof assistant?.content === "string" ? assistant.content : ""
-    const ref = content.match(/\{\{\s*([\w]+)\s*\}\}/)?.[1]
-    if (ref) {
-      const col = columns.find((c) => c.name === ref)
-      const prompt = col?.system_prompt
-      if (typeof prompt === "string" && prompt.trim()) return prompt.trim()
-    }
-  }
-
-  // Fallback: the last column that defines a system_prompt.
-  for (let i = columns.length - 1; i >= 0; i--) {
-    const prompt = columns[i]?.system_prompt
-    if (typeof prompt === "string" && prompt.trim()) return prompt.trim()
-  }
-  return null
-}
-
-function extractSdgSummary(config: Record<string, unknown>): [string, string][] {
+// The assessor/system prompt is resolved authoritatively by the backend
+// (validate_sdg_job → assessorPrompt) and passed in, rather than guessed from
+// config internals on the client — guessing could confidently render a sampler's
+// prompt as the assessor prompt.
+function extractSdgSummary(
+  config: Record<string, unknown>,
+  assessorPrompt?: string | null,
+): [string, string][] {
   const rows: [string, string][] = []
 
   const columns = config.columns as Array<Record<string, unknown>> | undefined
@@ -59,12 +36,12 @@ function extractSdgSummary(config: Record<string, unknown>): [string, string][] 
   if (config.mode) rows.push(["Mode", String(config.mode)])
   if (config.topic) rows.push(["Topic", String(config.topic)])
 
-  const assessorPrompt = findAssessorPrompt(config)
-  if (assessorPrompt) {
+  if (assessorPrompt?.trim()) {
+    const trimmed = assessorPrompt.trim()
     const preview =
-      assessorPrompt.length > PROMPT_PREVIEW_LEN
-        ? `${assessorPrompt.slice(0, PROMPT_PREVIEW_LEN)}…`
-        : assessorPrompt
+      trimmed.length > PROMPT_PREVIEW_LEN
+        ? `${trimmed.slice(0, PROMPT_PREVIEW_LEN)}…`
+        : trimmed
     rows.push(["Assessor prompt", preview])
   }
 
@@ -124,8 +101,12 @@ function extractServeSummary(config: Record<string, unknown>): [string, string][
   return rows
 }
 
-function extractConfigSummary(jobType: string | undefined, config: Record<string, unknown>): [string, string][] {
-  if (jobType === "sdg") return extractSdgSummary(config)
+function extractConfigSummary(
+  jobType: string | undefined,
+  config: Record<string, unknown>,
+  assessorPrompt?: string | null,
+): [string, string][] {
+  if (jobType === "sdg") return extractSdgSummary(config, assessorPrompt)
   if (jobType === "training") return extractTrainingSummary(config)
   if (jobType === "eval") return extractEvalSummary(config)
   if (jobType === "serve") return extractServeSummary(config)
@@ -156,7 +137,9 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
     }
   }
 
-  const summary = action.config ? extractConfigSummary(action.jobType, action.config) : []
+  const summary = action.config
+    ? extractConfigSummary(action.jobType, action.config, action.assessorPrompt)
+    : []
   // The training dataset's record count is resolved by the backend (not in the
   // config), so the user always sees how many records they're about to train on.
   if (action.jobType === "training" && typeof action.dataRecordCount === "number") {

@@ -14,6 +14,9 @@ export interface ProposedAction {
   parentJobId?: string
   recipe?: string
   dataRecordCount?: number | null
+  // Backend-resolved assessor/system prompt for an SDG job (null when none was
+  // confidently identified). Rendered verbatim instead of the client guessing it.
+  assessorPrompt?: string | null
 }
 
 export interface ToolResult {
