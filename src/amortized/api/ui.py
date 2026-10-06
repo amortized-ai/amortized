@@ -100,23 +100,23 @@ def _dedup_options(options: list[OptionItem]) -> list[OptionItem]:
     """Drop duplicate option cards within a single call.
 
     A model under protocol stress sometimes lists the same choice twice (same
-    click-text, or same label with cosmetic wording tweaks), which renders as
-    redundant cards the user cannot tell apart. Dedup by the click `value` and by
-    the display `title`, preserving first-seen order, so each distinct choice
-    appears once. (Cross-turn re-asking of an identical option set is a separate,
-    client-side concern — these cards are rendered from the session message
-    history, not this response alone.)
+    click-text), which renders as redundant cards the user cannot tell apart. Dedup
+    by the click `value` — the choice's identity — preserving first-seen order. We
+    deliberately do NOT dedup by `title`: titles are 1-3 word labels, so two
+    genuinely different choices can share one (e.g. two base models both labelled
+    "8B" with different `value`s), and dropping the second would make it
+    unselectable. Title is used only as the identity when an option has no `value`.
+    (Cross-turn re-asking of an identical option set is a separate, client-side
+    concern — these cards are rendered from the session message history, not this
+    response alone.)
     """
-    seen_values: set[str] = set()
-    seen_titles: set[str] = set()
+    seen: set[str] = set()
     deduped: list[OptionItem] = []
     for opt in options:
-        value_key = opt.value.strip().lower()
-        title_key = opt.title.strip().lower()
-        if value_key in seen_values or title_key in seen_titles:
+        key = opt.value.strip().lower() or f"title:{opt.title.strip().lower()}"
+        if key in seen:
             continue
-        seen_values.add(value_key)
-        seen_titles.add(title_key)
+        seen.add(key)
         deduped.append(opt)
     return deduped
 

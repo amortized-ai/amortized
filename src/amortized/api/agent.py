@@ -207,6 +207,15 @@ _SUBAGENT_JOB_DONE_PROMPT = (
 )
 
 
+def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
+    """Whether a job_complete event reports success. Prefers the structured
+    `outcome` field; falls back to the legacy display-text substring only when the
+    client didn't send one (version skew during a rollout)."""
+    if body.outcome is not None:
+        return body.outcome.strip().lower() == "succeeded"
+    return "status: succeeded" in user_text.lower()
+
+
 def _tool_name(part: dict[str, Any]) -> str:
     raw = part.get("tool") or part.get("toolName") or ""
     if "__" in raw:
@@ -456,8 +465,18 @@ def _coerce_int(value: Any) -> int:
     return 0
 
 
-async def _fetch_all_messages(opencode_session_id: str) -> list[dict[str, Any]]:
-    """GET a session's full message history (info + parts), or [] on any failure."""
+async def _fetch_all_messages(
+    opencode_session_id: str,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
+    """GET a session's full message history (info + parts), or [] on any failure.
+
+    When a per-turn ``cache`` is supplied, the result is memoized by session id so
+    the same turn's provenance gate and metrics recorder don't each re-fetch every
+    session over HTTP. The provenance gate pops a session from the cache after it
+    posts a correction, so the re-grounding pass still sees the fresh messages."""
+    if cache is not None and opencode_session_id in cache:
+        return cache[opencode_session_id]
     try:
         resp = await _client().get(
             f"{_opencode_url()}/session/{opencode_session_id}/message",
@@ -465,12 +484,16 @@ async def _fetch_all_messages(opencode_session_id: str) -> list[dict[str, Any]]:
         )
         content_type = resp.headers.get("content-type", "")
         if resp.status_code != 200 or "application/json" not in content_type:
-            return []
-        messages = resp.json()
-        return messages if isinstance(messages, list) else []
+            result: list[dict[str, Any]] = []
+        else:
+            messages = resp.json()
+            result = messages if isinstance(messages, list) else []
     except Exception:
         logger.warning("monitor: failed to fetch messages for %s", opencode_session_id)
-        return []
+        result = []
+    if cache is not None:
+        cache[opencode_session_id] = result
+    return result
 
 
 async def _record_turn_metrics(
@@ -478,6 +501,7 @@ async def _record_turn_metrics(
     turn: TurnState,
     session_id: str,
     turn_id: str,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
 ) -> None:
     """Append one monitor ``turn`` record. Attributes every opencode assistant
     message to exactly one proxy turn (dedup by id across all of the
@@ -496,7 +520,7 @@ async def _record_turn_metrics(
 
         new_msgs: list[tuple[int, str, dict[str, Any]]] = []
         for sid, role in role_by_session.items():
-            for msg in await _fetch_all_messages(sid):
+            for msg in await _fetch_all_messages(sid, cache):
                 info = msg.get("info") or {}
                 if info.get("role") != "assistant":
                     continue
@@ -667,10 +691,11 @@ async def _record_turn_metrics(
 # Deliberately conservative: only ID-shaped hex/UUID tokens are checked (not
 # free-form metrics or model names, which cannot be flagged without false
 # positives), a token is grounded by *substring* match (so an abbreviated prefix
-# of a real UUID still passes), and pure-decimal numbers are never treated as
-# identifiers. On a violation we block + force-correct: suppress the message and
-# make the model re-answer grounded; if it still can't, we replace it outright
-# rather than relay an unverified claim.
+# of a real UUID still passes), and bare hex runs must mix digits and letters (so
+# pure-decimal counts and pure-hex words are never treated as identifiers). On a
+# violation we force-correct once: make the model re-answer grounded; if it still
+# can't, we relay its reply with an appended caveat naming the unverified id(s)
+# rather than discard a possibly-correct answer.
 
 # UUID, or any hex run of >=8 chars (job/run ids are UUIDs; models often surface a
 # short prefix). Anchored so pure-prose words can't match (hex letters are a-f).
@@ -682,9 +707,14 @@ _ID_RE = re.compile(
 def _extract_id_candidates(text: str) -> set[str]:
     out: set[str] = set()
     for tok in _ID_RE.findall(text.lower()):
-        # Require a hex letter so plain decimal counts / numbers (e.g. "12345678"
-        # records) are never mistaken for identifiers — keeps the gate conservative.
-        if any(c in "abcdef" for c in tok):
+        if "-" in tok:
+            out.add(tok)  # dash-structured UUID — unambiguously an identifier
+            continue
+        # A bare hex run is only id-like if it mixes digits AND hex letters. This
+        # excludes both pure-decimal counts ("12345678" records) and pure-hex
+        # English words ("deadbeef", "facefeed") that would otherwise be
+        # false-flagged as fabricated ids and cost the model a correction round.
+        if any(c in "0123456789" for c in tok) and any(c in "abcdef" for c in tok):
             out.add(tok)
     return out
 
@@ -698,7 +728,9 @@ def _result_text(result: dict[str, Any]) -> str:
     )
 
 
-async def _grounded_corpus(state: SessionState) -> str:
+async def _grounded_corpus(
+    state: SessionState, cache: dict[str, list[dict[str, Any]]] | None = None
+) -> str:
     """Everything the model legitimately saw this conversation, lowercased.
 
     Union over every role session of: user/system message text (user input,
@@ -714,7 +746,7 @@ async def _grounded_corpus(state: SessionState) -> str:
 
     chunks: list[str] = []
     for sid in sessions:
-        for msg in await _fetch_all_messages(sid):
+        for msg in await _fetch_all_messages(sid, cache):
             role = (msg.get("info") or {}).get("role")
             for part in msg.get("parts") or []:
                 ptype = part.get("type")
@@ -731,18 +763,23 @@ async def _grounded_corpus(state: SessionState) -> str:
 
 
 # How many times to force-correct a reply that states a fabricated identifier
-# before giving up and replacing it outright. Each attempt re-grounds against a
+# before giving up and appending a caveat. Each attempt re-grounds against a
 # freshly-fetched corpus (a correction may call a tool that surfaces the id for
-# real), so a legitimately-recoverable turn usually self-heals on the first pass.
-MAX_PROVENANCE_RETRIES = 3
+# real), so a legitimately-recoverable turn self-heals on the first pass. Capped at
+# 1: further retries rarely recover and multiply model round-trips per turn.
+MAX_PROVENANCE_RETRIES = 1
 
 
-async def _ungrounded_ids(state: SessionState, result: dict[str, Any]) -> list[str]:
+async def _ungrounded_ids(
+    state: SessionState,
+    result: dict[str, Any],
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[str]:
     """Identifier tokens in the reply that appear nowhere the model could have seen."""
     candidates = _extract_id_candidates(_result_text(result))
     if not candidates:
         return []
-    corpus = await _grounded_corpus(state)
+    corpus = await _grounded_corpus(state, cache)
     return sorted(c for c in candidates if c not in corpus)
 
 
@@ -750,10 +787,11 @@ async def _apply_provenance_gate(
     state: SessionState,
     result: dict[str, Any],
     body: MessageRequest,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     """Block + force-correct fabricated identifiers before they reach the user."""
     try:
-        violations = await _ungrounded_ids(state, result)
+        violations = await _ungrounded_ids(state, result, cache)
         if not violations:
             return result
 
@@ -779,31 +817,38 @@ async def _apply_provenance_gate(
             current = await _proxy_send_message(
                 active_id, correction, agent=agent, model=body.model
             )
+            # The correction adds new messages to the active session; drop its cached
+            # copy so re-grounding fetches them (other sessions stay cached).
+            if cache is not None:
+                cache.pop(active_id, None)
             # Re-ground each attempt: a correction may call a tool that now surfaces
             # the id legitimately.
-            violations = await _ungrounded_ids(state, current)
+            violations = await _ungrounded_ids(state, current, cache)
             if not violations:
                 return current
 
-        # Exhausted every retry and the model still fabricates — block outright
-        # rather than relay an unverified claim.
+        # Exhausted the correction and the model still states an unverified id.
+        # Rather than discard a possibly-correct reply (a tightened-but-imperfect
+        # id detector can still false-positive), keep it and append a visible
+        # caveat naming the unverified id(s) so the user is warned without losing
+        # content.
         logger.warning(
-            "Provenance gate: still ungrounded after %d corrections %s session=%s",
+            "Provenance gate: still ungrounded after %d correction(s) %s session=%s",
             MAX_PROVENANCE_RETRIES, violations, active_id,
         )
-        return {
-            "info": current.get("info", result.get("info", {})),
-            "parts": [
-                {
-                    "type": "text",
-                    "text": (
-                        "Sorry — I don't have verified details for that yet. "
-                        "Let me pull the latest from the platform before I give "
-                        "you specifics."
-                    ),
-                }
-            ],
-        }
+        parts = list(current.get("parts") or [])
+        parts.append(
+            {
+                "type": "text",
+                "text": (
+                    "\n\n⚠️ I couldn't verify the identifier(s) "
+                    f"{', '.join(violations)} against platform data in this "
+                    "session — treat them as unconfirmed until I fetch the real "
+                    "values."
+                ),
+            }
+        )
+        return {**current, "parts": parts}
     except Exception:
         logger.warning("Provenance gate failed (passing through)", exc_info=True)
         return result
@@ -931,6 +976,10 @@ class MessageRequest(BaseModel):
     # "job_complete" when a job-monitor card fires). The server uses it to steer
     # the turn — e.g. tell an active subagent to hand back instead of continuing.
     event: str | None = None
+    # Structured outcome for an `event` turn (e.g. "succeeded"/"failed" for a
+    # job_complete). Read instead of sniffing the display text for a "status:
+    # succeeded" substring, which silently broke if the card's wording changed.
+    outcome: str | None = None
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -1065,13 +1114,21 @@ async def _run_turn(
     body: MessageRequest,
 ) -> None:
     turn = state.turns.get(turn_id)
+    # One message-fetch cache per turn, shared by the provenance gate and the metrics
+    # recorder so they don't each re-fetch every session over HTTP.
+    msg_cache: dict[str, list[dict[str, Any]]] = {}
     try:
         async with state.lock:
             if state.subagent_id:
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
-            result = await _apply_provenance_gate(state, result, body)
+            result = await _apply_provenance_gate(state, result, body, msg_cache)
+            # Backfill the UI phase uniformly for every path (subagent completion,
+            # subagent→subagent delegation, orchestrator) — not just the one return
+            # inside the subagent handler — so the progress bar never strands on a
+            # stale phase on a hand-back/delegation turn.
+            result = _ensure_phase_signal(state, result)
             result = _enforce_single_interaction(result, state)
         if turn:
             turn.result = result
@@ -1098,7 +1155,7 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
-            await _record_turn_metrics(state, turn, session_id, turn_id)
+            await _record_turn_metrics(state, turn, session_id, turn_id, msg_cache)
         state.last_activity = datetime.now(UTC)
 
 
@@ -1160,7 +1217,7 @@ async def _handle_subagent_message(
     # steps" nudge (which left weaker models looping on post-job inspection calls
     # and never signalling completion). Only on success — a failed job still needs
     # the subagent's own failure handling.
-    if body.event == "job_complete" and "status: succeeded" in user_text.lower():
+    if body.event == "job_complete" and _job_succeeded(body, user_text):
         user_text = _SUBAGENT_JOB_DONE_PROMPT
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
@@ -1230,7 +1287,8 @@ async def _handle_subagent_message(
         sub_result["parts"] = response_parts + _strip_internal_tools(sub_result.get("parts", []))
         return sub_result
 
-    return _ensure_phase_signal(state, result)
+    # Phase backfill is applied uniformly by _run_turn for every return path.
+    return result
 
 
 async def _resume_parent_subagent(

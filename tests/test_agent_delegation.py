@@ -92,10 +92,23 @@ def _run(coro: Any) -> Any:
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
-def _body(text: str = "hi", event: str | None = None) -> agent.MessageRequest:
+def _body(
+    text: str = "hi", event: str | None = None, outcome: str | None = None
+) -> agent.MessageRequest:
     return agent.MessageRequest(
-        parts=[agent.MessagePart(type="text", text=text)], event=event
+        parts=[agent.MessagePart(type="text", text=text)], event=event, outcome=outcome
     )
+
+
+class TestJobSucceeded:
+    def test_structured_outcome_preferred(self) -> None:
+        # The structured field decides, regardless of display text.
+        assert agent._job_succeeded(_body(outcome="succeeded"), "whatever wording")
+        assert not agent._job_succeeded(_body(outcome="failed"), "status: succeeded")
+
+    def test_legacy_substring_fallback_when_no_outcome(self) -> None:
+        assert agent._job_succeeded(_body(), "Job x finished with status: succeeded.")
+        assert not agent._job_succeeded(_body(), "Job x finished with status: failed.")
 
 
 class TestSubagentDelegation:
@@ -415,42 +428,43 @@ def _signal_phase_results(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 class TestPhaseBackfill:
-    """When an active subagent's turn carries no signal_phase, the server
-    backfills one from subagent_target so the UI progress bar is never stale."""
+    """When an active subagent's turn carries no signal_phase, the server backfills
+    one from subagent_target so the UI progress bar is never stale. The backfill is
+    applied by _run_turn to EVERY handler return path (completion hand-back,
+    subagent→subagent delegation, normal), so it is unit-tested here on the pure
+    _ensure_phase_signal function it delegates to."""
 
-    def test_backfills_phase_when_subagent_forgets(self, router: _Router) -> None:
-        sdg_id = router.add_session([[_text_part("working on it")]])
-        state = _make_state(router)
-        state.subagent_id = sdg_id
+    def _sub_state(self) -> agent.SessionState:
+        state = agent.SessionState(orchestrator_id="orch")
+        state.subagent_id = "sub"
         state.subagent_target = "sdg"
+        return state
 
-        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
+    def test_backfills_phase_when_subagent_forgets(self) -> None:
+        result = {"parts": [_text_part("working on it")]}
+        out = agent._ensure_phase_signal(self._sub_state(), result)
 
-        signals = _signal_phase_results(result["parts"])
+        signals = _signal_phase_results(out["parts"])
         assert len(signals) == 1
         assert agent._get_tool_input(signals[0]).get("phase") == "sdg"
 
-    def test_does_not_duplicate_when_subagent_signals(self, router: _Router) -> None:
-        sdg_id = router.add_session(
-            [[_tool_part("signal_phase", {"phase": "sdg", "step": "gather_requirements"})]]
-        )
-        state = _make_state(router)
-        state.subagent_id = sdg_id
-        state.subagent_target = "sdg"
+    def test_does_not_duplicate_when_subagent_signals(self) -> None:
+        state = self._sub_state()
+        result = {
+            "parts": [
+                _tool_part("signal_phase", {"phase": "sdg", "step": "gather_requirements"})
+            ]
+        }
+        out = agent._ensure_phase_signal(state, result)
 
-        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
-
-        assert len(_signal_phase_results(result["parts"])) == 1
+        assert len(_signal_phase_results(out["parts"])) == 1
         assert state.last_signal_step == "gather_requirements"  # remembered for next turn
 
-    def test_backfill_carries_last_signalled_step(self, router: _Router) -> None:
-        sdg_id = router.add_session([[_text_part("still working")]])
-        state = _make_state(router)
-        state.subagent_id = sdg_id
-        state.subagent_target = "sdg"
+    def test_backfill_carries_last_signalled_step(self) -> None:
+        state = self._sub_state()
         state.last_signal_step = "confirm"
+        result = {"parts": [_text_part("still working")]}
+        out = agent._ensure_phase_signal(state, result)
 
-        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
-
-        signals = _signal_phase_results(result["parts"])
+        signals = _signal_phase_results(out["parts"])
         assert agent._get_tool_input(signals[0]).get("step") == "confirm"

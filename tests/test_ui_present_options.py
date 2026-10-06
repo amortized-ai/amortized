@@ -33,8 +33,17 @@ def test_duplicate_value_removed() -> None:
     assert out[0].title == "Yes"
 
 
-def test_duplicate_title_removed() -> None:
-    opts = [_opt("Train", "Train on all data"), _opt("train", "Train on a subset")]
+def test_distinct_values_sharing_a_title_are_both_kept() -> None:
+    # Short labels collide legitimately (e.g. two base models both labelled "8B").
+    # They differ by click `value`, so both must survive — dropping one would make
+    # it unselectable.
+    opts = [_opt("8B", "qwen-8b"), _opt("8B", "llama-8b")]
+    out = _dedup_options(opts)
+    assert [o.value for o in out] == ["qwen-8b", "llama-8b"]
+
+
+def test_valueless_options_dedup_by_title() -> None:
+    opts = [_opt("Skip", ""), _opt("skip", "  ")]
     assert len(_dedup_options(opts)) == 1
 
 

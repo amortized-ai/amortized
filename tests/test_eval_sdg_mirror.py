@@ -40,6 +40,29 @@ class TestSdgSignature:
             _sdg_cfg("gpt-oss", "author", "prior batch rubric")
         )
 
+    def test_different_topic_differs(self) -> None:
+        # Same teacher + prompts but a different topic is a different task — the
+        # signature must distinguish it (else a different-topic eval set is wrongly
+        # flagged recipe_match / passes the mirror check).
+        a = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        b = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        a["topic"] = "RFE tickets"
+        b["topic"] = "support tickets"
+        assert jobs._sdg_signature(a) != jobs._sdg_signature(b)
+
+    def test_different_document_ids_differ(self) -> None:
+        a = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        b = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        a["document_ids"] = ["doc-1", "doc-2"]
+        b["document_ids"] = ["doc-9"]
+        assert jobs._sdg_signature(a) != jobs._sdg_signature(b)
+        # Order-insensitive: same set in a different order compares equal.
+        c = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        c["document_ids"] = ["doc-2", "doc-1"]
+        a2 = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        a2["document_ids"] = ["doc-1", "doc-2"]
+        assert jobs._sdg_signature(a2) == jobs._sdg_signature(c)
+
     def test_accepts_json_string_config(self) -> None:
         import json
 
@@ -50,6 +73,46 @@ class TestSdgSignature:
         assert jobs._sdg_signature({}) is None
         assert jobs._sdg_signature("not json") is None
         assert jobs._sdg_signature(None) is None
+
+
+class TestAssessorPrompt:
+    def _cfg_with_processor(self, ref_col: str, assessor_prompt: str) -> dict:
+        return {
+            "columns": [
+                {"column_type": "sampler", "name": "topic"},
+                {"column_type": "llm-text", "name": "input", "system_prompt": "author"},
+                {"column_type": "llm-text", "name": "score", "system_prompt": assessor_prompt},
+            ],
+            "processors": [
+                {
+                    "template": {
+                        "messages": [
+                            {"role": "user", "content": "{{ input }}"},
+                            {"role": "assistant", "content": "{{ " + ref_col + " }}"},
+                        ]
+                    }
+                }
+            ],
+        }
+
+    def test_resolves_prompt_from_processor_assistant_ref(self) -> None:
+        cfg = self._cfg_with_processor("score", "You are an RFE assessor.")
+        assert jobs._assessor_prompt(cfg) == "You are an RFE assessor."
+
+    def test_none_when_no_processor_ref(self) -> None:
+        # No processor template -> we do NOT guess (no blind "last system_prompt"
+        # fallback that could surface a sampler's prompt).
+        cfg = {
+            "columns": [
+                {"name": "input", "system_prompt": "author"},
+                {"name": "score", "system_prompt": "assessor"},
+            ]
+        }
+        assert jobs._assessor_prompt(cfg) is None
+
+    def test_none_on_malformed_config(self) -> None:
+        assert jobs._assessor_prompt({}) is None
+        assert jobs._assessor_prompt({"columns": "nope"}) is None
 
 
 class _FakeRepo:

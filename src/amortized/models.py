@@ -154,6 +154,11 @@ class ValidatedJobConfig(BaseModel):
     # user always sees them even when the model omits them from its prose. Kept out
     # of `config` so they are never re-submitted to the create endpoint.
     data_record_count: int | None = None
+    # The assessor/system prompt the teacher follows (and that ships in the SFT
+    # training data), resolved server-side from the SDG config so the card renders
+    # the real prompt instead of the client guessing it from config internals.
+    # None when the config has no confidently-identifiable assessor prompt.
+    assessor_prompt: str | None = None
 
 
 class RecipeSummary(BaseModel):

@@ -39,12 +39,20 @@ class TestExtractIdCandidates:
     def test_short_hex_ignored(self) -> None:
         assert agent._extract_id_candidates("value 0.92 and ab12") == set()
 
+    def test_pure_hex_word_ignored(self) -> None:
+        # 8+ hex chars but all letters (no digit) — an English word, not an id.
+        assert agent._extract_id_candidates("the deadbeef and facefeed cases") == set()
+
+    def test_hex_needs_both_digit_and_letter(self) -> None:
+        # Digits + letters -> an id; this is the discriminator that excludes words.
+        assert "a1b2c3d4" in agent._extract_id_candidates("job a1b2c3d4")
+
 
 class TestProvenanceGate:
     def _patch_corpus(
         self, monkeypatch: pytest.MonkeyPatch, corpus_by_session: dict[str, str]
     ) -> None:
-        async def _fetch(sid: str) -> list[dict[str, Any]]:
+        async def _fetch(sid: str, cache: Any = None) -> list[dict[str, Any]]:
             blob = corpus_by_session.get(sid, "")
             if not blob:
                 return []
@@ -102,14 +110,14 @@ class TestProvenanceGate:
         assert corrections[0] == ("orch", "morty")
         assert "no fabricated ids" in agent._result_text(out)
 
-    def test_persistent_fabrication_blocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_persistent_fabrication_gets_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         self._patch_corpus(monkeypatch, {"orch": ""})
 
         calls = 0
 
         async def _send(*a: Any, **k: Any) -> dict[str, Any]:
-            # Model doubles down with the same fabricated id on every retry.
+            # Model doubles down with the same fabricated id on the correction.
             nonlocal calls
             calls += 1
             return _text_result("It's definitely job a1b2c3d4.")
@@ -119,11 +127,12 @@ class TestProvenanceGate:
         result = _text_result("Submitted job a1b2c3d4.")
         out = _run(agent._apply_provenance_gate(state, result, _body()))
 
-        # Every retry is attempted before the reply is blocked outright.
-        assert calls == agent.MAX_PROVENANCE_RETRIES
+        # Capped at one correction; then the reply is kept with an appended caveat
+        # (rather than discarded) naming the unverified id.
+        assert calls == agent.MAX_PROVENANCE_RETRIES == 1
         text = agent._result_text(out)
-        assert "a1b2c3d4" not in text
-        assert "don't have verified details" in text
+        assert "couldn't verify" in text.lower()
+        assert "a1b2c3d4" in text  # named in the caveat so the user is warned
 
     def test_correction_succeeds_within_retry_budget(
         self, monkeypatch: pytest.MonkeyPatch
@@ -134,11 +143,9 @@ class TestProvenanceGate:
         calls = 0
 
         async def _send(*a: Any, **k: Any) -> dict[str, Any]:
-            # Fabricates on the first correction, then self-heals on the second.
+            # Self-heals on the first correction (within the budget of 1).
             nonlocal calls
             calls += 1
-            if calls < 2:
-                return _text_result("Still job a1b2c3d4.")
             return _text_result("Here are your grounded next steps.")
 
         monkeypatch.setattr(agent, "_proxy_send_message", _send)
@@ -146,7 +153,7 @@ class TestProvenanceGate:
         result = _text_result("Submitted job a1b2c3d4.")
         out = _run(agent._apply_provenance_gate(state, result, _body()))
 
-        assert calls == 2  # stopped as soon as the reply was clean
+        assert calls == 1  # stopped as soon as the reply was clean
         assert "grounded next steps" in agent._result_text(out)
 
     def test_correction_routed_to_active_subagent(self, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import logging
+import re
 from typing import Any
 
 import asyncpg
@@ -581,7 +582,41 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
         job_type=JobType.sdg,
         config=config,
         parent_job_id=parent_job_id,
+        assessor_prompt=_assessor_prompt(config),
     )
+
+
+def _assessor_prompt(config: dict[str, Any]) -> str | None:
+    """The assessor/system prompt the teacher follows — the `system_prompt` of the
+    column whose output becomes the assistant turn in an SFT processor template.
+
+    Resolved authoritatively from the config so the confirmation card shows the
+    real prompt. Returns None when it can't be identified confidently (no blind
+    "last column with a system_prompt" fallback — that risked rendering a
+    sampler's prompt as the assessor prompt)."""
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return None
+    by_name = {c.get("name"): c for c in columns if isinstance(c, dict)}
+    for proc in config.get("processors") or []:
+        if not isinstance(proc, dict):
+            continue
+        template = proc.get("template")
+        messages = template.get("messages") if isinstance(template, dict) else None
+        if not isinstance(messages, list):
+            continue
+        for msg in messages:
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            content = msg.get("content") if isinstance(msg.get("content"), str) else ""
+            ref = re.search(r"\{\{\s*(\w+)\s*\}\}", content)
+            if not ref:
+                continue
+            col = by_name.get(ref.group(1))
+            prompt = col.get("system_prompt") if isinstance(col, dict) else None
+            if isinstance(prompt, str) and prompt.strip():
+                return prompt.strip()
+    return None
 
 
 class CloneSdgForEvalRequest(BaseModel):
@@ -876,12 +911,20 @@ async def _rubric_drift_warning(
     return []
 
 
-def _sdg_signature(cfg: Any) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
-    """The (teacher models, system prompts) that define an SDG pipeline's task.
+_SdgSignature = tuple[
+    tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]
+]
 
-    Returns sorted tuples so two configs that generate the same task compare
-    equal regardless of ordering. `None` when the config is unparseable or
-    carries neither signal (can't be compared)."""
+
+def _sdg_signature(cfg: Any) -> _SdgSignature | None:
+    """What defines an SDG pipeline's task AND its input distribution.
+
+    Teacher models + system prompts alone are not enough: `clone_sdg_config_for_eval`
+    treats `topic`, `document_ids`, and the sampler columns as recipe-defining too,
+    so two configs with the same teacher+assessor prompt but a different document set
+    or topic generate a DIFFERENT task. Folding those in stops a different-input eval
+    set from being flagged `recipe_match` / passing the mirror check. Returns sorted
+    tuples so ordering doesn't matter; `None` when unparseable or carrying no signal."""
     if isinstance(cfg, str):
         try:
             cfg = json.loads(cfg)
@@ -903,9 +946,20 @@ def _sdg_signature(cfg: Any) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
             if isinstance(c, dict) and c.get("system_prompt")
         )
     )
-    if not models and not prompts:
+    topic = str(cfg.get("topic") or "")
+    document_ids = tuple(sorted(str(d) for d in (cfg.get("document_ids") or []) if d))
+    # Column identity (name/type), so a different sampler set is a different task
+    # even when the assessor system prompt is unchanged.
+    columns = tuple(
+        sorted(
+            str(c.get("name") or c.get("column_type") or "")
+            for c in (cfg.get("columns") or [])
+            if isinstance(c, dict) and (c.get("name") or c.get("column_type"))
+        )
+    )
+    if not models and not prompts and not topic and not document_ids and not columns:
         return None
-    return models, prompts
+    return models, prompts, topic, document_ids, columns
 
 
 async def _training_sdg_mirror_warning(
@@ -1035,7 +1089,12 @@ async def _resolve_data_run(
     if parent_job_id:
         job = await repo.get_job(parent_job_id)
         if job:
-            return str(job.get("mlflow_run_id") or "")
+            run = str(job.get("mlflow_run_id") or "")
+            if run:
+                return run
+            # Parent row exists but its run id isn't populated — fall through to the
+            # explicit data_run_id rather than returning "" (which silently disabled
+            # the downstream leakage/overlap check).
     return data_run_id
 
 
