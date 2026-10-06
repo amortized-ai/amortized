@@ -243,12 +243,13 @@ class TestJobCompleteHandback:
         assert router.sent[0][1] == "confirm"
 
 
-class TestTruncateAfterPresentOptions:
-    """present_options must end the turn: anything the model emits after the first
-    one (more questions, show_prompt, a premature validate_* confirm card) is
-    dropped so the user sees exactly one question and gets to answer it."""
+class TestEnforceSingleInteraction:
+    """A turn either ASKS one question or CONFIRMS one job, never both. Whichever
+    interaction leads the turn wins; the other kind (and repeats) is stripped so
+    the UI never shows a question batched with a confirm card."""
 
-    def test_drops_everything_after_first_present_options(self) -> None:
+    def test_ask_turn_drops_everything_after_first_present_options(self) -> None:
+        # question(s) first, then a premature confirm card -> keep only the first Q.
         result = {
             "parts": [
                 _text_part("here are your options"),
@@ -259,25 +260,54 @@ class TestTruncateAfterPresentOptions:
                 _tool_part("validate_sdg_job", {"mode": "preview"}),
             ]
         }
-        out = agent._truncate_after_present_options(result)
+        out = agent._enforce_single_interaction(result)
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["present_options"]  # only the FIRST question survives
         assert len(out["parts"]) == 2  # the lead text + the one question
 
-    def test_noop_without_present_options(self) -> None:
+    def test_confirm_turn_drops_options_stacked_under_the_card(self) -> None:
+        # validate_* first, then a redundant "confirm?" present_options -> the
+        # confirmation card wins; the stacked question is dropped, passive cards stay.
+        result = {
+            "parts": [
+                _tool_part("validate_training_job", {"algorithm": "sft"}),
+                _tool_part("show_vram_estimate", {}),
+                _tool_part("signal_phase", {"phase": "training", "step": "confirm"}),
+                _tool_part("present_options", {"question": "Submit this job?"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert "present_options" not in tools  # no options under the confirm card
+        assert tools == ["validate_training_job", "show_vram_estimate", "signal_phase"]
+
+    def test_confirm_turn_drops_repeat_confirm_card(self) -> None:
+        result = {
+            "parts": [
+                _text_part("confirm below"),
+                _tool_part("validate_training_job", {"algorithm": "osft"}),
+                _tool_part("present_options", {"question": "ok?"}),
+                _tool_part("validate_training_job", {"algorithm": "osft"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["validate_training_job"]
+
+    def test_noop_without_any_interaction(self) -> None:
         result = {"parts": [_text_part("working"), _tool_part("list_models", {})]}
-        out = agent._truncate_after_present_options(result)
+        out = agent._enforce_single_interaction(result)
         assert out["parts"] == result["parts"]
         assert out is result  # unchanged object when nothing to cut
 
-    def test_noop_when_present_options_is_last(self) -> None:
+    def test_noop_when_present_options_is_last_and_alone(self) -> None:
         result = {
             "parts": [
                 _text_part("pick one"),
                 _tool_part("present_options", {"question": "which?"}),
             ]
         }
-        out = agent._truncate_after_present_options(result)
+        out = agent._enforce_single_interaction(result)
         assert len(out["parts"]) == 2
 
 

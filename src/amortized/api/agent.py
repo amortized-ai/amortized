@@ -252,27 +252,65 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
-def _truncate_after_present_options(result: dict[str, Any]) -> dict[str, Any]:
-    """Make present_options terminal: drop anything the model emitted after the
-    first one in a turn.
+# Tools whose result renders a job CONFIRMATION card (its own Confirm / Cancel).
+_CONFIRM_CARD_TOOLS = {
+    "validate_training_job",
+    "validate_eval_job",
+    "validate_sdg_job",
+}
 
-    present_options asks the user a question and MUST end the turn, but a weaker
-    driver batches several present_options + show_prompt + a validate_* into one
-    turn and never waits — so the user can't actually pick (the size question and
-    the system-prompt confirmation get steamrolled by a premature confirm card).
-    The model is also told to stop in the tool result (see present_options), but
-    this guarantees the UI shows exactly ONE question and no premature cards even
-    when the model ignores that. The monitor log is recorded from the raw opencode
+
+def _enforce_single_interaction(result: dict[str, Any]) -> dict[str, Any]:
+    """A turn either ASKS the user one question or CONFIRMS one job — never both.
+
+    present_options asks a question and MUST end the turn; a validate_* renders a
+    confirmation card that already has its own Confirm/Cancel. A weaker driver
+    batches them, in either order, into one turn:
+
+    - question(s) first, then a premature validate_* — the user never gets to
+      pick (the sample-size / system-prompt choices get steamrolled by a confirm
+      card). Fix: the first question wins; drop everything after it.
+    - validate_* first, then a present_options — the confirmation card renders
+      with redundant option buttons stacked underneath it (observed: a "full
+      SFT" confirm card with "Confirm & train / Adjust settings" options below).
+      Fix: the card wins; drop the stacked question.
+
+    So: whichever interaction LEADS the turn is kept; the other interaction kind
+    (and any repeat) is stripped. An ASK turn also drops anything after the
+    question; a CONFIRM turn keeps its passive cards (VRAM/pricing, signal_phase)
+    but never a question. The monitor log is recorded from the raw opencode
     parts, not this result, so the batching stays visible/measurable there."""
     parts = result.get("parts") or []
-    cut: list[dict[str, Any]] = []
-    for part in parts:
-        cut.append(part)
-        if _tool_name(part) == "present_options":
-            break
-    if len(cut) == len(parts):
+    first_q = first_card = None
+    for i, part in enumerate(parts):
+        name = _tool_name(part)
+        if first_q is None and name == "present_options":
+            first_q = i
+        if first_card is None and name in _CONFIRM_CARD_TOOLS:
+            first_card = i
+    if first_q is None and first_card is None:
         return result
-    return {**result, "parts": cut}
+
+    if first_q is not None and (first_card is None or first_q < first_card):
+        # ASK turn: the question is terminal — keep up to and including it.
+        kept = parts[: first_q + 1]
+    else:
+        # CONFIRM turn: the card is terminal — drop every stacked question and
+        # any repeat confirm card, keeping passive parts in order.
+        kept = []
+        seen_card = False
+        for part in parts:
+            name = _tool_name(part)
+            if name == "present_options":
+                continue
+            if name in _CONFIRM_CARD_TOOLS:
+                if seen_card:
+                    continue
+                seen_card = True
+            kept.append(part)
+    if len(kept) == len(parts):
+        return result
+    return {**result, "parts": kept}
 
 
 # Active subagent → the workflow phase its turns belong to (UI progress bar).
@@ -976,7 +1014,7 @@ async def _run_turn(
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
             result = await _apply_provenance_gate(state, result, body)
-            result = _truncate_after_present_options(result)
+            result = _enforce_single_interaction(result)
         if turn:
             turn.result = result
     except AgentTurnError as exc:

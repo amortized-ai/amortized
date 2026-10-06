@@ -1605,7 +1605,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically.",
+        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically. Do NOT call it after validate_* either \u2014 the confirmation card already has its own Confirm/Cancel, so a 'confirm?' question under it is redundant and will be dropped.",
         "operationId": "present_options",
         "requestBody": {
           "content": {

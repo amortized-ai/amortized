@@ -82,7 +82,9 @@ class PresentOptionsResponse(BaseModel):
         "Render clickable option cards in the chat UI. EVERY message that asks a question "
         "or offers choices MUST use this tool — do NOT write numbered lists. Call once per "
         "message, then STOP and wait for the user to respond. Do NOT call this tool after "
-        "submitting a job — the UI renders a job monitor card automatically."
+        "submitting a job — the UI renders a job monitor card automatically. Do NOT call it "
+        "after validate_* either — the confirmation card already has its own Confirm/Cancel, "
+        "so a 'confirm?' question under it is redundant and will be dropped."
     ),
 )
 async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse:
