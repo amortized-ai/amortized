@@ -35,7 +35,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -66,11 +66,23 @@ class Run:
 
     @property
     def counted_turns(self) -> list[dict[str, Any]]:
-        """Turns up to (and including) the completion boundary."""
+        """Turns up to (and including) the completion boundary.
+
+        Compares real datetimes (not lexicographic strings, which misorder mixed
+        ts formats). If the completion ts excludes every turn, that's a data
+        problem — warn and return nothing rather than silently counting the whole
+        session (which would fold post-completion turns into turns/tokens/cost)."""
         if not self.completion:
             return self.turns
-        cutoff = self.completion.get("ts", "")
-        return [t for t in self.turns if str(t.get("ts", "")) <= cutoff] or self.turns
+        cutoff = _ts_key(self.completion.get("ts"))
+        counted = [t for t in self.turns if _ts_key(t.get("ts")) <= cutoff]
+        if self.turns and not counted:
+            print(
+                f"  ! {self.session_id}: completion ts excludes all turns; "
+                "counting none (check log timestamps)",
+                file=sys.stderr,
+            )
+        return counted
 
     @property
     def tool_calls(self) -> list[dict[str, Any]]:
@@ -158,6 +170,20 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
+def _ts_key(value: Any) -> datetime:
+    """Sortable, comparison-safe key for a record timestamp.
+
+    Normalises to aware-UTC so mixed offset/naive stamps compare without raising,
+    and sends a missing/unparseable stamp to the END (datetime.max) rather than
+    the front, so a malformed ts never silently reorders the run."""
+    dt = _parse_dt(value)
+    if dt is None:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def load_runs(log_dir: Path) -> list[Run]:
     runs: list[Run] = []
     for path in sorted(log_dir.glob("*.jsonl")):
@@ -175,7 +201,7 @@ def load_runs(log_dir: Path) -> list[Run]:
                 run.turns.append(rec)
             elif kind == "completion":
                 run.completion = rec  # last one wins
-        run.turns.sort(key=lambda t: str(t.get("ts", "")))
+        run.turns.sort(key=lambda t: _ts_key(t.get("ts")))
         runs.append(run)
     return runs
 
@@ -204,7 +230,12 @@ def load_checklist(use_case: str) -> dict[str, Any]:
 # Matchers (autonomous scoring)
 # --------------------------------------------------------------------------- #
 
-_ERROR_MARKERS = ('"errors"', "validation_error", "is required", "invalid", "must be")
+# Strong error signals for the NON-JSON fallback only. Deliberately excludes
+# generic phrases ("is required", "invalid", "must be") that appear verbatim in
+# valid field-doc echoes (e.g. a successful validate returning "max_length must be
+# a positive integer"); structured JSON is checked by fields, not substrings.
+_ERROR_MARKERS = ('"errors"', "validation_error", "traceback (most recent call last)")
+_ERROR_STATUS_VALUES = {"error", "errored", "failed", "failure", "rejected"}
 
 # Substrings that identify a base-model name in present_options titles, so the
 # model_choice check recognises a model list even when the question itself does
@@ -223,37 +254,31 @@ _MODEL_NAME_MARKERS = (
 
 
 def _is_ok_output(status: str | None, output: str | None) -> bool:
+    """Whether a tool call's result represents success.
+
+    Keys off STRUCTURED signals: the call-level status, and — when the output
+    parses as JSON — an error-valued `status` field or a truthy top-level
+    `error`/`errors`. Only when the output is not JSON does it fall back to the
+    strong `_ERROR_MARKERS` substrings, so a valid result echoing field docs
+    ("max_length must be a positive integer") is not misread as a failure."""
     if status == "error":
         return False
-    text = (output or "").lower()
-    return not any(marker in text for marker in _ERROR_MARKERS)
+    text = output or ""
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return not any(marker in text.lower() for marker in _ERROR_MARKERS)
+    if isinstance(data, dict):
+        st = data.get("status")
+        if isinstance(st, str) and st.lower() in _ERROR_STATUS_VALUES:
+            return False
+        if data.get("error") or data.get("errors"):
+            return False
+    return True
 
 
 def _calls(run: Run, tool: str) -> list[dict[str, Any]]:
     return [c for c in run.tool_calls if c.get("tool") == tool]
-
-
-def _catalog_names(run: Run) -> set[str]:
-    """The set of valid model identifiers the eval judge may name, taken from the
-    `name` field of list_models / get_eval_endpoint_suggestions outputs (eval
-    workflow: judge model comes from these). Deliberately the `name`, NOT
-    `model_name`: config.judge.model is the `name` (e.g. "gpt-oss"), and using the
-    `model_name` instead (e.g. "openai/gpt-oss-120b") is exactly the mis-naming
-    this guards — a substring test would let it slip, so match `name` exactly."""
-    names: set[str] = set()
-    for tool in ("list_models", "get_eval_endpoint_suggestions"):
-        for c in _calls(run, tool):
-            try:
-                data = json.loads(c.get("output") or "")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if not isinstance(data, dict):
-                continue
-            for key in ("models", "known_endpoints"):
-                for e in data.get(key) or []:
-                    if isinstance(e, dict) and e.get("name"):
-                        names.add(str(e["name"]))
-    return names
 
 
 def _spec_match(call: dict[str, Any], spec: Any) -> bool:
@@ -474,22 +499,6 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         ):
             return "review"
         return "wrong"  # training ran but never offered a model choice
-
-    if mtype == "judge_valid":
-        # The eval judge model must be a real model name from the catalog
-        # (list_models / get_eval_endpoint_suggestions). We score the LAST
-        # validate_eval_job's `judge` — the submitted config — so a run that
-        # mis-names the judge then corrects it (as the reference did:
-        # openai/gpt-oss-120b -> gpt-oss) scores `met`, while one that leaves an
-        # invalid name scores `wrong`. `judge` is promoted at log time, so no
-        # config-input logging is needed.
-        judges = [c.get("judge") for c in _calls(run, "validate_eval_job") if c.get("judge")]
-        if not judges:
-            return "missed"  # no judge recorded (eval never validated / judge unset)
-        valid = _catalog_names(run)
-        if not valid:
-            return "review"  # catalog not captured -> can't decide, defer
-        return "met" if judges[-1] in valid else "wrong"
 
     return "review"
 
