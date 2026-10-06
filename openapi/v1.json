@@ -1980,7 +1980,7 @@
           "agent"
         ],
         "summary": "List Providers",
-        "description": "Provider catalog + connection status from OpenCode, for the Studio settings/model picker.\n\nProxies OpenCode's ``/provider`` ({all, default, connected}). OpenCode merges the\nconfigured API key into the matching provider entry, so only id/name is surfaced per\nprovider \u2014 the key (and every other field) is dropped before it reaches the browser.",
+        "description": "Provider catalog + connection status from OpenCode, for the Studio model picker.\n\nProxies OpenCode's ``/provider`` ({all, default, connected}) and reduces it to what the chat\npicker needs: only the ``connected`` providers (those with credentials \u2014 ``all`` is the entire\nmodels.dev catalog of ~225 providers / thousands of models, far too big to ship), each with its\nchat-usable models (normalized to [{id, name}]). \"Chat-usable\" is judged purely by OpenCode's\ncapability flags (emits text + supports tool calls), so the filter is provider-agnostic and new\nmodels appear automatically. Credentials and all other fields are dropped before the browser.",
         "operationId": "list_providers_agent_provider_get",
         "responses": {
           "200": {

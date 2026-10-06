@@ -14,7 +14,7 @@ from fastapi import APIRouter
 
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
-from amortized.core.model_catalog import enabled_models
+from amortized.core.model_catalog import available_models, enabled_models
 from amortized.models import GatewayModel, ModelsResponse
 
 logger = logging.getLogger("amortized.api.models")
@@ -42,9 +42,17 @@ async def list_models() -> ModelsResponse:
     if gateway_models:
         return ModelsResponse(models=gateway_models, gateway_url=config_mod.settings.gateway_url)
 
-    # Gateway unavailable or empty — fall back to direct providers (dropped-in keys).
+    # Gateway unavailable or empty — fall back to direct providers (dropped-in keys),
+    # pulled live from each provider's /v1/models (filtered to chat models; openai to the
+    # gpt-5/gpt-6 families).
+    pairs, live_ok = await available_models()
+    # Only fall back to the static data-designer catalog when the live pull actually ERRORED
+    # (providers unreachable). An empty-but-healthy result is legitimate (e.g. an OpenAI-only key
+    # with no gpt-5/gpt-6 access) and must stay empty — the static catalog would re-add the very
+    # gpt-4o-class models the dynamic filter is meant to exclude.
+    if not pairs and not live_ok:
+        pairs = enabled_models()
     direct = [
-        GatewayModel(name=model, provider=provider, model_name=model)
-        for provider, model in enabled_models()
+        GatewayModel(name=model, provider=provider, model_name=model) for provider, model in pairs
     ]
     return ModelsResponse(models=direct, gateway_url="")

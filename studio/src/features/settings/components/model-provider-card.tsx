@@ -15,6 +15,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   vertex: "Vertex (ADC)",
+  maas: "MaaS",
 }
 
 function label(provider: string): string {
@@ -25,6 +26,25 @@ function label(provider: string): string {
 // (a multi-line file), not a single-line key string.
 function isAdc(provider: string): boolean {
   return provider === "vertex"
+}
+
+// MaaS is OpenAI-compatible BYOK: its credential is a base URL + an API key (two fields),
+// combined into a {baseURL, apiKey} JSON blob — so, like vertex, it is not a single key string.
+function isOpenAICompat(provider: string): boolean {
+  return provider === "maas"
+}
+
+function isValidUrl(value: string): boolean {
+  const v = value.trim()
+  // HTTPS only: the server rejects http:// MaaS URLs (the key is sent to the endpoint), so reject
+  // them here too rather than let the request fail late with a generic network error.
+  if (!/^https:\/\//i.test(v)) return false
+  try {
+    new URL(v)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function isValidCredential(provider: string, value: string): boolean {
@@ -52,18 +72,27 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
   const remove = useRemoveModelProvider()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState("")
+  const [baseUrlDraft, setBaseUrlDraft] = useState("")
   const [showKey, setShowKey] = useState(false)
 
   const adc = isAdc(providerID)
-  const valid = isValidCredential(providerID, draft)
+  const compat = isOpenAICompat(providerID)
+  const valid = compat
+    ? isValidUrl(baseUrlDraft) && draft.trim().length >= 8
+    : isValidCredential(providerID, draft)
   const showInput = editing || !configured
 
   function handleSave() {
+    // MaaS stores a {baseURL, apiKey} blob (two fields); the others store a single credential string.
+    const credential = compat
+      ? JSON.stringify({ baseURL: baseUrlDraft.trim().replace(/\/+$/, ""), apiKey: draft.trim() })
+      : draft.trim()
     add.mutate(
-      { provider: providerID, key: draft.trim() },
+      { provider: providerID, key: credential },
       {
         onSuccess: () => {
           setDraft("")
+          setBaseUrlDraft("")
           setShowKey(false)
           setEditing(false)
         },
@@ -73,6 +102,7 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
 
   function cancel() {
     setDraft("")
+    setBaseUrlDraft("")
     setShowKey(false)
     setEditing(false)
   }
@@ -160,6 +190,45 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
               {saveButton}
             </div>
           </div>
+        ) : compat ? (
+          <div className="mt-2 flex flex-col gap-2">
+            <Input
+              value={baseUrlDraft}
+              onChange={(e) => setBaseUrlDraft(e.target.value)}
+              placeholder="MaaS base URL, e.g. https://maas.example.com/v1"
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 font-mono text-xs h-8"
+              data-testid={`provider-baseurl-${providerID}`}
+            />
+            <div className="flex items-center gap-2">
+              <Input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={configured ? "Enter a new API key…" : "Paste your MaaS API key…"}
+                type={showKey ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 font-mono text-xs h-8"
+                data-testid={`provider-cred-${providerID}`}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? "Hide key" : "Show key"}
+              >
+                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+              {editing && (
+                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={cancel}>
+                  Cancel
+                </Button>
+              )}
+              {saveButton}
+            </div>
+          </div>
         ) : (
           <div className="mt-2 flex items-center gap-2">
             <Input
@@ -206,7 +275,7 @@ export function ModelProviderCard() {
   // The card only applies to the hybrid gateway deployment.
   if (isLoading || !status?.available) return null
 
-  const supported = status.supported.length > 0 ? status.supported : ["openai", "anthropic", "vertex"]
+  const supported = status.supported.length > 0 ? status.supported : ["openai", "anthropic", "vertex", "maas"]
   const configured = new Set(status.configured)
 
   return (

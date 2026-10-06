@@ -38,8 +38,6 @@ from amortized.jobs.common import set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.eval")
 
-IMAGE = "ghcr.io/amortized-ai/eval:latest"
-
 _ENDPOINT_KEYS = ("endpoint", "endpoint_base", "endpoint_tuned", "judge")
 
 DEFAULT_SERVE_PORT = 8000
@@ -62,10 +60,14 @@ def _endpoint_spec(
     # A base_url that names an enabled provider (e.g. "openai") resolves to that
     # provider's real endpoint + its injected key env-var — the same catalog SDG
     # uses — so a BYOK-stripped judge/endpoint still authenticates with the
-    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...).
+    # forwarded provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...). The
+    # provider_type (openai|anthropic) selects the runner's calling paradigm so the
+    # judge supports exactly what the SDG teacher does (incl. native Anthropic).
+    provider_type = "openai"
     provider = resolve_provider(base_url)
     if provider:
         base_url = provider.get("endpoint", base_url)
+        provider_type = provider.get("provider_type") or "openai"
         if not api_key:
             env_name = provider.get("api_key", env_name)
     if api_key:
@@ -74,6 +76,7 @@ def _endpoint_spec(
         "base_url": base_url.rstrip("/"),
         "model": str(endpoint["model"]),
         "api_key_env": env_name,
+        "provider_type": provider_type,
     }
 
 
@@ -435,6 +438,10 @@ async def build(
     # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
     inject_enabled_provider_keys(env)
 
+    # Eval job image — the tag is configurable (settings.eval_image_tag, default "latest") so a
+    # specific commit can be pinned to test or roll back the eval backend without moving :latest.
+    image = f"{config_mod.settings.image_registry}/eval:{config_mod.settings.eval_image_tag}"
+
     # --- Model under evaluation: embedded serving or external endpoint ---
     has_model_source = bool(
         str(config.get("training_job_id", "")).strip()
@@ -448,8 +455,9 @@ async def build(
             "base_url": f"http://localhost:{extras['port']}/v1",
             "model": extras["served_model_name"],
             "api_key_env": "EVAL_MODEL_API_KEY",
+            # Embedded vLLM is OpenAI-compatible.
+            "provider_type": "openai",
         }
-        image = IMAGE
         # GPU budget like a training job: the pod requests nvidia.com/gpu
         # and the namespace ResourceQuota bounds it.
         resources = Resources(gpus=int(extras.get("gpus", 1)), cpus=4, memory_gb=16)
@@ -481,7 +489,6 @@ async def build(
         model_endpoint = _endpoint_spec(config, model_key, "EVAL_MODEL_API_KEY", env)
         pre_commands = []
         extras = {}
-        image = IMAGE
         resources = Resources(gpus=0, cpus=2, memory_gb=4)
         command = ["python3", "/app/run_eval.py", "--config", "/amortized/config.json"]
 

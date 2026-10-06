@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
+    eval_image_tag: str = Field(
+        "latest",
+        description="Tag for the eval job image (ghcr.io/amortized-ai/eval:<tag>). Pin to a commit "
+        "sha to test or roll back the eval backend without moving :latest.",
+    )
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
     mlflow_tracking_token_file: str = Field(
         "",

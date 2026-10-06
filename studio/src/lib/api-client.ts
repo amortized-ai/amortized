@@ -357,6 +357,7 @@ interface TurnOutcome {
   ok: boolean
   result?: OpenCodeResponse
   status?: number
+  error?: string
 }
 
 /**
@@ -384,7 +385,7 @@ async function pollTurn(sessionId: string, turnId: string): Promise<TurnOutcome>
       await sleep(TURN_POLL_INTERVAL_MS)
       continue
     }
-    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500 }
+    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500, error: data.error as string }
     return { ok: true, result: data.result as OpenCodeResponse }
   }
   return { ok: false, status: 504 }
@@ -444,7 +445,9 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
         return outcome.result as OpenCodeResponse
       }
       status = outcome.status ?? 500
-      lastError = new ApiError(status, "Agent turn failed", null)
+      // Surface the server's mapped provider-error message (shown in the chat Alert) instead of a
+      // generic one; a short string becomes the ApiError detail (see ApiError).
+      lastError = new ApiError(status, "Agent turn failed", outcome.error ?? null)
     } else {
       status = resp.status
       lastError = new ApiError(status, resp.statusText, null)
