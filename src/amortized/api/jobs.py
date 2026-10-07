@@ -171,6 +171,38 @@ async def _validate_training_data(
     return errors
 
 
+async def _validate_model_source(
+    config: dict[str, Any],
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Validate training_job_id when resuming from a finetuned model."""
+    training_job_id = str(config.get("training_job_id", "") or "").strip()
+    if not training_job_id:
+        return []
+
+    errors: list[str] = []
+    repo = Repository(db)
+    parent = await repo.get_job(training_job_id)
+    if parent is None:
+        errors.append(f"training_job_id: job '{training_job_id}' not found")
+    elif parent.get("type") != "training":
+        errors.append(
+            f"training_job_id: job '{training_job_id}' is type"
+            f" '{parent.get('type')}' (must be 'training')"
+        )
+    elif parent.get("status") != "succeeded":
+        errors.append(
+            f"training_job_id: job '{training_job_id}' has status"
+            f" '{parent.get('status')}' (must be 'succeeded')"
+        )
+    elif not parent.get("mlflow_run_id"):
+        errors.append(
+            f"training_job_id: job '{training_job_id}' has no MLflow"
+            " artifacts — the model may not have been uploaded"
+        )
+    return errors
+
+
 def _strip_eval_api_keys(job: Job) -> None:
     """Remove endpoint API keys from a job response before returning it."""
     if not isinstance(job.config, dict):
@@ -335,6 +367,7 @@ async def create_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
+    errors.extend(await _validate_model_source(config, db))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -603,6 +636,7 @@ async def validate_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
+    errors.extend(await _validate_model_source(config, db))
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
