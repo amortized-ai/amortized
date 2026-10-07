@@ -1594,13 +1594,148 @@ async def create_session() -> dict[str, Any]:
     return {"id": session_id}
 
 
+# ---------------------------------------------------------------------------
+# SDG assessor-prompt binding
+# ---------------------------------------------------------------------------
+# The user reviews the assessor/system prompt in a show_prompt preview and approves it;
+# the job must then run with THAT exact prompt. A weaker model can paraphrase it when it
+# writes the SDG config. So whenever a validate_sdg_job confirm card is read, if a prompt
+# was previewed we overwrite the config's assessor prompt with the previewed one — in
+# every place it lives — so the displayed card AND the launched job carry exactly what
+# the user approved (the confirm card stays the final review). Scoped to preview flows:
+# no show_prompt means there is no approved prompt to bind against (knowledge-ingestion
+# and classification generate their prompts without a preview), so the model's prompt is
+# left untouched.
+
+_SHOW_PROMPT_TOOL = "show_prompt"
+_VALIDATE_SDG_TOOL = "validate_sdg_job"
+
+
+def _last_shown_prompt(messages: list[dict[str, Any]]) -> str | None:
+    """The most recent prompt the user was shown via show_prompt in `messages`
+    (chronological) — the one they approved in the show → approve → build flow."""
+    latest: str | None = None
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        for part in msg.get("parts") or []:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "tool"
+                and _tool_name(part) == _SHOW_PROMPT_TOOL
+            ):
+                shown = str(_get_tool_input(part).get("prompt") or "").strip()
+                if shown:
+                    latest = shown
+    return latest
+
+
+def _rewrite_assessor_prompt(config: dict[str, Any], new_prompt: str) -> bool:
+    """Overwrite the assessor system prompt in an SDG config with `new_prompt`, in every
+    place it lives: the output column's `system_prompt` and the SFT processor's `system`
+    message. Mirrors jobs._assessor_prompt's resolution (processor → SFT template →
+    assistant `{{column}}`) so it targets the SAME prompt the confirm card renders, and
+    leaves the input-generator column's own system_prompt alone. Returns True if it
+    rewrote anything."""
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return False
+    by_name = {c.get("name"): c for c in columns if isinstance(c, dict)}
+    rewrote = False
+    for proc in config.get("processors") or []:
+        if not isinstance(proc, dict):
+            continue
+        template = proc.get("template")
+        messages = template.get("messages") if isinstance(template, dict) else None
+        if not isinstance(messages, list):
+            continue
+        target_col: dict[str, Any] | None = None
+        for msg in messages:
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            content = msg.get("content") if isinstance(msg.get("content"), str) else ""
+            ref = re.search(r"\{\{\s*(\w+)\s*\}\}", content or "")
+            if ref:
+                candidate = by_name.get(ref.group(1))
+                if isinstance(candidate, dict) and isinstance(candidate.get("system_prompt"), str):
+                    target_col = candidate
+                break
+        if target_col is None:
+            continue
+        target_col["system_prompt"] = new_prompt
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                msg["content"] = new_prompt
+        rewrote = True
+    return rewrote
+
+
+def _bind_validated_sdg_prompt(data: dict[str, Any], new_prompt: str) -> bool:
+    """Rewrite a ValidatedJobConfig dict ({config, assessor_prompt, ...}) so both the
+    config (what the job runs with) and the shown assessor_prompt carry `new_prompt`."""
+    config = data.get("config")
+    if not isinstance(config, dict) or not _rewrite_assessor_prompt(config, new_prompt):
+        return False
+    data["assessor_prompt"] = new_prompt
+    return True
+
+
+def _bind_validate_part(part: dict[str, Any], new_prompt: str) -> None:
+    """Overwrite the assessor prompt in a validate_sdg_job tool part's OUTPUT (the
+    ValidatedJobConfig the UI reads for the card and the create payload)."""
+    containers: list[tuple[dict[str, Any], str]] = []
+    state = part.get("state")
+    if isinstance(state, dict) and "output" in state:
+        containers.append((state, "output"))
+    if "output" in part:
+        containers.append((part, "output"))
+    for obj, key in containers:
+        raw = obj.get(key)
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(parsed, dict) and _bind_validated_sdg_prompt(parsed, new_prompt):
+                obj[key] = json.dumps(parsed)
+        elif isinstance(raw, dict):
+            _bind_validated_sdg_prompt(raw, new_prompt)
+
+
+def _bind_sdg_prompt_to_approved(messages: list[dict[str, Any]]) -> None:
+    """In-place: if the user was shown a prompt (show_prompt) and these messages carry a
+    validate_sdg_job confirm card, overwrite the card's assessor prompt with the last
+    previewed one. No preview → no-op. See the section header for rationale."""
+    if not isinstance(messages, list):
+        return
+    approved = _last_shown_prompt(messages)
+    if not approved:
+        return
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        for part in msg.get("parts") or []:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "tool"
+                and _tool_name(part) == _VALIDATE_SDG_TOOL
+            ):
+                _bind_validate_part(part, approved)
+
+
 @router.get("/session/{session_id}/message")
 async def get_session_messages(session_id: str) -> Any:
     state = _sessions.get(session_id)
     if not state:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
-    return await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
+    messages = await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
+    try:
+        if isinstance(messages, list):
+            _bind_sdg_prompt_to_approved(messages)
+    except Exception:
+        logger.warning("SDG prompt-bind failed (passing through)", exc_info=True)
+    return messages
 
 
 def _evict_finished_turns(state: SessionState) -> None:
