@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 from typing import Any
 
@@ -10,7 +11,7 @@ import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.mlflow_client import MLflowClient
 from amortized.jobs.base import JobBuildResult
-from amortized.jobs.common import set_mlflow_run_tag
+from amortized.jobs.common import resolve_training_model, set_mlflow_run_tag
 
 logger = logging.getLogger("amortized.jobs.training")
 
@@ -39,6 +40,7 @@ _TRAINING_HUB_SKIP_KEYS = {
     "dataset_job_id",
     "topic",
     "model_job_id",
+    "training_job_id",
 }
 
 
@@ -103,6 +105,23 @@ async def build(
     algorithm = config.get("algorithm", "sft")
     algorithm = algo_aliases.get(algorithm, algorithm)
 
+    model_pre_commands: list[str] = []
+    if config.get("training_job_id"):
+        _, model_path, model_pre_commands = await resolve_training_model(config)
+        if model_path.startswith("$"):
+            resolved_path = "/amortized/work/served_model/checkpoint"
+            model_pre_commands.append(
+                "mkdir -p /amortized/work/served_model"
+                f' && ln -sfn "{model_path}" {resolved_path}'
+            )
+            model_path = resolved_path
+        config = dict(config)
+        config["model_name_or_path"] = model_path
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+        for asset in ("merge_lora.py", "patch_model_config.py"):
+            with open(os.path.join(assets_dir, asset)) as f:
+                config_files[asset] = f.read()
+
     config_files["config.yaml"] = _training_hub_config_yaml(algorithm, config)
     thub_subcommand = algorithm.replace("_", "-")
     cmd = ["thub", thub_subcommand, "--config", "/amortized/config.yaml"]
@@ -115,6 +134,7 @@ async def build(
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
+        pre_commands=model_pre_commands,
         post_commands=[post_cmd],
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
         image=config_mod.job_image("training"),
