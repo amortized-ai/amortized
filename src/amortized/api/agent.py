@@ -1036,19 +1036,21 @@ async def _no_data_advisory(
     state: SessionState, target: str, context: str, user_text: str
 ) -> str | None:
     """Advisory to prepend to a training/eval handoff when THIS conversation has no
-    dataset to work from yet.
+    dataset selected yet — directing the subagent to let the user CHOOSE between an
+    existing dataset and a fresh one, rather than silently defaulting to generation.
 
     The orchestrator routes to training/eval off the user's verb ("train"), but
-    those jobs can't run without data. Rather than let the subagent spin up and
-    discover the gap through tool exploration (the wasted hop seen in GLM runs),
-    the proxy states the fact at the delegation boundary — the earliest point the
+    those jobs can't run without data, and the user must get to decide how that data
+    is provided. Rather than let the subagent spin up and jump straight to SDG, the
+    proxy injects the fork at the delegation boundary — the earliest point the
     backend can act, since the orchestrator's choice is model-internal.
 
     Fail-safe: fires only when none of the conversation-scoped dataset signals hold
-    (see _conversation_has_dataset). Any uncertainty (a signal present, or a fetch
-    error) returns None, leaving the handoff unchanged — so fresh-generate,
-    train/eval-on-existing, upload, and split flows are all untouched. It never
-    blocks the delegation; it just states the fact.
+    (see _conversation_has_dataset) — i.e. the user has NOT already chosen (no SDG in
+    flight, no existing dataset pointed to). Any uncertainty (a signal present, or a
+    fetch error) returns None, leaving the handoff unchanged — so once a choice is
+    made the fork isn't re-asked, and upload/split/train-on-existing flows are
+    untouched. It never blocks the delegation; it states the fork to present.
     """
     if target not in _DATA_DEPENDENT_TARGETS:
         return None
@@ -1060,12 +1062,12 @@ async def _no_data_advisory(
     verb = _DATA_DEPENDENT_TARGETS[target]
     return (
         "[DATA AVAILABILITY]\n"
-        "There is no dataset in this conversation yet — none was generated (SDG),"
-        " uploaded, or pointed to. A"
-        f" {target} job needs data to {verb}, so the first step is to obtain it:"
-        " generate a fresh dataset (delegate to SDG), or use an existing dataset if"
-        " the user names one. That is expected here — proceed with getting the"
-        f" dataset; just don't create or confirm the {target} job until one exists."
+        "No dataset has been selected in this conversation yet. Before setting up the"
+        f" {target} job, let the user choose how to provide the data — present two"
+        " options with present_options: (1) use an existing dataset (help them pick"
+        " one), or (2) generate a fresh dataset with SDG. Do NOT assume: a"
+        f" {target} job needs data to {verb}, so don't create or confirm it, and"
+        " don't start generating, until the user has chosen and the dataset exists."
     )
 
 
