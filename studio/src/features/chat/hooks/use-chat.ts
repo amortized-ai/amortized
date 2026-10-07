@@ -41,6 +41,7 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
     selectedOptionValue: m.selectedOptionValue,
     phase: m.phase,
     streamStartedAt: m.streamStartedAt,
+    model: m.model,
   }
 }
 
@@ -580,7 +581,14 @@ export function useChat() {
           const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
           logger.info("sending to OpenCode", { conversationId: convId })
           const { chatModelSelection } = useSettingsStore.getState()
-          const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+          // Pin the model per conversation: use the conversation's own model if set,
+          // else the global default. Stamp the assistant message (so its label is
+          // correct immediately, even mid-stream).
+          const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+          const modelToSend = conv?.model ?? chatModelSelection
+          useChatStore.getState().updateMessageFields(convId, assistantId, { model: modelToSend })
+          if (!conv?.model) useChatStore.getState().setConversationModel(convId, modelToSend)
+          const response = await sendOpenCodeMessage(convId, content, modelToSend)
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
           logger.info("OpenCode response received", {

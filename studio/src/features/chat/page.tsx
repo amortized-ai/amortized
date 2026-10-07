@@ -98,6 +98,7 @@ export default function ChatPage() {
     deleteConversation,
     replaceAllConversations,
     updateConversationTitle,
+    setConversationModel,
     _hasHydrated,
   } = useChatStore()
 
@@ -173,6 +174,19 @@ export default function ChatPage() {
       setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
     }
   }, [usableProviders, chatModelSelection, setChatModelSelection])
+
+  // The header picker reflects the ACTIVE conversation's model (what its next send
+  // uses), falling back to the global default for new/legacy conversations. Changing
+  // it updates this conversation going forward AND the global default for new chats.
+  const activeConversation = conversations.find((c) => c.id === currentConversationId)
+  const activeModelSelection = activeConversation?.model ?? chatModelSelection
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (currentConversationId) setConversationModel(currentConversationId, value)
+      setChatModelSelection(value)
+    },
+    [currentConversationId, setConversationModel, setChatModelSelection],
+  )
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
@@ -280,7 +294,7 @@ export default function ChatPage() {
               <Bot className="h-3 w-3 text-white" />
             </div>
             <span className="text-sm font-semibold">Morty</span>
-            <Select value={chatModelSelection} onValueChange={setChatModelSelection}>
+            <Select value={activeModelSelection} onValueChange={handleModelChange}>
               <SelectTrigger className="h-7 w-[220px] text-xs" data-testid="chat-model-select-page">
                 <SelectValue />
               </SelectTrigger>
