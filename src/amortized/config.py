@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     def resolved_default_backend(self) -> str:
         return self.default_backend or self.compute_backend or "local"
 
+    @property
+    def resolved_training_image_tag(self) -> str:
+        """Training image tag, never empty. An empty override must not fall through to
+        job_image_tag (a CI commit sha that has no matching upstream training image)."""
+        return self.training_image_tag or "latest"
+
     model_config = {
         "env_prefix": "AMORTIZED_",
         "extra": "ignore",

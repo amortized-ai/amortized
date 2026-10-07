@@ -419,7 +419,7 @@ async def _build_classification_eval(
         resources=Resources(gpus=int(config.get("nproc_per_node", 0)), cpus=4, memory_gb=8),
         # Classification eval runs in the training image (sentence-transformers) — pin it with
         # training_image_tag (upstream lifecycle), not job_image_tag.
-        image=config_mod.job_image("training", config_mod.settings.training_image_tag),
+        image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=resolved_config,
     )
 

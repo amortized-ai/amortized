@@ -1108,3 +1108,19 @@ class TestJobImageTag:
             {},
         )
         assert clf.image == f"{reg}/training:0.1.0"
+
+    @pytest.mark.asyncio
+    async def test_empty_training_tag_does_not_fall_back_to_job_tag(self, monkeypatch) -> None:
+        import amortized.config as config_mod
+        from amortized.jobs import training as training_builder
+
+        reg = "ghcr.io/amortized-ai"
+        # An empty training override must resolve to "latest", not leak the pinned CI sha onto the
+        # training image (which has no matching tag).
+        monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
+        monkeypatch.setattr(config_mod.settings, "training_image_tag", "")
+
+        train = await training_builder.build(
+            {"id": "t1", "type": "training"}, {"algorithm": "osft"}, {}
+        )
+        assert train.image == f"{reg}/training:latest"
