@@ -654,24 +654,6 @@ def _coerce_config(raw: Any) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-async def _parent_sdg_job(
-    repo: Repository, training_job_id: str
-) -> dict[str, Any] | None:
-    """The SDG job that produced a trained model's training data, or None.
-
-    None when the chain can't be resolved from job rows: the training job is
-    absent, it wasn't chained from an SDG job (trained from a split/upload), or
-    that parent SDG job is gone. Callers that must tell those cases apart (to
-    surface distinct errors) resolve the chain themselves."""
-    training = await repo.get_job(training_job_id)
-    if not training:
-        return None
-    train_sdg_id = str(training.get("parent_job_id") or "")
-    if not train_sdg_id:
-        return None
-    return await repo.get_job(train_sdg_id)
-
-
 @router.post(
     "/sdg/clone-for-eval",
     response_model=ClonedSdgConfig,
@@ -992,13 +974,16 @@ async def _training_sdg_mirror_warning(
         return []  # not an eval-for-trained-model chained from an SDG job
 
     repo = Repository(db)
-    train_sdg = await _parent_sdg_job(repo, training_job_id)
-    if not train_sdg:
-        return []  # training data not chained from a resolvable SDG job
-    train_sdg_id = str(train_sdg.get("id") or "")
+    training = await repo.get_job(training_job_id)
+    if not training:
+        return []
+    train_sdg_id = str(training.get("parent_job_id") or "")
+    if not train_sdg_id:
+        return []  # training data not chained from an SDG job -> nothing to mirror
 
+    train_sdg = await repo.get_job(train_sdg_id)
     eval_sdg = await repo.get_job(str(parent_job_id))
-    if not eval_sdg:
+    if not train_sdg or not eval_sdg:
         return []
 
     train_sig = _sdg_signature(train_sdg.get("config"))
