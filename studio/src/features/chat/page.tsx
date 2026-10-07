@@ -36,6 +36,7 @@ function ChatContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     chatState,
     error,
     thinkingStep,
@@ -78,6 +79,11 @@ function ChatContent() {
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
         disabled={isStreaming}
+        placeholder={
+          jobInFlight
+            ? "A job is running — Morty will continue when it finishes…"
+            : undefined
+        }
       />
       {chatState === "error" && (
         <Alert variant="destructive">

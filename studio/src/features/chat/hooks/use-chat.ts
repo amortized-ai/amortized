@@ -570,7 +570,18 @@ export function useChat() {
       const convId = existingConvId ?? `conv-${Date.now()}`
       const isNewConversation = !existingConvId
 
-      if (chatState === "streaming" || _sendLock.has(convId)) return
+      // Sequential model: while a job is running (its monitor card is progressing),
+      // block all new user input — typed messages and option picks (which route
+      // through here) alike. The input is visually disabled too, but guard the logic
+      // so no raced/programmatic send reaches Morty mid-job. The job_complete
+      // continuation uses its own path and stays exempt, so it can clear the lock.
+      if (
+        chatState === "streaming" ||
+        _sendLock.has(convId) ||
+        useChatStore.getState().getJobInFlight(convId)
+      ) {
+        return
+      }
       _sendLock.add(convId)
 
       const assistantId = generateId()
@@ -930,6 +941,7 @@ export function useChat() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     error,
     chatState,
     currentToolCall,

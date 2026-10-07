@@ -22,6 +22,7 @@ function ChatPanelContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     thinkingStep,
     confirmAction,
     rejectAction,
@@ -76,7 +77,15 @@ function ChatPanelContent() {
         onRejectAction={rejectAction}
         onJobComplete={notifyJobComplete}
       />
-      <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
+      <ChatInput
+        onSend={handleOptionSelect}
+        disabled={isStreaming}
+        placeholder={
+          jobInFlight
+            ? "A job is running — Morty will continue when it finishes…"
+            : undefined
+        }
+      />
     </>
   )
 }
