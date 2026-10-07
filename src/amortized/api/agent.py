@@ -82,6 +82,10 @@ class SessionState:
     # control returns to the delegating subagent, not the orchestrator.
     subagent_stack: list[tuple[str, str]] = field(default_factory=list)
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # When this conversation's proxy state was created. A job whose DB created_at
+    # predates this is from an EARLIER conversation, so reporting it as "just
+    # generated" is undisclosed reuse — see _apply_job_claim_gate.
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     turns: dict[str, TurnState] = field(default_factory=dict)
     turn_order: list[str] = field(default_factory=list)
     # opencode assistant-message ids already attributed to a monitor turn record,
@@ -855,6 +859,239 @@ async def _apply_provenance_gate(
 
 
 # ---------------------------------------------------------------------------
+# Job-claim verification gate
+# ---------------------------------------------------------------------------
+#
+# The provenance gate above checks that an id the model states EXISTS in the
+# conversation. This gate goes one level deeper: when the model reports a job to
+# the user, it checks that the job's real DB record MATCHES the claim. Two general
+# checks (not keyed to one symptom):
+#   A. state truth    — "finished/ready/generated" => DB status must be succeeded.
+#   B. flow attribution — "just ran/generated" for a job created in an EARLIER
+#      conversation, with no matching validate_*_job this session and no reuse
+#      disclosure => undisclosed stale reuse (caught the 200-requested /
+#      500-record-stale-job substitution).
+# Same remediation shape as the provenance gate: force-correct once, else append a
+# visible caveat rather than discard. Reuse is NOT blocked — only forced to be
+# disclosed — so legitimate reuse (e.g. the eval flow) keeps working.
+
+# These lexicons only decide WHETHER a claim is being made; the verdict always
+# comes from the DB record, never from the text.
+_DONE_CLAIM_RE = re.compile(
+    r"\b(finished|complete|completed|ready|done|generated|produced|succeeded|trained)\b",
+    re.I,
+)
+_FRESH_RUN_RE = re.compile(
+    r"(now running|is running|are running|kicked off|just (ran|generated|finished|trained)"
+    r"|run finished|generation (job|is|finished|complete)|is (generating|being generated)"
+    r"|\bgenerated\b|\bproducing\b|spinning up)",
+    re.I,
+)
+_REUSE_DISCLOSED_RE = re.compile(
+    r"(reus|existing|already (generated|have|exists|ran)|previous|earlier"
+    r"|from (a |an )?(prior|earlier|previous)|from before)",
+    re.I,
+)
+_VALIDATE_TOOL_BY_TYPE = {
+    "sdg": "validate_sdg_job",
+    "training": "validate_training_job",
+    "eval": "validate_eval_job",
+}
+
+
+def _as_utc(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def _sentences_with(text: str, token: str) -> str:
+    """The sentence-ish chunks of `text` that mention `token`, so a claim about one
+    job isn't attributed to another mentioned in the same reply."""
+    tl = token.lower()
+    hits = [c for c in re.split(r"[\n.!?;]+", text) if tl in c.lower()]
+    return " ".join(hits)
+
+
+async def _fetch_job_by_token(
+    token: str, job_cache: dict[str, dict[str, Any] | None] | None = None
+) -> dict[str, Any] | None:
+    """The DB job a stated id-token resolves to (by id prefix), or None. Best-effort
+    — any DB issue returns None so the gate simply doesn't fire."""
+    if job_cache is not None and token in job_cache:
+        return job_cache[token]
+    job: dict[str, Any] | None = None
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            job = await Repository(conn).find_job_by_id_prefix(token)
+    except Exception:
+        job = None
+    if job_cache is not None:
+        job_cache[token] = job
+    return job
+
+
+async def _session_has_validate(
+    state: SessionState,
+    job_type: str,
+    cache: dict[str, list[dict[str, Any]]] | None,
+) -> bool:
+    """Whether a validate_*_job of this type was called anywhere in the conversation
+    so far — the structural signal that a fresh job really was submitted this session."""
+    tool = _VALIDATE_TOOL_BY_TYPE.get(job_type)
+    if not tool:
+        return False
+    sessions = {state.orchestrator_id}
+    if state.subagent_id:
+        sessions.add(state.subagent_id)
+    sessions.update(state.completed_subagents.values())
+    sessions.update(sid for _t, sid in state.subagent_stack)
+    for sid in sessions:
+        for msg in await _fetch_all_messages(sid, cache):
+            for part in msg.get("parts") or []:
+                if part.get("type") == "tool" and _tool_name(part) == tool:
+                    return True
+    return False
+
+
+async def _job_claim_violations(
+    state: SessionState,
+    result: dict[str, Any],
+    cache: dict[str, list[dict[str, Any]]] | None,
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Job claims in the reply that the job's real DB record contradicts."""
+    text = _result_text(result)
+    tokens = _extract_id_candidates(text)
+    if not tokens:
+        return []
+    violations: list[dict[str, Any]] = []
+    for token in sorted(tokens):
+        job = await _fetch_job_by_token(token, job_cache)
+        if not job:
+            continue  # not a real job (or ambiguous) — provenance gate covers fabrication
+        window = _sentences_with(text, token)
+        if not window:
+            continue
+        status = str(job.get("status") or "")
+        jtype = str(job.get("type") or "")
+        num = job.get("config", {}).get("num_records") if isinstance(job.get("config"), dict) else None
+        if _DONE_CLAIM_RE.search(window) and status != "succeeded":
+            violations.append(
+                {"token": token, "kind": "state", "status": status, "type": jtype, "num": num}
+            )
+            continue  # a wrong-status job is reported once; don't also flag reuse
+        if (
+            _FRESH_RUN_RE.search(window)
+            and not _REUSE_DISCLOSED_RE.search(window)
+            and not await _session_has_validate(state, jtype, cache)
+        ):
+            created = _as_utc(job.get("created_at"))
+            session_start = _as_utc(state.created_at)
+            if created and session_start and created < session_start:
+                violations.append(
+                    {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
+                )
+    return violations
+
+
+def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
+    lines = [
+        "[JOB-CLAIM CHECK — internal system verification, not from the user]",
+        "Your reply described job(s) in a way the platform's records contradict:",
+    ]
+    for v in violations:
+        if v["kind"] == "state":
+            lines.append(
+                f"- You presented job {v['token']} as finished/ready, but its real"
+                f" status is '{v['status']}'. Do NOT claim completion until it is"
+                " actually succeeded — state the real status or wait for it."
+            )
+        else:
+            size = f" ({v['num']} records)" if v["num"] is not None else ""
+            lines.append(
+                f"- You implied job {v['token']} was generated/started in this"
+                f" conversation, but it is an EXISTING {v['type']} dataset{size}"
+                " created in an earlier conversation and no matching job was"
+                " submitted this session. Either submit a fresh job for the user's"
+                f" request, or explicitly tell the user you are REUSING existing job"
+                f" {v['token']}{size} so they can confirm it matches what they asked for."
+            )
+    lines.append("Re-send your reply with the accurate status / reuse disclosure.")
+    return "\n".join(lines)
+
+
+def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for v in violations:
+        if v["kind"] == "state":
+            parts.append(f"job {v['token']} is '{v['status']}', not finished")
+        else:
+            size = f" ({v['num']} records)" if v["num"] is not None else ""
+            parts.append(
+                f"job {v['token']} is an existing dataset{size} from an earlier"
+                " conversation, not a fresh run"
+            )
+    return (
+        "\n\n⚠️ Platform records don't match what I said above: "
+        + "; ".join(parts)
+        + ". Treat these as unconfirmed."
+    )
+
+
+async def _apply_job_claim_gate(
+    state: SessionState,
+    result: dict[str, Any],
+    body: MessageRequest,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Verify + force-correct false job-completion / stale-reuse claims."""
+    try:
+        job_cache: dict[str, dict[str, Any] | None] = {}
+        violations = await _job_claim_violations(state, result, cache, job_cache)
+        if not violations:
+            return result
+
+        active_id = state.subagent_id or state.orchestrator_id
+        agent = state.subagent_target if state.subagent_id else "morty"
+        current = result
+        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
+            logger.warning(
+                "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
+                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+            )
+            current = await _proxy_send_message(
+                active_id, _job_claim_correction(violations), agent=agent, model=body.model
+            )
+            if cache is not None:
+                cache.pop(active_id, None)
+            violations = await _job_claim_violations(state, current, cache, job_cache)
+            if not violations:
+                return current
+
+        logger.warning(
+            "Job-claim gate: still contradicted after %d correction(s) %s session=%s",
+            MAX_PROVENANCE_RETRIES, violations, active_id,
+        )
+        parts = list(current.get("parts") or [])
+        parts.append({"type": "text", "text": _job_claim_caveat(violations)})
+        return {**current, "parts": parts}
+    except Exception:
+        logger.warning("Job-claim gate failed (passing through)", exc_info=True)
+        return result
+
+
+# ---------------------------------------------------------------------------
 # Upstream helpers
 # ---------------------------------------------------------------------------
 
@@ -1124,6 +1361,7 @@ async def _run_turn(
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
             result = await _apply_provenance_gate(state, result, body, msg_cache)
+            result = await _apply_job_claim_gate(state, result, body, msg_cache)
             # Backfill the UI phase uniformly for every path (subagent completion,
             # subagent→subagent delegation, orchestrator) — not just the one return
             # inside the subagent handler — so the progress bar never strands on a
