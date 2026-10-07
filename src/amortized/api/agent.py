@@ -898,6 +898,35 @@ _VALIDATE_TOOL_BY_TYPE = {
     "eval": "validate_eval_job",
 }
 
+# Check C — a present-tense assertion that a job IS running / was just submitted,
+# with no job id to point to. Kept separate from _FRESH_RUN_RE (which also matches
+# past-tense "finished") and excludes future/conditional phrasing so "once it runs"
+# / "we'll train next" don't trip it.
+_INPROGRESS_RE = re.compile(
+    r"(is|are|'s) (now |currently )?(running|generating|being generated|in progress|underway)"
+    r"|(just )?(submitted|kicked off|spun up|spinning up|started|launched|queued)\b"
+    r"|job is now",
+    re.I,
+)
+_FUTURE_RE = re.compile(
+    r"\b(once|when|after|will|would|as soon as|going to|about to|next we|then we|let'?s)\b",
+    re.I,
+)
+_TYPE_HINT_RE = [
+    ("sdg", re.compile(r"\b(data[- ]?gen|synthetic|sdg|dataset|examples|records|generation)\b", re.I)),
+    ("training", re.compile(r"\b(train|fine[- ]?tun|osft|sft)\b", re.I)),
+    ("eval", re.compile(r"\b(eval|scoring run|judge)\b", re.I)),
+]
+
+
+def _infer_job_type(text: str) -> str:
+    """Best-effort job type from a claim's wording, "" when unclear (then any
+    validate counts)."""
+    for jtype, pat in _TYPE_HINT_RE:
+        if pat.search(text):
+            return jtype
+    return ""
+
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -946,11 +975,11 @@ async def _session_has_validate(
     job_type: str,
     cache: dict[str, list[dict[str, Any]]] | None,
 ) -> bool:
-    """Whether a validate_*_job of this type was called anywhere in the conversation
-    so far — the structural signal that a fresh job really was submitted this session."""
+    """Whether a validate_*_job was called anywhere in the conversation so far — the
+    structural signal that a fresh job really was set up this session. Scoped to the
+    type's validate tool when known; an empty/unknown type matches ANY validate."""
     tool = _VALIDATE_TOOL_BY_TYPE.get(job_type)
-    if not tool:
-        return False
+    wanted = {tool} if tool else set(_VALIDATE_TOOL_BY_TYPE.values())
     sessions = {state.orchestrator_id}
     if state.subagent_id:
         sessions.add(state.subagent_id)
@@ -959,7 +988,7 @@ async def _session_has_validate(
     for sid in sessions:
         for msg in await _fetch_all_messages(sid, cache):
             for part in msg.get("parts") or []:
-                if part.get("type") == "tool" and _tool_name(part) == tool:
+                if part.get("type") == "tool" and _tool_name(part) in wanted:
                     return True
     return False
 
@@ -972,10 +1001,10 @@ async def _job_claim_violations(
 ) -> list[dict[str, Any]]:
     """Job claims in the reply that the job's real DB record contradicts."""
     text = _result_text(result)
-    tokens = _extract_id_candidates(text)
-    if not tokens:
+    if not text.strip():
         return []
     violations: list[dict[str, Any]] = []
+    tokens = _extract_id_candidates(text)
     for token in sorted(tokens):
         job = await _fetch_job_by_token(token, job_cache)
         if not job:
@@ -1003,7 +1032,38 @@ async def _job_claim_violations(
                 violations.append(
                     {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
                 )
+    # Check C — a present-tense "a job is running / was just submitted" claim that
+    # names no job id, with nothing actually set up this conversation. Only when the
+    # reply cites no id at all; a named id is handled by A/B above or the provenance
+    # gate, so this never double-fires with them.
+    if not tokens:
+        jtype = await _unbacked_inprogress_claim(state, text, cache)
+        if jtype is not None:
+            violations.append(
+                {"token": None, "kind": "unbacked", "status": "", "type": jtype, "num": None}
+            )
     return violations
+
+
+async def _unbacked_inprogress_claim(
+    state: SessionState,
+    text: str,
+    cache: dict[str, list[dict[str, Any]]] | None,
+) -> str | None:
+    """The inferred job type ("" if unclear) when the reply asserts a job is running
+    / was just submitted but no validate_*_job happened this conversation and reuse
+    isn't disclosed; None when there's no such unbacked claim."""
+    claim = " ".join(
+        s
+        for s in re.split(r"[\n.!?;]+", text)
+        if _INPROGRESS_RE.search(s) and not _FUTURE_RE.search(s)
+    )
+    if not claim or _REUSE_DISCLOSED_RE.search(claim):
+        return None
+    jtype = _infer_job_type(claim)
+    if await _session_has_validate(state, jtype, cache):
+        return None
+    return jtype
 
 
 def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
@@ -1017,6 +1077,16 @@ def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
                 f"- You presented job {v['token']} as finished/ready, but its real"
                 f" status is '{v['status']}'. Do NOT claim completion until it is"
                 " actually succeeded — state the real status or wait for it."
+            )
+        elif v["kind"] == "unbacked":
+            kind = f"{v['type']} " if v["type"] else ""
+            lines.append(
+                f"- You told the user a {kind}job is running / was just submitted, but"
+                " NO job has actually been submitted in this conversation (no"
+                " validate_*_job happened and there is no job id to point to). Do NOT"
+                " report a job as running before one exists. If you have not submitted"
+                " it yet, say what you are about to do and call the validate_*_job"
+                " tool (or ask the user to confirm) — do not claim it is already running."
             )
         else:
             size = f" ({v['num']} records)" if v["num"] is not None else ""
@@ -1037,6 +1107,11 @@ def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
     for v in violations:
         if v["kind"] == "state":
             parts.append(f"job {v['token']} is '{v['status']}', not finished")
+        elif v["kind"] == "unbacked":
+            parts.append(
+                "no job has actually been submitted in this conversation yet, so"
+                " nothing is running"
+            )
         else:
             size = f" ({v['num']} records)" if v["num"] is not None else ""
             parts.append(

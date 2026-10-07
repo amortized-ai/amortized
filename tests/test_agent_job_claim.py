@@ -173,6 +173,72 @@ class TestRemediation:
         assert out is result  # untouched; provenance gate owns fabrication
 
 
+class TestUnbackedInProgress:
+    def test_unbacked_running_claim_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The earlier-gap case: "the data generation job is now running" with no id
+        # and nothing submitted this conversation.
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(
+            monkeypatch, {}, has_validate=False, reply="Please confirm the SDG config to proceed."
+        )
+        out = _run(
+            agent._apply_job_claim_gate(
+                state, _text_result("The data generation job is now running."), _body()
+            )
+        )
+        assert len(sent) == 1
+        assert "NO job has actually been submitted" in sent[0]
+        assert "confirm the SDG config" in agent._result_text(out)
+
+    def test_validate_present_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {}, has_validate=True)
+        result = _text_result("The data generation job is now running.")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
+        assert sent == []  # a job really was set up this conversation
+        assert out is result
+
+    def test_future_tense_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {}, has_validate=False)
+        result = _text_result("Once the data generation job is running, we'll fine-tune.")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
+        assert sent == []  # conditional/future, not a present-tense claim
+        assert out is result
+
+    def test_reuse_disclosed_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {}, has_validate=False)
+        result = _text_result("Reusing the existing dataset — it is running on the prior data.")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
+        assert sent == []  # reuse disclosed
+        assert out is result
+
+    def test_persistent_unbacked_gets_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(
+            monkeypatch, {}, has_validate=False, reply="The training job is now running."
+        )
+        out = _run(
+            agent._apply_job_claim_gate(
+                state, _text_result("The training job is now running."), _body()
+            )
+        )
+        assert len(sent) == 1
+        assert "nothing is running" in agent._result_text(out)
+
+    def test_tokened_reply_defers_to_ab(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A named, legit job created this session — Check C must NOT fire (an id is
+        # present, so A/B own it; here nothing is wrong).
+        state = agent.SessionState(orchestrator_id="orch")
+        job = _job(status="running", created_at=datetime.now(UTC) + timedelta(seconds=5))
+        sent = _patch(monkeypatch, {"abcd1234": job}, has_validate=True)
+        result = _text_result("Job abcd1234 is now running.")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
+        assert sent == []
+        assert out is result
+
+
 class TestHelpers:
     def test_sentences_with_isolates_the_mention(self) -> None:
         text = "Job aaaa1111 finished. Job bbbb2222 is still running."
@@ -183,3 +249,9 @@ class TestHelpers:
         assert agent._as_utc(datetime(2026, 1, 1)).tzinfo is UTC
         assert agent._as_utc("2026-01-01T00:00:00").tzinfo is UTC
         assert agent._as_utc(None) is None
+
+    def test_infer_job_type(self) -> None:
+        assert agent._infer_job_type("the data generation job") == "sdg"
+        assert agent._infer_job_type("fine-tuning is underway") == "training"
+        assert agent._infer_job_type("the eval run") == "eval"
+        assert agent._infer_job_type("the job is running") == ""
