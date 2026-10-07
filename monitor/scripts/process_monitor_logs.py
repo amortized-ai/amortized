@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -277,6 +276,27 @@ def _is_ok_output(status: str | None, output: str | None) -> bool:
     return True
 
 
+def _has_numeric_score(data: Any) -> bool:
+    """Whether a parsed eval-results payload holds at least one real numeric score
+    (int/float, not bool/None) inside a ``scores`` object.
+
+    Searched recursively, since get_eval_results nests scores under ``results``
+    (``{"results": {"scores": {criterion: number}}}``) and the shape may vary. A bare
+    number elsewhere in the payload (e.g. a config value) does NOT count — only values
+    inside a ``scores`` dict do — and a null score ("judge scored nothing") is ignored.
+    """
+    if isinstance(data, list):
+        return any(_has_numeric_score(item) for item in data)
+    if isinstance(data, dict):
+        scores = data.get("scores")
+        if isinstance(scores, dict) and any(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in scores.values()
+        ):
+            return True
+        return any(_has_numeric_score(v) for v in data.values())
+    return False
+
+
 def _calls(run: Run, tool: str) -> list[dict[str, Any]]:
     return [c for c in run.tool_calls if c.get("tool") == tool]
 
@@ -407,10 +427,13 @@ def score_auto(run: Run, match: dict[str, Any]) -> str:
         if not calls:
             return "missed"
         for c in calls:
-            # output is truncated, so match the `"scores": { ... }` block
-            # non-greedily up to its closing brace or the truncation edge.
-            m = re.search(r'"scores"\s*:\s*\{(.*?)(?:\}|$)', c.get("output") or "", re.S)
-            if m and re.search(r":\s*-?\d+(?:\.\d+)?", m.group(1)):
+            # The log keeps full tool output, so parse it and inspect `scores`
+            # structurally rather than scraping the JSON text with a regex.
+            try:
+                data = json.loads(c.get("output") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue  # unparseable output — can't confirm a score
+            if _has_numeric_score(data):
                 return "met"  # at least one criterion has a real numeric score
         return "wrong"
 
