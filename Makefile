@@ -46,9 +46,12 @@ prompt: ## Generate k8s configs from agents directory
 	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
 	@cp $(AGENTS_DIR)/orchestrator/identity.md k8s/base/morty-identity.md
 	@cp $(AGENTS_DIR)/orchestrator/workflow.md k8s/base/morty-workflow.md
-	@cp $(AGENTS_DIR)/sdg/workflow.md k8s/base/morty-sdg-workflow.md
-	@cp $(AGENTS_DIR)/training/workflow.md k8s/base/morty-training-workflow.md
-	@cp $(AGENTS_DIR)/eval/workflow.md k8s/base/morty-eval-workflow.md
+	@# Subagents get the shared turn-taking contract + frontmatter (mode/permission)
+	@# prepended, so they run as interactive user-facing agents like the primary —
+	@# not as default/completion-framed agents that simulate the user's replies.
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/sdg/workflow.md > k8s/base/morty-sdg-workflow.md
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/training/workflow.md > k8s/base/morty-training-workflow.md
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/eval/workflow.md > k8s/base/morty-eval-workflow.md
 	@rm -rf $(K8S_SKILLS)
 	@for agent in sdg training; do \
 		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
@@ -65,9 +68,9 @@ prompt: ## Generate k8s configs from agents directory
 	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > $(HELM_FILES)/morty-config/morty.md
 	@cp $(AGENTS_DIR)/orchestrator/identity.md $(HELM_FILES)/morty-config/morty-identity.md
 	@cp $(AGENTS_DIR)/orchestrator/workflow.md $(HELM_FILES)/morty-config/morty-workflow.md
-	@cp $(AGENTS_DIR)/sdg/workflow.md $(HELM_FILES)/morty-config/morty-sdg-workflow.md
-	@cp $(AGENTS_DIR)/training/workflow.md $(HELM_FILES)/morty-config/morty-training-workflow.md
-	@cp $(AGENTS_DIR)/eval/workflow.md $(HELM_FILES)/morty-config/morty-eval-workflow.md
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/sdg/workflow.md > $(HELM_FILES)/morty-config/morty-sdg-workflow.md
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/training/workflow.md > $(HELM_FILES)/morty-config/morty-training-workflow.md
+	@cat $(AGENTS_DIR)/subagent-contract.md $(AGENTS_DIR)/eval/workflow.md > $(HELM_FILES)/morty-config/morty-eval-workflow.md
 	@for agent in sdg training; do \
 		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
 			mkdir -p $(HELM_FILES)/morty-skills/$$agent; \
