@@ -7,6 +7,10 @@ metadata:
     app: amortized
     component: opencode
 data:
+  # This is the KIND-path opencode config. Its PROD-path twin is the baked
+  # containers/morty/opencode.json (strict JSON, rewritten per-user in-sandbox by
+  # studio-gateway provision.js). Keep the provider.glm / model blocks in sync
+  # across both copies.
   .opencode.json: |
     {
       "$schema": "https://opencode.ai/config.json",

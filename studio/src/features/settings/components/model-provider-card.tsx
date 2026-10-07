@@ -11,6 +11,8 @@ import {
   useRemoveModelProvider,
 } from "../api/use-model-provider"
 
+// Keep in sync with studio-gateway's splash.js PROVIDER_LABELS (separate build
+// target — the gateway's provisioning splash — so it can't share this module).
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",

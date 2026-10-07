@@ -5,6 +5,8 @@
 // Continue to provision the stack once with the full set. Polls /gateway/ready
 // and reloads into the studio SPA once ready.
 
+// Keep in sync with studio's model-provider-card.tsx PROVIDER_LABELS (separate
+// build target — the React settings card — so it can't share this module).
 const PROVIDER_LABELS = { openai: 'OpenAI', anthropic: 'Anthropic', vertex: 'Vertex (ADC)', maas: 'MaaS', glm: 'GLM (RITS)', 'glm-flash': 'GLM-5.3 Flash' };
 
 function renderSplash(state, basePath = '') {
@@ -125,7 +127,7 @@ function renderSplash(state, basePath = '') {
   var RETRY_URL = ${esc(retryUrl)};
   var PROVIDER_URL = ${esc(providerUrl)};
   var LABELS = ${esc(PROVIDER_LABELS)};
-  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).', glm: 'Your RITS LiteLLM key (starts with "sk-"). Stored for your account only.' };
+  var HINTS = { openai: 'OpenAI keys start with "sk-".', anthropic: 'Anthropic keys start with "sk-ant-".', vertex: 'Paste the Vertex ADC JSON (a Google credentials file). Stored for your account only.', maas: 'Enter your MaaS endpoint base URL and its API key (OpenAI-compatible).', glm: 'Your RITS LiteLLM key (starts with "sk-"). Stored for your account only.', 'glm-flash': 'Your GLM-5.3 Flash LiteLLM key (starts with "sk-"). Stored for your account only.' };
   var POLL_MS = 2500;
   var CONFIGURED = {};   // provider -> true (added this session / already stored)
   function el(id){ return document.getElementById(id); }

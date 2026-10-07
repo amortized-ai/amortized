@@ -337,15 +337,9 @@ async def _training_recipe_signature(
     what makes a prior eval set "the same task". None when the model did not
     chain from an SDG job (trained from an upload/split) — then no eval set can
     be recipe-matched and the caller falls back to offering all scored sets."""
-    from amortized.api.jobs import _sdg_signature
+    from amortized.api.jobs import _parent_sdg_job, _sdg_signature
 
-    training = await repo.get_job(training_job_id)
-    if not training:
-        return None
-    train_sdg_id = str(training.get("parent_job_id") or "")
-    if not train_sdg_id:
-        return None
-    sdg = await repo.get_job(train_sdg_id)
+    sdg = await _parent_sdg_job(repo, training_job_id)
     if not sdg:
         return None
     return _sdg_signature(sdg.get("config"))

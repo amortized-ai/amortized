@@ -36,7 +36,8 @@ def _log_path(session_id: str) -> Path:
 def append_record(session_id: str, record: dict[str, Any]) -> None:
     """Append one JSON line to the session's log. Never raises."""
     try:
-        record.setdefault("ts", datetime.now(UTC).isoformat())
+        # Copy before stamping `ts` so logging never mutates the caller's dict.
+        record = {"ts": datetime.now(UTC).isoformat(), **record}
         path = _log_path(session_id)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, default=str) + "\n")

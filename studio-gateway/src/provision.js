@@ -645,14 +645,18 @@ async function ensureSandbox(ns, providers) {
     console.log(`  WARNING: no default model for ${ns} — provider '${preferred}' returned no models; Morty needs an explicitly selected model until its endpoint is reachable`);
   }
 
-  // Rewrite the baked opencode.json in-sandbox: set the per-user MCP URL (amz-<user>) and the
-  // default model. `node` (present in the image) does a robust JSON edit rather than a brittle sed;
-  // USER_NS + MORTY_MODEL are passed as sandbox env. For the ADC (Vertex) provider it also
-  // materializes the credentials JSON from its base64 env (MORTY_ADC_B64) to the
-  // GOOGLE_APPLICATION_CREDENTIALS path before opencode starts (a no-op for the others). For a
-  // MaaS (OpenAI-compatible) provider — which models.dev can't resolve — it writes an explicit
-  // `provider.maas` block (@ai-sdk/openai-compatible) with the per-user base URL and the discovered
-  // models, so opencode reports maas in /provider (connected) and resolves `maas/<model>` turns.
+  // Rewrite the baked opencode.json in-sandbox (containers/morty/opencode.json; its KIND-path
+  // twin is k8s/base/opencode-configmap.yaml — keep provider blocks in sync). It must stay
+  // strict JSON (JSON.parse below), so no comments in that file. Set the per-user MCP URL
+  // (amz-<user>) and the default model. `node` (present in the image) does a robust JSON edit
+  // rather than a brittle sed; USER_NS + MORTY_MODEL are passed as sandbox env. For the ADC
+  // (Vertex) provider it also materializes the credentials JSON from its base64 env
+  // (MORTY_ADC_B64) to the GOOGLE_APPLICATION_CREDENTIALS path before opencode starts —
+  // env-then-write delivery (the prior `sandbox upload` path was broken; a no-op for the other,
+  // key providers). For a MaaS (OpenAI-compatible) provider — which models.dev can't resolve —
+  // it writes an explicit `provider.maas` block (@ai-sdk/openai-compatible) with the per-user
+  // base URL and the discovered models, so opencode reports maas in /provider (connected) and
+  // resolves `maas/<model>` turns.
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
     'if(process.env.MORTY_MODEL){c.model=process.env.MORTY_MODEL;}' +

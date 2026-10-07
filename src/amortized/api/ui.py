@@ -14,15 +14,17 @@ _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def _coerce_number(value: Any) -> Any:
-    """Pull the first number out of a string like '$0.037', '0.17/1M tokens'.
+    """Pull a leading number out of a string like '$0.037', '0.17/1M tokens'.
 
     The pricing card is a display-only convenience; an agent that passes a cost as
     a formatted string (observed with GLM) should still render the card rather than
-    hard-fail validation. Non-string / unparseable values pass through untouched so
-    pydantic reports a normal error for genuinely bad input.
+    hard-fail validation. Only a leading number (optionally after a currency symbol)
+    is coerced — we don't dig a number out of arbitrary prose, so non-numeric input
+    passes through untouched and pydantic reports a normal error for it.
     """
     if isinstance(value, str):
-        match = _NUM_RE.search(value.replace(",", ""))
+        stripped = value.replace(",", "").strip().lstrip("$€£ ")
+        match = _NUM_RE.match(stripped)
         if match:
             return match.group(0)
     return value
@@ -69,8 +71,9 @@ class PresentOptionsResponse(BaseModel):
     # Authoritative server directive the model reads in the tool result. The system
     # prompt already says "ask one question, then wait", but weaker drivers batch
     # several present_options + a validate_* into one turn and never wait; a tool
-    # result outranks the prompt, so repeat the stop here. The proxy also truncates
-    # the turn at the first present_options as a backstop (see agent.py).
+    # result outranks the prompt, so repeat the stop here. As a backstop the proxy's
+    # _enforce_single_interaction keeps this turn's passive content but strips any
+    # additional interactions (other present_options / validate_*) from it (agent.py).
     agent_instruction: str = Field(default=_PRESENT_OPTIONS_HALT, exclude=False)
 
 

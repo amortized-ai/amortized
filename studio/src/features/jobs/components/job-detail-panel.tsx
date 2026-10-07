@@ -41,6 +41,15 @@ function formatJobError(raw: string): { summary: string; isTruncated: boolean } 
   return { summary: raw, isTruncated: false }
 }
 
+function NoScoresCard({ detail }: { detail: string }) {
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+      <p className="font-medium">No scores</p>
+      <p className="text-muted-foreground mt-1">{detail}</p>
+    </div>
+  )
+}
+
 interface JobDetailPanelProps {
   job: Job | null
   open: boolean
@@ -605,15 +614,11 @@ function EvalResultsTab({ job }: { job: Job }) {
         ) : null}
 
         {noScores && (
-          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-            <p className="font-medium">No scores</p>
-            <p className="text-muted-foreground mt-1">
-              This eval succeeded but produced no usable scores
-              {results.num_scored === 0 ? " (0 samples scored)" : ""}. The judge
-              returned no results for the scored samples — check the job logs for
-              the cause.
-            </p>
-          </div>
+          <NoScoresCard
+            detail={`This eval succeeded but produced no usable scores${
+              results.num_scored === 0 ? " (0 samples scored)" : ""
+            }. The judge returned no results for the scored samples — check the job logs for the cause.`}
+          />
         )}
 
         {scoreEntries.length > 0 && (
@@ -693,14 +698,11 @@ function EvalResultsTab({ job }: { job: Job }) {
   return (
     <div className="space-y-4 pt-2">
       {legacyNoScores && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-          <p className="font-medium">No scores</p>
-          <p className="text-muted-foreground mt-1">
-            This eval succeeded but produced no usable judge scores
-            {results.judge?.num_judged === 0 ? " (0 samples judged)" : ""}. Check the
-            job logs for the cause.
-          </p>
-        </div>
+        <NoScoresCard
+          detail={`This eval succeeded but produced no usable judge scores${
+            results.judge?.num_judged === 0 ? " (0 samples judged)" : ""
+          }. Check the job logs for the cause.`}
+        />
       )}
       {results.judge && (
         <div className="rounded-xl border bg-card p-4">

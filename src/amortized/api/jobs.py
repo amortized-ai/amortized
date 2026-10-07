@@ -654,6 +654,24 @@ def _coerce_config(raw: Any) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+async def _parent_sdg_job(
+    repo: Repository, training_job_id: str
+) -> dict[str, Any] | None:
+    """The SDG job that produced a trained model's training data, or None.
+
+    None when the chain can't be resolved from job rows: the training job is
+    absent, it wasn't chained from an SDG job (trained from a split/upload), or
+    that parent SDG job is gone. Callers that must tell those cases apart (to
+    surface distinct errors) resolve the chain themselves."""
+    training = await repo.get_job(training_job_id)
+    if not training:
+        return None
+    train_sdg_id = str(training.get("parent_job_id") or "")
+    if not train_sdg_id:
+        return None
+    return await repo.get_job(train_sdg_id)
+
+
 @router.post(
     "/sdg/clone-for-eval",
     response_model=ClonedSdgConfig,
@@ -876,12 +894,7 @@ async def _rubric_drift_warning(
     candidates = await repo.list_jobs(job_type=JobType.eval)
     submitted = {str(c["name"]): str(c.get("description", "")) for c in inline}
     for job in candidates:
-        cfg = job.get("config", {})
-        if isinstance(cfg, str):
-            try:
-                cfg = json.loads(cfg)
-            except ValueError:
-                continue
+        cfg = _coerce_config(job.get("config"))
         same_dataset = (
             data_run_id
             and str(cfg.get("eval_data_run_id") or "") == data_run_id
@@ -926,13 +939,7 @@ def _sdg_signature(cfg: Any) -> _SdgSignature | None:
     or topic generate a DIFFERENT task. Folding those in stops a different-input eval
     set from being flagged `recipe_match` / passing the mirror check. Returns sorted
     tuples so ordering doesn't matter; `None` when unparseable or carrying no signal."""
-    if isinstance(cfg, str):
-        try:
-            cfg = json.loads(cfg)
-        except ValueError:
-            return None
-    if not isinstance(cfg, dict):
-        return None
+    cfg = _coerce_config(cfg)
     models = tuple(
         sorted(
             str(m["model"])
@@ -985,16 +992,13 @@ async def _training_sdg_mirror_warning(
         return []  # not an eval-for-trained-model chained from an SDG job
 
     repo = Repository(db)
-    training = await repo.get_job(training_job_id)
-    if not training:
-        return []
-    train_sdg_id = str(training.get("parent_job_id") or "")
-    if not train_sdg_id:
-        return []  # training data not chained from an SDG job -> nothing to mirror
+    train_sdg = await _parent_sdg_job(repo, training_job_id)
+    if not train_sdg:
+        return []  # training data not chained from a resolvable SDG job
+    train_sdg_id = str(train_sdg.get("id") or "")
 
-    train_sdg = await repo.get_job(train_sdg_id)
     eval_sdg = await repo.get_job(str(parent_job_id))
-    if not train_sdg or not eval_sdg:
+    if not eval_sdg:
         return []
 
     train_sig = _sdg_signature(train_sdg.get("config"))
