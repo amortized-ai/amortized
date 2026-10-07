@@ -177,48 +177,12 @@ def _serialize_handle(handle: BackendHandle) -> str:
     )
 
 
-_TERMINAL_JOB_STATUSES = frozenset(
-    {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}
-)
-
-
 async def _update_job(job_id: str, **kwargs: Any) -> None:
     from amortized.db.connection import get_pool
 
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
         await repo.update_job(job_id, **kwargs)
-
-    # Push-based continuation: the moment a job reaches a terminal state, drive the
-    # next-step turn in its originating chat so "I'll continue automatically" is true
-    # even if the tab is closed. All terminal transitions route through here except
-    # cleanup_orphaned_jobs (raw SQL), which fires the notify itself.
-    status = kwargs.get("status")
-    if status in _TERMINAL_JOB_STATUSES:
-        await _notify_job_terminal(job_id, str(status))
-
-
-async def _notify_job_terminal(job_id: str, status: str) -> None:
-    """Hand a just-finished job to the in-process agent watcher, which drives the
-    continuation turn in the job's originating conversation. Best-effort: a job
-    created outside a chat (no conversation_id) or a gone session no-ops, and any
-    failure here must never derail the worker's own bookkeeping."""
-    try:
-        from amortized.api import agent
-        from amortized.db.connection import get_pool
-
-        async with get_pool().acquire() as conn:
-            job = await Repository(conn).get_job(job_id)
-        if not job:
-            return
-        conversation_id = str(job.get("conversation_id") or "")
-        if not conversation_id:
-            return  # frontend-driven (no watcher) — unchanged legacy behavior
-        await agent.notify_job_complete(
-            conversation_id, job_id, str(job.get("type") or ""), status
-        )
-    except Exception:
-        logger.warning("Job-terminal continuation notify failed for %s", job_id, exc_info=True)
 
 
 async def _pick_pending_job() -> dict[str, Any] | None:
@@ -648,8 +612,6 @@ async def cleanup_orphaned_jobs() -> None:
                 )
             if result == "UPDATE 1":
                 logger.warning("Marked orphaned job %s as failed", job_id)
-                # Bypasses _update_job, so fire the continuation notify directly.
-                await _notify_job_terminal(job_id, JobStatus.failed.value)
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
