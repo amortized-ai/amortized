@@ -94,6 +94,52 @@ class TestEntryFromJob:
         entry = evals_api._entry_from_job(job, {})
         assert entry["model"] == "legacy-tuned"
 
+    def test_classification_base_model_from_config(self) -> None:
+        # A base-model classification eval (no endpoint, no eval_model tag) must
+        # report its model_name_or_path, not "(unknown)".
+        job = _job("j1", "")
+        job["config"]["endpoint"] = {}
+        job["config"]["eval_mode"] = "classification"
+        job["config"]["model_name_or_path"] = "sentence-transformers/all-MiniLM-L6-v2"
+        entry = evals_api._entry_from_job(job, {})
+        assert entry["model"] == "sentence-transformers/all-MiniLM-L6-v2"
+
+    def test_classification_tuned_model_label(self) -> None:
+        # A tuned classification eval resolves to the training-model label (so it
+        # doesn't collide with the base run and merge into one column).
+        job = _job("j2", "")
+        job["config"]["endpoint"] = {}
+        job["config"]["eval_mode"] = "classification"
+        job["config"]["training_job_id"] = "abcd1234-5678"
+        labels = {"abcd1234-5678": "all-MiniLM-L6-v2-embedding_sft-abcd1234"}
+        entry = evals_api._entry_from_job(job, {}, labels)
+        assert entry["model"] == "all-MiniLM-L6-v2-embedding_sft-abcd1234"
+
+    def test_classification_tuned_without_label_uses_short_id(self) -> None:
+        job = _job("j3", "")
+        job["config"]["endpoint"] = {}
+        job["config"]["eval_mode"] = "classification"
+        job["config"]["training_job_id"] = "abcd1234-5678"
+        entry = evals_api._entry_from_job(job, {})
+        assert entry["model"] == "tuned-abcd1234"
+
+    def test_classification_base_and_tuned_do_not_merge_label(self) -> None:
+        # The two runs must carry distinct model labels so the UI renders them as
+        # separate columns instead of a merged mean +/- std.
+        base = _job("jb", "")
+        base["config"].update(
+            endpoint={}, eval_mode="classification",
+            model_name_or_path="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        tuned = _job("jt", "")
+        tuned["config"].update(
+            endpoint={}, eval_mode="classification", training_job_id="abcd1234-5678",
+        )
+        labels = {"abcd1234-5678": "all-MiniLM-L6-v2-embedding_sft-abcd1234"}
+        mb = evals_api._entry_from_job(base, {})["model"]
+        mt = evals_api._entry_from_job(tuned, {}, labels)["model"]
+        assert mb != mt and mb != "(unknown)" and mt != "(unknown)"
+
 
 class TestGrouping:
     @pytest.mark.asyncio
