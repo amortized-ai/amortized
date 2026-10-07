@@ -661,10 +661,13 @@ def _coerce_config(raw: Any) -> dict[str, Any]:
     summary=(
         "Build the eval-set SDG config for a trained model by mirroring its"
         " training SDG recipe verbatim (teacher model, prompts, SFT format);"
-        " only num_records changes. Running it generates FRESH inputs — that"
-        " fresh sampling IS the held-out isolation, so there is NOTHING to"
-        " verify afterward. Pass the returned `config` straight to"
-        " validate_sdg_job. Use this instead of hand-assembling an eval SDG."
+        " only num_records changes. For a purely synthetic task, re-running"
+        " generates fresh held-out inputs. For a document-grounded task it"
+        " re-seeds from the SAME source documents, so the eval is freshly"
+        " regenerated but NOT a disjoint held-out split — the platform's"
+        " input-overlap check runs at validate time either way. Pass the"
+        " returned `config` straight to validate_sdg_job. Use this instead"
+        " of hand-assembling an eval SDG."
     ),
 )
 async def clone_sdg_config_for_eval(
@@ -724,15 +727,25 @@ async def clone_sdg_config_for_eval(
             ),
         )
     cloned["num_records"] = request.num_records
+    # Document-grounded recipes re-seed from the SAME source chunks as training
+    # (document_ids is mirrored), so re-running regenerates fresh text but is NOT a
+    # disjoint held-out split. Purely synthetic recipes do get fresh held-out draws.
+    # Either way the input-overlap check still runs at validate time.
+    held_out_note = (
+        " It re-seeds from the SAME source documents as training, so the eval is"
+        " freshly regenerated but NOT a disjoint held-out split; the platform"
+        " flags input overlap when you validate the eval job."
+        if cloned.get("document_ids")
+        else " Fresh generation yields fresh held-out inputs; the platform still"
+        " flags any input overlap when you validate the eval job."
+    )
     return ClonedSdgConfig(
         config=cloned,
         train_sdg_job_id=train_sdg_id,
         note=(
             "Mirrors the training SDG recipe (teacher, prompts, SFT format)"
             " verbatim; only num_records changed. Pass `config` to"
-            " validate_sdg_job. Fresh generation yields fresh held-out inputs —"
-            " do NOT compare datasets afterward; the platform flags any input"
-            " overlap when you validate the eval job."
+            " validate_sdg_job." + held_out_note
         ),
     )
 

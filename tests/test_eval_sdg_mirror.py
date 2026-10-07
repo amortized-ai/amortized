@@ -220,6 +220,39 @@ class TestCloneSdgConfigForEval:
         assert result.config["processors"] == cfg["processors"]
 
     @pytest.mark.asyncio
+    async def test_synthetic_recipe_note_claims_held_out(self, patch_repo) -> None:
+        # No document_ids -> fresh generation genuinely is held-out; say so.
+        cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        patch_repo(
+            {
+                "train-job": {"parent_job_id": "train-sdg"},
+                "train-sdg": {"config": cfg},
+            }
+        )
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
+        result = await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert "fresh held-out inputs" in result.note
+        assert "disjoint" not in result.note
+
+    @pytest.mark.asyncio
+    async def test_document_grounded_note_disclaims_held_out(self, patch_repo) -> None:
+        # document_ids mirrored -> eval re-seeds from the SAME chunks as training,
+        # so the note must NOT claim a disjoint held-out split (leakage honesty).
+        cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
+        cfg["document_ids"] = ["doc-1", "doc-2"]
+        patch_repo(
+            {
+                "train-job": {"parent_job_id": "train-sdg"},
+                "train-sdg": {"config": cfg},
+            }
+        )
+        req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
+        result = await jobs.clone_sdg_config_for_eval(req, db=None)
+        assert result.config["document_ids"] == ["doc-1", "doc-2"]  # still mirrored
+        assert "NOT a disjoint held-out split" in result.note
+        assert "fresh held-out inputs" not in result.note
+
+    @pytest.mark.asyncio
     async def test_accepts_json_string_config(self, patch_repo) -> None:
         import json
 
