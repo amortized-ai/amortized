@@ -912,10 +912,12 @@ _FUTURE_RE = re.compile(
     r"\b(once|when|after|will|would|as soon as|going to|about to|next we|then we|let'?s)\b",
     re.I,
 )
+# Leading \b only (no trailing) so inflections match: "training" -> train,
+# "datasets" -> dataset. Leading \b still blocks substrings like "constrain".
 _TYPE_HINT_RE = [
-    ("sdg", re.compile(r"\b(data[- ]?gen|synthetic|sdg|dataset|examples|records|generation)\b", re.I)),
-    ("training", re.compile(r"\b(train|fine[- ]?tun|osft|sft)\b", re.I)),
-    ("eval", re.compile(r"\b(eval|scoring run|judge)\b", re.I)),
+    ("sdg", re.compile(r"\b(data[- ]?gen|synthetic|sdg|dataset|example|record|generation)", re.I)),
+    ("training", re.compile(r"\b(train|fine[- ]?tun|osft|sft)", re.I)),
+    ("eval", re.compile(r"\b(eval|scoring run|judge)", re.I)),
 ]
 
 
@@ -1037,10 +1039,10 @@ async def _job_claim_violations(
     # reply cites no id at all; a named id is handled by A/B above or the provenance
     # gate, so this never double-fires with them.
     if not tokens:
-        jtype = await _unbacked_inprogress_claim(state, text, cache)
-        if jtype is not None:
+        claim_type = await _unbacked_inprogress_claim(state, text, cache)
+        if claim_type is not None:
             violations.append(
-                {"token": None, "kind": "unbacked", "status": "", "type": jtype, "num": None}
+                {"token": None, "kind": "unbacked", "status": "", "type": claim_type, "num": None}
             )
     return violations
 
