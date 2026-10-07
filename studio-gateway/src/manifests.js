@@ -26,9 +26,12 @@ const OPENSHELL_MTLS_DIR = process.env.OPENSHELL_MTLS_DIR || '/etc/openshell-mtl
 // Optional overrides passed through to the chart.
 const SERVER_IMAGE_TAG = process.env.AMORTIZED_SERVER_IMAGE_TAG || '';
 // Optional job-image tag, forwarded into the per-user server env (AMORTIZED_JOB_IMAGE_TAG) so the
-// server dispatches pinned job backends (eval, data-designer/SDG, training, document) as
+// server dispatches the pinned amortized-CI job images (eval, data-designer/SDG, document) as
 // <registry>/<name>:<tag>. Empty => the server's default (:latest).
 const JOB_IMAGE_TAG = process.env.AMORTIZED_JOB_IMAGE_TAG || '';
+// The training image is built upstream (training-hub), not per amortized commit, so it has its own
+// tag (AMORTIZED_TRAINING_IMAGE_TAG) — pin a published version (e.g. 0.1.0) independently.
+const TRAINING_IMAGE_TAG = process.env.AMORTIZED_TRAINING_IMAGE_TAG || '';
 // SDG teacher keys: a dir of provider-env-name files (e.g. OPENAI_API_KEY) the
 // gateway mounts and stamps into each user ns as `amortized-teacher-keys`, then
 // references via the chart's teacherKeys.existingSecret. Empty => no teacher keys.
@@ -104,14 +107,16 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = fa
       extraVolumeMounts: [{ name: 'openshell-mtls', mountPath: OPENSHELL_MTLS_DIR, readOnly: true }],
     };
   }
-  // Forward the job-image tag into the server env (creating the server block if Morty is off), so
-  // the server dispatches pinned job backends. Appends to any mTLS extraEnv above.
-  if (JOB_IMAGE_TAG) {
+  // Forward the image-tag overrides into the server env (creating the server block if Morty is
+  // off), so the server dispatches pinned job backends. The training image is on a separate
+  // lifecycle, so it carries its own tag. Appends to any mTLS extraEnv above.
+  const tagEnv = [
+    ...(JOB_IMAGE_TAG ? [{ name: 'AMORTIZED_JOB_IMAGE_TAG', value: JOB_IMAGE_TAG }] : []),
+    ...(TRAINING_IMAGE_TAG ? [{ name: 'AMORTIZED_TRAINING_IMAGE_TAG', value: TRAINING_IMAGE_TAG }] : []),
+  ];
+  if (tagEnv.length) {
     values.server = values.server || {};
-    values.server.extraEnv = [
-      ...(values.server.extraEnv || []),
-      { name: 'AMORTIZED_JOB_IMAGE_TAG', value: JOB_IMAGE_TAG },
-    ];
+    values.server.extraEnv = [...(values.server.extraEnv || []), ...tagEnv];
   }
   // The per-user BYOK key (stamped into MODEL_KEY_SECRET) powers the server's model
   // catalog too; fall back to a deployment-level mounted teacher-keys dir otherwise.
