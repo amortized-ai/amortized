@@ -120,39 +120,27 @@ class TestStaleReuse:
     def test_disclosed_reuse_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(monkeypatch, {"ad472e75": _job()})
-        out = _run(
-            agent._apply_job_claim_gate(
-                state,
-                _text_result("Reusing your existing dataset ad472e75 (500 records)."),
-                _body(),
-            )
-        )
+        result = _text_result("Reusing your existing dataset ad472e75 (500 records).")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
         assert sent == []  # reuse disclosed -> no correction
+        assert out is result
 
     def test_validate_this_session_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(monkeypatch, {"ad472e75": _job()}, has_validate=True)
-        out = _run(
-            agent._apply_job_claim_gate(
-                state,
-                _text_result("The SDG run finished — ready (job ad472e75)."),
-                _body(),
-            )
-        )
+        result = _text_result("The SDG run finished — ready (job ad472e75).")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
         assert sent == []  # a fresh job really was submitted this session
+        assert out is result
 
     def test_fresh_job_this_session_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         job = _job(created_at=datetime.now(UTC) + timedelta(seconds=5))
         sent = _patch(monkeypatch, {"ad472e75": job})
-        out = _run(
-            agent._apply_job_claim_gate(
-                state,
-                _text_result("The SDG run finished — ready (job ad472e75)."),
-                _body(),
-            )
-        )
+        result = _text_result("The SDG run finished — ready (job ad472e75).")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
         assert sent == []  # job created within this conversation
+        assert out is result
 
 
 class TestRemediation:
