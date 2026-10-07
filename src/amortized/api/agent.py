@@ -987,9 +987,11 @@ async def _session_has_validate(
 # one when THIS conversation has no data path is premature.
 _DATA_DEPENDENT_TARGETS = {"training": "train on", "eval": "evaluate on"}
 
-# Tools that mean the user is working with an EXISTING dataset (browsing, inspecting,
-# or splitting one) — so training/eval off it is not premature.
-_DATASET_TOOLS = {"list_datasets", "get_dataset", "get_dataset_samples", "split_dataset"}
+# Tools that mean the user has engaged a SPECIFIC existing dataset (inspecting its
+# samples or splitting it) — a de-facto choice of existing data, so the fork is moot.
+# `list_datasets` is deliberately excluded: merely browsing the catalog is not a
+# choice, so the existing-vs-generate fork should still be offered.
+_DATASET_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
 
 
 async def _conversation_has_dataset(

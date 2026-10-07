@@ -580,12 +580,24 @@ class TestConversationHasDataset:
         )
         assert self._run_check() is True
 
-    def test_dataset_tool_touched_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_specific_dataset_tool_touched_counts(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._setup(
+            monkeypatch,
+            messages=[{"info": {}, "parts": [_tool_part("get_dataset_samples", {})]}],
+        )
+        assert self._run_check() is True
+
+    def test_merely_listing_datasets_is_not_a_choice(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Browsing the catalog is not choosing a dataset — the fork must still fire.
         self._setup(
             monkeypatch,
             messages=[{"info": {}, "parts": [_tool_part("list_datasets", {})]}],
         )
-        assert self._run_check() is True
+        assert self._run_check() is False
 
     def test_cited_existing_dataset_id_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         tok = "a1b2c3d4"
