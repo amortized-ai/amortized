@@ -28,6 +28,7 @@ async def create_job(
     parent_job_id: str = "",
     user_id: str = "",
     retry_of: str = "",
+    conversation_id: str = "",
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
@@ -49,6 +50,7 @@ async def create_job(
         user_id=user_id,
         k8s_namespace=_settings.compute_namespace,
         retry_of=retry_of,
+        conversation_id=conversation_id,
     )
 
     logger.info("Created %s job %s", job_type.value, job_id)

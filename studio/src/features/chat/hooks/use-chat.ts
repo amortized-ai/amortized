@@ -732,8 +732,12 @@ export function useChat() {
 
     setChatState("streaming")
 
+    // The agent-proxy session id this job belongs to — sent on create so the backend
+    // watcher can drive the completion continuation even if this tab is closed.
+    const conversationSessionId = useChatStore.getState().getSessionId(convId)
+
     try {
-      const job = await createJob(endpoint, body)
+      const job = await createJob(endpoint, body, conversationSessionId ?? undefined)
 
       const jobToolResult: ToolResult = {
         name: `create_${jobType}_job`,
@@ -861,6 +865,19 @@ export function useChat() {
           "job_complete",
           status,
         )
+
+        // The backend watcher already claimed this continuation (push-based path): it is
+        // driving the turn and will deliver the next-steps via the /pending poll. Drop
+        // our placeholder and don't render a (stale) snapshot — pollPending appends the
+        // watcher's result when it lands.
+        if ((response as { info?: { id?: string } })?.info?.id === "job-complete-duplicate") {
+          useChatStore.getState().removeMessage(convId, placeholderId)
+          _activeRequests.delete(convId)
+          useChatStore.getState().addNotifiedJob(convId, jobId)
+          setChatState("done")
+          consecutiveFailures = 0
+          continue
+        }
 
         const parsed = parseOpenCodeResponse(response)
         const sessionMessages = await fetchSessionMessages(convId)

@@ -141,6 +141,10 @@ class Job(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     retry_of: str = ""
+    # The agent-proxy session that dispatched this job, so the backend watcher can
+    # drive the next-step turn on completion even if the chat tab is closed. Empty
+    # for jobs created outside a chat (falls back to the frontend monitor card).
+    conversation_id: str = ""
 
 
 class ValidatedJobConfig(BaseModel):

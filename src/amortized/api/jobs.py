@@ -321,6 +321,7 @@ async def create_sdg_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
+    conversation_id = http_request.headers.get("X-Conversation-Id", "")
 
     repo = Repository(db)
     try:
@@ -330,6 +331,7 @@ async def create_sdg_job(
             config=config,
             parent_job_id=parent_job_id,
             user_id=user_id,
+            conversation_id=conversation_id,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -357,6 +359,7 @@ async def create_training_job(
         raise HTTPException(status_code=422, detail=errors)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
+    conversation_id = http_request.headers.get("X-Conversation-Id", "")
 
     repo = Repository(db)
     try:
@@ -366,6 +369,7 @@ async def create_training_job(
             config=config,
             parent_job_id=parent_job_id,
             user_id=user_id,
+            conversation_id=conversation_id,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -467,6 +471,7 @@ async def create_eval_job(
         raise HTTPException(status_code=422, detail=errors)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
+    conversation_id = http_request.headers.get("X-Conversation-Id", "")
 
     # Persist the metric set on the dataset's MLflow run so every later
     # eval on the same dataset (any session) reuses the same metrics.
@@ -480,6 +485,7 @@ async def create_eval_job(
             config=config,
             parent_job_id=parent_job_id,
             user_id=user_id,
+            conversation_id=conversation_id,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -553,6 +559,11 @@ async def retry_job(
         raise HTTPException(status_code=422, detail=errors)
 
     user_id = http_request.headers.get("X-Forwarded-User", "") or job.get("user_id", "")
+    # Continue the retry in the same chat the original ran in when the client doesn't
+    # supply one, so the watcher can still drive the retried eval's completion.
+    conversation_id = http_request.headers.get("X-Conversation-Id", "") or job.get(
+        "conversation_id", ""
+    )
 
     await _persist_metric_set(config, parent_job_id, db)
 
@@ -565,6 +576,7 @@ async def retry_job(
             parent_job_id=parent_job_id,
             user_id=user_id,
             retry_of=job_id,
+            conversation_id=conversation_id,
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

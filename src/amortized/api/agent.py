@@ -68,6 +68,17 @@ class TurnState:
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
     task: asyncio.Task[None] | None = None
+    # True for a server-initiated (job-completion watcher) turn. The frontend never
+    # learns such a turn's id, so it can't poll GET /turn/{id} for the result; instead
+    # the finished result is enqueued to SessionState.pending_results and delivered via
+    # the /pending poll. User/frontend turns are polled by id and are never enqueued.
+    watcher: bool = False
+    # Self-contained render payload for a watcher turn, computed at turn end: the gated
+    # result parts PLUS the turn's full assistant parts (tool-call details live only in
+    # the GET-messages endpoint, not the POST result the delegation path returns). This
+    # is what /pending delivers, so the frontend renders it from the response alone —
+    # matching the user-send / job-notify paths, which re-fetch the session for tools.
+    delivery: dict[str, Any] | None = None
 
 
 @dataclass
@@ -101,9 +112,23 @@ class SessionState:
     # (the redundant review card is dropped), so a driver that re-shows the prompt
     # before every validate_* can't livelock. See _enforce_single_interaction.
     reviewed_card_sigs: set[str] = field(default_factory=set)
+    # The model the user last drove this conversation with, so a server-initiated turn
+    # (the job-completion watcher) continues on the same model instead of the default.
+    last_model: MessageModel | None = None
+    # Finished results of server-initiated (watcher) turns, awaiting delivery to the
+    # frontend via the /pending poll. The frontend can't poll these by turn id (it never
+    # learns the watcher's id), so this is their only delivery channel. Drained on each
+    # /pending read; bounded by MAX_PENDING_RESULTS so a never-polling session can't grow
+    # it unboundedly.
+    pending_results: list[dict[str, Any]] = field(default_factory=list)
 
 
 _sessions: dict[str, SessionState] = {}
+
+# Cap on undelivered watcher-turn results buffered per session (see
+# SessionState.pending_results). Watcher turns are at most one per job completion, so a
+# small cap is ample; the oldest are dropped if a session is never polled.
+MAX_PENDING_RESULTS = 20
 
 # Strong references to in-flight turn tasks so they are not garbage-collected before
 # completion (asyncio holds only weak references to tasks); each removes itself on done.
@@ -180,15 +205,35 @@ def _client() -> httpx.AsyncClient:
 # ---------------------------------------------------------------------------
 
 
+async def _conversation_has_unfinished_jobs(conversation_id: str) -> bool:
+    """Whether this conversation still has a non-terminal job. Best-effort — any DB
+    issue returns False so cleanup proceeds normally."""
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            return await Repository(conn).conversation_has_unfinished_jobs(conversation_id)
+    except Exception:
+        return False
+
+
 async def _session_cleanup_loop() -> None:
     while True:
         await asyncio.sleep(600)
         cutoff = datetime.now(UTC) - timedelta(hours=SESSION_TTL_HOURS)
         expired = [sid for sid, s in _sessions.items() if s.last_activity < cutoff]
+        evicted = 0
         for sid in expired:
+            # Keep an idle session alive while it still owns a running job, so the
+            # completion watcher can drive its continuation turn (a training run can
+            # outlast the idle TTL). Once the job is terminal it evicts normally.
+            if await _conversation_has_unfinished_jobs(sid):
+                continue
             del _sessions[sid]
-        if expired:
-            logger.info("Evicted %d expired agent sessions", len(expired))
+            evicted += 1
+        if evicted:
+            logger.info("Evicted %d expired agent sessions", evicted)
 
 
 # ---------------------------------------------------------------------------
@@ -925,14 +970,14 @@ _DISPATCH_UPSTREAM_FIELDS = {
     ],
 }
 
-# Honest "wait" guidance injected when the stage-gate fires. Commit 1 keeps
-# continuation frontend/pull-driven, so a wait only resumes while the page stays
-# open; the page-open caveat is relaxed in commit 2 (the push-based watcher makes
-# auto-continue unconditional). Kept as one constant so commit 2 edits one place.
+# Honest "wait" guidance injected when the stage-gate fires. The push-based watcher
+# (notify_job_complete) drives the continuation turn from the backend the moment the
+# upstream job finishes, so auto-continue is unconditional — the user does not need to
+# keep the tab open. Kept as one constant so every gate branch stays consistent.
 _AWAIT_UPSTREAM_GUIDANCE = (
     "report the true current status to the user and wait — tell them it is still"
-    " running and that you'll continue automatically once it finishes, as long as"
-    " they keep this page open"
+    " running and that you'll continue automatically once it finishes; they don't"
+    " need to keep this page open"
 )
 
 
@@ -1607,6 +1652,97 @@ def _evict_finished_turns(state: SessionState) -> None:
         state.turn_order = keep_hard
 
 
+async def _claim_job_continuation(job_id: str) -> bool:
+    """Atomically win the single-fire continuation for a terminal job. Best-effort: a
+    DB failure returns False so we never drive a possibly-duplicate turn."""
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            return await Repository(conn).claim_job_continuation(job_id)
+    except Exception:
+        return False
+
+
+async def _completed_job_id(text: str) -> str:
+    """The full id of the job a job_complete event refers to, resolved from the ids
+    cited in its text. '' when none resolves to a real job."""
+    for token in sorted(_extract_id_candidates(text)):
+        job = await _fetch_job_by_token(token)
+        if job and job.get("id"):
+            return str(job["id"])
+    return ""
+
+
+def _spawn_turn(
+    state: SessionState,
+    session_id: str,
+    user_text: str,
+    body: MessageRequest,
+    watcher: bool = False,
+) -> str:
+    """Register a background turn and start it. Shared by the HTTP send path and the
+    in-process job-completion watcher so both run through the same turn lifecycle.
+
+    ``watcher=True`` marks a server-initiated turn whose result must be delivered via
+    the /pending poll (the frontend never learns its turn id)."""
+    turn_id = str(uuid.uuid4())
+    turn = TurnState(watcher=watcher)
+    state.turns[turn_id] = turn
+    state.turn_order.append(turn_id)
+    _evict_finished_turns(state)
+    task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
+    turn.task = task
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    state.last_activity = datetime.now(UTC)
+    return turn_id
+
+
+async def notify_job_complete(
+    conversation_id: str, job_id: str, job_type: str, status: str
+) -> bool:
+    """Drive a job's completion continuation from the backend — called by the worker
+    the moment a job reaches a terminal state, so "I'll continue automatically" holds
+    even when the chat tab is closed. Returns True iff this call drove the turn.
+
+    No-ops (returns False) when the session is gone (server restart / eviction — the
+    frontend monitor card picks it up on reopen, and we deliberately leave the claim
+    unclaimed for it) or when the single-fire continuation was already claimed (the
+    frontend card observed the terminal state first).
+
+    SINGLE-REPLICA ASSUMPTION: _sessions is a per-process in-memory registry, so this
+    only works when the pod whose worker finishes the job is the same pod that owns the
+    chat session — i.e. one server replica (the current deploy; see k8s replicas:1).
+    Under >1 replica a job can finish on a different pod than the session lives on, and
+    this silently no-ops. Scaling out requires a cross-pod wake-up (sticky routing, or
+    Postgres LISTEN/NOTIFY / a shared queue) before this can be relied on."""
+    state = _sessions.get(conversation_id)
+    if state is None:
+        return False
+    if not await _claim_job_continuation(job_id):
+        return False
+    text = (
+        f"Job {job_id} ({job_type}) finished with status: {status}. "
+        "Use present_options to suggest next steps to the user."
+    )
+    body = MessageRequest(
+        parts=[MessagePart(type="text", text=text)],
+        event="job_complete",
+        outcome=status,
+        model=state.last_model,
+    )
+    _spawn_turn(state, conversation_id, text, body, watcher=True)
+    logger.info(
+        "Watcher drove job-completion continuation: conv=%s job=%s status=%s",
+        conversation_id,
+        job_id[:8],
+        status,
+    )
+    return True
+
+
 @router.post("/session/{session_id}/message")
 async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     """Accept a message and run the turn in the background.
@@ -1625,6 +1761,25 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="unknown session")
 
     state.last_activity = datetime.now(UTC)
+    # Remember the user's model so a server-initiated continuation (the watcher) runs
+    # on the same model rather than the default.
+    if body.model is not None:
+        state.last_model = body.model
+
+    # Push-based continuation dedup: a frontend job_complete event races the backend
+    # watcher. Claim the job's single-fire guard first; if the watcher already drove
+    # the continuation, return its result (the next-steps it produced) rather than
+    # driving a duplicate turn. Only the HTTP (frontend) path claims here — the watcher
+    # claims in notify_job_complete before it spawns, so it never collides with itself.
+    if body.event == "job_complete":
+        job_id = await _completed_job_id(user_text)
+        if job_id and not await _claim_job_continuation(job_id):
+            # The backend watcher already claimed and is driving this continuation; its
+            # result is delivered via /pending. Return an empty sentinel (NOT a snapshot
+            # of the session, which would be stale — the watcher turn is likely still
+            # running) so the frontend suppresses its placeholder and renders only the
+            # watcher's result when it arrives on the pending channel.
+            return {"info": {"id": "job-complete-duplicate"}, "parts": []}
 
     # Bound pending work per session: active turns are never evicted, so without an
     # admission limit a client could queue unboundedly (state.turns / _background_tasks).
@@ -1634,15 +1789,7 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
             detail="too many pending turns for this session; retry shortly",
         )
 
-    turn_id = str(uuid.uuid4())
-    turn = TurnState()
-    state.turns[turn_id] = turn
-    state.turn_order.append(turn_id)
-    _evict_finished_turns(state)
-    task = asyncio.create_task(_run_turn(state, session_id, turn_id, user_text, body))
-    turn.task = task
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    turn_id = _spawn_turn(state, session_id, user_text, body)
     return {"turn_id": turn_id, "status": "processing"}
 
 
@@ -1671,6 +1818,24 @@ async def _run_turn(
             # stale phase on a hand-back/delegation turn.
             result = _ensure_phase_signal(state, result)
             result = _enforce_single_interaction(result, state)
+            if turn and turn.watcher:
+                # Build the /pending delivery payload while still holding the lock, so the
+                # active session (the one that produced the user-facing output) is read
+                # consistently. The delegation path's POST result carries only
+                # step markers, so fold in the turn's full assistant parts for the
+                # tool-call details (e.g. a validate_* confirmation card).
+                active_id = state.subagent_id or state.orchestrator_id
+                base_parts = result.get("parts", []) if isinstance(result, dict) else []
+                info = result.get("info", {}) if isinstance(result, dict) else {}
+                if not isinstance(info, dict):
+                    info = {}
+                # The frontend only harvests tool parts from an assistant-role message,
+                # so guarantee the role (the delegation POST result occasionally omits it).
+                info = {**info, "role": "assistant"}
+                turn.delivery = {
+                    "info": info,
+                    "parts": base_parts + await _fetch_all_assistant_parts(active_id),
+                }
         if turn:
             turn.result = result
     except AgentTurnError as exc:
@@ -1696,6 +1861,13 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
+            # A watcher turn has no frontend poller for its id — hand its result to the
+            # /pending channel so the next-steps it produced reach the UI. User/frontend
+            # turns are polled by id, so they are never enqueued (no double-render).
+            if turn.watcher and turn.delivery is not None and turn.error is None:
+                state.pending_results.append(turn.delivery)
+                if len(state.pending_results) > MAX_PENDING_RESULTS:
+                    del state.pending_results[:-MAX_PENDING_RESULTS]
             await _record_turn_metrics(state, turn, session_id, turn_id, msg_cache)
         state.last_activity = datetime.now(UTC)
 
@@ -1958,6 +2130,17 @@ async def get_pending(session_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
     result: dict[str, Any] = await _proxy_get(target_id, "pending", {"messages": []}, session_id)
+    # Drain any watcher-turn results buffered for this session and append them to the
+    # opencode-pending messages. This is the delivery channel for server-initiated turns
+    # (see SessionState.pending_results); the drain is a single read so each result is
+    # surfaced to the frontend exactly once.
+    if state.pending_results:
+        drained = state.pending_results
+        state.pending_results = []
+        messages = result.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+        result["messages"] = messages + drained
     return result
 
 

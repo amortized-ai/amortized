@@ -273,9 +273,22 @@ export async function retryJob(jobId: string): Promise<Job> {
 
 // --- Recipes ---
 
-export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {
+export function createJob(
+  endpoint: string,
+  body: Record<string, unknown>,
+  conversationId?: string,
+): Promise<Job> {
   logger.info("createJob", { endpoint })
-  return post<Job>(endpoint, body)
+  // Tag the job with the agent-proxy session so the backend watcher can drive the
+  // completion continuation even if this tab is later closed.
+  const init: RequestInit = {
+    method: "POST",
+    body: JSON.stringify(body),
+  }
+  if (conversationId) {
+    init.headers = { "X-Conversation-Id": conversationId }
+  }
+  return request<Job>(endpoint, init)
 }
 
 // --- Direct job creation (for recipe re-execution) ---

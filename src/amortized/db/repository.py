@@ -1,7 +1,7 @@
 """Repository wrapping all CRUD operations on the jobs table."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 import asyncpg
@@ -34,6 +34,7 @@ class Repository:
         k8s_namespace: str = "",
         request_config: dict[str, Any] | None = None,
         retry_of: str = "",
+        conversation_id: str = "",
     ) -> dict[str, Any]:
         # request_config is the pre-dispatch snapshot the worker never
         # touches (it overwrites jobs.config with resolved/injected
@@ -42,8 +43,8 @@ class Repository:
         await self.conn.execute(
             """INSERT INTO jobs
                (id, type, status, config, recipe, parent_job_id, user_id,
-                created_at, k8s_namespace, request_config, retry_of)
-               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11)""",
+                created_at, k8s_namespace, request_config, retry_of, conversation_id)
+               VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)""",
             job_id,
             job_type.value,
             JobStatus.queued.value,
@@ -55,6 +56,7 @@ class Repository:
             k8s_namespace,
             json.dumps(snapshot),
             retry_of,
+            conversation_id,
         )
         result = await self.get_job(job_id)
         assert result is not None
@@ -124,6 +126,8 @@ class Repository:
         "started_at",
         "completed_at",
         "backend_handle",
+        "conversation_id",
+        "continuation_claimed_at",
     }
 
     async def update_job(
@@ -202,6 +206,38 @@ class Repository:
     async def delete_job(self, job_id: str) -> bool:
         result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"
+
+    async def claim_job_continuation(self, job_id: str) -> bool:
+        """Atomically claim the right to drive this job's completion continuation.
+
+        The backend watcher and the frontend monitor card both race to react to a
+        terminal job; this single-fire guard ensures exactly one drives the
+        next-step turn. Returns True iff this caller won (was the first to claim);
+        a conditional UPDATE on an empty claim column makes it race-safe."""
+        row = await self.conn.fetchrow(
+            """UPDATE jobs SET continuation_claimed_at = $1
+               WHERE id = $2 AND continuation_claimed_at = ''
+               RETURNING id""",
+            datetime.now(UTC).isoformat(),
+            job_id,
+        )
+        return row is not None
+
+    async def conversation_has_unfinished_jobs(self, conversation_id: str) -> bool:
+        """Whether this conversation still has a job that hasn't reached a terminal
+        state — the signal that keeps its proxy session alive past the idle TTL so the
+        watcher can still drive the continuation when the job finishes."""
+        if not conversation_id:
+            return False
+        row = await self.conn.fetchrow(
+            """SELECT 1 FROM jobs
+               WHERE conversation_id = $1 AND status NOT IN ($2, $3, $4) LIMIT 1""",
+            conversation_id,
+            JobStatus.succeeded.value,
+            JobStatus.failed.value,
+            JobStatus.cancelled.value,
+        )
+        return row is not None
 
 
 def _row_to_job(row: Any) -> dict[str, Any]:

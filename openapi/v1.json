@@ -4125,6 +4125,11 @@
             "type": "string",
             "title": "Retry Of",
             "default": ""
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id",
+            "default": ""
           }
         },
         "type": "object",
