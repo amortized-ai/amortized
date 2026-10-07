@@ -985,7 +985,8 @@ async def _job_claim_violations(
             continue
         status = str(job.get("status") or "")
         jtype = str(job.get("type") or "")
-        num = job.get("config", {}).get("num_records") if isinstance(job.get("config"), dict) else None
+        cfg = job.get("config")
+        num = cfg.get("num_records") if isinstance(cfg, dict) else None
         if _DONE_CLAIM_RE.search(window) and status != "succeeded":
             violations.append(
                 {"token": token, "kind": "state", "status": status, "type": jtype, "num": num}
