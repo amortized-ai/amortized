@@ -6169,7 +6169,14 @@
           "model_name_or_path": {
             "type": "string",
             "title": "Model Name Or Path",
-            "description": "HuggingFace model ID or local path"
+            "description": "HuggingFace model ID or local path. Required unless training_job_id is set (resume from a previously finetuned model).",
+            "default": ""
+          },
+          "training_job_id": {
+            "type": "string",
+            "title": "Training Job Id",
+            "description": "Training job ID whose finetuned model to resume from. The model artifacts are downloaded from MLflow before training starts. Alternative to model_name_or_path.",
+            "default": ""
           },
           "data_path": {
             "anyOf": [
@@ -6463,8 +6470,7 @@
         "additionalProperties": true,
         "type": "object",
         "required": [
-          "algorithm",
-          "model_name_or_path"
+          "algorithm"
         ],
         "title": "TrainingJobRequest"
       },
