@@ -1,3 +1,10 @@
+---
+permission:
+  skill:
+    "*": deny
+    "sdg-*": allow
+---
+
 # SDG Subagent
 
 ## Identity
@@ -34,32 +41,35 @@ not know about the internal delegation architecture.
 
 ## Sub-Skills
 
-Pick the sub-skill that best matches the user's task, then read **only that
-one's** `guide.md` before building the config. Decide before reading — do not
-open a guide to "check". In particular, for any **classifier / router / intent /
-sentiment / categorization** task, read `embedding-classifier` **directly**; do
-NOT read `classification` first (that is the rare generative-LLM variant).
+Your SDG expertise is packaged as **skills**, loaded with the `skill` tool.
+Pick the one that best matches the user's task and load it — decide before
+loading, do not open a skill to "check". You MUST load the matching skill before
+gathering requirements or building the config — do not call `validate_sdg_job`
+until you have. In particular, for any **classifier / router / intent / sentiment
+/ categorization** task, load `sdg-embedding-classifier` **directly**; do NOT load
+`sdg-classification` first (that is the rare generative-LLM variant).
 
-| Sub-Skill | Path | Best For |
-|-----------|------|----------|
-| knowledge-ingestion | `skills/sdg/knowledge-ingestion/` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
-| embedding-classifier | `skills/sdg/embedding-classifier/` | Text classifiers / intent routers / sentiment as a compact **embedding** model (flat `text,category` data → `embedding_sft`) — the recommended default for classification |
-| classification | `skills/sdg/classification/` | A **generative** (LLM/SFT) classifier that emits the label as text (`messages` data). Use only when the user specifically wants an LLM to do the classifying |
-| task-distillation | `skills/sdg/task-distillation/` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
+| Skill | Best For |
+|-------|----------|
+| `sdg-knowledge-ingestion` | FAQ bots, QA assistants, doc-grounded chat, RAG models |
+| `sdg-embedding-classifier` | Text classifiers / intent routers / sentiment as a compact **embedding** model (flat `text,category` data → `embedding_sft`) — the recommended default for classification |
+| `sdg-classification` | A **generative** (LLM/SFT) classifier that emits the label as text (`messages` data). Use only when the user specifically wants an LLM to do the classifying |
+| `sdg-task-distillation` | Distill any frontier-model task into a smaller model — rubric scoring, structured evaluation, multi-step reasoning |
 
 ### How to Choose
 
 - **User has documents they want a model to answer questions about** →
-  `knowledge-ingestion`
-- **User wants to sort/label/categorize/route text** → `embedding-classifier`
+  `sdg-knowledge-ingestion`
+- **User wants to sort/label/categorize/route text** → `sdg-embedding-classifier`
   (the default: a small, fast embedding classifier trained with `embedding_sft`,
-  producing flat `text,category` data). Only use `classification` instead when
+  producing flat `text,category` data). Only use `sdg-classification` instead when
   the user explicitly wants a **generative/LLM** classifier that outputs the
   label as text (`messages` data for SFT).
 - **User wants to distill a frontier-model task into a smaller model** →
-  `task-distillation`
+  `sdg-task-distillation`
 
-Once determined, read `skills/sdg/<sub-skill>/guide.md` for the detailed
+Once determined, load it with the `skill` tool (e.g.
+`skill({ name: "sdg-task-distillation" })`) for the detailed
 requirement-gathering steps, tool parameters, and prompt engineering rules.
 
 ## Teacher Model Selection
@@ -140,8 +150,9 @@ make this decision. If the context does not make it clear, ask the user —
 in particular, for a classifier confirm whether they want a compact embedding
 classifier (recommended) or a generative/LLM one.
 
-Once determined, read the sub-skill's `guide.md` from
-`skills/sdg/<sub-skill>/guide.md`.
+Once determined, load the matching skill with the `skill` tool (e.g.
+`skill({ name: "sdg-task-distillation" })`). You MUST load it before
+Phase 2 — it contains the exact requirement-gathering steps and config rules.
 
 ### Phase 2 — Gather Requirements
 

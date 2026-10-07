@@ -1,3 +1,10 @@
+---
+permission:
+  skill:
+    "*": deny
+    "training-*": allow
+---
+
 # Training Workflow
 
 ## Identity
@@ -32,10 +39,14 @@ about internal delegation.
 
 ## Sub-Skills
 
-| Sub-Skill | Path | Best For |
-|-----------|------|----------|
-| knowledge-ingestion/osft | `skills/training/knowledge-ingestion/osft/` | Knowledge ingestion, FAQ bots, doc-grounded QA |
-| embedding-classifier | `skills/training/embedding-classifier/` | Text classifiers, intent routers, topic/sentiment tagging |
+Your training expertise is packaged as **skills**, loaded with the `skill`
+tool. You MUST load the matching skill before gathering requirements or building
+the config — do not call `validate_training_job` until you have.
+
+| Skill | Best For |
+|-------|----------|
+| `training-knowledge-ingestion-osft` | Knowledge ingestion, FAQ bots, doc-grounded QA |
+| `training-embedding-classifier` | Text classifiers, intent routers, topic/sentiment tagging |
 
 **How to choose:** Knowledge ingestion / doc-grounded QA → OSFT (default,
 recommended). Classify text into a fixed set of categories (intent routing,
@@ -47,10 +58,12 @@ fine-tune — use the OSFT sub-skill (its guide's **Scope** note covers
 `messages`-based fine-tunes; skip the document-specific steps), not
 embedding-classifier.
 
-Read `skills/training/knowledge-ingestion/osft/guide.md` for OSFT, or
-`skills/training/embedding-classifier/guide.md` for the embedding classifier —
+Load the matching skill with the `skill` tool —
+`skill({ name: "training-knowledge-ingestion-osft" })` for OSFT, or
+`skill({ name: "training-embedding-classifier" })` for the embedding classifier —
 each has detailed requirement-gathering steps, tool parameters, and
-hyperparameter guidance.
+hyperparameter guidance. The OSFT skill bundles the supported-model list and a
+config template.
 
 **Embedding classifier differs from the LLM sub-skills:** the algorithm is fixed
 to `embedding_sft` (no lora/qlora/osft/sft method choice) and the base is a small
@@ -59,8 +72,9 @@ Method Selection VRAM steps below**; they apply only to the LLM sub-skills.
 
 ## Student Model Selection
 
-Read `skills/training/supported_models.json` for the list of candidate
-models. You MUST show VRAM estimates before presenting model options.
+Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osft` skill) for the
+list of candidate models. You MUST show VRAM estimates before presenting model
+options.
 
 1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
@@ -121,10 +135,12 @@ knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
 classifying text into a fixed set of categories. For classification tasks,
 embedding-classifier is the default — **unless** the user explicitly wants a
 **generative/LLM** classifier (an LLM that emits the label as text on `messages`
-data), which is a normal LLM fine-tune and routes to OSFT instead. Read the
-matching guide (`skills/training/knowledge-ingestion/osft/guide.md` or
-`skills/training/embedding-classifier/guide.md`) for detailed guidance. For the
-embedding classifier, skip the VRAM/model-size/method steps.
+data), which is a normal LLM fine-tune and routes to OSFT instead. Load the
+matching skill (`skill({ name: "training-knowledge-ingestion-osft" })` or
+`skill({ name: "training-embedding-classifier" })`). You MUST load it before
+Phase 2 — it contains the detailed guidance (the OSFT skill also bundles the
+supported-model list). For the embedding classifier, skip the VRAM/model-size/
+method steps.
 
 ### Phase 2 — Gather Requirements
 

@@ -30,6 +30,9 @@ spec:
             capabilities:
               drop: ["ALL"]
           command: ["sh", "-c"]
+          # Expand the flat ConfigMap keys (name__with__underscores) into a
+          # nested skill tree (name/with/underscores) that opencode discovers
+          # at .opencode/skills/<skill>/SKILL.md.
           args:
             - |
               set -e
@@ -93,7 +96,7 @@ spec:
               subPath: morty-eval-workflow.md
               readOnly: true
             - name: skills-tree
-              mountPath: /app/workspace/skills
+              mountPath: /app/workspace/.opencode/skills
               readOnly: true
             - name: gcp-credentials
               mountPath: /app/gcp

@@ -1,6 +1,18 @@
+---
+name: training-embedding-classifier
+description: >-
+  Train a compact embedding classifier / router with embedding_sft (contrastive
+  fine-tuning of a sentence-transformers model). For intent routing, ticket/topic
+  classification, and sentiment — small, fast, and cheap to serve. The algorithm
+  is fixed (no lora/qlora/osft choice) and there is no VRAM/model-size selection.
+  Pairs with the sdg-embedding-classifier skill.
+metadata:
+  stage: training
+---
+
 # Embedding Classifier — Training Guide
 
-Use this sub-skill to train a **compact embedding classifier / router** with
+Use this skill to train a **compact embedding classifier / router** with
 `embedding_sft` (contrastive fine-tuning of a sentence-transformers model). Best
 for intent routing, ticket/topic classification, and sentiment — small, fast, and
 cheap to serve. Pair it with the **Embedding Classifier** SDG skill, which

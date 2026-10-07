@@ -1,3 +1,14 @@
+---
+name: sdg-embedding-classifier
+description: >-
+  Generate synthetic (text, category) training data for a compact embedding
+  classifier / router trained with embedding_sft. The recommended default for
+  classification, intent routing, sentiment, and topic tagging — flat
+  text,category rows with no messages transform.
+metadata:
+  stage: sdg
+---
+
 # Embedding Classifier — Data Generation Guide
 
 Use this guide to generate data for a **compact embedding classifier / router**
@@ -5,12 +16,12 @@ Use this guide to generate data for a **compact embedding classifier / router**
 output is labeled `(text, category)` examples — one row per example, no
 `messages` transform.
 
-## When to use this vs. the SFT classification guide
+## When to use this vs. the SFT classification skill
 
 - **Embedding classifier** (this guide): trains a small sentence-transformers
   model so same-category texts cluster; classify by nearest class at inference.
   Fast, cheap, tiny model, great for routing/intent/topic. Data: `(text, category)`.
-- **SFT classification** (`classification/guide.md`): fine-tunes an LLM to emit
+- **SFT classification** (the `sdg-classification` skill): fine-tunes an LLM to emit
   the label as text. Data: chat `messages`. Use when you need an LLM anyway.
 
 ## How this works
@@ -45,11 +56,11 @@ Follow the workflow's one-question-per-turn rules. Gather, in order:
 
 ## Minimal worked example
 
-The structure is standard `validate_sdg_job` (see the knowledge-ingestion guide
-for the general shape); only two things are specific to this skill — a `category`
-**sampler** and a single `llm-text` column with the seed examples folded into the
-`system_prompt`. Note `processors: []` — unlike the other skills, there is **no
-`schema_transform`**; we want raw `text,category`, not `messages`.
+The structure is standard `validate_sdg_job` (see the `sdg-knowledge-ingestion`
+skill for the general shape); only two things are specific to this skill — a
+`category` **sampler** and a single `llm-text` column with the seed examples folded
+into the `system_prompt`. Note `processors: []` — unlike the other skills, there is
+**no `schema_transform`**; we want raw `text,category`, not `messages`.
 
 ```json
 {

@@ -93,7 +93,8 @@ field on the message request selects which agent's prompt to use
 - Self-contained system prompts with inline identity and conversation rules
 - Users address the subagent as "Morty" — they don't know about delegation
 - Absorbed content from the old `skills/*/guidance.md` files (routing, model selection, defaults)
-- Sub-skill guides (`skills/sdg/classification/guide.md`, etc.) loaded at runtime via Read tool
+- Sub-skills are native opencode skills (`.opencode/skills/<name>/SKILL.md` with
+  name/description frontmatter), auto-discovered and loaded on demand via the `skill` tool
 - Signal completion when job is submitted
 
 ### 5. Nginx (`studio/nginx.conf.template`)

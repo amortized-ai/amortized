@@ -1,12 +1,24 @@
+---
+name: sdg-classification
+description: >-
+  Generate synthetic labeled training data for text classifiers. Use for
+  ticket classifiers, intent routers, sentiment analysis, and content
+  moderation, where each sample is input text plus a category (and optional
+  urgency) label. Covers category/urgency design, sample counts, and SFT
+  formatting.
+metadata:
+  stage: sdg
+---
+
 # Classification (Generative / LLM) — SDG Guide
 
 > **Most classifier / router / sentiment / intent tasks should NOT use this
-> guide — use the `embedding-classifier` skill instead** (the common case: a
+> guide — use the `sdg-embedding-classifier` skill instead** (the common case: a
 > compact, fast embedding classifier trained with `embedding_sft` on flat
 > `text,category` data). Use THIS guide *only* when the user explicitly wants a
 > **generative LLM** classifier that emits the label as text (`messages`/SFT
-> data). If you opened this by default, switch to `embedding-classifier` and just
-> continue — do not tell the user you switched.
+> data). If you opened this by default, switch to `sdg-embedding-classifier` and
+> just continue — do not tell the user you switched.
 
 ## How This Works
 
@@ -111,6 +123,6 @@ ALWAYS add as the last option:
 ## After SDG — Training
 
 This generative classifier is a normal `messages`-based fine-tune. Recommend
-OSFT/SFT training — read `skills/training/knowledge-ingestion/osft/guide.md` (its
+OSFT/SFT training — load the `training-knowledge-ingestion-osft` skill (its
 **Scope** note covers `messages`-based tasks; skip the document-specific steps,
 since there are no documents here). Chain via `parent_job_id`.
