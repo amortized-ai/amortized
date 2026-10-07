@@ -439,4 +439,38 @@ describe("useChat — per-conversation model", () => {
     expect(conv.model).toBe(PINNED)
     expect(conv.messages.find((m) => m.role === "assistant")!.model).toBe(PINNED)
   })
+
+  it("applies the conversation model to job-completion turns", async () => {
+    mockResponse.parts = [{ type: "text", text: "Here are your next steps." }]
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    useChatStore.setState({
+      conversations: [
+        {
+          id: "c1",
+          title: "T",
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          model: PINNED,
+          messages: [
+            { id: "u1", role: "user", content: "hi", timestamp: "2026-01-01" },
+            { id: "a1", role: "assistant", content: "ok", timestamp: "2026-01-01" },
+          ],
+        },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.notifyJobComplete("job-1", "sdg", "succeeded")
+    })
+
+    // The job-completion send carries the conversation's model, and its new assistant
+    // turn is stamped with it (not left unlabeled or defaulted to the global).
+    expect(sendOpenCodeMessage).toHaveBeenCalledWith("c1", expect.any(String), PINNED)
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const lastAssistant = [...conv.messages].reverse().find((m) => m.role === "assistant")!
+    expect(lastAssistant.model).toBe(PINNED)
+  })
 })

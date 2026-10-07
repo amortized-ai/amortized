@@ -45,6 +45,19 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
   }
 }
 
+// Resolve the model for a send and pin it: use the conversation's own model if set,
+// else the global default. Stamps the assistant message (so its label is correct
+// immediately, even mid-stream) and seeds the conversation's model on first send.
+// Must be called BEFORE any await in the send flow so a later picker change cannot
+// retroactively alter the model of an already-submitted turn.
+function resolveAndPinModel(convId: string, assistantMessageId: string): string {
+  const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+  const model = conv?.model ?? useSettingsStore.getState().chatModelSelection
+  useChatStore.getState().updateMessageFields(convId, assistantMessageId, { model })
+  if (!conv?.model) useChatStore.getState().setConversationModel(convId, model)
+  return model
+}
+
 const TOOL_BLOCK_RE =
   /<function_(?:calls|details|response|returns)>[\s\S]*?<\/function_(?:calls|details|response|returns)>/g
 const INVOKE_NAME_RE = /<invoke name="([^"]+)">/g
@@ -565,6 +578,10 @@ export function useChat() {
         })
         _activeRequests.add(convId)
 
+        // Capture and pin the model BEFORE warmup — if the user changes the picker
+        // while warmup is pending, this already-submitted turn must keep its model.
+        const modelToSend = resolveAndPinModel(convId, assistantId)
+
         // Make this conversation current now so the keyed view shows the new turn
         // immediately (the messages selector keys off currentConversationId).
         if (isNewConversation) setCurrentConversationId(convId)
@@ -580,14 +597,6 @@ export function useChat() {
         try {
           const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
           logger.info("sending to OpenCode", { conversationId: convId })
-          const { chatModelSelection } = useSettingsStore.getState()
-          // Pin the model per conversation: use the conversation's own model if set,
-          // else the global default. Stamp the assistant message (so its label is
-          // correct immediately, even mid-stream).
-          const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
-          const modelToSend = conv?.model ?? chatModelSelection
-          useChatStore.getState().updateMessageFields(convId, assistantId, { model: modelToSend })
-          if (!conv?.model) useChatStore.getState().setConversationModel(convId, modelToSend)
           const response = await sendOpenCodeMessage(convId, content, modelToSend)
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
@@ -807,10 +816,15 @@ export function useChat() {
       })
       _activeRequests.add(convId)
 
+      // Job-completion turns belong to the conversation — use (and stamp) its model
+      // too, so they don't silently run on a different model or render unlabeled.
+      const modelToSend = resolveAndPinModel(convId, placeholderId)
+
       try {
         const response = await sendOpenCodeMessage(
           convId,
           `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          modelToSend,
         )
 
         const parsed = parseOpenCodeResponse(response)
