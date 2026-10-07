@@ -259,6 +259,7 @@ class TestDispatchProvenance:
         )
         assert len(sent) == 1
         assert "evaluate on dataset ad472e75" in sent[0]
+        assert "Reusing dataset" in agent._result_text(out)  # corrected reply kept
 
     def test_non_dispatch_tool_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
