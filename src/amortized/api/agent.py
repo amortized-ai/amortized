@@ -864,13 +864,18 @@ async def _apply_provenance_gate(
 #
 # The provenance gate above checks that an id the model states EXISTS in the
 # conversation. This gate goes one level deeper: when the model reports a job to
-# the user, it checks that the job's real DB record MATCHES the claim. Two general
+# the user, it checks that the job's real DB record MATCHES the claim. Three general
 # checks (not keyed to one symptom):
 #   A. state truth    — "finished/ready/generated" => DB status must be succeeded.
 #   B. flow attribution — "just ran/generated" for a job created in an EARLIER
 #      conversation, with no matching validate_*_job this session and no reuse
 #      disclosure => undisclosed stale reuse (caught the 200-requested /
 #      500-record-stale-job substitution).
+#   C. dispatch provenance — a training/eval dispatch THIS turn (a validate_*_job
+#      tool call) whose parent_job_id is a dataset from an EARLIER conversation, not
+#      run or disclosed as reused this session => undisclosed stale substitution,
+#      caught at the point of action. Keyed on the tool call's structured
+#      parent_job_id argument, not on prose, so phrasing cannot evade it.
 # Same remediation shape as the provenance gate: force-correct once, else append a
 # visible caveat rather than discard. Reuse is NOT blocked — only forced to be
 # disclosed — so legitimate reuse (e.g. the eval flow) keeps working.
@@ -898,36 +903,13 @@ _VALIDATE_TOOL_BY_TYPE = {
     "eval": "validate_eval_job",
 }
 
-# Check C — a present-tense assertion that a job IS running / was just submitted,
-# with no job id to point to. Kept separate from _FRESH_RUN_RE (which also matches
-# past-tense "finished") and excludes future/conditional phrasing so "once it runs"
-# / "we'll train next" don't trip it.
-_INPROGRESS_RE = re.compile(
-    r"(is|are|'s) (now |currently )?(running|generating|being generated|in progress|underway)"
-    r"|(just )?(submitted|kicked off|spun up|spinning up|started|launched|queued)\b"
-    r"|job is now",
-    re.I,
-)
-_FUTURE_RE = re.compile(
-    r"\b(once|when|after|will|would|as soon as|going to|about to|next we|then we|let'?s)\b",
-    re.I,
-)
-# Leading \b only (no trailing) so inflections match: "training" -> train,
-# "datasets" -> dataset. Leading \b still blocks substrings like "constrain".
-_TYPE_HINT_RE = [
-    ("sdg", re.compile(r"\b(data[- ]?gen|synthetic|sdg|dataset|example|record|generation)", re.I)),
-    ("training", re.compile(r"\b(train|fine[- ]?tun|osft|sft)", re.I)),
-    ("eval", re.compile(r"\b(eval|scoring run|judge)", re.I)),
-]
-
-
-def _infer_job_type(text: str) -> str:
-    """Best-effort job type from a claim's wording, "" when unclear (then any
-    validate counts)."""
-    for jtype, pat in _TYPE_HINT_RE:
-        if pat.search(text):
-            return jtype
-    return ""
+# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
+# a parent dataset. The call carries parent_job_id as a structured argument, so
+# dispatch provenance is verified from the parent's DB record, with no prose parsing.
+_DISPATCH_PARENT_TYPE = {
+    "validate_training_job": "training",
+    "validate_eval_job": "eval",
+}
 
 
 def _as_utc(value: Any) -> datetime | None:
@@ -1034,38 +1016,66 @@ async def _job_claim_violations(
                 violations.append(
                     {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
                 )
-    # Check C — a present-tense "a job is running / was just submitted" claim that
-    # names no job id, with nothing actually set up this conversation. Only when the
-    # reply cites no id at all; a named id is handled by A/B above or the provenance
-    # gate, so this never double-fires with them.
-    if not tokens:
-        claim_type = await _unbacked_inprogress_claim(state, text, cache)
-        if claim_type is not None:
-            violations.append(
-                {"token": None, "kind": "unbacked", "status": "", "type": claim_type, "num": None}
-            )
+    # Check C — a training/eval dispatch this turn onto a stale, undisclosed parent
+    # dataset. Keyed on the dispatch tool call's parent_job_id, independent of prose,
+    # so it fires even when the reply names no id. Dedup against A/B by parent prefix.
+    flagged = {v["token"] for v in violations if v.get("token")}
+    for v in await _dispatch_provenance_violations(state, result, text, cache, job_cache):
+        if v["token"] not in flagged:
+            violations.append(v)
     return violations
 
 
-async def _unbacked_inprogress_claim(
+async def _dispatch_provenance_violations(
     state: SessionState,
+    result: dict[str, Any],
     text: str,
     cache: dict[str, list[dict[str, Any]]] | None,
-) -> str | None:
-    """The inferred job type ("" if unclear) when the reply asserts a job is running
-    / was just submitted but no validate_*_job happened this conversation and reuse
-    isn't disclosed; None when there's no such unbacked claim."""
-    claim = " ".join(
-        s
-        for s in re.split(r"[\n.!?;]+", text)
-        if _INPROGRESS_RE.search(s) and not _FUTURE_RE.search(s)
-    )
-    if not claim or _REUSE_DISCLOSED_RE.search(claim):
-        return None
-    jtype = _infer_job_type(claim)
-    if await _session_has_validate(state, jtype, cache):
-        return None
-    return jtype
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """A training/eval dispatch in this turn whose parent dataset is a succeeded job
+    from an EARLIER conversation, with no SDG validated this session and no reuse
+    disclosure — undisclosed stale substitution, caught at the point of action. The
+    verdict is wholly structural: the dispatch tool call's parent_job_id argument, the
+    parent's created_at vs the session start, and the presence of a validate_sdg_job
+    in the corpus. Only reuse disclosure is read from prose (a communication act with
+    no structural proxy), and matching it merely suppresses the flag — fail-safe."""
+    violations: list[dict[str, Any]] = []
+    session_start = _as_utc(state.created_at)
+    if session_start is None:
+        return violations
+    reuse_disclosed = bool(_REUSE_DISCLOSED_RE.search(text))
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        downstream = _DISPATCH_PARENT_TYPE.get(_tool_name(part))
+        if downstream is None:
+            continue
+        parent_id = str(_get_tool_input(part).get("parent_job_id") or "")
+        if not parent_id:
+            continue  # data_path / data_run_id dispatch — not an SDG chain
+        if reuse_disclosed:
+            continue  # reuse acknowledged in the reply — allowed
+        parent = await _fetch_job_by_token(parent_id, job_cache)
+        if not parent:
+            continue
+        created = _as_utc(parent.get("created_at"))
+        if created is None or created >= session_start:
+            continue  # produced this conversation — a fresh, legitimate chain
+        if await _session_has_validate(state, "sdg", cache):
+            continue  # a fresh SDG really was set up this session
+        cfg = parent.get("config")
+        num = cfg.get("num_records") if isinstance(cfg, dict) else None
+        violations.append(
+            {
+                "token": parent_id[:8],
+                "kind": "dispatch",
+                "status": str(parent.get("status") or ""),
+                "type": downstream,
+                "num": num,
+            }
+        )
+    return violations
 
 
 def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
@@ -1080,15 +1090,16 @@ def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
                 f" status is '{v['status']}'. Do NOT claim completion until it is"
                 " actually succeeded — state the real status or wait for it."
             )
-        elif v["kind"] == "unbacked":
-            kind = f"{v['type']} " if v["type"] else ""
+        elif v["kind"] == "dispatch":
+            verb = "train on" if v["type"] == "training" else "evaluate on"
+            size = f" ({v['num']} records)" if v["num"] is not None else ""
             lines.append(
-                f"- You told the user a {kind}job is running / was just submitted, but"
-                " NO job has actually been submitted in this conversation (no"
-                " validate_*_job happened and there is no job id to point to). Do NOT"
-                " report a job as running before one exists. If you have not submitted"
-                " it yet, say what you are about to do and call the validate_*_job"
-                " tool (or ask the user to confirm) — do not claim it is already running."
+                f"- You are about to {verb} dataset {v['token']}{size}, but that is an"
+                " EXISTING dataset created in an earlier conversation — you did not run"
+                " a fresh SDG job for this request this session, nor tell the user you"
+                " are reusing it. Either submit a new SDG job for what the user asked"
+                f" for, or explicitly tell the user you are REUSING existing dataset"
+                f" {v['token']}{size} so they can confirm it matches before it runs."
             )
         else:
             size = f" ({v['num']} records)" if v["num"] is not None else ""
@@ -1109,10 +1120,12 @@ def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
     for v in violations:
         if v["kind"] == "state":
             parts.append(f"job {v['token']} is '{v['status']}', not finished")
-        elif v["kind"] == "unbacked":
+        elif v["kind"] == "dispatch":
+            size = f" ({v['num']} records)" if v["num"] is not None else ""
             parts.append(
-                "no job has actually been submitted in this conversation yet, so"
-                " nothing is running"
+                f"the {v['type']} run is about to use existing dataset {v['token']}{size}"
+                " from an earlier conversation, which was not generated or disclosed as"
+                " reused this session"
             )
         else:
             size = f" ({v['num']} records)" if v["num"] is not None else ""

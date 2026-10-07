@@ -1,9 +1,10 @@
 """Tests for the job-claim verification gate in the agent proxy.
 
 The gate checks that a job the assistant reports to the user actually MATCHES its
-DB record: (A) a job reported done must really be succeeded, and (B) a job reported
-as freshly generated must not be an undisclosed stale reuse from an earlier
-conversation. It force-corrects once, then appends a caveat.
+DB record: (A) a job reported done must really be succeeded, (B) a job reported as
+freshly generated must not be an undisclosed stale reuse from an earlier
+conversation, and (C) a training/eval dispatch this turn must not chain onto a stale,
+undisclosed parent dataset. It force-corrects once, then appends a caveat.
 """
 
 import asyncio
@@ -25,6 +26,17 @@ def _body() -> agent.MessageRequest:
 
 def _text_result(text: str) -> dict[str, Any]:
     return {"info": {"id": "x"}, "parts": [{"type": "text", "text": text}]}
+
+
+def _dispatch_result(text: str, tool: str, parent_job_id: str) -> dict[str, Any]:
+    """A reply carrying a training/eval validate dispatch tool call."""
+    return {
+        "info": {"id": "x"},
+        "parts": [
+            {"type": "text", "text": text},
+            {"type": "tool", "tool": tool, "input": {"parent_job_id": parent_job_id}},
+        ],
+    }
 
 
 def _job(**kw: Any) -> dict[str, Any]:
@@ -173,70 +185,118 @@ class TestRemediation:
         assert out is result  # untouched; provenance gate owns fabrication
 
 
-class TestUnbackedInProgress:
-    def test_unbacked_running_claim_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # The earlier-gap case: "the data generation job is now running" with no id
-        # and nothing submitted this conversation.
+class TestDispatchProvenance:
+    PARENT = "ad472e75-2d12-4819-8ed6-4a8bdb3321ad"
+
+    def test_stale_parent_training_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The real harm: training chained onto a stale SDG from an earlier
+        # conversation, no SDG run this session, no reuse disclosure.
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(
-            monkeypatch, {}, has_validate=False, reply="Please confirm the SDG config to proceed."
+            monkeypatch,
+            {self.PARENT: _job()},  # succeeded sdg, created yesterday
+            has_validate=False,
+            reply="I'll reuse the existing dataset ad472e75 (500 records) — confirm it fits.",
         )
         out = _run(
             agent._apply_job_claim_gate(
-                state, _text_result("The data generation job is now running."), _body()
+                state,
+                _dispatch_result("Setting up training.", "validate_training_job", self.PARENT),
+                _body(),
             )
         )
         assert len(sent) == 1
-        assert "NO job has actually been submitted" in sent[0]
-        assert "confirm the SDG config" in agent._result_text(out)
+        assert "REUSING existing dataset ad472e75" in sent[0]
+        assert "train on dataset ad472e75" in sent[0]
+        assert "existing dataset" in agent._result_text(out)  # corrected reply kept
 
-    def test_validate_present_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_fresh_parent_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        sent = _patch(monkeypatch, {}, has_validate=True)
-        result = _text_result("The data generation job is now running.")
+        job = _job(created_at=datetime.now(UTC) + timedelta(seconds=5))  # this conversation
+        sent = _patch(monkeypatch, {self.PARENT: job}, has_validate=False)
+        result = _dispatch_result("Setting up training.", "validate_training_job", self.PARENT)
         out = _run(agent._apply_job_claim_gate(state, result, _body()))
-        assert sent == []  # a job really was set up this conversation
+        assert sent == []  # parent produced this conversation
         assert out is result
 
-    def test_future_tense_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_sdg_validated_this_session_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        sent = _patch(monkeypatch, {}, has_validate=False)
-        result = _text_result("Once the data generation job is running, we'll fine-tune.")
+        sent = _patch(monkeypatch, {self.PARENT: _job()}, has_validate=True)
+        result = _dispatch_result("Setting up training.", "validate_training_job", self.PARENT)
         out = _run(agent._apply_job_claim_gate(state, result, _body()))
-        assert sent == []  # conditional/future, not a present-tense claim
+        assert sent == []  # a fresh SDG really was set up this session
         assert out is result
 
     def test_reuse_disclosed_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        sent = _patch(monkeypatch, {}, has_validate=False)
-        result = _text_result("Reusing the existing dataset — it is running on the prior data.")
+        sent = _patch(monkeypatch, {self.PARENT: _job()}, has_validate=False)
+        result = _dispatch_result(
+            "Reusing the existing dataset to fine-tune.", "validate_training_job", self.PARENT
+        )
         out = _run(agent._apply_job_claim_gate(state, result, _body()))
-        assert sent == []  # reuse disclosed
+        assert sent == []  # reuse disclosed in the reply
         assert out is result
 
-    def test_persistent_unbacked_gets_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_parent_id_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {self.PARENT: _job()}, has_validate=False)
+        result = _dispatch_result("Training on an uploaded file.", "validate_training_job", "")
+        out = _run(agent._apply_job_claim_gate(state, result, _body()))
+        assert sent == []  # data_path / data_run_id dispatch, not an SDG chain
+        assert out is result
+
+    def test_eval_dispatch_stale_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(
-            monkeypatch, {}, has_validate=False, reply="The training job is now running."
+            monkeypatch, {self.PARENT: _job()}, has_validate=False, reply="Reusing dataset."
         )
         out = _run(
             agent._apply_job_claim_gate(
-                state, _text_result("The training job is now running."), _body()
+                state,
+                _dispatch_result("Scoring the model.", "validate_eval_job", self.PARENT),
+                _body(),
             )
         )
         assert len(sent) == 1
-        assert "nothing is running" in agent._result_text(out)
+        assert "evaluate on dataset ad472e75" in sent[0]
 
-    def test_tokened_reply_defers_to_ab(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # A named, legit job created this session — Check C must NOT fire (an id is
-        # present, so A/B own it; here nothing is wrong).
+    def test_non_dispatch_tool_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        job = _job(status="running", created_at=datetime.now(UTC) + timedelta(seconds=5))
-        sent = _patch(monkeypatch, {"abcd1234": job}, has_validate=True)
-        result = _text_result("Job abcd1234 is now running.")
+        sent = _patch(monkeypatch, {self.PARENT: _job()}, has_validate=False)
+        result = _dispatch_result("Listing jobs.", "list_jobs", self.PARENT)
         out = _run(agent._apply_job_claim_gate(state, result, _body()))
-        assert sent == []
+        assert sent == []  # not a dispatch tool
         assert out is result
+
+    def test_persistent_dispatch_gets_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Model re-sends the same stale dispatch on the correction -> caveat.
+        state = agent.SessionState(orchestrator_id="orch")
+
+        async def _fetch(token: str, job_cache: Any = None) -> dict[str, Any] | None:
+            return _job() if token == self.PARENT else None
+
+        async def _has_validate(st: Any, jt: str, c: Any) -> bool:
+            return False
+
+        sent: list[str] = []
+
+        async def _send(sid: str, text: str, **k: Any) -> dict[str, Any]:
+            sent.append(text)
+            return _dispatch_result("Setting up training.", "validate_training_job", self.PARENT)
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        monkeypatch.setattr(agent, "_session_has_validate", _has_validate)
+        monkeypatch.setattr(agent, "_proxy_send_message", _send)
+
+        out = _run(
+            agent._apply_job_claim_gate(
+                state,
+                _dispatch_result("Setting up training.", "validate_training_job", self.PARENT),
+                _body(),
+            )
+        )
+        assert len(sent) == 1
+        assert "existing dataset ad472e75" in agent._result_text(out)
 
 
 class TestHelpers:
@@ -249,9 +309,3 @@ class TestHelpers:
         assert agent._as_utc(datetime(2026, 1, 1)).tzinfo is UTC
         assert agent._as_utc("2026-01-01T00:00:00").tzinfo is UTC
         assert agent._as_utc(None) is None
-
-    def test_infer_job_type(self) -> None:
-        assert agent._infer_job_type("the data generation job") == "sdg"
-        assert agent._infer_job_type("fine-tuning is underway") == "training"
-        assert agent._infer_job_type("the eval run") == "eval"
-        assert agent._infer_job_type("the job is running") == ""
