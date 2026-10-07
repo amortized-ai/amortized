@@ -43,7 +43,21 @@ class TrainingJobConfig(BaseModel):
     algorithm: str = Field(
         ..., description="Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd)"
     )
-    model_name_or_path: str = Field(..., description="HuggingFace model ID or local path")
+    model_name_or_path: str = Field(
+        "",
+        description=(
+            "HuggingFace model ID or local path. Required unless training_job_id"
+            " is set (resume from a previously finetuned model)."
+        ),
+    )
+    training_job_id: str = Field(
+        "",
+        description=(
+            "Training job ID whose finetuned model to resume from."
+            " The model artifacts are downloaded from MLflow before"
+            " training starts. Alternative to model_name_or_path."
+        ),
+    )
     data_path: str | None = Field(
         None, description="Path to training data (resolved from parent if chaining)"
     )
@@ -111,6 +125,16 @@ class TrainingJobConfig(BaseModel):
         "",
         description="1-5 word model topic for tracking (e.g. 'support ticket classification')",
     )
+
+    @model_validator(mode="after")
+    def check_model_source(self) -> "TrainingJobConfig":
+        if not self.model_name_or_path and not self.training_job_id:
+            msg = (
+                "either model_name_or_path (HuggingFace model ID) or"
+                " training_job_id (resume from a finetuned model) is required"
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def check_osft_requires_urr(self) -> "TrainingJobConfig":
