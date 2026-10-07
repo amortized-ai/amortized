@@ -189,3 +189,48 @@ class TestJobCRUD:
         jobs = await repo.list_jobs(status=JobStatus.queued, job_type=JobType.training)
         assert len(jobs) == 1
         assert jobs[0]["id"] == "f1"
+
+
+class TestUserHasDataset:
+    async def _mk(
+        self, repo: Repository, jid: str, jtype: JobType, status: JobStatus, user: str
+    ) -> None:
+        await repo.create_job(
+            job_id=jid,
+            job_type=jtype,
+            config={},
+            created_at="2026-01-01T00:00:00+00:00",
+            user_id=user,
+        )
+        await repo.update_job(jid, status=status.value)
+
+    @pytest.mark.asyncio
+    async def test_succeeded_sdg_counts(self, repo: Repository) -> None:
+        await self._mk(repo, "j1", JobType.sdg, JobStatus.succeeded, "alice")
+        assert await repo.user_has_dataset("alice") is True
+
+    @pytest.mark.asyncio
+    async def test_succeeded_upload_counts(self, repo: Repository) -> None:
+        await self._mk(repo, "j1", JobType.upload, JobStatus.succeeded, "alice")
+        assert await repo.user_has_dataset("alice") is True
+
+    @pytest.mark.asyncio
+    async def test_unfinished_sdg_does_not_count(self, repo: Repository) -> None:
+        await self._mk(repo, "j1", JobType.sdg, JobStatus.running, "alice")
+        assert await repo.user_has_dataset("alice") is False
+
+    @pytest.mark.asyncio
+    async def test_training_job_is_not_a_dataset(self, repo: Repository) -> None:
+        await self._mk(repo, "j1", JobType.training, JobStatus.succeeded, "alice")
+        assert await repo.user_has_dataset("alice") is False
+
+    @pytest.mark.asyncio
+    async def test_empty_owner_upload_matches_scoped_user(self, repo: Repository) -> None:
+        # Dataset uploads don't record a user_id; the per-user-namespace DB means
+        # an empty-owner row is still this user's, so it must count.
+        await self._mk(repo, "j1", JobType.upload, JobStatus.succeeded, "")
+        assert await repo.user_has_dataset("alice") is True
+
+    @pytest.mark.asyncio
+    async def test_no_dataset_returns_false(self, repo: Repository) -> None:
+        assert await repo.user_has_dataset("alice") is False

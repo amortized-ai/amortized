@@ -199,6 +199,27 @@ class Repository:
             return None
         return _row_to_job(row)
 
+    async def user_has_dataset(self, user_id: str) -> bool:
+        """Whether any usable dataset exists — a succeeded SDG or upload job, the
+        only job types that produce training/eval data. Scoped to ``user_id`` when
+        given, but also matches empty-owner rows because dataset uploads
+        (``/api/v1/datasets``) don't record a user_id; the server runs one DB per
+        user namespace, so empty-owner rows are still this user's. An empty
+        ``user_id`` (no proxy header) can't be scoped, so it matches any owner —
+        erring toward "has data" keeps the no-data advisory fail-safe."""
+        if user_id:
+            row = await self.conn.fetchrow(
+                "SELECT 1 FROM jobs WHERE type IN ('sdg', 'upload')"
+                " AND status = 'succeeded' AND user_id IN ($1, '') LIMIT 1",
+                user_id,
+            )
+        else:
+            row = await self.conn.fetchrow(
+                "SELECT 1 FROM jobs WHERE type IN ('sdg', 'upload')"
+                " AND status = 'succeeded' LIMIT 1"
+            )
+        return row is not None
+
     async def delete_job(self, job_id: str) -> bool:
         result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"

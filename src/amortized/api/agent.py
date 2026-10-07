@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from amortized.api import monitor_log
@@ -73,6 +73,11 @@ class TurnState:
 @dataclass
 class SessionState:
     orchestrator_id: str
+    # Who owns this conversation (X-Forwarded-User from the proxy, "" when the
+    # header is absent, e.g. kind dev). Captured at session create and backfilled
+    # on each message so gates can scope DB queries to this user — see
+    # _no_data_advisory.
+    user: str = ""
     subagent_id: str | None = None
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -977,6 +982,62 @@ async def _session_has_validate(
     return False
 
 
+# Job types whose subagent can't do anything without an existing dataset — so a
+# delegation to one when the platform provably has no data is premature.
+_DATA_DEPENDENT_TARGETS = {"training": "train on", "eval": "evaluate on"}
+
+
+async def _user_has_dataset(user: str) -> bool:
+    """Whether a usable dataset exists for ``user`` (a succeeded SDG/upload job).
+    Best-effort — any DB issue returns True so the no-data advisory fails safe
+    (assume data may exist → no advisory)."""
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            return await Repository(conn).user_has_dataset(user)
+    except Exception:
+        return True
+
+
+async def _no_data_advisory(state: SessionState, target: str) -> str | None:
+    """Advisory to prepend to a training/eval handoff when no dataset exists yet.
+
+    The orchestrator routes to training/eval off the user's verb ("train"), but
+    those jobs can't run without data. Rather than let the subagent spin up and
+    discover the gap through tool exploration (the wasted hop seen in GLM runs),
+    the proxy states the fact at the delegation boundary — the earliest point the
+    backend can act, since the orchestrator's choice is model-internal.
+
+    Fail-safe: this only fires on a DEFINITIVE structural fact — zero succeeded
+    SDG/upload jobs AND no SDG set up this conversation. Any uncertainty (data may
+    exist, an SDG is already in flight, a DB error, or an unknown target) returns
+    None, leaving the handoff unchanged. It never presumes SDG-vs-upload or blocks
+    the delegation — so the upload/existing-data flows (which have a dataset) are
+    never touched.
+    """
+    if target not in _DATA_DEPENDENT_TARGETS:
+        return None
+    try:
+        if await _session_has_validate(state, "sdg", None):
+            return None  # an SDG is already set up this conversation — data is coming
+    except Exception:
+        return None
+    if await _user_has_dataset(state.user):
+        return None
+    verb = _DATA_DEPENDENT_TARGETS[target]
+    return (
+        "[DATA AVAILABILITY]\n"
+        "There is no dataset yet — no completed SDG or uploaded dataset, and none"
+        f" generated in this conversation. A {target} job needs data to {verb}, so"
+        " the first step is to obtain it: generate a fresh dataset (delegate to"
+        " SDG) or have the user upload one. That is expected here — proceed with"
+        f" producing the dataset; just don't create or confirm the {target} job"
+        " until one exists."
+    )
+
+
 async def _job_claim_violations(
     state: SessionState,
     result: dict[str, Any],
@@ -1323,7 +1384,7 @@ def _extract_user_text(body: MessageRequest) -> str:
 
 
 @router.post("/session")
-async def create_session() -> dict[str, Any]:
+async def create_session(http_request: Request) -> dict[str, Any]:
     session_id = str(uuid.uuid4())
     try:
         opencode_id = await _proxy_create_session()
@@ -1333,7 +1394,8 @@ async def create_session() -> dict[str, Any]:
         raise HTTPException(status_code=504, detail="Agent service timed out") from None
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Agent service error: {exc}") from None
-    _sessions[session_id] = SessionState(orchestrator_id=opencode_id)
+    user = http_request.headers.get("X-Forwarded-User", "")
+    _sessions[session_id] = SessionState(orchestrator_id=opencode_id, user=user)
     return {"id": session_id}
 
 
@@ -1396,7 +1458,9 @@ def _evict_finished_turns(state: SessionState) -> None:
 
 
 @router.post("/session/{session_id}/message")
-async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
+async def send_message(
+    session_id: str, body: MessageRequest, http_request: Request
+) -> dict[str, Any]:
     """Accept a message and run the turn in the background.
 
     Returns immediately with a ``turn_id``; the caller polls
@@ -1411,6 +1475,11 @@ async def send_message(session_id: str, body: MessageRequest) -> dict[str, Any]:
     state = _sessions.get(session_id)
     if not state:
         raise HTTPException(status_code=404, detail="unknown session")
+
+    # Backfill the owner for sessions created before user-capture existed, or when
+    # the create call lacked the header — every message carries it.
+    if not state.user:
+        state.user = http_request.headers.get("X-Forwarded-User", "")
 
     state.last_activity = datetime.now(UTC)
 
@@ -1699,6 +1768,10 @@ async def _maybe_delegate(
                 }
             ],
         }
+
+    advisory = await _no_data_advisory(state, target)
+    if advisory:
+        context = f"{advisory}\n\n{context}" if context else advisory
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 

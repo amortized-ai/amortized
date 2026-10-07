@@ -468,3 +468,89 @@ class TestPhaseBackfill:
 
         signals = _signal_phase_results(out["parts"])
         assert agent._get_tool_input(signals[0]).get("step") == "confirm"
+
+
+class TestNoDataAdvisory:
+    """Pre-delegation advisory: when the platform provably has no dataset, a
+    training/eval handoff is annotated so the subagent routes to data production
+    first instead of discovering the gap after it spins up."""
+
+    @staticmethod
+    def _patch(
+        monkeypatch: pytest.MonkeyPatch, *, validated: bool, has_data: bool
+    ) -> None:
+        async def _validate(*_a: Any, **_k: Any) -> bool:
+            return validated
+
+        async def _dataset(_user: str) -> bool:
+            return has_data
+
+        monkeypatch.setattr(agent, "_session_has_validate", _validate)
+        monkeypatch.setattr(agent, "_user_has_dataset", _dataset)
+
+    def _delegate(self, router: _Router, target: str) -> tuple[str, list[str]]:
+        sub_id = router.queue_session([[_text_part("ok")]])
+        state = _make_state(router)
+        _run(
+            agent._maybe_delegate(
+                state,
+                "s1",
+                (target, "orig ctx", False),
+                "go",
+                {"info": {}, "parts": []},
+                _body(),
+            )
+        )
+        sent = [text for sid, text, _ag in router.sent if sid == sub_id]
+        return sub_id, sent
+
+    def test_advisory_prepended_to_training_handoff(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch(monkeypatch, validated=False, has_data=False)
+        _sub_id, sent = self._delegate(router, "training")
+        assert sent
+        assert "[DATA AVAILABILITY]" in sent[0]
+        assert "train on" in sent[0]
+        assert "orig ctx" in sent[0]  # original context preserved
+
+    def test_advisory_for_eval_uses_evaluate_verb(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch(monkeypatch, validated=False, has_data=False)
+        _sub_id, sent = self._delegate(router, "eval")
+        assert "[DATA AVAILABILITY]" in sent[0]
+        assert "evaluate on" in sent[0]
+
+    def test_no_advisory_when_dataset_exists(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch(monkeypatch, validated=False, has_data=True)
+        _sub_id, sent = self._delegate(router, "training")
+        assert "[DATA AVAILABILITY]" not in sent[0]
+
+    def test_no_advisory_when_sdg_validated_this_session(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch(monkeypatch, validated=True, has_data=False)
+        _sub_id, sent = self._delegate(router, "training")
+        assert "[DATA AVAILABILITY]" not in sent[0]
+
+    def test_no_advisory_for_non_data_dependent_target(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # sdg itself produces data — never annotated even with no dataset yet.
+        self._patch(monkeypatch, validated=False, has_data=False)
+        _sub_id, sent = self._delegate(router, "sdg")
+        assert "[DATA AVAILABILITY]" not in sent[0]
+
+    def test_advisory_suppressed_on_validate_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Fail-safe: any error determining session state → no advisory.
+        async def _boom(*_a: Any, **_k: Any) -> bool:
+            raise RuntimeError("opencode unreachable")
+
+        monkeypatch.setattr(agent, "_session_has_validate", _boom)
+        state = agent.SessionState(orchestrator_id="orch")
+        assert _run(agent._no_data_advisory(state, "training")) is None
