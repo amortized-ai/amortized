@@ -471,22 +471,17 @@ class TestPhaseBackfill:
 
 
 class TestNoDataAdvisory:
-    """Pre-delegation advisory: when the platform provably has no dataset, a
-    training/eval handoff is annotated so the subagent routes to data production
-    first instead of discovering the gap after it spins up."""
+    """Pre-delegation advisory: when THIS conversation has no dataset path, a
+    training/eval handoff is annotated so the subagent gets data first instead of
+    discovering the gap after it spins up. Scoping lives in _conversation_has_dataset
+    (exercised in TestConversationHasDataset); here we test injection + wording."""
 
     @staticmethod
-    def _patch(
-        monkeypatch: pytest.MonkeyPatch, *, validated: bool, has_data: bool
-    ) -> None:
-        async def _validate(*_a: Any, **_k: Any) -> bool:
-            return validated
-
-        async def _dataset(_user: str) -> bool:
+    def _patch(monkeypatch: pytest.MonkeyPatch, *, has_data: bool) -> None:
+        async def _has(*_a: Any, **_k: Any) -> bool:
             return has_data
 
-        monkeypatch.setattr(agent, "_session_has_validate", _validate)
-        monkeypatch.setattr(agent, "_user_has_dataset", _dataset)
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
 
     def _delegate(self, router: _Router, target: str) -> tuple[str, list[str]]:
         sub_id = router.queue_session([[_text_part("ok")]])
@@ -507,7 +502,7 @@ class TestNoDataAdvisory:
     def test_advisory_prepended_to_training_handoff(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._patch(monkeypatch, validated=False, has_data=False)
+        self._patch(monkeypatch, has_data=False)
         _sub_id, sent = self._delegate(router, "training")
         assert sent
         assert "[DATA AVAILABILITY]" in sent[0]
@@ -517,22 +512,15 @@ class TestNoDataAdvisory:
     def test_advisory_for_eval_uses_evaluate_verb(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._patch(monkeypatch, validated=False, has_data=False)
+        self._patch(monkeypatch, has_data=False)
         _sub_id, sent = self._delegate(router, "eval")
         assert "[DATA AVAILABILITY]" in sent[0]
         assert "evaluate on" in sent[0]
 
-    def test_no_advisory_when_dataset_exists(
+    def test_no_advisory_when_conversation_has_dataset(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._patch(monkeypatch, validated=False, has_data=True)
-        _sub_id, sent = self._delegate(router, "training")
-        assert "[DATA AVAILABILITY]" not in sent[0]
-
-    def test_no_advisory_when_sdg_validated_this_session(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._patch(monkeypatch, validated=True, has_data=False)
+        self._patch(monkeypatch, has_data=True)
         _sub_id, sent = self._delegate(router, "training")
         assert "[DATA AVAILABILITY]" not in sent[0]
 
@@ -540,17 +528,90 @@ class TestNoDataAdvisory:
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # sdg itself produces data — never annotated even with no dataset yet.
-        self._patch(monkeypatch, validated=False, has_data=False)
+        self._patch(monkeypatch, has_data=False)
         _sub_id, sent = self._delegate(router, "sdg")
         assert "[DATA AVAILABILITY]" not in sent[0]
 
-    def test_advisory_suppressed_on_validate_error(
+    def test_advisory_suppressed_on_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Fail-safe: any error determining session state → no advisory.
+        # Fail-safe: any error determining conversation state → no advisory.
         async def _boom(*_a: Any, **_k: Any) -> bool:
             raise RuntimeError("opencode unreachable")
 
-        monkeypatch.setattr(agent, "_session_has_validate", _boom)
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _boom)
         state = agent.SessionState(orchestrator_id="orch")
-        assert _run(agent._no_data_advisory(state, "training")) is None
+        assert _run(agent._no_data_advisory(state, "training", "ctx", "go")) is None
+
+
+class TestConversationHasDataset:
+    """The conversation-scoped dataset signals that gate the advisory. Fresh SDG,
+    existing-dataset browsing/splitting, and train/eval-on-existing must all count as
+    "has data"; a bare training request with no data path must not."""
+
+    def _setup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        messages: list[dict[str, Any]] | None = None,
+        jobs: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        async def _fetch(_sid: str, _cache: Any = None) -> list[dict[str, Any]]:
+            return messages or []
+
+        async def _job(token: str, _cache: Any = None) -> dict[str, Any] | None:
+            return (jobs or {}).get(token)
+
+        monkeypatch.setattr(agent, "_fetch_all_messages", _fetch)
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _job)
+
+    @staticmethod
+    def _user_msg(text: str) -> dict[str, Any]:
+        return {"info": {"role": "user"}, "parts": [_text_part(text)]}
+
+    def _run_check(self, context: str = "", user_text: str = "go") -> bool:
+        state = agent.SessionState(orchestrator_id="orch")
+        return _run(agent._conversation_has_dataset(state, context, user_text, {}))
+
+    def test_fresh_sdg_this_session_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._setup(
+            monkeypatch,
+            messages=[{"info": {}, "parts": [_tool_part("validate_sdg_job", {})]}],
+        )
+        assert self._run_check() is True
+
+    def test_dataset_tool_touched_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._setup(
+            monkeypatch,
+            messages=[{"info": {}, "parts": [_tool_part("list_datasets", {})]}],
+        )
+        assert self._run_check() is True
+
+    def test_cited_existing_dataset_id_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        tok = "a1b2c3d4"
+        self._setup(
+            monkeypatch,
+            messages=[],
+            jobs={tok: {"type": "sdg", "status": "succeeded"}},
+        )
+        assert self._run_check(context=f"user wants to train on dataset {tok}") is True
+
+    def test_cited_id_that_is_a_training_job_does_not_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An id that resolves to a training (not sdg/upload) job is not a dataset.
+        tok = "a1b2c3d4"
+        self._setup(
+            monkeypatch, messages=[], jobs={tok: {"type": "training", "status": "succeeded"}}
+        )
+        assert self._run_check(context=f"retry training job {tok}") is False
+
+    def test_bare_training_request_has_no_dataset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._setup(
+            monkeypatch,
+            messages=[self._user_msg("train a model to assess RFEs")],
+            jobs={},
+        )
+        assert self._run_check(user_text="train a model to assess RFEs") is False
