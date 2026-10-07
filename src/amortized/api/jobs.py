@@ -136,6 +136,38 @@ def _simplify_sdg_errors(
 # ---------------------------------------------------------------------------
 
 
+async def _require_dependency_succeeded(
+    repo: Repository,
+    job_id: str,
+    label: str,
+    *,
+    require_mlflow: bool = True,
+) -> list[str]:
+    """A referenced upstream job must exist, be ``succeeded``, and (optionally)
+    have MLflow artifacts. Returns the error(s) for that reference, empty when OK.
+
+    This is the fail-closed half of the dependency invariant: a downstream job
+    cannot be created until every upstream job it references is terminal
+    ``succeeded``. Shared by training and eval validation so every dependency
+    (SDG dataset parent, the model under eval) is gated identically.
+    """
+    job = await repo.get_job(job_id)
+    if job is None:
+        return [f"{label}: job '{job_id}' not found"]
+    status = job.get("status")
+    if status != "succeeded":
+        return [
+            f"{label}: job '{job_id}' has status '{status}' — it must finish"
+            " ('succeeded') before it can be used"
+        ]
+    if require_mlflow and not job.get("mlflow_run_id"):
+        return [
+            f"{label}: job '{job_id}' has no MLflow artifacts — it may not"
+            " have finished producing its output"
+        ]
+    return []
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -157,19 +189,7 @@ async def _validate_training_data(
 
     if parent_job_id and not data_path:
         repo = Repository(db)
-        parent = await repo.get_job(parent_job_id)
-        if parent is None:
-            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
-        elif parent.get("status") != "succeeded":
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has status"
-                f" '{parent.get('status')}' (must be 'succeeded')"
-            )
-        elif not parent.get("mlflow_run_id"):
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has no MLflow"
-                " artifacts — the dataset may not have been uploaded"
-            )
+        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
 
     return errors
 
@@ -208,6 +228,7 @@ async def _validate_eval_data(
     """Validate that eval data is available (via parent job or MLflow run)."""
     errors: list[str] = []
     data_run_id = config.get("eval_data_run_id", "")
+    training_job_id = str(config.get("training_job_id", "") or "")
 
     if not parent_job_id and not data_run_id:
         errors.append(
@@ -217,21 +238,15 @@ async def _validate_eval_data(
         )
         return errors
 
+    repo = Repository(db)
     if parent_job_id:
-        repo = Repository(db)
-        parent = await repo.get_job(parent_job_id)
-        if parent is None:
-            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
-        elif parent.get("status") != "succeeded":
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has status"
-                f" '{parent.get('status')}' (must be 'succeeded')"
-            )
-        elif not parent.get("mlflow_run_id"):
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has no MLflow"
-                " artifacts — the dataset may not have been uploaded"
-            )
+        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
+
+    # The model under eval must itself have finished training — otherwise there is
+    # no adapter to score. This is the training -> eval edge of the dependency
+    # invariant (the SDG -> {training,eval} edge is parent_job_id above).
+    if training_job_id:
+        errors += await _require_dependency_succeeded(repo, training_job_id, "training_job_id")
 
     return errors
 

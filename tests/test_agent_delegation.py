@@ -541,37 +541,34 @@ class TestNoDataAdvisory:
 
         monkeypatch.setattr(agent, "_conversation_has_dataset", _boom)
         state = agent.SessionState(orchestrator_id="orch")
-        assert _run(agent._no_data_advisory(state, "training", "ctx", "go")) is None
+        assert _run(agent._no_data_advisory(state, "training")) is None
 
 
 class TestConversationHasDataset:
-    """The conversation-scoped dataset signals that gate the advisory. Fresh SDG,
-    existing-dataset browsing/splitting, and train/eval-on-existing must all count as
-    "has data"; a bare training request with no data path must not."""
+    """The conversation-scoped dataset signals that gate the advisory. Only tool
+    facts count: fresh SDG (`validate_sdg_job`) or engaging a specific existing
+    dataset (`get_dataset`-family). Browsing the catalog, or merely naming a dataset
+    in text (including the orchestrator handoff relayed as user text), must NOT count
+    — that is availability, not a choice, and the fork must still fire."""
 
     def _setup(
         self,
         monkeypatch: pytest.MonkeyPatch,
         *,
         messages: list[dict[str, Any]] | None = None,
-        jobs: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         async def _fetch(_sid: str, _cache: Any = None) -> list[dict[str, Any]]:
             return messages or []
 
-        async def _job(token: str, _cache: Any = None) -> dict[str, Any] | None:
-            return (jobs or {}).get(token)
-
         monkeypatch.setattr(agent, "_fetch_all_messages", _fetch)
-        monkeypatch.setattr(agent, "_fetch_job_by_token", _job)
 
     @staticmethod
     def _user_msg(text: str) -> dict[str, Any]:
         return {"info": {"role": "user"}, "parts": [_text_part(text)]}
 
-    def _run_check(self, context: str = "", user_text: str = "go") -> bool:
+    def _run_check(self) -> bool:
         state = agent.SessionState(orchestrator_id="orch")
-        return _run(agent._conversation_has_dataset(state, context, user_text, {}))
+        return _run(agent._conversation_has_dataset(state, {}))
 
     def test_fresh_sdg_this_session_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._setup(
@@ -599,24 +596,23 @@ class TestConversationHasDataset:
         )
         assert self._run_check() is False
 
-    def test_cited_existing_dataset_id_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        tok = "a1b2c3d4"
-        self._setup(
-            monkeypatch,
-            messages=[],
-            jobs={tok: {"type": "sdg", "status": "succeeded"}},
-        )
-        assert self._run_check(context=f"user wants to train on dataset {tok}") is True
-
-    def test_cited_id_that_is_a_training_job_does_not_count(
+    def test_dataset_id_named_in_text_is_not_a_choice(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # An id that resolves to a training (not sdg/upload) job is not a dataset.
-        tok = "a1b2c3d4"
+        # Regression: a dataset id merely named in text — including the orchestrator
+        # handoff (relayed into the subagent session as a user-role message, listing
+        # the available datasets as platform state) — is availability, not a choice.
+        # Only a dataset *tool* fact counts, so the fork must still fire.
         self._setup(
-            monkeypatch, messages=[], jobs={tok: {"type": "training", "status": "succeeded"}}
+            monkeypatch,
+            messages=[
+                self._user_msg(
+                    "[CONTEXT] PLATFORM STATE (relevant artifacts): "
+                    "available dataset a1b2c3d4 (sdg, succeeded)"
+                )
+            ],
         )
-        assert self._run_check(context=f"retry training job {tok}") is False
+        assert self._run_check() is False
 
     def test_bare_training_request_has_no_dataset(
         self, monkeypatch: pytest.MonkeyPatch
@@ -624,6 +620,5 @@ class TestConversationHasDataset:
         self._setup(
             monkeypatch,
             messages=[self._user_msg("train a model to assess RFEs")],
-            jobs={},
         )
-        assert self._run_check(user_text="train a model to assess RFEs") is False
+        assert self._run_check() is False

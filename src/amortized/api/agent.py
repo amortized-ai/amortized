@@ -911,6 +911,30 @@ _DISPATCH_PARENT_TYPE = {
     "validate_eval_job": "eval",
 }
 
+# Check D ("not ready") — the stage-gate. A downstream dispatch maps to the upstream
+# job-id field(s) it depends on, each of which must be 'succeeded' before the step can
+# advance. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and are
+# validated downstream, so they are not listed. validate_sdg_job is intentionally
+# absent: cloning an SDG recipe for an eval set may run while training is still in
+# flight ("prep eval set now"), so eval-set prep is NOT gated here.
+_DISPATCH_UPSTREAM_FIELDS = {
+    "validate_training_job": [("parent_job_id", "the training dataset's job")],
+    "validate_eval_job": [
+        ("parent_job_id", "the eval dataset's job"),
+        ("training_job_id", "the model's training job"),
+    ],
+}
+
+# Honest "wait" guidance injected when the stage-gate fires. Commit 1 keeps
+# continuation frontend/pull-driven, so a wait only resumes while the page stays
+# open; the page-open caveat is relaxed in commit 2 (the push-based watcher makes
+# auto-continue unconditional). Kept as one constant so commit 2 edits one place.
+_AWAIT_UPSTREAM_GUIDANCE = (
+    "report the true current status to the user and wait — tell them it is still"
+    " running and that you'll continue automatically once it finishes, as long as"
+    " they keep this page open"
+)
+
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -996,47 +1020,35 @@ _DATASET_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
 
 async def _conversation_has_dataset(
     state: SessionState,
-    context: str,
-    user_text: str,
     cache: dict[str, list[dict[str, Any]]] | None,
 ) -> bool:
-    """Whether THIS conversation already has, or points at, a dataset — so a
-    training/eval delegation is NOT premature. All signals are structural
-    (conversation-scoped, never a lifetime "has this user ever" query):
+    """Whether THIS conversation already has, or has engaged, a dataset — so a
+    training/eval delegation is NOT premature. Both signals are structural tool
+    facts (conversation-scoped, never a lifetime "has this user ever" query):
 
     1. An SDG job was set up here (`validate_sdg_job`) — fresh data in flight.
-    2. A dataset tool was touched here — the user engaged an existing dataset.
-    3. An id cited in the handoff/user text resolves to a succeeded SDG/upload job
-       — the user pointed training/eval at an existing dataset (the DB is the
-       arbiter; id-token extraction, not prose classification).
+    2. A dataset tool was touched here (`get_dataset`/`get_dataset_samples`/
+       `split_dataset`) — the user engaged a SPECIFIC existing dataset.
+
+    Deliberately NOT inferred from message text. The orchestrator's handoff lists
+    the available datasets as platform state, and that handoff is relayed into the
+    subagent session as a user-role message — so scanning text for dataset ids
+    conflates "available/listed" with "chosen" and suppresses the fork when the
+    user has not actually decided. A real choice always surfaces as a tool fact:
+    resolving even a fuzzy name ("the whimsical lark data") routes through
+    get_dataset, which trips signal 2 regardless of how it was phrased.
     """
     if await _session_has_validate(state, "sdg", cache):
         return True
-    id_text = [context, user_text]
     for sid in _session_ids(state):
         for msg in await _fetch_all_messages(sid, cache):
-            role = (msg.get("info") or {}).get("role")
             for part in msg.get("parts") or []:
-                if part.get("type") == "tool":
-                    if _tool_name(part) in _DATASET_TOOLS:
-                        return True
-                elif role == "user" and part.get("type") == "text":
-                    id_text.append(str(part.get("text") or ""))
-    job_cache: dict[str, dict[str, Any] | None] = {}
-    for tok in _extract_id_candidates("\n".join(id_text)):
-        job = await _fetch_job_by_token(tok, job_cache)
-        if (
-            job
-            and job.get("type") in {"sdg", "upload"}
-            and job.get("status") == "succeeded"
-        ):
-            return True
+                if part.get("type") == "tool" and _tool_name(part) in _DATASET_TOOLS:
+                    return True
     return False
 
 
-async def _no_data_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
+async def _no_data_advisory(state: SessionState, target: str) -> str | None:
     """Advisory to prepend to a training/eval handoff when THIS conversation has no
     dataset selected yet — directing the subagent to let the user CHOOSE between an
     existing dataset and a fresh one, rather than silently defaulting to generation.
@@ -1057,7 +1069,7 @@ async def _no_data_advisory(
     if target not in _DATA_DEPENDENT_TARGETS:
         return None
     try:
-        if await _conversation_has_dataset(state, context, user_text, {}):
+        if await _conversation_has_dataset(state, {}):
             return None
     except Exception:
         return None
@@ -1071,6 +1083,45 @@ async def _no_data_advisory(
         f" {target} job needs data to {verb}, so don't create or confirm it, and"
         " don't start generating, until the user has chosen and the dataset exists."
     )
+
+
+# A job that has not reached a terminal state — the step that depends on it cannot
+# advance yet. (Terminal = succeeded/failed/cancelled; failed/cancelled are handled
+# by the subagent's own failure path, not the "wait" advisory.)
+_INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
+
+
+async def _upstream_not_ready_advisory(
+    state: SessionState, target: str, context: str, user_text: str
+) -> str | None:
+    """The stage-gate at the delegation boundary (companion to the validate-time
+    'not_ready' check). When a training/eval handoff cites an upstream job that is
+    still in flight, steer the subagent to report the true status and wait rather
+    than build/confirm a downstream job whose prerequisite hasn't finished.
+
+    Keyed on the dependency graph, not symptoms: only data-dependent downstream
+    targets (training/eval), only a cited job that resolves to an in-flight status.
+    A delegation to SDG (e.g. cloning a recipe for an eval set "while training runs")
+    is NOT a _DATA_DEPENDENT_TARGET, so concurrent eval-set prep stays allowed.
+    Fail-safe: any uncertainty/error returns None, leaving the handoff unchanged.
+    """
+    if target not in _DATA_DEPENDENT_TARGETS:
+        return None
+    try:
+        for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
+            job = await _fetch_job_by_token(token)
+            if job and str(job.get("status") or "") in _INFLIGHT_STATUSES:
+                status = str(job.get("status") or "")
+                return (
+                    "[UPSTREAM NOT READY]\n"
+                    f"An upstream job this {target} step depends on ({token}) is still"
+                    f" '{status}', not finished. Do NOT build, confirm, or create the"
+                    f" {target} job yet — it cannot run until that job succeeds."
+                    f" Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
+                )
+    except Exception:
+        return None
+    return None
 
 
 async def _job_claim_violations(
@@ -1112,13 +1163,22 @@ async def _job_claim_violations(
                 violations.append(
                     {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
                 )
+    flagged = {v["token"] for v in violations if v.get("token")}
+    # Check D — the stage-gate: a training/eval dispatch this turn whose upstream job
+    # isn't 'succeeded' yet. Structural (tool-arg + DB status), fires regardless of
+    # prose. Run before Check C so "wait for it to finish" wins over "disclose reuse"
+    # when an upstream is both in-flight and old. Dedup by upstream prefix.
+    for v in await _not_ready_violations(state, result, job_cache):
+        if v["token"] not in flagged:
+            violations.append(v)
+            flagged.add(v["token"])
     # Check C — a training/eval dispatch this turn onto a stale, undisclosed parent
     # dataset. Keyed on the dispatch tool call's parent_job_id, independent of prose,
-    # so it fires even when the reply names no id. Dedup against A/B by parent prefix.
-    flagged = {v["token"] for v in violations if v.get("token")}
+    # so it fires even when the reply names no id. Dedup against A/B/D by parent prefix.
     for v in await _dispatch_provenance_violations(state, result, text, cache, job_cache):
         if v["token"] not in flagged:
             violations.append(v)
+            flagged.add(v["token"])
     return violations
 
 
@@ -1174,6 +1234,50 @@ async def _dispatch_provenance_violations(
     return violations
 
 
+async def _not_ready_violations(
+    state: SessionState,
+    result: dict[str, Any],
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Check D — the stage-gate. A training/eval dispatch in this turn whose upstream
+    job (the SDG dataset, or the model under eval) is not yet 'succeeded' — i.e. the
+    workflow is being advanced before its prerequisite finished. Purely structural:
+    the dispatch tool call's upstream id argument and that job's DB status; no prose.
+    Blocks forward movement so Morty reports the true status and waits, instead of
+    confirming/creating a job that can't run yet. Independent of job age (unlike the
+    stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
+    violations: list[dict[str, Any]] = []
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        downstream = _tool_name(part)
+        fields = _DISPATCH_UPSTREAM_FIELDS.get(downstream)
+        if not fields:
+            continue
+        dtype = _DISPATCH_PARENT_TYPE.get(downstream, "")
+        inp = _get_tool_input(part)
+        for field_name, label in fields:
+            up_id = str(inp.get(field_name) or "")
+            if not up_id:
+                continue  # reference absent — Layer 1 fail-closes at create time
+            up = await _fetch_job_by_token(up_id, job_cache)
+            if not up:
+                continue  # unresolvable — not a stage-gate concern (fabrication gate owns it)
+            status = str(up.get("status") or "")
+            if status == "succeeded":
+                continue
+            violations.append(
+                {
+                    "token": up_id[:8],
+                    "kind": "not_ready",
+                    "status": status,
+                    "type": dtype,
+                    "label": label,
+                }
+            )
+    return violations
+
+
 def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
     lines = [
         "[JOB-CLAIM CHECK — internal system verification, not from the user]",
@@ -1185,6 +1289,13 @@ def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
                 f"- You presented job {v['token']} as finished/ready, but its real"
                 f" status is '{v['status']}'. Do NOT claim completion until it is"
                 " actually succeeded — state the real status or wait for it."
+            )
+        elif v["kind"] == "not_ready":
+            lines.append(
+                f"- You are advancing the {v['type']} step, but {v['label']}"
+                f" ({v['token']}) is still '{v['status']}', not succeeded. Do NOT"
+                f" create, confirm, or present a confirmation card for the {v['type']}"
+                f" job — it cannot run until that finishes. Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
             )
         elif v["kind"] == "dispatch":
             verb = "train on" if v["type"] == "training" else "evaluate on"
@@ -1216,6 +1327,11 @@ def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
     for v in violations:
         if v["kind"] == "state":
             parts.append(f"job {v['token']} is '{v['status']}', not finished")
+        elif v["kind"] == "not_ready":
+            parts.append(
+                f"{v['label']} ({v['token']}) is still '{v['status']}', so the"
+                f" {v['type']} step can't proceed yet"
+            )
         elif v["kind"] == "dispatch":
             size = f" ({v['num']} records)" if v["num"] is not None else ""
             parts.append(
@@ -1796,9 +1912,13 @@ async def _maybe_delegate(
             ],
         }
 
-    advisory = await _no_data_advisory(state, target, context, user_text)
+    advisory = await _no_data_advisory(state, target)
     if advisory:
         context = f"{advisory}\n\n{context}" if context else advisory
+
+    not_ready = await _upstream_not_ready_advisory(state, target, context, user_text)
+    if not_ready:
+        context = f"{not_ready}\n\n{context}" if context else not_ready
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 
