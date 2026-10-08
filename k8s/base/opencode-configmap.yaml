@@ -7,10 +7,38 @@ metadata:
     app: amortized
     component: opencode
 data:
+  # This is the KIND-path opencode config. Its PROD-path twin is the baked
+  # containers/morty/opencode.json (strict JSON, rewritten per-user in-sandbox by
+  # studio-gateway provision.js). Keep the provider.glm / model blocks in sync
+  # across both copies.
   .opencode.json: |
     {
       "$schema": "https://opencode.ai/config.json",
       "model": "google-vertex-anthropic/claude-opus-4-8@default",
+      "provider": {
+        "glm": {
+          "npm": "@ai-sdk/anthropic",
+          "name": "GLM (RITS)",
+          "options": {
+            "baseURL": "{env:GLM_BASE_URL}",
+            "apiKey": "{env:GLM_API_KEY}"
+          },
+          "models": {
+            "rits/zai-org/glm-5-3": { "name": "GLM-5.3" }
+          }
+        },
+        "glm-flash": {
+          "npm": "@ai-sdk/anthropic",
+          "name": "GLM-5.3 Flash",
+          "options": {
+            "baseURL": "{env:GLM_FLASH_BASE_URL}",
+            "apiKey": "{env:GLM_FLASH_API_KEY}"
+          },
+          "models": {
+            "glm-5-3-flash": { "name": "GLM-5.3 Flash" }
+          }
+        }
+      },
       "mcp": {
         "amortized": {
           "type": "remote",
