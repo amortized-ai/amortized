@@ -1,0 +1,604 @@
+# Expected-aspect checklist for the GENERIC Morty workflow.
+#
+# Every row is derived from the platform workflow docs (agents/*/workflow.md),
+# NOT from any particular task. The trajectory orchestrator -> sdg -> training
+# -> eval is identical whether the user is building an RFE assessor, a ticket
+# classifier, or anything else, so this checklist is use-case AGNOSTIC. A
+# specific use case can add task-grounded rows in its own checklist later; the
+# rows here are the pipeline mechanics that should hold for any successful run.
+#
+# Each row exists BEFORE a run, so an aspect Morty was supposed to exhibit but
+# skipped scores as `missed` (an absent signal can't hide). See monitor/README.md.
+#
+# adjudicate:
+#   auto      - scored deterministically from the log by the processing script
+#   llm_judge - scored by an LLM pass (planned; emitted as `review` for now)
+#   human     - left as `review` for offline human adjudication
+#
+# requires (optional gate): a row scores `n/a` (and is not sent to the judge)
+#   unless its precondition holds. type `skill_loaded` matches a role-scoped
+#   `read` of a guide path (`path_contains`) -> used to activate the aspect-G
+#   skill-adherence rows only on runs that loaded that sub-skill's guide.
+#
+# match types (auto rows):
+#   tool_called | tool_before | validate_ok | recovery | completion | chained
+#   scores_present | no_error_calls | solo_delegation
+#   tool_called accepts `tool` (single) or `tools` (any-of list) and optional
+#   `where` (exact-match on logged fields, incl. `role` for stage attribution).
+#   tool_before `before`/`after` accept a bare tool name OR `{tool, where}` to
+#     order calls distinguished by an arg (e.g. validate_sdg_job mode=preview vs
+#     create). If the `where` field is absent from the log it returns `review`.
+#   solo_delegation: every delegate_to_subagent message was the delegate call
+#     alone (no text / other tool). Needs the `solo` field (server logging).
+#   scores_present: get_eval_results carried a non-null numeric rubric score
+#     (an outcome check, not a mechanic — "did the eval actually produce signal").
+#   no_error_calls: no tool call ended in status=error (optional `tools` filter).
+
+use_case: general
+description: >
+  Generic Morty pipeline: SDG -> training -> eval. Use-case-agnostic workflow
+  mechanics grounded in agents/*/workflow.md. Compares LLMs driving Morty.
+
+rows:
+  # ---- Spine: the three delegations, in order (orchestrator) ----------------
+  - id: delegate_sdg
+    stage: "Delegate -> SDG"
+    aspect: D
+    expected: "Orchestrator delegates the data step to the SDG agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 2 (64-69)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: sdg } }
+
+  - id: delegate_training
+    stage: "Delegate -> training"
+    aspect: D
+    expected: "Orchestrator delegates the training step to the training agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 3 "After SDG -> Train" (90-96)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: training } }
+
+  - id: delegate_eval
+    stage: "Delegate -> eval"
+    aspect: D
+    expected: "Orchestrator delegates the eval step to the eval agent"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 3 "After training -> Evaluate" (99-103)
+    match: { type: tool_called, tool: delegate_to_subagent, where: { target: eval } }
+
+  - id: order_sdg_before_training
+    stage: "Order: SDG before training"
+    aspect: C
+    expected: "SDG config is validated before the training config (data before training)"
+    adjudicate: auto
+    # na_if_after_chained: resume/reuse — when training chains to a pre-existing
+    # SDG dataset (parent_job_id set) and no SDG validate precedes it in this log,
+    # the within-log ordering rule does not apply -> n/a (not wrong).
+    match:
+      type: tool_before
+      before: validate_sdg_job
+      after: validate_training_job
+      na_if_after_chained: parent_job_id
+
+  - id: order_training_before_eval
+    stage: "Order: training before eval"
+    aspect: C
+    expected: "Training config is validated before the eval config (model before eval)"
+    adjudicate: auto
+    match: { type: tool_before, before: validate_training_job, after: validate_eval_job }
+
+  # ---- Pipeline wiring: chaining via parent_job_id / data refs --------------
+  - id: chain_training
+    stage: "Chain SDG -> training"
+    aspect: D
+    expected: "Training job chains to the SDG output (parent_job_id or data_run_id set)"
+    adjudicate: auto
+    # training/workflow.md Job Chaining (63-76); orchestrator (116-117)
+    match: { type: chained, tool: validate_training_job, any_of: [parent_job_id, data_run_id] }
+
+  - id: chain_eval
+    stage: "Chain -> eval dataset"
+    aspect: D
+    expected: "Eval job references a real dataset (parent_job_id or eval_data_run_id set)"
+    adjudicate: auto
+    # eval/workflow.md Step 1 (104-118)
+    match: { type: chained, tool: validate_eval_job, any_of: [parent_job_id, eval_data_run_id] }
+
+  # ---- Config validity: submission happens only via a passing validate_* ----
+  - id: sdg_config_valid
+    stage: "SDG config"
+    aspect: A
+    expected: "SDG config passes validate_sdg_job"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_sdg_job }
+
+  - id: training_config_valid
+    stage: "Training config"
+    aspect: A
+    expected: "Training config passes validate_training_job"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_training_job }
+
+  - id: eval_config_valid
+    stage: "Eval config"
+    aspect: A
+    expected: "Eval config passes validate_eval_job (model-under-eval named correctly)"
+    adjudicate: auto
+    match: { type: validate_ok, tool: validate_eval_job }
+
+  - id: eval_judge_set
+    stage: "Eval judge"
+    aspect: A
+    expected: "Eval sets an explicit judge (rubric evals require one)"
+    adjudicate: auto
+    # eval/workflow.md (240-247): "Never submit a rubric eval without config.judge"
+    match: { type: chained, tool: validate_eval_job, any_of: [judge] }
+
+  # ---- Per-stage mandated actions (deterministic tool signals) --------------
+  - id: sdg_models_grounded
+    stage: "SDG teacher models"
+    aspect: E
+    expected: "Only shows teacher models returned by list_models (never hardcoded)"
+    adjudicate: auto
+    # sdg/workflow.md Teacher Model Selection (54-59)
+    match: { type: tool_called, tool: list_models, where: { role: sdg } }
+
+  - id: sdg_pricing_shown
+    stage: "SDG pricing"
+    aspect: B
+    expected: "Looks up model pricing before asking the user to pick a teacher model"
+    adjudicate: auto
+    # sdg/workflow.md (60-63, 100-101)
+    # na_if_reused: when SDG inherits a prior job's config (get_job returns an
+    # sdg-type job under the sdg role), no fresh teacher selection happened, so
+    # there is no pricing step to show -> n/a (not missed).
+    match:
+      type: tool_called
+      tools: [get_model_pricing, show_model_pricing]
+      where: { role: sdg }
+      na_if_reused: { tool: get_job, where: { role: sdg }, output_contains: '"type": "sdg"' }
+
+  - id: prompt_shown_for_review
+    stage: "Prompt shown for review"
+    aspect: B
+    expected: "When asking the user to review/approve a generated prompt, the prompt is actually rendered (show_prompt), not just referenced"
+    adjudicate: auto
+    # sdg task-distillation guide Step 8: render the prompt with show_prompt
+    # before asking for approval. Guards the observed "here's the prompt … review
+    # it" where the prompt was never shown (lived only in the SDG job config).
+    # The prompt-generate-and-approve step exists ONLY in the task-distillation
+    # skill (no other SDG sub-skill composes a prompt for the user), so gate on
+    # that guide being loaded — like the aspect-G task-distillation rows. n/a when
+    # the skill was not loaded, or when no prompt review was solicited.
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+    match: { type: prompt_review }
+
+  - id: eval_phase_signaled
+    stage: "Progress: eval phase"
+    aspect: B
+    expected: "The eval stage signals its own phase (eval), so the progress UI reflects the current stage"
+    adjudicate: auto
+    # eval/workflow.md Progress Signal + ui.py signal_phase: each stage must
+    # signal its own phase so the UI tracks the live stage. n/a when there is no
+    # eval stage; review when the log predates phase capture.
+    match: { type: eval_phase }
+
+  - id: sdg_skill_loaded
+    stage: "SDG sub-skill"
+    aspect: B
+    expected: "Reads an SDG sub-skill guide (skills/sdg/.../guide.md) before building the config"
+    adjudicate: auto
+    # sdg/workflow.md (49, 127-128): read skills/sdg/<sub-skill>/guide.md before config.
+    # WHICH sub-skill is correct is task-specific -> that lives in a use-case overlay.
+    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "skills/sdg/" }
+
+  - id: train_skill_loaded
+    stage: "Training sub-skill"
+    aspect: B
+    expected: "Reads the training sub-skill guide (skills/training/.../guide.md) before building the config"
+    adjudicate: auto
+    # training/workflow.md (35, 96-101): Route to Sub-Skill -> read skills/training/.../osft/guide.md
+    match: { type: tool_called, tool: read, where: { role: training }, output_contains: "skills/training/" }
+
+  - id: train_vram_shown
+    stage: "Training VRAM"
+    aspect: B
+    expected: "Shows VRAM estimates before presenting model/method options"
+    adjudicate: auto
+    # training/workflow.md (42-62): "You MUST show VRAM estimates before ..."
+    match: { type: tool_called, tools: [estimate_training_resources, show_vram_estimate], where: { role: training } }
+
+  - id: train_model_choice_offered
+    stage: "Training model choice"
+    aspect: B
+    expected: "Presents the base-model options and waits — never auto-picks a default"
+    adjudicate: auto
+    # training/workflow.md (47-55): "present the models as options and wait for
+    # the user to choose — never auto-select a model". Verified via a
+    # present_options (training role) that names a model.
+    match: { type: model_choice }
+
+  - id: train_data_confirmed
+    stage: "Training data usage"
+    aspect: B
+    expected: "Confirms how much data to train on (get_dataset record count) before validating"
+    adjudicate: auto
+    # training/workflow.md (118-127): "ALWAYS confirm data usage"
+    match: { type: tool_called, tool: get_dataset, where: { role: training } }
+
+  - id: eval_data_confirmed
+    stage: "Eval data usage"
+    aspect: B
+    expected: "Confirms how much of the dataset to evaluate (get_dataset record count)"
+    adjudicate: auto
+    # eval/workflow.md Step 1.5 (130-135): "ALWAYS confirm data usage"
+    match: { type: tool_called, tool: get_dataset, where: { role: eval } }
+
+  - id: eval_dedup_checked
+    stage: "Eval de-dup"
+    aspect: F
+    expected: "Checks list_evaluations for an existing eval before submitting"
+    adjudicate: auto
+    # eval/workflow.md Step 4 (256-263)
+    match: { type: tool_called, tool: list_evaluations, where: { role: eval } }
+
+  - id: eval_results_reported
+    stage: "Eval results"
+    aspect: C
+    expected: "Fetches eval scores via get_eval_results and reports them"
+    adjudicate: auto
+    # eval/workflow.md Step 5 (302-317). MECHANIC ONLY: fires on the call, not on
+    # whether the payload held real scores -> see eval_scores_present for outcome.
+    match: { type: tool_called, tool: get_eval_results, where: { role: eval } }
+
+  - id: eval_scores_present
+    stage: "Eval scores usable"
+    aspect: C
+    expected: "The eval produced non-null rubric scores (judge actually scored the samples)"
+    adjudicate: auto
+    # OUTCOME check: get_eval_results can succeed yet return all-null scores
+    # (num_succeeded=200 but scores_n=0) -> the run produced no eval signal.
+    # eval/workflow.md Step 5 (302-317).
+    match: { type: scores_present, tool: get_eval_results }
+
+  # ---- Robustness ----------------------------------------------------------
+  - id: robustness_recovery
+    stage: "Robustness"
+    aspect: F
+    expected: "On a tool/validation error, recovers with a later successful call (no loop)"
+    adjudicate: auto
+    # every workflow's Failure Handling; n/a when no error occurred
+    match: { type: recovery }
+
+  - id: no_error_tool_calls
+    stage: "No error calls"
+    aspect: F
+    expected: "No tool call ended in an error status (invalid args / failed skill load)"
+    adjudicate: auto
+    # complements robustness_recovery: penalises the error itself, not just non-recovery
+    match: { type: no_error_calls }
+
+  # ---- End to end ----------------------------------------------------------
+  - id: e2e_complete
+    stage: "End-to-end complete"
+    aspect: C
+    expected: "Run reached a human-declared successful completion"
+    adjudicate: auto
+    match: { type: completion, outcome: success }
+
+  # ---- Behavioral rows: no deterministic signal -> offline adjudication -----
+  - id: clean_delegation
+    stage: "Clean delegation"
+    aspect: B
+    expected: "The delegating turn is ONLY the delegate_to_subagent call (no text/other tools)"
+    adjudicate: auto
+    # orchestrator/workflow.md Phase 2 (64-69). Uses the per-message `solo` flag
+    # (server logging); `review` on logs recorded before that flag existed.
+    match: { type: solo_delegation }
+
+  - id: sdg_preview_before_create
+    stage: "SDG preview flow"
+    aspect: B
+    expected: "Runs validate_sdg_job mode=preview before mode=create"
+    adjudicate: auto
+    # sdg/workflow.md (91-96). Uses the logged `mode` arg; `review` on logs
+    # recorded before `mode` was captured.
+    match: { type: tool_before,
+             before: { tool: validate_sdg_job, where: { mode: preview } },
+             after: { tool: validate_sdg_job, where: { mode: create } } }
+
+  - id: tool_selection
+    stage: "Tool selection"
+    aspect: B
+    expected: "Chose the right tool for the task at each step (not the wrong or no tool)"
+    adjudicate: llm_judge
+
+  - id: grounding_data
+    stage: "Grounding (data)"
+    aspect: E
+    expected: "Reports dataset ids/counts from real get_job/get_dataset results; invents nothing"
+    adjudicate: llm_judge
+    # Assistant text (claim) + full tool output (source of truth) are both logged,
+    # so an LLM pass can adjudicate claim-vs-source without the live transcript.
+
+  - id: grounding_results
+    stage: "Grounding (results)"
+    aspect: E
+    expected: "Reports eval numbers from the finished eval job, not invented"
+    adjudicate: llm_judge
+    # get_eval_results output is logged untruncated -> the cited numbers are checkable.
+
+  - id: no_fabrication
+    stage: "Anti-fabrication"
+    aspect: E
+    expected: "Never fabricates success, hides errors, or fakes a submit control via present_options"
+    adjudicate: llm_judge
+    # eval/workflow.md (279-300); all Failure Handling sections. Judged from
+    # logged assistant text against tool statuses/outputs.
+
+  - id: eval_set_mirrors_training_sdg
+    stage: "Eval set mirrors training SDG"
+    aspect: F
+    # Gated: only applies when the eval subject is a TUNED model (its config
+    # carries training_job_id). Base-model / gateway-model evals -> n/a.
+    requires: { type: eval_for_trained_model }
+    expected: >
+      When building a NEW eval set for a trained model, the eval-data SDG mirrors
+      the SAME pipeline that produced the model's training data: it reuses that
+      pipeline's assessor system_prompt VERBATIM, the SAME teacher model, and the
+      SAME output format/schema — regenerating only fresh inputs for leakage
+      isolation. `met` if the eval-set SDG is grounded in the training model's own
+      SDG config (e.g. the agent traced the training job to its parent SDG and
+      copied that prompt/teacher). `wrong` if it instead anchors the prompt/teacher
+      to a prior or unrelated dataset (e.g. "the prompt stays identical to your
+      prior eval batches") rather than to THIS model's training pipeline, or uses a
+      different teacher model. `n/a` if the eval reused an existing held-out split
+      (no new SDG set was generated) or the needed config was not observable.
+    adjudicate: llm_judge
+    # Semantic check: the agent may call get_job on *an* SDG job yet copy the WRONG
+    # one (observed: anchored to prior platform RFE datasets). Only a transcript
+    # pass can tell whether the reused config is the training model's. Gated by the
+    # eval_for_trained_model precondition (validate_eval_job carries training_job_id).
+
+  - id: sdg_sample_count_user_chosen
+    stage: "SDG sample count chosen by user"
+    aspect: B
+    expected: >
+      For EACH dataset Morty generates via SDG, the number of
+      records/examples is a choice offered to the user (e.g. a
+      present_options question like "how many examples?"), not a number
+      Morty picks on its own. `met` if every generated dataset's size was
+      put to the user as a decision. `wrong` if Morty selected a size
+      unilaterally and only asked the user to CONFIRM its own chosen count
+      (e.g. "proceed with the full 40-record run?") without ever offering
+      the size as a choice — this applies especially to a held-out eval
+      set, whose size is a fresh decision even when the rest of the SDG
+      config is cloned from the training pipeline. `n/a` if no SDG dataset
+      was generated.
+    adjudicate: llm_judge
+    # present_options content (question + option titles) is logged, so the
+    # judge can tell a size-decision prompt from a mere confirm-my-number one.
+
+  # ---- Redundancy (LLM-judge; de-dup of decisions & options) ----------------
+  # Both judge from the logged present_options prompts (question + options are in
+  # the tool OUTPUT) and assistant prose. User replies are NOT logged, so the
+  # judge treats a decision as already-made when the same choice was presented /
+  # recorded earlier in the session.
+  - id: no_repeated_decisions
+    stage: "No re-asking decided points"
+    aspect: F
+    expected: >
+      Morty does not ask the user to decide a point that was already decided
+      earlier in the session. Flag `wrong` if a later present_options prompt (or
+      assistant question) re-requests a choice the user already made in a
+      previous/recent turn — e.g. the same step/question offered again after it
+      was answered. Do NOT flag legitimate refinements the user explicitly asked
+      to change, or distinct new decisions. `met` if no already-decided point is
+      re-asked; `n/a` if the run contains no user-facing decision prompts.
+    adjudicate: llm_judge
+
+  - id: no_duplicate_options
+    stage: "No semantically-duplicate options"
+    aspect: F
+    expected: >
+      Within any single set of options Morty presents to the user (a
+      present_options prompt), no two options mean the same thing. Flag `wrong`
+      if a prompt offers two or more options that are semantically equivalent —
+      the same practical choice worded differently, so picking either leads to
+      the same outcome. Genuinely distinct options (even if related) are fine.
+      `met` if every option set has distinct choices; `n/a` if no options were
+      presented.
+    adjudicate: llm_judge
+
+  # ---- Skill adherence (aspect G) -------------------------------------------
+  # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
+  # which only assert a guide was read), these check whether the workflow FOLLOWED
+  # the guide's content. Curated per skill from agents/*/skills/**/guide.md. Each
+  # row is gated by `requires: skill_loaded` (role-scoped read of that guide) so it
+  # is `n/a` unless that sub-skill was actually loaded in the run; only then is it
+  # sent to the judge. Skills belong to subagents, so `role` scopes the gate.
+  # Judged from assistant prose + present_options outputs + tool outputs ONLY
+  # (tool INPUTS / submitted configs are not in the transcript), so criteria are
+  # limited to guide steps observable there.
+
+  # -- SDG: classification (agents/sdg/skills/classification/guide.md) --
+  - id: skill_classification_stepwise_questions
+    stage: "Skill: classification requirement flow"
+    aspect: G
+    expected: >
+      The SDG agent gathers classification requirements ONE question at a time via
+      present_options (not all at once), covering the guide's steps in order:
+      domain, then categories, then urgency, then sample count, then teacher model
+      (present_options steps sdg-domain / sdg-categories / sdg-urgency /
+      sdg-samples / sdg-teacher-model). `wrong` if it dumps every question in one
+      turn or skips the staged flow.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_suggests_categories
+    stage: "Skill: classification suggests labels"
+    aspect: G
+    expected: >
+      For the chosen domain the agent SUGGESTS concrete category labels (3-6
+      relevant ones) as options rather than leaving the user to invent them from
+      nothing, and offers a custom/"define my own" path. Seen in the
+      sdg-categories present_options options. `wrong` if it just asks the user to
+      type labels with no suggestions.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_urgency_offered
+    stage: "Skill: classification urgency step"
+    aspect: G
+    expected: >
+      The agent offers an urgency choice (e.g. 3 levels / 4 levels / no urgency) as
+      its own decision point (sdg-urgency), per the guide. `wrong` if urgency is
+      never surfaced to the user.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  - id: skill_classification_teacher_from_list_models
+    stage: "Skill: classification teacher options"
+    aspect: G
+    expected: >
+      Teacher-model options are exactly the models returned by list_models (no
+      invented/hardcoded models) AND the guide-mandated last option "Configure a
+      model" is included. Cross-check the list_models output against the
+      sdg-teacher-model options. `wrong` if options include a model not in
+      list_models or omit the configure-a-model fallback.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+
+  # -- SDG: knowledge-ingestion (agents/sdg/skills/knowledge-ingestion/guide.md) --
+  - id: skill_knowledge_grounds_on_documents
+    stage: "Skill: knowledge doc grounding"
+    aspect: G
+    expected: >
+      Before proposing sample counts the agent establishes the actual documents
+      via list_documents / get_document_chunks (real doc ids and chunk/token
+      stats), rather than proceeding without inspecting the uploaded documents.
+      `wrong` if it never inspects the documents.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_samples_from_chunk_stats
+    stage: "Skill: knowledge sample-count math"
+    aspect: G
+    expected: >
+      The proposed num_samples is derived from the document's chunk statistics
+      (coverage x mean_chunk_tokens / avg_qa_tokens x num_chunks) and the agent
+      SHOWS the user the numbers — the multiplier, chunk stats, and resulting
+      sample count — not a bare round guess. Seen in assistant prose / the
+      coverage-tier present_options. `wrong` if sample count is picked with no
+      chunk-based reasoning shown.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_coverage_tiers
+    stage: "Skill: knowledge coverage tiers"
+    aspect: G
+    expected: >
+      The agent presents three source-coverage tiers (about 3x / 5x / 8x) with the
+      computed sample count for each, recommending the 5x default. `wrong` if it
+      offers a single number or tiers without the computed counts.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  - id: skill_knowledge_no_user_system_prompt
+    stage: "Skill: knowledge generates system prompt"
+    aspect: G
+    expected: >
+      The agent does NOT ask the user to write the trained model's system prompt;
+      it generates a domain-specific default itself and only surfaces it in the
+      confirmation table for optional adjustment. `wrong` if it asks the user to
+      author the system prompt.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+
+  # -- SDG: task-distillation (agents/sdg/skills/task-distillation/guide.md) --
+  - id: skill_distillation_asks_examples_first
+    stage: "Skill: distillation examples-first"
+    aspect: G
+    expected: >
+      The agent asks for examples (ICL / demonstration or, for rubric assessment,
+      calibration pairs) early to extract format and task criteria, instead of
+      interrogating the user for every detail. `wrong` if it never requests
+      examples and asks for all fields piecemeal.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_confirms_output_format
+    stage: "Skill: distillation format confirmation"
+    aspect: G
+    expected: >
+      The agent extracts/derives the output format and presents a concrete demo of
+      it (placeholder content) for the user to confirm BEFORE building the config.
+      `wrong` if it proceeds to validate_sdg_job without ever showing the output
+      format for confirmation.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_corpus_inferred_silently
+    stage: "Skill: distillation reuses real corpus"
+    aspect: G
+    expected: >
+      When the user's examples reveal an existing corpus of real inputs (a backlog
+      of tickets/RFEs/docs), the agent infers it silently and reuses that corpus —
+      it does NOT ask the user to choose between "generate inputs" vs "use your
+      own". `wrong` if it poses that generate-vs-use question despite a real-input
+      corpus; `n/a` if no real-input corpus is evident.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  - id: skill_distillation_teacher_name_verbatim
+    stage: "Skill: distillation teacher name verbatim"
+    aspect: G
+    expected: >
+      Teacher-model options come from list_models and the model `name` string is
+      used verbatim — not shortened, re-prefixed, or otherwise modified (e.g.
+      "openai/openai/gpt-oss-120b" stays intact). Compare the list_models output
+      to the model shown in options/confirmation. `wrong` if the name is altered.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+
+  # -- Training: OSFT (agents/training/skills/knowledge-ingestion/osft/guide.md) --
+  - id: skill_osft_model_from_supported_file
+    stage: "Skill: OSFT model list"
+    aspect: G
+    expected: >
+      The training agent presents ONLY models from skills/training/
+      supported_models.json (it reads that file) and does not invent other sizes
+      or HuggingFace IDs. `wrong` if a presented model is not from that file.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_key_params_in_table
+    stage: "Skill: OSFT confirmation params"
+    aspect: G
+    expected: >
+      The confirmation table shown to the user includes the OSFT-critical
+      parameters the guide says to ALWAYS show — unfreeze_rank_ratio and
+      effective_batch_size — even when at defaults. `wrong` if the confirmation
+      omits unfreeze_rank_ratio or effective_batch_size.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_params_justified
+    stage: "Skill: OSFT param reasoning"
+    aspect: G
+    expected: >
+      The agent justifies its hyperparameter choices to the user (e.g. epochs and
+      learning_rate tied to dataset size and model size, max_length tied to the
+      SDG task) rather than presenting static defaults with no reasoning. `wrong`
+      if values are shown with no rationale.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+
+  - id: skill_osft_single_gpu_no_gpu_question
+    stage: "Skill: OSFT 1-GPU default"
+    aspect: G
+    expected: >
+      The agent uses a single GPU (nproc_per_node 1) and does NOT ask the user how
+      many GPUs they have or offer GPU-count options, per the guide. `wrong` if it
+      asks the user to choose a GPU count.
+    adjudicate: llm_judge
+    requires: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }

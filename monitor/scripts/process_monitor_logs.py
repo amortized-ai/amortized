@@ -1,0 +1,917 @@
+#!/usr/bin/env python3
+"""Process monitor JSONL logs into testing metrics.
+
+Reads per-session logs written by the amortized proxy (`<session>.jsonl`,
+default `~/.amortized/monitor/`), scores each run against a use-case
+expected-aspect checklist, and prints:
+
+  (a) per-run efficiency + checklist status, and
+  (b) a per-model comparison table (the LLM comparison).
+
+Efficiency (turns-to-complete, tokens excl. cache, cost, wall-clock) is measured up to
+the human-declared completion turn. Objective checklist rows are scored
+autonomously from the log. `llm_judge` rows can be scored by --llm-judge (an LLM
+pass over the transcript); otherwise `llm_judge` / `human` rows are emitted as
+`review` and can be filled via `--review <csv>`.
+
+Usage:
+  process_monitor_logs.py <log-dir> --use-case general
+  process_monitor_logs.py <log-dir> --use-case general --emit-review review.csv
+  process_monitor_logs.py <log-dir> --use-case general --review review.filled.csv
+  process_monitor_logs.py <log-dir> --use-case general --llm-judge
+
+--llm-judge uses claude-opus-4-8 (what Morty runs on; override with --judge-model)
+and reads creds from the env: ANTHROPIC_VERTEX_PROJECT_ID (+ CLOUD_ML_REGION) for
+Vertex, else ANTHROPIC_API_KEY for the direct API. A --review CSV overrides it.
+
+Status values: met | wrong | missed | n/a | review
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    sys.exit("PyYAML is required: pip install pyyaml")
+
+CHECKLIST_DIR = Path(__file__).resolve().parent.parent / "use_cases"
+
+# Default judge model = what Morty itself runs on.
+JUDGE_MODEL_DEFAULT = "claude-opus-4-8"
+# Per-tool-output cap in the judge PROMPT only (the log keeps full output). Large
+# enough for eval-results/config payloads; bounds pathological dumps.
+_JUDGE_OUTPUT_CAP = 8000
+
+
+# --------------------------------------------------------------------------- #
+# Loading
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class Run:
+    session_id: str
+    turns: list[dict[str, Any]] = field(default_factory=list)
+    completion: dict[str, Any] | None = None
+
+    @property
+    def counted_turns(self) -> list[dict[str, Any]]:
+        """Turns up to (and including) the completion boundary.
+
+        Compares real datetimes (not lexicographic strings, which misorder mixed
+        ts formats). If the completion ts excludes every turn, that's a data
+        problem — warn and return nothing rather than silently counting the whole
+        session (which would fold post-completion turns into turns/tokens/cost)."""
+        if not self.completion:
+            return self.turns
+        cutoff = _ts_key(self.completion.get("ts"))
+        counted = [t for t in self.turns if _ts_key(t.get("ts")) <= cutoff]
+        if self.turns and not counted:
+            print(
+                f"  ! {self.session_id}: completion ts excludes all turns; "
+                "counting none (check log timestamps)",
+                file=sys.stderr,
+            )
+        return counted
+
+    @property
+    def tool_calls(self) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for turn in self.counted_turns:
+            calls.extend(turn.get("tool_calls") or [])
+        return calls
+
+    @property
+    def total_tokens(self) -> int:
+        # Headline efficiency EXCLUDES cache-read tokens (cheap, dominated by the
+        # cached system prompt): input + output + reasoning only. The raw log
+        # keeps the full breakdown incl. cache under `tokens`.
+        total = 0
+        for t in self.counted_turns:
+            tk = t.get("tokens") or {}
+            total += (
+                int(tk.get("input", 0)) + int(tk.get("output", 0)) + int(tk.get("reasoning", 0))
+            )
+        return total
+
+    @property
+    def total_cost(self) -> float:
+        return sum(float(t.get("cost") or 0) for t in self.counted_turns)
+
+    @property
+    def turns_to_complete(self) -> int:
+        return len(self.counted_turns)
+
+    @property
+    def wall_clock_s(self) -> float | None:
+        stamps = [
+            (t.get("started_at"), t.get("finished_at"))
+            for t in self.counted_turns
+            if t.get("started_at") and t.get("finished_at")
+        ]
+        if not stamps:
+            return None
+        starts = [_parse_dt(s) for s, _ in stamps if _parse_dt(s)]
+        ends = [_parse_dt(e) for _, e in stamps if _parse_dt(e)]
+        if not starts or not ends:
+            return None
+        return (max(ends) - min(starts)).total_seconds()
+
+    @property
+    def _latencies_s(self) -> list[float]:
+        # Per-message response latency: send received -> response ready
+        # (turn.duration_ms). This is the assistant response time per user message.
+        out: list[float] = []
+        for t in self.counted_turns:
+            ms = t.get("duration_ms")
+            if isinstance(ms, (int, float)):
+                out.append(float(ms) / 1000.0)
+        return out
+
+    @property
+    def avg_latency_s(self) -> float | None:
+        lat = self._latencies_s
+        return sum(lat) / len(lat) if lat else None
+
+    @property
+    def max_latency_s(self) -> float | None:
+        lat = self._latencies_s
+        return max(lat) if lat else None
+
+    @property
+    def agent_model(self) -> str | None:
+        models = [t.get("model") for t in self.counted_turns if t.get("role") == "orchestrator"]
+        models = [m for m in models if m]
+        if not models:
+            models = [t.get("model") for t in self.counted_turns if t.get("model")]
+        return models[-1] if models else None
+
+    @property
+    def outcome(self) -> str | None:
+        return self.completion.get("outcome") if self.completion else None
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _ts_key(value: Any) -> datetime:
+    """Sortable, comparison-safe key for a record timestamp.
+
+    Normalises to aware-UTC so mixed offset/naive stamps compare without raising,
+    and sends a missing/unparseable stamp to the END (datetime.max) rather than
+    the front, so a malformed ts never silently reorders the run."""
+    dt = _parse_dt(value)
+    if dt is None:
+        return datetime.max.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def load_runs(log_dir: Path) -> list[Run]:
+    runs: list[Run] = []
+    for path in sorted(log_dir.glob("*.jsonl")):
+        run = Run(session_id=path.stem)
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = rec.get("kind")
+            if kind == "turn":
+                run.turns.append(rec)
+            elif kind == "completion":
+                run.completion = rec  # last one wins
+        run.turns.sort(key=lambda t: _ts_key(t.get("ts")))
+        runs.append(run)
+    return runs
+
+
+def load_checklist(use_case: str) -> dict[str, Any]:
+    path = CHECKLIST_DIR / use_case / "checklist.yaml"
+    if not path.exists():
+        sys.exit(f"No checklist for use-case {use_case!r} at {path}")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    # A use-case may `extends: general` — a task overlay on top of the generic
+    # workflow checklist. Merge: base rows in order (overlay overrides by id),
+    # then overlay-only rows appended.
+    parent = data.get("extends")
+    if parent:
+        base_rows = load_checklist(parent).get("rows", [])
+        overlay_rows = data.get("rows", [])
+        overlay_by_id = {r["id"]: r for r in overlay_rows}
+        base_ids = {r["id"] for r in base_rows}
+        merged = [overlay_by_id.get(r["id"], r) for r in base_rows]
+        merged += [r for r in overlay_rows if r["id"] not in base_ids]
+        data["rows"] = merged
+    return data
+
+
+# --------------------------------------------------------------------------- #
+# Matchers (autonomous scoring)
+# --------------------------------------------------------------------------- #
+
+# Strong error signals for the NON-JSON fallback only. Deliberately excludes
+# generic phrases ("is required", "invalid", "must be") that appear verbatim in
+# valid field-doc echoes (e.g. a successful validate returning "max_length must be
+# a positive integer"); structured JSON is checked by fields, not substrings.
+_ERROR_MARKERS = ('"errors"', "validation_error", "traceback (most recent call last)")
+_ERROR_STATUS_VALUES = {"error", "errored", "failed", "failure", "rejected"}
+
+# Substrings that identify a base-model name in present_options titles, so the
+# model_choice check recognises a model list even when the question itself does
+# not contain the word "model". Lowercased family names, not exact ids, so new
+# sizes/variants still match.
+_MODEL_NAME_MARKERS = (
+    "qwen",
+    "llama",
+    "granite",
+    "mistral",
+    "gemma",
+    "phi-",
+    "smol",
+    "deepseek",
+)
+
+
+def _is_ok_output(status: str | None, output: str | None) -> bool:
+    """Whether a tool call's result represents success.
+
+    Keys off STRUCTURED signals: the call-level status, and — when the output
+    parses as JSON — an error-valued `status` field or a truthy top-level
+    `error`/`errors`. Only when the output is not JSON does it fall back to the
+    strong `_ERROR_MARKERS` substrings, so a valid result echoing field docs
+    ("max_length must be a positive integer") is not misread as a failure."""
+    if status == "error":
+        return False
+    text = output or ""
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return not any(marker in text.lower() for marker in _ERROR_MARKERS)
+    if isinstance(data, dict):
+        st = data.get("status")
+        if isinstance(st, str) and st.lower() in _ERROR_STATUS_VALUES:
+            return False
+        if data.get("error") or data.get("errors"):
+            return False
+    return True
+
+
+def _has_numeric_score(data: Any) -> bool:
+    """Whether a parsed eval-results payload holds at least one real numeric score
+    (int/float, not bool/None) inside a ``scores`` object.
+
+    Searched recursively, since get_eval_results nests scores under ``results``
+    (``{"results": {"scores": {criterion: number}}}``) and the shape may vary. A bare
+    number elsewhere in the payload (e.g. a config value) does NOT count — only values
+    inside a ``scores`` dict do — and a null score ("judge scored nothing") is ignored.
+    """
+    if isinstance(data, list):
+        return any(_has_numeric_score(item) for item in data)
+    if isinstance(data, dict):
+        scores = data.get("scores")
+        if isinstance(scores, dict) and any(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in scores.values()
+        ):
+            return True
+        return any(_has_numeric_score(v) for v in data.values())
+    return False
+
+
+def _calls(run: Run, tool: str) -> list[dict[str, Any]]:
+    return [c for c in run.tool_calls if c.get("tool") == tool]
+
+
+def _spec_match(call: dict[str, Any], spec: Any) -> bool:
+    """A tool_before endpoint is either a bare tool name (str) or a
+    ``{tool, where}`` dict that also matches on logged arg fields (e.g. mode)."""
+    if isinstance(spec, str):
+        return call.get("tool") == spec
+    if call.get("tool") != spec.get("tool"):
+        return False
+    return all(call.get(k) == v for k, v in (spec.get("where") or {}).items())
+
+
+def _spec_field_missing(run: Run, spec: Any) -> bool:
+    """logging-dependency guard: True when a `where` field is required but no
+    call of that tool carries it (log predates the signal -> defer to review).
+    False when the tool was never called (let the normal missed/wrong path run)."""
+    if isinstance(spec, str) or not spec.get("where"):
+        return False
+    keys = spec["where"].keys()
+    calls = _calls(run, spec.get("tool"))
+    return bool(calls) and not any(any(k in c for k in keys) for c in calls)
+
+
+def score_auto(run: Run, match: dict[str, Any]) -> str:
+    mtype = match.get("type")
+
+    if mtype == "tool_called":
+        where = match.get("where") or {}
+        tools = match.get("tools") or [match["tool"]]  # `tools` = any-of tool names
+        needle = match.get("output_contains")  # optional substring test on tool output
+        for c in run.tool_calls:
+            if c.get("tool") not in tools:
+                continue
+            if not all(c.get(k) == v for k, v in where.items()):
+                continue
+            if match.get("status") and c.get("status") != match["status"]:
+                continue
+            if needle and needle not in (c.get("output") or ""):
+                continue
+            return "met"
+        # Reuse/resume: the step legitimately did not run because the agent
+        # inherited config from a prior job (e.g. SDG reused a prior job's teacher,
+        # so there was no teacher selection and hence no pricing to show). The
+        # `na_if_reused` probe identifies that prior-config load -> n/a, not missed.
+        na = match.get("na_if_reused")
+        if na:
+            na_tools = na.get("tools") or [na["tool"]]
+            na_where = na.get("where") or {}
+            na_needle = na.get("output_contains")
+            for c in run.tool_calls:
+                if c.get("tool") not in na_tools:
+                    continue
+                if not all(c.get(k) == v for k, v in na_where.items()):
+                    continue
+                if na_needle and na_needle not in (c.get("output") or ""):
+                    continue
+                return "n/a"
+        return "missed"
+
+    if mtype == "chained":
+        # A validate_* call carries a non-empty field from `any_of` — used for
+        # pipeline wiring (parent_job_id / data_run_id / eval_data_run_id) and
+        # for other required config refs (e.g. the eval `judge`). Absent -> missed.
+        keys = match.get("any_of") or ["parent_job_id", "data_run_id"]
+        for c in _calls(run, match["tool"]):
+            if any(c.get(k) for k in keys):
+                return "met"
+        return "missed"
+
+    if mtype == "validate_ok":
+        calls = _calls(run, match["tool"])
+        if not calls:
+            return "missed"
+        return (
+            "met"
+            if any(_is_ok_output(c.get("status"), c.get("output")) for c in calls)
+            else "wrong"
+        )
+
+    if mtype == "tool_before":
+        before_spec, after_spec = match["before"], match["after"]
+        if _spec_field_missing(run, before_spec) or _spec_field_missing(run, after_spec):
+            return "review"  # log predates the arg the `where` filters on
+        before = [i for i, c in enumerate(run.tool_calls) if _spec_match(c, before_spec)]
+        after = [i for i, c in enumerate(run.tool_calls) if _spec_match(c, after_spec)]
+        if not after:
+            return "missed"
+        # Resume/reuse: when the earliest `after` call chains to an artifact built
+        # in a prior session (its `na_if_after_chained` field is set) and no
+        # `before` call precedes it in THIS log, the within-log ordering rule does
+        # not apply (e.g. training resumed from a pre-existing SDG dataset). A
+        # genuinely out-of-order run with no such chain still falls through to wrong.
+        na_field = match.get("na_if_after_chained")
+        if na_field:
+            first_after = min(after)
+            if not any(i < first_after for i in before) and run.tool_calls[first_after].get(
+                na_field
+            ):
+                return "n/a"
+        if not before or min(before) > min(after):
+            return "wrong"
+        return "met"
+
+    if mtype == "recovery":
+        calls = run.tool_calls
+        error_idx = next((i for i, c in enumerate(calls) if c.get("status") == "error"), None)
+        if error_idx is None:
+            return "n/a"  # nothing to recover from
+        recovered = any(c.get("status") == "completed" for c in calls[error_idx + 1 :])
+        return "met" if recovered else "wrong"
+
+    if mtype == "completion":
+        if not run.completion:
+            return "missed"
+        want = match.get("outcome")
+        if want and run.outcome != want:
+            return "wrong"
+        return "met"
+
+    if mtype == "scores_present":
+        # Outcome (not mechanic): the eval job returned usable rubric scores.
+        # get_eval_results can succeed as a call yet carry all-null `scores`
+        # (judge scored nothing) -> the eval produced no signal. missed when the
+        # results were never fetched; wrong when fetched but every score is null.
+        calls = _calls(run, match.get("tool", "get_eval_results"))
+        if not calls:
+            return "missed"
+        for c in calls:
+            # The log keeps full tool output, so parse it and inspect `scores`
+            # structurally rather than scraping the JSON text with a regex.
+            try:
+                data = json.loads(c.get("output") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue  # unparseable output — can't confirm a score
+            if _has_numeric_score(data):
+                return "met"  # at least one criterion has a real numeric score
+        return "wrong"
+
+    if mtype == "solo_delegation":
+        # Every delegating message was ONLY the delegate call (no text, no other
+        # tool). `solo` is captured per delegate call; absent -> log predates the
+        # signal, defer to review (logging-dependency rule).
+        calls = _calls(run, "delegate_to_subagent")
+        target = match.get("target")
+        if target:
+            calls = [c for c in calls if c.get("target") == target]
+        if not calls:
+            return "missed"
+        if not any("solo" in c for c in calls):
+            return "review"
+        return "met" if all(c.get("solo") for c in calls) else "wrong"
+
+    if mtype == "no_error_calls":
+        # Robustness: no tool call ended in an error status (optionally limited
+        # to `tools`). Distinct from `recovery`, which only asks whether a later
+        # call succeeded after an error — this penalises the error itself.
+        tools = match.get("tools")
+        for c in run.tool_calls:
+            if tools and c.get("tool") not in tools:
+                continue
+            if c.get("status") == "error":
+                return "wrong"
+        return "met"
+
+    if mtype == "prompt_review":
+        # Integrity: task-distillation Step 8 composes a system prompt and must
+        # render it with show_prompt before asking the user to approve it (the row
+        # is gated on that skill being loaded). Scored structurally, not on the
+        # phrasing of the ask: show_prompt called -> met (the prompt was shown,
+        # however the agent worded the request); not called but an SDG config was
+        # built -> wrong (a prompt was composed and the user never saw it); neither
+        # -> n/a (the prompt-composition step was not reached this run).
+        if _calls(run, "show_prompt"):
+            return "met"
+        if _calls(run, "validate_sdg_job"):
+            return "wrong"
+        return "n/a"
+
+    if mtype == "eval_phase":
+        # UI progress: the eval stage must signal phase=eval so the bar shows
+        # "Evaluation". The observed bug was eval signalling phase=training,
+        # leaving the bar stuck on Model Training.
+        if not _calls(run, "validate_eval_job"):
+            return "n/a"  # no eval stage in this run
+        eval_signals = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "signal_phase" and c.get("role") == "eval"
+        ]
+        if not eval_signals:
+            return "missed"  # eval ran but never signalled a phase
+        if not any("phase" in c for c in eval_signals):
+            return "review"  # log predates phase capture (logging-dependency)
+        return "met" if any(c.get("phase") == "eval" for c in eval_signals) else "wrong"
+
+    if mtype == "model_choice":
+        # The training stage must let the user CHOOSE the base model — present it
+        # as options and wait, never auto-pick a recommended default. Checkable
+        # via a present_options (training role) whose question or option titles
+        # name a model. n/a when there is no training stage; review when the log
+        # predates present_options content capture.
+        if not _calls(run, "validate_training_job"):
+            return "n/a"  # no training stage in this run
+        present = [
+            c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options" and c.get("role") == "training"
+        ]
+        for c in present:
+            question = (c.get("question") or "").lower()
+            titles = " ".join(c.get("options") or []).lower()
+            if "model" in question or any(m in titles for m in _MODEL_NAME_MARKERS):
+                return "met"
+        # Distinguish "never offered a model choice" from "log predates the
+        # option-content capture": if no present_options anywhere carries the
+        # question/options fields, we cannot tell -> defer to review.
+        if not any(
+            "question" in c or "options" in c
+            for c in run.tool_calls
+            if c.get("tool") == "present_options"
+        ):
+            return "review"
+        return "wrong"  # training ran but never offered a model choice
+
+    return "review"
+
+
+def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
+    """Evaluate a row-level `requires` precondition against the run. A row whose
+    precondition is unmet scores `n/a` and (for llm_judge rows) is not sent to
+    the judge — used to gate skill-adherence rows to runs where that sub-skill
+    was actually loaded, so a classification run doesn't get judged against the
+    task-distillation guide.
+
+    Supports:
+
+    - `type: skill_loaded` — a `read` whose output echoes the guide path
+      (`path_contains`), optionally scoped to a subagent `role` (the sub-skills
+      belong to subagents, so role-scoping disambiguates which agent loaded which
+      guide). Reuses the same read/output_contains detection as the auto
+      `skill_loaded` mechanic rows.
+    - `type: eval_for_trained_model` — the run validated an eval job whose config
+      carries a `training_job_id` (the subject under eval is a tuned model, not a
+      base/gateway model). Gates rows that only apply when an eval set is being
+      built FOR a trained model (where it must mirror the training pipeline's SDG
+      config), so base-model or gateway-model evals don't get judged against them.
+
+    Unknown types don't gate (return True)."""
+    if not requires:
+        return True
+    if requires.get("type") == "skill_loaded":
+        role = requires.get("role")
+        needle = requires.get("path_contains")
+        for c in run.tool_calls:
+            if c.get("tool") != "read":
+                continue
+            if role and c.get("role") != role:
+                continue
+            if needle and needle not in (c.get("output") or ""):
+                continue
+            return True
+        return False
+    if requires.get("type") == "eval_for_trained_model":
+        return any(
+            c.get("training_job_id") for c in _calls(run, "validate_eval_job")
+        )
+    return True  # unknown precondition -> do not gate
+
+
+def score_run(run: Run, checklist: dict[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for row in checklist["rows"]:
+        if not _requires_met(run, row.get("requires")):
+            result[row["id"]] = "n/a"  # precondition absent -> row doesn't apply
+            continue
+        mode = row.get("adjudicate", "human")
+        if mode == "auto" and row.get("match"):
+            result[row["id"]] = score_auto(run, row["match"])
+        else:
+            result[row["id"]] = "review"  # human / llm_judge -> offline
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Review CSV merge
+# --------------------------------------------------------------------------- #
+
+
+def emit_review_csv(path: Path, runs: list[Run], checklist: dict[str, Any]) -> None:
+    review_rows = [r for r in checklist["rows"] if r.get("adjudicate") in ("human", "llm_judge")]
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["session_id", "row_id", "aspect", "expected", "status"])
+        for run in runs:
+            for row in review_rows:
+                writer.writerow([run.session_id, row["id"], row["aspect"], row["expected"], ""])
+    print(f"Wrote review template: {path}  ({len(runs)} runs x {len(review_rows)} rows)")
+
+
+def load_review_csv(path: Path) -> dict[tuple[str, str], str]:
+    overrides: dict[tuple[str, str], str] = {}
+    with path.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            status = (row.get("status") or "").strip()
+            if status:
+                overrides[(row["session_id"], row["row_id"])] = status
+    return overrides
+
+
+# --------------------------------------------------------------------------- #
+# LLM-judge pass (fills `llm_judge` rows from the log; default model = Morty's)
+# --------------------------------------------------------------------------- #
+
+_JUDGE_SYSTEM = (
+    'You are a strict adjudicator for an ML-agent ("Morty") pipeline monitor. '
+    "You are given ONE run's transcript — the agent's assistant messages and its "
+    "tool calls with outputs — and a rubric of behavioral checklist rows. For each "
+    "row decide whether its expectation held, judging ONLY from the transcript.\n"
+    'Verdicts: "met" (clearly satisfied), "wrong" (clearly violated), '
+    '"n/a" (the situation the row targets never arose), '
+    '"unknown" (the transcript lacks the evidence to decide — e.g. the assistant '
+    "messages were not captured). Prefer \"unknown\" over guessing. For grounding "
+    "rows, a claim is grounded only if the cited ids/numbers actually appear in a "
+    "tool output.\n"
+    "For rows about a specific workflow step: if the run ended before that step "
+    "could occur (it was abandoned or errored out earlier in the pipeline), answer "
+    '"n/a" — do NOT penalise a step the run never reached. Reserve "wrong" for a '
+    "step the run actually reached but did incorrectly, or clearly skipped despite "
+    "progressing past the point where it should have happened.\n"
+    "Respond with ONLY a JSON object mapping each row_id to "
+    '{"verdict": <one of the four>, "reason": "<=200 chars"}. No prose outside JSON.'
+)
+
+
+def _judge_evidence(run: Run) -> str:
+    """Chronological transcript for the judge: assistant prose + tool calls with
+    (prompt-capped) outputs, in turn order."""
+    lines: list[str] = []
+    for turn in run.counted_turns:
+        trole = turn.get("role", "?")
+        for t in turn.get("texts") or []:
+            lines.append(f"[{t.get('role', trole)} says] {t.get('text', '')}")
+        for c in turn.get("tool_calls") or []:
+            out = c.get("output") or ""
+            if len(out) > _JUDGE_OUTPUT_CAP:
+                out = out[:_JUDGE_OUTPUT_CAP] + f"…[+{len(out) - _JUDGE_OUTPUT_CAP} chars]"
+            meta = {k: c.get(k) for k in ("status", "target", "mode") if c.get(k)}
+            lines.append(f"[{c.get('role', trole)} tool] {c.get('tool')} {meta} -> {out}")
+    return "\n".join(lines) or "(no assistant text or tool calls were captured)"
+
+
+def _norm_verdict(value: Any) -> str:
+    v = str(value or "").strip().lower().replace("_", "/")
+    if v in {"met", "wrong"}:
+        return v
+    if v in {"n/a", "na"}:
+        return "n/a"
+    return "review"  # "unknown" or unparseable -> stays for a human
+
+
+def _parse_judge_json(raw: str) -> dict[str, Any]:
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1] if "```" in text[3:] else text.lstrip("`")
+        text = text[4:] if text.lower().startswith("json") else text
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        return {}
+    try:
+        return json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
+
+
+def _make_judge_call(model: str):
+    """Return a `call(system, prompt) -> str`. Uses Vertex when
+    ANTHROPIC_VERTEX_PROJECT_ID is set (matches this env), else the direct
+    Anthropic API (ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL)."""
+    try:
+        import anthropic
+    except ImportError:
+        sys.exit("--llm-judge needs the `anthropic` package: uv pip install anthropic")
+    import os
+
+    project = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID")
+    if project:
+        region = os.environ.get("CLOUD_ML_REGION") or os.environ.get(
+            "ANTHROPIC_VERTEX_REGION", "global"
+        )
+        client: Any = anthropic.AnthropicVertex(project_id=project, region=region)
+    else:
+        client = anthropic.Anthropic()
+
+    def call(system: str, prompt: str) -> str:
+        resp = client.messages.create(
+            model=model,
+            max_tokens=2000,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+
+    return call
+
+
+def llm_judge_runs(
+    runs: list[Run], checklist: dict[str, Any], model: str
+) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], str]]:
+    """Judge every `llm_judge` row for every run in one call per run. Returns
+    (verdicts, reasons) keyed by (session_id, row_id)."""
+    rows = [r for r in checklist["rows"] if r.get("adjudicate") == "llm_judge"]
+    verdicts: dict[tuple[str, str], str] = {}
+    reasons: dict[tuple[str, str], str] = {}
+    if not rows:
+        return verdicts, reasons
+    call = _make_judge_call(model)
+    for run in runs:
+        # Only judge rows whose precondition holds for this run; gated-out rows
+        # keep the `n/a` score_run already assigned (skill not loaded here).
+        active = [r for r in rows if _requires_met(run, r.get("requires"))]
+        if not active:
+            continue
+        rubric = json.dumps(
+            [{"row_id": r["id"], "expected": r["expected"]} for r in active], indent=2
+        )
+        prompt = f"RUBRIC (judge each row_id):\n{rubric}\n\nTRANSCRIPT:\n{_judge_evidence(run)}"
+        try:
+            data = _parse_judge_json(call(_JUDGE_SYSTEM, prompt))
+        except Exception as exc:  # noqa: BLE001 - report and leave rows as review
+            print(f"  ! llm-judge failed for {run.session_id}: {exc}", file=sys.stderr)
+            data = {}
+        for r in active:
+            entry = data.get(r["id"])
+            # The judge is asked for {"verdict","reason"} per row, but sometimes
+            # returns a bare verdict string ({"row_id": "met"}); tolerate both so
+            # one malformed entry doesn't crash the whole scoring pass.
+            if isinstance(entry, dict):
+                verdict, reason = entry.get("verdict"), entry.get("reason", "")
+            elif isinstance(entry, str):
+                verdict, reason = entry, ""
+            else:
+                verdict, reason = None, ""
+            verdicts[(run.session_id, r["id"])] = _norm_verdict(verdict)
+            reasons[(run.session_id, r["id"])] = str(reason).strip()
+    return verdicts, reasons
+
+
+# --------------------------------------------------------------------------- #
+# Reporting
+# --------------------------------------------------------------------------- #
+
+
+def _fmt(value: Any, kind: str) -> str:
+    if value is None:
+        return "-"
+    if kind == "s":
+        return f"{value:.0f}s"
+    if kind == "$":
+        return f"${value:.4f}"
+    if kind == "int":
+        return f"{int(value):,}"
+    return str(value)
+
+
+def print_per_run(
+    runs: list[Run],
+    scores: dict[str, dict[str, str]],
+    checklist: dict[str, Any],
+    reasons: dict[tuple[str, str], str] | None = None,
+) -> None:
+    reasons = reasons or {}
+    print("## Per-run\n")
+    for run in runs:
+        sc = scores[run.session_id]
+        print(f"### {run.session_id}")
+        print(f"- model: `{run.agent_model or '-'}`   outcome: {run.outcome or '(not marked)'}")
+        print(
+            f"- turns-to-complete: **{run.turns_to_complete}**   "
+            f"tokens excl. cache: **{_fmt(run.total_tokens, 'int')}**   "
+            f"cost: {_fmt(run.total_cost, '$')}   "
+            f"wall-clock: {_fmt(run.wall_clock_s, 's')}"
+        )
+        print(
+            f"- response latency: avg {_fmt(run.avg_latency_s, 's')}   "
+            f"max {_fmt(run.max_latency_s, 's')}   (send received -> response ready, per message)"
+        )
+        for row in checklist["rows"]:
+            reason = reasons.get((run.session_id, row["id"]), "")
+            suffix = f"  |  {reason}" if reason else ""
+            print(
+                f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} "
+                f"— {row['stage']}{suffix}"
+            )
+        print()
+
+
+def print_comparison(
+    runs: list[Run], scores: dict[str, dict[str, str]], checklist: dict[str, Any]
+) -> None:
+    aspects = sorted({row["aspect"] for row in checklist["rows"]})
+    header = [
+        "model",
+        "session",
+        "outcome",
+        "turns",
+        "tokens (excl cache)",
+        "cost",
+        "time",
+        "latency",
+    ] + [f"asp {a}" for a in aspects]
+    print("## Per-run comparison\n")
+    print("| " + " | ".join(header) + " |")
+    print("|" + "|".join(["---"] * len(header)) + "|")
+
+    # One row per run (no averaging), grouped by model for readability.
+    for run in sorted(runs, key=lambda r: (r.agent_model or "(unknown)", r.session_id)):
+        sc = scores[run.session_id]
+        aspect_cells: list[str] = []
+        for aspect in aspects:
+            met = total = 0
+            pending = False  # any `review` row (judge not run / failed / deferred)
+            for row in checklist["rows"]:
+                if row["aspect"] != aspect:
+                    continue
+                status = sc[row["id"]]
+                if status in ("met", "wrong", "missed"):
+                    total += 1
+                    met += status == "met"
+                elif status == "review":
+                    pending = True
+            cell = f"{met}/{total}" if total else "-"
+            if pending:
+                cell += "*"  # fraction omits unadjudicated rows
+            aspect_cells.append(cell)
+
+        row_cells = [
+            run.agent_model or "(unknown)",
+            run.session_id[:8],
+            run.outcome or "(not marked)",
+            str(run.turns_to_complete),
+            _fmt(run.total_tokens, "int"),
+            _fmt(run.total_cost, "$"),
+            _fmt(run.wall_clock_s, "s"),
+            _fmt(run.avg_latency_s, "s"),
+            *aspect_cells,
+        ]
+        print("| " + " | ".join(row_cells) + " |")
+    print()
+    print(
+        "_One row per run. Aspect cells = met / (met+wrong+missed); "
+        "`review` rows excluded until adjudicated. `*` = the aspect has "
+        "unadjudicated (`review`) rows, so its fraction is auto-only and not "
+        "comparable to a fully-scored run._"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------------- #
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("log_dir", type=Path, help="Directory of <session>.jsonl monitor logs")
+    parser.add_argument("--use-case", required=True, help="Checklist under monitor/use_cases/")
+    parser.add_argument("--emit-review", type=Path, help="Write a blank review CSV and exit")
+    parser.add_argument(
+        "--review", type=Path, help="Merge a filled review CSV of human/LLM verdicts"
+    )
+    parser.add_argument(
+        "--llm-judge",
+        action="store_true",
+        help="Score `llm_judge` rows with an LLM pass (one call per run)",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=JUDGE_MODEL_DEFAULT,
+        help=f"Model for --llm-judge (default: {JUDGE_MODEL_DEFAULT}, what Morty runs on)",
+    )
+    args = parser.parse_args()
+
+    if not args.log_dir.is_dir():
+        sys.exit(f"Not a directory: {args.log_dir}")
+
+    checklist = load_checklist(args.use_case)
+    runs = load_runs(args.log_dir)
+    if not runs:
+        sys.exit(f"No *.jsonl logs found in {args.log_dir}")
+
+    if args.emit_review:
+        emit_review_csv(args.emit_review, runs, checklist)
+        return
+
+    scores = {run.session_id: score_run(run, checklist) for run in runs}
+
+    judge_reasons: dict[tuple[str, str], str] = {}
+    if args.llm_judge:
+        verdicts, judge_reasons = llm_judge_runs(runs, checklist, args.judge_model)
+        for (sid, row_id), status in verdicts.items():
+            scores[sid][row_id] = status
+
+    # A filled review CSV wins over the LLM (human overrides the machine).
+    if args.review:
+        overrides = load_review_csv(args.review)
+        for run in runs:
+            for row in checklist["rows"]:
+                key = (run.session_id, row["id"])
+                if key in overrides:
+                    scores[run.session_id][row["id"]] = overrides[key]
+
+    print_per_run(runs, scores, checklist, judge_reasons)
+    print_comparison(runs, scores, checklist)
+
+
+if __name__ == "__main__":
+    main()
