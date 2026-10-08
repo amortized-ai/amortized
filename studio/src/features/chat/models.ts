@@ -22,6 +22,26 @@ export const PROVIDER_CATALOG: Record<string, ProviderInfo> = {
       { providerID: "google-vertex-anthropic", modelID: "claude-haiku-4-5@20251001", label: "Claude Haiku 4.5" },
     ],
   },
+  // GLM via the RITS LiteLLM gateway. Server-side credential (the opencode-glm
+  // secret), so no user key is required — it shows up once opencode reports the
+  // `glm` provider connected (see /agent/provider).
+  "glm": {
+    label: "GLM (RITS)",
+    requiresApiKey: false,
+    models: [
+      { providerID: "glm", modelID: "rits/zai-org/glm-5-3", label: "GLM-5.3" },
+    ],
+  },
+  // GLM-5.3 Flash via a self-hosted LiteLLM (opencode-glm-flash secret), reached
+  // over an SSH tunnel — no user key. Shows up once opencode reports the
+  // `glm-flash` provider connected (see /agent/provider).
+  "glm-flash": {
+    label: "GLM-5.3 Flash",
+    requiresApiKey: false,
+    models: [
+      { providerID: "glm-flash", modelID: "glm-5-3-flash", label: "GLM-5.3 Flash" },
+    ],
+  },
   "anthropic": {
     label: "Anthropic (Direct)",
     requiresApiKey: true,
