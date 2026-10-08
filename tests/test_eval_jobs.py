@@ -288,6 +288,27 @@ class TestEvalBuilder:
         assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
 
     @pytest.mark.asyncio
+    async def test_build_embedded_multi_gpu_sets_tensor_parallel(self) -> None:
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "judge": JUDGE,
+            "nproc_per_node": 2,
+        }
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert result.resources.gpus == 2
+        assert "--tensor-parallel-size 2" in result.command[2]
+
+    @pytest.mark.asyncio
+    async def test_build_embedded_single_gpu_no_tensor_parallel(self) -> None:
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert result.resources.gpus == 1
+        assert "--tensor-parallel-size" not in result.command[2]
+
+    @pytest.mark.asyncio
     async def test_build_embeds_serving_for_model_name(self) -> None:
         config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
         del config["endpoint"]
