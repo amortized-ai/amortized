@@ -310,3 +310,69 @@ class TestHelpers:
         assert agent._as_utc(datetime(2026, 1, 1)).tzinfo is UTC
         assert agent._as_utc("2026-01-01T00:00:00").tzinfo is UTC
         assert agent._as_utc(None) is None
+
+def _validate_result(text: str, tool: str = "validate_sdg_job") -> dict[str, Any]:
+    """A reply that renders a validate_*_job confirm card (no job created yet)."""
+    return {
+        "info": {"id": "x"},
+        "parts": [
+            {"type": "text", "text": text},
+            {"type": "tool", "tool": tool, "input": {}},
+        ],
+    }
+
+
+class TestPrematureSubmit:
+    """Check E: a validate_*_job card only renders a confirm card — the job is created
+    when the user clicks Confirm. Prose claiming it is already submitted/running is false."""
+
+    def test_validate_with_fabricated_id_and_submission_claim_corrects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {}, reply="Click Confirm on the card to start it.")
+        # Mirrors the real GLM-flash failure: validate call + "underway/queued" + fake id.
+        text = (
+            "The dataset generation is underway. Your job is queued and generating: "
+            "Job ID: job-8f2a41d6-9c33-45e1-b2d0-71a44e2f9b10, 200 records."
+        )
+        out = _run(agent._apply_job_claim_gate(state, _validate_result(text), _body()))
+        assert len(sent) == 1
+        assert "not" in sent[0].lower() and "Confirm" in sent[0]
+        assert "Click Confirm" in agent._result_text(out)  # corrected reply kept
+
+    def test_validate_without_submission_claim_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {})
+        text = "Validation passed cleanly. Click Confirm on the card to start the 200-record run."
+        out = _run(agent._apply_job_claim_gate(state, _validate_result(text), _body()))
+        assert sent == []
+        assert "Validation passed" in agent._result_text(out)
+
+    def test_submission_claim_without_validate_card_passes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The post-Confirm report turn (no validate_* call) legitimately says "queued".
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {})
+        _run(
+            agent._apply_job_claim_gate(
+                state, _text_result("Your job is queued and generating now."), _body()
+            )
+        )
+        assert sent == []
+
+    def test_real_inflight_job_reference_suppresses_check_e(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A preview run (confirmed earlier THIS session) may be in flight while the
+        # full-run card is shown — "the preview is generating" is true, so E must not fire.
+        state = agent.SessionState(orchestrator_id="orch")
+        job = _job(status="running", created_at=datetime.now(UTC) + timedelta(seconds=5))
+        sent = _patch(monkeypatch, {"ad472e75": job})
+        text = "Your preview job ad472e75 is still generating. Here's the full run to confirm."
+        out = _run(agent._apply_job_claim_gate(state, _validate_result(text), _body()))
+        assert sent == []
+        assert "preview job ad472e75" in agent._result_text(out)

@@ -1095,6 +1095,11 @@ async def _apply_provenance_gate(
 #      run or disclosed as reused this session => undisclosed stale substitution,
 #      caught at the point of action. Keyed on the tool call's structured
 #      parent_job_id argument, not on prose, so phrasing cannot evade it.
+#   E. premature submission — a validate_*_job card is rendered THIS turn (the job is
+#      created only when the user clicks Confirm) yet the prose claims it is already
+#      submitted/queued/running/generating => false, caught before it misleads the user
+#      (the GLM-5.3-flash run said "the dataset generation is underway … job queued" off
+#      a validate call, with a fabricated job id). Structural: validate_* call + claim.
 # Same remediation shape as the provenance gate: force-correct once, else append a
 # visible caveat rather than discard. Reuse is NOT blocked — only forced to be
 # disclosed — so legitimate reuse (e.g. the eval flow) keeps working.
@@ -1121,6 +1126,24 @@ _VALIDATE_TOOL_BY_TYPE = {
     "training": "validate_training_job",
     "eval": "validate_eval_job",
 }
+_TYPE_BY_VALIDATE_TOOL = {tool: jtype for jtype, tool in _VALIDATE_TOOL_BY_TYPE.items()}
+
+# Check E ("premature submit") — a validate_*_job tool call only RENDERS a confirmation
+# card; the job is created solely when the user clicks Confirm on it (the frontend POSTs
+# create_*). So on a turn that proposes such a card, prose asserting the job is already
+# submitted / queued / running / generating is false — the job does not exist yet. This
+# lexicon only decides WHETHER such a claim is made; the verdict is structural (a
+# validate_* call is present in the same turn). "validate", "I'll build/set up", and plain
+# future tense are deliberately excluded so legitimate "here's the card to confirm" prose
+# never trips it.
+_SUBMITTED_CLAIM_RE = re.compile(
+    r"(underway|queued|submitted|dispatched|kicked off|spinning up"
+    r"|now (generating|running)|has (started|begun)"
+    r"|is (now )?(running|generating|live|being generated)"
+    r"|generation (has|is) (started|begun|underway|running)"
+    r"|job (is|was|has been) (created|submitted|queued|running|started|live))",
+    re.I,
+)
 
 # Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
 # a parent dataset. The call carries parent_job_id as a structured argument, so
@@ -1375,10 +1398,12 @@ async def _job_claim_violations(
         return []
     violations: list[dict[str, Any]] = []
     tokens = _extract_id_candidates(text)
+    saw_real_job = False
     for token in sorted(tokens):
         job = await _fetch_job_by_token(token, job_cache)
         if not job:
             continue  # not a real job (or ambiguous) — provenance gate covers fabrication
+        saw_real_job = True
         window = _sentences_with(text, token)
         if not window:
             continue
@@ -1418,7 +1443,35 @@ async def _job_claim_violations(
         if v["token"] not in flagged:
             violations.append(v)
             flagged.add(v["token"])
+    # Check E — premature submission. This turn renders a validate_*_job confirm card
+    # (job not created until the user clicks Confirm), yet the prose claims the job is
+    # already submitted/queued/running/generating. Structural: the turn's own validate_*
+    # call + a submission claim in prose; no id needed. Suppressed when the reply names a
+    # REAL job (then the claim is attributable to it and Checks A-D own it, and a preview
+    # legitimately in flight before the full-run card won't false-trip) — so this targets
+    # the id-less / fabricated over-claim prose alone can carry.
+    if not saw_real_job:
+        violations.extend(_premature_submit_violations(result, text))
     return violations
+
+
+def _premature_submit_violations(
+    result: dict[str, Any], text: str
+) -> list[dict[str, Any]]:
+    """Check E — see the call site. Returns one violation per validate_* job type whose
+    confirm card is rendered this turn while the prose claims the job already runs."""
+    if not _SUBMITTED_CLAIM_RE.search(text):
+        return []
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        jtype = _TYPE_BY_VALIDATE_TOOL.get(_tool_name(part))
+        if jtype and jtype not in seen:
+            seen.add(jtype)
+            out.append({"token": "", "kind": "premature_submit", "type": jtype})
+    return out
 
 
 async def _dispatch_provenance_violations(
@@ -1536,6 +1589,15 @@ def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
                 f" create, confirm, or present a confirmation card for the {v['type']}"
                 f" job — it cannot run until that finishes. Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
             )
+        elif v["kind"] == "premature_submit":
+            lines.append(
+                f"- You described the {v['type']} job as already submitted/queued/running,"
+                " but this turn you only rendered a confirmation card — the job is NOT"
+                " created yet and has no job ID. It is created only when the user clicks"
+                " Confirm on the card. Do NOT claim it is submitted, queued, generating, or"
+                " running, and do NOT state a job ID. Tell the user to click Confirm to"
+                " start it, then stop and wait."
+            )
         elif v["kind"] == "dispatch":
             verb = "train on" if v["type"] == "training" else "evaluate on"
             size = f" ({v['num']} records)" if v["num"] is not None else ""
@@ -1570,6 +1632,11 @@ def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
             parts.append(
                 f"{v['label']} ({v['token']}) is still '{v['status']}', so the"
                 f" {v['type']} step can't proceed yet"
+            )
+        elif v["kind"] == "premature_submit":
+            parts.append(
+                f"the {v['type']} job has not been submitted yet — it starts only when you"
+                " click Confirm on the card above"
             )
         elif v["kind"] == "dispatch":
             size = f" ({v['num']} records)" if v["num"] is not None else ""
