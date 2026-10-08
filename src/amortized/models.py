@@ -143,6 +143,23 @@ class Job(BaseModel):
     retry_of: str = ""
 
 
+class PromptView(BaseModel):
+    """One reviewable system prompt in an SDG recipe, resolved server-side so the
+    confirmation card can render EVERY prompt the recipe carries (input-generator,
+    assessor, and any future ones) rather than only the assessor. A recipe commonly
+    has more than one — e.g. a ticket-generation prompt plus the assessor prompt."""
+
+    # "assessor" = the system prompt the teacher follows that ships in the SFT training
+    # data; "input" = an input-generator column's own system prompt.
+    role: str
+    # Human-readable card heading (e.g. "Assessor system prompt", "Ticket prompt").
+    label: str
+    # The recipe column the prompt lives on, so an approved preview can be bound back
+    # to the exact config slot.
+    column: str
+    text: str
+
+
 class ValidatedJobConfig(BaseModel):
     valid: bool = True
     job_type: JobType
@@ -150,6 +167,20 @@ class ValidatedJobConfig(BaseModel):
     parent_job_id: str = ""
     recipe: str = ""
     warnings: list[str] = Field(default_factory=list)
+    # Backend-resolved display facts the confirmation card shows verbatim, so the
+    # user always sees them even when the model omits them from its prose. Kept out
+    # of `config` so they are never re-submitted to the create endpoint.
+    data_record_count: int | None = None
+    # The assessor/system prompt the teacher follows (and that ships in the SFT
+    # training data), resolved server-side from the SDG config so the card renders
+    # the real prompt instead of the client guessing it from config internals.
+    # None when the config has no confidently-identifiable assessor prompt. Retained
+    # for back-compat; it mirrors the "assessor"-role entry in `prompts`.
+    assessor_prompt: str | None = None
+    # Every reviewable system prompt in the recipe (input generators + assessor + any
+    # future ones), in generation order, so the card can render all of them instead of
+    # just the assessor. Empty when none are confidently identifiable.
+    prompts: list[PromptView] = Field(default_factory=list)
 
 
 class RecipeSummary(BaseModel):
