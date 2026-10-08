@@ -40,6 +40,7 @@ from amortized.models import (
     Job,
     JobStatus,
     JobType,
+    PromptView,
     SDGJobRequest,
     TrainingJobRequest,
     ValidatedJobConfig,
@@ -593,22 +594,23 @@ async def retry_job(
 async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
+    prompts = _recipe_prompts(config)
+    assessor = next((p.text for p in prompts if p.role == "assessor"), None)
     return ValidatedJobConfig(
         job_type=JobType.sdg,
         config=config,
         parent_job_id=parent_job_id,
-        assessor_prompt=_assessor_prompt(config),
+        assessor_prompt=assessor,
+        prompts=prompts,
     )
 
 
-def _assessor_prompt(config: dict[str, Any]) -> str | None:
-    """The assessor/system prompt the teacher follows — the `system_prompt` of the
-    column whose output becomes the assistant turn in an SFT processor template.
-
-    Resolved authoritatively from the config so the confirmation card shows the
-    real prompt. Returns None when it can't be identified confidently (no blind
-    "last column with a system_prompt" fallback — that risked rendering a
-    sampler's prompt as the assessor prompt)."""
+def _assessor_column_name(config: dict[str, Any]) -> str | None:
+    """Name of the column whose `system_prompt` is the assessor prompt — the column
+    whose output becomes the assistant turn in an SFT processor template (referenced
+    via `{{column}}`). Returns None when it can't be identified confidently (no blind
+    "last column with a system_prompt" fallback — that risked treating a sampler's
+    prompt as the assessor prompt)."""
     columns = config.get("columns")
     if not isinstance(columns, list):
         return None
@@ -631,8 +633,51 @@ def _assessor_prompt(config: dict[str, Any]) -> str | None:
             col = by_name.get(ref.group(1))
             prompt = col.get("system_prompt") if isinstance(col, dict) else None
             if isinstance(prompt, str) and prompt.strip():
-                return prompt.strip()
+                return ref.group(1)
     return None
+
+
+def _assessor_prompt(config: dict[str, Any]) -> str | None:
+    """The assessor/system prompt the teacher follows, resolved authoritatively from
+    the config. Thin wrapper over `_recipe_prompts` kept for existing callers."""
+    return next((p.text for p in _recipe_prompts(config) if p.role == "assessor"), None)
+
+
+def _prompt_label(column: str) -> str:
+    """Human card heading for an input-generator column (e.g. 'support_ticket' ->
+    'Support ticket prompt')."""
+    words = column.replace("_", " ").strip()
+    return f"{words[:1].upper()}{words[1:]} prompt" if words else "Input prompt"
+
+
+def _recipe_prompts(config: dict[str, Any]) -> list[PromptView]:
+    """Every reviewable system prompt in an SDG recipe, in generation order (input
+    generators first, assessor last), each tagged with its column and role. This is
+    what the confirmation card renders, so the user reviews ALL prompts the recipe
+    carries — a ticket-generation prompt and an assessor prompt, not just one."""
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return []
+    assessor = _assessor_column_name(config)
+    inputs: list[PromptView] = []
+    assessor_view: PromptView | None = None
+    for col in columns:
+        if not isinstance(col, dict):
+            continue
+        name = col.get("name")
+        prompt = col.get("system_prompt")
+        if not isinstance(name, str) or not isinstance(prompt, str) or not prompt.strip():
+            continue
+        text = prompt.strip()
+        if name == assessor:
+            assessor_view = PromptView(
+                role="assessor", label="Assessor system prompt", column=name, text=text
+            )
+        else:
+            inputs.append(
+                PromptView(role="input", label=_prompt_label(name), column=name, text=text)
+            )
+    return inputs + ([assessor_view] if assessor_view else [])
 
 
 class CloneSdgForEvalRequest(BaseModel):

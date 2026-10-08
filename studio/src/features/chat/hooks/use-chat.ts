@@ -236,6 +236,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         recipe: validated.recipe,
         dataRecordCount: validated.dataRecordCount,
         assessorPrompt: validated.assessorPrompt,
+        prompts: validated.prompts,
       }
     }
   }

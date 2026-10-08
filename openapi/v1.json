@@ -221,7 +221,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Build the eval-set SDG config for a trained model by mirroring its training SDG recipe verbatim (teacher model, prompts, SFT format); only num_records changes. Running it generates FRESH inputs \u2014 that fresh sampling IS the held-out isolation, so there is NOTHING to verify afterward. Pass the returned `config` straight to validate_sdg_job. Use this instead of hand-assembling an eval SDG.",
+        "summary": "Build the eval-set SDG config for a trained model by mirroring its training SDG recipe verbatim (teacher model, prompts, SFT format); only num_records changes. For a purely synthetic task, re-running generates fresh held-out inputs. For a document-grounded task it re-seeds from the SAME source documents, so the eval is freshly regenerated but NOT a disjoint held-out split \u2014 the platform's input-overlap check runs at validate time either way. Pass the returned `config` straight to validate_sdg_job. Use this instead of hand-assembling an eval SDG.",
         "description": "Deterministically mirror a model's training SDG recipe for its eval set.\n\nReplaces the error-prone manual clone: resolving the training job's parent\nSDG and copying its teacher/prompts/format by hand is exactly where a weak\ndriver drifts (wrong teacher, reworded prompt) or loops (polling get_job to\n'verify' overlap). This returns the mirrored config in one call.",
         "operationId": "clone_sdg_config_for_eval",
         "requestBody": {
@@ -4856,6 +4856,17 @@
               }
             ],
             "title": "Event"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
           }
         },
         "type": "object",
@@ -5316,6 +5327,35 @@
           "options"
         ],
         "title": "PresentOptionsResponse"
+      },
+      "PromptView": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "label",
+          "column",
+          "text"
+        ],
+        "title": "PromptView",
+        "description": "One reviewable system prompt in an SDG recipe, resolved server-side so the\nconfirmation card can render EVERY prompt the recipe carries (input-generator,\nassessor, and any future ones) rather than only the assessor. A recipe commonly\nhas more than one \u2014 e.g. a ticket-generation prompt plus the assessor prompt."
       },
       "RemoteValidatorParams": {
         "properties": {
@@ -6007,6 +6047,11 @@
             "type": "boolean",
             "title": "Rendered",
             "default": true
+          },
+          "agent_instruction": {
+            "type": "string",
+            "title": "Agent Instruction",
+            "default": "The prompt is now shown for review. Do NOT submit or confirm a job in this same turn (no validate_*/create_*) \u2014 the user must review this prompt first, because it ships in the training data. Ask them to approve it or request edits (present_options), then STOP and wait; build/confirm the job in your NEXT turn, after they approve."
           }
         },
         "type": "object",
@@ -6932,6 +6977,24 @@
               }
             ],
             "title": "Data Record Count"
+          },
+          "assessor_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessor Prompt"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/PromptView"
+            },
+            "type": "array",
+            "title": "Prompts"
           }
         },
         "type": "object",

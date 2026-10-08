@@ -4,6 +4,15 @@ export interface OptionCard {
   value: string
 }
 
+// One reviewable system prompt in an SDG recipe, resolved by the backend. A recipe
+// carries more than one (e.g. a ticket-generation prompt and an assessor prompt).
+export interface PromptView {
+  role: string
+  label: string
+  column: string
+  text: string
+}
+
 export interface ProposedAction {
   action: string
   description: string
@@ -16,7 +25,11 @@ export interface ProposedAction {
   dataRecordCount?: number | null
   // Backend-resolved assessor/system prompt for an SDG job (null when none was
   // confidently identified). Rendered verbatim instead of the client guessing it.
+  // Mirrors the "assessor"-role entry in `prompts`; kept for back-compat.
   assessorPrompt?: string | null
+  // Every reviewable system prompt in the recipe (input generators + assessor),
+  // rendered verbatim so the user reviews all of them, not just the assessor.
+  prompts?: PromptView[]
 }
 
 export interface ToolResult {

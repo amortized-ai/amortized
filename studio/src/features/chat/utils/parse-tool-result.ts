@@ -1,6 +1,26 @@
+import type { PromptView } from "../types"
+
 interface McpContentBlock {
   type: string
   text?: string
+}
+
+function extractPromptViews(raw: unknown): PromptView[] {
+  if (!Array.isArray(raw)) return []
+  const out: PromptView[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue
+    const o = item as Record<string, unknown>
+    if (typeof o.text === "string" && o.text.trim()) {
+      out.push({
+        role: typeof o.role === "string" ? o.role : "",
+        label: typeof o.label === "string" ? o.label : "",
+        column: typeof o.column === "string" ? o.column : "",
+        text: o.text,
+      })
+    }
+  }
+  return out
 }
 
 export function unwrapToolResult(raw: string): unknown {
@@ -62,6 +82,7 @@ export interface ValidatedJobConfig {
   warnings: string[]
   dataRecordCount: number | null
   assessorPrompt: string | null
+  prompts: PromptView[]
 }
 
 export function extractValidatedJobConfig(result: string): ValidatedJobConfig | null {
@@ -80,6 +101,7 @@ export function extractValidatedJobConfig(result: string): ValidatedJobConfig | 
         typeof obj.data_record_count === "number" ? obj.data_record_count : null,
       assessorPrompt:
         typeof obj.assessor_prompt === "string" ? obj.assessor_prompt : null,
+      prompts: extractPromptViews(obj.prompts),
     }
   }
   return null

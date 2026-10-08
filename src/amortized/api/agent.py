@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 import hashlib
 import json
 import logging
@@ -1790,24 +1791,26 @@ async def create_session() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # SDG assessor-prompt binding
 # ---------------------------------------------------------------------------
-# The user reviews the assessor/system prompt in a show_prompt preview and approves it;
-# the job must then run with THAT exact prompt. A weaker model can paraphrase it when it
-# writes the SDG config. So whenever a validate_sdg_job confirm card is read, if a prompt
-# was previewed we overwrite the config's assessor prompt with the previewed one — in
-# every place it lives — so the displayed card AND the launched job carry exactly what
-# the user approved (the confirm card stays the final review). Scoped to preview flows:
-# no show_prompt means there is no approved prompt to bind against (knowledge-ingestion
-# and classification generate their prompts without a preview), so the model's prompt is
-# left untouched.
+# The user reviews a recipe's system prompts in show_prompt previews and approves them;
+# the job must then run with THOSE exact prompts. A recipe carries MORE THAN ONE — e.g. a
+# ticket-generation (input) prompt and an assessor prompt — and a weaker model can
+# paraphrase any of them when it writes the SDG config. So whenever a validate_sdg_job
+# confirm card is read, every previewed prompt is bound back to the recipe column it was
+# paraphrased from (matched by text similarity, one-to-one), so the displayed card AND the
+# launched job carry exactly what the user approved. Matching by similarity — not "the
+# last shown prompt" — keeps a ticket prompt from being written into the assessor slot
+# just because it was shown last. Scoped to preview flows: no show_prompt means nothing to
+# bind (knowledge-ingestion and classification generate prompts without a preview), so the
+# model's config is left untouched.
 
 _SHOW_PROMPT_TOOL = "show_prompt"
 _VALIDATE_SDG_TOOL = "validate_sdg_job"
 
 
-def _last_shown_prompt(messages: list[dict[str, Any]]) -> str | None:
-    """The most recent prompt the user was shown via show_prompt in `messages`
-    (chronological) — the one they approved in the show → approve → build flow."""
-    latest: str | None = None
+def _shown_prompts(messages: list[dict[str, Any]]) -> list[str]:
+    """Every prompt the user was shown via show_prompt in `messages` (chronological),
+    de-duplicated preserving order — a driver may re-show a prompt before confirming."""
+    out: list[str] = []
     for msg in messages:
         if not isinstance(msg, dict):
             continue
@@ -1818,23 +1821,20 @@ def _last_shown_prompt(messages: list[dict[str, Any]]) -> str | None:
                 and _tool_name(part) == _SHOW_PROMPT_TOOL
             ):
                 shown = str(_get_tool_input(part).get("prompt") or "").strip()
-                if shown:
-                    latest = shown
-    return latest
+                if shown and shown not in out:
+                    out.append(shown)
+    return out
 
 
-def _rewrite_assessor_prompt(config: dict[str, Any], new_prompt: str) -> bool:
-    """Overwrite the assessor system prompt in an SDG config with `new_prompt`, in every
-    place it lives: the output column's `system_prompt` and the SFT processor's `system`
-    message. Mirrors jobs._assessor_prompt's resolution (processor → SFT template →
-    assistant `{{column}}`) so it targets the SAME prompt the confirm card renders, and
-    leaves the input-generator column's own system_prompt alone. Returns True if it
-    rewrote anything."""
-    columns = config.get("columns")
-    if not isinstance(columns, list):
-        return False
-    by_name = {c.get("name"): c for c in columns if isinstance(c, dict)}
-    rewrote = False
+def _rewrite_processor_system_messages(
+    config: dict[str, Any], assessor_col: str, new_prompt: str
+) -> bool:
+    """Set the SFT processor template's `system` message to `new_prompt` for the
+    processor whose assistant turn references the assessor column — the assessor prompt
+    ships both on its column and in the processor's system turn. Returns True if it
+    changed anything."""
+    ref_pat = re.compile(r"\{\{\s*" + re.escape(assessor_col) + r"\s*\}\}")
+    changed = False
     for proc in config.get("processors") or []:
         if not isinstance(proc, dict):
             continue
@@ -1842,39 +1842,88 @@ def _rewrite_assessor_prompt(config: dict[str, Any], new_prompt: str) -> bool:
         messages = template.get("messages") if isinstance(template, dict) else None
         if not isinstance(messages, list):
             continue
-        target_col: dict[str, Any] | None = None
-        for msg in messages:
-            if not isinstance(msg, dict) or msg.get("role") != "assistant":
-                continue
-            content = msg.get("content") if isinstance(msg.get("content"), str) else ""
-            ref = re.search(r"\{\{\s*(\w+)\s*\}\}", content or "")
-            if ref:
-                candidate = by_name.get(ref.group(1))
-                if isinstance(candidate, dict) and isinstance(candidate.get("system_prompt"), str):
-                    target_col = candidate
-                break
-        if target_col is None:
+        refs_assessor = any(
+            isinstance(m, dict)
+            and m.get("role") == "assistant"
+            and isinstance(m.get("content"), str)
+            and ref_pat.search(m["content"])
+            for m in messages
+        )
+        if not refs_assessor:
             continue
-        target_col["system_prompt"] = new_prompt
         for msg in messages:
-            if isinstance(msg, dict) and msg.get("role") == "system":
+            if not isinstance(msg, dict) or msg.get("role") != "system":
+                continue
+            if msg.get("content") != new_prompt:
                 msg["content"] = new_prompt
-        rewrote = True
-    return rewrote
+                changed = True
+    return changed
 
 
-def _bind_validated_sdg_prompt(data: dict[str, Any], new_prompt: str) -> bool:
-    """Rewrite a ValidatedJobConfig dict ({config, assessor_prompt, ...}) so both the
-    config (what the job runs with) and the shown assessor_prompt carry `new_prompt`."""
-    config = data.get("config")
-    if not isinstance(config, dict) or not _rewrite_assessor_prompt(config, new_prompt):
+def _bind_prompts_to_config(config: dict[str, Any], shown: list[str]) -> bool:
+    """Overwrite each prompt-bearing recipe column's `system_prompt` with the approved
+    preview it most closely matches (greedy one-to-one by text similarity), and align the
+    SFT processor's system turn when the assessor column is rebound. Returns True if it
+    changed anything."""
+    from amortized.api.jobs import _assessor_column_name
+
+    columns = config.get("columns")
+    if not isinstance(columns, list) or not shown:
         return False
-    data["assessor_prompt"] = new_prompt
+    prompt_cols = [
+        c
+        for c in columns
+        if isinstance(c, dict)
+        and isinstance(c.get("system_prompt"), str)
+        and c["system_prompt"].strip()
+    ]
+    if not prompt_cols:
+        return False
+    assessor_col = _assessor_column_name(config)
+    scored: list[tuple[float, int, int]] = []
+    for si, s in enumerate(shown):
+        for ci, col in enumerate(prompt_cols):
+            ratio = difflib.SequenceMatcher(None, s, col["system_prompt"]).ratio()
+            scored.append((ratio, si, ci))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    used_s: set[int] = set()
+    used_c: set[int] = set()
+    changed = False
+    for _ratio, si, ci in scored:
+        if si in used_s or ci in used_c:
+            continue
+        used_s.add(si)
+        used_c.add(ci)
+        col = prompt_cols[ci]
+        if col["system_prompt"] != shown[si]:
+            col["system_prompt"] = shown[si]
+            changed = True
+        if (
+            assessor_col is not None
+            and col.get("name") == assessor_col
+            and _rewrite_processor_system_messages(config, assessor_col, shown[si])
+        ):
+            changed = True
+    return changed
+
+
+def _bind_validated_sdg_prompts(data: dict[str, Any], shown: list[str]) -> bool:
+    """Rewrite a ValidatedJobConfig dict ({config, assessor_prompt, prompts, ...}) so the
+    config (what the job runs with) carries the approved prompts, then refresh the
+    card's display fields (`prompts`, `assessor_prompt`) from the rebound config."""
+    config = data.get("config")
+    if not isinstance(config, dict) or not _bind_prompts_to_config(config, shown):
+        return False
+    from amortized.api.jobs import _recipe_prompts
+
+    prompts = _recipe_prompts(config)
+    data["prompts"] = [p.model_dump() for p in prompts]
+    data["assessor_prompt"] = next((p.text for p in prompts if p.role == "assessor"), None)
     return True
 
 
-def _bind_validate_part(part: dict[str, Any], new_prompt: str) -> None:
-    """Overwrite the assessor prompt in a validate_sdg_job tool part's OUTPUT (the
+def _bind_validate_part(part: dict[str, Any], shown: list[str]) -> None:
+    """Bind the approved prompts into a validate_sdg_job tool part's OUTPUT (the
     ValidatedJobConfig the UI reads for the card and the create payload)."""
     containers: list[tuple[dict[str, Any], str]] = []
     state = part.get("state")
@@ -1889,20 +1938,20 @@ def _bind_validate_part(part: dict[str, Any], new_prompt: str) -> None:
                 parsed = json.loads(raw)
             except (ValueError, TypeError):
                 continue
-            if isinstance(parsed, dict) and _bind_validated_sdg_prompt(parsed, new_prompt):
+            if isinstance(parsed, dict) and _bind_validated_sdg_prompts(parsed, shown):
                 obj[key] = json.dumps(parsed)
         elif isinstance(raw, dict):
-            _bind_validated_sdg_prompt(raw, new_prompt)
+            _bind_validated_sdg_prompts(raw, shown)
 
 
 def _bind_sdg_prompt_to_approved(messages: list[dict[str, Any]]) -> None:
-    """In-place: if the user was shown a prompt (show_prompt) and these messages carry a
-    validate_sdg_job confirm card, overwrite the card's assessor prompt with the last
-    previewed one. No preview → no-op. See the section header for rationale."""
+    """In-place: if the user was shown prompts (show_prompt) and these messages carry a
+    validate_sdg_job confirm card, bind every approved prompt to the recipe column it
+    matches. No preview → no-op. See the section header for rationale."""
     if not isinstance(messages, list):
         return
-    approved = _last_shown_prompt(messages)
-    if not approved:
+    shown = _shown_prompts(messages)
+    if not shown:
         return
     for msg in messages:
         if not isinstance(msg, dict):
@@ -1913,7 +1962,7 @@ def _bind_sdg_prompt_to_approved(messages: list[dict[str, Any]]) -> None:
                 and part.get("type") == "tool"
                 and _tool_name(part) == _VALIDATE_SDG_TOOL
             ):
-                _bind_validate_part(part, approved)
+                _bind_validate_part(part, shown)
 
 
 @router.get("/session/{session_id}/message")
