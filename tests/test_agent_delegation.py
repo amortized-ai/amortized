@@ -4,7 +4,7 @@ Covers subagent → subagent delegation (e.g. eval → sdg) and the
 stack-based return of control when the delegated subagent completes.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -302,6 +302,16 @@ class TestEnforceSingleInteraction:
         texts = [p for p in out["parts"] if p.get("type") == "text"]
         assert texts and "Criterion" in texts[0]["text"]  # the metric table survives
 
+    @staticmethod
+    def _training_ready() -> agent.SessionState:
+        # A state whose training prerequisites are met, so these tests isolate the
+        # single-interaction invariant (not the training precondition gate).
+        state = _fresh_state()
+        state.shown_vram = True
+        state.confirmed_data = True
+        state.offered_choice.add("training")
+        return state
+
     def test_confirm_turn_drops_options_stacked_under_the_card(self) -> None:
         # validate_* first, then a redundant "confirm?" present_options -> the
         # confirmation card wins; the stacked question is dropped, passive cards stay.
@@ -313,7 +323,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("present_options", {"question": "Submit this job?"}),
             ]
         }
-        out = agent._enforce_single_interaction(result, _fresh_state())
+        out = agent._enforce_single_interaction(result, self._training_ready())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert "present_options" not in tools  # no options under the confirm card
         assert tools == ["validate_training_job", "show_vram_estimate", "signal_phase"]
@@ -327,7 +337,7 @@ class TestEnforceSingleInteraction:
                 _tool_part("validate_training_job", {"algorithm": "osft"}),
             ]
         }
-        out = agent._enforce_single_interaction(result, _fresh_state())
+        out = agent._enforce_single_interaction(result, self._training_ready())
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools == ["validate_training_job"]
 
@@ -421,6 +431,209 @@ class TestEnforceSingleInteraction:
         }
         out = agent._enforce_single_interaction(result, _fresh_state())
         assert len(out["parts"]) == 2
+
+
+class TestPreviewBeforeCreateGate:
+    """A full-job SDG confirm (validate_sdg_job mode='create') may render only after a
+    preview of the SAME recipe has been shown standalone for approval. This stops a
+    weak driver from skipping the mandated ~10-sample preview and jumping straight to
+    the full run, and re-gates when the recipe is edited after a preview."""
+
+    _RECIPE: ClassVar[dict[str, Any]] = {"columns": [{"name": "q"}], "topic": "openshift"}
+
+    def _create(self, **extra: Any) -> dict[str, Any]:
+        return _tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create", **extra})
+
+    def _preview(self, **extra: Any) -> dict[str, Any]:
+        return _tool_part(
+            "validate_sdg_job", {**self._RECIPE, "mode": "preview", **extra}
+        )
+
+    def test_create_without_prior_preview_is_held_and_nudged(self) -> None:
+        result = {"parts": [_text_part("confirm the full run"), self._create()]}
+        out = agent._enforce_single_interaction(result, _fresh_state())
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert "validate_sdg_job" not in tools  # full-job confirm held
+        texts = [p["text"] for p in out["parts"] if p.get("type") == "text"]
+        assert any("preview" in t.lower() for t in texts)  # steered to preview first
+
+    def test_create_with_omitted_mode_defaults_to_create_and_is_gated(self) -> None:
+        # SDGJobRequest.mode defaults to 'create', so an omitted mode is a full run.
+        result = {"parts": [_tool_part("validate_sdg_job", dict(self._RECIPE))]}
+        out = agent._enforce_single_interaction(result, _fresh_state())
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert "validate_sdg_job" not in tools
+
+    def test_preview_then_create_same_turn_keeps_preview(self) -> None:
+        # The driver stacks the full run under the preview. The preview leads; the
+        # create is dropped and must come on a later turn after approval.
+        state = _fresh_state()
+        result = {"parts": [self._preview(), self._create()]}
+        out = agent._enforce_single_interaction(result, state)
+        modes = [
+            agent._validate_mode(p)
+            for p in out["parts"]
+            if agent._tool_name(p) == "validate_sdg_job"
+        ]
+        assert modes == ["preview"]  # only the preview rendered
+        # The preview is now approved, so a later create proceeds.
+        out2 = agent._enforce_single_interaction({"parts": [self._create()]}, state)
+        assert any(
+            agent._tool_name(p) == "validate_sdg_job" for p in out2["parts"]
+        )
+
+    def test_create_after_standalone_preview_proceeds(self) -> None:
+        state = _fresh_state()
+        agent._enforce_single_interaction({"parts": [self._preview()]}, state)
+        out = agent._enforce_single_interaction({"parts": [self._create()]}, state)
+        assert any(agent._tool_name(p) == "validate_sdg_job" for p in out["parts"])
+
+    def test_record_count_change_does_not_re_gate(self) -> None:
+        # num_records counts samples, not recipe — a preview of 10 approves the full run.
+        state = _fresh_state()
+        agent._enforce_single_interaction(
+            {"parts": [self._preview(num_records=10)]}, state
+        )
+        out = agent._enforce_single_interaction(
+            {"parts": [self._create(num_records=500)]}, state
+        )
+        assert any(agent._tool_name(p) == "validate_sdg_job" for p in out["parts"])
+
+    def test_edited_recipe_re_gates_the_create(self) -> None:
+        state = _fresh_state()
+        agent._enforce_single_interaction({"parts": [self._preview()]}, state)
+        edited = _tool_part(
+            "validate_sdg_job",
+            {"columns": [{"name": "q"}], "topic": "kubernetes", "mode": "create"},
+        )
+        out = agent._enforce_single_interaction({"parts": [edited]}, state)
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert "validate_sdg_job" not in tools  # new recipe needs a fresh preview
+
+    def test_prompt_gate_precedes_the_preview_gate(self) -> None:
+        # With a new prompt AND an ungated create, the prompt review wins first.
+        result = {
+            "parts": [
+                _tool_part("show_prompt", {"prompt": "You are an assessor."}),
+                self._create(),
+            ]
+        }
+        out = agent._enforce_single_interaction(result, _fresh_state())
+        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+        assert tools == ["show_prompt"]  # prompt stands alone; create held
+
+    def test_training_confirm_is_not_preview_gated(self) -> None:
+        # The preview gate is SDG-only: a training confirm is never held with the SDG
+        # preview nudge (it has its own precondition gates, covered separately).
+        result = {"parts": [_tool_part("validate_training_job", {"algorithm": "sft"})]}
+        out = agent._enforce_single_interaction(result, _fresh_state())
+        texts = [p.get("text", "") for p in out["parts"] if p.get("type") == "text"]
+        assert not any("preview" in t.lower() for t in texts)
+
+
+def _tools(out: dict[str, Any]) -> list[str]:
+    return [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
+
+
+def _nudge(out: dict[str, Any]) -> str:
+    return " ".join(p.get("text", "") for p in out["parts"] if p.get("type") == "text")
+
+
+class TestTrainingConfirmPreconditions:
+    """A validate_training_job card may render only after the user has (in order)
+    confirmed the data, been offered a model/method choice, and seen the VRAM estimate —
+    the training arm of the confirm-card precondition evaluator. Signals accumulate as
+    turns render them and reset once the job card renders."""
+
+    def _confirm(self) -> dict[str, Any]:
+        return {"parts": [_tool_part("validate_training_job", {"algorithm": "osft"})]}
+
+    def test_held_until_data_confirmed_first(self) -> None:
+        out = agent._enforce_single_interaction(self._confirm(), _fresh_state())
+        assert "validate_training_job" not in _tools(out)
+        assert "get_dataset" in _nudge(out).lower()  # first unmet precondition
+
+    def test_get_dataset_satisfies_the_data_precondition(self) -> None:
+        state = _fresh_state()
+        # A prior setup turn inspects the dataset (passive tool, no card/question).
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("get_dataset", {"run_id": "r1"})]}, state
+        )
+        assert state.confirmed_data is True
+        # Data done; the next unmet precondition is the model choice.
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_training_job" not in _tools(out)
+        assert "model" in _nudge(out).lower()
+
+    def test_model_choice_recorded_only_in_training_context(self) -> None:
+        state = _fresh_state()
+        state.subagent_target = "training"
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("present_options", {"question": "Which base model?"})]},
+            state,
+        )
+        assert "training" in state.offered_choice
+
+    def test_renders_once_all_preconditions_met(self) -> None:
+        state = _fresh_state()
+        state.subagent_target = "training"
+        # data (prior turn) + model choice (prior turn) + VRAM (this turn).
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("get_dataset", {"run_id": "r1"})]}, state
+        )
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("present_options", {"question": "Which model?"})]}, state
+        )
+        result = {
+            "parts": [
+                _tool_part("estimate_training_resources", {"model": "m"}),
+                _tool_part("validate_training_job", {"algorithm": "osft"}),
+            ]
+        }
+        out = agent._enforce_single_interaction(result, state)
+        assert "validate_training_job" in _tools(out)
+
+    def test_second_job_re_gates_after_confirm(self) -> None:
+        state = _fresh_state()
+        state.shown_vram = True
+        state.confirmed_data = True
+        state.offered_choice.add("training")
+        out1 = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_training_job" in _tools(out1)  # first job passes
+        # The signals were cleared, so a second training job must re-establish them.
+        assert state.shown_vram is False
+        assert "training" not in state.offered_choice
+        out2 = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_training_job" not in _tools(out2)
+
+
+class TestEvalConfirmPreconditions:
+    """A validate_eval_job card may render only after the user has been offered the
+    evaluation setup (the judge model has no default) — the eval arm of the evaluator."""
+
+    def _confirm(self) -> dict[str, Any]:
+        return {"parts": [_tool_part("validate_eval_job", {"training_job_id": "t1"})]}
+
+    def test_held_until_a_choice_was_offered(self) -> None:
+        out = agent._enforce_single_interaction(self._confirm(), _fresh_state())
+        assert "validate_eval_job" not in _tools(out)
+        assert "judge" in _nudge(out).lower()
+
+    def test_renders_after_eval_choice_offered(self) -> None:
+        state = _fresh_state()
+        state.subagent_target = "eval"
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("present_options", {"question": "Which judge model?"})]},
+            state,
+        )
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" in _tools(out)
+
+    def test_training_choice_does_not_satisfy_eval(self) -> None:
+        state = _fresh_state()
+        state.offered_choice.add("training")  # a training choice is not an eval choice
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" not in _tools(out)
 
 
 def _signal_phase_results(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:

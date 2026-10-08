@@ -15,6 +15,7 @@ import logging
 import re
 import ssl
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -101,6 +102,20 @@ class SessionState:
     # (the redundant review card is dropped), so a driver that re-shows the prompt
     # before every validate_* can't livelock. See _enforce_single_interaction.
     reviewed_card_sigs: set[str] = field(default_factory=set)
+    # Config signatures of SDG previews (validate_sdg_job mode="preview") already shown
+    # standalone for approval. A full-job confirm (mode="create") may render only once
+    # its config's signature is in this set, so a driver can't jump straight to the full
+    # run; editing the recipe yields a new signature and re-gates. See
+    # _enforce_single_interaction / _sdg_config_signature.
+    approved_preview_sigs: set[str] = field(default_factory=set)
+    # Prerequisite ACTIONS a confirm card requires, accumulated as turns render them, so
+    # the (sync) confirm-precondition evaluator can hold a validate_* card the model
+    # jumped to without the mandated setup. Reset for a job type once its confirm card
+    # renders, so a SECOND job of that type in the same conversation re-gates. See
+    # _enforce_single_interaction / _CONFIRM_PRECONDITIONS.
+    shown_vram: bool = False  # estimate_training_resources rendered (training)
+    confirmed_data: bool = False  # a dataset tool (get_dataset/…) rendered (training data)
+    offered_choice: set[str] = field(default_factory=set)  # targets that asked present_options
 
 
 _sessions: dict[str, SessionState] = {}
@@ -295,6 +310,157 @@ def _review_card_signature(part: dict[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _validate_mode(part: dict[str, Any]) -> str:
+    """The `mode` of a validate_sdg_job call. SDGJobRequest.mode defaults to 'create',
+    so an omitted mode is a full-job confirm, not a preview."""
+    return str(_get_tool_input(part).get("mode") or "create").strip().lower()
+
+
+# Fields that count a sample, not the recipe. A preview approves the RECIPE (columns,
+# models, processors, seed, topic); changing only how many records to make must not
+# force a re-preview. parent_job_id is lineage, likewise not recipe-defining. Mirrors
+# the clone-for-eval invariant ("mirror the recipe verbatim; only num_records changes").
+_SDG_NON_RECIPE_FIELDS = {"mode", "num_records", "parent_job_id"}
+
+
+def _sdg_config_signature(part: dict[str, Any]) -> str:
+    """Stable signature of an SDG job's RECIPE, identical for a preview and the full-job
+    confirm of the same recipe (they differ only in `mode`/record count). An edited
+    recipe yields a new signature, so the preview-before-create gate re-fires."""
+    recipe = {
+        k: v for k, v in _get_tool_input(part).items() if k not in _SDG_NON_RECIPE_FIELDS
+    }
+    canonical = json.dumps(recipe, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# Tools that establish a confirm card's prerequisite ACTIONS, tracked as session
+# signals (see SessionState). The VRAM estimate and dataset inspection are ordinary
+# (passive) tool calls that must have happened before a training confirm.
+_VRAM_TOOL = "estimate_training_resources"
+_DATA_CONFIRM_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
+
+# Targets whose confirm cards require the user to have been offered a choice first.
+_CHOICE_REQUIRED_TARGETS = {"training", "eval"}
+
+
+# Steering appended when a confirm card is HELD because a prerequisite is unmet. One per
+# precondition; the first unmet one's text is what the model sees.
+_PREVIEW_FIRST_NUDGE = (
+    "A full SDG run must be previewed first. Call validate_sdg_job with mode "
+    '"preview", let the user approve the ~10-sample preview, then confirm the full '
+    "run. If you already previewed but changed the recipe, re-run the preview so the "
+    "user approves the new configuration before the full job is created."
+)
+_TRAINING_DATA_NUDGE = (
+    "Confirm the training data before the job card. Call get_dataset on the training "
+    "run and show the user its record count — even if the data came in via "
+    "parent_job_id (auto-resolving data is not the same as the user confirming it)."
+)
+_TRAINING_MODEL_NUDGE = (
+    "Let the user choose the base model/method before the job card. Present the options "
+    "with present_options (with VRAM estimates) and wait for their reply — never "
+    "auto-select a base model and jump straight to the confirmation."
+)
+_TRAINING_VRAM_NUDGE = (
+    "Show the VRAM estimate before the job card. Call estimate_training_resources for "
+    "the final configuration so the user sees the resource cost before confirming."
+)
+_EVAL_CHOICE_NUDGE = (
+    "Let the user decide the evaluation setup before the job card. The judge model has "
+    "no default — ask which model to judge with (present_options, a soft suggestion is "
+    "fine) and wait for their reply before confirming the eval job."
+)
+
+
+@dataclass(frozen=True)
+class _ConfirmGate:
+    """One ordered precondition a confirm card must clear before it may render: a
+    predicate over the session signals (+ the card itself) and the steer emitted when
+    it is unmet."""
+
+    name: str
+    satisfied: Callable[[SessionState, dict[str, Any]], bool]
+    nudge: str
+
+
+# The confirm-card precondition registry — the single ordered table the gate consults to
+# answer "may this validate_* card render this turn, or must a prerequisite fire first?".
+# Per confirm tool, the preconditions in dependency order; the FIRST unmet one holds the
+# card and steers the model. Declarative: a new gate (an eval metric review, a training
+# method card) is one more entry, not new control flow. (Readiness preconditions that
+# need the DB — an upstream job being 'succeeded' — stay in the async stage-gate
+# `_not_ready_violations`, deduped there against the dispatch-provenance check; this
+# table is the SYNC half that turns on session-local signals.)
+_CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
+    "validate_sdg_job": (
+        _ConfirmGate(
+            "preview",
+            lambda s, c: _validate_mode(c) != "create"
+            or _sdg_config_signature(c) in s.approved_preview_sigs,
+            _PREVIEW_FIRST_NUDGE,
+        ),
+    ),
+    "validate_training_job": (
+        _ConfirmGate("data", lambda s, c: s.confirmed_data, _TRAINING_DATA_NUDGE),
+        _ConfirmGate(
+            "model", lambda s, c: "training" in s.offered_choice, _TRAINING_MODEL_NUDGE
+        ),
+        _ConfirmGate("vram", lambda s, c: s.shown_vram, _TRAINING_VRAM_NUDGE),
+    ),
+    "validate_eval_job": (
+        _ConfirmGate(
+            "choice", lambda s, c: "eval" in s.offered_choice, _EVAL_CHOICE_NUDGE
+        ),
+    ),
+}
+
+
+def _first_unmet_precondition(
+    state: SessionState, card: dict[str, Any]
+) -> _ConfirmGate | None:
+    """The first precondition the leading confirm card has not satisfied, or None."""
+    for gate in _CONFIRM_PRECONDITIONS.get(_tool_name(card), ()):
+        if not gate.satisfied(state, card):
+            return gate
+    return None
+
+
+def _record_confirm_signals(
+    state: SessionState, parts: list[dict[str, Any]], ask_turn: bool
+) -> None:
+    """Accumulate the prerequisite-action signals a confirm card's preconditions read,
+    from the cards this turn renders: the VRAM estimate and dataset inspection (passive
+    tool calls), and — when a question leads this turn (ask_turn) inside a training/eval
+    subagent — that the user was offered a choice."""
+    for part in parts:
+        name = _tool_name(part)
+        if name == _VRAM_TOOL:
+            state.shown_vram = True
+        elif name in _DATA_CONFIRM_TOOLS:
+            state.confirmed_data = True
+    if ask_turn and state.subagent_target in _CHOICE_REQUIRED_TARGETS:
+        state.offered_choice.add(state.subagent_target)
+
+
+_JOB_TYPE_FOR_CONFIRM = {
+    "validate_sdg_job": "sdg",
+    "validate_training_job": "training",
+    "validate_eval_job": "eval",
+}
+
+
+def _reset_confirm_signals(state: SessionState, job_type: str) -> None:
+    """Clear a job type's prerequisite signals once its confirm card has rendered, so a
+    SECOND job of that type in the same conversation must re-establish them."""
+    if job_type == "training":
+        state.shown_vram = False
+        state.confirmed_data = False
+        state.offered_choice.discard("training")
+    elif job_type == "eval":
+        state.offered_choice.discard("eval")
+
+
 def _enforce_single_interaction(
     result: dict[str, Any], state: SessionState
 ) -> dict[str, Any]:
@@ -322,6 +488,25 @@ def _enforce_single_interaction(
       the now-redundant review card is dropped instead — so a driver that re-shows
       the prompt before every validate_* can't livelock. An edited prompt (new
       signature) re-gates.
+    - a confirm card (validate_*) whose ordered PREREQUISITES aren't met yet — the
+      driver jumped to the job card without the mandated setup. Fix: the card is held
+      and the model is steered to do the missing step first. The prerequisites per job
+      type are declared in _CONFIRM_PRECONDITIONS and the first unmet one fires:
+        · SDG full run (mode="create") — a preview of the SAME recipe must have been
+          shown standalone first (tracked by recipe signature; an edited recipe
+          re-gates). A preview shown standalone records its signature; the matching
+          full-job confirm then proceeds on a later turn.
+        · Training — the user must have confirmed the data (get_dataset shown), been
+          offered a base-model/method choice (present_options in the training step),
+          and seen the VRAM estimate, before the job card.
+        · Eval — the user must have been offered the evaluation setup (judge has no
+          default) before the job card.
+      These prerequisite ACTIONS are tracked as session signals accumulated as turns
+      render them (_record_confirm_signals) and cleared once the job card renders
+      (_reset_confirm_signals) so a second job of the type re-gates. (Readiness
+      prerequisites that need the DB — an upstream job being 'succeeded' — live in the
+      async stage-gate _not_ready_violations, deduped there against dispatch-provenance;
+      this function is the sync half that turns on session-local signals.)
 
     Whichever interaction LEADS the turn is kept; every OTHER interactive element
     (extra questions, repeat/stacked confirm cards) is stripped. Passive content
@@ -340,10 +525,16 @@ def _enforce_single_interaction(
             first_card = i
         if first_review is None and name in _REVIEW_CARD_TOOLS:
             first_review = i
-    if first_q is None and first_card is None:
-        return result
 
     ask_turn = first_q is not None and (first_card is None or first_q < first_card)
+
+    # Accumulate the prerequisite-action signals a later confirm card reads (VRAM
+    # estimate / dataset inspection are passive and may land on a setup turn with no
+    # question or card at all), before the early return below.
+    _record_confirm_signals(state, parts, ask_turn)
+
+    if first_q is None and first_card is None:
+        return result
 
     # Review gate: a review card must be reviewed on its own turn before the job it
     # gates is confirmed — but only the FIRST time the user sees that prompt, so a
@@ -352,9 +543,20 @@ def _enforce_single_interaction(
     new_review = review_sig is not None and review_sig not in state.reviewed_card_sigs
     prompt_gate = not ask_turn and first_card is not None and new_review
 
-    if prompt_gate:
+    # Confirm-card precondition gate: a validate_* card may lead a turn only after its
+    # ordered prerequisites (preview approved / data confirmed / model offered / VRAM
+    # shown / eval setup chosen) are met. The first unmet one holds the card and steers
+    # the model. The prompt review gate takes precedence, so this runs only when
+    # prompt_gate is not already firing.
+    unmet = (
+        _first_unmet_precondition(state, parts[first_card])
+        if (not ask_turn and not prompt_gate and first_card is not None)
+        else None
+    )
+
+    if prompt_gate or unmet is not None:
         # No interaction leads: keep passive parts (incl. the review card); drop the
-        # confirm card so the prompt stands alone. The job is confirmed next turn.
+        # confirm card so the prompt/preview stands alone. The job is confirmed next turn.
         keep_index: int | None = None
         drop_review = False
     else:
@@ -379,6 +581,22 @@ def _enforce_single_interaction(
     # so the next confirm that re-includes it proceeds instead of re-gating.
     if review_sig is not None and not drop_review:
         state.reviewed_card_sigs.add(review_sig)
+    # When a confirm card actually renders (passed its preconditions): a standalone SDG
+    # preview records its recipe signature so the matching full-job confirm may proceed
+    # later; any other job card resets that type's prerequisite signals so a second job
+    # of the type re-gates.
+    if not ask_turn and keep_index is not None and keep_index == first_card:
+        card = parts[first_card]
+        if _tool_name(card) == "validate_sdg_job" and _validate_mode(card) == "preview":
+            state.approved_preview_sigs.add(_sdg_config_signature(card))
+        else:
+            _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
+
+    # When a confirm card is held for an unmet precondition, append its steer so the
+    # model knows what to do first (the card was silently dropped otherwise).
+    if unmet is not None:
+        kept = [*kept, {"type": "text", "text": unmet.nudge}]
+        return {**result, "parts": kept}
     if len(kept) == len(parts):
         return result
     return {**result, "parts": kept}
@@ -1121,6 +1339,27 @@ async def _upstream_not_ready_advisory(
     except Exception:
         return None
     return None
+
+
+async def _delegation_advisory(
+    state: SessionState, target: str, context: str, user_text: str
+) -> str | None:
+    """The single ordered precondition gate at the delegation boundary — one evaluator
+    for all 'don't build the downstream job yet' preconditions, returning the FIRST
+    unmet one (or None), never stacking two overlapping advisories into one handoff.
+
+    Order is the dependency order the user must resolve: the DATA-AVAILABILITY fork
+    comes first — until a dataset is chosen there is nothing downstream to gate, and
+    naming an in-flight upstream would be premature (there may be no upstream at all).
+    Only once data is in play does the UPSTREAM-READY check apply (its upstream exists
+    and must be 'succeeded'). Folding the two sibling gates here removes the class of
+    double-fire where both prepend to the same handoff. New delegation preconditions
+    slot in as another ordered step, mirroring the confirm-card precondition order in
+    _enforce_single_interaction (prompt review → preview approval → confirm)."""
+    advisory = await _no_data_advisory(state, target)
+    if advisory:
+        return advisory
+    return await _upstream_not_ready_advisory(state, target, context, user_text)
 
 
 async def _job_claim_violations(
@@ -2046,13 +2285,9 @@ async def _maybe_delegate(
             ],
         }
 
-    advisory = await _no_data_advisory(state, target)
+    advisory = await _delegation_advisory(state, target, context, user_text)
     if advisory:
         context = f"{advisory}\n\n{context}" if context else advisory
-
-    not_ready = await _upstream_not_ready_advisory(state, target, context, user_text)
-    if not_ready:
-        context = f"{not_ready}\n\n{context}" if context else not_ready
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 

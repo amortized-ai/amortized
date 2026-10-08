@@ -204,3 +204,62 @@ class TestUpstreamNotReadyAdvisory:
             )
         )
         assert advisory is None
+
+
+class TestDelegationAdvisory:
+    """The ordered delegation-boundary gate: one evaluator returns the FIRST unmet
+    precondition (data fork → upstream ready), never both stacked into one handoff."""
+
+    _TID = "a1b2c3d4-1111-2222-3333-444455556666"
+
+    @staticmethod
+    def _patch_has_data(monkeypatch: pytest.MonkeyPatch, has_data: bool) -> None:
+        async def _has(*_a: Any, **_k: Any) -> bool:
+            return has_data
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
+
+    def test_no_data_wins_and_does_not_also_stack_upstream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # No dataset chosen AND an in-flight job is cited: the data fork is the decision
+        # to make first; the upstream advisory must NOT also be appended.
+        state = agent.SessionState(orchestrator_id="orch")
+        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
+        self._patch_has_data(monkeypatch, False)
+        advisory = _run(
+            agent._delegation_advisory(
+                state, "training", f"train using job {self._TID}", ""
+            )
+        )
+        assert advisory is not None
+        assert "[DATA AVAILABILITY]" in advisory
+        assert "[UPSTREAM NOT READY]" not in advisory  # no double-fire
+
+    def test_upstream_check_applies_once_data_is_in_play(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
+        self._patch_has_data(monkeypatch, True)
+        advisory = _run(
+            agent._delegation_advisory(
+                state, "eval", f"evaluate the model from job {self._TID}", ""
+            )
+        )
+        assert advisory is not None
+        assert "[UPSTREAM NOT READY]" in advisory
+        assert "[DATA AVAILABILITY]" not in advisory
+
+    def test_no_advisory_when_data_chosen_and_upstream_succeeded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        state = agent.SessionState(orchestrator_id="orch")
+        _patch(monkeypatch, {self._TID: _job(status="succeeded", jtype="training")})
+        self._patch_has_data(monkeypatch, True)
+        advisory = _run(
+            agent._delegation_advisory(
+                state, "eval", f"evaluate the model from job {self._TID}", ""
+            )
+        )
+        assert advisory is None
