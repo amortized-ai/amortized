@@ -87,6 +87,22 @@ class TestCreateJob:
         )
         assert row["parent_job_id"] == "parent-123"
 
+    @pytest.mark.asyncio
+    async def test_create_rejects_job_over_gpu_budget(self, repo: Repository) -> None:
+        # Default gpu_budget is 1, so a 2-GPU training could never be admitted — it would
+        # sit queued forever. Reject it at creation instead.
+        with pytest.raises(InvalidJobStateError, match="GPU budget"):
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={
+                    "algorithm": "sft",
+                    "model_name_or_path": "t",
+                    "data_path": "t.jsonl",
+                    "nproc_per_node": 2,
+                },
+            )
+
 
 class TestGetJob:
     @pytest.mark.asyncio
@@ -208,6 +224,12 @@ class TestEstimateGpuDemand:
         assert estimate_gpu_demand({"type": "eval", "config": {"training_job_id": "t1"}}) == 1
         job = {"type": "eval", "config": {"model_name_or_path": "Qwen/x"}}
         assert estimate_gpu_demand(job) == 1
+
+    def test_multi_gpu_respects_nproc_per_node(self) -> None:
+        # training and embedded-serve eval both scale GPU demand with nproc_per_node
+        assert estimate_gpu_demand({"type": "training", "config": {"nproc_per_node": 4}}) == 4
+        job = {"type": "eval", "config": {"model_name_or_path": "Qwen/x", "nproc_per_node": 2}}
+        assert estimate_gpu_demand(job) == 2
 
     def test_eval_classification_defaults_to_cpu(self) -> None:
         # An embedding classifier eval encodes on CPU by default (gpus=0).
