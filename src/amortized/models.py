@@ -621,3 +621,21 @@ class DatasetSplitRequest(BaseModel):
     complement_name: str = Field(
         "", description="Label for the complement dataset (default: derived)"
     )
+
+class DatasetMergeRequest(BaseModel):
+    """Merge several datasets into one dataset.
+
+    All source datasets are concatenated in order into a single new
+    dataset run, usable anywhere a dataset run ID is accepted
+    (training data_run_id, eval eval_data_run_id, etc.).
+    """
+
+    run_ids: list[str] = Field(
+        ...,
+        min_length=2,
+        description="MLflow run IDs of datasets to merge (at least 2)",
+    )
+    name: str = Field(
+        "",
+        description="Name for the merged dataset (default: derived from source names)",
+    )

@@ -1017,6 +1017,48 @@
         }
       }
     },
+    "/api/v1/datasets/merge": {
+      "post": {
+        "tags": [
+          "datasets"
+        ],
+        "summary": "Merge multiple datasets into one.",
+        "description": "Concatenate multiple datasets into a single new dataset.\n\nAll rows from the source datasets are combined in order. The merged\ndataset is a new MLflow run usable anywhere a dataset run ID is\naccepted (training data_run_id, eval eval_data_run_id, etc.).\nRead the merged run ID from the finished job's config (merged_run_id).",
+        "operationId": "merge_datasets",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetMergeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/documents/convert": {
       "post": {
         "tags": [
@@ -2637,6 +2679,31 @@
         ],
         "title": "CustomColumnConfig",
         "description": "Configuration for custom user-defined column generators.\n\nCustom columns allow users to provide their own generation logic via a callable function\ndecorated with `@custom_column_generator`. Two strategies are supported: cell_by_cell\n(default, row-based) and full_column (batch-based with DataFrame access).\n\nAttributes:\n    generator_function (required): A callable decorated with @custom_column_generator.\n    generation_strategy: \"cell_by_cell\" (row-based) or \"full_column\" (batch-based).\n    generator_params: Optional typed configuration object (Pydantic BaseModel) passed\n        as the second argument to the generator function.\n\nInherited Attributes:\n    name (required): Unique name of the column to be generated.\n    drop: If True, generate this column but remove it from the final dataset."
+      },
+      "DatasetMergeRequest": {
+        "properties": {
+          "run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 2,
+            "title": "Run Ids",
+            "description": "MLflow run IDs of datasets to merge (at least 2)"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Name for the merged dataset (default: derived from source names)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_ids"
+        ],
+        "title": "DatasetMergeRequest",
+        "description": "Merge several datasets into one dataset.\n\nAll source datasets are concatenated in order into a single new\ndataset run, usable anywhere a dataset run ID is accepted\n(training data_run_id, eval eval_data_run_id, etc.)."
       },
       "DatasetSplitRequest": {
         "properties": {

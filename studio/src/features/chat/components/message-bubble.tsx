@@ -15,7 +15,7 @@ import { extractJobInfo } from "../utils/parse-tool-result"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
-const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_sdg_job", "create_training_job", "create_eval_job", "create_job", "split_dataset"])
+const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_sdg_job", "create_training_job", "create_eval_job", "create_job", "split_dataset", "merge_datasets"])
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
@@ -76,7 +76,7 @@ export function MessageBubble({
         const info = extractJobInfo(t.result)
         // Split jobs are upload-type internally — label them as splits so
         // the monitor card and completion notification read correctly.
-        const type = t.name === "split_dataset" ? "SPLIT" : info.jobType
+        const type = t.name === "split_dataset" ? "SPLIT" : t.name === "merge_datasets" ? "MERGE" : info.jobType
         return info.jobId ? { id: info.jobId, type } : null
       })
       .filter((j): j is { id: string; type: string } => !!j)
