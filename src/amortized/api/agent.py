@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import re
 import ssl
@@ -21,6 +22,32 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from amortized.api.agent_claims import (
+    _AWAIT_UPSTREAM_GUIDANCE,
+    _job_claim_caveat,
+    _job_claim_correction,
+)
+from amortized.api.agent_confirm import (
+    _CONFIRM_CARD_TOOLS,
+    _JOB_TYPE_FOR_CONFIRM,
+    _REVIEW_CARD_TOOLS,
+    _first_unmet_precondition,
+    _record_confirm_signals,
+    _reset_confirm_signals,
+    _review_card_signature,
+    _sdg_config_signature,
+    _validate_mode,
+)
+from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.api.agent_sdg_prompt import (
+    _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
+)
+from amortized.api.agent_sdg_prompt import (
+    _bind_sdg_prompt_to_approved,
+)
+from amortized.api.agent_sdg_prompt import (
+    _shown_prompts as _shown_prompts,  # re-export for tests
+)
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -62,6 +89,7 @@ class TurnState:
     error: str | None = None
     error_status: int | None = None
     consumed: bool = False
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     finished_at: datetime | None = None
     task: asyncio.Task[None] | None = None
 
@@ -78,8 +106,39 @@ class SessionState:
     # control returns to the delegating subagent, not the orchestrator.
     subagent_stack: list[tuple[str, str]] = field(default_factory=list)
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # When this conversation's proxy state was created. A job whose DB created_at
+    # predates this is from an EARLIER conversation, so reporting it as "just
+    # generated" is undisclosed reuse — see _apply_job_claim_gate.
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     turns: dict[str, TurnState] = field(default_factory=dict)
     turn_order: list[str] = field(default_factory=list)
+    # opencode assistant-message ids already attributed to a monitor turn record,
+    # so each message is counted once even across delegating turns / sessions.
+    seen_message_ids: set[str] = field(default_factory=set)
+    # Last workflow step a subagent actually signalled, so when it forgets to call
+    # signal_phase the server can backfill the UI progress bar at the right step
+    # instead of snapping it back to the start of the phase.
+    last_signal_step: str = ""
+    # Content signatures of review cards (e.g. an assessor prompt) already rendered
+    # to the user standalone. The review gate fires only for a prompt NOT in this
+    # set; once shown, a later confirm that re-includes the same prompt is allowed
+    # (the redundant review card is dropped), so a driver that re-shows the prompt
+    # before every validate_* can't livelock. See _enforce_single_interaction.
+    reviewed_card_sigs: set[str] = field(default_factory=set)
+    # Config signatures of SDG previews (validate_sdg_job mode="preview") already shown
+    # standalone for approval. A full-job confirm (mode="create") may render only once
+    # its config's signature is in this set, so a driver can't jump straight to the full
+    # run; editing the recipe yields a new signature and re-gates. See
+    # _enforce_single_interaction / _sdg_config_signature.
+    approved_preview_sigs: set[str] = field(default_factory=set)
+    # Prerequisite ACTIONS a confirm card requires, accumulated as turns render them, so
+    # the (sync) confirm-precondition evaluator can hold a validate_* card the model
+    # jumped to without the mandated setup. Reset for a job type once its confirm card
+    # renders, so a SECOND job of that type in the same conversation re-gates. See
+    # _enforce_single_interaction / _CONFIRM_PRECONDITIONS.
+    shown_vram: bool = False  # estimate_training_resources rendered (training)
+    confirmed_data: bool = False  # a dataset tool (get_dataset/…) rendered (training data)
+    offered_choice: set[str] = field(default_factory=set)  # targets that asked present_options
 
 
 _sessions: dict[str, SessionState] = {}
@@ -176,26 +235,27 @@ async def _session_cleanup_loop() -> None:
 
 INTERNAL_TOOLS = {"delegate_to_subagent", "signal_subagent_completion"}
 
+# Injected in place of the generic job-completion nudge when an ACTIVE SUBAGENT's
+# delegated job finishes successfully — a terminal instruction to hand control
+# back now, so a weaker model doesn't keep calling read-only tools (get_job,
+# get_dataset_samples, …) and never signal completion.
+_SUBAGENT_JOB_DONE_PROMPT = (
+    "[SYSTEM EVENT] Your delegated job finished successfully. Your task for this "
+    "delegation is complete. Your ONLY next action is to call "
+    "signal_subagent_completion with a short summary that includes the job ID. "
+    "Do NOT call any other tools (no get_job, list_jobs, get_dataset, "
+    "get_dataset_samples, or present_options) and do NOT inspect or re-verify the "
+    "dataset — hand control back now."
+)
 
-def _tool_name(part: dict[str, Any]) -> str:
-    raw = part.get("tool") or part.get("toolName") or ""
-    if "__" in raw:
-        return raw.split("__")[-1]
-    if raw.startswith("amortized_"):
-        return raw[len("amortized_") :]
-    return raw
 
-
-def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
-    inp = part.get("input")
-    if isinstance(inp, dict):
-        return inp
-    state = part.get("state")
-    if isinstance(state, dict):
-        state_input = state.get("input")
-        if isinstance(state_input, dict):
-            return state_input
-    return {}
+def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
+    """Whether a job_complete event reports success. Prefers the structured
+    `outcome` field; falls back to the legacy display-text substring only when the
+    client didn't send one (version skew during a rollout)."""
+    if body.outcome is not None:
+        return body.outcome.strip().lower() == "succeeded"
+    return "status: succeeded" in user_text.lower()
 
 
 _VALID_TARGETS = {"sdg", "training", "eval"}
@@ -229,6 +289,183 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
+def _enforce_single_interaction(
+    result: dict[str, Any], state: SessionState
+) -> dict[str, Any]:
+    """A turn either ASKS the user one question or CONFIRMS one job — never both.
+
+    present_options asks a question and MUST end the turn; a validate_* renders a
+    confirmation card that already has its own Confirm/Cancel. A weaker driver
+    batches them, in either order, into one turn:
+
+    - question(s) first, then a premature validate_* — the user never gets to
+      pick (the sample-size / system-prompt choices get steamrolled by a confirm
+      card). Fix: the first question wins; the extra questions and the confirm
+      card are stripped.
+    - validate_* first, then a present_options — the confirmation card renders
+      with redundant option buttons stacked underneath it (observed: a "full
+      SFT" confirm card with "Confirm & train / Adjust settings" options below).
+      Fix: the card wins; the stacked question is stripped.
+    - a review card (show_prompt — an assessor/system prompt that ships in the
+      training data) then a validate_* — the driver shows the prompt and in the
+      SAME turn stacks the job confirmation under it, so the user confirms before
+      reviewing the prompt. Fix: the review wins; the confirm card is stripped,
+      leaving the prompt on its own turn. The gate fires ONLY for a prompt the
+      user has not already seen (tracked by content signature in session state);
+      once reviewed, a later confirm that re-includes the same prompt proceeds and
+      the now-redundant review card is dropped instead — so a driver that re-shows
+      the prompt before every validate_* can't livelock. An edited prompt (new
+      signature) re-gates.
+    - a confirm card (validate_*) whose ordered PREREQUISITES aren't met yet — the
+      driver jumped to the job card without the mandated setup. Fix: the card is held
+      and the model is steered to do the missing step first. The prerequisites per job
+      type are declared in _CONFIRM_PRECONDITIONS and the first unmet one fires:
+        · SDG full run (mode="create") — a preview of the SAME recipe must have been
+          shown standalone first (tracked by recipe signature; an edited recipe
+          re-gates). A preview shown standalone records its signature; the matching
+          full-job confirm then proceeds on a later turn.
+        · Training — the user must have confirmed the data (get_dataset shown), been
+          offered a base-model/method choice (present_options in the training step),
+          and seen the VRAM estimate, before the job card.
+        · Eval — the user must have been offered the evaluation setup (judge has no
+          default) before the job card.
+      These prerequisite ACTIONS are tracked as session signals accumulated as turns
+      render them (_record_confirm_signals) and cleared once the job card renders
+      (_reset_confirm_signals) so a second job of the type re-gates. (Readiness
+      prerequisites that need the DB — an upstream job being 'succeeded' — live in the
+      async stage-gate _not_ready_violations, deduped there against dispatch-provenance;
+      this function is the sync half that turns on session-local signals.)
+
+    Whichever interaction LEADS the turn is kept; every OTHER interactive element
+    (extra questions, repeat/stacked confirm cards) is stripped. Passive content
+    — explanatory text, show_* display cards, signal_phase — is ALWAYS kept, even
+    after the kept interaction, so content the question is about (e.g. a proposed
+    metric-set table the driver wrote as trailing text) is never dropped. The
+    monitor log is recorded from the raw opencode parts, not this result, so the
+    batching stays visible/measurable there."""
+    parts = result.get("parts") or []
+    first_q = first_card = first_review = None
+    for i, part in enumerate(parts):
+        name = _tool_name(part)
+        if first_q is None and name == "present_options":
+            first_q = i
+        if first_card is None and name in _CONFIRM_CARD_TOOLS:
+            first_card = i
+        if first_review is None and name in _REVIEW_CARD_TOOLS:
+            first_review = i
+
+    ask_turn = first_q is not None and (first_card is None or first_q < first_card)
+
+    # Accumulate the prerequisite-action signals a later confirm card reads (VRAM
+    # estimate / dataset inspection are passive and may land on a setup turn with no
+    # question or card at all), before the early return below.
+    _record_confirm_signals(state, parts, ask_turn)
+
+    if first_q is None and first_card is None:
+        return result
+
+    # Review gate: a review card must be reviewed on its own turn before the job it
+    # gates is confirmed — but only the FIRST time the user sees that prompt, so a
+    # driver re-showing it before every confirm can't livelock.
+    review_sig = _review_card_signature(parts[first_review]) if first_review is not None else None
+    new_review = review_sig is not None and review_sig not in state.reviewed_card_sigs
+    prompt_gate = not ask_turn and first_card is not None and new_review
+
+    # Confirm-card precondition gate: a validate_* card may lead a turn only after its
+    # ordered prerequisites (preview approved / data confirmed / model offered / VRAM
+    # shown / eval setup chosen) are met. The first unmet one holds the card and steers
+    # the model. The prompt review gate takes precedence, so this runs only when
+    # prompt_gate is not already firing.
+    unmet = (
+        _first_unmet_precondition(state, parts[first_card])
+        if (not ask_turn and not prompt_gate and first_card is not None)
+        else None
+    )
+
+    if prompt_gate or unmet is not None:
+        # No interaction leads: keep passive parts (incl. the review card); drop the
+        # confirm card so the prompt/preview stands alone. The job is confirmed next turn.
+        keep_index: int | None = None
+        drop_review = False
+    else:
+        # Whichever interaction leads the turn is the one the model is really making;
+        # keep exactly that one and strip every OTHER interactive element. If a
+        # confirm proceeds with an already-reviewed prompt stacked on it, drop the
+        # now-redundant review card (its text is already inside the confirm card).
+        keep_index = first_q if ask_turn else first_card
+        drop_review = not ask_turn and first_card is not None and review_sig is not None
+
+    kept = [
+        part
+        for i, part in enumerate(parts)
+        if i == keep_index
+        or (
+            _tool_name(part) != "present_options"
+            and _tool_name(part) not in _CONFIRM_CARD_TOOLS
+            and not (drop_review and _tool_name(part) in _REVIEW_CARD_TOOLS)
+        )
+    ]
+    # Mark the prompt reviewed once it is actually rendered to the user this turn,
+    # so the next confirm that re-includes it proceeds instead of re-gating.
+    if review_sig is not None and not drop_review:
+        state.reviewed_card_sigs.add(review_sig)
+    # When a confirm card actually renders (passed its preconditions): a standalone SDG
+    # preview records its recipe signature so the matching full-job confirm may proceed
+    # later; any other job card resets that type's prerequisite signals so a second job
+    # of the type re-gates.
+    if not ask_turn and keep_index is not None and keep_index == first_card:
+        card = parts[first_card]
+        if _tool_name(card) == "validate_sdg_job" and _validate_mode(card) == "preview":
+            state.approved_preview_sigs.add(_sdg_config_signature(card))
+        else:
+            _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
+
+    # When a confirm card is held for an unmet precondition, append its steer so the
+    # model knows what to do first (the card was silently dropped otherwise).
+    if unmet is not None:
+        kept = [*kept, {"type": "text", "text": unmet.nudge}]
+        return {**result, "parts": kept}
+    if len(kept) == len(parts):
+        return result
+    return {**result, "parts": kept}
+
+
+# Active subagent → the workflow phase its turns belong to (UI progress bar).
+_PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
+
+
+def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
+    """Guarantee the UI progress bar reflects the active subagent's phase.
+
+    The bar is driven by signal_phase tool results. A weaker driver sometimes
+    forgets to call it, leaving the bar on a stale phase (the loop that stranded
+    the eval stage on the training bar). When a subagent is active and its turn
+    carries no signal_phase, backfill one from the server-known subagent_target,
+    carrying the last step the model actually signalled. UI only — this is NOT
+    recorded to the monitor log, which must still reflect what the model did."""
+    phase = _PHASE_FOR_TARGET.get(state.subagent_target or "")
+    if not phase:
+        return result
+    parts = result.get("parts") or []
+    for part in parts:
+        if _tool_name(part) == "signal_phase":
+            step = _get_tool_input(part).get("step")
+            if step:
+                state.last_signal_step = str(step)
+            return result  # model signalled this turn; nothing to backfill
+    payload = {"phase": phase, "step": state.last_signal_step}
+    result["parts"] = [
+        *parts,
+        {
+            "type": "tool",
+            "tool": "mcp_amortized__signal_phase",
+            "input": payload,
+            "output": json.dumps(payload),
+        },
+    ]
+    return result
+
+
 async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str, Any]]:
     """GET session messages and return parts from all assistant messages.
 
@@ -260,6 +497,756 @@ async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str,
     except Exception:
         logger.warning("Failed to fetch session messages for %s", opencode_session_id)
         return []
+
+
+# ---------------------------------------------------------------------------
+# Monitor metrics capture (best-effort; never breaks a turn)
+# ---------------------------------------------------------------------------
+
+
+def _coerce_int(value: Any) -> int:
+    """Best-effort int, folding dict token buckets (e.g. cache {read, write})."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, dict):
+        return sum(_coerce_int(v) for v in value.values())
+    return 0
+
+
+async def _fetch_all_messages(
+    opencode_session_id: str,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
+    """GET a session's full message history (info + parts), or [] on any failure.
+
+    When a per-turn ``cache`` is supplied, the result is memoized by session id so
+    the same turn's provenance gate and metrics recorder don't each re-fetch every
+    session over HTTP. The provenance gate pops a session from the cache after it
+    posts a correction, so the re-grounding pass still sees the fresh messages."""
+    if cache is not None and opencode_session_id in cache:
+        return cache[opencode_session_id]
+    try:
+        resp = await _client().get(
+            f"{_opencode_url()}/session/{opencode_session_id}/message",
+            timeout=10.0,
+        )
+        content_type = resp.headers.get("content-type", "")
+        if resp.status_code != 200 or "application/json" not in content_type:
+            result: list[dict[str, Any]] = []
+        else:
+            messages = resp.json()
+            result = messages if isinstance(messages, list) else []
+    except Exception:
+        logger.warning("monitor: failed to fetch messages for %s", opencode_session_id)
+        result = []
+    if cache is not None:
+        cache[opencode_session_id] = result
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Anti-fabrication provenance gate
+# ---------------------------------------------------------------------------
+#
+# An identifier the assistant states to the user must have appeared somewhere the
+# model legitimately saw it — a tool result, a system event, a user message, or a
+# delegation handoff. One that appears nowhere in the whole conversation's tool
+# I/O or user/system text is fabricated (the GLM-5.3-flash run invented a job id
+# `a1b2c3d4`, a model `mixtral`, and a `0.92` score — the id was the clean tell).
+#
+# Deliberately conservative: only ID-shaped hex/UUID tokens are checked (not
+# free-form metrics or model names, which cannot be flagged without false
+# positives), a token is grounded by *substring* match (so an abbreviated prefix
+# of a real UUID still passes), and bare hex runs must mix digits and letters (so
+# pure-decimal counts and pure-hex words are never treated as identifiers). On a
+# violation we force-correct once: make the model re-answer grounded; if it still
+# can't, we relay its reply with an appended caveat naming the unverified id(s)
+# rather than discard a possibly-correct answer.
+
+# UUID, or any hex run of >=8 chars (job/run ids are UUIDs; models often surface a
+# short prefix). Anchored so pure-prose words can't match (hex letters are a-f).
+_ID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}"
+)
+
+
+def _extract_id_candidates(text: str) -> set[str]:
+    out: set[str] = set()
+    for tok in _ID_RE.findall(text.lower()):
+        if "-" in tok:
+            out.add(tok)  # dash-structured UUID — unambiguously an identifier
+            continue
+        # A bare hex run is only id-like if it mixes digits AND hex letters. This
+        # excludes both pure-decimal counts ("12345678" records) and pure-hex
+        # English words ("deadbeef", "facefeed") that would otherwise be
+        # false-flagged as fabricated ids and cost the model a correction round.
+        if any(c in "0123456789" for c in tok) and any(c in "abcdef" for c in tok):
+            out.add(tok)
+    return out
+
+
+def _result_text(result: dict[str, Any]) -> str:
+    """The user-facing assistant prose for a turn (what Studio renders)."""
+    return "\n".join(
+        str(p.get("text") or "")
+        for p in result.get("parts", [])
+        if p.get("type") == "text" and (p.get("text") or "").strip()
+    )
+
+
+async def _grounded_corpus(
+    state: SessionState, cache: dict[str, list[dict[str, Any]]] | None = None
+) -> str:
+    """Everything the model legitimately saw this conversation, lowercased.
+
+    Union over every role session of: user/system message text (user input,
+    `[SYSTEM EVENT]`s, and the delegation handoff relayed as user text) plus every
+    tool call's input and output. An id the assistant states that is a substring
+    of this corpus is grounded; one that is not is fabricated.
+    """
+    sessions = {state.orchestrator_id}
+    if state.subagent_id:
+        sessions.add(state.subagent_id)
+    sessions.update(state.completed_subagents.values())
+    sessions.update(sid for _t, sid in state.subagent_stack)
+
+    chunks: list[str] = []
+    for sid in sessions:
+        for msg in await _fetch_all_messages(sid, cache):
+            role = (msg.get("info") or {}).get("role")
+            for part in msg.get("parts") or []:
+                ptype = part.get("type")
+                if role == "user" and ptype == "text":
+                    chunks.append(str(part.get("text") or ""))
+                elif ptype == "tool":
+                    chunks.append(str(_get_tool_input(part)))
+                    part_state = part.get("state")
+                    if isinstance(part_state, dict):
+                        output = part_state.get("output")
+                        if isinstance(output, str):
+                            chunks.append(output)
+    return "\n".join(chunks).lower()
+
+
+# How many times to force-correct a reply that states a fabricated identifier
+# before giving up and appending a caveat. Each attempt re-grounds against a
+# freshly-fetched corpus (a correction may call a tool that surfaces the id for
+# real), so a legitimately-recoverable turn self-heals on the first pass. Capped at
+# 1: further retries rarely recover and multiply model round-trips per turn.
+MAX_PROVENANCE_RETRIES = 1
+
+
+async def _ungrounded_ids(
+    state: SessionState,
+    result: dict[str, Any],
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> list[str]:
+    """Identifier tokens in the reply that appear nowhere the model could have seen."""
+    candidates = _extract_id_candidates(_result_text(result))
+    if not candidates:
+        return []
+    corpus = await _grounded_corpus(state, cache)
+    return sorted(c for c in candidates if c not in corpus)
+
+
+async def _apply_provenance_gate(
+    state: SessionState,
+    result: dict[str, Any],
+    body: MessageRequest,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Block + force-correct fabricated identifiers before they reach the user."""
+    try:
+        violations = await _ungrounded_ids(state, result, cache)
+        if not violations:
+            return result
+
+        active_id = state.subagent_id or state.orchestrator_id
+        agent = state.subagent_target if state.subagent_id else "morty"
+        current = result
+        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
+            logger.warning(
+                "Provenance gate: ungrounded identifier(s) %s session=%s agent=%s "
+                "(correction %d/%d)",
+                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+            )
+            correction = (
+                "[GROUNDING VIOLATION — internal system check, not from the user]\n"
+                "Your previous reply stated identifier(s) that appear in NO tool result, "
+                f"system event, or user message in this conversation: {', '.join(violations)}.\n"
+                "Do NOT invent job IDs, run IDs, dataset IDs, model names, or metrics. "
+                "Re-send your reply to the user using ONLY values that came from a tool "
+                "result in this session. If you do not have a real value, do not state "
+                "one — call the appropriate tool to fetch it first, or tell the user you "
+                "don't have it yet."
+            )
+            current = await _proxy_send_message(
+                active_id, correction, agent=agent, model=body.model
+            )
+            # The correction adds new messages to the active session; drop its cached
+            # copy so re-grounding fetches them (other sessions stay cached).
+            if cache is not None:
+                cache.pop(active_id, None)
+            # Re-ground each attempt: a correction may call a tool that now surfaces
+            # the id legitimately.
+            violations = await _ungrounded_ids(state, current, cache)
+            if not violations:
+                return current
+
+        # Exhausted the correction and the model still states an unverified id.
+        # Rather than discard a possibly-correct reply (a tightened-but-imperfect
+        # id detector can still false-positive), keep it and append a visible
+        # caveat naming the unverified id(s) so the user is warned without losing
+        # content.
+        logger.warning(
+            "Provenance gate: still ungrounded after %d correction(s) %s session=%s",
+            MAX_PROVENANCE_RETRIES, violations, active_id,
+        )
+        parts = list(current.get("parts") or [])
+        parts.append(
+            {
+                "type": "text",
+                "text": (
+                    "\n\n⚠️ I couldn't verify the identifier(s) "
+                    f"{', '.join(violations)} against platform data in this "
+                    "session — treat them as unconfirmed until I fetch the real "
+                    "values."
+                ),
+            }
+        )
+        return {**current, "parts": parts}
+    except Exception:
+        logger.warning("Provenance gate failed (passing through)", exc_info=True)
+        return result
+
+
+# ---------------------------------------------------------------------------
+# Job-claim verification gate
+# ---------------------------------------------------------------------------
+#
+# The provenance gate above checks that an id the model states EXISTS in the
+# conversation. This gate goes one level deeper: when the model reports a job to
+# the user, it checks that the job's real DB record MATCHES the claim. Three general
+# checks (not keyed to one symptom):
+#   A. state truth    — "finished/ready/generated" => DB status must be succeeded.
+#   B. flow attribution — "just ran/generated" for a job created in an EARLIER
+#      conversation, with no matching validate_*_job this session and no reuse
+#      disclosure => undisclosed stale reuse (caught the 200-requested /
+#      500-record-stale-job substitution).
+#   C. dispatch provenance — a training/eval dispatch THIS turn (a validate_*_job
+#      tool call) whose parent_job_id is a dataset from an EARLIER conversation, not
+#      run or disclosed as reused this session => undisclosed stale substitution,
+#      caught at the point of action. Keyed on the tool call's structured
+#      parent_job_id argument, not on prose, so phrasing cannot evade it.
+#   E. premature submission — a validate_*_job card is rendered THIS turn (the job is
+#      created only when the user clicks Confirm) yet the prose claims it is already
+#      submitted/queued/running/generating => false, caught before it misleads the user
+#      (the GLM-5.3-flash run said "the dataset generation is underway … job queued" off
+#      a validate call, with a fabricated job id). Structural: validate_* call + claim.
+# Same remediation shape as the provenance gate: force-correct once, else append a
+# visible caveat rather than discard. Reuse is NOT blocked — only forced to be
+# disclosed — so legitimate reuse (e.g. the eval flow) keeps working.
+
+# These lexicons only decide WHETHER a claim is being made; the verdict always
+# comes from the DB record, never from the text.
+_DONE_CLAIM_RE = re.compile(
+    r"\b(finished|complete|completed|ready|done|generated|produced|succeeded|trained)\b",
+    re.I,
+)
+_FRESH_RUN_RE = re.compile(
+    r"(now running|is running|are running|kicked off|just (ran|generated|finished|trained)"
+    r"|run finished|generation (job|is|finished|complete)|is (generating|being generated)"
+    r"|\bgenerated\b|\bproducing\b|spinning up)",
+    re.I,
+)
+_REUSE_DISCLOSED_RE = re.compile(
+    r"(reus|existing|already (generated|have|exists|ran)|previous|earlier"
+    r"|from (a |an )?(prior|earlier|previous)|from before)",
+    re.I,
+)
+_VALIDATE_TOOL_BY_TYPE = {
+    "sdg": "validate_sdg_job",
+    "training": "validate_training_job",
+    "eval": "validate_eval_job",
+}
+_TYPE_BY_VALIDATE_TOOL = {tool: jtype for jtype, tool in _VALIDATE_TOOL_BY_TYPE.items()}
+
+# Check E ("premature submit") — a validate_*_job tool call only RENDERS a confirmation
+# card; the job is created solely when the user clicks Confirm on it (the frontend POSTs
+# create_*). So on a turn that proposes such a card, prose asserting the job is already
+# submitted / queued / running / generating is false — the job does not exist yet. This
+# lexicon only decides WHETHER such a claim is made; the verdict is structural (a
+# validate_* call is present in the same turn). "validate", "I'll build/set up", and plain
+# future tense are deliberately excluded so legitimate "here's the card to confirm" prose
+# never trips it.
+_SUBMITTED_CLAIM_RE = re.compile(
+    r"(underway|queued|submitted|dispatched|kicked off|spinning up"
+    r"|now (generating|running)|has (started|begun)"
+    r"|is (now )?(running|generating|live|being generated)"
+    r"|generation (has|is) (started|begun|underway|running)"
+    r"|job (is|was|has been) (created|submitted|queued|running|started|live))",
+    re.I,
+)
+
+# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
+# a parent dataset. The call carries parent_job_id as a structured argument, so
+# dispatch provenance is verified from the parent's DB record, with no prose parsing.
+_DISPATCH_PARENT_TYPE = {
+    "validate_training_job": "training",
+    "validate_eval_job": "eval",
+}
+
+# Check D ("not ready") — the stage-gate. A downstream dispatch maps to the upstream
+# job-id field(s) it depends on, each of which must be 'succeeded' before the step can
+# advance. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and are
+# validated downstream, so they are not listed. validate_sdg_job is intentionally
+# absent: cloning an SDG recipe for an eval set may run while training is still in
+# flight ("prep eval set now"), so eval-set prep is NOT gated here.
+_DISPATCH_UPSTREAM_FIELDS = {
+    "validate_training_job": [("parent_job_id", "the training dataset's job")],
+    "validate_eval_job": [
+        ("parent_job_id", "the eval dataset's job"),
+        ("training_job_id", "the model's training job"),
+    ],
+}
+
+def _as_utc(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def _sentences_with(text: str, token: str) -> str:
+    """The sentence-ish chunks of `text` that mention `token`, so a claim about one
+    job isn't attributed to another mentioned in the same reply."""
+    tl = token.lower()
+    hits = [c for c in re.split(r"[\n.!?;]+", text) if tl in c.lower()]
+    return " ".join(hits)
+
+
+async def _fetch_job_by_token(
+    token: str, job_cache: dict[str, dict[str, Any] | None] | None = None
+) -> dict[str, Any] | None:
+    """The DB job a stated id-token resolves to (by id prefix), or None. Best-effort
+    — any DB issue returns None so the gate simply doesn't fire."""
+    if job_cache is not None and token in job_cache:
+        return job_cache[token]
+    job: dict[str, Any] | None = None
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            job = await Repository(conn).find_job_by_id_prefix(token)
+    except Exception:
+        job = None
+    if job_cache is not None:
+        job_cache[token] = job
+    return job
+
+
+def _session_ids(state: SessionState) -> set[str]:
+    """Every opencode session making up this conversation — the orchestrator plus
+    the active and completed/stashed subagents."""
+    sessions = {state.orchestrator_id}
+    if state.subagent_id:
+        sessions.add(state.subagent_id)
+    sessions.update(state.completed_subagents.values())
+    sessions.update(sid for _t, sid in state.subagent_stack)
+    return sessions
+
+
+async def _session_has_validate(
+    state: SessionState,
+    job_type: str,
+    cache: dict[str, list[dict[str, Any]]] | None,
+) -> bool:
+    """Whether a validate_*_job was called anywhere in the conversation so far — the
+    structural signal that a fresh job really was set up this session. Scoped to the
+    type's validate tool when known; an empty/unknown type matches ANY validate."""
+    tool = _VALIDATE_TOOL_BY_TYPE.get(job_type)
+    wanted = {tool} if tool else set(_VALIDATE_TOOL_BY_TYPE.values())
+    for sid in _session_ids(state):
+        for msg in await _fetch_all_messages(sid, cache):
+            for part in msg.get("parts") or []:
+                if part.get("type") == "tool" and _tool_name(part) in wanted:
+                    return True
+    return False
+
+
+# Job types whose subagent can't do anything without a dataset — so a delegation to
+# one when THIS conversation has no data path is premature.
+_DATA_DEPENDENT_TARGETS = {"training": "train on", "eval": "evaluate on"}
+
+# Tools that mean the user has engaged a SPECIFIC existing dataset (inspecting its
+# samples or splitting it) — a de-facto choice of existing data, so the fork is moot.
+# `list_datasets` is deliberately excluded: merely browsing the catalog is not a
+# choice, so the existing-vs-generate fork should still be offered.
+_DATASET_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
+
+
+async def _conversation_has_dataset(
+    state: SessionState,
+    cache: dict[str, list[dict[str, Any]]] | None,
+) -> bool:
+    """Whether THIS conversation already has, or has engaged, a dataset — so a
+    training/eval delegation is NOT premature. Both signals are structural tool
+    facts (conversation-scoped, never a lifetime "has this user ever" query):
+
+    1. An SDG job was set up here (`validate_sdg_job`) — fresh data in flight.
+    2. A dataset tool was touched here (`get_dataset`/`get_dataset_samples`/
+       `split_dataset`) — the user engaged a SPECIFIC existing dataset.
+
+    Deliberately NOT inferred from message text. The orchestrator's handoff lists
+    the available datasets as platform state, and that handoff is relayed into the
+    subagent session as a user-role message — so scanning text for dataset ids
+    conflates "available/listed" with "chosen" and suppresses the fork when the
+    user has not actually decided. A real choice always surfaces as a tool fact:
+    resolving even a fuzzy name ("the whimsical lark data") routes through
+    get_dataset, which trips signal 2 regardless of how it was phrased.
+    """
+    if await _session_has_validate(state, "sdg", cache):
+        return True
+    for sid in _session_ids(state):
+        for msg in await _fetch_all_messages(sid, cache):
+            for part in msg.get("parts") or []:
+                if part.get("type") == "tool" and _tool_name(part) in _DATASET_TOOLS:
+                    return True
+    return False
+
+
+async def _no_data_advisory(state: SessionState, target: str) -> str | None:
+    """Advisory to prepend to a training/eval handoff when THIS conversation has no
+    dataset selected yet — directing the subagent to let the user CHOOSE between an
+    existing dataset and a fresh one, rather than silently defaulting to generation.
+
+    The orchestrator routes to training/eval off the user's verb ("train"), but
+    those jobs can't run without data, and the user must get to decide how that data
+    is provided. Rather than let the subagent spin up and jump straight to SDG, the
+    proxy injects the fork at the delegation boundary — the earliest point the
+    backend can act, since the orchestrator's choice is model-internal.
+
+    Fail-safe: fires only when none of the conversation-scoped dataset signals hold
+    (see _conversation_has_dataset) — i.e. the user has NOT already chosen (no SDG in
+    flight, no existing dataset pointed to). Any uncertainty (a signal present, or a
+    fetch error) returns None, leaving the handoff unchanged — so once a choice is
+    made the fork isn't re-asked, and upload/split/train-on-existing flows are
+    untouched. It never blocks the delegation; it states the fork to present.
+    """
+    if target not in _DATA_DEPENDENT_TARGETS:
+        return None
+    try:
+        if await _conversation_has_dataset(state, {}):
+            return None
+    except Exception:
+        return None
+    verb = _DATA_DEPENDENT_TARGETS[target]
+    return (
+        "[DATA AVAILABILITY]\n"
+        "No dataset has been selected in this conversation yet. Before setting up the"
+        f" {target} job, let the user choose how to provide the data — present two"
+        " options with present_options: (1) use an existing dataset (help them pick"
+        " one), or (2) generate a fresh dataset with SDG. Do NOT assume: a"
+        f" {target} job needs data to {verb}, so don't create or confirm it, and"
+        " don't start generating, until the user has chosen and the dataset exists."
+    )
+
+
+# A job that has not reached a terminal state — the step that depends on it cannot
+# advance yet. (Terminal = succeeded/failed/cancelled; failed/cancelled are handled
+# by the subagent's own failure path, not the "wait" advisory.)
+_INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
+
+
+async def _upstream_not_ready_advisory(
+    state: SessionState, target: str, context: str, user_text: str
+) -> str | None:
+    """The stage-gate at the delegation boundary (companion to the validate-time
+    'not_ready' check). When a training/eval handoff cites an upstream job that is
+    still in flight, steer the subagent to report the true status and wait rather
+    than build/confirm a downstream job whose prerequisite hasn't finished.
+
+    Keyed on the dependency graph, not symptoms: only data-dependent downstream
+    targets (training/eval), only a cited job that resolves to an in-flight status.
+    A delegation to SDG (e.g. cloning a recipe for an eval set "while training runs")
+    is NOT a _DATA_DEPENDENT_TARGET, so concurrent eval-set prep stays allowed.
+    Fail-safe: any uncertainty/error returns None, leaving the handoff unchanged.
+    """
+    if target not in _DATA_DEPENDENT_TARGETS:
+        return None
+    try:
+        for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
+            job = await _fetch_job_by_token(token)
+            if job and str(job.get("status") or "") in _INFLIGHT_STATUSES:
+                status = str(job.get("status") or "")
+                return (
+                    "[UPSTREAM NOT READY]\n"
+                    f"An upstream job this {target} step depends on ({token}) is still"
+                    f" '{status}', not finished. Do NOT build, confirm, or create the"
+                    f" {target} job yet — it cannot run until that job succeeds."
+                    f" Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
+                )
+    except Exception:
+        return None
+    return None
+
+
+async def _delegation_advisory(
+    state: SessionState, target: str, context: str, user_text: str
+) -> str | None:
+    """The single ordered precondition gate at the delegation boundary — one evaluator
+    for all 'don't build the downstream job yet' preconditions, returning the FIRST
+    unmet one (or None), never stacking two overlapping advisories into one handoff.
+
+    Order is the dependency order the user must resolve: the DATA-AVAILABILITY fork
+    comes first — until a dataset is chosen there is nothing downstream to gate, and
+    naming an in-flight upstream would be premature (there may be no upstream at all).
+    Only once data is in play does the UPSTREAM-READY check apply (its upstream exists
+    and must be 'succeeded'). Folding the two sibling gates here removes the class of
+    double-fire where both prepend to the same handoff. New delegation preconditions
+    slot in as another ordered step, mirroring the confirm-card precondition order in
+    _enforce_single_interaction (prompt review → preview approval → confirm)."""
+    advisory = await _no_data_advisory(state, target)
+    if advisory:
+        return advisory
+    return await _upstream_not_ready_advisory(state, target, context, user_text)
+
+
+async def _job_claim_violations(
+    state: SessionState,
+    result: dict[str, Any],
+    cache: dict[str, list[dict[str, Any]]] | None,
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Job claims in the reply that the job's real DB record contradicts."""
+    text = _result_text(result)
+    if not text.strip():
+        return []
+    violations: list[dict[str, Any]] = []
+    tokens = _extract_id_candidates(text)
+    saw_real_types: set[str] = set()
+    for token in sorted(tokens):
+        job = await _fetch_job_by_token(token, job_cache)
+        if not job:
+            continue  # not a real job (or ambiguous) — provenance gate covers fabrication
+        saw_real_types.add(str(job.get("type") or ""))
+        window = _sentences_with(text, token)
+        if not window:
+            continue
+        status = str(job.get("status") or "")
+        jtype = str(job.get("type") or "")
+        cfg = job.get("config")
+        num = cfg.get("num_records") if isinstance(cfg, dict) else None
+        if _DONE_CLAIM_RE.search(window) and status != "succeeded":
+            violations.append(
+                {"token": token, "kind": "state", "status": status, "type": jtype, "num": num}
+            )
+            continue  # a wrong-status job is reported once; don't also flag reuse
+        if (
+            _FRESH_RUN_RE.search(window)
+            and not _REUSE_DISCLOSED_RE.search(window)
+            and not await _session_has_validate(state, jtype, cache)
+        ):
+            created = _as_utc(job.get("created_at"))
+            session_start = _as_utc(state.created_at)
+            if created and session_start and created < session_start:
+                violations.append(
+                    {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
+                )
+    flagged = {v["token"] for v in violations if v.get("token")}
+    # Check D — the stage-gate: a training/eval dispatch this turn whose upstream job
+    # isn't 'succeeded' yet. Structural (tool-arg + DB status), fires regardless of
+    # prose. Run before Check C so "wait for it to finish" wins over "disclose reuse"
+    # when an upstream is both in-flight and old. Dedup by upstream prefix.
+    for v in await _not_ready_violations(state, result, job_cache):
+        if v["token"] not in flagged:
+            violations.append(v)
+            flagged.add(v["token"])
+    # Check C — a training/eval dispatch this turn onto a stale, undisclosed parent
+    # dataset. Keyed on the dispatch tool call's parent_job_id, independent of prose,
+    # so it fires even when the reply names no id. Dedup against A/B/D by parent prefix.
+    for v in await _dispatch_provenance_violations(state, result, text, cache, job_cache):
+        if v["token"] not in flagged:
+            violations.append(v)
+            flagged.add(v["token"])
+    # Check E — premature submission. This turn renders a validate_*_job confirm card
+    # (job not created until the user clicks Confirm), yet the prose claims the job is
+    # already submitted/queued/running/generating. Structural: the turn's own validate_*
+    # call + a submission claim in prose; no id needed. Suppressed PER JOB TYPE when the
+    # reply names a REAL job of THAT type — then the claim is attributable to it and
+    # Checks A-D own it (and a preview of the same type, legitimately in flight before the
+    # full-run card, won't false-trip). Scoped to the card's own type so naming an
+    # unrelated real job (e.g. a prior training run) can't launder a false "the SDG run is
+    # underway" claim about a just-rendered SDG card.
+    violations.extend(_premature_submit_violations(result, text, saw_real_types))
+    return violations
+
+
+def _premature_submit_violations(
+    result: dict[str, Any], text: str, saw_real_types: set[str]
+) -> list[dict[str, Any]]:
+    """Check E — see the call site. Returns one violation per validate_* job type whose
+    confirm card is rendered this turn while the prose claims the job already runs, unless
+    a REAL job of that same type is named in the reply (then Checks A-D own the claim)."""
+    if not _SUBMITTED_CLAIM_RE.search(text):
+        return []
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        jtype = _TYPE_BY_VALIDATE_TOOL.get(_tool_name(part))
+        if jtype and jtype not in seen and jtype not in saw_real_types:
+            seen.add(jtype)
+            out.append({"token": "", "kind": "premature_submit", "type": jtype})
+    return out
+
+
+async def _dispatch_provenance_violations(
+    state: SessionState,
+    result: dict[str, Any],
+    text: str,
+    cache: dict[str, list[dict[str, Any]]] | None,
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """A training/eval dispatch in this turn whose parent dataset is a succeeded job
+    from an EARLIER conversation, with no SDG validated this session and no reuse
+    disclosure — undisclosed stale substitution, caught at the point of action. The
+    verdict is wholly structural: the dispatch tool call's parent_job_id argument, the
+    parent's created_at vs the session start, and the presence of a validate_sdg_job
+    in the corpus. Only reuse disclosure is read from prose (a communication act with
+    no structural proxy), and matching it merely suppresses the flag — fail-safe."""
+    violations: list[dict[str, Any]] = []
+    session_start = _as_utc(state.created_at)
+    if session_start is None:
+        return violations
+    reuse_disclosed = bool(_REUSE_DISCLOSED_RE.search(text))
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        downstream = _DISPATCH_PARENT_TYPE.get(_tool_name(part))
+        if downstream is None:
+            continue
+        parent_id = str(_get_tool_input(part).get("parent_job_id") or "")
+        if not parent_id:
+            continue  # data_path / data_run_id dispatch — not an SDG chain
+        if reuse_disclosed:
+            continue  # reuse acknowledged in the reply — allowed
+        parent = await _fetch_job_by_token(parent_id, job_cache)
+        if not parent:
+            continue
+        created = _as_utc(parent.get("created_at"))
+        if created is None or created >= session_start:
+            continue  # produced this conversation — a fresh, legitimate chain
+        if await _session_has_validate(state, "sdg", cache):
+            continue  # a fresh SDG really was set up this session
+        cfg = parent.get("config")
+        num = cfg.get("num_records") if isinstance(cfg, dict) else None
+        violations.append(
+            {
+                "token": parent_id[:8],
+                "kind": "dispatch",
+                "status": str(parent.get("status") or ""),
+                "type": downstream,
+                "num": num,
+            }
+        )
+    return violations
+
+
+async def _not_ready_violations(
+    state: SessionState,
+    result: dict[str, Any],
+    job_cache: dict[str, dict[str, Any] | None],
+) -> list[dict[str, Any]]:
+    """Check D — the stage-gate. A training/eval dispatch in this turn whose upstream
+    job (the SDG dataset, or the model under eval) is not yet 'succeeded' — i.e. the
+    workflow is being advanced before its prerequisite finished. Purely structural:
+    the dispatch tool call's upstream id argument and that job's DB status; no prose.
+    Blocks forward movement so Morty reports the true status and waits, instead of
+    confirming/creating a job that can't run yet. Independent of job age (unlike the
+    stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
+    violations: list[dict[str, Any]] = []
+    for part in result.get("parts") or []:
+        if part.get("type") != "tool":
+            continue
+        downstream = _tool_name(part)
+        fields = _DISPATCH_UPSTREAM_FIELDS.get(downstream)
+        if not fields:
+            continue
+        dtype = _DISPATCH_PARENT_TYPE.get(downstream, "")
+        inp = _get_tool_input(part)
+        for field_name, label in fields:
+            up_id = str(inp.get(field_name) or "")
+            if not up_id:
+                continue  # reference absent — Layer 1 fail-closes at create time
+            up = await _fetch_job_by_token(up_id, job_cache)
+            if not up:
+                continue  # unresolvable — not a stage-gate concern (fabrication gate owns it)
+            status = str(up.get("status") or "")
+            if status == "succeeded":
+                continue
+            violations.append(
+                {
+                    "token": up_id[:8],
+                    "kind": "not_ready",
+                    "status": status,
+                    "type": dtype,
+                    "label": label,
+                }
+            )
+    return violations
+
+
+async def _apply_job_claim_gate(
+    state: SessionState,
+    result: dict[str, Any],
+    body: MessageRequest,
+    cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Verify + force-correct false job-completion / stale-reuse claims."""
+    try:
+        job_cache: dict[str, dict[str, Any] | None] = {}
+        violations = await _job_claim_violations(state, result, cache, job_cache)
+        if not violations:
+            return result
+
+        active_id = state.subagent_id or state.orchestrator_id
+        agent = state.subagent_target if state.subagent_id else "morty"
+        current = result
+        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
+            logger.warning(
+                "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
+                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+            )
+            current = await _proxy_send_message(
+                active_id, _job_claim_correction(violations), agent=agent, model=body.model
+            )
+            if cache is not None:
+                cache.pop(active_id, None)
+            violations = await _job_claim_violations(state, current, cache, job_cache)
+            if not violations:
+                return current
+
+        logger.warning(
+            "Job-claim gate: still contradicted after %d correction(s) %s session=%s",
+            MAX_PROVENANCE_RETRIES, violations, active_id,
+        )
+        parts = list(current.get("parts") or [])
+        parts.append({"type": "text", "text": _job_claim_caveat(violations)})
+        return {**current, "parts": parts}
+    except Exception:
+        logger.warning("Job-claim gate failed (passing through)", exc_info=True)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +1367,14 @@ class MessageRequest(BaseModel):
     agent: str | None = None
     parts: list[MessagePart]
     model: MessageModel | None = None
+    # Set by the client to mark a non-user, system-generated turn (e.g.
+    # "job_complete" when a job-monitor card fires). The server uses it to steer
+    # the turn — e.g. tell an active subagent to hand back instead of continuing.
+    event: str | None = None
+    # Structured outcome for an `event` turn (e.g. "succeeded"/"failed" for a
+    # job_complete). Read instead of sniffing the display text for a "status:
+    # succeeded" substring, which silently broke if the card's wording changed.
+    outcome: str | None = None
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -409,13 +1404,20 @@ async def create_session() -> dict[str, Any]:
     return {"id": session_id}
 
 
+# ---------------------------------------------------------------------------
 @router.get("/session/{session_id}/message")
 async def get_session_messages(session_id: str) -> Any:
     state = _sessions.get(session_id)
     if not state:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
-    return await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
+    messages = await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
+    try:
+        if isinstance(messages, list):
+            _bind_sdg_prompt_to_approved(messages)
+    except Exception:
+        logger.warning("SDG prompt-bind failed (passing through)", exc_info=True)
+    return messages
 
 
 def _evict_finished_turns(state: SessionState) -> None:
@@ -514,12 +1516,23 @@ async def _run_turn(
     body: MessageRequest,
 ) -> None:
     turn = state.turns.get(turn_id)
+    # One message-fetch cache per turn, shared by the provenance gate and the metrics
+    # recorder so they don't each re-fetch every session over HTTP.
+    msg_cache: dict[str, list[dict[str, Any]]] = {}
     try:
         async with state.lock:
             if state.subagent_id:
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
+            result = await _apply_provenance_gate(state, result, body, msg_cache)
+            result = await _apply_job_claim_gate(state, result, body, msg_cache)
+            # Backfill the UI phase uniformly for every path (subagent completion,
+            # subagent→subagent delegation, orchestrator) — not just the one return
+            # inside the subagent handler — so the progress bar never strands on a
+            # stale phase on a hand-back/delegation turn.
+            result = _ensure_phase_signal(state, result)
+            result = _enforce_single_interaction(result, state)
         if turn:
             turn.result = result
     except AgentTurnError as exc:
@@ -572,6 +1585,13 @@ async def _handle_subagent_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
+    # A subagent whose delegated job just finished successfully is done: steer it
+    # to hand control back immediately, instead of the generic "suggest next
+    # steps" nudge (which left weaker models looping on post-job inspection calls
+    # and never signalling completion). Only on success — a failed job still needs
+    # the subagent's own failure handling.
+    if body.event == "job_complete" and _job_succeeded(body, user_text):
+        user_text = _SUBAGENT_JOB_DONE_PROMPT
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -640,6 +1660,7 @@ async def _handle_subagent_message(
         sub_result["parts"] = response_parts + _strip_internal_tools(sub_result.get("parts", []))
         return sub_result
 
+    # Phase backfill is applied uniformly by _run_turn for every return path.
     return result
 
 
@@ -722,6 +1743,10 @@ async def _maybe_delegate(
                 }
             ],
         }
+
+    advisory = await _delegation_advisory(state, target, context, user_text)
+    if advisory:
+        context = f"{advisory}\n\n{context}" if context else advisory
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 
