@@ -759,25 +759,12 @@ export function useChat() {
         toolResults: [...(actionMsg.toolResults ?? []), jobToolResult],
       })
 
-      const sessionId = store.getSessionId(convId)
-      if (sessionId) {
-        try {
-          const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agent: "morty",
-              parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
-            }),
-          })
-          if (!resp.ok) {
-            logger.warn("morty notification failed", { status: resp.status })
-          }
-        } catch (notifyErr) {
-          logger.warn("morty notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
-        }
-      }
-
+      // Sequential model: do NOT notify Morty that the job was submitted. Any message
+      // here wakes Morty mid-job and it chatters ("I'll monitor… nothing needed from
+      // you until then") — a promise pull-based continuation can't keep. Leave Morty
+      // idle; the user sees the submission via the job-monitor card. The lineage this
+      // POST used to carry (the real job id) is folded into the single job_complete
+      // wake (processJobNotifyQueue), which is the only point Morty needs it.
       setChatState("done")
     } catch (err) {
       useChatStore.getState().setJobInFlight(convId, false)
@@ -867,7 +854,7 @@ export function useChat() {
       try {
         const response = await sendOpenCodeMessage(
           convId,
-          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          `The ${jobType} job you set up (id ${jobId}) has finished with status: ${status}. Use present_options to suggest next steps to the user.`,
           undefined,
           "job_complete",
           status,
