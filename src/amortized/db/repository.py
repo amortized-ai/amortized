@@ -66,6 +66,18 @@ class Repository:
             return None
         return _row_to_job(row)
 
+    async def find_job_by_id_prefix(self, prefix: str) -> dict[str, Any] | None:
+        """A job whose id starts with `prefix` — the UI and model routinely cite an
+        8-char id prefix. None when nothing matches OR the prefix is ambiguous
+        (>1 job), since an ambiguous prefix can't be resolved to one job with
+        confidence."""
+        rows = await self.conn.fetch(
+            "SELECT * FROM jobs WHERE id::text LIKE $1 || '%' LIMIT 2", prefix
+        )
+        if len(rows) != 1:
+            return None
+        return _row_to_job(rows[0])
+
     async def list_jobs(
         self,
         *,
