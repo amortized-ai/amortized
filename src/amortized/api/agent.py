@@ -9,14 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import difflib
-import hashlib
 import json
 import logging
 import re
 import ssl
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,6 +23,32 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api import monitor_log
+from amortized.api.agent_claims import (
+    _AWAIT_UPSTREAM_GUIDANCE,
+    _job_claim_caveat,
+    _job_claim_correction,
+)
+from amortized.api.agent_confirm import (
+    _CONFIRM_CARD_TOOLS,
+    _JOB_TYPE_FOR_CONFIRM,
+    _REVIEW_CARD_TOOLS,
+    _first_unmet_precondition,
+    _record_confirm_signals,
+    _reset_confirm_signals,
+    _review_card_signature,
+    _sdg_config_signature,
+    _validate_mode,
+)
+from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.api.agent_sdg_prompt import (
+    _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
+)
+from amortized.api.agent_sdg_prompt import (
+    _bind_sdg_prompt_to_approved,
+)
+from amortized.api.agent_sdg_prompt import (
+    _shown_prompts as _shown_prompts,  # re-export for tests
+)
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -236,27 +259,6 @@ def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
     return "status: succeeded" in user_text.lower()
 
 
-def _tool_name(part: dict[str, Any]) -> str:
-    raw = part.get("tool") or part.get("toolName") or ""
-    if "__" in raw:
-        return raw.split("__")[-1]
-    if raw.startswith("amortized_"):
-        return raw[len("amortized_") :]
-    return raw
-
-
-def _get_tool_input(part: dict[str, Any]) -> dict[str, Any]:
-    inp = part.get("input")
-    if isinstance(inp, dict):
-        return inp
-    state = part.get("state")
-    if isinstance(state, dict):
-        state_input = state.get("input")
-        if isinstance(state_input, dict):
-            return state_input
-    return {}
-
-
 _VALID_TARGETS = {"sdg", "training", "eval"}
 
 
@@ -286,180 +288,6 @@ def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
 
 def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
-
-
-# Tools whose result renders a job CONFIRMATION card (its own Confirm / Cancel).
-_CONFIRM_CARD_TOOLS = {
-    "validate_training_job",
-    "validate_eval_job",
-    "validate_sdg_job",
-}
-
-# Tools whose result renders a card the user must REVIEW/approve before the job it
-# gates is confirmed (e.g. an assessor/system prompt that ships in the training
-# data). Unlike purely informational show_* cards (VRAM, pricing) — which belong on
-# the confirm card — a review card must get its own turn. Add future review cards
-# here; the gate in _enforce_single_interaction treats the category uniformly.
-_REVIEW_CARD_TOOLS = {"show_prompt"}
-
-
-def _review_card_signature(part: dict[str, Any]) -> str:
-    """Stable content signature of a review card, so an edited prompt re-gates but
-    an unchanged re-show of an already-reviewed prompt does not."""
-    inp = _get_tool_input(part)
-    text = str(inp.get("prompt") or inp.get("title") or "")
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _validate_mode(part: dict[str, Any]) -> str:
-    """The `mode` of a validate_sdg_job call. SDGJobRequest.mode defaults to 'create',
-    so an omitted mode is a full-job confirm, not a preview."""
-    return str(_get_tool_input(part).get("mode") or "create").strip().lower()
-
-
-# Fields that count a sample, not the recipe. A preview approves the RECIPE (columns,
-# models, processors, seed, topic); changing only how many records to make must not
-# force a re-preview. parent_job_id is lineage, likewise not recipe-defining. Mirrors
-# the clone-for-eval invariant ("mirror the recipe verbatim; only num_records changes").
-_SDG_NON_RECIPE_FIELDS = {"mode", "num_records", "parent_job_id"}
-
-
-def _sdg_config_signature(part: dict[str, Any]) -> str:
-    """Stable signature of an SDG job's RECIPE, identical for a preview and the full-job
-    confirm of the same recipe (they differ only in `mode`/record count). An edited
-    recipe yields a new signature, so the preview-before-create gate re-fires."""
-    recipe = {
-        k: v for k, v in _get_tool_input(part).items() if k not in _SDG_NON_RECIPE_FIELDS
-    }
-    canonical = json.dumps(recipe, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-# Tools that establish a confirm card's prerequisite ACTIONS, tracked as session
-# signals (see SessionState). The VRAM estimate and dataset inspection are ordinary
-# (passive) tool calls that must have happened before a training confirm.
-_VRAM_TOOL = "estimate_training_resources"
-_DATA_CONFIRM_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
-
-# Targets whose confirm cards require the user to have been offered a choice first.
-_CHOICE_REQUIRED_TARGETS = {"training", "eval"}
-
-
-# Steering appended when a confirm card is HELD because a prerequisite is unmet. One per
-# precondition; the first unmet one's text is what the model sees.
-_PREVIEW_FIRST_NUDGE = (
-    "A full SDG run must be previewed first. Call validate_sdg_job with mode "
-    '"preview", let the user approve the ~10-sample preview, then confirm the full '
-    "run. If you already previewed but changed the recipe, re-run the preview so the "
-    "user approves the new configuration before the full job is created."
-)
-_TRAINING_DATA_NUDGE = (
-    "Confirm the training data before the job card. Call get_dataset on the training "
-    "run and show the user its record count — even if the data came in via "
-    "parent_job_id (auto-resolving data is not the same as the user confirming it)."
-)
-_TRAINING_MODEL_NUDGE = (
-    "Let the user choose the base model/method before the job card. Present the options "
-    "with present_options (with VRAM estimates) and wait for their reply — never "
-    "auto-select a base model and jump straight to the confirmation."
-)
-_TRAINING_VRAM_NUDGE = (
-    "Show the VRAM estimate before the job card. Call estimate_training_resources for "
-    "the final configuration so the user sees the resource cost before confirming."
-)
-_EVAL_CHOICE_NUDGE = (
-    "Let the user decide the evaluation setup before the job card. The judge model has "
-    "no default — ask which model to judge with (present_options, a soft suggestion is "
-    "fine) and wait for their reply before confirming the eval job."
-)
-
-
-@dataclass(frozen=True)
-class _ConfirmGate:
-    """One ordered precondition a confirm card must clear before it may render: a
-    predicate over the session signals (+ the card itself) and the steer emitted when
-    it is unmet."""
-
-    name: str
-    satisfied: Callable[[SessionState, dict[str, Any]], bool]
-    nudge: str
-
-
-# The confirm-card precondition registry — the single ordered table the gate consults to
-# answer "may this validate_* card render this turn, or must a prerequisite fire first?".
-# Per confirm tool, the preconditions in dependency order; the FIRST unmet one holds the
-# card and steers the model. Declarative: a new gate (an eval metric review, a training
-# method card) is one more entry, not new control flow. (Readiness preconditions that
-# need the DB — an upstream job being 'succeeded' — stay in the async stage-gate
-# `_not_ready_violations`, deduped there against the dispatch-provenance check; this
-# table is the SYNC half that turns on session-local signals.)
-_CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
-    "validate_sdg_job": (
-        _ConfirmGate(
-            "preview",
-            lambda s, c: _validate_mode(c) != "create"
-            or _sdg_config_signature(c) in s.approved_preview_sigs,
-            _PREVIEW_FIRST_NUDGE,
-        ),
-    ),
-    "validate_training_job": (
-        _ConfirmGate("data", lambda s, c: s.confirmed_data, _TRAINING_DATA_NUDGE),
-        _ConfirmGate(
-            "model", lambda s, c: "training" in s.offered_choice, _TRAINING_MODEL_NUDGE
-        ),
-        _ConfirmGate("vram", lambda s, c: s.shown_vram, _TRAINING_VRAM_NUDGE),
-    ),
-    "validate_eval_job": (
-        _ConfirmGate(
-            "choice", lambda s, c: "eval" in s.offered_choice, _EVAL_CHOICE_NUDGE
-        ),
-    ),
-}
-
-
-def _first_unmet_precondition(
-    state: SessionState, card: dict[str, Any]
-) -> _ConfirmGate | None:
-    """The first precondition the leading confirm card has not satisfied, or None."""
-    for gate in _CONFIRM_PRECONDITIONS.get(_tool_name(card), ()):
-        if not gate.satisfied(state, card):
-            return gate
-    return None
-
-
-def _record_confirm_signals(
-    state: SessionState, parts: list[dict[str, Any]], ask_turn: bool
-) -> None:
-    """Accumulate the prerequisite-action signals a confirm card's preconditions read,
-    from the cards this turn renders: the VRAM estimate and dataset inspection (passive
-    tool calls), and — when a question leads this turn (ask_turn) inside a training/eval
-    subagent — that the user was offered a choice."""
-    for part in parts:
-        name = _tool_name(part)
-        if name == _VRAM_TOOL:
-            state.shown_vram = True
-        elif name in _DATA_CONFIRM_TOOLS:
-            state.confirmed_data = True
-    if ask_turn and state.subagent_target in _CHOICE_REQUIRED_TARGETS:
-        state.offered_choice.add(state.subagent_target)
-
-
-_JOB_TYPE_FOR_CONFIRM = {
-    "validate_sdg_job": "sdg",
-    "validate_training_job": "training",
-    "validate_eval_job": "eval",
-}
-
-
-def _reset_confirm_signals(state: SessionState, job_type: str) -> None:
-    """Clear a job type's prerequisite signals once its confirm card has rendered, so a
-    SECOND job of that type in the same conversation must re-establish them."""
-    if job_type == "training":
-        state.shown_vram = False
-        state.confirmed_data = False
-        state.offered_choice.discard("training")
-    elif job_type == "eval":
-        state.offered_choice.discard("eval")
 
 
 def _enforce_single_interaction(
@@ -1167,16 +995,6 @@ _DISPATCH_UPSTREAM_FIELDS = {
     ],
 }
 
-# Honest "wait" guidance injected when the stage-gate fires. Continuation is
-# frontend/pull-driven, so a wait only resumes while the page stays open — the
-# caveat below states exactly that.
-_AWAIT_UPSTREAM_GUIDANCE = (
-    "report the true current status to the user and wait — tell them it is still"
-    " running and that you'll continue automatically once it finishes, as long as"
-    " they keep this page open"
-)
-
-
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         dt = value
@@ -1570,94 +1388,6 @@ async def _not_ready_violations(
     return violations
 
 
-def _job_claim_correction(violations: list[dict[str, Any]]) -> str:
-    lines = [
-        "[JOB-CLAIM CHECK — internal system verification, not from the user]",
-        "Your reply described job(s) in a way the platform's records contradict:",
-    ]
-    for v in violations:
-        if v["kind"] == "state":
-            lines.append(
-                f"- You presented job {v['token']} as finished/ready, but its real"
-                f" status is '{v['status']}'. Do NOT claim completion until it is"
-                " actually succeeded — state the real status or wait for it."
-            )
-        elif v["kind"] == "not_ready":
-            lines.append(
-                f"- You are advancing the {v['type']} step, but {v['label']}"
-                f" ({v['token']}) is still '{v['status']}', not succeeded. Do NOT"
-                f" create, confirm, or present a confirmation card for the {v['type']}"
-                f" job — it cannot run until that finishes. Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
-            )
-        elif v["kind"] == "premature_submit":
-            lines.append(
-                f"- You described the {v['type']} job as already submitted/queued/running,"
-                " but this turn you only rendered a confirmation card — the job is NOT"
-                " created yet and has no job ID. It is created only when the user clicks"
-                " Confirm on the card. Do NOT claim it is submitted, queued, generating, or"
-                " running, and do NOT state a job ID. Tell the user to click Confirm to"
-                " start it, then stop and wait."
-            )
-        elif v["kind"] == "dispatch":
-            verb = "train on" if v["type"] == "training" else "evaluate on"
-            size = f" ({v['num']} records)" if v["num"] is not None else ""
-            lines.append(
-                f"- You are about to {verb} dataset {v['token']}{size}, but that is an"
-                " EXISTING dataset created in an earlier conversation — you did not run"
-                " a fresh SDG job for this request this session, nor tell the user you"
-                " are reusing it. Either submit a new SDG job for what the user asked"
-                f" for, or explicitly tell the user you are REUSING existing dataset"
-                f" {v['token']}{size} so they can confirm it matches before it runs."
-            )
-        else:
-            size = f" ({v['num']} records)" if v["num"] is not None else ""
-            lines.append(
-                f"- You implied job {v['token']} was generated/started in this"
-                f" conversation, but it is an EXISTING {v['type']} dataset{size}"
-                " created in an earlier conversation and no matching job was"
-                " submitted this session. Either submit a fresh job for the user's"
-                f" request, or explicitly tell the user you are REUSING existing job"
-                f" {v['token']}{size} so they can confirm it matches what they asked for."
-            )
-    lines.append("Re-send your reply with the accurate status / reuse disclosure.")
-    return "\n".join(lines)
-
-
-def _job_claim_caveat(violations: list[dict[str, Any]]) -> str:
-    parts: list[str] = []
-    for v in violations:
-        if v["kind"] == "state":
-            parts.append(f"job {v['token']} is '{v['status']}', not finished")
-        elif v["kind"] == "not_ready":
-            parts.append(
-                f"{v['label']} ({v['token']}) is still '{v['status']}', so the"
-                f" {v['type']} step can't proceed yet"
-            )
-        elif v["kind"] == "premature_submit":
-            parts.append(
-                f"the {v['type']} job has not been submitted yet — it starts only when you"
-                " click Confirm on the card above"
-            )
-        elif v["kind"] == "dispatch":
-            size = f" ({v['num']} records)" if v["num"] is not None else ""
-            parts.append(
-                f"the {v['type']} run is about to use existing dataset {v['token']}{size}"
-                " from an earlier conversation, which was not generated or disclosed as"
-                " reused this session"
-            )
-        else:
-            size = f" ({v['num']} records)" if v["num"] is not None else ""
-            parts.append(
-                f"job {v['token']} is an existing dataset{size} from an earlier"
-                " conversation, not a fresh run"
-            )
-    return (
-        "\n\n⚠️ Platform records don't match what I said above: "
-        + "; ".join(parts)
-        + ". Treat these as unconfirmed."
-    )
-
-
 async def _apply_job_claim_gate(
     state: SessionState,
     result: dict[str, Any],
@@ -1856,182 +1586,6 @@ async def create_session() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# SDG assessor-prompt binding
-# ---------------------------------------------------------------------------
-# The user reviews a recipe's system prompts in show_prompt previews and approves them;
-# the job must then run with THOSE exact prompts. A recipe carries MORE THAN ONE — e.g. a
-# ticket-generation (input) prompt and an assessor prompt — and a weaker model can
-# paraphrase any of them when it writes the SDG config. So whenever a validate_sdg_job
-# confirm card is read, every previewed prompt is bound back to the recipe column it was
-# paraphrased from (matched by text similarity, one-to-one), so the displayed card AND the
-# launched job carry exactly what the user approved. Matching by similarity — not "the
-# last shown prompt" — keeps a ticket prompt from being written into the assessor slot
-# just because it was shown last. Scoped to preview flows: no show_prompt means nothing to
-# bind (knowledge-ingestion and classification generate prompts without a preview), so the
-# model's config is left untouched.
-
-_SHOW_PROMPT_TOOL = "show_prompt"
-_VALIDATE_SDG_TOOL = "validate_sdg_job"
-
-
-def _shown_prompts(messages: list[dict[str, Any]]) -> list[str]:
-    """Every prompt the user was shown via show_prompt in `messages` (chronological),
-    de-duplicated preserving order — a driver may re-show a prompt before confirming."""
-    out: list[str] = []
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        for part in msg.get("parts") or []:
-            if (
-                isinstance(part, dict)
-                and part.get("type") == "tool"
-                and _tool_name(part) == _SHOW_PROMPT_TOOL
-            ):
-                shown = str(_get_tool_input(part).get("prompt") or "").strip()
-                if shown and shown not in out:
-                    out.append(shown)
-    return out
-
-
-def _rewrite_processor_system_messages(
-    config: dict[str, Any], assessor_col: str, new_prompt: str
-) -> bool:
-    """Set the SFT processor template's `system` message to `new_prompt` for the
-    processor whose assistant turn references the assessor column — the assessor prompt
-    ships both on its column and in the processor's system turn. Returns True if it
-    changed anything."""
-    ref_pat = re.compile(r"\{\{\s*" + re.escape(assessor_col) + r"\s*\}\}")
-    changed = False
-    for proc in config.get("processors") or []:
-        if not isinstance(proc, dict):
-            continue
-        template = proc.get("template")
-        messages = template.get("messages") if isinstance(template, dict) else None
-        if not isinstance(messages, list):
-            continue
-        refs_assessor = any(
-            isinstance(m, dict)
-            and m.get("role") == "assistant"
-            and isinstance(m.get("content"), str)
-            and ref_pat.search(m["content"])
-            for m in messages
-        )
-        if not refs_assessor:
-            continue
-        for msg in messages:
-            if not isinstance(msg, dict) or msg.get("role") != "system":
-                continue
-            if msg.get("content") != new_prompt:
-                msg["content"] = new_prompt
-                changed = True
-    return changed
-
-
-def _bind_prompts_to_config(config: dict[str, Any], shown: list[str]) -> bool:
-    """Overwrite each prompt-bearing recipe column's `system_prompt` with the approved
-    preview it most closely matches (greedy one-to-one by text similarity), and align the
-    SFT processor's system turn when the assessor column is rebound. Returns True if it
-    changed anything."""
-    from amortized.api.jobs import _assessor_column_name
-
-    columns = config.get("columns")
-    if not isinstance(columns, list) or not shown:
-        return False
-    prompt_cols = [
-        c
-        for c in columns
-        if isinstance(c, dict)
-        and isinstance(c.get("system_prompt"), str)
-        and c["system_prompt"].strip()
-    ]
-    if not prompt_cols:
-        return False
-    assessor_col = _assessor_column_name(config)
-    scored: list[tuple[float, int, int]] = []
-    for si, s in enumerate(shown):
-        for ci, col in enumerate(prompt_cols):
-            ratio = difflib.SequenceMatcher(None, s, col["system_prompt"]).ratio()
-            scored.append((ratio, si, ci))
-    scored.sort(key=lambda t: t[0], reverse=True)
-    used_s: set[int] = set()
-    used_c: set[int] = set()
-    changed = False
-    for _ratio, si, ci in scored:
-        if si in used_s or ci in used_c:
-            continue
-        used_s.add(si)
-        used_c.add(ci)
-        col = prompt_cols[ci]
-        if col["system_prompt"] != shown[si]:
-            col["system_prompt"] = shown[si]
-            changed = True
-        if (
-            assessor_col is not None
-            and col.get("name") == assessor_col
-            and _rewrite_processor_system_messages(config, assessor_col, shown[si])
-        ):
-            changed = True
-    return changed
-
-
-def _bind_validated_sdg_prompts(data: dict[str, Any], shown: list[str]) -> bool:
-    """Rewrite a ValidatedJobConfig dict ({config, assessor_prompt, prompts, ...}) so the
-    config (what the job runs with) carries the approved prompts, then refresh the
-    card's display fields (`prompts`, `assessor_prompt`) from the rebound config."""
-    config = data.get("config")
-    if not isinstance(config, dict) or not _bind_prompts_to_config(config, shown):
-        return False
-    from amortized.api.jobs import _recipe_prompts
-
-    prompts = _recipe_prompts(config)
-    data["prompts"] = [p.model_dump() for p in prompts]
-    data["assessor_prompt"] = next((p.text for p in prompts if p.role == "assessor"), None)
-    return True
-
-
-def _bind_validate_part(part: dict[str, Any], shown: list[str]) -> None:
-    """Bind the approved prompts into a validate_sdg_job tool part's OUTPUT (the
-    ValidatedJobConfig the UI reads for the card and the create payload)."""
-    containers: list[tuple[dict[str, Any], str]] = []
-    state = part.get("state")
-    if isinstance(state, dict) and "output" in state:
-        containers.append((state, "output"))
-    if "output" in part:
-        containers.append((part, "output"))
-    for obj, key in containers:
-        raw = obj.get(key)
-        if isinstance(raw, str):
-            try:
-                parsed = json.loads(raw)
-            except (ValueError, TypeError):
-                continue
-            if isinstance(parsed, dict) and _bind_validated_sdg_prompts(parsed, shown):
-                obj[key] = json.dumps(parsed)
-        elif isinstance(raw, dict):
-            _bind_validated_sdg_prompts(raw, shown)
-
-
-def _bind_sdg_prompt_to_approved(messages: list[dict[str, Any]]) -> None:
-    """In-place: if the user was shown prompts (show_prompt) and these messages carry a
-    validate_sdg_job confirm card, bind every approved prompt to the recipe column it
-    matches. No preview → no-op. See the section header for rationale."""
-    if not isinstance(messages, list):
-        return
-    shown = _shown_prompts(messages)
-    if not shown:
-        return
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        for part in msg.get("parts") or []:
-            if (
-                isinstance(part, dict)
-                and part.get("type") == "tool"
-                and _tool_name(part) == _VALIDATE_SDG_TOOL
-            ):
-                _bind_validate_part(part, shown)
-
-
 @router.get("/session/{session_id}/message")
 async def get_session_messages(session_id: str) -> Any:
     state = _sessions.get(session_id)
