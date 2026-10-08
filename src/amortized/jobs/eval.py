@@ -417,7 +417,9 @@ async def _build_classification_eval(
         post_commands=[post_cmd],
         # Encoding a small eval set is fast; GPU optional (0 = CPU, no quota).
         resources=Resources(gpus=int(config.get("nproc_per_node", 0)), cpus=4, memory_gb=8),
-        image=config_mod.job_image("training"),
+        # Classification eval runs in the training image (sentence-transformers) — pin it with
+        # training_image_tag (upstream lifecycle), not job_image_tag.
+        image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=resolved_config,
     )
 
@@ -436,8 +438,8 @@ async def build(
     # ANTHROPIC_API_KEY / ... regardless of which provider it uses.
     inject_enabled_provider_keys(env)
 
-    # Eval job image — job_image_tag (default "latest") pins every job backend; set it to a commit
-    # sha for a reproducible release, or leave "latest" to track main.
+    # Generative eval job image — job_image_tag (default "latest") pins the amortized-CI job images
+    # (eval, SDG, document); set it to a commit sha for a reproducible release, or leave "latest".
     image = config_mod.job_image("eval")
 
     # --- Model under evaluation: embedded serving or external endpoint ---

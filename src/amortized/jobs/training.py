@@ -117,7 +117,7 @@ async def build(
         config_files=config_files,
         post_commands=[post_cmd],
         resources=Resources(gpus=config.get("nproc_per_node", 1)),
-        image=config_mod.job_image("training"),
+        image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=dict(config),
     )
 

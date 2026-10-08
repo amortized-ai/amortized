@@ -1061,20 +1061,66 @@ class TestEndpointRetries:
 
 
 class TestJobImageTag:
-    """A single job_image_tag pins every job backend for a reproducible release."""
+    """job_image_tag pins the amortized-CI job images (eval, SDG, document); the upstream training
+    image is pinned separately by training_image_tag."""
 
     @pytest.mark.asyncio
-    async def test_job_image_tag_pins_all_job_images(self, monkeypatch) -> None:
+    async def test_job_image_tag_pins_ci_job_images(self, monkeypatch) -> None:
         import amortized.config as config_mod
 
         reg = "ghcr.io/amortized-ai"
         monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
-        # the shared helper composes any job image at the pinned tag
+        # the shared helper composes any CI job image at the pinned tag
         assert config_mod.job_image("data-designer") == f"{reg}/data-designer:sha-abc123"
-        assert config_mod.job_image("training") == f"{reg}/training:sha-abc123"
         assert config_mod.job_image("document") == f"{reg}/document:sha-abc123"
         # and the eval builder picks it up end-to-end
         result = await eval_builder.build(
             {"id": "j1", "type": "eval"}, {**EVAL_BODY, "judge": JUDGE}, {}
         )
         assert result.image == f"{reg}/eval:sha-abc123"
+
+    @pytest.mark.asyncio
+    async def test_training_image_tag_independent_of_job_image_tag(self, monkeypatch) -> None:
+        import amortized.config as config_mod
+        from amortized.jobs import training as training_builder
+
+        reg = "ghcr.io/amortized-ai"
+        # Different tags on purpose: the training image is built upstream (training-hub), not per
+        # amortized commit, so a job_image_tag sha must never leak onto it.
+        monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
+        monkeypatch.setattr(config_mod.settings, "training_image_tag", "0.1.0")
+
+        # the training builder uses training_image_tag, not job_image_tag
+        train = await training_builder.build(
+            {"id": "t1", "type": "training"}, {"algorithm": "osft"}, {}
+        )
+        assert train.image == f"{reg}/training:0.1.0"
+
+        # classification eval runs in the training image → training_image_tag, not job_image_tag
+        clf = await eval_builder.build(
+            {"id": "e1", "type": "eval"},
+            {
+                "eval_mode": "classification",
+                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "eval_data_run_id": "run123",
+                "class_labels": ["A", "B"],
+            },
+            {},
+        )
+        assert clf.image == f"{reg}/training:0.1.0"
+
+    @pytest.mark.asyncio
+    async def test_empty_training_tag_does_not_fall_back_to_job_tag(self, monkeypatch) -> None:
+        import amortized.config as config_mod
+        from amortized.jobs import training as training_builder
+
+        reg = "ghcr.io/amortized-ai"
+        # An empty training override must resolve to "latest", not leak the pinned CI sha onto the
+        # training image (which has no matching tag).
+        monkeypatch.setattr(config_mod.settings, "job_image_tag", "sha-abc123")
+        monkeypatch.setattr(config_mod.settings, "training_image_tag", "")
+
+        train = await training_builder.build(
+            {"id": "t1", "type": "training"}, {"algorithm": "osft"}, {}
+        )
+        assert train.image == f"{reg}/training:latest"
