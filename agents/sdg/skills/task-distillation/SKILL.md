@@ -25,6 +25,48 @@ rather than asking for every detail.
 
 ## Requirement Gathering
 
+### Step 0 — Eval set for a trained model? (clone, don't redesign)
+
+If the handoff context says the goal is a **held-out eval set for a
+trained model** (it carries a training job ID), do NOT run fresh
+requirement gathering and do NOT design a new prompt, teacher, or format.
+The model can only be scored fairly on the task it was trained for, so the
+eval set must come from the SAME pipeline that produced its training data:
+
+1. **ASK the user how many records the eval set should have** — the ONE
+   decision that is genuinely fresh (everything else is settled by the
+   training recipe). Present it as a choice (`present_options`) with a
+   sensible default; never pick the size yourself. Only skip the question
+   if the handoff/user already named a size in this conversation.
+2. Call `clone_sdg_config_for_eval(training_job_id, num_records)`. It
+   resolves the training job's parent SDG and returns an eval SDG config
+   that mirrors the training recipe exactly — teacher model, every prompt,
+   and the SFT format — with only the record count changed. Do NOT
+   reassemble this by hand (that is where teacher/prompt drift creeps in).
+3. Pass the returned `config` straight to preview/create
+   (`validate_sdg_job`). Fresh generation yields fresh held-out inputs —
+   that fresh sampling IS the isolation, so do NOT fetch and compare
+   datasets afterward to "prove" non-overlap (an open-ended loop). The
+   platform checks the generated set against the training data when the
+   eval job is validated and flags any overlap.
+
+If `clone_sdg_config_for_eval` reports the training job has no parent SDG
+to mirror (e.g. the model was trained on an uploaded dataset), don't
+dead-end — offer the user two paths with `present_options`: (a) generate
+a fresh eval set from scratch (go to Step 1, distilling the same task), or
+(b) provide an SDG config to mirror. Do not improvise a new pipeline
+silently.
+
+**Never distill a training set FROM a dataset the user wants to improve
+on.** If the user asks to "do better on <dataset X>", treat X as the
+benchmark/eval target: generate a FRESH training set for the same task
+(Steps 1–9) — do NOT turn X into the training data. Only train on X if the
+user explicitly confirms it (and accepts the leakage trade-off). Fresh,
+separately-generated inputs are what keep the eval honest.
+
+For any OTHER goal (a fresh training set, or an eval set with no trained
+model to mirror), continue with Step 1 below.
+
 ### Step 1 — What is the task?
 
 Identify the task type (assessment, classification, extraction,
@@ -103,9 +145,11 @@ Compose the task system prompt combining:
    sections."
 
 
-Present to the user for review. Same prompt is used in both the
-output-generating column `system_prompt` and the SFT processor system
-message.
+Render the FULL prompt for the user with the `show_prompt` tool (pass the
+complete prompt text), then ask them to approve or adjust it. `show_prompt`
+is the only way the user sees the prompt, so render it before asking them to
+review or approve it. The same prompt is used in both the output-generating
+column `system_prompt` and the SFT processor system message.
 
 ### Step 9 — Generate outputs for raw inputs (optional)
 
