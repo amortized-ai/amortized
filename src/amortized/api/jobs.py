@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
-from amortized.core import mirror
+from amortized.core import lineage, mirror
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -169,6 +169,22 @@ async def _require_dependency_succeeded(
     return []
 
 
+async def _gate_declared_upstreams(
+    repo: Repository, job_type: str, ids: dict[str, str]
+) -> list[str]:
+    """Gate every upstream edge the lineage DAG declares for ``job_type``: each
+    referenced upstream job must be ``succeeded``. ``ids`` maps the edge field name
+    to the id present on this request (absent/empty => that edge isn't referenced and
+    isn't checked). Sourcing the edge set from core/lineage keeps Layer 1 (here) and
+    Layer 2 (the proxy stage-gate) on one declaration."""
+    errors: list[str] = []
+    for up in lineage.gated_upstreams(job_type):
+        job_id = str(ids.get(up.field, "") or "")
+        if job_id:
+            errors += await _require_dependency_succeeded(repo, job_id, up.field)
+    return errors
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -188,9 +204,10 @@ async def _validate_training_data(
         )
         return errors
 
-    if parent_job_id and not data_path:
-        repo = Repository(db)
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
+    # parent_job_id is an alternative data source to data_path: only gate the SDG
+    # chain edge when it's the source in play (no direct data_path override).
+    ids = {"parent_job_id": parent_job_id} if not data_path else {}
+    errors += await _gate_declared_upstreams(Repository(db), "training", ids)
 
     return errors
 
@@ -239,15 +256,11 @@ async def _validate_eval_data(
         )
         return errors
 
-    repo = Repository(db)
-    if parent_job_id:
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
-
-    # The model under eval must itself have finished training — otherwise there is
-    # no adapter to score. This is the training -> eval edge of the dependency
-    # invariant (the SDG -> {training,eval} edge is parent_job_id above).
-    if training_job_id:
-        errors += await _require_dependency_succeeded(repo, training_job_id, "training_job_id")
+    # Gate both eval edges from the lineage DAG: the dataset parent (SDG/upload) and
+    # training_job_id (the model under eval — it must have finished training, else
+    # there is no adapter to score).
+    ids = {"parent_job_id": parent_job_id, "training_job_id": training_job_id}
+    errors += await _gate_declared_upstreams(Repository(db), "eval", ids)
 
     return errors
 
