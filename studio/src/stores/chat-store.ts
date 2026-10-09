@@ -25,6 +25,9 @@ export interface PersistedMessage {
   selectedOptionValue?: string
   phase?: string
   streamStartedAt?: number
+  // Encoded model selection (provider::modelID) that produced this assistant turn,
+  // captured from the send-time selection. Absent on legacy messages and user turns.
+  model?: string
 }
 
 export interface PersistedConversation {
@@ -33,6 +36,10 @@ export interface PersistedConversation {
   created_at: string
   updated_at: string
   messages: PersistedMessage[]
+  // Encoded model selection this conversation currently uses (what the next send
+  // uses, shown in the header). Set on first send; editable mid-conversation.
+  // Absent on legacy conversations (falls back to the global default).
+  model?: string
 }
 
 export type SessionStatus = "unknown" | "connected" | "reconnecting" | "rebuilt" | "restored"
@@ -56,6 +63,7 @@ interface ChatStoreState {
   deleteConversation: (id: string) => void
   replaceAllConversations: (conv: PersistedConversation) => void
   updateConversationTitle: (id: string, title: string) => void
+  setConversationModel: (conversationId: string, model: string) => void
   addMessage: (conversationId: string, message: PersistedMessage) => void
   updateMessage: (conversationId: string, messageId: string, content: string) => void
   getConversationMessages: (conversationId: string) => PersistedMessage[]
@@ -120,6 +128,12 @@ export const useChatStore = create<ChatStoreState>()(
         set((s) => ({
           conversations: s.conversations.map((c) =>
             c.id === id ? { ...c, title } : c,
+          ),
+        })),
+      setConversationModel: (conversationId, model) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId ? { ...c, model } : c,
           ),
         })),
       addMessage: (conversationId, message) =>

@@ -5,6 +5,7 @@ import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { useUIStore } from "@/stores/ui-store"
 import { useDragResize } from "@/hooks/use-drag-resize"
+import { cn } from "@/lib/utils"
 import { MessageList } from "./components/message-list"
 import { ChatInput } from "./components/chat-input"
 import { ConversationList } from "./components/conversation-list"
@@ -21,14 +22,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Bot, GripVertical } from "lucide-react"
-import { PROVIDER_CATALOG, encodeModelSelection, type ProviderInfo } from "./models"
+import { Plus, Bot, GripVertical, AlertTriangle } from "lucide-react"
+import { PROVIDER_CATALOG, encodeModelSelection, modelDisplayName, type ProviderInfo } from "./models"
 import { useProviderStatus } from "./api/use-providers"
 import { clearConversationSession } from "@/lib/api-client"
 
 import { derivePlan } from "./utils/derive-plan-steps"
 
-function ChatContent() {
+function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
   const navigate = useNavigate()
   const {
     messages,
@@ -54,12 +55,14 @@ function ChatContent() {
         navigate(value.slice(6))
         return
       }
+      // Same block as the composer: don't send on an unavailable pinned model.
+      if (sendBlockedReason) return
       if (messageId) {
         selectOption(messageId, value)
       }
       void sendMessage(value)
     },
-    [sendMessage, selectOption, navigate],
+    [sendMessage, selectOption, navigate, sendBlockedReason],
   )
 
   return (
@@ -74,9 +77,14 @@ function ChatContent() {
         onRejectAction={rejectAction}
         onJobComplete={notifyJobComplete}
       />
+      {sendBlockedReason && (
+        <Alert variant="destructive" data-testid="model-unavailable-warning">
+          <AlertDescription>{sendBlockedReason}</AlertDescription>
+        </Alert>
+      )}
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
-        disabled={isStreaming}
+        disabled={isStreaming || !!sendBlockedReason}
       />
       {chatState === "error" && (
         <Alert variant="destructive">
@@ -98,6 +106,7 @@ export default function ChatPage() {
     deleteConversation,
     replaceAllConversations,
     updateConversationTitle,
+    setConversationModel,
     _hasHydrated,
   } = useChatStore()
 
@@ -163,16 +172,39 @@ export default function ChatPage() {
     enableNewlyConnected(connectedKnownProviders)
   }, [connectedKnownProviders, enableNewlyConnected])
 
-  // Keep the selection on a usable provider (see usableProviders above).
-  useEffect(() => {
-    const isValid = usableProviders.some((p) =>
-      p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === chatModelSelection)
-    )
-    if (!isValid && usableProviders.length > 0 && usableProviders[0]!.models.length > 0) {
-      const first = usableProviders[0]!.models[0]!
-      setChatModelSelection(encodeModelSelection(first.providerID, first.modelID))
-    }
-  }, [usableProviders, chatModelSelection, setChatModelSelection])
+  const isUsableSelection = useCallback(
+    (sel: string | undefined): boolean =>
+      !!sel &&
+      usableProviders.some((p) =>
+        p.models.some((m) => encodeModelSelection(m.providerID, m.modelID) === sel),
+      ),
+    [usableProviders],
+  )
+
+  // The header picker reflects the ACTIVE conversation's model (what its next send
+  // uses), falling back to the global default for new/legacy conversations. Changing
+  // it updates this conversation going forward AND the global default for new chats.
+  const activeConversation = conversations.find((c) => c.id === currentConversationId)
+  const activeConvModel = activeConversation?.model
+  const activeModelSelection = activeConvModel ?? chatModelSelection
+  const handleModelChange = useCallback(
+    (value: string) => {
+      if (currentConversationId) setConversationModel(currentConversationId, value)
+      setChatModelSelection(value)
+    },
+    [currentConversationId, setConversationModel, setChatModelSelection],
+  )
+
+  // The active model selection (the conversation's pin, or the global default for a new
+  // chat) must be on a usable provider. If it isn't — the provider was disabled or lost
+  // connectivity — we never silently switch it: keep the selection, surface it, and block
+  // sending until the user picks a usable model. Gated on a known usable set so nothing is
+  // flagged while the provider list is still loading.
+  const activeModelUnavailable =
+    usableProviders.length > 0 && !isUsableSelection(activeModelSelection)
+  const sendBlockedReason = activeModelUnavailable
+    ? `"${modelDisplayName(activeModelSelection)}" is unavailable — pick another model to continue.`
+    : undefined
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
@@ -280,11 +312,24 @@ export default function ChatPage() {
               <Bot className="h-3 w-3 text-white" />
             </div>
             <span className="text-sm font-semibold">Morty</span>
-            <Select value={chatModelSelection} onValueChange={setChatModelSelection}>
-              <SelectTrigger className="h-7 w-[220px] text-xs" data-testid="chat-model-select-page">
+            <Select value={activeModelSelection} onValueChange={handleModelChange}>
+              <SelectTrigger
+                className={cn(
+                  "h-7 w-[220px] text-xs",
+                  activeModelUnavailable && "border-destructive/60 text-destructive",
+                )}
+                data-testid="chat-model-select-page"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                {/* Keep the unavailable pin visible (disabled) so the trigger shows it
+                    and the user knows why sending is blocked. */}
+                {activeModelUnavailable && (
+                  <SelectItem value={activeModelSelection} disabled className="text-xs text-muted-foreground">
+                    {modelDisplayName(activeModelSelection)} (unavailable)
+                  </SelectItem>
+                )}
                 {usableProviders.map((provider) => (
                   <SelectGroup key={provider.providerID}>
                     <SelectLabel className="text-xs text-muted-foreground">{provider.label}</SelectLabel>
@@ -300,13 +345,16 @@ export default function ChatPage() {
                 ))}
               </SelectContent>
             </Select>
+            {activeModelUnavailable && (
+              <AlertTriangle className="h-3.5 w-3.5 text-destructive" aria-label="Selected model unavailable" />
+            )}
           </div>
           <Button size="sm" variant="outline" onClick={handleNewConversation} className="rounded-lg transition-all duration-300 hover:shadow-sm hover:-translate-y-px">
             <Plus className="mr-1 h-3.5 w-3.5" />
             New
           </Button>
         </div>
-        <ChatContent key={currentConversationId ?? "empty"} />
+        <ChatContent key={currentConversationId ?? "empty"} sendBlockedReason={sendBlockedReason} />
       </div>
 
       <DeleteConversationDialog

@@ -41,7 +41,21 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
     selectedOptionValue: m.selectedOptionValue,
     phase: m.phase,
     streamStartedAt: m.streamStartedAt,
+    model: m.model,
   }
+}
+
+// Resolve the model for a send and pin it: use the conversation's own model if set,
+// else the global default. Stamps the assistant message (so its label is correct
+// immediately, even mid-stream) and seeds the conversation's model on first send.
+// Must be called BEFORE any await in the send flow so a later picker change cannot
+// retroactively alter the model of an already-submitted turn.
+function resolveAndPinModel(convId: string, assistantMessageId: string): string {
+  const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+  const model = conv?.model ?? useSettingsStore.getState().chatModelSelection
+  useChatStore.getState().updateMessageFields(convId, assistantMessageId, { model })
+  if (!conv?.model) useChatStore.getState().setConversationModel(convId, model)
+  return model
 }
 
 const TOOL_BLOCK_RE =
@@ -564,6 +578,10 @@ export function useChat() {
         })
         _activeRequests.add(convId)
 
+        // Capture and pin the model BEFORE warmup — if the user changes the picker
+        // while warmup is pending, this already-submitted turn must keep its model.
+        const modelToSend = resolveAndPinModel(convId, assistantId)
+
         // Make this conversation current now so the keyed view shows the new turn
         // immediately (the messages selector keys off currentConversationId).
         if (isNewConversation) setCurrentConversationId(convId)
@@ -579,8 +597,7 @@ export function useChat() {
         try {
           const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
           logger.info("sending to OpenCode", { conversationId: convId })
-          const { chatModelSelection } = useSettingsStore.getState()
-          const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+          const response = await sendOpenCodeMessage(convId, content, modelToSend)
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
           logger.info("OpenCode response received", {
@@ -799,10 +816,15 @@ export function useChat() {
       })
       _activeRequests.add(convId)
 
+      // Job-completion turns belong to the conversation — use (and stamp) its model
+      // too, so they don't silently run on a different model or render unlabeled.
+      const modelToSend = resolveAndPinModel(convId, placeholderId)
+
       try {
         const response = await sendOpenCodeMessage(
           convId,
           `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          modelToSend,
         )
 
         const parsed = parseOpenCodeResponse(response)

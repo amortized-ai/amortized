@@ -58,4 +58,14 @@ export function parseModelSelection(encoded: string): { providerID: string; mode
   return { providerID: encoded.slice(0, idx), modelID: encoded.slice(idx + SEPARATOR.length) }
 }
 
+// Friendly label for an encoded model selection, for display (e.g. the per-message
+// model tag). Prefers the static catalog label; falls back to the raw model id with
+// the variant/alias suffix trimmed for readability.
+export function modelDisplayName(encoded: string): string {
+  const { providerID, modelID } = parseModelSelection(encoded)
+  const known = PROVIDER_CATALOG[providerID]?.models.find((m) => m.modelID === modelID)
+  if (known) return known.label
+  return modelID.replace(/@.*$/, "").replace(/-latest$/, "")
+}
+
 export const DEFAULT_CHAT_MODEL_SELECTION = encodeModelSelection("google-vertex-anthropic", "claude-opus-4-8@default")
