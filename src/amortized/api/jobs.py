@@ -169,19 +169,14 @@ async def _require_dependency_succeeded(
     return []
 
 
-async def _gate_declared_upstreams(
-    repo: Repository, job_type: str, ids: dict[str, str]
-) -> list[str]:
-    """Gate every upstream edge the lineage DAG declares for ``job_type``: each
-    referenced upstream job must be ``succeeded``. ``ids`` maps the edge field name
-    to the id present on this request (absent/empty => that edge isn't referenced and
-    isn't checked). Sourcing the edge set from core/lineage keeps Layer 1 (here) and
-    Layer 2 (the proxy stage-gate) on one declaration."""
+async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[str]:
+    """Field-driven dependency gate: every upstream *job* this config references
+    (lineage.GATED_FIELDS) must be ``succeeded``. Keys on the fields present, not on
+    the job type, so this is the same rule for any node — including one "beyond the
+    graph" — and Layer 2 (the proxy stage-gate) gates the identical field set."""
     errors: list[str] = []
-    for up in lineage.gated_upstreams(job_type):
-        job_id = str(ids.get(up.field, "") or "")
-        if job_id:
-            errors += await _require_dependency_succeeded(repo, job_id, up.field)
+    for field, job_id, _label in lineage.present_gated_fields(refs):
+        errors += await _require_dependency_succeeded(repo, job_id, field)
     return errors
 
 
@@ -205,9 +200,10 @@ async def _validate_training_data(
         return errors
 
     # parent_job_id is an alternative data source to data_path: only gate the SDG
-    # chain edge when it's the source in play (no direct data_path override).
-    ids = {"parent_job_id": parent_job_id} if not data_path else {}
-    errors += await _gate_declared_upstreams(Repository(db), "training", ids)
+    # chain edge when it's the source in play (no direct data_path override). Any other
+    # upstream-job reference on the config is gated too (field-driven).
+    refs = {**config, "parent_job_id": parent_job_id if not data_path else ""}
+    errors += await _gate_upstream_refs(Repository(db), refs)
 
     return errors
 
@@ -256,11 +252,11 @@ async def _validate_eval_data(
         )
         return errors
 
-    # Gate both eval edges from the lineage DAG: the dataset parent (SDG/upload) and
-    # training_job_id (the model under eval — it must have finished training, else
-    # there is no adapter to score).
-    ids = {"parent_job_id": parent_job_id, "training_job_id": training_job_id}
-    errors += await _gate_declared_upstreams(Repository(db), "eval", ids)
+    # Field-driven gate: the dataset parent (SDG/upload) and training_job_id (the model
+    # under eval — it must have finished training, else there is no adapter to score),
+    # plus any other upstream-job reference present on the config.
+    refs = {**config, "parent_job_id": parent_job_id, "training_job_id": training_job_id}
+    errors += await _gate_upstream_refs(Repository(db), refs)
 
     return errors
 

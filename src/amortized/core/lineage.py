@@ -10,24 +10,33 @@ places:
     dispatch whose upstream is still in flight);
   * the prose of the workflow prompts under ``agents/`` (soft guidance to the agent).
 
-This module makes the graph explicit and authoritative, so the two enforcement
-layers derive their edge set from one declaration instead of each hard-coding it
-(they drifted apart otherwise). It also carries the prompt-consistency contract
-(``check_workflow_consistency``): the fields this DAG gates must be documented in the
-matching ``agents/<type>/workflow.md`` or one of that agent's skills, and the
-pipeline order here must match the order the orchestrator prompt presents. A test
-runs that check, so a change to the code graph that leaves the prompts (or skills)
-behind — or vice versa — fails CI.
+This module makes the graph explicit and authoritative. It encodes a *local
+precondition*, not a prescribed path: a node may launch iff the upstream jobs its
+config *references* have ``succeeded``. It says nothing about what else happened —
+extra steps, loops, re-runs, out-of-order exploration are all fine. So enforcement is
+**field-driven** (``GATED_FIELDS`` / ``present_gated_fields``): both layers gate
+whichever upstream-reference fields are present on the job being launched, regardless
+of its type. A job type not in ``PIPELINE`` ("beyond the graph") is still gated on the
+prerequisites it names — and nothing forces a global sdg→training→eval sequence.
+
+``PIPELINE`` is the richer *structure* layered on top: per-node producer edges, the
+topological order, and the orchestrator capability headings. It drives the
+prompt-consistency contract (``check_workflow_consistency``) and the delegation
+advisory's producer scoping — it is **not** a runtime path gate (``pipeline_order``
+is used only by the consistency test, never to constrain a user action).
 
 Pure: no FastAPI / opencode / DB deps, so both the API routes and the proxy can
 import it. The DB status check itself stays in the callers; this module only owns
-*which* fields are edges, their producing job type, and whether they are gated.
+*which* fields are gated references, their producing job type, and the topology.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # A referenced upstream job counts as ready only once it reaches this status.
 READY_STATUS = "succeeded"
@@ -97,6 +106,31 @@ PIPELINE: dict[str, JobNode] = {
 }
 
 
+# The field-driven enforcement universe: every config key that references an upstream
+# *job* (by id), with a generic label for gate messages. Enforcement keys on THIS, not
+# on PIPELINE membership, so a job type "beyond the graph" is still gated on whatever
+# of these it carries. Fields that reference an MLflow *run* (data_run_id /
+# eval_data_run_id) are intentionally absent: a run is an artifact, not a job, and
+# carries no job-ordering gate. Kept in sync with PIPELINE's edges by a test.
+GATED_FIELDS: dict[str, str] = {
+    "parent_job_id": "the upstream job that produced this job's input",
+    "training_job_id": "the model's training job",
+}
+
+
+def present_gated_fields(config: Mapping[str, Any]) -> list[tuple[str, str, str]]:
+    """The gated upstream references actually present on a job's config, as
+    ``(field, job_id, label)``. Both enforcement layers call this, so "a node launches
+    only once the prerequisites it references have succeeded" is defined in one place
+    and applies to any job type, declared in PIPELINE or not."""
+    out: list[tuple[str, str, str]] = []
+    for field, label in GATED_FIELDS.items():
+        job_id = str(config.get(field, "") or "")
+        if job_id:
+            out.append((field, job_id, label))
+    return out
+
+
 def upstreams(job_type: str) -> tuple[Upstream, ...]:
     """Every declared upstream edge for ``job_type`` (empty for roots/unknown)."""
     node = PIPELINE.get(job_type)
@@ -104,27 +138,37 @@ def upstreams(job_type: str) -> tuple[Upstream, ...]:
 
 
 def gated_upstreams(job_type: str) -> tuple[Upstream, ...]:
-    """The upstream edges subject to the stage-gate — those a downstream job must
-    wait on. This is the single source both enforcement layers consume."""
+    """The declared upstream edges for ``job_type`` subject to the stage-gate. Used by
+    the prompt-consistency check and tests; runtime enforcement is field-driven via
+    ``present_gated_fields`` (which also covers types not in PIPELINE)."""
     return tuple(u for u in upstreams(job_type) if u.gated)
 
 
 def dispatch_parent_type() -> dict[str, str]:
-    """``{validate_tool: downstream_job_type}`` for the proxy's dispatch gates."""
-    return {n.validate_tool: n.job_type for n in PIPELINE.values()}
+    """``{validate_tool: downstream_job_type}`` for the proxy's stale-reuse (dispatch)
+    check. Only nodes with a gated upstream appear: a root (SDG) has no prerequisite,
+    so cloning a recipe for an eval set may run while training is still in flight."""
+    return {n.validate_tool: n.job_type for n in PIPELINE.values() if gated_upstreams(n.job_type)}
 
 
-def dispatch_upstream_fields() -> dict[str, list[tuple[str, str]]]:
-    """``{validate_tool: [(field, label), ...]}`` of gated upstreams, for the proxy's
-    not-ready stage-gate. Only tools with at least one gated upstream appear (SDG,
-    with none, is intentionally absent — cloning a recipe for an eval set may run
-    while training is still in flight)."""
-    out: dict[str, list[tuple[str, str]]] = {}
-    for node in PIPELINE.values():
-        fields = [(u.field, u.label) for u in node.upstreams if u.gated]
-        if fields:
-            out[node.validate_tool] = fields
-    return out
+_DISPATCH_TOOL_RE = re.compile(r"^validate_(?P<type>\w+)_job$")
+
+
+def dispatch_job_type(tool_name: str) -> str | None:
+    """The job type a ``validate_<type>_job`` dispatch tool launches, or None if the
+    tool is not a dispatch or launches a *known root* (a PIPELINE node with no
+    upstream — e.g. SDG, whose eval-set prep is allowed to run alongside training).
+
+    An unknown type (not in PIPELINE) returns the type, not None: a dispatch "beyond
+    the graph" is still stage-gated on whatever prerequisites it references."""
+    m = _DISPATCH_TOOL_RE.match(tool_name)
+    if not m:
+        return None
+    jt = m.group("type")
+    node = PIPELINE.get(jt)
+    if node is not None and not node.upstreams:
+        return None  # a declared root — no prerequisite, never stage-gated
+    return jt
 
 
 def pipeline_order() -> list[str]:
