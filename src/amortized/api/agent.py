@@ -49,6 +49,7 @@ from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
 from amortized.config import settings
+from amortized.core import lineage
 
 logger = logging.getLogger(__name__)
 
@@ -793,24 +794,15 @@ _SUBMITTED_CLAIM_RE = re.compile(
 # Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
 # a parent dataset. The call carries parent_job_id as a structured argument, so
 # dispatch provenance is verified from the parent's DB record, with no prose parsing.
-_DISPATCH_PARENT_TYPE = {
-    "validate_training_job": "training",
-    "validate_eval_job": "eval",
-}
-
-# Check D ("not ready") — the stage-gate. A downstream dispatch maps to the upstream
+# Check D ("not ready") — the stage-gate: a downstream dispatch maps to the upstream
 # job-id field(s) it depends on, each of which must be 'succeeded' before the step can
-# advance. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and are
-# validated downstream, so they are not listed. validate_sdg_job is intentionally
-# absent: cloning an SDG recipe for an eval set may run while training is still in
-# flight ("prep eval set now"), so eval-set prep is NOT gated here.
-_DISPATCH_UPSTREAM_FIELDS = {
-    "validate_training_job": [("parent_job_id", "the training dataset's job")],
-    "validate_eval_job": [
-        ("parent_job_id", "the eval dataset's job"),
-        ("training_job_id", "the model's training job"),
-    ],
-}
+# advance. Both tables are derived from the canonical DAG in core/lineage.py so the
+# proxy (Layer 2) and the create-time validators (Layer 1) never drift on which edges
+# exist. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and so are not
+# edges; validate_sdg_job has no gated upstream (cloning an SDG recipe for an eval set
+# may run while training is still in flight), so it is absent from the fields map.
+_DISPATCH_PARENT_TYPE = lineage.dispatch_parent_type()
+_DISPATCH_UPSTREAM_FIELDS = lineage.dispatch_upstream_fields()
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
