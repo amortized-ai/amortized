@@ -30,31 +30,46 @@ class TestGraph:
                 assert order.index(up.producer) < order.index(jt)
 
 
+class TestFieldDrivenGate:
+    def test_gated_fields_match_the_dag_edges(self) -> None:
+        # Anti-drift: the flat enforcement universe equals the set of gated edge
+        # fields declared across PIPELINE (neither side can grow a field alone).
+        dag_fields = {u.field for n in lineage.PIPELINE.values() for u in n.upstreams if u.gated}
+        assert set(lineage.GATED_FIELDS) == dag_fields
+
+    def test_present_gated_fields_picks_referenced_jobs(self) -> None:
+        refs = lineage.present_gated_fields(
+            {"parent_job_id": "sdg-1", "training_job_id": "", "data_run_id": "run-9", "x": 1}
+        )
+        # only non-empty gated job references; data_run_id is a run, not gated
+        assert [(f, j) for f, j, _ in refs] == [("parent_job_id", "sdg-1")]
+
+    def test_present_gated_fields_covers_unknown_node(self) -> None:
+        # a job type "beyond the graph" still surfaces its referenced prerequisites
+        refs = lineage.present_gated_fields({"training_job_id": "t-1"})
+        assert [(f, j) for f, j, _ in refs] == [("training_job_id", "t-1")]
+
+
 class TestDispatchDerivation:
-    def test_parent_type_covers_training_and_eval(self) -> None:
+    def test_parent_type_excludes_roots(self) -> None:
+        # SDG has no prerequisite, so it is absent from the stale-reuse dispatch map.
         assert lineage.dispatch_parent_type() == {
-            "validate_sdg_job": "sdg",
             "validate_training_job": "training",
             "validate_eval_job": "eval",
         }
 
-    def test_upstream_fields_exclude_sdg(self) -> None:
-        fields = lineage.dispatch_upstream_fields()
-        assert "validate_sdg_job" not in fields  # SDG eval-set prep is not gated
-        assert fields["validate_training_job"] == [("parent_job_id", "the training dataset's job")]
-        assert [f for f, _ in fields["validate_eval_job"]] == [
-            "parent_job_id",
-            "training_job_id",
-        ]
+    def test_dispatch_job_type_gates_training_and_eval(self) -> None:
+        assert lineage.dispatch_job_type("validate_training_job") == "training"
+        assert lineage.dispatch_job_type("validate_eval_job") == "eval"
 
-    def test_layers_see_the_same_edge_set(self) -> None:
-        # Anti-drift: the proxy's per-tool gated fields must equal the DAG's gated
-        # upstreams for the tool's job type (what Layer 1 iterates).
-        fields = lineage.dispatch_upstream_fields()
-        by_type = {n.validate_tool: n.job_type for n in lineage.PIPELINE.values()}
-        for tool, pairs in fields.items():
-            jt = by_type[tool]
-            assert {f for f, _ in pairs} == {u.field for u in lineage.gated_upstreams(jt)}
+    def test_dispatch_job_type_skips_root_and_non_dispatch(self) -> None:
+        assert lineage.dispatch_job_type("validate_sdg_job") is None  # root, not gated
+        assert lineage.dispatch_job_type("get_job") is None
+        assert lineage.dispatch_job_type("split_dataset") is None
+
+    def test_dispatch_job_type_covers_beyond_graph(self) -> None:
+        # an unknown dispatch is still gated (field-driven) on whatever it references
+        assert lineage.dispatch_job_type("validate_serve_job") == "serve"
 
 
 class TestWorkflowConsistency:

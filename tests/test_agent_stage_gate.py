@@ -110,7 +110,7 @@ class TestNotReadyGate:
     def test_training_on_inflight_sdg_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(monkeypatch, {"sdgjob0001": _job(status="queued", jtype="sdg")})
-        out = _run(
+        _run(
             agent._apply_job_claim_gate(
                 state,
                 _dispatch_result("validate_training_job", {"parent_job_id": "sdgjob0001"}),
@@ -118,8 +118,27 @@ class TestNotReadyGate:
             )
         )
         assert len(sent) == 1
-        assert "the training dataset's job" in sent[0]
+        assert "the upstream job that produced this job's input" in sent[0]
         assert "'queued'" in sent[0]
+
+    def test_beyond_graph_dispatch_is_gated_on_its_reference(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A dispatch tool not in PIPELINE (e.g. validate_serve_job) is still gated,
+        # field-driven, on the in-flight prerequisite it references.
+        state = agent.SessionState(orchestrator_id="orch")
+        sent = _patch(monkeypatch, {"trainjob01": _job(status="running", jtype="training")})
+        out = _run(
+            agent._apply_job_claim_gate(
+                state,
+                _dispatch_result("validate_serve_job", {"training_job_id": "trainjob01"}),
+                _body(),
+            )
+        )
+        assert len(sent) == 1
+        assert "the model's training job" in sent[0]
+        assert "'running'" in sent[0]
+        assert out is not None
         _ = out
 
     def test_succeeded_upstream_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,9 +163,7 @@ class TestNotReadyGate:
         # is not a gated dispatch, so an in-flight training_job_id in its input is ignored.
         state = agent.SessionState(orchestrator_id="orch")
         _patch(monkeypatch, {"trainjob01": _job(status="running", jtype="training")})
-        result = _dispatch_result(
-            "validate_sdg_job", {"training_job_id": "trainjob01"}
-        )
+        result = _dispatch_result("validate_sdg_job", {"training_job_id": "trainjob01"})
         violations = _run(agent._not_ready_violations(state, result, {}))
         assert violations == []
 
@@ -205,6 +222,19 @@ class TestUpstreamNotReadyAdvisory:
         )
         assert advisory is None
 
+    def test_unrelated_inflight_job_does_not_advise(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An in-flight job whose type is NOT a producer of the target (here an eval job
+        # mentioned alongside a training handoff) is not a prerequisite — extra work
+        # done alongside must not block the node.
+        state = agent.SessionState(orchestrator_id="orch")
+        _patch(monkeypatch, {self._TID: _job(status="running", jtype="eval")})
+        advisory = _run(
+            agent._upstream_not_ready_advisory(
+                state, "training", f"train on data; btw job {self._TID} is still running", ""
+            )
+        )
+        assert advisory is None
+
 
 class TestDelegationAdvisory:
     """The ordered delegation-boundary gate: one evaluator returns the FIRST unmet
@@ -228,9 +258,7 @@ class TestDelegationAdvisory:
         _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
         self._patch_has_data(monkeypatch, False)
         advisory = _run(
-            agent._delegation_advisory(
-                state, "training", f"train using job {self._TID}", ""
-            )
+            agent._delegation_advisory(state, "training", f"train using job {self._TID}", "")
         )
         assert advisory is not None
         assert "[DATA AVAILABILITY]" in advisory
