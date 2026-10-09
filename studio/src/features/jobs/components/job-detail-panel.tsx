@@ -41,6 +41,15 @@ function formatJobError(raw: string): { summary: string; isTruncated: boolean } 
   return { summary: raw, isTruncated: false }
 }
 
+function NoScoresCard({ detail }: { detail: string }) {
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+      <p className="font-medium">No scores</p>
+      <p className="text-muted-foreground mt-1">{detail}</p>
+    </div>
+  )
+}
+
 interface JobDetailPanelProps {
   job: Job | null
   open: boolean
@@ -591,6 +600,11 @@ function EvalResultsTab({ job }: { job: Job }) {
     const scoreEntries = Object.entries(results.scores ?? {}).filter(
       ([name]) => rubricNames.size === 0 || rubricNames.has(name),
     )
+    // A succeeded eval can still yield nothing usable (judge errored on every
+    // sample, empty output, etc.). Say so plainly rather than render a blank
+    // table or a misleading "0 scored" footer — never imply a score exists.
+    const hasUsableScore = scoreEntries.some(([, s]) => s !== null && s !== undefined)
+    const noScores = results.num_scored === 0 || !hasUsableScore
     return (
       <div className="space-y-4 pt-2">
         {modelName ? (
@@ -598,6 +612,14 @@ function EvalResultsTab({ job }: { job: Job }) {
             Model: <span className="font-mono text-foreground">{String(modelName)}</span>
           </p>
         ) : null}
+
+        {noScores && (
+          <NoScoresCard
+            detail={`This eval succeeded but produced no usable scores${
+              results.num_scored === 0 ? " (0 samples scored)" : ""
+            }. The judge returned no results for the scored samples — check the job logs for the cause.`}
+          />
+        )}
 
         {scoreEntries.length > 0 && (
           <div className="rounded-xl border bg-card overflow-hidden">
@@ -671,8 +693,17 @@ function EvalResultsTab({ job }: { job: Job }) {
     ...(wantMetric("empty_rate") ? [{ label: "Empty rate", base: formatMetric(results.base?.empty_rate), tuned: formatMetric(results.tuned?.empty_rate) }] : []),
   ]
 
+  const legacyNoScores =
+    !results.judge || results.judge.num_judged === 0 || results.judge.win_rate === null
   return (
     <div className="space-y-4 pt-2">
+      {legacyNoScores && (
+        <NoScoresCard
+          detail={`This eval succeeded but produced no usable judge scores${
+            results.judge?.num_judged === 0 ? " (0 samples judged)" : ""
+          }. Check the job logs for the cause.`}
+        />
+      )}
       {results.judge && (
         <div className="rounded-xl border bg-card p-4">
           <div className="flex items-baseline justify-between">

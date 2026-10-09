@@ -33,6 +33,7 @@ const TOOL_LABELS: Record<string, string> = {
   "show_vram_estimate": "Estimating GPU requirements",
   "create_sdg_job": "Submitting SDG job",
   "create_training_job": "Submitting training job",
+  "create_eval_job": "Submitting eval job",
   "get_job_detail": "Checking job status",
   "get_job_logs": "Reading job logs",
 }
@@ -47,10 +48,13 @@ const PHASE_STEP_LABELS: Record<string, string> = {
 
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
+  let latestStep = ""
+  let terminalSeen = false
   const seenLabels = new Set<string>()
   const steps: Array<{ label: string }> = []
 
   for (const msg of messages) {
+    let phaseChangedThisMsg = false
     for (const tool of msg.toolResults) {
       if (tool.name === "signal_phase" || tool.name === "signal phase") {
         const data = tryParseToolResult(tool.result)
@@ -62,8 +66,12 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
         if (latestPhase && phase !== latestPhase) {
           seenLabels.clear()
           steps.length = 0
+          terminalSeen = false
+          phaseChangedThisMsg = true
         }
         latestPhase = phase
+
+        latestStep = step
 
         const label = PHASE_STEP_LABELS[step]
         if (label && !seenLabels.has(label)) {
@@ -79,16 +87,44 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
         steps.push({ label })
       }
     }
+    // A job-completion continuation turn is terminal for the phase it finished —
+    // unless the same turn advanced to a new phase (then the new phase leads and is
+    // still in progress). Lets the bar settle when the driver skips the "review" signal.
+    if (msg.terminal && !phaseChangedThisMsg) terminalSeen = true
   }
 
-  if (!latestPhase || steps.length === 0) return null
+  if (!latestPhase) return null
+
+  // The phase is known but no recognizable step was collected — e.g. the server
+  // backfilled a phase-only signal because the driver forgot to call signal_phase.
+  // Render the static plan for the phase so the bar still shows the right section
+  // (this also covers "eval", which parsePhaseTag's static path does not accept).
+  if (steps.length === 0) {
+    const cfg = STATIC_PHASE_CONFIG[latestPhase]
+    if (!cfg) return null
+    const activeIdx = resolveStepIndex(cfg.steps, latestStep)
+    const done = latestStep === "review" || terminalSeen
+    return {
+      phase: latestPhase,
+      label: cfg.label,
+      steps: cfg.steps.map((def, i): PlanStep => ({
+        label: def.label,
+        status: done || i < activeIdx ? "completed" : i === activeIdx ? "active" : "pending",
+      })),
+    }
+  }
+
+  // When the last signalled step is "review" — or a job-completion turn made the
+  // phase terminal — the workflow has finished; mark every step complete so the bar
+  // isn't left spinning.
+  const done = latestStep === "review" || terminalSeen
 
   return {
     phase: latestPhase,
     label: PHASE_LABELS[latestPhase],
     steps: steps.map((s, i): PlanStep => ({
       label: s.label,
-      status: i < steps.length - 1 ? "completed" : "active",
+      status: done || i < steps.length - 1 ? "completed" : "active",
     })),
   }
 }
@@ -118,9 +154,20 @@ const TRAINING_STEPS: StepDef[] = [
   { label: "Checking results", matchSteps: ["review"] },
 ]
 
+const EVAL_STEPS: StepDef[] = [
+  { label: "Understanding your task", matchSteps: ["understand_task"] },
+  { label: "Loading eval guide", matchSteps: ["load_skill"] },
+  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
+  { label: "Selecting judge & metrics", matchSteps: ["estimate_cost"] },
+  { label: "Reviewing configuration", matchSteps: ["confirm"] },
+  { label: "Submitting eval job", matchSteps: ["execute"] },
+  { label: "Checking results", matchSteps: ["review"] },
+]
+
 const STATIC_PHASE_CONFIG: Partial<Record<PlanPhase, { label: string; steps: StepDef[] }>> = {
   sdg: { label: "Data Generation", steps: SDG_STEPS },
   training: { label: "Model Training", steps: TRAINING_STEPS },
+  eval: { label: "Evaluation", steps: EVAL_STEPS },
 }
 
 function resolveStepIndex(stepDefs: StepDef[], currentStep: string): number {

@@ -6,9 +6,27 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, ChevronDown, ChevronRight, Rocket } from "lucide-react"
-import type { ProposedAction } from "../types"
+import type { ProposedAction, PromptView } from "../types"
 
-function extractSdgSummary(config: Record<string, unknown>): [string, string][] {
+const PROMPT_PREVIEW_LEN = 220
+
+function promptPreview(text: string): string {
+  const trimmed = text.trim()
+  return trimmed.length > PROMPT_PREVIEW_LEN
+    ? `${trimmed.slice(0, PROMPT_PREVIEW_LEN)}…`
+    : trimmed
+}
+
+// The reviewable prompts are resolved authoritatively by the backend
+// (validate_sdg_job → prompts / assessorPrompt) and passed in, rather than guessed
+// from config internals on the client — guessing could confidently render a sampler's
+// prompt as the assessor prompt. A recipe carries more than one (e.g. a ticket
+// generator and an assessor), so every prompt is shown, not just the assessor.
+function extractSdgSummary(
+  config: Record<string, unknown>,
+  assessorPrompt?: string | null,
+  prompts?: PromptView[],
+): [string, string][] {
   const rows: [string, string][] = []
 
   const columns = config.columns as Array<Record<string, unknown>> | undefined
@@ -26,6 +44,14 @@ function extractSdgSummary(config: Record<string, unknown>): [string, string][] 
   if (config.num_records) rows.push(["Samples", String(config.num_records)])
   if (config.mode) rows.push(["Mode", String(config.mode)])
   if (config.topic) rows.push(["Topic", String(config.topic)])
+
+  if (prompts?.length) {
+    for (const p of prompts) {
+      if (p.text?.trim()) rows.push([p.label || "Prompt", promptPreview(p.text)])
+    }
+  } else if (assessorPrompt?.trim()) {
+    rows.push(["Assessor prompt", promptPreview(assessorPrompt)])
+  }
 
   const docIds = config.document_ids as string[] | undefined
   if (docIds?.length) rows.push(["Documents", `${docIds.length} document${docIds.length > 1 ? "s" : ""}`])
@@ -83,8 +109,13 @@ function extractServeSummary(config: Record<string, unknown>): [string, string][
   return rows
 }
 
-function extractConfigSummary(jobType: string | undefined, config: Record<string, unknown>): [string, string][] {
-  if (jobType === "sdg") return extractSdgSummary(config)
+function extractConfigSummary(
+  jobType: string | undefined,
+  config: Record<string, unknown>,
+  assessorPrompt?: string | null,
+  prompts?: PromptView[],
+): [string, string][] {
+  if (jobType === "sdg") return extractSdgSummary(config, assessorPrompt, prompts)
   if (jobType === "training") return extractTrainingSummary(config)
   if (jobType === "eval") return extractEvalSummary(config)
   if (jobType === "serve") return extractServeSummary(config)
@@ -115,7 +146,14 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
     }
   }
 
-  const summary = action.config ? extractConfigSummary(action.jobType, action.config) : []
+  const summary = action.config
+    ? extractConfigSummary(action.jobType, action.config, action.assessorPrompt, action.prompts)
+    : []
+  // The training dataset's record count is resolved by the backend (not in the
+  // config), so the user always sees how many records they're about to train on.
+  if (action.jobType === "training" && typeof action.dataRecordCount === "number") {
+    summary.push(["Training records", action.dataRecordCount.toLocaleString()])
+  }
 
   return (
     <Card className="border-primary/30 bg-primary/5 overflow-hidden">

@@ -21,6 +21,7 @@ function ChatPanelContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     thinkingStep,
     confirmAction,
     rejectAction,
@@ -53,7 +54,9 @@ function ChatPanelContent() {
   return (
     <>
       <SheetHeader className="border-b p-4">
-        <SheetTitle>Chat</SheetTitle>
+        <div className="flex items-center justify-between">
+          <SheetTitle>Chat</SheetTitle>
+        </div>
       </SheetHeader>
       <PlanProgress plan={phasePlan} />
       <SessionStatusBanner
@@ -72,7 +75,15 @@ function ChatPanelContent() {
         onRejectAction={rejectAction}
         onJobComplete={notifyJobComplete}
       />
-      <ChatInput onSend={handleOptionSelect} disabled={isStreaming} />
+      <ChatInput
+        onSend={handleOptionSelect}
+        disabled={isStreaming}
+        placeholder={
+          jobInFlight
+            ? "A job is running — Morty will continue when it finishes…"
+            : undefined
+        }
+      />
     </>
   )
 }
