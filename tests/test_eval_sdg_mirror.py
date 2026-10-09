@@ -120,7 +120,9 @@ class _FakeRepo:
         self._jobs = jobs_by_id
 
     async def get_job(self, job_id: str):
-        return self._jobs.get(job_id)
+        row = self._jobs.get(job_id)
+        # Real rows always carry their own id; the fixtures key by it, so mirror that.
+        return {"id": job_id, **row} if row is not None else None
 
 
 @pytest.fixture
@@ -136,8 +138,8 @@ class TestTrainingSdgMirrorWarning:
     async def test_warns_on_divergent_teacher_and_prompt(self, patch_repo) -> None:
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": _sdg_cfg("gpt-oss", "author", "assess RFE")},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": _sdg_cfg("gpt-oss", "author", "assess RFE")},
                 "eval-sdg": {"config": _sdg_cfg("gpt-4o-mini", "author", "prior batch")},
             }
         )
@@ -162,8 +164,8 @@ class TestTrainingSdgMirrorWarning:
         eval_cfg["document_ids"] = ["doc-9"]
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": train},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": train},
                 "eval-sdg": {"config": eval_cfg},
             }
         )
@@ -180,8 +182,8 @@ class TestTrainingSdgMirrorWarning:
         cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": cfg},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": cfg},
                 # fresh inputs only (same teacher + prompts) -> signatures match
                 "eval-sdg": {"config": {**cfg, "num_records": 40}},
             }
@@ -194,9 +196,7 @@ class TestTrainingSdgMirrorWarning:
     @pytest.mark.asyncio
     async def test_silent_when_not_for_a_trained_model(self, patch_repo) -> None:
         patch_repo({})  # no training_job_id -> never resolves lineage
-        warnings = await jobs._training_sdg_mirror_warning(
-            {}, "eval-sdg", db=None
-        )
+        warnings = await jobs._training_sdg_mirror_warning({}, "eval-sdg", db=None)
         assert warnings == []
 
     @pytest.mark.asyncio
@@ -231,8 +231,8 @@ class TestCloneSdgConfigForEval:
         cfg["processors"] = [{"processor_type": "schema_transform"}]
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": cfg},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": cfg},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
@@ -246,9 +246,7 @@ class TestCloneSdgConfigForEval:
         assert result.config["processors"] == cfg["processors"]
 
     @pytest.mark.asyncio
-    async def test_carries_constraints_tool_configs_drops_non_recipe(
-        self, patch_repo
-    ) -> None:
+    async def test_carries_constraints_tool_configs_drops_non_recipe(self, patch_repo) -> None:
         # Full-recipe copy: recipe-defining fields the old allowlist dropped
         # (constraints, tool_configs) must carry over, while non-recipe fields
         # (parent_job_id lineage, mode) must NOT.
@@ -259,8 +257,8 @@ class TestCloneSdgConfigForEval:
         cfg["mode"] = "preview"
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": cfg},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": cfg},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
@@ -277,8 +275,8 @@ class TestCloneSdgConfigForEval:
         cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": cfg},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": cfg},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
@@ -294,8 +292,8 @@ class TestCloneSdgConfigForEval:
         cfg["document_ids"] = ["doc-1", "doc-2"]
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": cfg},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": cfg},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
@@ -311,8 +309,8 @@ class TestCloneSdgConfigForEval:
         cfg = _sdg_cfg("gpt-oss", "author", "assess RFE")
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": json.dumps(cfg)},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": json.dumps(cfg)},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=25)
@@ -346,8 +344,8 @@ class TestCloneSdgConfigForEval:
 
         patch_repo(
             {
-                "train-job": {"parent_job_id": "train-sdg"},
-                "train-sdg": {"config": {}},
+                "train-job": {"type": "training", "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "config": {}},
             }
         )
         req = jobs.CloneSdgForEvalRequest(training_job_id="train-job", num_records=40)
@@ -407,8 +405,8 @@ class TestEvalOverlapWarning:
     async def test_warns_on_reused_inputs(self, patch) -> None:
         patch(
             {
-                "train-job": {"config": {}, "parent_job_id": "train-sdg"},
-                "train-sdg": {"mlflow_run_id": "run-train"},
+                "train-job": {"type": "training", "config": {}, "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "mlflow_run_id": "run-train"},
                 "eval-sdg": {"mlflow_run_id": "run-eval"},
             },
             {"run-train": {"a", "b"}, "run-eval": {"a", "c"}},  # 'a' reused
@@ -422,8 +420,8 @@ class TestEvalOverlapWarning:
     async def test_silent_on_fresh_eval_set(self, patch) -> None:
         patch(
             {
-                "train-job": {"config": {}, "parent_job_id": "train-sdg"},
-                "train-sdg": {"mlflow_run_id": "run-train"},
+                "train-job": {"type": "training", "config": {}, "parent_job_id": "train-sdg"},
+                "train-sdg": {"type": "sdg", "mlflow_run_id": "run-train"},
                 "eval-sdg": {"mlflow_run_id": "run-eval"},
             },
             {"run-train": {"a", "b"}, "run-eval": {"c", "d"}},
@@ -486,8 +484,8 @@ class TestEvalOverlapWarning:
             "Repository",
             lambda _db: _FakeRepo(
                 {
-                    "train-job": {"config": {}, "parent_job_id": "train-sdg"},
-                    "train-sdg": {"mlflow_run_id": "run-train"},
+                    "train-job": {"type": "training", "config": {}, "parent_job_id": "train-sdg"},
+                    "train-sdg": {"type": "sdg", "mlflow_run_id": "run-train"},
                     "eval-sdg": {"mlflow_run_id": "run-eval"},
                 }
             ),

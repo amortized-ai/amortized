@@ -32,14 +32,21 @@ import it. The DB status check itself stays in the callers; this module only own
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 # A referenced upstream job counts as ready only once it reaches this status.
 READY_STATUS = "succeeded"
+
+# Job types that materialize a dataset artifact in MLflow (the thing a downstream
+# training/eval job downloads). The dataset edge (parent_job_id) resolves to one of
+# these. One place owns the fact, shared by the create-time resolvers and the worker's
+# parent-artifact download.
+DATASET_PRODUCER_TYPES = frozenset({"sdg", "upload"})
 
 
 @dataclass(frozen=True)
@@ -194,6 +201,68 @@ def pipeline_order() -> list[str]:
     for jt in PIPELINE:
         visit(jt)
     return order
+
+
+# ---------------------------------------------------------------------------
+# Ancestry traversal (walk the graph upstream)
+# ---------------------------------------------------------------------------
+
+# A fetch callable maps a job id to its row (or None). Injected so this module stays
+# DB-free; the API routes and worker pass a Repository-backed lookup (e.g. repo.get_job).
+JobFetch = Callable[[str], Awaitable[Mapping[str, Any] | None]]
+
+
+def _coerce_config(cfg: Any) -> Mapping[str, Any]:
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except ValueError:
+            return {}
+    return cfg if isinstance(cfg, Mapping) else {}
+
+
+def job_ref(job: Mapping[str, Any], field: str) -> str:
+    """Read an upstream-reference field from a job row, whether it lives as a top-level
+    column (``parent_job_id``) or inside the config JSON (``training_job_id``,
+    ``data_run_id``). One reader so callers stop special-casing where an id is stored."""
+    val = job.get(field)
+    if not val:
+        val = _coerce_config(job.get("config")).get(field)
+    return str(val or "")
+
+
+async def ancestors(
+    job: Mapping[str, Any], fetch: JobFetch, *, _seen: set[str] | None = None
+) -> AsyncIterator[Mapping[str, Any]]:
+    """Yield each upstream job once, following every declared gated edge of each node's
+    type, depth-first and cycle-safe. Replaces the one-hop, per-call-site parent walks:
+    the chain (eval → training → sdg) is traversed in full. ``job`` is a job row;
+    ``fetch(id)`` resolves an id to a row (or None)."""
+    seen = _seen if _seen is not None else set()
+    for up in upstreams(str(job.get("type") or "")):
+        up_id = job_ref(job, up.field)
+        if not up_id or up_id in seen:
+            continue
+        seen.add(up_id)
+        parent = await fetch(up_id)
+        if parent is None:
+            continue
+        yield parent
+        async for a in ancestors(parent, fetch, _seen=seen):
+            yield a
+
+
+async def nearest_ancestor(
+    job: Mapping[str, Any], job_types: str | Collection[str], fetch: JobFetch
+) -> Mapping[str, Any] | None:
+    """The closest upstream job whose type is in ``job_types`` (multi-hop), or None.
+    e.g. ``nearest_ancestor(eval, "sdg", fetch)`` finds the eval's dataset SDG even if
+    it is reached through the training job."""
+    wanted = {job_types} if isinstance(job_types, str) else set(job_types)
+    async for a in ancestors(job, fetch):
+        if str(a.get("type") or "") in wanted:
+            return a
+    return None
 
 
 # ---------------------------------------------------------------------------
