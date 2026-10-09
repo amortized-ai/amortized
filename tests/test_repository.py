@@ -173,6 +173,53 @@ class TestJobCRUD:
         assert await repo.delete_job("nonexistent") is False
 
     @pytest.mark.asyncio
+    async def test_find_job_by_id_prefix_unique_hit(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="abc12345-aaaa",
+            job_type=JobType.training,
+            config={},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        await repo.create_job(
+            job_id="def67890-bbbb",
+            job_type=JobType.sdg,
+            config={},
+            created_at="2026-01-01T00:00:01+00:00",
+        )
+        found = await repo.find_job_by_id_prefix("abc12345")
+        assert found is not None
+        assert found["id"] == "abc12345-aaaa"
+
+    @pytest.mark.asyncio
+    async def test_find_job_by_id_prefix_no_match(self, repo: Repository) -> None:
+        await repo.create_job(
+            job_id="abc12345-aaaa",
+            job_type=JobType.training,
+            config={},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        assert await repo.find_job_by_id_prefix("zzzz") is None
+
+    @pytest.mark.asyncio
+    async def test_find_job_by_id_prefix_ambiguous_returns_none(
+        self, repo: Repository
+    ) -> None:
+        # Two jobs share the prefix — ambiguous, so it cannot resolve to one job.
+        await repo.create_job(
+            job_id="shared01-aaaa",
+            job_type=JobType.training,
+            config={},
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+        await repo.create_job(
+            job_id="shared01-bbbb",
+            job_type=JobType.sdg,
+            config={},
+            created_at="2026-01-01T00:00:01+00:00",
+        )
+        assert await repo.find_job_by_id_prefix("shared01") is None
+
+    @pytest.mark.asyncio
     async def test_list_jobs_with_both_filters(self, repo: Repository) -> None:
         await repo.create_job(
             job_id="f1",
