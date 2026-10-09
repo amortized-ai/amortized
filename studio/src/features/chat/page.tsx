@@ -35,6 +35,7 @@ function ChatContent() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     chatState,
     error,
     thinkingStep,
@@ -77,6 +78,11 @@ function ChatContent() {
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
         disabled={isStreaming}
+        placeholder={
+          jobInFlight
+            ? "A job is running — Morty will continue when it finishes…"
+            : undefined
+        }
       />
       {chatState === "error" && (
         <Alert variant="destructive">
@@ -301,10 +307,12 @@ export default function ChatPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button size="sm" variant="outline" onClick={handleNewConversation} className="rounded-lg transition-all duration-300 hover:shadow-sm hover:-translate-y-px">
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            New
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={handleNewConversation} className="rounded-lg transition-all duration-300 hover:shadow-sm hover:-translate-y-px">
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              New
+            </Button>
+          </div>
         </div>
         <ChatContent key={currentConversationId ?? "empty"} />
       </div>

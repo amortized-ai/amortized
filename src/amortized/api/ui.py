@@ -2,12 +2,55 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import re
+from typing import Any, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+# A leading number with an optional magnitude suffix: '128k', '1.5M', '131072'.
+_INT_RE = re.compile(r"(-?\d+(?:\.\d+)?)\s*([kKmMgG])?")
+_SUFFIX_MULTIPLIER = {"k": 1_000, "m": 1_000_000, "g": 1_000_000_000}
+
+
+def _coerce_number(value: Any) -> Any:
+    """Pull a leading number out of a string like '$0.037', '0.17/1M tokens'.
+
+    The pricing card is a display-only convenience; an agent that passes a cost as
+    a formatted string (observed with GLM) should still render the card rather than
+    hard-fail validation. Only a leading number (optionally after a currency symbol)
+    is coerced — we don't dig a number out of arbitrary prose, so non-numeric input
+    passes through untouched and pydantic reports a normal error for it.
+    """
+    if isinstance(value, str):
+        stripped = value.replace(",", "").strip().lstrip("$€£ ")
+        match = _NUM_RE.match(stripped)
+        if match:
+            return match.group(0)
+    return value
+
+
+def _coerce_context_length(value: Any) -> Any:
+    """Coerce a context-window string to an int, tolerating magnitude suffixes and
+    whole-number floats: '128k' -> 128000, '1.5M' -> 1500000, '131072.0' -> 131072.
+
+    context_length is an INTEGER field, so the float-tolerant _coerce_number is wrong
+    for it — it would truncate '128k' to 128 and leave '131072.0' as a string that
+    then 422s on int coercion (the very hard-fail the coercion exists to avoid). Like
+    _coerce_number this is a display-only best-effort: unparseable input passes through
+    untouched for pydantic to report normally.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.replace(",", "").strip()
+    match = _INT_RE.match(stripped)
+    if not match:
+        return value
+    number, suffix = match.group(1), match.group(2)
+    return int(float(number) * _SUFFIX_MULTIPLIER.get((suffix or "").lower(), 1))
 
 
 class OptionItem(BaseModel):
@@ -35,11 +78,26 @@ class PresentOptionsRequest(BaseModel):
     )
 
 
+_PRESENT_OPTIONS_HALT = (
+    "You have presented this question to the user. STOP NOW — this ENDS your turn."
+    " Do NOT call any more tools (no further present_options, show_prompt,"
+    " validate_*, create_*, or any read), and write no more text. Wait for the"
+    " user's selection; act on it in your NEXT turn."
+)
+
+
 class PresentOptionsResponse(BaseModel):
     step: str
     question: str
     options: list[OptionItem]
     rendered: bool = Field(True, description="Indicates the frontend rendered these as cards")
+    # Authoritative server directive the model reads in the tool result. The system
+    # prompt already says "ask one question, then wait", but weaker drivers batch
+    # several present_options + a validate_* into one turn and never wait; a tool
+    # result outranks the prompt, so repeat the stop here. As a backstop the proxy's
+    # _enforce_single_interaction keeps this turn's passive content but strips any
+    # additional interactions (other present_options / validate_*) from it (agent.py).
+    agent_instruction: str = Field(default=_PRESENT_OPTIONS_HALT, exclude=False)
 
 
 @router.post(
@@ -50,15 +108,102 @@ class PresentOptionsResponse(BaseModel):
         "Render clickable option cards in the chat UI. EVERY message that asks a question "
         "or offers choices MUST use this tool — do NOT write numbered lists. Call once per "
         "message, then STOP and wait for the user to respond. Do NOT call this tool after "
-        "submitting a job — the UI renders a job monitor card automatically."
+        "submitting a job — the UI renders a job monitor card automatically. Do NOT call it "
+        "after validate_* either — the confirmation card already has its own Confirm/Cancel, "
+        "so a 'confirm?' question under it is redundant and will be dropped."
     ),
 )
 async def present_options(body: PresentOptionsRequest) -> PresentOptionsResponse:
     return PresentOptionsResponse(
         step=body.step,
         question=body.question,
-        options=body.options,
+        options=_dedup_options(body.options),
         rendered=True,
+    )
+
+
+def _dedup_options(options: list[OptionItem]) -> list[OptionItem]:
+    """Drop duplicate option cards within a single call.
+
+    A model under protocol stress sometimes lists the same choice twice (same
+    click-text), which renders as redundant cards the user cannot tell apart. Dedup
+    by the click `value` — the choice's identity — preserving first-seen order. We
+    deliberately do NOT dedup by `title`: titles are 1-3 word labels, so two
+    genuinely different choices can share one (e.g. two base models both labelled
+    "8B" with different `value`s), and dropping the second would make it
+    unselectable. Title is used only as the identity when an option has no `value`.
+    (Cross-turn re-asking of an identical option set is a separate, client-side
+    concern — these cards are rendered from the session message history, not this
+    response alone.)
+    """
+    seen: set[str] = set()
+    deduped: list[OptionItem] = []
+    for opt in options:
+        key = opt.value.strip().lower() or f"title:{opt.title.strip().lower()}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(opt)
+    return deduped
+
+
+class ShowPromptRequest(BaseModel):
+    title: str = Field(
+        "System prompt",
+        description="Short card heading (e.g. 'Assessor system prompt')",
+    )
+    prompt: str = Field(
+        ...,
+        description="The FULL prompt text to display verbatim for the user to review",
+        min_length=1,
+    )
+    purpose: str = Field(
+        "",
+        description="One-line note on what the prompt is used for (optional)",
+    )
+
+
+_SHOW_PROMPT_REVIEW = (
+    "The prompt is now shown for review. Do NOT submit or confirm a job in this"
+    " same turn (no validate_*/create_*) — the user must review this prompt first,"
+    " because it ships in the training data. Ask them to approve it or request"
+    " edits (present_options), then STOP and wait; build/confirm the job in your"
+    " NEXT turn, after they approve."
+)
+
+
+class ShowPromptResponse(BaseModel):
+    title: str
+    prompt: str
+    purpose: str
+    rendered: bool = Field(True)
+    # Server directive the model reads in the tool result. A weaker driver shows
+    # the assessor prompt and stacks a validate_* confirm card under it in the same
+    # turn, so the user confirms the job before reviewing the prompt. A tool result
+    # outranks the system prompt; the proxy also drops the stacked confirm card as
+    # a backstop (see _enforce_single_interaction in agent.py).
+    agent_instruction: str = Field(default=_SHOW_PROMPT_REVIEW, exclude=False)
+
+
+@router.post(
+    "/show_prompt",
+    response_model=ShowPromptResponse,
+    operation_id="show_prompt",
+    summary=(
+        "Render a prompt in a review card in the chat UI. Call this with the "
+        "FULL prompt text WHENEVER you ask the user to review or approve a "
+        "prompt (e.g. a generated system/assessor prompt) — the prompt text is "
+        "otherwise never shown to the user. Never say 'here is the prompt' or "
+        "'the prompt above' without calling this tool in the same response."
+    ),
+)
+async def show_prompt(body: ShowPromptRequest) -> ShowPromptResponse:
+    return ShowPromptResponse(
+        title=body.title,
+        prompt=body.prompt,
+        purpose=body.purpose,
+        rendered=True,
+        agent_instruction=_SHOW_PROMPT_REVIEW,
     )
 
 
@@ -68,6 +213,16 @@ class ModelPricingItem(BaseModel):
     prompt_cost_per_1m: float = Field(..., description="Input cost per 1M tokens")
     completion_cost_per_1m: float = Field(..., description="Output cost per 1M tokens")
     context_length: int = Field(0, description="Context window size")
+
+    @field_validator("prompt_cost_per_1m", "completion_cost_per_1m", mode="before")
+    @classmethod
+    def _accept_numeric_strings(cls, value: Any) -> Any:
+        return _coerce_number(value)
+
+    @field_validator("context_length", mode="before")
+    @classmethod
+    def _accept_context_length_strings(cls, value: Any) -> Any:
+        return _coerce_context_length(value)
 
 
 class ShowModelPricingRequest(BaseModel):
@@ -131,7 +286,8 @@ class SignalPhaseRequest(BaseModel):
         ...,
         description=(
             "Current workflow phase: 'sdg' for data generation workflows, "
-            "'training' for model training workflows"
+            "'training' for model training workflows, 'eval' for model "
+            "evaluation workflows"
         ),
     )
     step: str = Field(
@@ -161,9 +317,9 @@ class SignalPhaseResponse(BaseModel):
     operation_id="signal_phase",
     summary=(
         "Update the UI progress bar. You MUST call this once on every response "
-        "during an SDG or training workflow. Set phase to 'sdg' or 'training' "
-        "based on the current workflow. Call once per response at the current "
-        "step — do not batch or skip."
+        "during an SDG, training, or eval workflow. Set phase to 'sdg', "
+        "'training', or 'eval' based on the current workflow. Call once per "
+        "response at the current step — do not batch or skip."
     ),
 )
 async def signal_phase(body: SignalPhaseRequest) -> SignalPhaseResponse:

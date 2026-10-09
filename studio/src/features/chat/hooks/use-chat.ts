@@ -108,6 +108,7 @@ const UI_TOOLS = new Set([
   "signal_phase",
   "get_model_pricing",
   "show_model_pricing",
+  "show_prompt",
   "estimate_training_resources",
   "show_vram_estimate",
   "submit_recipe_job",
@@ -158,7 +159,14 @@ function extractSessionData(
     ? sessionMessages.slice(lastUserIdx + 1)
     : sessionMessages
 
-  for (const msg of sessionMessages) {
+  // signal_phase drives the progress bar, so only collect it from the CURRENT
+  // turn — not the whole session history. Each get_session_messages fetch builds
+  // one assistant message; scanning all history re-attributes a session's first
+  // phase signal to its latest turn. When control returns to the orchestrator
+  // after the subagents finish, that would re-emit the orchestrator's stale
+  // opening phase (e.g. training) as the last signal, snapping the bar back from
+  // Evaluation. The turn's own phase is the one it signalled this turn.
+  for (const msg of currentTurnMessages) {
     const info = (msg as unknown as Record<string, unknown>).info as Record<string, unknown> | undefined
     if (info?.role !== "assistant") continue
 
@@ -184,12 +192,15 @@ function extractSessionData(
         textParts.push(part.text)
       } else if (part.type === "tool") {
         const name = normalizeToolName(part.tool ?? "")
-        // Validate tools legitimately fire multiple times in one turn —
-        // the agent fixes a validation error and re-validates. Dropping
-        // the retry (the default dedup) keeps only the ERRORED result,
-        // which kills the confirmation card. The card builder below picks
-        // the last result that actually parses as a valid config.
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name.startsWith("validate_")
+        // Some tools legitimately fire multiple times in one turn, so the
+        // default by-name dedup would wrongly drop a result:
+        //  - validate/create retries: the agent fixes a validation error and
+        //    re-validates; keeping only the ERRORED result kills the card
+        //    (the card builder below picks the last result that parses).
+        //  - show_prompt: the agent may review several DISTINCT prompts in one
+        //    turn (e.g. a ticket prompt and an assessor prompt); each must be
+        //    rendered, not collapsed to the first.
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name === "show_prompt" || name.startsWith("validate_")
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -226,6 +237,9 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         config: validated.config,
         parentJobId: validated.parentJobId,
         recipe: validated.recipe,
+        dataRecordCount: validated.dataRecordCount,
+        assessorPrompt: validated.assessorPrompt,
+        prompts: validated.prompts,
       }
     }
   }
@@ -243,6 +257,49 @@ function extractPhase(toolResults: ToolResult[]): string | undefined {
     if (p?.phase) return p.step ? `${p.phase}:${p.step}` : p.phase
   } catch { /* ignore */ }
   return undefined
+}
+
+// Stable signature of a turn's present_options card: the question plus its option
+// click-values, lowercased and order-independent. null when the turn has no
+// present_options. Lets us tell "the model re-asked the exact same thing" apart
+// from a legitimately different prompt.
+function presentOptionsSignature(toolResults: ToolResult[]): string | null {
+  const tool = toolResults.find((t) => t.name === "present_options")
+  if (!tool?.result) return null
+  try {
+    const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+    if (!parsed?.options || !Array.isArray(parsed.options)) return null
+    const values = (parsed.options as { title?: string; value?: string }[])
+      .map((o) => (o.value ?? o.title ?? "").trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+    if (values.length === 0) return null
+    const question = typeof parsed.question === "string" ? parsed.question.trim().toLowerCase() : ""
+    return `${question}||${values.join("|")}`
+  } catch {
+    return null
+  }
+}
+
+// Morty under protocol stress sometimes re-asks a question it just asked, with the
+// same options, rendering a duplicate card. If this turn's present_options is
+// identical to the previous populated assistant turn's, drop it — the earlier card
+// is still on screen and clickable. Only consecutive repeats are suppressed (a
+// later context change may legitimately re-surface the same choice), and every
+// other tool result (job cards, phase signals) is kept intact.
+function dedupeConsecutiveOptions(convId: string, toolResults: ToolResult[]): ToolResult[] {
+  const sig = presentOptionsSignature(toolResults)
+  if (!sig) return toolResults
+  const msgs = useChatStore.getState().getConversationMessages(convId)
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]!
+    if (m.role !== "assistant") continue
+    // Skip the current turn's empty placeholder assistant message.
+    if (!m.content && (m.toolResults?.length ?? 0) === 0) continue
+    const prevSig = presentOptionsSignature(m.toolResults ?? [])
+    return prevSig === sig ? toolResults.filter((t) => t.name !== "present_options") : toolResults
+  }
+  return toolResults
 }
 
 function startThinkingTimer(
@@ -469,16 +526,17 @@ export function useChat() {
         for (const response of pending) {
           const parsed = parseOpenCodeResponse(response)
           const session = extractSessionData([response], parsed.toolResults)
-          const proposedAction = buildProposedAction(session.tools)
+          const pendingToolResults = dedupeConsecutiveOptions(convId, session.tools)
+          const proposedAction = buildProposedAction(pendingToolResults)
 
           addMessage(convId, {
             id: generateId(),
             role: "assistant",
             content: session.text || parsed.content,
             timestamp: new Date().toISOString(),
-            toolResults: session.tools,
+            toolResults: pendingToolResults,
             proposedAction,
-            phase: extractPhase(session.tools),
+            phase: extractPhase(pendingToolResults),
           })
         }
       } catch {
@@ -516,7 +574,18 @@ export function useChat() {
       const convId = existingConvId ?? `conv-${Date.now()}`
       const isNewConversation = !existingConvId
 
-      if (chatState === "streaming" || _sendLock.has(convId)) return
+      // Sequential model: while a job is running (its monitor card is progressing),
+      // block all new user input — typed messages and option picks (which route
+      // through here) alike. The input is visually disabled too, but guard the logic
+      // so no raced/programmatic send reaches Morty mid-job. The job_complete
+      // continuation uses its own path and stays exempt, so it can clear the lock.
+      if (
+        chatState === "streaming" ||
+        _sendLock.has(convId) ||
+        useChatStore.getState().getJobInFlight(convId)
+      ) {
+        return
+      }
       _sendLock.add(convId)
 
       const assistantId = generateId()
@@ -592,7 +661,7 @@ export function useChat() {
           const parsed = parseOpenCodeResponse(response)
           const sessionMessages = await fetchSessionMessages(convId)
           const session = extractSessionData(sessionMessages, parsed.toolResults)
-          const toolResults = session.tools
+          const toolResults = dedupeConsecutiveOptions(convId, session.tools)
           const responseContent = session.text || parsed.content
 
           if (toolResults.length > 0) {
@@ -694,25 +763,12 @@ export function useChat() {
         toolResults: [...(actionMsg.toolResults ?? []), jobToolResult],
       })
 
-      const sessionId = store.getSessionId(convId)
-      if (sessionId) {
-        try {
-          const resp = await fetch(`${getBaseUrl()}/agent/session/${sessionId}/message`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              agent: "morty",
-              parts: [{ type: "text", text: `Job confirmed and submitted. Job ID: ${job.id} (${jobType} job, status: ${job.status})` }],
-            }),
-          })
-          if (!resp.ok) {
-            logger.warn("morty notification failed", { status: resp.status })
-          }
-        } catch (notifyErr) {
-          logger.warn("morty notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
-        }
-      }
-
+      // Sequential model: do NOT notify Morty that the job was submitted. Any message
+      // here wakes Morty mid-job and it chatters ("I'll monitor… nothing needed from
+      // you until then") — a promise pull-based continuation can't keep. Leave Morty
+      // idle; the user sees the submission via the job-monitor card. The lineage this
+      // POST used to carry (the real job id) is folded into the single job_complete
+      // wake (processJobNotifyQueue), which is the only point Morty needs it.
       setChatState("done")
     } catch (err) {
       useChatStore.getState().setJobInFlight(convId, false)
@@ -753,6 +809,11 @@ export function useChat() {
 
   const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string }>>([])
   const jobNotifyRunningRef = useRef(false)
+  // Per-job attempt count that PERSISTS across notify calls (the in-loop
+  // consecutiveFailures resets each drain). A continuation that keeps failing is
+  // capped here so a re-fired notification can't retry the same job forever.
+  const jobNotifyAttemptsRef = useRef<Map<string, number>>(new Map())
+  const MAX_JOB_ATTEMPTS = 3
 
   const processJobNotifyQueue = useCallback(async () => {
     if (jobNotifyRunningRef.current) return
@@ -802,25 +863,31 @@ export function useChat() {
       try {
         const response = await sendOpenCodeMessage(
           convId,
-          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          `The ${jobType} job you set up (id ${jobId}) has finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          undefined,
+          "job_complete",
+          status,
         )
 
         const parsed = parseOpenCodeResponse(response)
         const sessionMessages = await fetchSessionMessages(convId)
         const session = extractSessionData(sessionMessages, parsed.toolResults)
+        const notifyToolResults = dedupeConsecutiveOptions(convId, session.tools)
         // A job-finished turn may self-heal and re-validate (e.g. a failed job
         // whose config the agent then fixes), so it can carry a confirmation card.
-        const proposedAction = buildProposedAction(session.tools)
+        const proposedAction = buildProposedAction(notifyToolResults)
 
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: session.text || parsed.content,
-          toolResults: session.tools,
+          toolResults: notifyToolResults,
           proposedAction,
-          phase: extractPhase(session.tools),
+          phase: extractPhase(notifyToolResults),
+          terminal: true,
         })
 
         _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
+        jobNotifyAttemptsRef.current.delete(jobId)
         setChatState(proposedAction ? "action_pending" : "done")
         consecutiveFailures = 0
       } catch (err) {
@@ -830,7 +897,15 @@ export function useChat() {
         })
         setChatState("done")
         consecutiveFailures++
-        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+        const attempts = (jobNotifyAttemptsRef.current.get(jobId) ?? 0) + 1
+        jobNotifyAttemptsRef.current.set(jobId, attempts)
+        // Give up on a persistently-failing job: mark it notified so a re-fired
+        // notification (watcher or poll) doesn't re-enqueue and retry it forever.
+        if (attempts >= MAX_JOB_ATTEMPTS) {
+          useChatStore.getState().addNotifiedJob(convId, jobId)
+          jobNotifyAttemptsRef.current.delete(jobId)
+        }
+        logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
       } finally {
         _sendLock.delete(convId)
       }
@@ -856,11 +931,24 @@ export function useChat() {
 
   useEffect(() => {
     if (!jobInFlight || !currentConversationId) return
-    const timeout = setTimeout(() => {
-      logger.warn("jobInFlight auto-expired after timeout", { convId: currentConversationId })
+    const clear = (reason: string) => {
+      logger.warn(`jobInFlight cleared (${reason})`, { convId: currentConversationId })
       useChatStore.getState().setJobInFlight(currentConversationId, false)
-    }, 30 * 60 * 1000)
-    return () => clearTimeout(timeout)
+    }
+    // Clear the input lock when the user comes back to the tab — if the completion
+    // notification never arrived (tab was closed, server restarted), a returning user
+    // should be able to type immediately rather than wait out the fallback. The backend
+    // stage-gate (agent proxy) still blocks any premature forward step, so unlocking
+    // early is safe.
+    const onFocus = () => clear("window focus")
+    window.addEventListener("focus", onFocus)
+    // Shortened fallback (was 30m) so the lock self-releases promptly even if the user
+    // never refocuses the tab.
+    const timeout = setTimeout(() => clear("timeout"), 5 * 60 * 1000)
+    return () => {
+      window.removeEventListener("focus", onFocus)
+      clearTimeout(timeout)
+    }
   }, [jobInFlight, currentConversationId])
 
   const isStreaming = chatState === "streaming" || chatState === "tool_call" || jobInFlight
@@ -872,6 +960,7 @@ export function useChat() {
     sendMessage,
     selectOption,
     isStreaming,
+    jobInFlight,
     error,
     chatState,
     currentToolCall,
