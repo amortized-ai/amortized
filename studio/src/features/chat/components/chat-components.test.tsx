@@ -378,6 +378,28 @@ describe("MessageBubble — structured option cards", () => {
     expect(screen.queryAllByRole("button")).toHaveLength(0)
     expect(document.querySelector(".thinking-dot")).not.toBeNull()
   })
+
+  it("renders every show_prompt review card in a turn, not just the first", () => {
+    // The agent may review two distinct prompts in one turn (e.g. a ticket prompt and
+    // an assessor prompt). Both must render — not collapse to the first by tool name.
+    const toolResults = [
+      {
+        name: "show_prompt",
+        result: JSON.stringify({ title: "Ticket prompt", prompt: "Generate a support ticket." }),
+        collapsed: true,
+      },
+      {
+        name: "show_prompt",
+        result: JSON.stringify({ title: "Assessor prompt", prompt: "Score the ticket 0-10." }),
+        collapsed: true,
+      },
+    ]
+    render(<MessageBubble message={makeMsg("Review these:", toolResults)} />, { wrapper: Wrapper })
+    expect(screen.getByText("Ticket prompt")).toBeInTheDocument()
+    expect(screen.getByText("Assessor prompt")).toBeInTheDocument()
+    expect(screen.getByText("Generate a support ticket.")).toBeInTheDocument()
+    expect(screen.getByText("Score the ticket 0-10.")).toBeInTheDocument()
+  })
 })
 
 describe("MessageBubble — split_dataset monitor card", () => {

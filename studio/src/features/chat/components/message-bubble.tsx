@@ -9,6 +9,7 @@ import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
 import { ModelPricingCard } from "./model-pricing-card"
 import { VRAMEstimateCard } from "./vram-estimate-card"
+import { PromptReviewCard } from "./prompt-review-card"
 import { JobMonitorCard } from "./job-monitor-card"
 import { ThinkingSteps } from "./thinking-steps"
 import { extractJobInfo } from "../utils/parse-tool-result"
@@ -113,6 +114,19 @@ export function MessageBubble({
     return null
   }, [isUser, message.toolResults])
 
+  const promptReviews = useMemo(() => {
+    if (isUser) return []
+    const reviews: Array<{ title?: string; prompt: string; purpose?: string }> = []
+    for (const tool of message.toolResults) {
+      if (tool.name !== "show_prompt" || !tool.result) continue
+      try {
+        const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+        if (parsed?.prompt && typeof parsed.prompt === "string") reviews.push(parsed)
+      } catch { /* ignore parse errors */ }
+    }
+    return reviews
+  }, [isUser, message.toolResults])
+
   const visibleToolResults = useMemo(() => {
     const hidden = new Set<string>([
       "signal_phase",
@@ -128,9 +142,10 @@ export function MessageBubble({
       hidden.add("estimate_training_resources")
       hidden.add("show_vram_estimate")
     }
+    if (promptReviews.length > 0) hidden.add("show_prompt")
     if (structuredOptions) hidden.add("present_options")
     return message.toolResults.filter((t) => !hidden.has(t.name))
-  }, [message.toolResults, modelPricing, vramEstimate, structuredOptions])
+  }, [message.toolResults, modelPricing, vramEstimate, promptReviews, structuredOptions])
 
   // Some models (e.g. gpt-5.x) put their prose in the present_options `question` field and
   // return an empty final-answer text, so surface the question when there's no text content.
@@ -149,6 +164,7 @@ export function MessageBubble({
     visibleToolResults.length > 0 ||
     !!modelPricing ||
     !!vramEstimate ||
+    promptReviews.length > 0 ||
     (!!message.proposedAction && !!onConfirmAction && !!onRejectAction)
 
   return (
@@ -199,6 +215,12 @@ export function MessageBubble({
             </div>
           )
         )}
+
+        {promptReviews.map((review, i) => (
+          <div key={`prompt-review-${i}`} className="mt-3">
+            <PromptReviewCard data={review} />
+          </div>
+        ))}
 
         {modelPricing && (
           <div className="mt-3">

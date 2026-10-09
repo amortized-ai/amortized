@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { unwrapToolResult, extractJobInfo } from "./parse-tool-result"
+import {
+  unwrapToolResult,
+  extractJobInfo,
+  extractValidatedJobConfig,
+} from "./parse-tool-result"
 
 describe("unwrapToolResult", () => {
   it("parses a plain JSON object string", () => {
@@ -67,5 +71,46 @@ describe("extractJobInfo", () => {
 
   it("returns null jobId when no UUID found", () => {
     expect(extractJobInfo("some random text")).toEqual({ jobId: null, jobType: "SDG" })
+  })
+})
+
+describe("extractValidatedJobConfig", () => {
+  it("extracts all reviewable prompts (ticket + assessor), not just the assessor", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({
+        valid: true,
+        job_type: "sdg",
+        config: { columns: [] },
+        assessor_prompt: "ASSESS",
+        prompts: [
+          { role: "input", label: "Ticket prompt", column: "generated_input", text: "TICKET" },
+          { role: "assessor", label: "Assessor system prompt", column: "output", text: "ASSESS" },
+        ],
+      }),
+    )
+    expect(validated?.prompts.map((p) => [p.role, p.text])).toEqual([
+      ["input", "TICKET"],
+      ["assessor", "ASSESS"],
+    ])
+    expect(validated?.assessorPrompt).toBe("ASSESS")
+  })
+
+  it("defaults prompts to an empty array when the field is absent", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({ valid: true, job_type: "sdg", config: {}, assessor_prompt: "X" }),
+    )
+    expect(validated?.prompts).toEqual([])
+  })
+
+  it("drops prompt entries that carry no text", () => {
+    const validated = extractValidatedJobConfig(
+      JSON.stringify({
+        valid: true,
+        job_type: "sdg",
+        config: {},
+        prompts: [{ role: "input", text: "" }, { role: "assessor", text: "ASSESS" }],
+      }),
+    )
+    expect(validated?.prompts.map((p) => p.text)).toEqual(["ASSESS"])
   })
 })

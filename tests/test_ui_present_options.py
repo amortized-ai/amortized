@@ -1,0 +1,153 @@
+"""Tests for the present_options intra-call dedup guard."""
+
+import asyncio
+from typing import Any
+
+import pytest
+from pydantic import ValidationError
+
+from amortized.api.ui import (
+    ModelPricingItem,
+    OptionItem,
+    PresentOptionsRequest,
+    ShowModelPricingRequest,
+    ShowPromptRequest,
+    SignalPhaseRequest,
+    _dedup_options,
+    present_options,
+    show_model_pricing,
+    show_prompt,
+    signal_phase,
+)
+
+
+def _run(coro: Any) -> Any:
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _opt(title: str, value: str) -> OptionItem:
+    return OptionItem(title=title, description="", value=value)
+
+
+def test_duplicate_value_removed() -> None:
+    opts = [_opt("Yes", "Yes, train it"), _opt("Yep", "yes, train it ")]
+    out = _dedup_options(opts)
+    assert len(out) == 1
+    assert out[0].title == "Yes"
+
+
+def test_distinct_values_sharing_a_title_are_both_kept() -> None:
+    # Short labels collide legitimately (e.g. two base models both labelled "8B").
+    # They differ by click `value`, so both must survive — dropping one would make
+    # it unselectable.
+    opts = [_opt("8B", "qwen-8b"), _opt("8B", "llama-8b")]
+    out = _dedup_options(opts)
+    assert [o.value for o in out] == ["qwen-8b", "llama-8b"]
+
+
+def test_valueless_options_dedup_by_title() -> None:
+    opts = [_opt("Skip", ""), _opt("skip", "  ")]
+    assert len(_dedup_options(opts)) == 1
+
+
+def test_distinct_options_preserved_in_order() -> None:
+    opts = [_opt("A", "do a"), _opt("B", "do b"), _opt("C", "do c")]
+    out = _dedup_options(opts)
+    assert [o.title for o in out] == ["A", "B", "C"]
+
+
+def test_endpoint_dedups() -> None:
+    body = PresentOptionsRequest(
+        step="s",
+        question="q?",
+        options=[_opt("Yes", "do it"), _opt("Yes", "do it")],
+    )
+    resp = _run(present_options(body))
+    assert len(resp.options) == 1
+
+
+def test_present_options_carries_halt_directive() -> None:
+    # The tool result must tell the model to end its turn, so a weaker driver
+    # can't batch more questions + a validate_* behind one present_options.
+    body = PresentOptionsRequest(step="s", question="q?", options=[_opt("Yes", "do it")])
+    resp = _run(present_options(body))
+    assert "STOP" in resp.agent_instruction
+    assert "NEXT turn" in resp.agent_instruction
+    dumped = resp.model_dump()
+    assert dumped["agent_instruction"] == resp.agent_instruction  # serialized to the model
+
+
+def test_show_prompt_echoes_full_text() -> None:
+    prompt = "You are an RFE assessor.\nScore 5 criteria, 7/10 PASS."
+    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt=prompt)))
+    assert resp.rendered is True
+    assert resp.prompt == prompt
+    assert resp.title == "Assessor prompt"
+
+
+def test_show_prompt_carries_review_first_directive() -> None:
+    # The tool result must tell the model to hold the job until the user reviews the
+    # prompt — a weaker driver otherwise stacks a validate_*/create_* in the same turn.
+    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt="x")))
+    assert "review" in resp.agent_instruction.lower()
+    assert "validate_" in resp.agent_instruction and "create_" in resp.agent_instruction
+    assert "STOP" in resp.agent_instruction
+    dumped = resp.model_dump()
+    assert dumped["agent_instruction"] == resp.agent_instruction  # serialized to the model
+
+
+def test_show_prompt_rejects_empty_prompt() -> None:
+    # min_length=1 guards against an empty review card (nothing for the user to approve).
+    with pytest.raises(ValidationError):
+        ShowPromptRequest(title="Assessor prompt", prompt="")
+
+
+def test_signal_phase_accepts_eval() -> None:
+    resp = _run(signal_phase(SignalPhaseRequest(phase="eval", step="review")))
+    assert resp.phase == "eval"
+    assert resp.step == "review"
+
+
+def test_show_model_pricing_coerces_formatted_numbers() -> None:
+    # An agent that passes costs as formatted strings should still render the card
+    # rather than 422 (observed with GLM dropping the pricing card on first try).
+    body = ShowModelPricingRequest(
+        models=[
+            ModelPricingItem(
+                model_id="openai/gpt-oss-120b",
+                name="gpt-oss",
+                prompt_cost_per_1m="$0.037",  # type: ignore[arg-type]
+                completion_cost_per_1m="0.17/1M tokens",  # type: ignore[arg-type]
+                context_length="131072",  # type: ignore[arg-type]
+            )
+        ]
+    )
+    resp = _run(show_model_pricing(body))
+    assert resp.rendered is True
+    item = resp.models[0]
+    assert item.prompt_cost_per_1m == 0.037
+    assert item.completion_cost_per_1m == 0.17
+    assert item.context_length == 131072
+
+
+def test_context_length_coerces_suffix_and_float_strings() -> None:
+    # context_length is an int field — the float-tolerant cost coercion would mangle it
+    # ('128k' -> 128, '131072.0' -> 422). It gets its own suffix-aware integer coercion.
+    def _item(ctx: object) -> ModelPricingItem:
+        return ModelPricingItem(
+            model_id="m",
+            name="m",
+            prompt_cost_per_1m=0.1,
+            completion_cost_per_1m=0.2,
+            context_length=ctx,  # type: ignore[arg-type]
+        )
+
+    assert _item("128k").context_length == 128000
+    assert _item("1.5M").context_length == 1_500_000
+    assert _item("131072.0").context_length == 131072
+    assert _item("128,000").context_length == 128000
+    assert _item(200000).context_length == 200000

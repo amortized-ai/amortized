@@ -1605,7 +1605,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically.",
+        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically. Do NOT call it after validate_* either \u2014 the confirmation card already has its own Confirm/Cancel, so a 'confirm?' question under it is redundant and will be dropped.",
         "operationId": "present_options",
         "requestBody": {
           "content": {
@@ -1624,6 +1624,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PresentOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ui/show_prompt": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Render a prompt in a review card in the chat UI. Call this with the FULL prompt text WHENEVER you ask the user to review or approve a prompt (e.g. a generated system/assessor prompt) \u2014 the prompt text is otherwise never shown to the user. Never say 'here is the prompt' or 'the prompt above' without calling this tool in the same response.",
+        "operationId": "show_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowPromptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShowPromptResponse"
                 }
               }
             }
@@ -1728,7 +1769,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG or training workflow. Set phase to 'sdg' or 'training' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
+        "summary": "Update the UI progress bar. You MUST call this once on every response during an SDG, training, or eval workflow. Set phase to 'sdg', 'training', or 'eval' based on the current workflow. Call once per response at the current step \u2014 do not batch or skip.",
         "operationId": "signal_phase",
         "requestBody": {
           "content": {
@@ -5184,6 +5225,11 @@
             "title": "Rendered",
             "description": "Indicates the frontend rendered these as cards",
             "default": true
+          },
+          "agent_instruction": {
+            "type": "string",
+            "title": "Agent Instruction",
+            "default": "You have presented this question to the user. STOP NOW \u2014 this ENDS your turn. Do NOT call any more tools (no further present_options, show_prompt, validate_*, create_*, or any read), and write no more text. Wait for the user's selection; act on it in your NEXT turn."
           }
         },
         "type": "object",
@@ -5868,6 +5914,66 @@
         ],
         "title": "ShowModelPricingResponse"
       },
+      "ShowPromptRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short card heading (e.g. 'Assessor system prompt')",
+            "default": "System prompt"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Prompt",
+            "description": "The FULL prompt text to display verbatim for the user to review"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "description": "One-line note on what the prompt is used for (optional)",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "ShowPromptRequest"
+      },
+      "ShowPromptResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "rendered": {
+            "type": "boolean",
+            "title": "Rendered",
+            "default": true
+          },
+          "agent_instruction": {
+            "type": "string",
+            "title": "Agent Instruction",
+            "default": "The prompt is now shown for review. Do NOT submit or confirm a job in this same turn (no validate_*/create_*) \u2014 the user must review this prompt first, because it ships in the training data. Ask them to approve it or request edits (present_options), then STOP and wait; build/confirm the job in your NEXT turn, after they approve."
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "prompt",
+          "purpose"
+        ],
+        "title": "ShowPromptResponse"
+      },
       "ShowVRAMEstimateRequest": {
         "properties": {
           "estimates": {
@@ -5912,7 +6018,7 @@
           "phase": {
             "type": "string",
             "title": "Phase",
-            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows"
+            "description": "Current workflow phase: 'sdg' for data generation workflows, 'training' for model training workflows, 'eval' for model evaluation workflows"
           },
           "step": {
             "type": "string",

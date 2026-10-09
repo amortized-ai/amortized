@@ -25,6 +25,9 @@ export interface PersistedMessage {
   selectedOptionValue?: string
   phase?: string
   streamStartedAt?: number
+  // Set on a job-completion continuation turn so the plan deriver can mark the phase
+  // terminal even when the driver never emits a "review" signal_phase (see ChatMessage).
+  terminal?: boolean
 }
 
 export interface PersistedConversation {
