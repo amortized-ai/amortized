@@ -13,12 +13,12 @@ unmet precondition this table names.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.core import mirror
 
 if TYPE_CHECKING:
     from amortized.api.agent import SessionState
@@ -51,22 +51,14 @@ def _validate_mode(part: dict[str, Any]) -> str:
     return str(_get_tool_input(part).get("mode") or "create").strip().lower()
 
 
-# Fields that count a sample, not the recipe. A preview approves the RECIPE (columns,
-# models, processors, seed, topic); changing only how many records to make must not
-# force a re-preview. parent_job_id is lineage, likewise not recipe-defining. Mirrors
-# the clone-for-eval invariant ("mirror the recipe verbatim; only num_records changes").
-_SDG_NON_RECIPE_FIELDS = {"mode", "num_records", "parent_job_id"}
-
-
 def _sdg_config_signature(part: dict[str, Any]) -> str:
     """Stable signature of an SDG job's RECIPE, identical for a preview and the full-job
     confirm of the same recipe (they differ only in `mode`/record count). An edited
-    recipe yields a new signature, so the preview-before-create gate re-fires."""
-    recipe = {
-        k: v for k, v in _get_tool_input(part).items() if k not in _SDG_NON_RECIPE_FIELDS
-    }
-    canonical = json.dumps(recipe, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    recipe yields a new signature, so the preview-before-create gate re-fires.
+
+    Shares `mirror.SDG_MIRROR`'s strip-set (mode/num_records/parent_job_id) with the
+    clone-for-eval path, so "what counts as the recipe" is defined once."""
+    return mirror.strict_signature(_get_tool_input(part), mirror.SDG_MIRROR)
 
 
 # Tools that establish a confirm card's prerequisite ACTIONS, tracked as session
