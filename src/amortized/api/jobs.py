@@ -1,13 +1,16 @@
 """Job management endpoints."""
 
+import copy
+import hashlib
 import json
 import logging
+import re
 from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
@@ -37,6 +40,7 @@ from amortized.models import (
     Job,
     JobStatus,
     JobType,
+    PromptView,
     SDGJobRequest,
     TrainingJobRequest,
     ValidatedJobConfig,
@@ -133,6 +137,38 @@ def _simplify_sdg_errors(
 # ---------------------------------------------------------------------------
 
 
+async def _require_dependency_succeeded(
+    repo: Repository,
+    job_id: str,
+    label: str,
+    *,
+    require_mlflow: bool = True,
+) -> list[str]:
+    """A referenced upstream job must exist, be ``succeeded``, and (optionally)
+    have MLflow artifacts. Returns the error(s) for that reference, empty when OK.
+
+    This is the fail-closed half of the dependency invariant: a downstream job
+    cannot be created until every upstream job it references is terminal
+    ``succeeded``. Shared by training and eval validation so every dependency
+    (SDG dataset parent, the model under eval) is gated identically.
+    """
+    job = await repo.get_job(job_id)
+    if job is None:
+        return [f"{label}: job '{job_id}' not found"]
+    status = job.get("status")
+    if status != "succeeded":
+        return [
+            f"{label}: job '{job_id}' has status '{status}' — it must finish"
+            " ('succeeded') before it can be used"
+        ]
+    if require_mlflow and not job.get("mlflow_run_id"):
+        return [
+            f"{label}: job '{job_id}' has no MLflow artifacts — it may not"
+            " have finished producing its output"
+        ]
+    return []
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -154,19 +190,7 @@ async def _validate_training_data(
 
     if parent_job_id and not data_path:
         repo = Repository(db)
-        parent = await repo.get_job(parent_job_id)
-        if parent is None:
-            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
-        elif parent.get("status") != "succeeded":
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has status"
-                f" '{parent.get('status')}' (must be 'succeeded')"
-            )
-        elif not parent.get("mlflow_run_id"):
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has no MLflow"
-                " artifacts — the dataset may not have been uploaded"
-            )
+        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
 
     return errors
 
@@ -205,6 +229,7 @@ async def _validate_eval_data(
     """Validate that eval data is available (via parent job or MLflow run)."""
     errors: list[str] = []
     data_run_id = config.get("eval_data_run_id", "")
+    training_job_id = str(config.get("training_job_id", "") or "")
 
     if not parent_job_id and not data_run_id:
         errors.append(
@@ -214,21 +239,15 @@ async def _validate_eval_data(
         )
         return errors
 
+    repo = Repository(db)
     if parent_job_id:
-        repo = Repository(db)
-        parent = await repo.get_job(parent_job_id)
-        if parent is None:
-            errors.append(f"parent_job_id: job '{parent_job_id}' not found")
-        elif parent.get("status") != "succeeded":
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has status"
-                f" '{parent.get('status')}' (must be 'succeeded')"
-            )
-        elif not parent.get("mlflow_run_id"):
-            errors.append(
-                f"parent_job_id: job '{parent_job_id}' has no MLflow"
-                " artifacts — the dataset may not have been uploaded"
-            )
+        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
+
+    # The model under eval must itself have finished training — otherwise there is
+    # no adapter to score. This is the training -> eval edge of the dependency
+    # invariant (the SDG -> {training,eval} edge is parent_job_id above).
+    if training_job_id:
+        errors += await _require_dependency_succeeded(repo, training_job_id, "training_job_id")
 
     return errors
 
@@ -575,10 +594,216 @@ async def retry_job(
 async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
+    prompts = _recipe_prompts(config)
+    assessor = next((p.text for p in prompts if p.role == "assessor"), None)
     return ValidatedJobConfig(
         job_type=JobType.sdg,
         config=config,
         parent_job_id=parent_job_id,
+        assessor_prompt=assessor,
+        prompts=prompts,
+    )
+
+
+def _assessor_column_name(config: dict[str, Any]) -> str | None:
+    """Name of the column whose `system_prompt` is the assessor prompt — the column
+    whose output becomes the assistant turn in an SFT processor template (referenced
+    via `{{column}}`). Returns None when it can't be identified confidently (no blind
+    "last column with a system_prompt" fallback — that risked treating a sampler's
+    prompt as the assessor prompt)."""
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return None
+    by_name = {c.get("name"): c for c in columns if isinstance(c, dict)}
+    for proc in config.get("processors") or []:
+        if not isinstance(proc, dict):
+            continue
+        template = proc.get("template")
+        messages = template.get("messages") if isinstance(template, dict) else None
+        if not isinstance(messages, list):
+            continue
+        for msg in messages:
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            raw_content = msg.get("content")
+            content = raw_content if isinstance(raw_content, str) else ""
+            ref = re.search(r"\{\{\s*(\w+)\s*\}\}", content)
+            if not ref:
+                continue
+            col = by_name.get(ref.group(1))
+            prompt = col.get("system_prompt") if isinstance(col, dict) else None
+            if isinstance(prompt, str) and prompt.strip():
+                return ref.group(1)
+    return None
+
+
+def _assessor_prompt(config: dict[str, Any]) -> str | None:
+    """The assessor/system prompt the teacher follows, resolved authoritatively from
+    the config. Thin wrapper over `_recipe_prompts` kept for existing callers."""
+    return next((p.text for p in _recipe_prompts(config) if p.role == "assessor"), None)
+
+
+def _prompt_label(column: str) -> str:
+    """Human card heading for an input-generator column (e.g. 'support_ticket' ->
+    'Support ticket prompt')."""
+    words = column.replace("_", " ").strip()
+    return f"{words[:1].upper()}{words[1:]} prompt" if words else "Input prompt"
+
+
+def _recipe_prompts(config: dict[str, Any]) -> list[PromptView]:
+    """Every reviewable system prompt in an SDG recipe, in generation order (input
+    generators first, assessor last), each tagged with its column and role. This is
+    what the confirmation card renders, so the user reviews ALL prompts the recipe
+    carries — a ticket-generation prompt and an assessor prompt, not just one."""
+    columns = config.get("columns")
+    if not isinstance(columns, list):
+        return []
+    assessor = _assessor_column_name(config)
+    inputs: list[PromptView] = []
+    assessor_view: PromptView | None = None
+    for col in columns:
+        if not isinstance(col, dict):
+            continue
+        name = col.get("name")
+        prompt = col.get("system_prompt")
+        if not isinstance(name, str) or not isinstance(prompt, str) or not prompt.strip():
+            continue
+        text = prompt.strip()
+        if name == assessor:
+            assessor_view = PromptView(
+                role="assessor", label="Assessor system prompt", column=name, text=text
+            )
+        else:
+            inputs.append(
+                PromptView(role="input", label=_prompt_label(name), column=name, text=text)
+            )
+    return inputs + ([assessor_view] if assessor_view else [])
+
+
+class CloneSdgForEvalRequest(BaseModel):
+    training_job_id: str = Field(
+        ...,
+        description=(
+            "The completed training job the eval set is for. Its parent SDG"
+            " recipe (teacher model, prompts, SFT format) is mirrored exactly."
+        ),
+    )
+    num_records: int = Field(
+        ...,
+        gt=0,
+        description="Number of held-out eval records the user asked for.",
+    )
+
+
+class ClonedSdgConfig(BaseModel):
+    config: dict[str, Any] = Field(
+        description="A ready-to-validate SDG config mirroring the training SDG recipe."
+    )
+    train_sdg_job_id: str = Field(
+        description="The SDG job this config was cloned from (the model's training SDG)."
+    )
+    note: str
+
+
+def _coerce_config(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+@router.post(
+    "/sdg/clone-for-eval",
+    response_model=ClonedSdgConfig,
+    operation_id="clone_sdg_config_for_eval",
+    summary=(
+        "Build the eval-set SDG config for a trained model by mirroring its"
+        " training SDG recipe verbatim (teacher model, prompts, SFT format);"
+        " only num_records changes. For a purely synthetic task, re-running"
+        " generates fresh held-out inputs. For a document-grounded task it"
+        " re-seeds from the SAME source documents, so the eval is freshly"
+        " regenerated but NOT a disjoint held-out split — the platform's"
+        " input-overlap check runs at validate time either way. Pass the"
+        " returned `config` straight to validate_sdg_job. Use this instead"
+        " of hand-assembling an eval SDG."
+    ),
+)
+async def clone_sdg_config_for_eval(
+    request: CloneSdgForEvalRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ClonedSdgConfig:
+    """Deterministically mirror a model's training SDG recipe for its eval set.
+
+    Replaces the error-prone manual clone: resolving the training job's parent
+    SDG and copying its teacher/prompts/format by hand is exactly where a weak
+    driver drifts (wrong teacher, reworded prompt) or loops (polling get_job to
+    'verify' overlap). This returns the mirrored config in one call."""
+    repo = Repository(db)
+    training = await repo.get_job(request.training_job_id)
+    if not training:
+        raise HTTPException(
+            status_code=404,
+            detail=f"training job {request.training_job_id[:8]} not found",
+        )
+    train_sdg_id = str(training.get("parent_job_id") or "")
+    if not train_sdg_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "training job has no parent SDG job, so its teacher/prompt/format"
+                " cannot be cloned automatically — build the eval SDG from the"
+                " training config manually"
+            ),
+        )
+    sdg = await repo.get_job(train_sdg_id)
+    if not sdg:
+        raise HTTPException(
+            status_code=404,
+            detail=f"parent SDG job {train_sdg_id[:8]} not found",
+        )
+    cfg = _coerce_config(sdg.get("config"))
+    # Mirror the WHOLE generation recipe; only the sample count changes. Copy every
+    # field except the non-recipe ones (sample count + lineage + mode) so that
+    # recipe-defining fields carry over automatically — an allowlist silently
+    # dropped constraints/tool_configs, giving the eval different generation
+    # behavior despite the "only num_records changes" promise.
+    non_recipe_keys = {"num_records", "parent_job_id", "mode"}
+    cloned: dict[str, Any] = {
+        key: copy.deepcopy(value)
+        for key, value in cfg.items()
+        if key not in non_recipe_keys and value is not None
+    }
+    if not cloned.get("columns"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"parent SDG job {train_sdg_id[:8]} has no columns to mirror —"
+                " its config is empty or in an unexpected shape"
+            ),
+        )
+    cloned["num_records"] = request.num_records
+    # Document-grounded recipes re-seed from the SAME source chunks as training
+    # (document_ids is mirrored), so re-running regenerates fresh text but is NOT a
+    # disjoint held-out split. Purely synthetic recipes do get fresh held-out draws.
+    # Either way the input-overlap check still runs at validate time.
+    held_out_note = (
+        " It re-seeds from the SAME source documents as training, so the eval is"
+        " freshly regenerated but NOT a disjoint held-out split; the platform"
+        " flags input overlap when you validate the eval job."
+        if cloned.get("document_ids")
+        else " Fresh generation yields fresh held-out inputs; the platform still"
+        " flags any input overlap when you validate the eval job."
+    )
+    return ClonedSdgConfig(
+        config=cloned,
+        train_sdg_job_id=train_sdg_id,
+        note=(
+            "Mirrors the training SDG recipe (teacher, prompts, SFT format)"
+            " verbatim; only num_records changed. Pass `config` to"
+            " validate_sdg_job." + held_out_note
+        ),
     )
 
 
@@ -606,10 +831,20 @@ async def validate_training_job(
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
+    repo = Repository(db)
+    # Resolve the run the job will ACTUALLY train on: an explicit data_run_id
+    # (e.g. a split complement) takes precedence over the parent SDG's full
+    # output, matching _resolve_training_data_run and the overlap check. Resolving
+    # parent-first here showed a split-trained job the full SDG size on the card.
+    data_run_id = str(config.get("data_run_id") or "")
+    data_run = data_run_id or await _resolve_data_run(repo, parent_job_id, "")
+    record_count = await _dataset_record_count(data_run)
+
     return ValidatedJobConfig(
         job_type=JobType.training,
         config=config,
         parent_job_id=parent_job_id,
+        data_record_count=record_count,
     )
 
 
@@ -683,6 +918,8 @@ async def validate_eval_job(
     # block — when the submitted criterion names match an earlier eval
     # on this dataset but the descriptions differ.
     warnings = await _rubric_drift_warning(config, parent_job_id, db)
+    warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, db))
+    warnings.extend(await _eval_overlap_warning(config, parent_job_id, db))
 
     return ValidatedJobConfig(
         job_type=JobType.eval,
@@ -712,12 +949,7 @@ async def _rubric_drift_warning(
     candidates = await repo.list_jobs(job_type=JobType.eval)
     submitted = {str(c["name"]): str(c.get("description", "")) for c in inline}
     for job in candidates:
-        cfg = job.get("config", {})
-        if isinstance(cfg, str):
-            try:
-                cfg = json.loads(cfg)
-            except ValueError:
-                continue
+        cfg = _coerce_config(job.get("config"))
         same_dataset = (
             data_run_id
             and str(cfg.get("eval_data_run_id") or "") == data_run_id
@@ -746,6 +978,270 @@ async def _rubric_drift_warning(
             " criteria."
         ]
     return []
+
+
+_SdgSignature = tuple[
+    tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]
+]
+
+
+def _sdg_signature(cfg: Any) -> _SdgSignature | None:
+    """What defines an SDG pipeline's task AND its input distribution.
+
+    Teacher models + system prompts alone are not enough: `clone_sdg_config_for_eval`
+    treats `topic`, `document_ids`, and the sampler columns as recipe-defining too,
+    so two configs with the same teacher+assessor prompt but a different document set
+    or topic generate a DIFFERENT task. Folding those in stops a different-input eval
+    set from being flagged `recipe_match` / passing the mirror check. Returns sorted
+    tuples so ordering doesn't matter; `None` when unparseable or carrying no signal."""
+    cfg = _coerce_config(cfg)
+    models = tuple(
+        sorted(
+            str(m["model"])
+            for m in (cfg.get("model_configs") or [])
+            if isinstance(m, dict) and m.get("model")
+        )
+    )
+    prompts = tuple(
+        sorted(
+            str(c["system_prompt"])
+            for c in (cfg.get("columns") or [])
+            if isinstance(c, dict) and c.get("system_prompt")
+        )
+    )
+    topic = str(cfg.get("topic") or "")
+    document_ids = tuple(sorted(str(d) for d in (cfg.get("document_ids") or []) if d))
+    # Column identity (name/type), so a different sampler set is a different task
+    # even when the assessor system prompt is unchanged.
+    columns = tuple(
+        sorted(
+            str(c.get("name") or c.get("column_type") or "")
+            for c in (cfg.get("columns") or [])
+            if isinstance(c, dict) and (c.get("name") or c.get("column_type"))
+        )
+    )
+    if not models and not prompts and not topic and not document_ids and not columns:
+        return None
+    return models, prompts, topic, document_ids, columns
+
+
+async def _training_sdg_mirror_warning(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """Warn when an eval set for a trained model was NOT generated by the same
+    SDG pipeline that produced the model's training data.
+
+    A tuned model can only be scored fairly on the task it was trained for, so
+    the eval-data SDG must reuse the training-data SDG's teacher model and
+    assessor system prompt (regenerating only fresh inputs for held-out
+    isolation). We compare the two SDG configs' (teacher models, system prompts)
+    signatures and warn — do not block — on divergence.
+
+    Best-effort: silent when the lineage can't be resolved from job rows — the
+    eval data is an uploaded dataset / split rather than a chained SDG job
+    (no `parent_job_id`), or the training data did not chain from an SDG job
+    (trained from a split/upload, or the SDG ran in an earlier, absent job).
+    Those gaps are why this warns rather than blocks."""
+    training_job_id = str(config.get("training_job_id") or "")
+    if not training_job_id or not parent_job_id:
+        return []  # not an eval-for-trained-model chained from an SDG job
+
+    repo = Repository(db)
+    training = await repo.get_job(training_job_id)
+    if not training:
+        return []
+    train_sdg_id = str(training.get("parent_job_id") or "")
+    if not train_sdg_id:
+        return []  # training data not chained from an SDG job -> nothing to mirror
+
+    train_sdg = await repo.get_job(train_sdg_id)
+    eval_sdg = await repo.get_job(str(parent_job_id))
+    if not train_sdg or not eval_sdg:
+        return []
+
+    train_sig = _sdg_signature(train_sdg.get("config"))
+    eval_sig = _sdg_signature(eval_sdg.get("config"))
+    if not train_sig or not eval_sig or train_sig == eval_sig:
+        return []
+
+    # Explain every signature component that diverged — the signature folds in
+    # topic/document_ids/columns too, so building diffs for only teacher+prompt
+    # left a topic/doc/column-only change showing an empty "differs in: )".
+    diffs: list[str] = []
+    if train_sig[0] != eval_sig[0]:
+        diffs.append(
+            f"teacher model (training SDG: {', '.join(train_sig[0]) or 'none'};"
+            f" eval SDG: {', '.join(eval_sig[0]) or 'none'})"
+        )
+    if train_sig[1] != eval_sig[1]:
+        diffs.append("assessor/system prompt")
+    if train_sig[2] != eval_sig[2]:
+        diffs.append(
+            f"topic (training SDG: {train_sig[2] or 'none'};"
+            f" eval SDG: {eval_sig[2] or 'none'})"
+        )
+    if train_sig[3] != eval_sig[3]:
+        diffs.append("source documents")
+    if train_sig[4] != eval_sig[4]:
+        diffs.append("columns / sampler set")
+    return [
+        "this eval set for a trained model was NOT generated by the same SDG"
+        f" pipeline as the model's training data (differs in: {'; '.join(diffs)})."
+        " A tuned model should be scored on the task it was trained for — reuse"
+        f" the training SDG config (job {train_sdg_id}) verbatim: same teacher"
+        " model and assessor system prompt, regenerating only fresh inputs."
+    ]
+
+
+def _record_input_signature(rec: dict[str, Any]) -> str:
+    """A stable hash of a record's INPUT content, for overlap detection.
+
+    SDG datasets are the SFT `messages` shape, so the input the model saw is the
+    user turn(s); two records with the same user content are the same example
+    regardless of the generated answer. Falls back to the whole record when there
+    is no `messages` column, so it still works on other dataset shapes."""
+    msgs = rec.get("messages")
+    if isinstance(msgs, list):
+        user = "\n".join(
+            str(m.get("content", ""))
+            for m in msgs
+            if isinstance(m, dict) and m.get("role") == "user"
+        ).strip()
+        if user:
+            return hashlib.sha256(user.encode("utf-8")).hexdigest()
+    blob = json.dumps(rec, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+async def _input_signatures(run_id: str) -> set[str]:
+    """Input signatures of every record in an MLflow dataset run."""
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    mlflow = _mlflow_client()
+    paths = await _find_dataset_artifacts(mlflow, run_id)
+    sigs: set[str] = set()
+    for path in paths:
+        for rec in _parse_records(path, await mlflow.get_artifact(run_id, path)):
+            sigs.add(_record_input_signature(rec))
+    return sigs
+
+
+async def _dataset_record_count(run_id: str) -> int | None:
+    """Number of records in an MLflow dataset run, or None if it can't be loaded.
+
+    Best-effort: a transient MLflow error must never block an otherwise-valid
+    confirmation card, so the count is simply omitted on failure."""
+    if not run_id:
+        return None
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    try:
+        mlflow = _mlflow_client()
+        paths = await _find_dataset_artifacts(mlflow, run_id)
+        total = 0
+        for path in paths:
+            total += sum(
+                1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path))
+            )
+        return total if paths else None
+    except Exception:
+        logger.warning("record count: failed to load dataset %s", run_id[:8], exc_info=True)
+        return None
+
+
+async def _resolve_data_run(
+    repo: Repository, parent_job_id: str, data_run_id: str
+) -> str:
+    """MLflow run holding a dataset, from either a parent job or a direct run id."""
+    if parent_job_id:
+        job = await repo.get_job(parent_job_id)
+        if job:
+            run = str(job.get("mlflow_run_id") or "")
+            if run:
+                return run
+            # Parent row exists but its run id isn't populated — fall through to the
+            # explicit data_run_id rather than returning "" (which silently disabled
+            # the downstream leakage/overlap check).
+    return data_run_id
+
+
+async def _resolve_training_data_run(repo: Repository, training_job_id: str) -> str:
+    """MLflow run holding the data a training job actually trained on.
+
+    Prefer the exact `data_run_id` the job used (e.g. a split complement), else
+    the parent SDG job's MLflow run."""
+    training = await repo.get_job(training_job_id)
+    if not training:
+        return ""
+    cfg = training.get("config") or {}
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg)
+        except ValueError:
+            cfg = {}
+    data_run_id = str((cfg or {}).get("data_run_id") or "")
+    if data_run_id:
+        return data_run_id
+    return await _resolve_data_run(repo, str(training.get("parent_job_id") or ""), "")
+
+
+async def _eval_overlap_warning(
+    config: dict[str, Any], parent_job_id: str, db: asyncpg.Connection
+) -> list[str]:
+    """Warn when an eval set for a trained model reuses the model's training inputs.
+
+    Resolves the eval dataset and the model's training dataset to their MLflow
+    runs, loads both, and intersects per-record input signatures. Any overlap
+    means the model would be scored on inputs it already trained on (leakage).
+    Warn — do not block.
+
+    Best-effort: silent when either dataset can't be resolved or loaded (the same
+    lineage gaps as the mirror check), so a transient MLflow error never blocks
+    an otherwise-valid eval."""
+    training_job_id = str(config.get("training_job_id") or "")
+    if not training_job_id:
+        return []  # not an eval for a trained model
+
+    repo = Repository(db)
+    eval_run = await _resolve_data_run(
+        repo, parent_job_id, str(config.get("eval_data_run_id") or "")
+    )
+    train_run = await _resolve_training_data_run(repo, training_job_id)
+    if not eval_run or not train_run:
+        return []
+
+    if eval_run == train_run:
+        return [
+            "the eval dataset is the model's training dataset — the model would be"
+            " scored entirely on data it trained on. Use a held-out eval set."
+        ]
+
+    try:
+        eval_sigs = await _input_signatures(eval_run)
+        train_sigs = await _input_signatures(train_run)
+    except Exception:
+        logger.warning("eval overlap check: failed to load datasets", exc_info=True)
+        return []
+    if not eval_sigs or not train_sigs:
+        return []
+
+    overlap = eval_sigs & train_sigs
+    if not overlap:
+        return []
+    return [
+        f"{len(overlap)} of {len(eval_sigs)} eval records reuse inputs the model"
+        " already saw in training — the eval would be scored partly on its own"
+        " training data (leakage). Regenerate the held-out set with fresh inputs"
+        " before evaluating."
+    ]
 
 
 @router.get(
