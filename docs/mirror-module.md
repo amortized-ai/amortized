@@ -1,7 +1,26 @@
 # Design: a config-mirror module (`core/mirror.py`)
 
-**Status:** proposal (spec only — no code yet)
+**Status:** implemented (Phase A + generalized retry/rerun). `core/mirror.py` + call-site
+rewiring + confirm-on-rerun UI. Cases 4–6 (split siblings, cross-model eval mirror,
+generalized drift warning) remain follow-ups.
 **Branch:** `feat/mirror-module` (off the `#496→#497→#498` stack tip)
+
+### Correction made during implementation
+
+Reading the actual code showed the two SDG signatures have **intentionally different
+strictness** and must stay separate (the original doc's "one `recipe_signature` replaces
+both" was wrong):
+
+- **Preview→full gate** (`_sdg_config_signature`) needs a **blanket** hash — any recipe
+  edit must re-gate. This became `mirror.strict_signature`, sharing `SDG_MIRROR`'s
+  strip-set with the clone path.
+- **Mirror warning** (`_sdg_signature`) is a **curated** comparison that deliberately
+  ignores seed / sample count (an eval set regenerates with a fresh seed yet is "the same
+  recipe"). Merging it with the blanket hash would make a fresh-seed eval set falsely fail
+  the mirror check. It **stays in the API layer** next to its diff messages.
+
+So the module unifies the **clone + strip-sets** (one source of truth) and the **strict
+gate signature**; the curated recipe-sameness comparison is left distinct on purpose.
 
 ## Problem
 
@@ -32,57 +51,58 @@ consequences:
    SDG and training can't be re-run at all, and no path exists for "re-run but change one
    knob."
 
-## Core idea: one field classification, shared by clone + signature
+## Core idea: one strip-set per job type
 
-Every mirror operation is `source config → derived config` under a **field policy**. The
-honest primitive is a classification of config keys into three roles, from which both the
-clone's drop-set *and* the signature's carry-set derive — so they can never disagree:
+Every mirror operation is `source config → derived config` under a **field policy**. Each
+job type declares one `strip_keys` set — the fields a clone never carries forward:
 
-- **`RUNTIME_KEYS`** — worker-injected at dispatch, always recomputed by the config
-  builder. Stripped on *every* mirror (this is what `_RETRY_STRIP_KEYS` is, generalized).
-  Never part of the signature.
-- **`SEMANTIC_KEYS`** (per job type) — sample-size / lineage knobs the caller is *expected*
-  to set: SDG `{num_records, mode}`, training `{num_train_epochs, ...}`, eval `{...}`.
-  `parent_job_id`/`training_job_id` are lineage and live here too. Carried verbatim
-  unless the caller passes an override. Never part of the signature.
-- **recipe (everything else)** — the fields that define the task and must stay identical.
-  The signature is computed over *exactly this set* (`all_keys − RUNTIME_KEYS − SEMANTIC_KEYS`).
+- **runtime** — worker-injected at dispatch, recomputed by the config builder (this is what
+  `_RETRY_STRIP_KEYS` is, generalized).
+- **semantic** — sample-size / mode knobs the caller is *expected* to re-set (SDG
+  `{num_records, mode}`); re-introduced via `overrides`.
+- **lineage** — `parent_job_id` / `training_job_id`, re-set by the create path.
 
-The drift bug disappears by construction: a new recipe field is, by default, in neither
-excluded set, so it is both carried by the clone and folded into the signature.
+Everything else — the recipe — carries forward automatically. The **clone** gains
+drift-safety from this (a new recipe field is carried without code changes). The **strict
+gate signature** uses the *same* `strip_keys`, so "what is the recipe" is defined once for
+clone + gate. (The curated recipe-*sameness* signature for the mirror warning is a separate,
+deliberate judgment — see the correction note at the top — and is not derived from this set.)
 
-## Proposed module `src/amortized/core/mirror.py` (pure — no FastAPI/opencode deps)
+## Module `src/amortized/core/mirror.py` (pure — no FastAPI/opencode deps)
+
+As built, `MirrorSpec` carries a single `strip_keys` set (runtime + semantic + lineage
+fields a clone never carries). Keeping it to one set — rather than the runtime/semantic
+split the earlier draft proposed — matched the two real call sites, which each strip a
+flat set; overrides re-introduce whatever the caller changes.
 
 ```python
 @dataclass(frozen=True)
 class MirrorSpec:
-    runtime_keys: frozenset[str]        # always stripped (recomputed by the builder)
-    semantic_keys: frozenset[str]       # carried, but overridable by the caller
+    strip_keys: frozenset[str]          # never carried by clone (runtime + semantic + lineage)
 
-def clone(src: dict, spec: MirrorSpec, overrides: dict | None = None) -> dict:
-    """Carry the recipe + semantic fields, strip runtime keys, apply overrides."""
+def clone(src, spec, *, overrides=None, also_strip=()) -> dict:
+    """Carry src minus strip_keys (+also_strip), drop None values, apply overrides. Deep-copied."""
 
-def recipe_signature(cfg: dict, spec: MirrorSpec) -> Signature | None:
-    """Stable, order-insensitive signature over recipe fields (= all − runtime − semantic).
-    None when empty/unparseable (preserves current _sdg_signature semantics)."""
-
-def diff_recipe(a: dict, b: dict, spec: MirrorSpec) -> list[str]:
-    """Human-readable, component-by-component divergence (powers the mirror warning)."""
+def strict_signature(src, spec) -> str:
+    """Blanket hash of everything carried (all − strip_keys). For the preview→full gate."""
 ```
 
-Specs are declared per job type in one place (the single source of truth that replaces the
-three ad-hoc sets):
+Per-job-type specs are the single source of truth that replaces the three ad-hoc drop-sets
+(`non_recipe_keys`, `_RETRY_STRIP_KEYS`, `_SDG_NON_RECIPE_FIELDS`):
 
 ```python
-SDG_MIRROR      = MirrorSpec(runtime_keys={...}, semantic_keys={"num_records", "mode", "parent_job_id"})
-TRAINING_MIRROR = MirrorSpec(runtime_keys={...}, semantic_keys={"num_train_epochs", ..., "parent_job_id", "data_run_id"})
-EVAL_MIRROR     = MirrorSpec(runtime_keys={"eval_data_path", "port", "served_model_name"},
-                             semantic_keys={"parent_job_id", "training_job_id", "eval_data_run_id"})
+SDG_MIRROR      = MirrorSpec(strip_keys={"num_records", "mode", "parent_job_id"})
+TRAINING_MIRROR = MirrorSpec(strip_keys={"parent_job_id"})
+EVAL_MIRROR     = MirrorSpec(strip_keys={"eval_data_path", "port", "served_model_name", "parent_job_id"})
+MIRROR_SPECS    = {"sdg": SDG_MIRROR, "training": TRAINING_MIRROR, "eval": EVAL_MIRROR}
 ```
+
+The curated recipe-sameness signature + `diff_recipe` for the mirror *warning* stay in the
+API layer (`_sdg_signature` / `_training_sdg_mirror_warning`) — see the correction note above.
 
 **Hard boundary:** `core/mirror.py` is pure. The API route module (`jobs.py`) and the proxy
 (`agent_confirm.py`) both *import* it; neither imports the other. The proxy keeps only its
-tool-call-part→config adapter locally and reuses `recipe_signature`.
+tool-call-part→config adapter locally and reuses `strict_signature`.
 
 ## How the six use cases map onto it
 
@@ -90,52 +110,53 @@ tool-call-part→config adapter locally and reuses `recipe_signature`.
 |---|---|---|---|
 | 1 | **Generalized retry/rerun** (SDG, training, eval) | `clone(src, spec)` from the `request_config` snapshot | lift the eval-only restriction; always via a confirm card (see guardrails) |
 | 2 | **Rerun with a tweak** ("train again, 5 epochs" / "regenerate, 2000 records") | `clone(src, spec, overrides={...})` | overrides are exactly the `semantic_keys` the caller sets; shown in the confirm card |
-| 3 | **Preview → full-run** | `recipe_signature` (replaces `_sdg_config_signature`) | one signature fn for gate + warning; `mode` is semantic so preview≈full |
-| 4 | **Split siblings** (`split_run_id` / `complement_run_id`) | `recipe_signature` equality across the two runs' source configs | expresses "same recipe, different partition" as data, not prose |
-| 5 | **Cross-model eval on the same eval set** | `clone(eval_cfg, EVAL_MIRROR, overrides={"training_job_id": B})` | mirror an eval, swap only the model under test |
-| 6 | **Generalized drift warning** | `diff_recipe` (generalizes `_training_sdg_mirror_warning`) | any declared-source relationship can warn on divergence |
+| 3 | **Preview → full-run** | `strict_signature` (= `_sdg_config_signature`) | shares `SDG_MIRROR` strip-set with clone; `mode`/count stripped so preview≈full. **Done.** |
+| 4 | **Split siblings** (`split_run_id` / `complement_run_id`) | curated signature equality across the two runs' source configs | expresses "same recipe, different partition" as data. *Follow-up.* |
+| 5 | **Cross-model eval on the same eval set** | `clone(eval_cfg, EVAL_MIRROR, overrides={"training_job_id": B})` | mirror an eval, swap only the model under test. *Follow-up (UI).* |
+| 6 | **Generalized drift warning** | generalize `_training_sdg_mirror_warning`'s diff | any declared-source relationship can warn on divergence. *Follow-up.* |
 
-All six are in scope. 1–3 collapse live duplication and unlock real features; 4–6 reuse the
-same two functions on new call sites.
+Cases 1–3 are **done** (collapse the live duplication + unlock SDG/training retry/rerun).
+4–6 reuse the same primitives on new call sites and are follow-ups.
 
 ## Guardrails that must NOT be folded into the module (policy ≠ mechanics)
 
 The module unifies the *plumbing*. The *decisions* stay at the call sites:
 
-- **Every rerun routes through a confirm card — for all types, identical or with
+- **Every rerun routes through a confirmation step — for all types, identical or with
   overrides.** Rerun is allowed for every type including training (confirmed); but because
-  any rerun can burn real GPU, none of them dispatches silently. The module just hands back
-  a config (`clone(...)`); the call site always renders a `validate_*` card the user
-  Confirms before `create_*`. There is no one-click retry.
-  - **Behavior change:** this *replaces* today's one-click `retry_job` endpoint
-    (jobs.py:512), which re-creates an eval directly with no card. Under this rule even an
-    identical eval retry shows a confirm card first. The `/{job_id}/retry` endpoint either
-    becomes a thin "pre-fill the config, then present the card" step or is dropped in favor
-    of the normal `validate_eval_job` flow seeded from the snapshot.
-  - Overrides vs identical no longer branch the *path* (both confirm); overrides only
-    change *what the card shows* (the diff the user reviews).
+  any rerun can burn real GPU, none of them dispatches on a single click.
+  - **As built:** the jobs-detail-panel Retry button (the only retry surface today) now
+    opens a **confirmation dialog** before calling `retry_job` — replacing the former
+    one-click eval retry. The dialog's copy adapts per type (eval → "same comparison group";
+    training → "consumes GPU for the full run"; SDG → "regenerates the dataset").
+  - The `retry_job` endpoint itself is generalized (all types, optional `overrides`) and
+    still does the create; the confirmation gate lives at the call site (the dialog), per
+    *policy ≠ mechanics*. A future chat-driven rerun would instead seed a `validate_*` card.
+  - An override-editing UI (case 2 in the panel) is a follow-up; the endpoint already
+    accepts `overrides`.
 - **`retry_of` lineage** continues to be set by the create path, not the module.
 - **Stage-gate dependency invariant** (upstream job must be `succeeded`) is unchanged — a
   rerun of a downstream job still can't advance past a non-succeeded upstream.
 
-## Call sites to rewire
+## Call sites rewired (done)
 
-1. `clone_sdg_config_for_eval` → thin HTTP shell over `clone(parent_cfg, SDG_MIRROR, overrides={"num_records": n})`.
-2. `retry_job` → generalize: drop the eval-only check; `clone(snapshot, SPEC_FOR[type])`;
-   route **all** reruns (every type, identical or overridden) through the confirm card +
-   stage gate — no direct one-click re-create.
-3. `_sdg_signature` / `_training_sdg_mirror_warning` → call `recipe_signature` / `diff_recipe`.
-4. `_sdg_config_signature` (proxy preview gate) → call `recipe_signature` (keep the local part adapter).
+1. `clone_sdg_config_for_eval` → `mirror.clone(parent_cfg, SDG_MIRROR, overrides={"num_records": n})`. ✅
+2. `retry_job` → generalized: dropped the eval-only check; `mirror.clone(snapshot, MIRROR_SPECS[type], overrides=...)`;
+   per-type validation; rejects unsupported types (e.g. `serve`). Confirmation gated by the
+   jobs-panel dialog. ✅
+3. `_sdg_config_signature` (proxy preview gate) → `mirror.strict_signature(..., SDG_MIRROR)` (local part adapter kept). ✅
+4. `_sdg_signature` / `_training_sdg_mirror_warning` → **left as-is** (curated recipe-sameness,
+   distinct by design — see correction note).
 
 ## Tests
 
-- `core/mirror`: drop-set and signature carry-set derive from one classification (add a
-  fake recipe field → it is both cloned and signed); `clone` honors overrides; signature is
-  order-insensitive; `None` on empty.
-- Regression parity: `clone_sdg_config_for_eval`, `retry_job`, the preview gate, and the
-  mirror warning produce the **same** results as today on existing fixtures (pure refactor).
-- New behavior: SDG/training retry; rerun-with-override; cross-model eval mirror; a training
-  rerun still requires a confirm card.
+- `tests/test_mirror.py`: `clone` drops strip-keys / None, applies overrides, deep-copies,
+  parses JSON-string sources; `strict_signature` matches preview↔full, changes on any recipe
+  edit (incl. constraints), specs cover all job types. ✅
+- Parity held: existing `tests/test_eval_sdg_mirror.py` (33) + gate tests pass unchanged. ✅
+- `tests/test_eval_jobs.py`: updated the old eval-only test → SDG retry 201, rerun-with-
+  overrides, unsupported-type 422 (DB-backed; run on CI). ✅
+- Follow-up behavior: cross-model eval mirror; an override-editing panel UI.
 
 ## Sequencing
 

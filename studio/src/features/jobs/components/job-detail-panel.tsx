@@ -62,20 +62,27 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
   const retryMutation = useRetryJob()
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false)
   const { getName, setName } = useEntityNamesStore()
 
   if (!open) return null
 
   const canCancel = job ? ["queued", "provisioning", "running"].includes(job.status) : false
   const canDelete = job ? ["succeeded", "failed", "cancelled"].includes(job.status) : false
+  // Retry/rerun is available for every job type that can be mirrored forward
+  // (SDG, training, eval — not serve), always behind a confirmation step.
   const canRetry =
     job != null &&
-    job.type === "eval" &&
+    ["sdg", "training", "eval"].includes(job.type) &&
     ["failed", "cancelled"].includes(job.status)
 
   function handleCancel() {
     cancelMutation.mutate(job!.id)
     setCancelDialogOpen(false)
+  }
+
+  function handleRetry() {
+    retryMutation.mutate(job!.id, { onSuccess: () => setRetryDialogOpen(false) })
   }
 
   function handleDelete() {
@@ -155,16 +162,44 @@ export function JobDetailPanel({ job, open, onOpenChange }: JobDetailPanelProps)
             {canDelete && (
               <>
                 {canRetry && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    title="Re-run this eval with its original config — scores land in the same comparison group"
-                    disabled={retryMutation.isPending}
-                    onClick={() => retryMutation.mutate(job.id)}
-                  >
-                    <RotateCcw className="mr-1 h-4 w-4" />
-                    Retry
-                  </Button>
+                  <Dialog open={retryDialogOpen} onOpenChange={setRetryDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Re-run this job with its original config"
+                        disabled={retryMutation.isPending}
+                      >
+                        <RotateCcw className="mr-1 h-4 w-4" />
+                        Retry
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Rerun {job.type} job</DialogTitle>
+                        <DialogDescription>
+                          This clones the job's original config into a new run
+                          {job.type === "eval"
+                            ? " — the new scores land in the same comparison group."
+                            : job.type === "training"
+                              ? " and consumes GPU for the full training run."
+                              : " and regenerates the dataset."}{" "}
+                          Continue?
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setRetryDialogOpen(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button onClick={handleRetry} disabled={retryMutation.isPending}>
+                          Rerun
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
                 <Button
                   variant="outline"

@@ -1,6 +1,5 @@
 """Job management endpoints."""
 
-import copy
 import hashlib
 import json
 import logging
@@ -12,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
+from amortized.core import mirror
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -490,37 +490,45 @@ async def create_eval_job(
     return response
 
 
-# Runtime-injected keys the eval builder recomputes on every dispatch —
-# stripped when a legacy job (no request_config snapshot) is retried.
-_RETRY_STRIP_KEYS = ("eval_data_path", "port", "served_model_name")
-
-
 @router.post(
     "/{job_id}/retry",
     status_code=201,
     response_model=Job,
     operation_id="retry_job",
     summary=(
-        "Retry a FAILED eval job by cloning its original request config"
-        " verbatim (rubric text included — the new scores land in the same"
-        " Evaluation tab comparison group). Only use this to re-run an"
-        " eval UNCHANGED; to change anything, assemble a new config"
-        " instead. Note: external-endpoint API keys are not retained, so"
-        " keyed endpoints need resubmission."
+        "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by"
+        " cloning its original request config. With no overrides it re-runs"
+        " the job UNCHANGED (for eval the new scores land in the same"
+        " Evaluation tab comparison group); pass `overrides` to change"
+        " specific knobs (e.g. num_train_epochs, num_records). The caller"
+        " confirms before this creates the job — it is not a silent dispatch."
+        " Note: external-endpoint API keys are not retained, so keyed"
+        " endpoints need resubmission."
     ),
 )
 async def retry_job(
     job_id: str,
     http_request: Request,
     db: asyncpg.Connection = Depends(_get_db),
+    overrides: dict[str, Any] | None = None,
 ) -> Job:
-    """Clone a failed eval job's original config into a new job."""
+    """Clone a failed/cancelled job's original config into a new job of the same type.
+
+    Generalized from the former eval-only path: the shared mirror.clone drops each
+    type's runtime/lineage fields from the pre-dispatch snapshot and applies any
+    caller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind
+    a confirmation step, so re-running an expensive training/SDG job is never a
+    single misclick."""
     repo = Repository(db)
     job = await repo.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-    if job.get("type") != JobType.eval.value:
-        raise HTTPException(status_code=422, detail="only eval jobs can be retried")
+    job_type = str(job.get("type") or "")
+    spec = mirror.MIRROR_SPECS.get(job_type)
+    if spec is None:
+        raise HTTPException(
+            status_code=422, detail=f"job type '{job_type}' cannot be retried"
+        )
     if job.get("status") not in (JobStatus.failed.value, JobStatus.cancelled.value):
         raise HTTPException(
             status_code=422,
@@ -530,37 +538,39 @@ async def retry_job(
             ),
         )
 
-    # The pre-dispatch snapshot is authoritative; legacy rows (created
-    # before the snapshot existed, or snapshotted from a worker-resolved
-    # config by the migration) carry runtime-injected keys, so strip
-    # them in either path — the builder recomputes all of them.
+    # The pre-dispatch snapshot is authoritative; legacy rows (created before the
+    # snapshot existed, or snapshotted from a worker-resolved config by the
+    # migration) carry runtime-injected keys. mirror.clone strips each type's
+    # runtime + lineage fields from whichever source we have — the builder
+    # recomputes all of them — and applies the caller's overrides on top.
     snapshot = job.get("request_config")
     if isinstance(snapshot, str):
         try:
             snapshot = json.loads(snapshot)
         except ValueError:
             snapshot = None
-    if isinstance(snapshot, dict) and snapshot.get("rubric"):
-        config = dict(snapshot)
-    else:
-        config = dict(job.get("config") or {})
-    for key in _RETRY_STRIP_KEYS:
-        config.pop(key, None)
-    config.pop("parent_job_id", None)
+    source = snapshot if isinstance(snapshot, dict) and snapshot else job.get("config")
+    config = mirror.clone(source, spec, overrides=overrides)
 
     parent_job_id = job.get("parent_job_id", "")
-    errors = await _validate_eval_data(config, parent_job_id, db)
-    if errors:
-        raise HTTPException(status_code=422, detail=errors)
+
+    # Per-type validation mirrors each create endpoint (SDG has none at this layer).
+    if job_type == JobType.training.value:
+        errors = await _validate_training_data(config, parent_job_id, db)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+    elif job_type == JobType.eval.value:
+        errors = await _validate_eval_data(config, parent_job_id, db)
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+        await _persist_metric_set(config, parent_job_id, db)
 
     user_id = http_request.headers.get("X-Forwarded-User", "") or job.get("user_id", "")
-
-    await _persist_metric_set(config, parent_job_id, db)
 
     try:
         row = await core_create_job(
             repo,
-            job_type=JobType.eval,
+            job_type=JobType(job_type),
             config=config,
             recipe=job.get("recipe", ""),
             parent_job_id=parent_job_id,
@@ -570,7 +580,7 @@ async def retry_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    logger.info("Retrying eval job %s as %s", job_id[:8], row["id"][:8])
+    logger.info("Retrying %s job %s as %s", job_type, job_id[:8], row["id"][:8])
     response = _job_response(row)
     _strip_eval_api_keys(response)
     return response
@@ -763,18 +773,16 @@ async def clone_sdg_config_for_eval(
             status_code=404,
             detail=f"parent SDG job {train_sdg_id[:8]} not found",
         )
-    cfg = _coerce_config(sdg.get("config"))
-    # Mirror the WHOLE generation recipe; only the sample count changes. Copy every
-    # field except the non-recipe ones (sample count + lineage + mode) so that
-    # recipe-defining fields carry over automatically — an allowlist silently
-    # dropped constraints/tool_configs, giving the eval different generation
-    # behavior despite the "only num_records changes" promise.
-    non_recipe_keys = {"num_records", "parent_job_id", "mode"}
-    cloned: dict[str, Any] = {
-        key: copy.deepcopy(value)
-        for key, value in cfg.items()
-        if key not in non_recipe_keys and value is not None
-    }
+    # Mirror the WHOLE generation recipe; only the sample count changes. The shared
+    # mirror.clone carries every field except SDG's non-recipe ones (sample count +
+    # lineage + mode) so recipe-defining fields carry over automatically — an
+    # allowlist silently dropped constraints/tool_configs, giving the eval different
+    # generation behavior despite the "only num_records changes" promise.
+    cloned = mirror.clone(
+        sdg.get("config"),
+        mirror.SDG_MIRROR,
+        overrides={"num_records": request.num_records},
+    )
     if not cloned.get("columns"):
         raise HTTPException(
             status_code=422,
@@ -783,7 +791,6 @@ async def clone_sdg_config_for_eval(
                 " its config is empty or in an unexpected shape"
             ),
         )
-    cloned["num_records"] = request.num_records
     # Document-grounded recipes re-seed from the SAME source chunks as training
     # (document_ids is mirrored), so re-running regenerates fresh text but is NOT a
     # disjoint held-out split. Purely synthetic recipes do get fresh held-out draws.
