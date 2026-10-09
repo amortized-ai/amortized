@@ -794,15 +794,14 @@ _SUBMITTED_CLAIM_RE = re.compile(
 # Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
 # a parent dataset. The call carries parent_job_id as a structured argument, so
 # dispatch provenance is verified from the parent's DB record, with no prose parsing.
-# Check D ("not ready") — the stage-gate: a downstream dispatch maps to the upstream
-# job-id field(s) it depends on, each of which must be 'succeeded' before the step can
-# advance. Both tables are derived from the canonical DAG in core/lineage.py so the
-# proxy (Layer 2) and the create-time validators (Layer 1) never drift on which edges
-# exist. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and so are not
-# edges; validate_sdg_job has no gated upstream (cloning an SDG recipe for an eval set
-# may run while training is still in flight), so it is absent from the fields map.
+# Derived from core/lineage so Layer 2 and the create-time validators (Layer 1) never
+# drift. Check D ("not ready" — the stage-gate) no longer needs a per-tool field map:
+# it is field-driven via lineage.present_gated_fields on the dispatch tool's input, so
+# any dispatch (including one "beyond the graph") is gated on the prerequisites it
+# actually references. validate_sdg_job has no gated upstream (cloning an SDG recipe
+# for an eval set may run while training is still in flight), so lineage.dispatch_job_type
+# returns None for it.
 _DISPATCH_PARENT_TYPE = lineage.dispatch_parent_type()
-_DISPATCH_UPSTREAM_FIELDS = lineage.dispatch_upstream_fields()
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -967,18 +966,24 @@ async def _upstream_not_ready_advisory(
     still in flight, steer the subagent to report the true status and wait rather
     than build/confirm a downstream job whose prerequisite hasn't finished.
 
-    Keyed on the dependency graph, not symptoms: only data-dependent downstream
-    targets (training/eval), only a cited job that resolves to an in-flight status.
-    A delegation to SDG (e.g. cloning a recipe for an eval set "while training runs")
-    is NOT a _DATA_DEPENDENT_TARGET, so concurrent eval-set prep stays allowed.
-    Fail-safe: any uncertainty/error returns None, leaving the handoff unchanged.
+    Keyed on the dependency graph, not symptoms. Only data-dependent downstream targets
+    (training/eval) are considered, and only a cited job whose *type is a producer* for
+    that target (lineage.upstreams) counts — an in-flight job of an unrelated type the
+    target does not depend on is NOT a prerequisite, so mentioning it (extra work done
+    alongside) does not block the handoff. A delegation to SDG (e.g. cloning a recipe
+    for an eval set "while training runs") is not a _DATA_DEPENDENT_TARGET, so
+    concurrent eval-set prep stays allowed. Fail-safe: any uncertainty/error returns
+    None, leaving the handoff unchanged.
     """
     if target not in _DATA_DEPENDENT_TARGETS:
         return None
+    producers = {u.producer for u in lineage.upstreams(target)}
     try:
         for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
             job = await _fetch_job_by_token(token)
-            if job and str(job.get("status") or "") in _INFLIGHT_STATUSES:
+            if not job or str(job.get("type") or "") not in producers:
+                continue  # not a job type this target depends on — not a prerequisite
+            if str(job.get("status") or "") in _INFLIGHT_STATUSES:
                 status = str(job.get("status") or "")
                 return (
                     "[UPSTREAM NOT READY]\n"
@@ -1160,32 +1165,30 @@ async def _not_ready_violations(
     result: dict[str, Any],
     job_cache: dict[str, dict[str, Any] | None],
 ) -> list[dict[str, Any]]:
-    """Check D — the stage-gate. A training/eval dispatch in this turn whose upstream
-    job (the SDG dataset, or the model under eval) is not yet 'succeeded' — i.e. the
-    workflow is being advanced before its prerequisite finished. Purely structural:
-    the dispatch tool call's upstream id argument and that job's DB status; no prose.
-    Blocks forward movement so Morty reports the true status and waits, instead of
-    confirming/creating a job that can't run yet. Independent of job age (unlike the
-    stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
+    """Check D — the stage-gate. A dispatch in this turn whose upstream job (the SDG
+    dataset, or the model under eval) is not yet 'succeeded' — i.e. the workflow is
+    being advanced before its prerequisite finished. Field-driven and purely
+    structural: for any dispatch tool, every upstream-job reference its input carries
+    (lineage.GATED_FIELDS) and that job's DB status; no prose. So a dispatch "beyond
+    the graph" is gated on exactly the prerequisites it names, and extra work elsewhere
+    is never a concern. Blocks forward movement so Morty reports the true status and
+    waits, instead of confirming/creating a job that can't run yet. Independent of job
+    age (unlike the stale-reuse 'dispatch' check) — it fires on any non-succeeded
+    upstream."""
     violations: list[dict[str, Any]] = []
     for part in result.get("parts") or []:
         if part.get("type") != "tool":
             continue
-        downstream = _tool_name(part)
-        fields = _DISPATCH_UPSTREAM_FIELDS.get(downstream)
-        if not fields:
-            continue
-        dtype = _DISPATCH_PARENT_TYPE.get(downstream, "")
+        dtype = lineage.dispatch_job_type(_tool_name(part))
+        if dtype is None:
+            continue  # not a dispatch, or a root (SDG) with no prerequisite
         inp = _get_tool_input(part)
-        for field_name, label in fields:
-            up_id = str(inp.get(field_name) or "")
-            if not up_id:
-                continue  # reference absent — Layer 1 fail-closes at create time
+        for _field, up_id, label in lineage.present_gated_fields(inp):
             up = await _fetch_job_by_token(up_id, job_cache)
             if not up:
                 continue  # unresolvable — not a stage-gate concern (fabrication gate owns it)
             status = str(up.get("status") or "")
-            if status == "succeeded":
+            if status == lineage.READY_STATUS:
                 continue
             violations.append(
                 {
