@@ -1,7 +1,22 @@
 """Unit tests for the canonical job-dependency DAG (core/lineage.py) and its
 consistency contract with the agent workflow prompts."""
 
+import asyncio
+import json
+from typing import Any, ClassVar
+
 from amortized.core import lineage
+
+
+def _run(coro: Any) -> Any:
+    return asyncio.run(coro)
+
+
+def _fetch_from(jobs: dict[str, dict[str, Any]]) -> lineage.JobFetch:
+    async def _fetch(job_id: str) -> dict[str, Any] | None:
+        return jobs.get(job_id)
+
+    return _fetch
 
 
 class TestGraph:
@@ -105,3 +120,75 @@ class TestWorkflowConsistency:
         (agents / "eval" / "workflow.md").write_text("parent_job_id training_job_id")
         problems = lineage.check_workflow_consistency(agents)
         assert any("out of pipeline order" in p for p in problems)
+
+
+class TestAncestry:
+    # sdg2 ──(eval dataset)──┐
+    # sdg1 ──parent──▶ training ──(model)──▶ eval ◀── parent ── sdg2
+    _JOBS: ClassVar[dict[str, dict[str, Any]]] = {
+        "sdg1": {"id": "sdg1", "type": "sdg", "mlflow_run_id": "run-sdg1"},
+        "sdg2": {"id": "sdg2", "type": "sdg", "mlflow_run_id": "run-sdg2"},
+        "train1": {"id": "train1", "type": "training", "parent_job_id": "sdg1"},
+        "eval1": {
+            "id": "eval1",
+            "type": "eval",
+            "parent_job_id": "sdg2",
+            "config": {"training_job_id": "train1"},
+        },
+    }
+
+    def test_job_ref_reads_column_and_config(self) -> None:
+        job = {"parent_job_id": "p", "config": {"training_job_id": "t"}}
+        assert lineage.job_ref(job, "parent_job_id") == "p"
+        assert lineage.job_ref(job, "training_job_id") == "t"  # from config
+        assert lineage.job_ref(job, "data_run_id") == ""
+
+    def test_job_ref_parses_json_string_config(self) -> None:
+        job = {"config": json.dumps({"training_job_id": "t9"})}
+        assert lineage.job_ref(job, "training_job_id") == "t9"
+
+    def test_ancestors_walks_full_chain(self) -> None:
+        fetch = _fetch_from(self._JOBS)
+        got = _run(self._collect(self._JOBS["eval1"], fetch))
+        # eval's upstreams in declared order: parent_job_id (sdg2), then training_job_id
+        # (train1), whose own parent (sdg1) is reached transitively.
+        assert [j["id"] for j in got] == ["sdg2", "train1", "sdg1"]
+
+    def test_nearest_ancestor_single_hop(self) -> None:
+        fetch = _fetch_from(self._JOBS)
+        sdg = _run(lineage.nearest_ancestor(self._JOBS["train1"], "sdg", fetch))
+        assert sdg is not None and sdg["id"] == "sdg1"
+
+    def test_nearest_ancestor_prefers_closest(self) -> None:
+        # eval's own dataset parent (sdg2) is closer than the model's training SDG (sdg1)
+        fetch = _fetch_from(self._JOBS)
+        sdg = _run(lineage.nearest_ancestor(self._JOBS["eval1"], "sdg", fetch))
+        assert sdg is not None and sdg["id"] == "sdg2"
+
+    def test_nearest_ancestor_multi_hop_through_training(self) -> None:
+        # an eval chained ONLY to the model (no dataset parent) still finds the SDG
+        # by walking eval → training → sdg.
+        jobs = dict(self._JOBS)
+        jobs["eval2"] = {"id": "eval2", "type": "eval", "config": {"training_job_id": "train1"}}
+        sdg = _run(lineage.nearest_ancestor(jobs["eval2"], "sdg", _fetch_from(jobs)))
+        assert sdg is not None and sdg["id"] == "sdg1"
+
+    def test_nearest_ancestor_accepts_type_set(self) -> None:
+        jobs = {
+            "up1": {"id": "up1", "type": "upload", "mlflow_run_id": "run-up1"},
+            "t": {"id": "t", "type": "training", "parent_job_id": "up1"},
+        }
+        got = _run(
+            lineage.nearest_ancestor(jobs["t"], lineage.DATASET_PRODUCER_TYPES, _fetch_from(jobs))
+        )
+        assert got is not None and got["id"] == "up1"
+
+    def test_ancestors_is_cycle_safe(self) -> None:
+        # a self-referential parent must not loop forever
+        jobs = {"t": {"id": "t", "type": "training", "parent_job_id": "t"}}
+        got = _run(self._collect(jobs["t"], _fetch_from(jobs)))
+        assert [j["id"] for j in got] == ["t"]  # visited once, then stops
+
+    @staticmethod
+    async def _collect(job: dict, fetch: lineage.JobFetch) -> list[dict]:
+        return [a async for a in lineage.ancestors(job, fetch)]

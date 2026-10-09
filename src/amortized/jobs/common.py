@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 import amortized.config as config_mod
+from amortized.core import lineage
 from amortized.core.mlflow_client import MLflowClient
 
 logger = logging.getLogger("amortized.jobs")
@@ -239,7 +240,7 @@ async def resolve_parent_artifacts(
     pre_commands: list[str] = []
     config = dict(config)
 
-    if job["type"] == JobType.training.value and parent["type"] in ("sdg", "upload"):
+    if job["type"] == JobType.training.value and parent["type"] in lineage.DATASET_PRODUCER_TYPES:
         existing = config.get("data_path", "")
         if not existing or not existing.startswith("s3://"):
             local_dir = "/amortized/work/data"
@@ -256,7 +257,7 @@ async def resolve_parent_artifacts(
                 parent_run_id,
                 local_dir,
             )
-    elif job["type"] == JobType.eval.value and parent["type"] in ("sdg", "upload"):
+    elif job["type"] == JobType.eval.value and parent["type"] in lineage.DATASET_PRODUCER_TYPES:
         local_dir = "/amortized/work/eval_data"
         pre_cmd = (
             f"mlflow artifacts download"
