@@ -7,6 +7,8 @@ const logger = getLogger("settings-store")
 
 interface SettingsState {
   apiKey: string
+  // Default model for NEW chats. Each conversation pins its own model on first send
+  // (PersistedConversation.model); this is only the seed/fallback for new or legacy chats.
   chatModelSelection: string
   enabledProviders: string[]
   // Connected providers already auto-considered — so each is auto-enabled at most once and a

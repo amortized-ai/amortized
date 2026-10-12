@@ -61,6 +61,7 @@ class TurnState:
     result: dict[str, Any] | None = None
     error: str | None = None
     error_status: int | None = None
+    error_code: str | None = None
     consumed: bool = False
     finished_at: datetime | None = None
     task: asyncio.Task[None] | None = None
@@ -304,32 +305,69 @@ async def _proxy_create_session() -> str:
 
 
 class AgentTurnError(Exception):
-    """A provider/model error during a turn, already mapped to a user-facing message."""
+    """A provider/model error during a turn, already mapped to a user-facing message.
 
-    def __init__(self, message: str, status: int = 400) -> None:
+    ``code`` is a stable, client-switchable identifier (see ``_classify_provider_error``):
+    ``tool_calling`` | ``auth`` | ``model_unavailable`` | ``rate_limit`` | ``unknown``.
+    """
+
+    def __init__(self, message: str, status: int = 400, code: str = "unknown") -> None:
         super().__init__(message)
         self.status = status
+        self.code = code
+
+
+def _classify_provider_error(raw: str, name: str = "") -> tuple[str, str]:
+    """Classify a raw provider/opencode error into a ``(code, message)`` pair.
+
+    ``code`` is a stable identifier the client switches on *exactly* (never by re-parsing
+    the prose); ``message`` is the short chat-facing text. Keyed on OpenCode's structured
+    error ``name`` (e.g. ``ProviderAuthError``, ``ProviderModelNotFoundError``) where
+    available, with message-text heuristics as a fallback for providers that omit it.
+    """
+    auth_msg = "That model isn't available with your API key or project (auth/permission)."
+    missing_msg = "That model isn't available on this provider/endpoint."
+    limited_msg = "The provider is rate-limiting or out of quota — try again shortly."
+
+    # Tier 1: trust OpenCode's structured error ``name`` (unambiguous) over message text, so e.g.
+    # a ``ProviderAuthError`` whose message mentions "not found" still classifies as ``auth``.
+    structured = {
+        "providerautherror": ("auth", auth_msg),
+        "providermodelnotfounderror": ("model_unavailable", missing_msg),
+    }
+    name_l = name.lower()
+    for key, result in structured.items():
+        if key in name_l:
+            return result
+
+    # Tier 2: message-text heuristics for providers that omit a structured name. Check the more
+    # specific missing-model signal before auth so "permission denied: model not found" maps to
+    # ``model_unavailable`` rather than ``auth``.
+    text = raw.lower()
+    if "tool" in text and ("choice" in text or "parser" in text or "enable-auto-tool" in text):
+        return (
+            "tool_calling",
+            "This model's server doesn't have tool-calling enabled, which Morty needs. "
+            "Pick a tool-calling-capable model.",
+        )
+    missing = ("not found", "does not exist", "no such model")
+    auth = ("unauthorized", "forbidden", "permission", "invalid api key")
+    limited = ("rate limit", "too many requests", "quota")
+    if any(s in text for s in missing):
+        return ("model_unavailable", missing_msg)
+    if any(s in text for s in auth):
+        return ("auth", auth_msg)
+    if any(s in text for s in limited):
+        return ("rate_limit", limited_msg)
+    return ("unknown", (raw or "").strip()[:180] or "The model provider returned an error.")
 
 
 def _friendly_provider_error(raw: str, name: str = "") -> str:
-    """Map a raw provider/opencode error to a short, user-facing chat message. Falls back to the
-    raw text (capped) so an unmapped error is still more useful than a generic one."""
-    text = f"{raw} {name}".lower()
-    if "tool" in text and ("choice" in text or "parser" in text or "enable-auto-tool" in text):
-        return (
-            "This model's server doesn't have tool-calling enabled, which Morty needs. "
-            "Pick a tool-calling-capable model."
-        )
-    auth = ("providerautherror", "unauthorized", "forbidden", "permission", "invalid api key")
-    missing = ("not found", "does not exist", "providermodelnotfound", "no such model")
-    limited = ("rate limit", "too many requests", "quota")
-    if any(s in text for s in auth):
-        return "That model isn't available with your API key or project (auth/permission)."
-    if any(s in text for s in missing):
-        return "That model isn't available on this provider/endpoint."
-    if any(s in text for s in limited):
-        return "The provider is rate-limiting or out of quota — try again shortly."
-    return (raw or "").strip()[:180] or "The model provider returned an error."
+    """Back-compat shim: the user-facing message for a raw provider error.
+
+    Prefer ``_classify_provider_error`` when you also need the stable ``code``.
+    """
+    return _classify_provider_error(raw, name)[1]
 
 
 async def _proxy_send_message(
@@ -357,7 +395,8 @@ async def _proxy_send_message(
         data = err.get("data")
         data = data if isinstance(data, dict) else {}
         raw = str(data.get("message") or "")
-        raise AgentTurnError(_friendly_provider_error(raw, str(err.get("name") or "")))
+        code, message = _classify_provider_error(raw, str(err.get("name") or ""))
+        raise AgentTurnError(message, code=code)
     return result
 
 
@@ -527,6 +566,7 @@ async def _run_turn(
         if turn:
             turn.error = str(exc)
             turn.error_status = exc.status
+            turn.error_code = exc.code
     except httpx.HTTPStatusError as exc:
         logger.warning("Agent turn upstream error: session=%s turn=%s", session_id, turn_id)
         if turn:
@@ -563,6 +603,7 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
         "result": turn.result,
         "error": turn.error,
         "error_status": turn.error_status,
+        "error_code": turn.error_code,
     }
 
 

@@ -12,6 +12,7 @@ import { VRAMEstimateCard } from "./vram-estimate-card"
 import { JobMonitorCard } from "./job-monitor-card"
 import { ThinkingSteps } from "./thinking-steps"
 import { extractJobInfo } from "../utils/parse-tool-result"
+import { modelDisplayName } from "../models"
 
 const TOOL_XML_RE =
   /<(?:function_calls|function_response|antml:function_calls|antml:invoke)[^>]*>[\s\S]*?<\/(?:function_calls|function_response|antml:function_calls|antml:invoke)>/g
@@ -251,6 +252,12 @@ export function MessageBubble({
         {parsedOptions.length > 0 && onOptionSelect && (
           <div className="mt-3">
             <OptionCards cards={parsedOptions} onSelect={(v) => onOptionSelect(v, message.id)} selectedValue={message.selectedOptionValue} />
+          </div>
+        )}
+
+        {!isUser && message.model && hasRenderableBody && (
+          <div className="mt-2 text-[10px] text-muted-foreground/70" data-testid="message-model">
+            {modelDisplayName(message.model)}
           </div>
         )}
       </div>

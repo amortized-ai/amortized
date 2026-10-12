@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError } from "@/lib/api-client"
 import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
+import { modelDisplayName } from "../models"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-chat")
@@ -41,7 +42,33 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
     selectedOptionValue: m.selectedOptionValue,
     phase: m.phase,
     streamStartedAt: m.streamStartedAt,
+    model: m.model,
   }
+}
+
+// Message for a model/auth turn failure, else null. Both model_unavailable and auth map to
+// one abstracted message — we deliberately don't surface auth/key specifics (chat users
+// don't own the server-side provider keys; leaking auth state is a security smell). Keyed on
+// the proxy's exact code; rate_limit (transient) and tool_calling (picker-filtered) → null.
+function modelFailureMessage(err: unknown, modelName: string): string | null {
+  if (!(err instanceof ApiError)) return null
+  if (err.code === "model_unavailable" || err.code === "auth") {
+    return `Model "${modelName}" could not be reached. Check your provider or model configuration.`
+  }
+  return null
+}
+
+// Resolve the model for a send and pin it: use the conversation's own model if set,
+// else the global default. Stamps the assistant message (so its label is correct
+// immediately, even mid-stream) and seeds the conversation's model on first send.
+// Must be called BEFORE any await in the send flow so a later picker change cannot
+// retroactively alter the model of an already-submitted turn.
+function resolveAndPinModel(convId: string, assistantMessageId: string): string {
+  const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
+  const model = conv?.model ?? useSettingsStore.getState().chatModelSelection
+  useChatStore.getState().updateMessageFields(convId, assistantMessageId, { model })
+  if (!conv?.model) useChatStore.getState().setConversationModel(convId, model)
+  return model
 }
 
 const TOOL_BLOCK_RE =
@@ -564,6 +591,10 @@ export function useChat() {
         })
         _activeRequests.add(convId)
 
+        // Capture and pin the model BEFORE warmup — if the user changes the picker
+        // while warmup is pending, this already-submitted turn must keep its model.
+        const modelToSend = resolveAndPinModel(convId, assistantId)
+
         // Make this conversation current now so the keyed view shows the new turn
         // immediately (the messages selector keys off currentConversationId).
         if (isNewConversation) setCurrentConversationId(convId)
@@ -579,8 +610,7 @@ export function useChat() {
         try {
           const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
           logger.info("sending to OpenCode", { conversationId: convId })
-          const { chatModelSelection } = useSettingsStore.getState()
-          const response = await sendOpenCodeMessage(convId, content, chatModelSelection)
+          const response = await sendOpenCodeMessage(convId, content, modelToSend)
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
           logger.info("OpenCode response received", {
@@ -632,15 +662,20 @@ export function useChat() {
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
           _activeRequests.delete(convId)
-          logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
-          // Keep the assistant placeholder and persist the error into it, so the failed
+          const rawMsg = err instanceof Error ? err.message : "Unknown error"
+          logger.error("OpenCode error", { error: rawMsg, code: err instanceof ApiError ? err.code : undefined })
+          // A model/auth failure shows an abstracted message instead of a raw "Error: …" (the
+          // composer block can't catch this — the model passed the picker's static checks but
+          // failed at runtime).
+          const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
+          // Keep the assistant placeholder and persist the message into it, so the failed
           // turn survives navigation instead of vanishing. Flag it as an error so context
           // replay skips it (a failed turn is not something the assistant actually said).
           useChatStore.getState().updateMessageFields(convId, assistantId, {
-            content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+            content: errMsg ?? `Error: ${rawMsg}`,
             error: true,
           })
-          setError(err instanceof Error ? err.message : "Unknown error")
+          setError(errMsg ?? rawMsg)
           setChatState("error")
         }
       } finally {
@@ -799,10 +834,15 @@ export function useChat() {
       })
       _activeRequests.add(convId)
 
+      // Job-completion turns belong to the conversation — use (and stamp) its model
+      // too, so they don't silently run on a different model or render unlabeled.
+      const modelToSend = resolveAndPinModel(convId, placeholderId)
+
       try {
         const response = await sendOpenCodeMessage(
           convId,
           `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          modelToSend,
         )
 
         const parsed = parseOpenCodeResponse(response)
@@ -825,12 +865,20 @@ export function useChat() {
         consecutiveFailures = 0
       } catch (err) {
         _activeRequests.delete(convId)
+        const rawMsg = err instanceof Error ? err.message : String(err)
+        // A job-completion turn runs automatically, so it bypasses the composer's
+        // unavailable-model block. A model/auth failure shows the abstracted message;
+        // otherwise a generic fallback. (We never silently switch the model here.)
+        const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
-          content: "I wasn't able to suggest next steps. You can ask me what to do next.",
+          content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
+          // Flag as an error so context replay skips it (a failed turn isn't assistant output),
+          // while the chat still shows the persisted text.
+          error: true,
         })
         setChatState("done")
         consecutiveFailures++
-        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: rawMsg })
       } finally {
         _sendLock.delete(convId)
       }

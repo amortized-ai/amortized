@@ -1,6 +1,8 @@
 import { renderHook, act } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { useChatStore } from "@/stores/chat-store"
+import { useSettingsStore } from "@/stores/settings-store"
+import { encodeModelSelection } from "../models"
 import type { OpenCodeResponse } from "../types"
 
 // Only the network layer is mocked — the real zustand store is used, so these tests
@@ -19,14 +21,20 @@ let mockResponse: OpenCodeResponse = {
   parts: [],
 }
 
-vi.mock("@/lib/api-client", () => ({
-  sendOpenCodeMessage: vi.fn(async () => mockResponse),
-  fetchSessionMessages: vi.fn(async () => []),
-  fetchPendingMessages: vi.fn(async () => []),
-  generateChatTitle: vi.fn(async (msg: string) => msg.slice(0, 40)),
-  createJob: vi.fn(async () => ({ id: "job-1", status: "queued" })),
-  getBaseUrl: vi.fn(() => ""),
-}))
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  // Keep the real module (notably the ApiError class, used for instanceof checks in
+  // use-chat) and override only the network functions.
+  const actual = await importOriginal<typeof import("@/lib/api-client")>()
+  return {
+    ...actual,
+    sendOpenCodeMessage: vi.fn(async () => mockResponse),
+    fetchSessionMessages: vi.fn(async () => []),
+    fetchPendingMessages: vi.fn(async () => []),
+    generateChatTitle: vi.fn(async (msg: string) => msg.slice(0, 40)),
+    createJob: vi.fn(async () => ({ id: "job-1", status: "queued" })),
+    getBaseUrl: vi.fn(() => ""),
+  }
+})
 
 import { useChat } from "./use-chat"
 
@@ -392,5 +400,194 @@ describe("useChat — job-finished notify keeps the confirmation card", () => {
     expect(last.proposedAction).not.toBeNull()
     expect(last.proposedAction!.jobType).toBe("sdg")
     expect(last.proposedAction!.endpoint).toBe("/api/v1/jobs/sdg")
+  })
+})
+
+describe("useChat — per-conversation model", () => {
+  it("pins a new chat to the global default model on first send", async () => {
+    const MODEL = encodeModelSelection("openai", "gpt-5.6-sol")
+    useSettingsStore.setState({ chatModelSelection: MODEL })
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("Hi")
+    })
+
+    // Sent with the global default, and both the conversation and the assistant
+    // message are stamped from that send-time value.
+    expect(sendOpenCodeMessage).toHaveBeenCalledWith(expect.any(String), "Hi", MODEL)
+    const convId = useChatStore.getState().currentConversationId!
+    const conv = useChatStore.getState().conversations.find((c) => c.id === convId)!
+    expect(conv.model).toBe(MODEL)
+    expect(conv.messages.find((m) => m.role === "assistant")!.model).toBe(MODEL)
+  })
+
+  it("uses the conversation's pinned model over the global default", async () => {
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    const GLOBAL = encodeModelSelection("openai", "gpt-5.6-sol")
+    useSettingsStore.setState({ chatModelSelection: GLOBAL })
+    useChatStore.setState({
+      conversations: [
+        { id: "c1", title: "T", created_at: "2026-01-01", updated_at: "2026-01-01", messages: [], model: PINNED },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("Hi")
+    })
+
+    expect(sendOpenCodeMessage).toHaveBeenCalledWith("c1", "Hi", PINNED)
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    expect(conv.model).toBe(PINNED)
+    expect(conv.messages.find((m) => m.role === "assistant")!.model).toBe(PINNED)
+  })
+
+  it("applies the conversation model to job-completion turns", async () => {
+    mockResponse.parts = [{ type: "text", text: "Here are your next steps." }]
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    useChatStore.setState({
+      conversations: [
+        {
+          id: "c1",
+          title: "T",
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          model: PINNED,
+          messages: [
+            { id: "u1", role: "user", content: "hi", timestamp: "2026-01-01" },
+            { id: "a1", role: "assistant", content: "ok", timestamp: "2026-01-01" },
+          ],
+        },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.notifyJobComplete("job-1", "sdg", "succeeded")
+    })
+
+    // The job-completion send carries the conversation's model, and its new assistant
+    // turn is stamped with it (not left unlabeled or defaulted to the global).
+    expect(sendOpenCodeMessage).toHaveBeenCalledWith("c1", expect.any(String), PINNED)
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const lastAssistant = [...conv.messages].reverse().find((m) => m.role === "assistant")!
+    expect(lastAssistant.model).toBe(PINNED)
+  })
+
+  it("names the unavailable model when a job-completion turn fails on it", async () => {
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    useChatStore.setState({
+      conversations: [
+        {
+          id: "c1",
+          title: "T",
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          model: PINNED,
+          messages: [{ id: "u1", role: "user", content: "hi", timestamp: "2026-01-01" }],
+        },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage, ApiError } = await import("@/lib/api-client")
+    ;(sendOpenCodeMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError(400, "Agent turn failed", "That model isn't available on this provider/endpoint.", "model_unavailable"),
+    )
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.notifyJobComplete("job-1", "sdg", "succeeded")
+    })
+
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const last = conv.messages[conv.messages.length - 1]!
+    expect(last.content).toContain("Claude Sonnet 5")
+    expect(last.content).toMatch(/could not be reached/i)
+    expect(last.error).toBe(true) // excluded from context replay
+  })
+
+  it("shows a model-named message when a user send fails on an unavailable model", async () => {
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    useChatStore.setState({
+      conversations: [
+        { id: "c1", title: "T", created_at: "2026-01-01", updated_at: "2026-01-01", model: PINNED, messages: [] },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage, ApiError } = await import("@/lib/api-client")
+    ;(sendOpenCodeMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError(400, "Agent turn failed", "That model isn't available on this provider/endpoint.", "model_unavailable"),
+    )
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("hi")
+    })
+
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const assistant = conv.messages.find((m) => m.role === "assistant")!
+    expect(assistant.error).toBe(true)
+    expect(assistant.content).toContain("Claude Sonnet 5")
+    expect(assistant.content).toMatch(/could not be reached/i)
+    expect(assistant.content).not.toContain("Error:")
+  })
+
+  it("abstracts an auth failure without leaking key/auth details", async () => {
+    const PINNED = encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default")
+    useChatStore.setState({
+      conversations: [
+        { id: "c1", title: "T", created_at: "2026-01-01", updated_at: "2026-01-01", model: PINNED, messages: [] },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage, ApiError } = await import("@/lib/api-client")
+    ;(sendOpenCodeMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new ApiError(401, "Agent turn failed", "That model isn't available with your API key or project (auth/permission).", "auth"),
+    )
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("hi")
+    })
+
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const assistant = conv.messages.find((m) => m.role === "assistant")!
+    expect(assistant.content).toMatch(/could not be reached/i)
+    // Security: never surface auth/key specifics to the chat user.
+    expect(assistant.content).not.toMatch(/api key|auth|permission/i)
+  })
+
+  it("uses the generic fallback message for a non-model job-completion failure", async () => {
+    useChatStore.setState({
+      conversations: [
+        {
+          id: "c1",
+          title: "T",
+          created_at: "2026-01-01",
+          updated_at: "2026-01-01",
+          model: encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default"),
+          messages: [{ id: "u1", role: "user", content: "hi", timestamp: "2026-01-01" }],
+        },
+      ],
+      currentConversationId: "c1",
+    })
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    ;(sendOpenCodeMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("network timeout"))
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.notifyJobComplete("job-1", "sdg", "succeeded")
+    })
+
+    const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
+    const last = conv.messages[conv.messages.length - 1]!
+    expect(last.content).toBe("I wasn't able to suggest next steps. You can ask me what to do next.")
+    expect(last.error).toBe(true) // excluded from context replay
   })
 })

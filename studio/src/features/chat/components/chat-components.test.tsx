@@ -15,6 +15,7 @@ import { MessageList } from "./message-list"
 import { MessageBubble } from "./message-bubble"
 import type { ChatMessage, PhasePlan } from "../types"
 import { useChatStore } from "@/stores/chat-store"
+import { encodeModelSelection } from "../models"
 
 const getJob = vi.fn()
 
@@ -418,5 +419,48 @@ describe("MessageBubble — split_dataset monitor card", () => {
       expect(screen.getByText("Splitting dataset (Stage 3/4)")).toBeInTheDocument(),
     )
     expect(screen.getByText(/Monitoring SPLIT job #9e2c1f70/)).toBeInTheDocument()
+  })
+})
+
+describe("MessageBubble — model label", () => {
+  function makeAssistant(model?: string): ChatMessage {
+    return {
+      id: "m1",
+      role: "assistant",
+      content: "Here you go.",
+      timestamp: new Date().toISOString(),
+      toolResults: [],
+      proposedAction: null,
+      optionCards: [],
+      ...(model ? { model } : {}),
+    }
+  }
+
+  it("shows the model label for an assistant message with a model", () => {
+    render(
+      <MessageBubble message={makeAssistant(encodeModelSelection("google-vertex-anthropic", "claude-sonnet-5@default"))} />,
+      { wrapper: Wrapper },
+    )
+    expect(screen.getByTestId("message-model")).toHaveTextContent("Claude Sonnet 5")
+  })
+
+  it("hides the model label when the message has no model", () => {
+    render(<MessageBubble message={makeAssistant()} />, { wrapper: Wrapper })
+    expect(screen.queryByTestId("message-model")).toBeNull()
+  })
+
+  it("does not show a model label on user messages", () => {
+    const userMsg: ChatMessage = {
+      id: "u1",
+      role: "user",
+      content: "hello",
+      timestamp: new Date().toISOString(),
+      toolResults: [],
+      proposedAction: null,
+      optionCards: [],
+      model: encodeModelSelection("openai", "gpt-5.6-sol"),
+    }
+    render(<MessageBubble message={userMsg} />, { wrapper: Wrapper })
+    expect(screen.queryByTestId("message-model")).toBeNull()
   })
 })
