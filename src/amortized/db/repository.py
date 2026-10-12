@@ -17,6 +17,15 @@ def _parse_ts(value: str | datetime | None) -> datetime | None:
     return datetime.fromisoformat(value)
 
 
+# Jobs the worker must NOT pick: dataset uploads and splits are processed by the
+# API layer, not the worker. Document uploads carry source='document' and remain
+# worker-side. COALESCE guards against a source-less upload (NULL IN (...) is NULL,
+# which would silently exclude the job and hang it in queued).
+_WORKER_ELIGIBLE_FILTER = (
+    "AND NOT (type = 'upload' AND COALESCE(config->>'source', '') IN ('upload', 'split'))"
+)
+
+
 class Repository:
     def __init__(self, conn: asyncpg.Connection) -> None:
         self.conn = conn
@@ -146,21 +155,12 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
-        # Exclude dataset uploads and splits — they are processed by the
-        # API layer, not the worker. Document uploads carry source='document'
-        # and remain worker-side. COALESCE guards against a source-less upload
-        # (NULL IN (...) is NULL, which would silently exclude the job and hang
-        # it in queued) and rescues any such jobs created before source was set.
-        dataset_filter = (
-            """AND NOT (type = 'upload' """
-            """AND COALESCE(config->>'source', '') IN ('upload', 'split'))"""
-        )
         if k8s_namespace:
             query = f"""UPDATE jobs SET status = $1
                        WHERE id = (
                            SELECT id FROM jobs
                            WHERE status = $2 AND k8s_namespace = $3
-                           {dataset_filter}
+                           {_WORKER_ELIGIBLE_FILTER}
                            ORDER BY created_at ASC
                            LIMIT 1
                            FOR UPDATE SKIP LOCKED
@@ -174,7 +174,7 @@ class Repository:
                        WHERE id = (
                            SELECT id FROM jobs
                            WHERE status = $2
-                           {dataset_filter}
+                           {_WORKER_ELIGIBLE_FILTER}
                            ORDER BY created_at ASC
                            LIMIT 1
                            FOR UPDATE SKIP LOCKED
@@ -183,6 +183,62 @@ class Repository:
             params = (JobStatus.provisioning.value, JobStatus.queued.value)
         async with self.conn.transaction():
             row = await self.conn.fetchrow(query, *params)
+        if row is None:
+            return None
+        return _row_to_job(row)
+
+    async def list_queued_candidates(
+        self, k8s_namespace: str, limit: int
+    ) -> list[dict[str, Any]]:
+        """Oldest-first worker-eligible queued jobs (read-only, no claim).
+
+        The worker scans these and claims the oldest that fits its resource budget
+        via ``claim_job`` — so a GPU job that doesn't fit is skipped and the CPU
+        jobs behind it still run. Same exclusion as ``pick_pending_job``.
+        """
+        if k8s_namespace:
+            rows = await self.conn.fetch(
+                f"""SELECT * FROM jobs
+                    WHERE status = $1 AND k8s_namespace = $2
+                    {_WORKER_ELIGIBLE_FILTER}
+                    ORDER BY created_at ASC
+                    LIMIT $3""",
+                JobStatus.queued.value, k8s_namespace, limit,
+            )
+        else:
+            rows = await self.conn.fetch(
+                f"""SELECT * FROM jobs
+                    WHERE status = $1
+                    {_WORKER_ELIGIBLE_FILTER}
+                    ORDER BY created_at ASC
+                    LIMIT $2""",
+                JobStatus.queued.value, limit,
+            )
+        return [_row_to_job(row) for row in rows]
+
+    async def claim_job(
+        self, job_id: str, k8s_namespace: str = ""
+    ) -> dict[str, Any] | None:
+        """Atomically move a specific queued job to provisioning.
+
+        Returns the job if this caller won the claim, else None (a concurrent
+        worker already took it). The ``status = 'queued'`` guard makes the claim
+        race-safe without row locks.
+        """
+        if k8s_namespace:
+            row = await self.conn.fetchrow(
+                """UPDATE jobs SET status = $1
+                   WHERE id = $2 AND status = $3 AND k8s_namespace = $4
+                   RETURNING *""",
+                JobStatus.provisioning.value, job_id, JobStatus.queued.value, k8s_namespace,
+            )
+        else:
+            row = await self.conn.fetchrow(
+                """UPDATE jobs SET status = $1
+                   WHERE id = $2 AND status = $3
+                   RETURNING *""",
+                JobStatus.provisioning.value, job_id, JobStatus.queued.value,
+            )
         if row is None:
             return None
         return _row_to_job(row)

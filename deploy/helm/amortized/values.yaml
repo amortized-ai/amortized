@@ -52,6 +52,12 @@ server:
   imageRegistry: ghcr.io/amortized-ai
   # AMORTIZED_DATA_DIR: mount path for the server's working data.
   dataDir: /data
+  # Job orchestration (worker concurrency). maxConcurrentJobs bounds how many jobs the
+  # worker runs at once (1 = serial). gpuBudget caps GPUs committed to in-flight jobs and
+  # should match the namespace GPU ResourceQuota — the RHOAI provisioner sets it to
+  # GPU_PER_USER so GPU jobs queue to fit instead of failing on quota.
+  maxConcurrentJobs: 4
+  gpuBudget: 1
   persistence:
     size: 200Gi
   # Optional AMORTIZED_DOCLING_URL (document conversion service). Omitted when empty.

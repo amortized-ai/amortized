@@ -43,6 +43,9 @@ const TEACHER_KEYS_SECRET = 'amortized-teacher-keys';
 // as Morty. Created by the provisioner (provision.js), not from a mounted dir.
 const MODEL_KEY_SECRET = 'amortized-model-key';
 const GPU_PER_USER = process.env.GPU_PER_USER || '1';
+// The server's in-process GPU budget mirrors the per-user GPU ResourceQuota (gpuQuota)
+// so it queues GPU jobs to fit the quota instead of dispatching them to fail on it.
+const GPU_BUDGET = Number.parseInt(GPU_PER_USER, 10) || 1;
 
 const labels = { app: 'amortized', 'app.kubernetes.io/managed-by': 'studio-gateway' };
 
@@ -88,6 +91,8 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = fa
     dataStores: { bundled: true },
     minio: { bundled: false },
     mlflow: { enterprise: { enabled: true }, trackingUri: MLFLOW_TRACKING_URI },
+    // The worker's GPU budget mirrors this user's gpu-quota (GPU_PER_USER); see gpuQuota().
+    server: { gpuBudget: GPU_BUDGET },
     // Morty is the OpenShell sandbox; Studio is served by the gateway itself.
     opencode: { enabled: false },
     studio: { enabled: false },
@@ -95,7 +100,7 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = fa
   if (mortyEnabled) {
     // Sandboxed-Morty mTLS upstream, injected via the chart's server.extra* hooks.
     const host = mortyHost(ns);
-    values.server = {
+    Object.assign(values.server, {
       hostAliases: [{ ip: gatewayIP, hostnames: [host] }],
       extraEnv: [
         { name: 'AMORTIZED_AGENT_UPSTREAM_URL', value: `https://${host}:8080` },
@@ -105,7 +110,7 @@ function userValues(ns, { mortyEnabled = false, gatewayIP = '', hasModelKey = fa
       ],
       extraVolumes: [{ name: 'openshell-mtls', secret: { secretName: 'openshell-client-tls' } }],
       extraVolumeMounts: [{ name: 'openshell-mtls', mountPath: OPENSHELL_MTLS_DIR, readOnly: true }],
-    };
+    });
   }
   // Forward the image-tag overrides into the server env (creating the server block if Morty is
   // off), so the server dispatches pinned job backends. The training image is on a separate
