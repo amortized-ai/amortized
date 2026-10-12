@@ -2823,7 +2823,7 @@
             "type": "array",
             "minItems": 2,
             "title": "Run Ids",
-            "description": "MLflow run IDs of datasets to merge (at least 2)"
+            "description": "MLflow run IDs of datasets to merge (at least 2, no duplicates)"
           },
           "name": {
             "type": "string",
