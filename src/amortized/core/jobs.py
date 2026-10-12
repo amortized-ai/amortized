@@ -75,6 +75,16 @@ async def create_job(
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
 
+    # A job that needs more GPUs than the whole budget can never be admitted (it would
+    # sit queued forever), so reject it at creation instead.
+    demand = estimate_gpu_demand({"type": job_type.value, "config": config})
+    if demand > _settings.gpu_budget:
+        raise InvalidJobStateError(
+            f"job requests {demand} GPU(s) (nproc_per_node) but the per-user GPU budget is"
+            f" {_settings.gpu_budget} — reduce nproc_per_node or raise the budget"
+            " (GPU_PER_USER / AMORTIZED_GPU_BUDGET)"
+        )
+
     job_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
