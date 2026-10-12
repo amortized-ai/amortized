@@ -467,6 +467,33 @@ class TestEvalOverlapWarning:
         assert warnings and "1 of 2 eval records reuse inputs" in warnings[0]
 
     @pytest.mark.asyncio
+    async def test_prefers_eval_data_run_id_over_parent(self, patch) -> None:
+        # Split-complement eval: train on split A, score on split B of the same SDG
+        # (parent_job_id=SDG, eval_data_run_id=B). The eval scores on B, so overlap
+        # must be computed against B — NOT the parent SDG's full run (which includes
+        # split A). Resolving the eval run parent-first falsely flagged leakage here.
+        patch(
+            {
+                "train-job": {
+                    "config": {"data_run_id": "run-split-a"},
+                    "parent_job_id": "train-sdg",
+                },
+                "eval-sdg": {"mlflow_run_id": "run-sdg-full"},
+            },
+            {
+                "run-split-a": {"a1", "a2"},  # training split
+                "run-split-b": {"b1", "b2"},  # eval split — disjoint from training
+                "run-sdg-full": {"a1", "a2", "b1", "b2"},  # full SDG = both splits
+            },
+        )
+        warnings = await jobs._eval_overlap_warning(
+            {"training_job_id": "train-job", "eval_data_run_id": "run-split-b"},
+            "eval-sdg",
+            db=None,
+        )
+        assert warnings == []  # split B shares no inputs with split A -> no leakage
+
+    @pytest.mark.asyncio
     async def test_silent_when_not_for_a_trained_model(self, patch) -> None:
         patch({}, {})
         assert await jobs._eval_overlap_warning({}, "eval-sdg", db=None) == []

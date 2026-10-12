@@ -1211,9 +1211,14 @@ async def _eval_overlap_warning(
         return []  # not an eval for a trained model
 
     repo = Repository(db)
-    eval_run = await _resolve_data_run(
-        repo, parent_job_id, str(config.get("eval_data_run_id") or "")
-    )
+    # Resolve the run the eval ACTUALLY scores on: an explicit eval_data_run_id
+    # (e.g. a split complement) takes precedence over the parent SDG's full output,
+    # matching how the job itself and _persist_metric_set resolve it (eval_data_run_id
+    # first, parent only as fallback). Resolving parent-first here compared the whole
+    # SDG set — which includes the model's training split — producing a false leakage
+    # warning (or masking a real one) for a split-complement eval.
+    eval_data_run_id = str(config.get("eval_data_run_id") or "")
+    eval_run = eval_data_run_id or await _resolve_data_run(repo, parent_job_id, "")
     train_run = await _resolve_training_data_run(repo, training_job_id)
     if not eval_run or not train_run:
         return []
