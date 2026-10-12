@@ -1,7 +1,10 @@
-"""Tests for the agent proxy subagent delegation routing.
+"""Tests for the agent proxy subagent routing.
 
-Covers subagent → subagent delegation (e.g. eval → sdg) and the
-stack-based return of control when the delegated subagent completes.
+Subagents are leaves: they execute their own job and hand back. A subagent that
+needs a prerequisite it can't produce (e.g. the eval agent needs a held-out
+dataset) hands back to the orchestrator via request_orchestrator_help; the
+orchestrator — the sole delegator — runs the producing subagent (sdg) and then
+resumes the caller via the existing completed_subagents + resume path.
 """
 
 from typing import Any
@@ -111,60 +114,9 @@ class TestJobSucceeded:
         assert not agent._job_succeeded(_body(), "Job x finished with status: failed.")
 
 
-class TestSubagentDelegation:
-    def test_subagent_delegation_switches_sessions(self, router: _Router) -> None:
-        # Active eval subagent delegates to sdg
-        sdg_id = router.queue_session([[_text_part("What kind of dataset?")]])
-        eval_id = router.add_session(
-            [[_tool_part("delegate_to_subagent", {"target": "sdg", "context": "c"})]]
-        )
-        state = _make_state(router)
-        state.subagent_id = eval_id
-        state.subagent_target = "eval"
-
-        result = _run(
-            agent._handle_subagent_message(state, "s1", "build the dataset", _body())
-        )
-
-        # The new sdg session became active; eval was stashed on the stack
-        assert state.subagent_target == "sdg"
-        assert state.subagent_id == sdg_id
-        assert len(state.subagent_stack) == 1
-        stashed_target, stashed_id = state.subagent_stack[0]
-        assert stashed_target == "eval"
-        assert stashed_id == eval_id  # the original eval session
-        # Response contains the user-visible parts from the sdg agent
-        texts = [p.get("text") for p in result["parts"] if p.get("type") == "text"]
-        assert "What kind of dataset?" in texts
-
-    def test_subagent_completion_returns_to_parent_not_orchestrator(self, router: _Router) -> None:
-        # sdg (child) completes; eval (parent, on the stack) resumes
-        eval_id = router.add_session([[_text_part("Dataset ready — continuing eval setup")]])
-        sdg_id = router.add_session(
-            [[_tool_part("signal_subagent_completion", {"summary": "SDG job 123 done"})]]
-        )
-        state = _make_state(router)
-        state.subagent_id = sdg_id
-        state.subagent_target = "sdg"
-        state.subagent_stack = [("eval", eval_id)]
-
-        result = _run(
-            agent._handle_subagent_message(state, "s1", "confirm", _body())
-        )
-
-        # Control returned to the eval agent
-        assert state.subagent_id == eval_id
-        assert state.subagent_target == "eval"
-        assert state.subagent_stack == []
-        # The orchestrator was never contacted
-        assert all(s != state.orchestrator_id for s, _, _ in router.sent)
-        # Parent received the completion summary
-        parent_msg = next(m for m in router.sent if m[0] == eval_id)
-        assert "[SUBAGENT COMPLETED]" in parent_msg[1]
-        assert "SDG job 123 done" in parent_msg[1]
-        # User-visible parts include both the sdg tail and the eval response
-        texts = [p.get("text") for p in result["parts"] if p.get("type") == "text"]
-        assert "Dataset ready — continuing eval setup" in texts
+class TestSubagentCompletion:
+    """A subagent that signals completion hands control back to the orchestrator —
+    the sole delegator — which resumes the conversation."""
 
     def test_subagent_completion_without_stack_resumes_orchestrator(self, router: _Router) -> None:
         state = _make_state(router, orchestrator_script=[[ _text_part("What next?") ]])
@@ -180,41 +132,143 @@ class TestSubagentDelegation:
         orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
         assert orch_msg[2] == "morty"
 
-    def test_parent_may_delegate_again_after_child_completes(self, router: _Router) -> None:
-        # eval resumes after sdg completes and immediately delegates to training
-        training_id = router.queue_session([[_text_part("Which model?")]])
-        eval_id = router.add_session(
-            [[_tool_part("delegate_to_subagent", {"target": "training", "context": "c2"})]]
-        )
-        sdg_id = router.add_session(
-            [[_tool_part("signal_subagent_completion", {"summary": "sdg done"})]]
-        )
-        state = _make_state(router)
-        state.subagent_id = sdg_id
-        state.subagent_target = "sdg"
-        state.subagent_stack = [("eval", eval_id)]
-
-        _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
-
-        assert state.subagent_target == "training"
-        assert state.subagent_id == training_id
-        assert state.subagent_stack == [("eval", eval_id)]
-
     def test_internal_tools_stripped_from_response(self, router: _Router) -> None:
+        # The completion signal and the orchestrator's onward delegation are internal
+        # routing — never surfaced to the user.
         _ = router.queue_session([[_text_part("What kind of dataset?")]])
-        state = _make_state(router)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [_tool_part("delegate_to_subagent", {"target": "sdg", "context": "c"})]
+            ],
+        )
         state.subagent_id = router.add_session(
-            [[_tool_part("delegate_to_subagent", {"target": "sdg", "context": "c"})]]
+            [[_tool_part("signal_subagent_completion", {"summary": "eval done"})]]
         )
         state.subagent_target = "eval"
 
-        result = _run(
-            agent._handle_subagent_message(state, "s1", "build it", _body())
-        )
-        tools = [
-            p for p in result["parts"] if p.get("type") == "tool"
-        ]
+        result = _run(agent._handle_subagent_message(state, "s1", "done", _body()))
+        tools = [p for p in result["parts"] if p.get("type") == "tool"]
         assert tools == []
+
+
+class TestRequestOrchestratorHelp:
+    """A subagent is a leaf: it cannot delegate. When it needs a prerequisite it can't
+    produce itself it calls request_orchestrator_help, handing back to the orchestrator.
+    The orchestrator runs the producing subagent (sdg) and then resumes the caller via
+    the existing resume path — eval → orch → sdg → orch → eval(resume)."""
+
+    _NEED: ClassVar[str] = "a held-out eval dataset for training job t1"
+    _CONTEXT: ClassVar[str] = "evaluating t1; judge gpt-oss; resume at metrics design (Step 3)"
+
+    def test_help_request_stashes_caller_and_seeds_orchestrator(self, router: _Router) -> None:
+        # eval (active) hands back for help; the orchestrator acknowledges in text, so
+        # this isolates the stash + seed (no onward delegation).
+        state = _make_state(router, orchestrator_script=[[_text_part("On it.")]])
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    )
+                ]
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+
+        _run(agent._handle_subagent_message(state, "s1", "set it up", _body()))
+
+        # The caller is stashed for a later resume; the orchestrator took over.
+        assert state.completed_subagents["eval"] == eval_id
+        assert state.subagent_id is None
+        assert state.subagent_target is None
+        # The orchestrator got the structured ask (as morty), carrying the need, the
+        # context, and the instruction to resume the caller with resume: true.
+        orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
+        assert orch_msg[2] == "morty"
+        assert "[SUBAGENT NEEDS HELP]" in orch_msg[1]
+        assert self._NEED in orch_msg[1]
+        assert "resume at metrics design" in orch_msg[1]
+        assert "resume: true" in orch_msg[1]
+
+    def test_help_flow_eval_to_sdg_to_eval_resume(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Isolate routing from the data-availability advisory (it would otherwise fire,
+        # since the harness can't see the sdg job the eval resume depends on).
+        async def _no_advisory(*_a: Any, **_k: Any) -> None:
+            return None
+
+        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+
+        # Orchestrator: delegate to sdg on the help ask, then resume eval on completion.
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "eval", "context": "set ready: sdg-1", "resume": True},
+                    )
+                ],
+            ],
+        )
+        # eval: first turn asks for help; second turn (resume) continues its workflow.
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    )
+                ],
+                [_text_part("Great — now let's design the eval metrics.")],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        # sdg (created on delegation): gathers requirements, then completes.
+        sdg_id = router.queue_session(
+            [
+                [_text_part("What format should the eval set be?")],
+                [
+                    _tool_part(
+                        "signal_subagent_completion",
+                        {"summary": "SDG job sdg-1 done; 40 records"},
+                    )
+                ],
+            ]
+        )
+
+        # Turn A: eval → request_orchestrator_help → orchestrator → delegate(sdg).
+        _run(
+            agent._handle_subagent_message(
+                state, "s1", "evaluate t1 on a fresh set", _body()
+            )
+        )
+        assert state.subagent_target == "sdg"  # sdg is now active
+        assert state.subagent_id == sdg_id
+        assert state.completed_subagents == {"eval": eval_id}  # caller stashed
+        sdg_handoff = next(m for m in router.sent if m[0] == sdg_id)
+        assert sdg_handoff[2] == "sdg"
+        assert self._NEED in sdg_handoff[1]  # the need rode into the sdg handoff
+
+        # Turn B: sdg completes → orchestrator → delegate(eval, resume=true) → resumed.
+        _run(agent._handle_subagent_message(state, "s1", "json, please", _body()))
+        assert state.subagent_target == "eval"  # control is back on the ORIGINAL eval
+        assert state.subagent_id == eval_id
+        assert "eval" not in state.completed_subagents  # popped on resume
+        resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
+        assert resume_msg[2] == "eval"
+        assert "[RESUMED]" in resume_msg[1]
 
 
 class TestJobCompleteHandback:
@@ -692,7 +746,7 @@ class TestPhaseBackfill:
     """When an active subagent's turn carries no signal_phase, the server backfills
     one from subagent_target so the UI progress bar is never stale. The backfill is
     applied by _run_turn to EVERY handler return path (completion hand-back,
-    subagent→subagent delegation, normal), so it is unit-tested here on the pure
+    subagent help hand-back, normal), so it is unit-tested here on the pure
     _ensure_phase_signal function it delegates to."""
 
     def _sub_state(self) -> agent.SessionState:
