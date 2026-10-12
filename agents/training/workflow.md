@@ -3,6 +3,9 @@ permission:
   skill:
     "*": deny
     "training-*": allow
+  # task = opencode's native subagent spawner; deny it so the leaf rule holds for
+  # the built-in too, not just the amortized delegate tool below.
+  task: deny
 # Role-scoped tools: the training subagent may validate ONLY training jobs.
 # SDG/eval validation belongs to their own subagents (enforced, not just prose).
 # A subagent is a leaf — it cannot delegate; when it needs a dataset generated it

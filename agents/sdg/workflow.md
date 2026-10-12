@@ -3,6 +3,9 @@ permission:
   skill:
     "*": deny
     "sdg-*": allow
+  # task = opencode's native subagent spawner; deny it so the leaf rule holds for
+  # the built-in too, not just the amortized delegate tool below.
+  task: deny
 # Role-scoped tools: the SDG subagent may validate ONLY SDG jobs. Training/eval
 # validation belongs to their own subagents (enforced, not just prose). SDG is a
 # pure leaf PRODUCER: it cannot delegate, and it never needs request_orchestrator_help
