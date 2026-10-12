@@ -872,6 +872,9 @@ export function useChat() {
         const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
           content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
+          // Flag as an error so context replay skips it (a failed turn isn't assistant output),
+          // while the chat still shows the persisted text.
+          error: true,
         })
         setChatState("done")
         consecutiveFailures++

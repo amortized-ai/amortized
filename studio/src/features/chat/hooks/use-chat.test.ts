@@ -509,6 +509,7 @@ describe("useChat — per-conversation model", () => {
     const last = conv.messages[conv.messages.length - 1]!
     expect(last.content).toContain("Claude Sonnet 5")
     expect(last.content).toMatch(/could not be reached/i)
+    expect(last.error).toBe(true) // excluded from context replay
   })
 
   it("shows a model-named message when a user send fails on an unavailable model", async () => {
@@ -587,5 +588,6 @@ describe("useChat — per-conversation model", () => {
     const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
     const last = conv.messages[conv.messages.length - 1]!
     expect(last.content).toBe("I wasn't able to suggest next steps. You can ask me what to do next.")
+    expect(last.error).toBe(true) // excluded from context replay
   })
 })
