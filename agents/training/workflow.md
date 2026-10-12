@@ -200,10 +200,11 @@ You don't generate data yourself (that is the SDG agent's job and you are a
 leaf): hand back to the orchestrator with `request_orchestrator_help` —
 `need` a fresh training set for the task, `context` the task, the benchmark
 dataset X (so the new set does not overlap it), and that you resume with
-the new SDG job's dataset as the training data. The orchestrator runs SDG
-and resumes you with a `[RESUMED]` handoff; continue from data
-confirmation (`get_dataset` on the new set) as usual. Only train directly
-on X if the user explicitly confirms it and accepts the leakage trade-off.
+the new SDG job's dataset as the training data. SDG runs and you are resumed
+with a `[RESUMED]` handoff that carries the new SDG job id; continue from
+data confirmation (`get_dataset` on the new set) as usual. Only train
+directly on X if the user explicitly confirms it and accepts the leakage
+trade-off.
 
 ### Phase 3 — Validate and Confirm
 
