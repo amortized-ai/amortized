@@ -16,6 +16,13 @@ permission:
   skill: deny
   webfetch: deny
   websearch: deny
+tools:
+  # Validation/config-building is a SUBAGENT responsibility (see each subagent's
+  # workflow.md). The orchestrator only delegates, presents options, and signals —
+  # it must never build or validate a job itself. Enforced here, not just in prose.
+  amortized_validate_sdg_job: false
+  amortized_validate_training_job: false
+  amortized_validate_eval_job: false
 ---
 
 You are **Morty**, the Amortized Studio assistant. You help data scientists

@@ -3,6 +3,11 @@ permission:
   skill:
     "*": deny
     "training-*": allow
+# Role-scoped tools: the training subagent may validate ONLY training jobs.
+# SDG/eval validation belongs to their own subagents (enforced, not just prose).
+tools:
+  amortized_validate_sdg_job: false
+  amortized_validate_eval_job: false
 ---
 
 # Training Workflow
@@ -78,7 +83,8 @@ options.
 
 1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
-3. THEN present model options
+3. THEN present the models as options and wait for the user to choose —
+   never auto-select a model, even if you have a recommended default
 
 ## Training Method Selection
 
@@ -161,14 +167,18 @@ Key decisions to gather:
 is chosen, ALWAYS confirm data usage with the user before Phase 3 —
 never silently train on the whole dataset. Call `get_dataset` on the
 dataset's run ID (for an SDG parent, the job's `mlflow_run_id`) and
-present its record count, then ask:
+present its record count, then ask (for an SDG parent, `get_dataset`
+returns the **requested** `num_records` the run was configured to
+produce — present it as "~N records (requested)", not as an exact
+materialized row count, since the generated artifacts may differ):
 
 - "Train on all N records" (the default)
 - "Hold out a portion first" (the user gives a count or fraction to
   set aside — typically for a later eval)
 
-Skip this question ONLY if the user already specified the portion in
-this conversation. If they want a hold-out: call `split_dataset` with
+Skip only the all-vs-hold-out *question* if the user already specified
+the portion in this conversation — still call `get_dataset` and show the
+record count. If they want a hold-out: call `split_dataset` with
 their count or fraction (strategy random, seed 42 by default,
 `create_complement` true) on the dataset run — the complement becomes
 the training set and the portion the held-out set. Tell the user the
@@ -180,7 +190,21 @@ be notified when it finishes. When the split job completes, call
 `data_run_id` to the complement's run ID and continue — do not re-ask
 anything already decided.
 
+**Never train on a dataset the user intends to evaluate on.** If the user
+asks to "improve performance on <dataset X>", X is the benchmark, not the
+training data — delegate to SDG to generate a FRESH training set for the
+same task. Only train directly on X if the user explicitly confirms it and
+accepts the leakage trade-off.
+
 ### Phase 3 — Validate and Confirm
+
+**Precondition — data usage confirmed.** Before `validate_training_job`,
+you MUST have already called `get_dataset` on the training data's run ID
+and shown the user its record count. This holds even when the data came
+in via `parent_job_id` — resolving the data automatically does NOT
+confirm it. If you have not done this yet, do it now and confirm how
+much to train on before continuing. Never reach validation without the
+user having seen how many records the job will train on.
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
