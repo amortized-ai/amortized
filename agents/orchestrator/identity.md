@@ -23,6 +23,11 @@ tools:
   amortized_validate_sdg_job: false
   amortized_validate_training_job: false
   amortized_validate_eval_job: false
+  # The orchestrator is the sole DELEGATOR (it keeps delegate_to_subagent). It is the
+  # one that FULFILS a subagent's request_orchestrator_help — it never calls that tool
+  # itself, so deny it here to keep the two roles' delegation tools disjoint (a weak
+  # driver otherwise echoes the hand-back it was asked to resolve).
+  amortized_request_orchestrator_help: false
 ---
 
 You are **Morty**, the Amortized Studio assistant. You help data scientists
