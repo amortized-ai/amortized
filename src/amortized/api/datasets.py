@@ -728,10 +728,10 @@ async def _process_dataset_merge(
 
             mlflow = MLflowClient(settings.mlflow_tracking_uri, timeout=60.0)
 
-            # Collect records from all source datasets, in order.
             all_records: list[dict[str, Any]] = []
             source_names: list[str] = []
-            output_format = ".jsonl"
+            all_parquet = True
+            total_bytes = 0
 
             for run_id in request.run_ids:
                 source_run = await mlflow.get_run(run_id)
@@ -746,17 +746,26 @@ async def _process_dataset_merge(
                 )
 
                 paths = await _find_dataset_artifacts(mlflow, run_id)
-                if any(p.endswith(".parquet") for p in paths):
-                    output_format = ".parquet"
+                if not all(p.endswith(".parquet") for p in paths):
+                    all_parquet = False
                 for path in paths:
                     data = await mlflow.get_artifact(run_id, path)
+                    total_bytes += len(data)
+                    if total_bytes > _MAX_UPLOAD_BYTES:
+                        raise ValueError(
+                            f"Aggregate source data exceeds {_MAX_UPLOAD_BYTES} bytes"
+                        )
                     all_records.extend(_parse_records(path, data))
 
-            temp_names = [n for n in source_names if not n.startswith(("ds-", "run-"))]
+            if not all_records:
+                raise ValueError("Merge produced no rows — all source datasets are empty")
+
+            output_format = ".parquet" if all_parquet else ".jsonl"
+            display_names = [n for n in source_names if not n.startswith("ds-")]
             if request.name:
                 merged_name = request.name
-            elif temp_names:
-                merged_name = " + ".join(temp_names)
+            elif display_names:
+                merged_name = " + ".join(display_names)
             else:
                 merged_name = f"Merged dataset ({len(request.run_ids)} sources)"
             artifact_path = f"generated_data/data{output_format}"
@@ -827,7 +836,6 @@ async def merge_datasets(
                     status_code=404, detail=f"Dataset run {run_id} not found"
                 ) from None
             raise
-        await _find_dataset_artifacts(mlflow, run_id)
 
     repo = Repository(db)
     row = await create_job(

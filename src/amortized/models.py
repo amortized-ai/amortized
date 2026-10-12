@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -664,8 +664,15 @@ class DatasetMergeRequest(BaseModel):
     run_ids: list[str] = Field(
         ...,
         min_length=2,
-        description="MLflow run IDs of datasets to merge (at least 2)",
+        description="MLflow run IDs of datasets to merge (at least 2, no duplicates)",
     )
+
+    @model_validator(mode="after")
+    def _no_duplicate_run_ids(self) -> Self:
+        if len(self.run_ids) != len(set(self.run_ids)):
+            raise ValueError("run_ids must not contain duplicates")
+        return self
+
     name: str = Field(
         "",
         description="Name for the merged dataset (default: derived from source names)",
