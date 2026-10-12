@@ -4,12 +4,14 @@ permission:
     "*": deny
     "sdg-*": allow
 # Role-scoped tools: the SDG subagent may validate ONLY SDG jobs. Training/eval
-# validation belongs to their own subagents (enforced, not just prose). A subagent
-# is a leaf — it cannot delegate (the orchestrator is the sole delegator).
+# validation belongs to their own subagents (enforced, not just prose). SDG is a
+# pure leaf PRODUCER: it cannot delegate, and it never needs request_orchestrator_help
+# either (that is for data CONSUMERS — eval/training — that need a dataset generated).
 tools:
   amortized_validate_training_job: false
   amortized_validate_eval_job: false
   amortized_delegate_to_subagent: false
+  amortized_request_orchestrator_help: false
 ---
 
 # SDG Subagent
