@@ -1905,6 +1905,47 @@
         }
       }
     },
+    "/api/v1/ui/request_orchestrator_help": {
+      "post": {
+        "tags": [
+          "ui"
+        ],
+        "summary": "Hand back to the orchestrator to run a prerequisite job you cannot produce yourself (e.g. generating a dataset), then resume you where you left off. Use ONLY when a different kind of job must run first \u2014 never for your own job.",
+        "operationId": "request_orchestrator_help",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestOrchestratorHelpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOrchestratorHelpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/session": {
       "post": {
         "tags": [
@@ -5350,6 +5391,37 @@
         ],
         "title": "RemoteValidatorParams",
         "description": "Configuration for remote validation. Sends data to a remote endpoint for validation.\n\nAttributes:\n    endpoint_url (required): The URL of the remote endpoint.\n    output_schema: The JSON schema for the remote validator's output. If not provided,\n        the output will not be validated.\n    timeout: The timeout for the HTTP request in seconds. Defaults to 30.0.\n    max_retries: The maximum number of retry attempts. Defaults to 3.\n    retry_backoff: The backoff factor for the retry delay in seconds. Defaults to 2.0.\n    max_parallel_requests: The maximum number of parallel requests to make. Defaults to 4."
+      },
+      "RequestOrchestratorHelpRequest": {
+        "properties": {
+          "need": {
+            "type": "string",
+            "title": "Need",
+            "description": "Short description of the prerequisite you cannot produce yourself and need before you can finish (e.g. 'a held-out eval dataset for training job <id>'). You run your OWN job; use this ONLY when a DIFFERENT kind of job must run first."
+          },
+          "context": {
+            "type": "string",
+            "title": "Context",
+            "description": "Everything the orchestrator needs to fulfill the prerequisite AND resume you afterward with continuity: what you were doing and the step to resume at, the relevant job/model IDs, and the choices already made (e.g. the eval subject and judge). The orchestrator has no memory of your session, so this is all it has."
+          }
+        },
+        "type": "object",
+        "required": [
+          "need",
+          "context"
+        ],
+        "title": "RequestOrchestratorHelpRequest"
+      },
+      "RequestOrchestratorHelpResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          }
+        },
+        "type": "object",
+        "title": "RequestOrchestratorHelpResponse"
       },
       "SDGJobRequest": {
         "properties": {
