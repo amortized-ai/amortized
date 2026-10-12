@@ -259,6 +259,12 @@ class TestRequestOrchestratorHelp:
         sdg_handoff = next(m for m in router.sent if m[0] == sdg_id)
         assert sdg_handoff[2] == "sdg"
         assert self._NEED in sdg_handoff[1]  # the need rode into the sdg handoff
+        # Regression guard: the orchestrator's seed (its instruction sheet — carrying the
+        # caller's context and "delegate to sdg…") must NOT leak into the leaf's handoff.
+        # The producer is a leaf: it sees only the dataset ask, never the help framing or
+        # the caller's resume note.
+        assert "[SUBAGENT NEEDS HELP]" not in sdg_handoff[1]
+        assert "resume at metrics design" not in sdg_handoff[1]
 
         # Turn B: sdg completes → proxy auto-resumes eval, with NO orchestrator turn.
         sent_before = len(router.sent)

@@ -266,19 +266,24 @@ _SUBAGENT_JOB_DONE_PROMPT = (
 )
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
-# a subagent (e.g. eval) needs a prerequisite it can't produce itself (e.g. a held-out
-# dataset). The orchestrator is the sole delegator, so its one job is to run the
-# producing subagent (sdg). The resume is NOT its job — when that producer completes,
-# the proxy resumes the requester automatically (see pending_help_target). {target}/
-# {need}/{context} are filled from the caller's target and the tool's arguments.
+# a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
+# The orchestrator is the sole delegator, so its one job is to run the producing
+# subagent (sdg) — handing it ONLY a plain dataset build-order, never the caller's
+# {context} (that note is for the orchestrator; the producer is a leaf and must not
+# learn the rest of the pipeline exists). The resume is NOT its job — when the producer
+# completes, the proxy resumes the requester automatically (see pending_help_target).
+# {target}/{need}/{context} are filled from the caller's target and the tool's arguments.
 _SUBAGENT_HELP_PROMPT = (
     "[SUBAGENT NEEDS HELP]\n"
-    "The {target} workflow needs a prerequisite it cannot produce itself.\n\n"
-    "need: {need}\n\ncontext: {context}\n\n"
-    "Your ONLY action this turn is a single delegate_to_subagent call to the agent "
-    'that produces it (for a dataset, target "sdg", resume: false), with the need and '
-    "context above in its context so it builds exactly what was asked. Nothing else — "
-    "once that job finishes, the platform resumes the {target} agent automatically."
+    "The {target} workflow needs a dataset it cannot produce itself.\n\n"
+    "dataset needed: {need}\n\n"
+    "background for YOU (do NOT pass this on): {context}\n\n"
+    "Your ONLY action this turn: a single delegate_to_subagent call to the producer "
+    '(target "sdg", resume: false). Its context must be ONLY a plain build order for '
+    "the dataset above, worded as if a user asked for that dataset directly — do NOT "
+    "mention the {target} step, resuming, waiting, or anything else about the pipeline "
+    "(the producer is a leaf and must not know the rest exists). The platform resumes "
+    "the {target} agent automatically once the job finishes."
 )
 
 
@@ -1915,7 +1920,10 @@ async def _handle_subagent_message(
         seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
         morty_result = await _orchestrator_turn(state, seed, body)
         delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
-        help_result = await _maybe_delegate(state, session_id, delegation, seed, morty_result, body)
+        # The leaf's [USER MESSAGE] is the dataset ask (need), NOT the orchestrator seed —
+        # the seed is the orchestrator's instruction sheet ("delegate to sdg…") and must
+        # never reach the producer, or a weak model obeys it instead of generating.
+        help_result = await _maybe_delegate(state, session_id, delegation, need, morty_result, body)
         response_parts = _strip_internal_tools(result.get("parts", []))
         help_result["parts"] = response_parts + _strip_internal_tools(
             help_result.get("parts", [])
