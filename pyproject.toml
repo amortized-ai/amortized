@@ -87,3 +87,6 @@ ignore_errors = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Repo root on the path so the standalone `monitor` scorer package (outside the
+# src/ layout) is importable as `monitor.scorer.*` in tests.
+pythonpath = ["."]
