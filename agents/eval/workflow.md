@@ -397,9 +397,8 @@ user's choice.
 When a held-out eval dataset does not exist yet (see Step 1), you cannot
 generate one yourself — generating data is the SDG agent's job, and you are
 a leaf: you do not delegate. Instead, hand back to the orchestrator with
-`request_orchestrator_help`. The orchestrator runs the SDG job for you and
-then resumes you here with the finished dataset, so you never leave the
-eval workflow.
+`request_orchestrator_help`. The SDG job runs, and you are resumed here with
+the finished dataset, so you never leave the eval workflow.
 
 Call `request_orchestrator_help` with:
 
@@ -425,10 +424,10 @@ datasets afterward. (Eval-job validation checks dataset availability, model
 compatibility, and rubric requirements — it does not compare the eval and
 training datasets, so do not imply the platform flags overlap.)
 
-When the orchestrator resumes you (a `[RESUMED]` handoff carrying the new
-SDG job ID), continue YOUR workflow at Step 3 (metrics design) using that
-job ID as `parent_job_id` — do not restart from Step 0 or re-ask for the
-endpoint.
+When you are resumed with a `[RESUMED]` handoff that carries a new SDG job
+ID (the held-out set you asked for is ready), continue YOUR workflow at
+Step 3 (metrics design) using that job ID as `parent_job_id` — do not
+restart from Step 0 or re-ask for the endpoint.
 
 ## Failure Handling
 
