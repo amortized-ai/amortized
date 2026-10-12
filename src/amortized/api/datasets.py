@@ -732,7 +732,6 @@ async def _process_dataset_merge(
 
             all_records: list[dict[str, Any]] = []
             source_names: list[str] = []
-            all_parquet = True
             total_bytes = 0
 
             for run_id in request.run_ids:
@@ -748,8 +747,6 @@ async def _process_dataset_merge(
                 )
 
                 paths = await _find_dataset_artifacts(mlflow, run_id)
-                if not all(p.endswith(".parquet") for p in paths):
-                    all_parquet = False
                 for path in paths:
                     data = await mlflow.get_artifact(run_id, path)
                     total_bytes += len(data)
@@ -762,7 +759,6 @@ async def _process_dataset_merge(
             if not all_records:
                 raise ValueError("Merge produced no rows — all source datasets are empty")
 
-            output_format = ".parquet" if all_parquet else ".jsonl"
             display_names = [n for n in source_names if not n.startswith("ds-")]
             if request.name:
                 merged_name = request.name
@@ -770,16 +766,8 @@ async def _process_dataset_merge(
                 merged_name = " + ".join(display_names)
             else:
                 merged_name = f"Merged dataset ({len(request.run_ids)} sources)"
-            artifact_path = f"generated_data/data{output_format}"
-            if output_format == ".parquet":
-                try:
-                    blob = _serialize_records(artifact_path, all_records)
-                except Exception:
-                    logger.info("Parquet serialization failed for merge, falling back to JSONL")
-                    artifact_path = "generated_data/data.jsonl"
-                    blob = _serialize_records(artifact_path, all_records)
-            else:
-                blob = _serialize_records(artifact_path, all_records)
+            artifact_path = "generated_data/data.jsonl"
+            blob = _serialize_records(artifact_path, all_records)
 
             merged_run_id = await _store_merged_run(
                 mlflow,

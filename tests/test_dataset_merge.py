@@ -176,7 +176,8 @@ class TestDatasetMerge:
             "a0", "a1", "a2", "a3", "a4", "b0", "b1", "b2"
         ]
 
-    async def test_all_parquet_produces_parquet(self, client: httpx.AsyncClient) -> None:
+    async def test_all_parquet_sources_produce_jsonl(self, client: httpx.AsyncClient) -> None:
+        """Merge always outputs JSONL regardless of source format."""
         a_records = _records(4, prefix="a")
         b_records = _records(3, prefix="b")
         fake = _FakeMLflow({
@@ -186,16 +187,12 @@ class TestDatasetMerge:
         job = await _run_merge(client, fake, {"run_ids": ["run-a", "run-b"]})
 
         assert job["status"] == "succeeded"
-        data = fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.parquet")]
-        assert data[:4] == b"PAR1"
-
-        import pyarrow.parquet as pq
-
-        table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
-        assert table.num_rows == 7
+        merged = _parse_jsonl(
+            fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.jsonl")]
+        )
+        assert len(merged) == 7
 
     async def test_mixed_formats_produce_jsonl(self, client: httpx.AsyncClient) -> None:
-        """When any source is JSONL, output should be JSONL (item 1)."""
         a_records = _records(3, prefix="a")
         b_records = _records(2, prefix="b")
         fake = _FakeMLflow({
@@ -222,13 +219,11 @@ class TestDatasetMerge:
         job = await _run_merge(client, fake, {"run_ids": ["run-a", "run-b"]})
 
         assert job["status"] == "succeeded"
-        import pyarrow.parquet as pq
-
-        data = fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.parquet")]
-        table = pq.read_table(io.BytesIO(data))  # type: ignore[no-untyped-call]
-        rows = table.to_pylist()
-        assert len(rows) == 2
-        assert "score" in rows[0] and "metadata" in rows[1]
+        merged = _parse_jsonl(
+            fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.jsonl")]
+        )
+        assert len(merged) == 2
+        assert "score" in merged[0] and "metadata" in merged[1]
 
     async def test_duplicate_run_ids_rejected(self, client: httpx.AsyncClient) -> None:
         """Duplicate run_ids should be rejected at the model level (item 2)."""
@@ -315,15 +310,13 @@ class TestDatasetMerge:
         assert json.loads(tags["source_run_ids"]) == ["run-a", "run-b"]
         assert tags["num_samples"] == "4"
 
-    async def test_empty_dict_values_fall_back_to_jsonl(self, client: httpx.AsyncClient) -> None:
-        """Empty dicts like {"function_call": {}} can't be written to parquet
-        (ArrowNotImplementedError). When all sources are parquet but
-        re-serialization fails, the merge should fall back to JSONL."""
+    async def test_empty_dict_values(self, client: httpx.AsyncClient) -> None:
+        """Empty dicts like {"function_call": {}} are preserved in JSONL output."""
         a = [{"messages": [{"role": "user", "content": "a"}], "score": 0.9}]
-        b_jsonl = [{"messages": [{"role": "user", "content": "b"}], "function_call": {}}]
+        b = [{"messages": [{"role": "user", "content": "b"}], "function_call": {}}]
         fake = _FakeMLflow({
             "run-a": ("A", [("generated_data/data.parquet", _parquet_bytes(a))]),
-            "run-b": ("B", [("generated_data/data.jsonl", _jsonl_bytes(b_jsonl))]),
+            "run-b": ("B", [("generated_data/data.jsonl", _jsonl_bytes(b))]),
         })
         job = await _run_merge(client, fake, {"run_ids": ["run-a", "run-b"]})
 
@@ -332,10 +325,10 @@ class TestDatasetMerge:
             fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.jsonl")]
         )
         assert len(merged) == 2
+        assert merged[1]["function_call"] == {}
 
-    async def test_mixed_types_same_key_fall_back_to_jsonl(self, client: httpx.AsyncClient) -> None:
-        """Parquet can't handle the same key with different types across records
-        (ArrowInvalid). The merge should fall back to JSONL."""
+    async def test_mixed_types_same_key(self, client: httpx.AsyncClient) -> None:
+        """Same key with different types across sources is preserved in JSONL."""
         a = [{"messages": [{"role": "user", "content": "a"}], "score": 0.9}]
         b = [{"messages": [{"role": "user", "content": "b"}], "score": "high"}]
         fake = _FakeMLflow({
