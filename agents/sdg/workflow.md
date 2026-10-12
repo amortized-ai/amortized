@@ -160,7 +160,15 @@ change. Do NOT restart from Phase 1.
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine whether this is an embedding-classifier (default for
+**Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
+training job ID, don't pick a sub-skill or design a new recipe — ask only the record
+count (`present_options`, sensible default), call
+`clone_sdg_config_for_eval(training_job_id, num_records)`, and pass its config straight
+to validate. Don't hand-assemble it (teacher/prompt drift), and don't compare datasets
+afterward (fresh sampling is the isolation; eval validation flags overlap). If there's
+no parent SDG to mirror, offer a fresh set from scratch or a user-provided config.
+
+Otherwise, route by task. Determine whether this is an embedding-classifier (default for
 classify/route/label tasks), a generative classification, knowledge-ingestion,
 or task-distillation task. Use the context provided by the orchestrator to
 make this decision. If the context does not make it clear, ask the user —
