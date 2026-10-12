@@ -101,6 +101,11 @@ class SessionState:
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     completed_subagents: dict[str, str] = field(default_factory=dict)
+    # Set to the target of a subagent that handed back via request_orchestrator_help
+    # (it's stashed in completed_subagents and awaits a dataset). When the producer it
+    # was waiting on (sdg) completes, the proxy resumes this target automatically —
+    # the resume is NOT left to the orchestrator model to decide. Cleared on resume.
+    pending_help_target: str | None = None
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     # When this conversation's proxy state was created. A job whose DB created_at
     # predates this is from an EARLIER conversation, so reporting it as "just
@@ -250,20 +255,18 @@ _SUBAGENT_JOB_DONE_PROMPT = (
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
 # a subagent (e.g. eval) needs a prerequisite it can't produce itself (e.g. a held-out
-# dataset). The orchestrator is the sole delegator, so it runs the producing subagent
-# (sdg) and later resumes the requester via the existing resume path. {target}/{need}/
-# {context} are filled from the caller's target and the tool's structured arguments.
+# dataset). The orchestrator is the sole delegator, so its one job is to run the
+# producing subagent (sdg). The resume is NOT its job — when that producer completes,
+# the proxy resumes the requester automatically (see pending_help_target). {target}/
+# {need}/{context} are filled from the caller's target and the tool's arguments.
 _SUBAGENT_HELP_PROMPT = (
     "[SUBAGENT NEEDS HELP]\n"
-    "The {target} workflow cannot proceed without a prerequisite it cannot produce "
-    "itself.\n\nneed: {need}\n\ncontext: {context}\n\n"
-    "Fulfill this prerequisite now, then resume the {target} agent. Your ONLY action "
-    "this turn is a single delegate_to_subagent call to the agent that produces the "
-    'prerequisite (for a dataset, target "sdg"), with the need and context above in '
-    'its context. When that agent completes, delegate_to_subagent to "{target}" with '
-    "resume: true, passing the produced artifact id(s) in the context — so {target} "
-    "continues where it left off instead of restarting. Respond with ONLY the "
-    "delegate_to_subagent tool call."
+    "The {target} workflow needs a prerequisite it cannot produce itself.\n\n"
+    "need: {need}\n\ncontext: {context}\n\n"
+    "Your ONLY action this turn is a single delegate_to_subagent call to the agent "
+    'that produces it (for a dataset, target "sdg", resume: false), with the need and '
+    "context above in its context so it builds exactly what was asked. Nothing else — "
+    "once that job finishes, the platform resumes the {target} agent automatically."
 )
 
 
@@ -1636,32 +1639,55 @@ async def _handle_subagent_message(
             logger.warning("Subagent session gone, tearing down: session=%s", session_id)
             state.subagent_id = None
             state.subagent_target = None
+            state.pending_help_target = None
         raise
     except Exception:
         logger.exception("Subagent message failed: session=%s", session_id)
         raise
 
     latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
+    # Completion is checked before a help request: if a turn somehow carries both
+    # signals, "I'm done" wins and the help ask is ignored (a subagent that is
+    # finishing has nothing left to be helped with).
     summary = _detect_completion(latest_parts)
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
-        if state.subagent_target and state.subagent_id:
-            state.completed_subagents[state.subagent_target] = state.subagent_id
+        completer = state.subagent_target
+        if completer and state.subagent_id:
+            state.completed_subagents[completer] = state.subagent_id
         state.subagent_id = None
         state.subagent_target = None
 
-        resume_prompt = (
-            f"[SUBAGENT COMPLETED]\n{summary}\n\n"
-            "REQUIRED: You MUST either delegate_to_subagent (if the user "
-            "already expressed intent) or call present_options with next "
-            "steps. Do NOT respond with only text."
-        )
-        morty_result = await _orchestrator_turn(state, resume_prompt, body)
-        delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
-        resume_result = await _maybe_delegate(
-            state, session_id, delegation, resume_prompt, morty_result, body
-        )
+        if state.pending_help_target and state.pending_help_target != completer:
+            # Backend-driven resume: the producer (e.g. sdg) just finished the
+            # prerequisite a CONSUMER (eval/training) requested via
+            # request_orchestrator_help. Resume that consumer directly instead of
+            # asking the orchestrator model to infer it — the resume is deterministic,
+            # so it can't misfire (no "present next steps" menu in place of the resume).
+            target = state.pending_help_target
+            state.pending_help_target = None
+            logger.info("Auto-resuming help requester: session=%s target=%s", session_id, target)
+            resume_context = (
+                f"The {target} prerequisite you requested is ready.\n{summary}\n\n"
+                "Continue your own workflow with this result — do not restart it or "
+                "re-ask the user for anything you already have."
+            )
+            resume_result = await _maybe_delegate(
+                state, session_id, (target, resume_context, True), summary, result, body
+            )
+        else:
+            resume_prompt = (
+                f"[SUBAGENT COMPLETED]\n{summary}\n\n"
+                "REQUIRED: You MUST either delegate_to_subagent (if the user "
+                "already expressed intent) or call present_options with next "
+                "steps. Do NOT respond with only text."
+            )
+            morty_result = await _orchestrator_turn(state, resume_prompt, body)
+            delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
+            resume_result = await _maybe_delegate(
+                state, session_id, delegation, resume_prompt, morty_result, body
+            )
         response_parts = _strip_internal_tools(result.get("parts", []))
         result["parts"] = response_parts + _strip_internal_tools(resume_result.get("parts", []))
         result["info"] = resume_result.get("info", result.get("info", {}))
@@ -1669,16 +1695,17 @@ async def _handle_subagent_message(
 
     # A subagent is a leaf — it cannot delegate. When it needs a prerequisite it
     # can't produce itself (e.g. the eval agent needs a held-out dataset), it hands
-    # back to the orchestrator via request_orchestrator_help. The orchestrator is the
-    # sole delegator: stash the caller exactly as a completion does, so the existing
-    # resume path (completed_subagents.pop → _maybe_delegate) can return to it, then
-    # seed the orchestrator to run the producing subagent and later resume the caller.
+    # back via request_orchestrator_help. Stash the caller (as a completion does) and
+    # record it as pending_help_target, so when the producer the orchestrator runs
+    # (sdg) completes, the proxy resumes this caller automatically — the orchestrator
+    # only has to make the first hop (delegate to the producer), never the resume.
     help_request = _detect_help_request(latest_parts)
     if help_request and state.subagent_target and state.subagent_id:
         need, help_context = help_request
         target = state.subagent_target
         logger.info("Subagent help request: session=%s target=%s", session_id, target)
         state.completed_subagents[target] = state.subagent_id
+        state.pending_help_target = target
         state.subagent_id = None
         state.subagent_target = None
         seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
@@ -1691,7 +1718,10 @@ async def _handle_subagent_message(
         )
         return help_result
 
-    # Phase backfill is applied uniformly by _run_turn for every return path.
+    # Ordinary subagent turn (no completion, no help request). Strip internal tools
+    # defensively so a stray/denied hand-back call a subagent emits here is never
+    # surfaced to the user. Phase backfill is applied uniformly by _run_turn.
+    result["parts"] = _strip_internal_tools(result.get("parts", []))
     return result
 
 
