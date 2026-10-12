@@ -1,6 +1,6 @@
 """Tests for provider-error mapping surfaced in Morty chat (friendly messages)."""
 
-from amortized.api.agent import _friendly_provider_error
+from amortized.api.agent import _classify_provider_error, _friendly_provider_error
 
 
 def test_tool_calling_disabled() -> None:
@@ -27,3 +27,20 @@ def test_unmapped_falls_back_to_raw() -> None:
 
 def test_empty_falls_back_to_generic() -> None:
     assert _friendly_provider_error("") == "The model provider returned an error."
+
+
+def test_classify_returns_stable_codes() -> None:
+    raw_tool = '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set'
+    assert _classify_provider_error(raw_tool)[0] == "tool_calling"
+    assert _classify_provider_error("", "ProviderAuthError")[0] == "auth"
+    assert _classify_provider_error("Unauthorized: invalid api key")[0] == "auth"
+    assert _classify_provider_error("model does not exist")[0] == "model_unavailable"
+    assert _classify_provider_error("", "ProviderModelNotFoundError")[0] == "model_unavailable"
+    assert _classify_provider_error("429 too many requests")[0] == "rate_limit"
+    assert _classify_provider_error("some unusual provider error")[0] == "unknown"
+
+
+def test_classify_message_matches_shim() -> None:
+    # The back-compat shim returns exactly the classifier's message half.
+    for raw, name in [("model does not exist", ""), ("", "ProviderAuthError"), ("", "")]:
+        assert _friendly_provider_error(raw, name) == _classify_provider_error(raw, name)[1]

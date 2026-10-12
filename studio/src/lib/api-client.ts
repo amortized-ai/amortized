@@ -21,8 +21,12 @@ class ApiError extends Error {
   declare status: number
   declare statusText: string
   declare body: unknown
+  // Stable provider-error classifier from the agent proxy (see _classify_provider_error):
+  // "model_unavailable" | "auth" | "tool_calling" | "rate_limit" | "unknown". Absent for
+  // non-agent errors.
+  declare code?: string
 
-  constructor(status: number, statusText: string, body: unknown) {
+  constructor(status: number, statusText: string, body: unknown, code?: string) {
     let detail: string | undefined
     if (typeof body === "object" && body !== null && "detail" in body) {
       detail = String((body as Record<string, unknown>).detail)
@@ -35,6 +39,7 @@ class ApiError extends Error {
     this.status = status
     this.statusText = statusText
     this.body = body
+    this.code = code
   }
 }
 
@@ -358,6 +363,7 @@ interface TurnOutcome {
   result?: OpenCodeResponse
   status?: number
   error?: string
+  code?: string
 }
 
 /**
@@ -385,7 +391,7 @@ async function pollTurn(sessionId: string, turnId: string): Promise<TurnOutcome>
       await sleep(TURN_POLL_INTERVAL_MS)
       continue
     }
-    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500, error: data.error as string }
+    if (data?.error) return { ok: false, status: (data.error_status as number) ?? 500, error: data.error as string, code: data.error_code as string | undefined }
     return { ok: true, result: data.result as OpenCodeResponse }
   }
   return { ok: false, status: 504 }
@@ -447,7 +453,7 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
       status = outcome.status ?? 500
       // Surface the server's mapped provider-error message (shown in the chat Alert) instead of a
       // generic one; a short string becomes the ApiError detail (see ApiError).
-      lastError = new ApiError(status, "Agent turn failed", outcome.error ?? null)
+      lastError = new ApiError(status, "Agent turn failed", outcome.error ?? null, outcome.code)
     } else {
       status = resp.status
       lastError = new ApiError(status, resp.statusText, null)

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl } from "@/lib/api-client"
+import { sendOpenCodeMessage, fetchSessionMessages, fetchPendingMessages, generateChatTitle, createJob, getBaseUrl, ApiError } from "@/lib/api-client"
 import { useChatStore, type PersistedMessage } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
+import { modelDisplayName } from "../models"
 import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-chat")
@@ -43,6 +44,18 @@ function toChatMessage(m: PersistedMessage): ChatMessage {
     streamStartedAt: m.streamStartedAt,
     model: m.model,
   }
+}
+
+// Message for a model/auth turn failure, else null. Both model_unavailable and auth map to
+// one abstracted message — we deliberately don't surface auth/key specifics (chat users
+// don't own the server-side provider keys; leaking auth state is a security smell). Keyed on
+// the proxy's exact code; rate_limit (transient) and tool_calling (picker-filtered) → null.
+function modelFailureMessage(err: unknown, modelName: string): string | null {
+  if (!(err instanceof ApiError)) return null
+  if (err.code === "model_unavailable" || err.code === "auth") {
+    return `Model "${modelName}" could not be reached. Check your provider or model configuration.`
+  }
+  return null
 }
 
 // Resolve the model for a send and pin it: use the conversation's own model if set,
@@ -649,15 +662,20 @@ export function useChat() {
           stopThinkingRef.current?.()
           stopThinkingRef.current = null
           _activeRequests.delete(convId)
-          logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
-          // Keep the assistant placeholder and persist the error into it, so the failed
+          const rawMsg = err instanceof Error ? err.message : "Unknown error"
+          logger.error("OpenCode error", { error: rawMsg, code: err instanceof ApiError ? err.code : undefined })
+          // A model/auth failure shows an abstracted message instead of a raw "Error: …" (the
+          // composer block can't catch this — the model passed the picker's static checks but
+          // failed at runtime).
+          const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
+          // Keep the assistant placeholder and persist the message into it, so the failed
           // turn survives navigation instead of vanishing. Flag it as an error so context
           // replay skips it (a failed turn is not something the assistant actually said).
           useChatStore.getState().updateMessageFields(convId, assistantId, {
-            content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+            content: errMsg ?? `Error: ${rawMsg}`,
             error: true,
           })
-          setError(err instanceof Error ? err.message : "Unknown error")
+          setError(errMsg ?? rawMsg)
           setChatState("error")
         }
       } finally {
@@ -847,12 +865,17 @@ export function useChat() {
         consecutiveFailures = 0
       } catch (err) {
         _activeRequests.delete(convId)
+        const rawMsg = err instanceof Error ? err.message : String(err)
+        // A job-completion turn runs automatically, so it bypasses the composer's
+        // unavailable-model block. A model/auth failure shows the abstracted message;
+        // otherwise a generic fallback. (We never silently switch the model here.)
+        const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
-          content: "I wasn't able to suggest next steps. You can ask me what to do next.",
+          content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
         })
         setChatState("done")
         consecutiveFailures++
-        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: err instanceof Error ? err.message : String(err) })
+        logger.error("job completion notification failed", { jobId, consecutiveFailures, error: rawMsg })
       } finally {
         _sendLock.delete(convId)
       }
