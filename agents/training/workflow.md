@@ -5,9 +5,12 @@ permission:
     "training-*": allow
 # Role-scoped tools: the training subagent may validate ONLY training jobs.
 # SDG/eval validation belongs to their own subagents (enforced, not just prose).
+# A subagent is a leaf — it cannot delegate; when it needs a dataset generated it
+# hands back to the orchestrator via request_orchestrator_help.
 tools:
   amortized_validate_sdg_job: false
   amortized_validate_eval_job: false
+  amortized_delegate_to_subagent: false
 ---
 
 # Training Workflow
@@ -192,9 +195,15 @@ anything already decided.
 
 **Never train on a dataset the user intends to evaluate on.** If the user
 asks to "improve performance on <dataset X>", X is the benchmark, not the
-training data — delegate to SDG to generate a FRESH training set for the
-same task. Only train directly on X if the user explicitly confirms it and
-accepts the leakage trade-off.
+training data — a FRESH training set must be generated for the same task.
+You don't generate data yourself (that is the SDG agent's job and you are a
+leaf): hand back to the orchestrator with `request_orchestrator_help` —
+`need` a fresh training set for the task, `context` the task, the benchmark
+dataset X (so the new set does not overlap it), and that you resume with
+the new SDG job's dataset as the training data. The orchestrator runs SDG
+and resumes you with a `[RESUMED]` handoff; continue from data
+confirmation (`get_dataset` on the new set) as usual. Only train directly
+on X if the user explicitly confirms it and accepts the leakage trade-off.
 
 ### Phase 3 — Validate and Confirm
 
