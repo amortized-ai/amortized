@@ -325,25 +325,40 @@ def _classify_provider_error(raw: str, name: str = "") -> tuple[str, str]:
     error ``name`` (e.g. ``ProviderAuthError``, ``ProviderModelNotFoundError``) where
     available, with message-text heuristics as a fallback for providers that omit it.
     """
-    text = f"{raw} {name}".lower()
+    auth_msg = "That model isn't available with your API key or project (auth/permission)."
+    missing_msg = "That model isn't available on this provider/endpoint."
+    limited_msg = "The provider is rate-limiting or out of quota — try again shortly."
+
+    # Tier 1: trust OpenCode's structured error ``name`` (unambiguous) over message text, so e.g.
+    # a ``ProviderAuthError`` whose message mentions "not found" still classifies as ``auth``.
+    structured = {
+        "providerautherror": ("auth", auth_msg),
+        "providermodelnotfounderror": ("model_unavailable", missing_msg),
+    }
+    name_l = name.lower()
+    for key, result in structured.items():
+        if key in name_l:
+            return result
+
+    # Tier 2: message-text heuristics for providers that omit a structured name. Check the more
+    # specific missing-model signal before auth so "permission denied: model not found" maps to
+    # ``model_unavailable`` rather than ``auth``.
+    text = raw.lower()
     if "tool" in text and ("choice" in text or "parser" in text or "enable-auto-tool" in text):
         return (
             "tool_calling",
             "This model's server doesn't have tool-calling enabled, which Morty needs. "
             "Pick a tool-calling-capable model.",
         )
-    auth = ("providerautherror", "unauthorized", "forbidden", "permission", "invalid api key")
-    missing = ("not found", "does not exist", "providermodelnotfound", "no such model")
+    missing = ("not found", "does not exist", "no such model")
+    auth = ("unauthorized", "forbidden", "permission", "invalid api key")
     limited = ("rate limit", "too many requests", "quota")
     if any(s in text for s in missing):
-        return ("model_unavailable", "That model isn't available on this provider/endpoint.")
+        return ("model_unavailable", missing_msg)
     if any(s in text for s in auth):
-        return (
-            "auth",
-            "That model isn't available with your API key or project (auth/permission).",
-        )
+        return ("auth", auth_msg)
     if any(s in text for s in limited):
-        return ("rate_limit", "The provider is rate-limiting or out of quota — try again shortly.")
+        return ("rate_limit", limited_msg)
     return ("unknown", (raw or "").strip()[:180] or "The model provider returned an error.")
 
 

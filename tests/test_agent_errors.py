@@ -40,6 +40,16 @@ def test_classify_returns_stable_codes() -> None:
     assert _classify_provider_error("some unusual provider error")[0] == "unknown"
 
 
+def test_structured_name_wins_over_message_text() -> None:
+    # A structured ProviderAuthError stays auth even when its message mentions "not found".
+    assert _classify_provider_error("API key not found", "ProviderAuthError")[0] == "auth"
+
+
+def test_text_only_prefers_missing_over_auth() -> None:
+    # Without a structured name, the more specific missing-model signal wins over "permission".
+    assert _classify_provider_error("permission denied: model not found")[0] == "model_unavailable"
+
+
 def test_classify_message_matches_shim() -> None:
     # The back-compat shim returns exactly the classifier's message half.
     for raw, name in [("model does not exist", ""), ("", "ProviderAuthError"), ("", "")]:
