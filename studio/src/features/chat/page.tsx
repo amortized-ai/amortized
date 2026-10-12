@@ -220,6 +220,9 @@ export default function ChatPage() {
         created_at: now,
         updated_at: now,
         messages: [],
+        // Snapshot the global default at creation so this chat doesn't drift when
+        // another chat later changes the global (handleModelChange updates it).
+        model: useSettingsStore.getState().chatModelSelection,
       })
       setCurrentConversationId(convId)
       return
@@ -238,6 +241,9 @@ export default function ChatPage() {
       created_at: now,
       updated_at: now,
       messages: [],
+      // Snapshot the global default at creation so this chat doesn't drift when
+      // another chat later changes the global (handleModelChange updates it).
+      model: useSettingsStore.getState().chatModelSelection,
     })
     setCurrentConversationId(convId)
   }, [addConversation, setCurrentConversationId])
