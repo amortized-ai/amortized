@@ -315,6 +315,43 @@ class TestDatasetMerge:
         assert json.loads(tags["source_run_ids"]) == ["run-a", "run-b"]
         assert tags["num_samples"] == "4"
 
+    async def test_empty_dict_values_fall_back_to_jsonl(self, client: httpx.AsyncClient) -> None:
+        """Empty dicts like {"function_call": {}} can't be written to parquet
+        (ArrowNotImplementedError). When all sources are parquet but
+        re-serialization fails, the merge should fall back to JSONL."""
+        a = [{"messages": [{"role": "user", "content": "a"}], "score": 0.9}]
+        b_jsonl = [{"messages": [{"role": "user", "content": "b"}], "function_call": {}}]
+        fake = _FakeMLflow({
+            "run-a": ("A", [("generated_data/data.parquet", _parquet_bytes(a))]),
+            "run-b": ("B", [("generated_data/data.jsonl", _jsonl_bytes(b_jsonl))]),
+        })
+        job = await _run_merge(client, fake, {"run_ids": ["run-a", "run-b"]})
+
+        assert job["status"] == "succeeded"
+        merged = _parse_jsonl(
+            fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.jsonl")]
+        )
+        assert len(merged) == 2
+
+    async def test_mixed_types_same_key_fall_back_to_jsonl(self, client: httpx.AsyncClient) -> None:
+        """Parquet can't handle the same key with different types across records
+        (ArrowInvalid). The merge should fall back to JSONL."""
+        a = [{"messages": [{"role": "user", "content": "a"}], "score": 0.9}]
+        b = [{"messages": [{"role": "user", "content": "b"}], "score": "high"}]
+        fake = _FakeMLflow({
+            "run-a": ("A", [("generated_data/data.parquet", _parquet_bytes(a))]),
+            "run-b": ("B", [("generated_data/data.parquet", _parquet_bytes(b))]),
+        })
+        job = await _run_merge(client, fake, {"run_ids": ["run-a", "run-b"]})
+
+        assert job["status"] == "succeeded"
+        merged = _parse_jsonl(
+            fake.uploads[(job["config"]["merged_run_id"], "generated_data/data.jsonl")]
+        )
+        assert len(merged) == 2
+        assert merged[0]["score"] == 0.9
+        assert merged[1]["score"] == "high"
+
     async def test_fewer_than_two_run_ids_rejected(self, client: httpx.AsyncClient) -> None:
         fake = _FakeMLflow({
             "run-a": ("A", [("generated_data/data.jsonl", _jsonl_bytes(_records(2)))]),

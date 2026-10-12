@@ -87,15 +87,26 @@ class MLflowClient:
     def _url(self, path: str) -> str:
         return f"{self._base}{path}"
 
-    async def list_experiment_ids(self, max_results: int = 200) -> list[str]:
-        """Return all experiment IDs."""
+    async def list_experiment_ids(self, page_size: int = 1000) -> list[str]:
+        """Return all experiment IDs, paginating through the full list."""
+        ids: list[str] = []
+        page_token: str | None = None
         async with self._client() as client:
-            resp = await client.post(
-                self._url("/api/2.0/mlflow/experiments/search"),
-                json={"max_results": max_results},
-            )
-            resp.raise_for_status()
-            return [e["experiment_id"] for e in resp.json().get("experiments", [])]
+            while True:
+                body: dict[str, Any] = {"max_results": page_size}
+                if page_token:
+                    body["page_token"] = page_token
+                resp = await client.post(
+                    self._url("/api/2.0/mlflow/experiments/search"),
+                    json=body,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                ids.extend(e["experiment_id"] for e in data.get("experiments", []))
+                page_token = data.get("next_page_token")
+                if not page_token:
+                    break
+        return ids
 
     async def get_experiment(self, name: str) -> str | None:
         """Get an experiment ID by name. Returns None if it doesn't exist."""

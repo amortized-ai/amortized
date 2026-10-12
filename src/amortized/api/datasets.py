@@ -691,6 +691,7 @@ async def _store_merged_run(
     source_run_ids: list[str],
     files: list[tuple[str, bytes]],
     num_records: int,
+    job_id: str,
 ) -> str:
     """Create a new MLflow run holding the merged dataset."""
     tags: dict[str, str] = {
@@ -699,6 +700,7 @@ async def _store_merged_run(
         "source": "merge",
         "source_run_ids": json.dumps(source_run_ids),
         "num_samples": str(num_records),
+        "job_id": job_id,
     }
 
     experiment_id = await mlflow.ensure_experiment("amortized/datasets")
@@ -769,7 +771,15 @@ async def _process_dataset_merge(
             else:
                 merged_name = f"Merged dataset ({len(request.run_ids)} sources)"
             artifact_path = f"generated_data/data{output_format}"
-            blob = _serialize_records(artifact_path, all_records)
+            if output_format == ".parquet":
+                try:
+                    blob = _serialize_records(artifact_path, all_records)
+                except Exception:
+                    logger.info("Parquet serialization failed for merge, falling back to JSONL")
+                    artifact_path = "generated_data/data.jsonl"
+                    blob = _serialize_records(artifact_path, all_records)
+            else:
+                blob = _serialize_records(artifact_path, all_records)
 
             merged_run_id = await _store_merged_run(
                 mlflow,
@@ -777,6 +787,7 @@ async def _process_dataset_merge(
                 request.run_ids,
                 [(artifact_path, blob)],
                 len(all_records),
+                job_id,
             )
 
             async with get_pool().acquire() as conn:
