@@ -30,7 +30,7 @@ def test_empty_falls_back_to_generic() -> None:
 
 
 def test_classify_returns_stable_codes() -> None:
-    raw_tool = '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set'
+    raw_tool = "tool choice requires --enable-auto-tool-choice and --tool-call-parser"
     assert _classify_provider_error(raw_tool)[0] == "tool_calling"
     assert _classify_provider_error("", "ProviderAuthError")[0] == "auth"
     assert _classify_provider_error("Unauthorized: invalid api key")[0] == "auth"
