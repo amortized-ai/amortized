@@ -335,13 +335,13 @@ def _classify_provider_error(raw: str, name: str = "") -> tuple[str, str]:
     auth = ("providerautherror", "unauthorized", "forbidden", "permission", "invalid api key")
     missing = ("not found", "does not exist", "providermodelnotfound", "no such model")
     limited = ("rate limit", "too many requests", "quota")
+    if any(s in text for s in missing):
+        return ("model_unavailable", "That model isn't available on this provider/endpoint.")
     if any(s in text for s in auth):
         return (
             "auth",
             "That model isn't available with your API key or project (auth/permission).",
         )
-    if any(s in text for s in missing):
-        return ("model_unavailable", "That model isn't available on this provider/endpoint.")
     if any(s in text for s in limited):
         return ("rate_limit", "The provider is rate-limiting or out of quota — try again shortly.")
     return ("unknown", (raw or "").strip()[:180] or "The model provider returned an error.")
