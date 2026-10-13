@@ -1585,7 +1585,12 @@ async def _run_turn(
             # step-markers, never see a card, and silently no-op (they only ever "worked"
             # in tests, which hand them real parts).
             active_id = state.subagent_id or state.orchestrator_id
-            result["parts"] = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+            fetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+            # Only replace on a successful fetch — a transient GET failure returns [],
+            # and blanking the parts would needlessly no-op every gate below for that turn
+            # (the client re-derives content from its own GET regardless).
+            if fetched:
+                result["parts"] = fetched
             result = await _apply_provenance_gate(state, result, body, msg_cache)
             result = await _apply_job_claim_gate(state, result, body, msg_cache)
             # Backfill the UI phase uniformly for every path (subagent completion,
@@ -1658,7 +1663,6 @@ async def _handle_subagent_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    user_text = _consume_interaction_steer(state, user_text)
     # A subagent whose delegated job just finished successfully is done: steer it
     # to hand control back immediately, instead of the generic "suggest next
     # steps" nudge (which left weaker models looping on post-job inspection calls
@@ -1666,6 +1670,11 @@ async def _handle_subagent_message(
     # the subagent's own failure handling.
     if body.event == "job_complete" and _job_succeeded(body, user_text):
         user_text = _SUBAGENT_JOB_DONE_PROMPT
+    else:
+        # Deliver any steer the interaction gate parked on a prior held-card turn as the
+        # lead of this message. Skipped on a job_complete event (which replaces user_text
+        # above) so the steer stays parked for the next real turn instead of being lost.
+        user_text = _consume_interaction_steer(state, user_text)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(

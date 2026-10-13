@@ -354,10 +354,14 @@ class TestEnforceSingleInteraction:
                 _tool_part("validate_sdg_job", {"mode": "preview"}),
             ]
         }
-        out = agent._enforce_single_interaction(result, _fresh_state())
+        state = _fresh_state()
+        out = agent._enforce_single_interaction(result, state)
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert "validate_sdg_job" not in tools  # job confirm deferred to next turn
         assert tools == ["signal_phase", "show_prompt", "get_model_pricing"]
+        # [3] the prompt-gate hold parks a model-directed review steer (not user text).
+        assert "review" in (state.pending_interaction_steer or "").lower()
+        assert not any(p.get("type") == "text" for p in out["parts"])
 
     def test_show_prompt_with_review_question_keeps_the_question(self) -> None:
         # The CORRECT flow: show the prompt, then ask approve/edit. This is an ask
@@ -555,6 +559,40 @@ def test_held_card_steer_is_delivered_to_the_model_next_turn_then_cleared() -> N
     assert "yes, go" in led
     assert state.pending_interaction_steer is None
     assert agent._consume_interaction_steer(state, "next") == "next"  # nothing parked
+
+
+class TestInteractionSteerDelivery:
+    """The gate parks a model-directed steer on the session; the next handler turn leads
+    the model's message with it — except a job_complete event (which replaces user_text),
+    where the steer stays parked for the next real turn (R2-A)."""
+
+    def test_subagent_turn_leads_with_the_parked_steer(self, router: _Router) -> None:
+        sub = router.add_session([[_text_part("ok")]])
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "sdg"
+        state.pending_interaction_steer = "Show the preview first."
+        _run(agent._handle_subagent_message(state, "s1", "go ahead", _body(text="go ahead")))
+        sent = next(t for (sid, t, _a) in router.sent if sid == sub)
+        assert sent.startswith("Show the preview first.")
+        assert "go ahead" in sent
+        assert state.pending_interaction_steer is None  # consumed
+
+    def test_job_complete_keeps_the_steer_parked(self, router: _Router) -> None:
+        sub = router.add_session([[_text_part("done")]])
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "sdg"
+        state.pending_interaction_steer = "Show the preview first."
+        _run(
+            agent._handle_subagent_message(
+                state, "s1", "ignored",
+                _body(text="ignored", event="job_complete", outcome="succeeded"),
+            )
+        )
+        sent = next(t for (sid, t, _a) in router.sent if sid == sub)
+        assert sent == agent._SUBAGENT_JOB_DONE_PROMPT  # job-done prompt, steer NOT prepended
+        assert state.pending_interaction_steer == "Show the preview first."  # stays parked
 
 
 class TestTrainingConfirmPreconditions:
