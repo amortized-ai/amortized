@@ -450,12 +450,15 @@ class TestPreviewBeforeCreateGate:
         )
 
     def test_create_without_prior_preview_is_held_and_nudged(self) -> None:
+        state = _fresh_state()
         result = {"parts": [_text_part("confirm the full run"), self._create()]}
-        out = agent._enforce_single_interaction(result, _fresh_state())
+        out = agent._enforce_single_interaction(result, state)
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert "validate_sdg_job" not in tools  # full-job confirm held
-        texts = [p["text"] for p in out["parts"] if p.get("type") == "text"]
-        assert any("preview" in t.lower() for t in texts)  # steered to preview first
+        assert "preview" in _nudge(state).lower()  # model steered to preview first
+        # The steer is model-directed and must NOT leak into the user-facing result.
+        texts = " ".join(p.get("text", "") for p in out["parts"] if p.get("type") == "text")
+        assert "preview" not in texts.lower()
 
     def test_create_with_omitted_mode_defaults_to_create_and_is_gated(self) -> None:
         # SDGJobRequest.mode defaults to 'create', so an omitted mode is a full run.
@@ -535,8 +538,23 @@ def _tools(out: dict[str, Any]) -> list[str]:
     return [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
 
 
-def _nudge(out: dict[str, Any]) -> str:
-    return " ".join(p.get("text", "") for p in out["parts"] if p.get("type") == "text")
+def _nudge(state: Any) -> str:
+    # The interaction gate now parks its model-directed steer on the session (delivered
+    # to the model on its next turn), not in the user-facing result parts.
+    return state.pending_interaction_steer or ""
+
+
+def test_held_card_steer_is_delivered_to_the_model_next_turn_then_cleared() -> None:
+    # [3] The gate parks a MODEL-directed steer on the session; the next message to that
+    # session leads with it (so the model does the missing step itself), then it clears —
+    # the steer is never shown to the user.
+    state = _fresh_state()
+    state.pending_interaction_steer = "Show the SDG preview before the full run."
+    led = agent._consume_interaction_steer(state, "yes, go")
+    assert led.startswith("Show the SDG preview before the full run.")
+    assert "yes, go" in led
+    assert state.pending_interaction_steer is None
+    assert agent._consume_interaction_steer(state, "next") == "next"  # nothing parked
 
 
 class TestTrainingConfirmPreconditions:
@@ -549,9 +567,10 @@ class TestTrainingConfirmPreconditions:
         return {"parts": [_tool_part("validate_training_job", {"algorithm": "osft"})]}
 
     def test_held_until_data_confirmed_first(self) -> None:
-        out = agent._enforce_single_interaction(self._confirm(), _fresh_state())
+        state = _fresh_state()
+        out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_training_job" not in _tools(out)
-        assert "get_dataset" in _nudge(out).lower()  # first unmet precondition
+        assert "get_dataset" in _nudge(state).lower()  # first unmet precondition
 
     def test_get_dataset_satisfies_the_data_precondition(self) -> None:
         state = _fresh_state()
@@ -564,7 +583,7 @@ class TestTrainingConfirmPreconditions:
         # Data done; the next unmet precondition is the model choice.
         out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_training_job" not in _tools(out)
-        assert "model" in _nudge(out).lower()
+        assert "model" in _nudge(state).lower()
 
     def test_model_choice_recorded_only_in_training_context(self) -> None:
         state = _fresh_state()
@@ -633,9 +652,10 @@ class TestEvalConfirmPreconditions:
         return {"parts": [_tool_part("validate_eval_job", {"training_job_id": "t1"})]}
 
     def test_held_until_a_choice_was_offered(self) -> None:
-        out = agent._enforce_single_interaction(self._confirm(), _fresh_state())
+        state = _fresh_state()
+        out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_eval_job" not in _tools(out)
-        assert "judge" in _nudge(out).lower()
+        assert "judge" in _nudge(state).lower()
 
     def test_renders_after_eval_choice_offered(self) -> None:
         state = _fresh_state()

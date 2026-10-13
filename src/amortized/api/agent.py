@@ -132,6 +132,12 @@ class SessionState:
     # run; editing the recipe yields a new signature and re-gates. See
     # _enforce_single_interaction / _sdg_config_signature.
     approved_preview_sigs: set[str] = field(default_factory=set)
+    # A model-directed steer the interaction gate produced when it HELD a card (an unmet
+    # confirm precondition, or a job card the model stacked under an unreviewed prompt).
+    # Delivered to the active session's model on its NEXT turn (prepended to that message)
+    # so the model does the missing step itself — NOT appended to the user-facing result,
+    # which only renders to the user. See _enforce_single_interaction + _handle_*_message.
+    pending_interaction_steer: str | None = None
     # Prerequisite ACTIONS a confirm card requires, accumulated as turns render them, so
     # the (sync) confirm-precondition evaluator can hold a validate_* card the model
     # jumped to without the mandated setup. Reset for a job type once its confirm card
@@ -421,11 +427,19 @@ def _enforce_single_interaction(
         else:
             _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
 
-    # When a confirm card is held for an unmet precondition, append its steer so the
-    # model knows what to do first (the card was silently dropped otherwise).
+    # A held card steers the MODEL to do the missing step first — delivered to its
+    # session on the next turn (see _handle_*_message), NOT appended to the user-facing
+    # result. The old code put the steer in the result's parts, so the USER saw text
+    # addressed to the model and the model (whose history showed a successful validate_*)
+    # never learned the card was held.
     if unmet is not None:
-        kept = [*kept, {"type": "text", "text": unmet.nudge}]
-        return {**result, "parts": kept}
+        state.pending_interaction_steer = unmet.nudge
+    elif prompt_gate:
+        state.pending_interaction_steer = (
+            "You stacked a job confirmation under a prompt the user has not reviewed "
+            "yet. Show the prompt on its own for review first; present the job "
+            "confirmation only on a later turn, after the user approves the prompt."
+        )
     if len(kept) == len(parts):
         return result
     return {**result, "parts": kept}
@@ -1564,6 +1578,14 @@ async def _run_turn(
                 result = await _handle_subagent_message(state, session_id, user_text, body)
             else:
                 result = await _handle_orchestrator_message(state, session_id, user_text, body)
+            # The opencode POST response carries only step markers; the real tool parts
+            # (cards, options, show_prompt, signal_phase) live in the GET messages. Every
+            # gate below keys off these parts, so make the result carry the ACTIVE
+            # session's current-turn parts — otherwise the structural gates scan
+            # step-markers, never see a card, and silently no-op (they only ever "worked"
+            # in tests, which hand them real parts).
+            active_id = state.subagent_id or state.orchestrator_id
+            result["parts"] = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
             result = await _apply_provenance_gate(state, result, body, msg_cache)
             result = await _apply_job_claim_gate(state, result, body, msg_cache)
             # Backfill the UI phase uniformly for every path (subagent completion,
@@ -1620,12 +1642,23 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     }
 
 
+def _consume_interaction_steer(state: SessionState, user_text: str) -> str:
+    """Prepend any steer the interaction gate parked on a prior held-card turn, so the
+    model receives it as the lead of its next message and does the missing step itself.
+    The steer is model-directed and is never shown to the user."""
+    if state.pending_interaction_steer:
+        user_text = f"{state.pending_interaction_steer}\n\n{user_text}"
+        state.pending_interaction_steer = None
+    return user_text
+
+
 async def _handle_subagent_message(
     state: SessionState,
     session_id: str,
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
+    user_text = _consume_interaction_steer(state, user_text)
     # A subagent whose delegated job just finished successfully is done: steer it
     # to hand control back immediately, instead of the generic "suggest next
     # steps" nudge (which left weaker models looping on post-job inspection calls
@@ -1815,6 +1848,7 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
+    user_text = _consume_interaction_steer(state, user_text)
     morty_result = await _orchestrator_turn(state, user_text, body)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
