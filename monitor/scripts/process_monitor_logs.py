@@ -71,6 +71,17 @@ def main() -> None:
         default=JUDGE_MODEL_DEFAULT,
         help=f"Model for --llm-judge (default: {JUDGE_MODEL_DEFAULT}, what Morty runs on)",
     )
+    parser.add_argument(
+        "--store",
+        type=Path,
+        help="Ingest raw logs + scores into a SQLite DB at this path (idempotent)",
+    )
+    parser.add_argument(
+        "--export",
+        nargs=2,
+        metavar=("FMT", "DIR"),
+        help="Export the --store DB tables to DIR as FMT (json|csv|parquet)",
+    )
     args = parser.parse_args()
 
     if not args.log_dir.is_dir():
@@ -104,6 +115,24 @@ def main() -> None:
 
     print_per_run(runs, scores, checklist, judge_reasons)
     print_comparison(runs, scores, checklist)
+
+    if args.store:
+        from monitor.scorer import store
+
+        store.ingest(
+            args.store,
+            runs,
+            use_case=args.use_case,
+            checklist=checklist,
+            scores=scores,
+            reasons=judge_reasons,
+        )
+        print(f"\nIngested {len(runs)} run(s) into {args.store}")
+        if args.export:
+            fmt, out_dir = args.export
+            store.export(args.store, fmt, Path(out_dir))
+    elif args.export:
+        sys.exit("--export requires --store <db>")
 
 
 if __name__ == "__main__":

@@ -313,12 +313,16 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
   "tool_calls": [ { "tool": "validate_training_job", "role": "training", "status": "completed",
                     "output": "…", "target": "sdg", "solo": true, "mode": "preview",
                     "parent_job_id": "…", "data_run_id": "…", "eval_data_run_id": "…",
-                    "judge": "…" } ],
+                    "judge": "…", "input": { "...": "redacted full tool input" } } ],
   // `output` is the full tool output (not truncated). `target`/`solo` are set on
   // delegate_to_subagent (`solo` = the delegating message was that call alone —
   // clean_delegation); `mode` (preview/create), `parent_job_id`/`data_run_id`/
   // `eval_data_run_id` are captured from validate_* inputs when non-empty; `judge`
-  // is the eval judge model name (from validate_eval_job; no api_key).
+  // is the eval judge model name (from validate_eval_job; no api_key). `input` is
+  // the FULL tool input for every call, with secret-keyed values masked and long
+  // strings/large structures bounded (see api/monitor_redact.py) — so a new offline
+  // check can read any arg without a logger change. The scalars above stay promoted
+  // for the existing matchers. (All capture is gated by AMORTIZED_MONITOR_ENABLED.)
   "texts": [ { "role": "orchestrator", "text": "…assistant prose this turn…" } ],
   // `texts` = assistant natural-language messages, chronological, for the LLM-judge
   // grounding/anti-fabrication rows (claim checked against tool_calls output).
@@ -327,4 +331,23 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
 // completion
 { "kind": "completion", "session_id": "...", "turn_id": "...",
   "outcome": "success|gave_up", "note": null, "ts": "…" }
+```
+
+## Structured store (`--store` / `--export`)
+
+JSONL stays the write-ahead capture format (the online path must never block on a
+DB). For comparative analysis across many runs, `--store <db.sqlite>` ingests the
+logs *and* the scored rows into SQLite (`scorer/store.py`); `--export <fmt> <dir>`
+dumps every table as json/csv (or parquet with the `monitor` extra). Ingest is
+idempotent — re-running against a growing log dir replaces each session's rows.
+
+Tables: `runs`, `turns`, `tool_calls` (full `input_json`), `texts`, `jobs`
+(job-created records), `row_scores` (per row: `aspect`, `role`, `model`,
+`use_case`, `status`), `rubric_scores` (graded skill adherence). Because `model`,
+`use_case`, and `role` are columns, cross-model / cross-use-case / per-subagent
+comparison is plain SQL, e.g. per-model met-rate:
+
+```sql
+SELECT model, SUM(status='met')*1.0 / SUM(status IN ('met','wrong','missed')) AS met_rate
+FROM row_scores GROUP BY model;
 ```

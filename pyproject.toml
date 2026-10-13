@@ -49,6 +49,9 @@ dev = [
 monitor = [
     "anthropic>=0.40.0",
     "pyyaml>=6.0",
+    # parquet export (process_monitor_logs.py --export parquet); json/csv need neither.
+    "pandas>=2.0",
+    "pyarrow>=14.0",
 ]
 
 [tool.setuptools.packages.find]
