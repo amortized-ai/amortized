@@ -48,6 +48,8 @@ class TrainingJobConfig(BaseModel):
         description=(
             "HuggingFace model ID or local path. Required unless training_job_id"
             " is set (resume from a previously finetuned model)."
+            " Do NOT set both this and training_job_id — when training_job_id"
+            " is set, the model is resolved from the parent job's checkpoint."
         ),
     )
     training_job_id: str = Field(
@@ -55,7 +57,8 @@ class TrainingJobConfig(BaseModel):
         description=(
             "Training job ID whose finetuned model to resume from."
             " The model artifacts are downloaded from MLflow before"
-            " training starts. Alternative to model_name_or_path."
+            " training starts. Mutually exclusive with model_name_or_path"
+            " — set one or the other, not both."
         ),
     )
     data_path: str | None = Field(

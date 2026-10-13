@@ -7,6 +7,8 @@ import logging
 import shlex
 from typing import Any
 
+import httpx
+
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
 
@@ -70,7 +72,7 @@ async def is_lora_export(run_id: str) -> bool:
         client = MLflowClient(tracking_uri)
         files = await client.list_artifacts(run_id, "model")
         return any(f.get("path") == "model/adapter_config.json" for f in files)
-    except Exception:
+    except (OSError, httpx.HTTPStatusError):
         logger.debug("artifact listing failed for run %s", run_id, exc_info=True)
         return False
 
@@ -99,19 +101,19 @@ async def training_display_name(parent: dict[str, Any], run_id: str) -> str:
     return display
 
 
-async def resolve_training_model(
+async def validate_training_parent(
     config: dict[str, Any],
-) -> tuple[str, str, list[str]]:
-    """Resolve a tuned model from a training job's MLflow artifacts.
+) -> tuple[dict[str, Any], str]:
+    """Validate and return the parent training job and its MLflow run ID.
 
-    Returns (served_model_name, model_path, pre_commands). model_path is the
-    in-container directory the servable checkpoint ends up in.
+    Shared by both the serving/eval path (resolve_training_model) and the
+    training resume path so validation logic isn't duplicated.
     """
     from amortized.jobs.base import JobBuildError
 
     training_job_id = str(config.get("training_job_id", "")).strip()
     if not training_job_id:
-        raise JobBuildError("training_job_id is required when evaluating a tuned model")
+        raise JobBuildError("training_job_id is required when using a tuned model")
 
     from amortized.db.connection import get_pool
 
@@ -124,15 +126,40 @@ async def resolve_training_model(
     if parent["status"] != "succeeded":
         raise JobBuildError(
             f"training job {training_job_id[:8]} has status {parent['status']!r}"
-            " — only succeeded training jobs can be evaluated"
+            " — only succeeded training jobs can be used"
         )
     run_id = parent.get("mlflow_run_id", "")
     if not run_id:
         raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
+    return parent, run_id
 
-    served_name = str(config.get("served_model_name", "")).strip()
-    if not served_name:
-        served_name = await training_display_name(parent, run_id)
+
+async def resolve_training_model(
+    config: dict[str, Any],
+    *,
+    skip_display_name: bool = False,
+) -> tuple[str, str, list[str]]:
+    """Resolve a tuned model from a training job's MLflow artifacts.
+
+    Returns (served_model_name, model_path, pre_commands). model_path is the
+    in-container directory the model checkpoint ends up in.
+
+    LoRA adapters are merged into the base model (merge-then-full-train)
+    because vLLM cannot serve bare adapters; for training resume the same
+    merge semantics apply. Non-LoRA checkpoints use the last step directly.
+
+    When *skip_display_name* is True the served_model_name resolution is
+    skipped (returns ``""``), avoiding a wasted MLflow round-trip when
+    the caller doesn't need it.
+    """
+    parent, run_id = await validate_training_parent(config)
+
+    if skip_display_name:
+        served_name = ""
+    else:
+        served_name = str(config.get("served_model_name", "")).strip()
+        if not served_name:
+            served_name = await training_display_name(parent, run_id)
 
     local_dir = "/amortized/work/served_model"
     if await is_lora_export(run_id):
@@ -146,10 +173,11 @@ async def resolve_training_model(
         model_path = f"{local_dir}/merged"
     else:
         pre_commands = [
-            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model/hf_format"
+            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model"
             f" -d {shlex.quote(local_dir)}",
-            f"SERVE_MODEL_DIR=$(find {shlex.quote(local_dir)}/hf_format -mindepth 1 -maxdepth 1"
-            " -type d | sort -V | tail -1)",
+            "SERVE_MODEL_DIR=$(find"
+            f" {shlex.quote(local_dir)}/model/hf_format"
+            " -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)",
             "python3 /amortized/patch_model_config.py $SERVE_MODEL_DIR",
         ]
         model_path = "$SERVE_MODEL_DIR"

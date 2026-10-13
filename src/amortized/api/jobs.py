@@ -198,13 +198,26 @@ async def _validate_training_data(
 async def _validate_model_source(
     config: dict[str, Any],
     db: asyncpg.Connection,
-) -> list[str]:
-    """Validate training_job_id when resuming from a finetuned model."""
+) -> tuple[list[str], list[str]]:
+    """Validate training_job_id when resuming from a finetuned model.
+
+    Returns (errors, warnings).
+    """
     training_job_id = str(config.get("training_job_id", "") or "").strip()
     if not training_job_id:
-        return []
+        return [], []
 
     errors: list[str] = []
+    warnings: list[str] = []
+
+    model_name_or_path = str(config.get("model_name_or_path", "") or "").strip()
+    if model_name_or_path:
+        warnings.append(
+            "both model_name_or_path and training_job_id are set —"
+            " training_job_id takes precedence and model_name_or_path"
+            f" ('{model_name_or_path}') will be ignored"
+        )
+
     repo = Repository(db)
     parent = await repo.get_job(training_job_id)
     if parent is None:
@@ -224,7 +237,22 @@ async def _validate_model_source(
             f"training_job_id: job '{training_job_id}' has no MLflow"
             " artifacts — the model may not have been uploaded"
         )
-    return errors
+    else:
+        parent_config = parent.get("config") or {}
+        if isinstance(parent_config, str):
+            try:
+                parent_config = json.loads(parent_config)
+            except (ValueError, TypeError):
+                parent_config = {}
+        parent_algo = str(parent_config.get("algorithm", "")).replace("-", "_")
+        if parent_algo and parent_algo not in _RESUMABLE_ALGORITHMS:
+            errors.append(
+                f"training_job_id: job '{training_job_id}' used algorithm"
+                f" '{parent_algo}' which does not produce a resumable"
+                f" checkpoint — only {sorted(_RESUMABLE_ALGORITHMS)} are"
+                " supported"
+            )
+    return errors, warnings
 
 
 def _strip_eval_api_keys(job: Job) -> None:
@@ -285,6 +313,8 @@ async def _validate_eval_data(
 
 
 _EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
+
+_RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
 
 
 async def _apply_classification_eval_mode(
@@ -386,9 +416,12 @@ async def create_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
-    errors.extend(await _validate_model_source(config, db))
+    model_errors, model_warnings = await _validate_model_source(config, db)
+    errors.extend(model_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
+    for w in model_warnings:
+        logger.warning("training job validation: %s", w)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
@@ -861,7 +894,8 @@ async def validate_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
-    errors.extend(await _validate_model_source(config, db))
+    model_errors, model_warnings = await _validate_model_source(config, db)
+    errors.extend(model_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -879,6 +913,7 @@ async def validate_training_job(
         config=config,
         parent_job_id=parent_job_id,
         data_record_count=record_count,
+        warnings=model_warnings,
     )
 
 
