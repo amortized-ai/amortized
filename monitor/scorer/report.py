@@ -73,6 +73,30 @@ def print_per_run(
         print()
 
 
+def print_rubrics(results: list[dict[str, Any]]) -> None:
+    """Per-run graded skill-adherence: % + each step's status, skipped steps listed."""
+    if not results:
+        return
+    print("\n## Skill adherence (graded rubric)\n")
+    by_session: dict[str, list[dict[str, Any]]] = {}
+    for r in results:
+        by_session.setdefault(r["session_id"], []).append(r)
+    for session_id, rubrics in by_session.items():
+        print(f"### {session_id}")
+        for rb in rubrics:
+            pct = rb["adherence_pct"]
+            pct_str = f"{pct:.0f}%" if pct is not None else "n/a"
+            print(f"- **{rb['skill']}** ({rb['role']}): adherence **{pct_str}**")
+            for step in rb["steps"]:
+                reason = f"  |  {step['reason']}" if step.get("reason") else ""
+                print(
+                    f"    - [{step['status']:>6}] {step['step_id']} (w{step['weight']:g}){reason}"
+                )
+            if rb["skipped"]:
+                print(f"    skipped: {', '.join(rb['skipped'])}")
+        print()
+
+
 def print_comparison(
     runs: list[Run], scores: dict[str, dict[str, str]], checklist: dict[str, Any]
 ) -> None:

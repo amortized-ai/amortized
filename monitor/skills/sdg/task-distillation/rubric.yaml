@@ -1,0 +1,59 @@
+# Graded adherence rubric for the SDG task-distillation sub-skill.
+# Steps are an ordered decomposition of agents/sdg/skills/task-distillation/guide.md.
+# Each step is scored met/missed/wrong/n/a/review; weighted adherence% =
+# Σweight(met) / Σweight(met+wrong+missed). The rubric only applies when the guide
+# was actually loaded in the run (gate), so a classification run is never scored
+# against it. `detect` is either an auto matcher spec or {type: llm_judge}.
+skill: sdg/task-distillation
+role: sdg
+guide: agents/sdg/skills/task-distillation/guide.md
+gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+scoring: weighted
+steps:
+  - id: asks_examples_first
+    order: 1
+    weight: 2
+    description: >
+      The agent asks for examples (ICL / demonstration or, for rubric assessment,
+      calibration pairs) early to extract format and task criteria, instead of
+      interrogating the user for every detail. `wrong` if it never requests
+      examples and asks for all fields piecemeal.
+    detect: { type: llm_judge }
+
+  - id: confirms_output_format
+    order: 2
+    weight: 2
+    description: >
+      The agent extracts/derives the output format and presents a concrete demo of
+      it (placeholder content) for the user to confirm BEFORE building the config.
+      `wrong` if it proceeds to validate_sdg_job without ever showing the output
+      format for confirmation.
+    detect: { type: llm_judge }
+
+  - id: corpus_inferred_silently
+    order: 3
+    weight: 1
+    description: >
+      When the user's examples reveal an existing corpus of real inputs (a backlog
+      of tickets/RFEs/docs), the agent infers it silently and reuses that corpus —
+      it does NOT ask the user to choose between "generate inputs" vs "use your
+      own". `wrong` if it poses that question despite a real-input corpus; `n/a` if
+      no real-input corpus is evident.
+    detect: { type: llm_judge }
+
+  - id: teacher_name_verbatim
+    order: 4
+    weight: 1
+    description: >
+      Teacher-model options come from list_models and the model `name` string is
+      used verbatim — not shortened, re-prefixed, or otherwise modified. `wrong` if
+      the name is altered.
+    detect: { type: llm_judge }
+
+  - id: prompt_shown_before_validate
+    order: 5
+    weight: 2
+    description: >
+      Composes the task system prompt and renders it with show_prompt before
+      building the SDG config (guide Step 8).
+    detect: { type: prompt_review }

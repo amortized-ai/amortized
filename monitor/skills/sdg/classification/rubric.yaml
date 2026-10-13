@@ -1,0 +1,46 @@
+# Graded adherence rubric for the SDG classification sub-skill.
+# Ordered decomposition of agents/sdg/skills/classification/guide.md. See
+# sdg/task-distillation/rubric.yaml for the scoring convention.
+skill: sdg/classification
+role: sdg
+guide: agents/sdg/skills/classification/guide.md
+gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+scoring: weighted
+steps:
+  - id: stepwise_questions
+    order: 1
+    weight: 2
+    description: >
+      Gathers classification requirements ONE question at a time via present_options
+      (not all at once), in guide order: domain, then categories, then urgency, then
+      sample count, then teacher model. `wrong` if it dumps every question in one
+      turn or skips the staged flow.
+    detect: { type: llm_judge }
+
+  - id: suggests_categories
+    order: 2
+    weight: 1
+    description: >
+      For the chosen domain the agent SUGGESTS concrete category labels (3-6
+      relevant ones) as options and offers a custom/"define my own" path, rather
+      than leaving the user to invent them. `wrong` if it just asks the user to type
+      labels with no suggestions.
+    detect: { type: llm_judge }
+
+  - id: urgency_offered
+    order: 3
+    weight: 1
+    description: >
+      The agent offers an urgency choice (e.g. 3 levels / 4 levels / no urgency) as
+      its own decision point, per the guide. `wrong` if urgency is never surfaced.
+    detect: { type: llm_judge }
+
+  - id: teacher_from_list_models
+    order: 4
+    weight: 1
+    description: >
+      Teacher-model options are exactly the models returned by list_models (no
+      invented/hardcoded models) AND include the guide-mandated last option
+      "Configure a model". `wrong` if options include a model not in list_models or
+      omit the configure-a-model fallback.
+    detect: { type: llm_judge }

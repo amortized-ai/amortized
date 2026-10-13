@@ -351,3 +351,22 @@ comparison is plain SQL, e.g. per-model met-rate:
 SELECT model, SUM(status='met')*1.0 / SUM(status IN ('met','wrong','missed')) AS met_rate
 FROM row_scores GROUP BY model;
 ```
+
+## Graded skill-adherence rubrics (`--skill-rubric`)
+
+The aspect-G checklist rows answer "did it follow the loaded guide?" as pass/fail.
+For a graded answer — *to what degree*, and *which steps were skipped* — each skill
+guide is also decomposed into an ordered, weighted rubric at
+`monitor/skills/<agent>/<skill>/rubric.yaml` (`scorer/rubric.py`). A rubric applies
+to a run only when its `gate` (a `skill_loaded` precondition) holds, so a
+classification run is never scored against the task-distillation rubric. Each step's
+`detect` is either an `auto` matcher spec (scored from the log) or `{type: llm_judge}`
+(judged, one call per run+skill, only with `--llm-judge`). Adherence rolls up as
+
+```
+adherence% = Σ weight(met) / Σ weight(met + wrong + missed)    (n/a, review excluded)
+```
+
+`--skill-rubric` prints per-run adherence % + each step's status + the skipped
+steps, and (with `--store`) writes the `rubric_scores` table. Dropping a new
+`rubric.yaml` into the skills tree adds a graded skill with no code change.

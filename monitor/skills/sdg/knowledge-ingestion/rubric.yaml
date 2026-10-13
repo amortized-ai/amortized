@@ -1,0 +1,47 @@
+# Graded adherence rubric for the SDG knowledge-ingestion sub-skill.
+# Ordered decomposition of agents/sdg/skills/knowledge-ingestion/guide.md. See
+# sdg/task-distillation/rubric.yaml for the scoring convention.
+skill: sdg/knowledge-ingestion
+role: sdg
+guide: agents/sdg/skills/knowledge-ingestion/guide.md
+gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+scoring: weighted
+steps:
+  - id: grounds_on_documents
+    order: 1
+    weight: 2
+    description: >
+      Before proposing sample counts the agent establishes the actual documents via
+      list_documents / get_document_chunks (real doc ids and chunk/token stats),
+      rather than proceeding without inspecting the uploaded documents. `wrong` if it
+      never inspects the documents.
+    detect: { type: llm_judge }
+
+  - id: samples_from_chunk_stats
+    order: 2
+    weight: 2
+    description: >
+      The proposed num_samples is derived from the document's chunk statistics
+      (coverage x mean_chunk_tokens / avg_qa_tokens x num_chunks) and the agent SHOWS
+      the numbers — multiplier, chunk stats, resulting count — not a bare guess.
+      `wrong` if the sample count is picked with no chunk-based reasoning shown.
+    detect: { type: llm_judge }
+
+  - id: coverage_tiers
+    order: 3
+    weight: 1
+    description: >
+      The agent presents three source-coverage tiers (about 3x / 5x / 8x) with the
+      computed sample count for each, recommending the 5x default. `wrong` if it
+      offers a single number or tiers without the computed counts.
+    detect: { type: llm_judge }
+
+  - id: no_user_system_prompt
+    order: 4
+    weight: 1
+    description: >
+      The agent does NOT ask the user to write the trained model's system prompt; it
+      generates a domain-specific default itself and only surfaces it in the
+      confirmation table for optional adjustment. `wrong` if it asks the user to
+      author the system prompt.
+    detect: { type: llm_judge }

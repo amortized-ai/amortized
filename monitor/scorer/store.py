@@ -189,6 +189,36 @@ def ingest(
         conn.close()
 
 
+def ingest_rubrics(db_path: Path, use_case: str, results: list[dict[str, Any]]) -> None:
+    """Write (or replace) graded rubric step rows. `results` is score_all()'s output."""
+    conn = connect(db_path)
+    try:
+        sessions = {r["session_id"] for r in results}
+        for sid in sessions:
+            conn.execute(
+                "DELETE FROM rubric_scores WHERE session_id = ? AND use_case = ?", (sid, use_case)
+            )
+        for rb in results:
+            for step in rb["steps"]:
+                conn.execute(
+                    "INSERT OR REPLACE INTO rubric_scores VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        rb["session_id"],
+                        use_case,
+                        rb["role"],
+                        rb["skill"],
+                        step["step_id"],
+                        step["status"],
+                        step["weight"],
+                        step.get("reason", ""),
+                        rb["adherence_pct"],
+                    ),
+                )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _fetch_all(db_path: Path, table: str) -> list[dict[str, Any]]:
     conn = connect(db_path)
     try:

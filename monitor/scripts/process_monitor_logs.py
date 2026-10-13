@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 # Make the repo root importable so `monitor.scorer` resolves when this script is
 # run directly (e.g. `uv run python monitor/scripts/process_monitor_logs.py`).
@@ -50,6 +51,7 @@ from monitor.scorer.report import (  # noqa: E402
     load_review_csv,
     print_comparison,
     print_per_run,
+    print_rubrics,
 )
 
 
@@ -70,6 +72,12 @@ def main() -> None:
         "--judge-model",
         default=JUDGE_MODEL_DEFAULT,
         help=f"Model for --llm-judge (default: {JUDGE_MODEL_DEFAULT}, what Morty runs on)",
+    )
+    parser.add_argument(
+        "--skill-rubric",
+        action="store_true",
+        help="Score graded per-step skill-adherence rubrics (monitor/skills/**/rubric.yaml); "
+        "llm_judge steps are judged when --llm-judge is also set",
     )
     parser.add_argument(
         "--store",
@@ -113,7 +121,19 @@ def main() -> None:
                 if key in overrides:
                     scores[run.session_id][row["id"]] = overrides[key]
 
+    rubric_results: list[dict[str, Any]] = []
+    if args.skill_rubric:
+        from monitor.scorer import rubric
+
+        rubrics = rubric.load_rubrics()
+        judge_map: dict[tuple[str, str], dict[str, tuple[str, str]]] = {}
+        if args.llm_judge:
+            judge_map = rubric.judge_rubrics(runs, rubrics, args.judge_model)
+        rubric_results = rubric.score_all(runs, rubrics, judge_map)
+
     print_per_run(runs, scores, checklist, judge_reasons)
+    if rubric_results:
+        print_rubrics(rubric_results)
     print_comparison(runs, scores, checklist)
 
     if args.store:
@@ -127,6 +147,8 @@ def main() -> None:
             scores=scores,
             reasons=judge_reasons,
         )
+        if rubric_results:
+            store.ingest_rubrics(args.store, args.use_case, rubric_results)
         print(f"\nIngested {len(runs)} run(s) into {args.store}")
         if args.export:
             fmt, out_dir = args.export
