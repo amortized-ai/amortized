@@ -35,6 +35,7 @@ from amortized.core.jobs import (
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
+from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
     EvalJobRequest,
     Job,
@@ -245,6 +246,7 @@ async def _validate_model_source(
             except (ValueError, TypeError):
                 parent_config = {}
         parent_algo = str(parent_config.get("algorithm", "")).replace("-", "_")
+        parent_algo = ALGO_ALIASES.get(parent_algo, parent_algo)
         if parent_algo and parent_algo not in _RESUMABLE_ALGORITHMS:
             errors.append(
                 f"training_job_id: job '{training_job_id}' used algorithm"

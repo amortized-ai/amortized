@@ -28,6 +28,14 @@ _TRAINING_HUB_FIELD_MAP: dict[str, str] = {
     "output_dir": "ckpt_output_dir",
 }
 
+ALGO_ALIASES: dict[str, str] = {
+    "lora": "lora_sft",
+    "qlora": "lora_sft",
+    "qlora_sft": "lora_sft",
+    "classifier": "embedding_sft",
+    "embedding": "embedding_sft",
+}
+
 _TRAINING_HUB_SKIP_KEYS = {
     "algorithm",
     "engine",
@@ -118,15 +126,8 @@ async def build(
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
-    algo_aliases = {
-        "lora": "lora_sft",
-        "qlora": "lora_sft",
-        "qlora_sft": "lora_sft",
-        "classifier": "embedding_sft",
-        "embedding": "embedding_sft",
-    }
     algorithm = config.get("algorithm", "sft")
-    algorithm = algo_aliases.get(algorithm, algorithm)
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
 
     model_pre_commands: list[str] = []
     resume_parent: dict[str, Any] | None = None
