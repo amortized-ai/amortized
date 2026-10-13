@@ -51,6 +51,13 @@ def _gate_eval_for_trained_model(run: Run, requires: dict[str, Any]) -> bool:
     return any(c.get("training_job_id") for c in _calls(run, "validate_eval_job"))
 
 
+@requires_gate("model_switched")
+def _gate_model_switched(run: Run, requires: dict[str, Any]) -> bool:
+    """The Morty orchestrator model changed at least once mid-conversation. Gates
+    the context-retention rows so they only apply when a switch actually happened."""
+    return run.model_switches >= 1
+
+
 def _requires_met(run: Run, requires: dict[str, Any] | None) -> bool:
     """Evaluate a row-level `requires` precondition against the run. Unknown types
     don't gate (return True)."""

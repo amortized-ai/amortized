@@ -403,6 +403,44 @@ def _m_repeated_decision(run: Run, match: dict[str, Any]) -> str:
     return "review" if gray else "met"
 
 
+@matcher("context_after_switch")
+def _m_context_after_switch(run: Run, match: dict[str, Any]) -> str:
+    # Deterministic proxy for history retention across a mid-conversation model
+    # switch (failure point D): after the switch boundary, a present_options
+    # question that re-asks one posed BEFORE the switch is the clearest observable
+    # sign context was lost. n/a if no switch or nothing asked after it; review if
+    # questions weren't captured; the llm_judge row is the richer backstop.
+    idx = run.model_switch_index
+    if idx is None:
+        return "n/a"
+    before_q: list[str] = []
+    after_q: list[str] = []
+    captured_any = False
+    for i, turn in enumerate(run.counted_turns):
+        for c in turn.get("tool_calls") or []:
+            if c.get("tool") != "present_options":
+                continue
+            q = _question_text(c)
+            if not q.strip():
+                continue
+            captured_any = True
+            (after_q if i >= idx else before_q).append(q)
+    if not after_q:
+        # either no post-switch prompts, or none captured
+        return "review" if not captured_any and _present_options(run) else "n/a"
+    if not before_q:
+        return "met"  # nothing decided before the switch to re-ask
+    gray = False
+    for qa in after_q:
+        for qb in before_q:
+            sim = similarity(qa, qb)
+            if sim >= SIM_HIGH:
+                return "wrong"
+            if sim >= SIM_GRAY:
+                gray = True
+    return "review" if gray else "met"
+
+
 def score_auto(run: Run, match: dict[str, Any]) -> str:
     fn = MATCHERS.get(match.get("type", ""))
     if fn is None:

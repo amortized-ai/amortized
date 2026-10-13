@@ -440,6 +440,33 @@ rows:
     adjudicate: auto
     match: { type: repeated_decision }
 
+  # ---- History retention across a mid-conversation model switch (point D) ----
+  # The Morty model is a per-request param, so a tester can switch it mid-chat.
+  # opencode keeps the session history server-side; the proxy can't see its internal
+  # context re-feed, so we score the observable behavior: after a switch, a decided
+  # question must not be re-asked. Both rows are `n/a` when no switch occurred.
+  - id: context_after_switch_auto
+    stage: "Context kept after model switch (lexical)"
+    aspect: F
+    expected: >
+      After a mid-conversation model switch, no present_options question re-asks a
+      point already decided before the switch (lexical pre-filter).
+    adjudicate: auto
+    match: { type: context_after_switch }
+
+  - id: context_retained_after_switch
+    stage: "Context kept after model switch"
+    aspect: F
+    requires: { type: model_switched }
+    expected: >
+      After the Morty model was changed mid-conversation, the agent retains prior
+      context: it does not re-ask points already decided before the switch, and it
+      builds on earlier decisions rather than restarting. `wrong` if it re-asks a
+      decided point or behaves as if the earlier conversation did not happen; `met`
+      if it continues coherently; `n/a` if no model switch occurred. (Judged from
+      observable behavior only — the proxy cannot see opencode's context re-feed.)
+    adjudicate: llm_judge
+
   # ---- Skill adherence (aspect G) -------------------------------------------
   # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
   # which only assert a guide was read), these check whether the workflow FOLLOWED

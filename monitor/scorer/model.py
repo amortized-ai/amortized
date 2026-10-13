@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,39 @@ class Run:
     @property
     def outcome(self) -> str | None:
         return self.completion.get("outcome") if self.completion else None
+
+    @property
+    def models(self) -> list[str]:
+        """The per-turn orchestrator model series, chronological (drops blanks).
+        `agent_model` is the last of these; this keeps the whole sequence so a
+        mid-conversation model switch is observable."""
+        return [
+            t["model"]
+            for t in self.counted_turns
+            if t.get("role") == "orchestrator" and t.get("model")
+        ]
+
+    @property
+    def model_switches(self) -> int:
+        """How many times the orchestrator model changed between consecutive turns."""
+        seq = self.models
+        return sum(1 for a, b in pairwise(seq) if a != b)
+
+    @property
+    def model_switch_index(self) -> int | None:
+        """Index into `counted_turns` of the first turn whose orchestrator model
+        differs from the previous one (the switch boundary), or None if no switch."""
+        prev: str | None = None
+        for i, t in enumerate(self.counted_turns):
+            if t.get("role") != "orchestrator":
+                continue
+            m = t.get("model")
+            if not m:
+                continue
+            if prev is not None and m != prev:
+                return i
+            prev = m
+        return None
 
 
 def _parse_dt(value: Any) -> datetime | None:
