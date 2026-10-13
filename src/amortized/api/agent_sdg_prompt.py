@@ -73,6 +73,12 @@ def _rewrite_processor_system_messages(
     return changed
 
 
+# Minimum difflib ratio for a shown preview to bind to a recipe column. A real match (the
+# preview IS that column's prompt) scores ~1.0; this floor keeps an unrelated/stale preview
+# from overwriting the column it merely scored highest against. Heuristic, tunable.
+_MIN_BIND_RATIO = 0.6
+
+
 def _bind_prompts_to_config(config: dict[str, Any], shown: list[str]) -> bool:
     """Overwrite each prompt-bearing recipe column's `system_prompt` with the approved
     preview it most closely matches (greedy one-to-one by text similarity), and align the
@@ -103,6 +109,12 @@ def _bind_prompts_to_config(config: dict[str, Any], shown: list[str]) -> bool:
     used_c: set[int] = set()
     changed = False
     for _ratio, si, ci in scored:
+        # scored is sorted by ratio desc, so the first sub-threshold pair means every
+        # remaining pair is too dissimilar to be a real match — stop binding. Without this,
+        # a stale/unrelated preview (e.g. from an abandoned recipe earlier in the session)
+        # would overwrite whatever column it merely scored highest against.
+        if _ratio < _MIN_BIND_RATIO:
+            break
         if si in used_s or ci in used_c:
             continue
         used_s.add(si)

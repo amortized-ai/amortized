@@ -242,7 +242,8 @@ class TestJobCompleteHandback:
             )
         )
         forwarded = router.sent[0][1]
-        assert forwarded == agent._SUBAGENT_JOB_DONE_PROMPT
+        assert agent._SUBAGENT_JOB_DONE_PROMPT in forwarded  # hand-back steer appended
+        assert "d6be24ce" in forwarded  # [5] the job id is KEPT, not replaced away
         assert "signal_subagent_completion" in forwarded
 
     def test_failed_job_not_rewritten(self, router: _Router) -> None:
@@ -491,7 +492,8 @@ class TestInteractionSteerDelivery:
             )
         )
         sent = next(t for (sid, t, _a) in router.sent if sid == sub)
-        assert sent == agent._SUBAGENT_JOB_DONE_PROMPT  # job-done prompt, steer NOT prepended
+        assert agent._SUBAGENT_JOB_DONE_PROMPT in sent  # job-done prompt forwarded
+        assert "Show the preview first." not in sent  # steer NOT consumed on job_complete
         assert state.pending_interaction_steer == "Show the preview first."  # stays parked
 
 

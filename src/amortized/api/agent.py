@@ -365,6 +365,10 @@ def _enforce_single_interaction(
     _record_confirm_signals(state, parts, ask_turn)
 
     if first_q is None and first_card is None:
+        # A review card shown on its own (no question, no confirm card) IS reviewed this
+        # turn — record it so a later turn that stacks it under a confirm doesn't re-gate.
+        if first_review is not None:
+            state.reviewed_card_sigs.add(_review_card_signature(parts[first_review]))
         return result
 
     # Review gate: a review card must be reviewed on its own turn before the job it
@@ -629,7 +633,13 @@ async def _grounded_corpus(
             for part in msg.get("parts") or []:
                 ptype = part.get("type")
                 if role == "user" and ptype == "text":
-                    chunks.append(str(part.get("text") or ""))
+                    txt = str(part.get("text") or "")
+                    # Skip the gate's own grounding correction: it NAMES the fabricated
+                    # id(s), which would otherwise re-enter the corpus and let the model's
+                    # repeat of the same id pass the recheck ([4]).
+                    if txt.startswith("[GROUNDING VIOLATION"):
+                        continue
+                    chunks.append(txt)
                 elif ptype == "tool":
                     chunks.append(str(_get_tool_input(part)))
                     part_state = part.get("state")
@@ -697,15 +707,21 @@ async def _apply_provenance_gate(
                 "one — call the appropriate tool to fetch it first, or tell the user you "
                 "don't have it yet."
             )
-            current = await _proxy_send_message(
+            post = await _proxy_send_message(
                 active_id, correction, agent=agent, model=body.model
             )
             # The correction adds new messages to the active session; drop its cached
             # copy so re-grounding fetches them (other sessions stay cached).
             if cache is not None:
                 cache.pop(active_id, None)
-            # Re-ground each attempt: a correction may call a tool that now surfaces
-            # the id legitimately.
+            # Re-ground the model's ACTUAL corrected reply: the POST response carries only
+            # step markers, so re-checking it would find no text and always "pass" — the
+            # real reply text is in the GET parts. (A correction may also call a tool that
+            # now surfaces the id legitimately.)
+            refetched = await _fetch_all_assistant_parts(active_id)
+            # Fall back to the POST parts if the fetch is empty (a transient GET failure,
+            # or a test without a live opencode) so the recheck still sees the reply.
+            current = {**post, "parts": refetched or post.get("parts") or []}
             violations = await _ungrounded_ids(state, current, cache)
             if not violations:
                 return current
@@ -1243,11 +1259,17 @@ async def _apply_job_claim_gate(
                 "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
                 violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
             )
-            current = await _proxy_send_message(
+            post = await _proxy_send_message(
                 active_id, _job_claim_correction(violations), agent=agent, model=body.model
             )
             if cache is not None:
                 cache.pop(active_id, None)
+            # Re-check the model's ACTUAL corrected reply (POST = step markers only; the
+            # real text is in the GET parts), else the recheck sees no claim and "passes".
+            refetched = await _fetch_all_assistant_parts(active_id)
+            # Fall back to the POST parts if the fetch is empty (a transient GET failure,
+            # or a test without a live opencode) so the recheck still sees the reply.
+            current = {**post, "parts": refetched or post.get("parts") or []}
             violations = await _job_claim_violations(state, current, cache, job_cache)
             if not violations:
                 return current
@@ -1655,7 +1677,9 @@ async def _handle_subagent_message(
     # and never signalling completion). Only on success — a failed job still needs
     # the subagent's own failure handling.
     if body.event == "job_complete" and _job_succeeded(body, user_text):
-        user_text = _SUBAGENT_JOB_DONE_PROMPT
+        # Keep the event text (it carries the job id the completion summary must report and
+        # the grounding corpus needs) and append the hand-back steer — don't replace it.
+        user_text = f"{user_text}\n\n{_SUBAGENT_JOB_DONE_PROMPT}"
     else:
         # Deliver any steer the interaction gate parked on a prior held-card turn as the
         # lead of this message. Skipped on a job_complete event (which replaces user_text
