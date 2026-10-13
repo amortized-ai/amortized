@@ -4,7 +4,7 @@ Covers subagent → subagent delegation (e.g. eval → sdg) and the
 stack-based return of control when the delegated subagent completes.
 """
 
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 
@@ -437,107 +437,6 @@ class TestEnforceSingleInteraction:
         assert len(out["parts"]) == 2
 
 
-class TestPreviewBeforeCreateGate:
-    """A full-job SDG confirm (validate_sdg_job mode='create') may render only after a
-    preview of the SAME recipe has been shown standalone for approval. This stops a
-    weak driver from skipping the mandated ~10-sample preview and jumping straight to
-    the full run, and re-gates when the recipe is edited after a preview."""
-
-    _RECIPE: ClassVar[dict[str, Any]] = {"columns": [{"name": "q"}], "topic": "openshift"}
-
-    def _create(self, **extra: Any) -> dict[str, Any]:
-        return _tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create", **extra})
-
-    def _preview(self, **extra: Any) -> dict[str, Any]:
-        return _tool_part(
-            "validate_sdg_job", {**self._RECIPE, "mode": "preview", **extra}
-        )
-
-    def test_create_without_prior_preview_is_held_and_nudged(self) -> None:
-        state = _fresh_state()
-        result = {"parts": [_text_part("confirm the full run"), self._create()]}
-        out = agent._enforce_single_interaction(result, state)
-        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
-        assert "validate_sdg_job" not in tools  # full-job confirm held
-        assert "preview" in _nudge(state).lower()  # model steered to preview first
-        # The steer is model-directed and must NOT leak into the user-facing result.
-        texts = " ".join(p.get("text", "") for p in out["parts"] if p.get("type") == "text")
-        assert "preview" not in texts.lower()
-
-    def test_create_with_omitted_mode_defaults_to_create_and_is_gated(self) -> None:
-        # SDGJobRequest.mode defaults to 'create', so an omitted mode is a full run.
-        result = {"parts": [_tool_part("validate_sdg_job", dict(self._RECIPE))]}
-        out = agent._enforce_single_interaction(result, _fresh_state())
-        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
-        assert "validate_sdg_job" not in tools
-
-    def test_preview_then_create_same_turn_keeps_preview(self) -> None:
-        # The driver stacks the full run under the preview. The preview leads; the
-        # create is dropped and must come on a later turn after approval.
-        state = _fresh_state()
-        result = {"parts": [self._preview(), self._create()]}
-        out = agent._enforce_single_interaction(result, state)
-        modes = [
-            agent._validate_mode(p)
-            for p in out["parts"]
-            if agent._tool_name(p) == "validate_sdg_job"
-        ]
-        assert modes == ["preview"]  # only the preview rendered
-        # The preview is now approved, so a later create proceeds.
-        out2 = agent._enforce_single_interaction({"parts": [self._create()]}, state)
-        assert any(
-            agent._tool_name(p) == "validate_sdg_job" for p in out2["parts"]
-        )
-
-    def test_create_after_standalone_preview_proceeds(self) -> None:
-        state = _fresh_state()
-        agent._enforce_single_interaction({"parts": [self._preview()]}, state)
-        out = agent._enforce_single_interaction({"parts": [self._create()]}, state)
-        assert any(agent._tool_name(p) == "validate_sdg_job" for p in out["parts"])
-
-    def test_record_count_change_does_not_re_gate(self) -> None:
-        # num_records counts samples, not recipe — a preview of 10 approves the full run.
-        state = _fresh_state()
-        agent._enforce_single_interaction(
-            {"parts": [self._preview(num_records=10)]}, state
-        )
-        out = agent._enforce_single_interaction(
-            {"parts": [self._create(num_records=500)]}, state
-        )
-        assert any(agent._tool_name(p) == "validate_sdg_job" for p in out["parts"])
-
-    def test_edited_recipe_re_gates_the_create(self) -> None:
-        state = _fresh_state()
-        agent._enforce_single_interaction({"parts": [self._preview()]}, state)
-        edited = _tool_part(
-            "validate_sdg_job",
-            {"columns": [{"name": "q"}], "topic": "kubernetes", "mode": "create"},
-        )
-        out = agent._enforce_single_interaction({"parts": [edited]}, state)
-        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
-        assert "validate_sdg_job" not in tools  # new recipe needs a fresh preview
-
-    def test_prompt_gate_precedes_the_preview_gate(self) -> None:
-        # With a new prompt AND an ungated create, the prompt review wins first.
-        result = {
-            "parts": [
-                _tool_part("show_prompt", {"prompt": "You are an assessor."}),
-                self._create(),
-            ]
-        }
-        out = agent._enforce_single_interaction(result, _fresh_state())
-        tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
-        assert tools == ["show_prompt"]  # prompt stands alone; create held
-
-    def test_training_confirm_is_not_preview_gated(self) -> None:
-        # The preview gate is SDG-only: a training confirm is never held with the SDG
-        # preview nudge (it has its own precondition gates, covered separately).
-        result = {"parts": [_tool_part("validate_training_job", {"algorithm": "sft"})]}
-        out = agent._enforce_single_interaction(result, _fresh_state())
-        texts = [p.get("text", "") for p in out["parts"] if p.get("type") == "text"]
-        assert not any("preview" in t.lower() for t in texts)
-
-
 def _tools(out: dict[str, Any]) -> list[str]:
     return [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
 
@@ -599,46 +498,46 @@ class TestInteractionSteerDelivery:
 class TestCommittingCardReRun:
     """A held committing card (unmet precondition) triggers an in-turn model re-run — the
     hard rail — so the premature card never reaches the client (it falls behind the steer
-    message); the soft prompt-gate steer is NOT re-run."""
-
-    _RECIPE: ClassVar[dict[str, Any]] = {"columns": [{"name": "q"}], "topic": "k8s"}
+    message). Validated on the training data precondition; SDG previewing is a soft prompt
+    default, not a gate, so it is deliberately NOT re-run."""
 
     def test_unmet_precondition_reruns_the_model(self, router: _Router) -> None:
-        # Turn 1: the subagent jumps straight to a full-run create card (no preview) -> the
-        # precondition gate holds it. The re-run then has the model show a preview instead.
+        # Turn 1: the subagent jumps to a training confirm with no data/model/VRAM shown ->
+        # the precondition gate holds it. The re-run then has the model do the setup.
         sub = router.add_session(
             [
-                [_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create"})],
-                [_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "preview"})],
+                [_tool_part("validate_training_job", {"algorithm": "osft"})],
+                [_tool_part("get_dataset", {"run_id": "r1"})],  # re-run: do setup instead
             ]
         )
         state = _make_state(router)
         state.subagent_id = sub
-        state.subagent_target = "sdg"
+        state.subagent_target = "training"
         tid = "turn-1"
         state.turns[tid] = agent.TurnState()
-        _run(agent._run_turn(state, "s1", tid, "do it", _body(text="do it")))
+        _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
         sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
-        assert sub_sends[0] == "do it"  # the original turn
+        assert sub_sends[0] == "train it"  # the original turn
         assert len(sub_sends) == 2  # the gate re-ran the model once (the hard rail)
-        assert sub_sends[1] != "do it"  # the re-run posted the precondition steer
+        assert sub_sends[1] != "train it"  # the re-run posted the data-precondition steer
         assert state.pending_rerun_steer is None  # consumed, not carried over
 
     def test_no_rerun_when_preconditions_met(self, router: _Router) -> None:
-        # A preview was already approved, so the create card is NOT held and NOT re-run.
+        # All training preconditions satisfied -> the confirm is NOT held and NOT re-run.
         sub = router.add_session(
-            [[_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create"})]]
+            [[_tool_part("validate_training_job", {"algorithm": "osft"})]]
         )
         state = _make_state(router)
         state.subagent_id = sub
-        state.subagent_target = "sdg"
-        preview = _tool_part("validate_sdg_job", {**self._RECIPE, "mode": "preview"})
-        state.approved_preview_sigs.add(agent._sdg_config_signature(preview))
+        state.subagent_target = "training"
+        state.confirmed_data = True
+        state.offered_choice.add("training")
+        state.shown_vram = True
         tid = "turn-1"
         state.turns[tid] = agent.TurnState()
-        _run(agent._run_turn(state, "s1", tid, "do it", _body(text="do it")))
+        _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
         sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
-        assert sub_sends == ["do it"]  # no re-run
+        assert sub_sends == ["train it"]  # no re-run
         assert state.pending_rerun_steer is None
 
 

@@ -13,7 +13,6 @@ unmet precondition this table names.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -45,30 +44,6 @@ def _review_card_signature(part: dict[str, Any]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _validate_mode(part: dict[str, Any]) -> str:
-    """The `mode` of a validate_sdg_job call. SDGJobRequest.mode defaults to 'create',
-    so an omitted mode is a full-job confirm, not a preview."""
-    return str(_get_tool_input(part).get("mode") or "create").strip().lower()
-
-
-# Fields that count a sample, not the recipe. A preview approves the RECIPE (columns,
-# models, processors, seed, topic); changing only how many records to make must not
-# force a re-preview. parent_job_id is lineage, likewise not recipe-defining. Mirrors
-# the clone-for-eval invariant ("mirror the recipe verbatim; only num_records changes").
-_SDG_NON_RECIPE_FIELDS = {"mode", "num_records", "parent_job_id"}
-
-
-def _sdg_config_signature(part: dict[str, Any]) -> str:
-    """Stable signature of an SDG job's RECIPE, identical for a preview and the full-job
-    confirm of the same recipe (they differ only in `mode`/record count). An edited
-    recipe yields a new signature, so the preview-before-create gate re-fires."""
-    recipe = {
-        k: v for k, v in _get_tool_input(part).items() if k not in _SDG_NON_RECIPE_FIELDS
-    }
-    canonical = json.dumps(recipe, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 # Tools that establish a confirm card's prerequisite ACTIONS, tracked as session
 # signals (see SessionState). The VRAM estimate and dataset inspection are ordinary
 # (passive) tool calls that must have happened before a training confirm.
@@ -77,13 +52,8 @@ _DATA_CONFIRM_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
 
 
 # Steering appended when a confirm card is HELD because a prerequisite is unmet. One per
-# precondition; the first unmet one's text is what the model sees.
-_PREVIEW_FIRST_NUDGE = (
-    "A full SDG run must be previewed first. Call validate_sdg_job with mode "
-    '"preview", let the user approve the ~10-sample preview, then confirm the full '
-    "run. If you already previewed but changed the recipe, re-run the preview so the "
-    "user approves the new configuration before the full job is created."
-)
+# precondition; the first unmet one's text is what the model sees. (SDG previewing is a
+# prompt default, not a hard gate — see the sdg workflow — so there is no preview nudge.)
 _TRAINING_DATA_NUDGE = (
     "Confirm the training data before the job card. Call get_dataset on the training "
     "run and show the user its record count — even if the data came in via "
@@ -165,14 +135,9 @@ class _ConfirmGate:
 # `_not_ready_violations`, deduped there against the dispatch-provenance check; this
 # table is the SYNC half that turns on session-local signals.)
 _CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
-    "validate_sdg_job": (
-        _ConfirmGate(
-            "preview",
-            lambda s, c: _validate_mode(c) != "create"
-            or _sdg_config_signature(c) in s.approved_preview_sigs,
-            _PREVIEW_FIRST_NUDGE,
-        ),
-    ),
+    # No SDG precondition: previewing before a full run is a strong PROMPT default (see the
+    # sdg workflow), not a hard gate — a capable model, or an explicit user "skip the
+    # preview", may create directly. Hard gates stay only for user-independent prereqs.
     "validate_training_job": (
         _ConfirmGate(
             "data", lambda s, c: s.confirmed_data, _TRAINING_DATA_NUDGE,
