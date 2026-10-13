@@ -70,6 +70,7 @@ export function MessageBubble({
 
   const jobSubmissions = useMemo(() => {
     if (isUser) return []
+    const seen = new Set<string>()
     return message.toolResults
       .filter((t) => JOB_TOOL_NAMES.has(t.name))
       .map((t) => {
@@ -80,6 +81,14 @@ export function MessageBubble({
         return info.jobId ? { id: info.jobId, type } : null
       })
       .filter((j): j is { id: string; type: string } => !!j)
+      // The same job tool can surface twice in one turn (the server turn-result seed
+      // plus the client's own GET re-derivation of the same opencode message). Dedup by
+      // id so a job renders a single monitor card (no duplicate React key).
+      .filter((j) => {
+        if (seen.has(j.id)) return false
+        seen.add(j.id)
+        return true
+      })
   }, [isUser, message.toolResults])
 
   const [dismissedJobs, setDismissedJobs] = useState<Set<string>>(new Set())
