@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from monitor.scorer.model import Run
+from monitor.scorer.store import _row_role
 
 
 def _fmt(value: Any, kind: str) -> str:
@@ -70,6 +71,40 @@ def print_per_run(
             print(
                 f"    - [{sc[row['id']]:>6}] {row['aspect']} · {row['id']} — {row['stage']}{suffix}"
             )
+        print()
+
+
+def print_role_breakdown(
+    runs: list[Run],
+    scores: dict[str, dict[str, str]],
+    checklist: dict[str, Any],
+    rubric_results: list[dict[str, Any]] | None = None,
+) -> None:
+    """Per-run met-rate split by the subagent role each row/rubric pertains to —
+    the orchestrator-vs-subagent view (axis E) in the CLI. Rows with no role fall
+    into a `workflow` bucket. Tokens per role live in the store's `turns` table."""
+    rubric_by_session: dict[str, list[dict[str, Any]]] = {}
+    for r in rubric_results or []:
+        rubric_by_session.setdefault(r["session_id"], []).append(r)
+    print("\n## Per-role breakdown\n")
+    for run in runs:
+        sc = scores[run.session_id]
+        buckets: dict[str, list[int]] = {}
+        for row in checklist["rows"]:
+            role = _row_role(row) or "workflow"
+            status = sc[row["id"]]
+            if status in ("met", "wrong", "missed"):
+                b = buckets.setdefault(role, [0, 0])
+                b[1] += 1
+                b[0] += status == "met"
+        print(f"### {run.session_id}  (`{run.agent_model or '-'}`)")
+        for role in sorted(buckets):
+            met, total = buckets[role]
+            print(f"- {role}: {met}/{total} met")
+        for rb in rubric_by_session.get(run.session_id, []):
+            pct = rb["adherence_pct"]
+            pct_str = f"{pct:.0f}%" if pct is not None else "n/a"
+            print(f"- rubric {rb['skill']} ({rb['role']}): adherence {pct_str}")
         print()
 
 

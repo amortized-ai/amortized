@@ -51,6 +51,7 @@ from monitor.scorer.report import (  # noqa: E402
     load_review_csv,
     print_comparison,
     print_per_run,
+    print_role_breakdown,
     print_rubrics,
 )
 
@@ -72,6 +73,12 @@ def main() -> None:
         "--judge-model",
         default=JUDGE_MODEL_DEFAULT,
         help=f"Model for --llm-judge (default: {JUDGE_MODEL_DEFAULT}, what Morty runs on)",
+    )
+    parser.add_argument(
+        "--by-role",
+        action="store_true",
+        help="Also print a per-run met-rate breakdown by subagent role (orchestrator/"
+        "sdg/training/eval) plus per-role rubric adherence",
     )
     parser.add_argument(
         "--skill-rubric",
@@ -134,6 +141,8 @@ def main() -> None:
     print_per_run(runs, scores, checklist, judge_reasons)
     if rubric_results:
         print_rubrics(rubric_results)
+    if args.by_role:
+        print_role_breakdown(runs, scores, checklist, rubric_results)
     print_comparison(runs, scores, checklist)
 
     if args.store:
