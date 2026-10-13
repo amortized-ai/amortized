@@ -10,15 +10,20 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useChatStore } from "@/stores/chat-store"
 import { markRunComplete } from "@/lib/api-client"
+import { useConfig } from "@/features/settings/api/use-settings"
 
 /**
  * Records a human-declared completion for a test run. The platform has no
  * workflow-completion signal (the orchestrator loops indefinitely), so the
  * tester marks the boundary here; it defines turns-to-complete / total-tokens
  * for the monitor metrics.
+ *
+ * Only rendered when the server has the monitor enabled (eval deploys); hidden
+ * in production, where the capture path is a no-op anyway.
  */
 export function MarkCompleteButton() {
   const conversationId = useChatStore((s) => s.currentConversationId)
+  const { data: config } = useConfig()
   const [busy, setBusy] = useState(false)
 
   async function mark(outcome: "success" | "gave_up") {
@@ -34,6 +39,8 @@ export function MarkCompleteButton() {
       toast.error("Could not record completion")
     }
   }
+
+  if (!config?.monitor_enabled) return null
 
   return (
     <DropdownMenu>

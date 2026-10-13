@@ -42,6 +42,7 @@ const config: ConfigResponse = {
   image_registry: "ghcr.io/amortized-ai",
   available_backends: ["kubernetes"],
   version: "0.3.0",
+  monitor_enabled: false,
 }
 
 const routes: MlflowGatewayRoute[] = [

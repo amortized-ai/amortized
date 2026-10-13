@@ -109,6 +109,7 @@ export interface ConfigResponse {
   image_registry: string
   available_backends: string[]
   version: string
+  monitor_enabled: boolean
 }
 
 // --- MLflow: Experiment Tracking ---

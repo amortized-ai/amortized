@@ -34,7 +34,14 @@ def _log_path(session_id: str) -> Path:
 
 
 def append_record(session_id: str, record: dict[str, Any]) -> None:
-    """Append one JSON line to the session's log. Never raises."""
+    """Append one JSON line to the session's log. Never raises.
+
+    No-op unless the monitor is enabled (``AMORTIZED_MONITOR_ENABLED``): the gate
+    lives here too so every writer (turn metrics, job-created, mark-complete) is
+    covered by one check, not just the per-turn capture path.
+    """
+    if not settings.monitor_enabled:
+        return
     try:
         record.setdefault("ts", datetime.now(UTC).isoformat())
         path = _log_path(session_id)

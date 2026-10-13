@@ -72,6 +72,7 @@ const mockConfig: ConfigResponse = {
   image_registry: "ghcr.io/amortized-ai",
   available_backends: ["kubernetes"],
   version: "1.0.0",
+  monitor_enabled: true,
 }
 
 const mockMlflowRunsSearch: MlflowRunsSearchResponse = {

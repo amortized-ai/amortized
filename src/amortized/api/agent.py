@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api import monitor_log
+from amortized.api.monitor_redact import redact
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -310,7 +311,12 @@ async def _record_turn_metrics(
     conversation's sessions), which fixes both the delegation undercount (a
     single active-session read misses subagents) and the within-turn undercount
     (multi-step tool loops span several assistant messages).
+
+    No-op unless the monitor is enabled — the early return also skips the costly
+    per-session message fan-out below, so production turns pay nothing.
     """
+    if not settings.monitor_enabled:
+        return
     try:
         role_by_session: dict[str, str] = {state.orchestrator_id: "orchestrator"}
         if state.subagent_id and state.subagent_target:
@@ -378,6 +384,7 @@ async def _record_turn_metrics(
                 if part.get("type") != "tool":
                     continue
                 name = _tool_name(part)
+                inp = _get_tool_input(part)
                 entry: dict[str, Any] = {"tool": name, "role": role}
                 part_state = part.get("state")
                 if isinstance(part_state, dict):
@@ -386,15 +393,14 @@ async def _record_turn_metrics(
                     output = part_state.get("output")
                     if isinstance(output, str) and output:
                         entry["output"] = output
+                # Promoted scalars — kept as first-class fields so the existing
+                # matchers read them directly (back-compat). The full redacted input
+                # is also captured below, so new offline checks need no logger edit.
                 if name == "delegate_to_subagent":
-                    entry["target"] = _get_tool_input(part).get("target")
+                    entry["target"] = inp.get("target")
                     # solo = the delegating message was the delegate call alone.
                     entry["solo"] = (not msg_has_text) and msg_tool_count == 1
                 elif name.startswith("validate_"):
-                    # Capture pipeline-wiring inputs so chaining (SDG->training->eval
-                    # via parent_job_id) is checkable offline. Config args aren't
-                    # otherwise logged; only record the fields when present/non-empty.
-                    inp = _get_tool_input(part)
                     # `training_job_id` on an eval config = the subject under eval is
                     # a tuned model (not a base/gateway model) — lets the monitor gate
                     # "eval set must mirror the training pipeline" checks on that case.
@@ -412,16 +418,11 @@ async def _record_turn_metrics(
                     mode = inp.get("mode")
                     if mode:
                         entry["mode"] = mode
-                    # Eval requires an explicit judge; record its model only
-                    # (never base_url/api_key) so "judge set" is checkable.
+                    # Eval requires an explicit judge; promote its model name.
                     judge = inp.get("judge")
                     if isinstance(judge, dict) and judge.get("model"):
                         entry["judge"] = judge["model"]
                 elif name == "signal_phase":
-                    # Capture phase/step so the UI progress signal is checkable
-                    # offline (e.g. the eval stage must signal phase=eval, not
-                    # a stale training phase).
-                    inp = _get_tool_input(part)
                     phase = inp.get("phase")
                     if phase:
                         entry["phase"] = phase
@@ -429,12 +430,6 @@ async def _record_turn_metrics(
                     if step:
                         entry["step"] = step
                 elif name == "present_options":
-                    # Capture the question and option titles so "a real choice
-                    # was offered" (e.g. the training base-model list) is
-                    # checkable offline — the option content is not otherwise
-                    # logged, so without this the monitor cannot tell whether
-                    # Morty presented options or auto-picked.
-                    inp = _get_tool_input(part)
                     question = inp.get("question")
                     if question:
                         entry["question"] = question
@@ -447,6 +442,13 @@ async def _record_turn_metrics(
                         ]
                         if titles:
                             entry["options"] = titles
+                # Full tool input, secrets masked + size-bounded. Removes the
+                # "signal must be pre-captured" constraint: offline checks can read
+                # any input field (and all tools' inputs, not just the ones promoted
+                # above) without a logger change.
+                redacted = redact(inp)
+                if redacted:
+                    entry["input"] = redacted
                 tool_calls.append(entry)
 
         started = turn.started_at
