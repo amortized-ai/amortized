@@ -143,6 +143,14 @@ class SessionState:
     shown_vram: bool = False  # estimate_training_resources rendered (training)
     confirmed_data: bool = False  # a dataset tool (get_dataset/…) rendered (training data)
     offered_choice: set[str] = field(default_factory=set)  # targets that asked present_options
+    # callIDs of interactive cards (stacked present_options, a repeat confirm, a redundant
+    # review) the interaction gate stripped from a turn result. get_session_messages filters
+    # these so a card removed from the result is also absent from the raw opencode history the
+    # UI re-fetches — otherwise the client re-derives the stripped card and the gate is a
+    # no-op for rendering. The committing-card hold uses the _run_turn re-run rail instead;
+    # this covers the non-committing strips it doesn't. Cumulative (callIDs are unique; bounded
+    # by the session's tool-call count). See _enforce_single_interaction.
+    suppressed_call_ids: set[str] = field(default_factory=set)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -403,8 +411,8 @@ def _enforce_single_interaction(
         keep_index = first_q if ask_turn else first_card
         drop_review = not ask_turn and first_card is not None and review_sig is not None
 
-    kept = [
-        part
+    kept_indices = {
+        i
         for i, part in enumerate(parts)
         if i == keep_index
         or (
@@ -412,7 +420,17 @@ def _enforce_single_interaction(
             and _tool_name(part) not in _CONFIRM_CARD_TOOLS
             and not (drop_review and _tool_name(part) in _REVIEW_CARD_TOOLS)
         )
-    ]
+    }
+    kept = [part for i, part in enumerate(parts) if i in kept_indices]
+    # Record the dropped cards' callIDs so get_session_messages also hides them: the client
+    # re-derives this turn's cards from its own GET and would otherwise re-render a card the
+    # gate removed from the result. (The committing-card hold is additionally re-run-railed in
+    # _run_turn; recording its callID here is harmless — that message sits behind the steer.)
+    for i, part in enumerate(parts):
+        if i not in kept_indices:
+            call_id = part.get("callID")
+            if call_id:
+                state.suppressed_call_ids.add(str(call_id))
     # Mark the prompt reviewed once it is actually rendered to the user this turn,
     # so the next confirm that re-includes it proceeds instead of re-gating.
     if review_sig is not None and not drop_review:
@@ -1493,6 +1511,15 @@ async def get_session_messages(session_id: str) -> Any:
             _bind_sdg_prompt_to_approved(messages)
     except Exception:
         logger.warning("SDG prompt-bind failed (passing through)", exc_info=True)
+    # Drop the cards the interaction gate stripped from the turn result, so the UI (which
+    # re-fetches this raw history) doesn't re-render a card the gate removed.
+    if isinstance(messages, list) and state.suppressed_call_ids:
+        for msg in messages:
+            parts = msg.get("parts") if isinstance(msg, dict) else None
+            if isinstance(parts, list):
+                msg["parts"] = [
+                    p for p in parts if str(p.get("callID")) not in state.suppressed_call_ids
+                ]
     return messages
 
 
