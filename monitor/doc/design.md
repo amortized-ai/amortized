@@ -331,6 +331,15 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
 // completion
 { "kind": "completion", "session_id": "...", "turn_id": "...",
   "outcome": "success|gave_up", "note": null, "ts": "…" }
+
+// job_created  — written server-side by the job-create endpoints (jobs.py), NOT by
+// the agent proxy. Job creation is human-gated (frontend POST /jobs/*), so it is
+// invisible to the agent tool log; the frontend sends X-Monitor-Session so the
+// record correlates to the run. Lets the monitor check a job was actually created
+// (job_created matcher) and monitored to a terminal status (job_monitored).
+{ "kind": "job_created", "session_id": "...", "job_id": "...",
+  "job_type": "sdg|training|eval", "status": "...", "parent_job_id": "…",
+  "mlflow_run_id": "…", "user_id": "…", "config": { "...": "redacted" }, "ts": "…" }
 ```
 
 ## Structured store (`--store` / `--export`)

@@ -116,10 +116,11 @@ function get<T>(path: string): Promise<T> {
   return request<T>(path)
 }
 
-function post<T>(path: string, body?: unknown): Promise<T> {
+function post<T>(path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
   return request<T>(path, {
     method: "POST",
     body: body != null ? JSON.stringify(body) : undefined,
+    headers,
   })
 }
 
@@ -266,9 +267,16 @@ export async function retryJob(jobId: string): Promise<Job> {
 
 // --- Recipes ---
 
-export function createJob(endpoint: string, body: Record<string, unknown>): Promise<Job> {
+export function createJob(
+  endpoint: string,
+  body: Record<string, unknown>,
+  sessionId?: string,
+): Promise<Job> {
   logger.info("createJob", { endpoint })
-  return post<Job>(endpoint, body)
+  // Correlate the human-gated job submission back to the monitor session that
+  // confirmed it (no-op server-side unless the monitor is enabled).
+  const headers = sessionId ? { "X-Monitor-Session": sessionId } : undefined
+  return post<Job>(endpoint, body, headers)
 }
 
 // --- Direct job creation (for recipe re-execution) ---

@@ -326,6 +326,46 @@ def _m_judge_valid(run: Run, match: dict[str, Any]) -> str:
     return "met" if judges[-1] in valid else "wrong"
 
 
+_TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
+
+
+@matcher("job_created")
+def _m_job_created(run: Run, match: dict[str, Any]) -> str:
+    # A job of the expected type was actually created (job_created record,
+    # correlated to this run via the X-Monitor-Session header the frontend sends).
+    # Job creation is human-gated, so it does not appear in the agent tool log —
+    # only in these server-side records.
+    jt = match.get("job_type")
+    jobs = [j for j in run.jobs if not jt or j.get("job_type") == jt]
+    return "met" if jobs else "missed"
+
+
+@matcher("job_monitored")
+def _m_job_monitored(run: Run, match: dict[str, Any]) -> str:
+    # After creation, the agent polled get_job for that job until a terminal status
+    # (succeeded/failed/cancelled) before moving on. n/a if nothing was created;
+    # missed if the created job was never polled; wrong if polled but never reached
+    # a terminal status in the logged output.
+    jt = match.get("job_type")
+    jobs = [j for j in run.jobs if not jt or j.get("job_type") == jt]
+    if not jobs:
+        return "n/a"
+    job_ids = {j.get("job_id") for j in jobs if j.get("job_id")}
+    get_calls = _calls(run, "get_job")
+    if not get_calls:
+        return "missed"
+    saw_job = False
+    for c in get_calls:
+        jid = (c.get("input") or {}).get("job_id")
+        out = (c.get("output") or "").lower()
+        # match by job_id when captured; else fall back to any get_job (old logs)
+        if jid is None or jid in job_ids:
+            saw_job = True
+            if any(t in out for t in _TERMINAL_STATUSES):
+                return "met"
+    return "wrong" if saw_job else "missed"
+
+
 def _present_options(run: Run) -> list[dict[str, Any]]:
     return _calls(run, "present_options")
 

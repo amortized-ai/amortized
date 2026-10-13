@@ -272,6 +272,57 @@ rows:
     # eval/workflow.md Step 5 (302-317).
     match: { type: scores_present, tool: get_eval_results }
 
+  # ---- Job lifecycle: created + monitored ----------------------------------
+  # Job creation is human-gated (frontend POST /jobs/*), so it is NOT in the agent
+  # tool log — it is captured server-side as `job_created` records correlated to the
+  # session (X-Monitor-Session header). These rows populate only when the monitor
+  # was enabled for the run. `job_monitored` is n/a when no job of that type was
+  # created, so preview-only runs are not penalised.
+  - id: sdg_job_created
+    stage: "SDG job created"
+    aspect: A
+    expected: "An SDG job was actually created and submitted (not just validated)"
+    adjudicate: auto
+    match: { type: job_created, job_type: sdg }
+
+  - id: training_job_created
+    stage: "Training job created"
+    aspect: A
+    expected: "A training job was actually created and submitted (not just validated)"
+    adjudicate: auto
+    match: { type: job_created, job_type: training }
+
+  - id: eval_job_created
+    stage: "Eval job created"
+    aspect: A
+    expected: "An eval job was actually created and submitted (not just validated)"
+    adjudicate: auto
+    match: { type: job_created, job_type: eval }
+
+  - id: training_job_monitored
+    stage: "Training job monitored"
+    aspect: C
+    expected: "After creating the training job, the agent polled get_job until a terminal status"
+    adjudicate: auto
+    match: { type: job_monitored, job_type: training }
+
+  - id: eval_job_monitored
+    stage: "Eval job monitored"
+    aspect: C
+    expected: "After creating the eval job, the agent polled get_job until a terminal status"
+    adjudicate: auto
+    match: { type: job_monitored, job_type: eval }
+
+  - id: job_status_grounded
+    stage: "Job status reported truthfully"
+    aspect: E
+    expected: >
+      The job status/outcome the agent reports in prose matches the real terminal
+      status from get_job output (succeeded/failed), not an invented success.
+      `wrong` if it claims success for a failed/incomplete job; `n/a` if no job
+      reached a terminal status in the run.
+    adjudicate: llm_judge
+
   # ---- Robustness ----------------------------------------------------------
   - id: robustness_recovery
     stage: "Robustness"

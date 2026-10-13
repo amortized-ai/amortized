@@ -677,7 +677,10 @@ export function useChat() {
     setChatState("streaming")
 
     try {
-      const job = await createJob(endpoint, body)
+      // Thread the monitor session id so the server can correlate this
+      // human-confirmed job back to the agent run (job_created record).
+      const monitorSessionId = useChatStore.getState().getSessionId(convId)
+      const job = await createJob(endpoint, body, monitorSessionId ?? undefined)
 
       const jobToolResult: ToolResult = {
         name: `create_${jobType}_job`,

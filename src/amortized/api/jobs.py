@@ -9,6 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
+from amortized.api import monitor_log
+from amortized.api.monitor_redact import redact
+from amortized.config import settings
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -50,6 +53,34 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
+
+
+def _emit_job_created(http_request: Request, job: Job, config: dict[str, Any]) -> None:
+    """Record a monitor ``job_created`` event correlated to the Studio session that
+    confirmed it (header ``X-Monitor-Session``, set by the frontend). Links the
+    human-gated job submission back to the agent run so the monitor can check a job
+    was actually created + monitored. Best-effort; never breaks job creation."""
+    try:
+        if not settings.monitor_enabled:
+            return
+        session_id = http_request.headers.get("X-Monitor-Session", "")
+        if not session_id:
+            return
+        monitor_log.append_record(
+            session_id,
+            {
+                "kind": "job_created",
+                "job_id": job.id,
+                "job_type": str(job.type),
+                "status": str(job.status),
+                "parent_job_id": job.parent_job_id or "",
+                "mlflow_run_id": getattr(job, "mlflow_run_id", "") or "",
+                "user_id": getattr(job, "user_id", "") or "",
+                "config": redact(config),
+            },
+        )
+    except Exception:
+        logger.warning("monitor: failed to emit job_created", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +298,9 @@ async def create_sdg_job(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _job_response(row)
+    resp = _job_response(row)
+    _emit_job_created(http_request, resp, config)
+    return resp
 
 
 @router.post(
@@ -303,7 +336,9 @@ async def create_training_job(
         )
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _job_response(row)
+    resp = _job_response(row)
+    _emit_job_created(http_request, resp, config)
+    return resp
 
 
 async def _persist_metric_set(
@@ -417,6 +452,7 @@ async def create_eval_job(
 
     response = _job_response(row)
     _strip_eval_api_keys(response)
+    _emit_job_created(http_request, response, config)
     return response
 
 

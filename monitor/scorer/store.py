@@ -184,6 +184,20 @@ def ingest(
                         reasons.get((run.session_id, row_id), ""),
                     ),
                 )
+            for job in run.jobs:
+                conn.execute(
+                    "INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        job.get("job_id"),
+                        run.session_id,
+                        job.get("job_type"),
+                        job.get("status"),
+                        job.get("parent_job_id"),
+                        job.get("mlflow_run_id"),
+                        job.get("user_id"),
+                        job.get("ts"),
+                    ),
+                )
         conn.commit()
     finally:
         conn.close()

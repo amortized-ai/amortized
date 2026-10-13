@@ -12,6 +12,8 @@
     "eval_config_valid": "met",
     "eval_data_confirmed": "missed",
     "eval_dedup_checked": "missed",
+    "eval_job_created": "met",
+    "eval_job_monitored": "met",
     "eval_judge_set": "met",
     "eval_judge_valid": "met",
     "eval_phase_signaled": "met",
@@ -20,6 +22,7 @@
     "eval_set_mirrors_training_sdg": "review",
     "grounding_data": "review",
     "grounding_results": "review",
+    "job_status_grounded": "review",
     "no_duplicate_options": "review",
     "no_duplicate_options_auto": "met",
     "no_error_tool_calls": "met",
@@ -31,6 +34,7 @@
     "prompt_shown_for_review": "met",
     "robustness_recovery": "n/a",
     "sdg_config_valid": "met",
+    "sdg_job_created": "met",
     "sdg_models_grounded": "met",
     "sdg_preview_before_create": "met",
     "sdg_pricing_shown": "missed",
@@ -57,7 +61,9 @@
     "train_model_choice_offered": "met",
     "train_skill_loaded": "missed",
     "train_vram_shown": "missed",
-    "training_config_valid": "met"
+    "training_config_valid": "met",
+    "training_job_created": "met",
+    "training_job_monitored": "met"
   },
   "sess-beta": {
     "chain_eval": "missed",
@@ -72,6 +78,8 @@
     "eval_config_valid": "missed",
     "eval_data_confirmed": "missed",
     "eval_dedup_checked": "missed",
+    "eval_job_created": "missed",
+    "eval_job_monitored": "n/a",
     "eval_judge_set": "missed",
     "eval_judge_valid": "missed",
     "eval_phase_signaled": "n/a",
@@ -80,6 +88,7 @@
     "eval_set_mirrors_training_sdg": "n/a",
     "grounding_data": "review",
     "grounding_results": "review",
+    "job_status_grounded": "review",
     "no_duplicate_options": "review",
     "no_duplicate_options_auto": "n/a",
     "no_error_tool_calls": "wrong",
@@ -91,6 +100,7 @@
     "prompt_shown_for_review": "n/a",
     "robustness_recovery": "wrong",
     "sdg_config_valid": "wrong",
+    "sdg_job_created": "missed",
     "sdg_models_grounded": "missed",
     "sdg_preview_before_create": "review",
     "sdg_pricing_shown": "missed",
@@ -117,6 +127,8 @@
     "train_model_choice_offered": "n/a",
     "train_skill_loaded": "missed",
     "train_vram_shown": "missed",
-    "training_config_valid": "missed"
+    "training_config_valid": "missed",
+    "training_job_created": "missed",
+    "training_job_monitored": "n/a"
   }
 }

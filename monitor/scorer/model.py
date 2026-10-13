@@ -28,6 +28,7 @@ class Run:
     session_id: str
     turns: list[dict[str, Any]] = field(default_factory=list)
     completion: dict[str, Any] | None = None
+    jobs: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def counted_turns(self) -> list[dict[str, Any]]:
@@ -180,6 +181,8 @@ def load_runs(log_dir: Path) -> list[Run]:
                 run.turns.append(rec)
             elif kind == "completion":
                 run.completion = rec  # last one wins
+            elif kind == "job_created":
+                run.jobs.append(rec)
         run.turns.sort(key=lambda t: str(t.get("ts", "")))
         runs.append(run)
     return runs

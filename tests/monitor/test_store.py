@@ -118,12 +118,14 @@ def test_export_json_and_csv(tmp_path: Path) -> None:
     store.export(db, "json", jdir)
     runs = json.loads((jdir / "runs.json").read_text())
     assert len(runs) == 2
-    # empty table still exports (jobs has no rows yet)
-    assert json.loads((jdir / "jobs.json").read_text()) == []
+    # job_created records from the fixture land in the jobs table
+    assert len(json.loads((jdir / "jobs.json").read_text())) == 3
+    # empty table still exports (no rubric scores ingested here)
+    assert json.loads((jdir / "rubric_scores.json").read_text()) == []
 
     cdir = tmp_path / "csv"
     store.export(db, "csv", cdir)
     text = (cdir / "row_scores.csv").read_text()
     assert "status" in text.splitlines()[0]
-    # empty jobs table still writes a header row
-    assert (cdir / "jobs.csv").read_text().splitlines()[0].startswith("job_id")
+    # empty rubric_scores table still writes a header row
+    assert (cdir / "rubric_scores.csv").read_text().splitlines()[0].startswith("session_id")
