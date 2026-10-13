@@ -35,8 +35,6 @@ from amortized.api.agent_confirm import (
     _record_confirm_signals,
     _reset_confirm_signals,
     _review_card_signature,
-    _sdg_config_signature,
-    _validate_mode,
 )
 from amortized.api.agent_parts import _get_tool_input, _tool_name
 from amortized.api.agent_sdg_prompt import (
@@ -125,12 +123,6 @@ class SessionState:
     # (the redundant review card is dropped), so a driver that re-shows the prompt
     # before every validate_* can't livelock. See _enforce_single_interaction.
     reviewed_card_sigs: set[str] = field(default_factory=set)
-    # Config signatures of SDG previews (validate_sdg_job mode="preview") already shown
-    # standalone for approval. A full-job confirm (mode="create") may render only once
-    # its config's signature is in this set, so a driver can't jump straight to the full
-    # run; editing the recipe yields a new signature and re-gates. See
-    # _enforce_single_interaction / _sdg_config_signature.
-    approved_preview_sigs: set[str] = field(default_factory=set)
     # Model-directed steers the interaction gate produces when it HOLDS a card — never
     # shown to the user (the old code leaked them as user-facing text). Two delivery modes:
     #  - SOFT (a job confirm stacked under an unreviewed prompt): delivered to the model on
@@ -420,16 +412,11 @@ def _enforce_single_interaction(
     # so the next confirm that re-includes it proceeds instead of re-gating.
     if review_sig is not None and not drop_review:
         state.reviewed_card_sigs.add(review_sig)
-    # When a confirm card actually renders (passed its preconditions): a standalone SDG
-    # preview records its recipe signature so the matching full-job confirm may proceed
-    # later; any other job card resets that type's prerequisite signals so a second job
-    # of the type re-gates.
+    # When a confirm card actually renders (passed its preconditions), reset that job
+    # type's prerequisite signals so a SECOND job of the type re-gates.
     if not ask_turn and keep_index is not None and keep_index == first_card:
         card = parts[first_card]
-        if _tool_name(card) == "validate_sdg_job" and _validate_mode(card) == "preview":
-            state.approved_preview_sigs.add(_sdg_config_signature(card))
-        else:
-            _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
+        _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
 
     # A held card steers the MODEL to do the missing step first — delivered to its
     # session on the next turn (see _handle_*_message), NOT appended to the user-facing
