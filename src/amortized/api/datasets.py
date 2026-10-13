@@ -33,7 +33,7 @@ _upload_semaphore = asyncio.Semaphore(3)
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
 _MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
-_MAX_MERGE_BYTES = 512 * 1024 * 1024  # 512 MiB — parsed dicts use ~5-10× more memory
+_MAX_MERGE_BYTES = 512 * 1024 * 1024  # 512 MiB -- parsed dicts use ~5-10x more memory
 
 
 def _sanitize_filename(name: str) -> str:
