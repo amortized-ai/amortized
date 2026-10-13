@@ -467,6 +467,13 @@ def _enforce_single_interaction(
 _PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
 
 
+# Synthetic tool name for the phase signal _ensure_phase_signal backfills when the model
+# forgot to call signal_phase. Deliberately distinct from opencode's real
+# `amortized_signal_phase` so _run_turn can keep this backfill (the client's own GET lacks
+# it) while dropping the other fetched tool parts it must not ship to the client (issue #505).
+_BACKFILL_PHASE_TOOL = "mcp_amortized__signal_phase"
+
+
 def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
     """Guarantee the UI progress bar reflects the active subagent's phase.
 
@@ -491,7 +498,7 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
         *parts,
         {
             "type": "tool",
-            "tool": "mcp_amortized__signal_phase",
+            "tool": _BACKFILL_PHASE_TOOL,
             "input": payload,
             "output": json.dumps(payload),
         },
@@ -1635,6 +1642,15 @@ async def _run_turn(
             # step-markers, never see a card, and silently no-op (they only ever "worked"
             # in tests, which hand them real parts).
             active_id = state.subagent_id or state.orchestrator_id
+            # The gates below INSPECT the active session's real current-turn parts to make
+            # decisions (hold a premature card, catch a fabricated job claim); they do not
+            # render anything — the studio client re-derives every card/option/prompt from
+            # its OWN GET /message, and corrections are posted to the session. So the fetched
+            # parts must NOT leak into the client-facing turn.result: the client seeds its
+            # tool-dedup from turn.result's parts and would drop the GET's card as a
+            # duplicate (issue #505). Snapshot the handler's POST markers for the client,
+            # feed the gates the real parts, then restore the client contract after the gates.
+            client_parts = result.get("parts") or []
             fetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
             # Only replace on a successful fetch — a transient GET failure returns [],
             # and blanking the parts would needlessly no-op every gate below for that turn
@@ -1672,9 +1688,21 @@ async def _run_turn(
                 result = await _apply_job_claim_gate(state, result, body, msg_cache)
                 result = _ensure_phase_signal(state, result)
                 result = _enforce_single_interaction(result, state)
-            # Exhausted (the driver re-emitted the premature card): drop the steer so it
-            # doesn't re-fire next turn; the card's precondition gate still re-holds it.
-            state.pending_rerun_steer = None
+            # Exhausted (the driver re-emitted the premature card despite the correction).
+            # Don't silently drop the steer — that dead-ends: the card is held yet the model
+            # is never told why. Defer it as a soft interaction steer so the model receives
+            # the correction on its NEXT turn and can render the prerequisite step first.
+            if state.pending_rerun_steer:
+                state.pending_interaction_steer = state.pending_rerun_steer
+                state.pending_rerun_steer = None
+            # Restore the client contract (see the fetch comment above): ship the handler's
+            # POST markers plus ONLY the gate-synthesized phase backfill — the one part the
+            # client cannot get from its own GET. Every card/option/prompt the client
+            # re-derives from GET, so leaking the fetched copies drops the GET's card (#505).
+            phase_backfill = [
+                p for p in (result.get("parts") or []) if p.get("tool") == _BACKFILL_PHASE_TOOL
+            ]
+            result["parts"] = [*client_parts, *phase_backfill]
         if turn:
             turn.result = result
     except AgentTurnError as exc:

@@ -542,6 +542,30 @@ class TestCommittingCardReRun:
         assert sub_sends == ["train it"]  # no re-run
         assert state.pending_rerun_steer is None
 
+    def test_rerun_exhaustion_defers_the_steer(self, router: _Router) -> None:
+        # The driver re-emits the premature card on the re-run too, so the hard rail
+        # exhausts (MAX_INTERACTION_RERUNS). The steer must NOT be silently dropped —
+        # it is deferred as a soft steer so the model is corrected on its next turn
+        # (otherwise the card is held yet the model never learns why — the dead end).
+        sub = router.add_session(
+            [
+                [_tool_part("validate_training_job", {"algorithm": "osft"})],  # turn 1: held
+                [_tool_part("validate_training_job", {"algorithm": "osft"})],  # re-run: re-emitted
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "training"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
+        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        assert len(sub_sends) == 2  # original + exactly one re-run
+        assert state.pending_rerun_steer is None  # hard steer cleared
+        # The fix: deferred, not lost — the model receives the correction next turn.
+        assert state.pending_interaction_steer
+        assert "data" in state.pending_interaction_steer.lower()
+
 
 class TestTrainingConfirmPreconditions:
     """A validate_training_job card may render only after the user has (in order)
