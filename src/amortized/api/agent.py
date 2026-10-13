@@ -131,12 +131,17 @@ class SessionState:
     # run; editing the recipe yields a new signature and re-gates. See
     # _enforce_single_interaction / _sdg_config_signature.
     approved_preview_sigs: set[str] = field(default_factory=set)
-    # A model-directed steer the interaction gate produced when it HELD a card (an unmet
-    # confirm precondition, or a job card the model stacked under an unreviewed prompt).
-    # Delivered to the active session's model on its NEXT turn (prepended to that message)
-    # so the model does the missing step itself — NOT appended to the user-facing result,
-    # which only renders to the user. See _enforce_single_interaction + _handle_*_message.
+    # Model-directed steers the interaction gate produces when it HOLDS a card — never
+    # shown to the user (the old code leaked them as user-facing text). Two delivery modes:
+    #  - SOFT (a job confirm stacked under an unreviewed prompt): delivered to the model on
+    #    its NEXT turn (prepended in _handle_*_message). The prompt still renders this turn
+    #    so the user can review it; the steer just stops the model re-stacking the confirm.
     pending_interaction_steer: str | None = None
+    #  - HARD (an unmet committing-card precondition — a full-run / train / eval confirm the
+    #    model jumped to): _run_turn posts it and RE-RUNS the model this same turn, so the
+    #    premature committing card never reaches the client (the stale turn falls behind the
+    #    steer message, like the provenance gate). See _enforce_single_interaction + _run_turn.
+    pending_rerun_steer: str | None = None
     # Prerequisite ACTIONS a confirm card requires, accumulated as turns render them, so
     # the (sync) confirm-precondition evaluator can hold a validate_* card the model
     # jumped to without the mandated setup. Reset for a job type once its confirm card
@@ -432,8 +437,12 @@ def _enforce_single_interaction(
     # addressed to the model and the model (whose history showed a successful validate_*)
     # never learned the card was held.
     if unmet is not None:
-        state.pending_interaction_steer = unmet.nudge
+        # HARD rail: _run_turn re-runs the model this same turn so the premature
+        # committing card never reaches the client.
+        state.pending_rerun_steer = unmet.nudge
     elif prompt_gate:
+        # SOFT rail: the prompt renders this turn (the user can review it); just steer the
+        # model, on its next turn, to stop stacking the confirm under it.
         state.pending_interaction_steer = (
             "You stacked a job confirmation under a prompt the user has not reviewed "
             "yet. Show the prompt on its own for review first; present the job "
@@ -650,6 +659,11 @@ async def _grounded_corpus(
 # real), so a legitimately-recoverable turn self-heals on the first pass. Capped at
 # 1: further retries rarely recover and multiply model round-trips per turn.
 MAX_PROVENANCE_RETRIES = 1
+
+# How many times _run_turn re-runs the model to clear a held committing card (the hard
+# rail): one correction attempt, then let the turn through so a non-complying driver
+# cannot loop.
+MAX_INTERACTION_RERUNS = 1
 
 
 async def _ungrounded_ids(
@@ -1560,6 +1574,32 @@ async def _run_turn(
             # stale phase on a hand-back/delegation turn.
             result = _ensure_phase_signal(state, result)
             result = _enforce_single_interaction(result, state)
+            # Hard rail: if the gate held a committing card (unmet precondition), correct
+            # the model NOW and re-render, so the premature card never reaches the client
+            # this turn — the stale turn falls behind the steer (a user-role message the
+            # client never shows), exactly like the provenance gate. Bounded so a driver
+            # that keeps jumping the gun can't loop.
+            reruns = 0
+            while state.pending_rerun_steer and reruns < MAX_INTERACTION_RERUNS:
+                reruns += 1
+                steer = state.pending_rerun_steer
+                state.pending_rerun_steer = None
+                steer_agent = state.subagent_target if state.subagent_id else "morty"
+                logger.info(
+                    "Interaction gate: held a committing card; re-running the model to "
+                    "clear it (session=%s agent=%s)", session_id, steer_agent,
+                )
+                await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
+                refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+                if refetched:
+                    result["parts"] = refetched
+                result = await _apply_provenance_gate(state, result, body, msg_cache)
+                result = await _apply_job_claim_gate(state, result, body, msg_cache)
+                result = _ensure_phase_signal(state, result)
+                result = _enforce_single_interaction(result, state)
+            # Exhausted (the driver re-emitted the premature card): drop the steer so it
+            # doesn't re-fire next turn; the card's precondition gate still re-holds it.
+            state.pending_rerun_steer = None
         if turn:
             turn.result = result
     except AgentTurnError as exc:
