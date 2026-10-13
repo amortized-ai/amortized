@@ -33,6 +33,7 @@ _upload_semaphore = asyncio.Semaphore(3)
 
 _ALLOWED_EXTENSIONS = (".jsonl", ".parquet")
 _MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GiB
+_MAX_MERGE_BYTES = 512 * 1024 * 1024  # 512 MiB — parsed dicts use ~5-10× more memory
 
 
 def _sanitize_filename(name: str) -> str:
@@ -750,9 +751,9 @@ async def _process_dataset_merge(
                 for path in paths:
                     data = await mlflow.get_artifact(run_id, path)
                     total_bytes += len(data)
-                    if total_bytes > _MAX_UPLOAD_BYTES:
+                    if total_bytes > _MAX_MERGE_BYTES:
                         raise ValueError(
-                            f"Aggregate source data exceeds {_MAX_UPLOAD_BYTES} bytes"
+                            f"Aggregate source data exceeds {_MAX_MERGE_BYTES} bytes"
                         )
                     all_records.extend(_parse_records(path, data))
 
