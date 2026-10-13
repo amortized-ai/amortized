@@ -252,6 +252,12 @@ async def _validate_model_source(
                 f" checkpoint — only {sorted(_RESUMABLE_ALGORITHMS)} are"
                 " supported"
             )
+        elif parent_algo in ("lora_sft",):
+            warnings.append(
+                "the parent job used LoRA — the adapter will be merged"
+                " into the base model and training will continue on full"
+                " weights (merge-then-full-train)"
+            )
     return errors, warnings
 
 
