@@ -543,9 +543,10 @@ def _tools(out: dict[str, Any]) -> list[str]:
 
 
 def _nudge(state: Any) -> str:
-    # The interaction gate now parks its model-directed steer on the session (delivered
-    # to the model on its next turn), not in the user-facing result parts.
-    return state.pending_interaction_steer or ""
+    # The interaction gate parks its model-directed steer on the session (never in the
+    # user-facing result): a HARD re-run steer for a held committing card, or a SOFT
+    # next-turn steer for a prompt-gate hold.
+    return state.pending_rerun_steer or state.pending_interaction_steer or ""
 
 
 def test_held_card_steer_is_delivered_to_the_model_next_turn_then_cleared() -> None:
@@ -593,6 +594,52 @@ class TestInteractionSteerDelivery:
         sent = next(t for (sid, t, _a) in router.sent if sid == sub)
         assert sent == agent._SUBAGENT_JOB_DONE_PROMPT  # job-done prompt, steer NOT prepended
         assert state.pending_interaction_steer == "Show the preview first."  # stays parked
+
+
+class TestCommittingCardReRun:
+    """A held committing card (unmet precondition) triggers an in-turn model re-run — the
+    hard rail — so the premature card never reaches the client (it falls behind the steer
+    message); the soft prompt-gate steer is NOT re-run."""
+
+    _RECIPE: ClassVar[dict[str, Any]] = {"columns": [{"name": "q"}], "topic": "k8s"}
+
+    def test_unmet_precondition_reruns_the_model(self, router: _Router) -> None:
+        # Turn 1: the subagent jumps straight to a full-run create card (no preview) -> the
+        # precondition gate holds it. The re-run then has the model show a preview instead.
+        sub = router.add_session(
+            [
+                [_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create"})],
+                [_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "preview"})],
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "sdg"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "do it", _body(text="do it")))
+        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        assert sub_sends[0] == "do it"  # the original turn
+        assert len(sub_sends) == 2  # the gate re-ran the model once (the hard rail)
+        assert sub_sends[1] != "do it"  # the re-run posted the precondition steer
+        assert state.pending_rerun_steer is None  # consumed, not carried over
+
+    def test_no_rerun_when_preconditions_met(self, router: _Router) -> None:
+        # A preview was already approved, so the create card is NOT held and NOT re-run.
+        sub = router.add_session(
+            [[_tool_part("validate_sdg_job", {**self._RECIPE, "mode": "create"})]]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "sdg"
+        preview = _tool_part("validate_sdg_job", {**self._RECIPE, "mode": "preview"})
+        state.approved_preview_sigs.add(agent._sdg_config_signature(preview))
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "do it", _body(text="do it")))
+        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        assert sub_sends == ["do it"]  # no re-run
+        assert state.pending_rerun_steer is None
 
 
 class TestTrainingConfirmPreconditions:
