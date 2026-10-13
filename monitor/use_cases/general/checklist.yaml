@@ -421,6 +421,25 @@ rows:
       presented.
     adjudicate: llm_judge
 
+  # Deterministic pre-filters for the two rows above (lexical token-set similarity
+  # over the captured present_options question + options). They catch the clear-cut
+  # near-identical cases cheaply; the llm_judge rows remain the semantic/paraphrase
+  # backstop. `review` when the signal is uncertain (gray band) or the options were
+  # not captured (log predates full-input capture).
+  - id: no_duplicate_options_auto
+    stage: "No duplicate options (lexical)"
+    aspect: F
+    expected: "No present_options prompt offers two near-identical options (lexical pre-filter)"
+    adjudicate: auto
+    match: { type: duplicate_options }
+
+  - id: no_repeated_decisions_auto
+    stage: "No repeated decisions (lexical)"
+    aspect: F
+    expected: "No two present_options prompts re-ask a near-identical question (lexical pre-filter)"
+    adjudicate: auto
+    match: { type: repeated_decision }
+
   # ---- Skill adherence (aspect G) -------------------------------------------
   # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
   # which only assert a guide was read), these check whether the workflow FOLLOWED

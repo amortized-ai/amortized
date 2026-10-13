@@ -14,6 +14,7 @@ from typing import Any
 
 from monitor.scorer.model import Run, _calls
 from monitor.scorer.requires import _requires_met
+from monitor.scorer.similarity import SIM_GRAY, SIM_HIGH, similarity
 
 Matcher = Callable[[Run, dict[str, Any]], str]
 MATCHERS: dict[str, Matcher] = {}
@@ -323,6 +324,83 @@ def _m_judge_valid(run: Run, match: dict[str, Any]) -> str:
     if not valid:
         return "review"  # catalog not captured -> can't decide, defer
     return "met" if judges[-1] in valid else "wrong"
+
+
+def _present_options(run: Run) -> list[dict[str, Any]]:
+    return _calls(run, "present_options")
+
+
+def _option_texts(call: dict[str, Any]) -> list[str]:
+    """Option strings for a present_options call. Prefers the full captured input
+    (title + description), falls back to the promoted `options` titles."""
+    opts = (call.get("input") or {}).get("options")
+    if isinstance(opts, list):
+        out: list[str] = []
+        for o in opts:
+            if isinstance(o, dict):
+                s = " ".join(str(o[k]) for k in ("title", "description") if o.get(k))
+                if s.strip():
+                    out.append(s)
+        if out:
+            return out
+    titles = call.get("options")
+    return [str(t) for t in titles] if isinstance(titles, list) else []
+
+
+def _question_text(call: dict[str, Any]) -> str:
+    return str(call.get("question") or (call.get("input") or {}).get("question") or "")
+
+
+@matcher("duplicate_options")
+def _m_duplicate_options(run: Run, match: dict[str, Any]) -> str:
+    # Deterministic pre-filter for `no_duplicate_options`: within a single
+    # present_options prompt, two options worded near-identically. High lexical
+    # similarity -> wrong; gray band -> review (the llm_judge row is the semantic
+    # backstop); n/a if no prompts; review if prompts exist but options weren't
+    # captured (log predates full-input capture).
+    calls = _present_options(run)
+    if not calls:
+        return "n/a"
+    checkable = False
+    gray = False
+    for c in calls:
+        texts = _option_texts(c)
+        if len(texts) < 2:
+            continue
+        checkable = True
+        for i in range(len(texts)):
+            for j in range(i + 1, len(texts)):
+                sim = similarity(texts[i], texts[j])
+                if sim >= SIM_HIGH:
+                    return "wrong"
+                if sim >= SIM_GRAY:
+                    gray = True
+    if not checkable:
+        return "review"
+    return "review" if gray else "met"
+
+
+@matcher("repeated_decision")
+def _m_repeated_decision(run: Run, match: dict[str, Any]) -> str:
+    # Deterministic pre-filter for `no_repeated_decisions`: two present_options
+    # prompts that re-ask a near-identical question (user replies aren't logged, so
+    # a re-asked question is the observable signal). n/a with <2 prompts; review if
+    # prompts exist but questions weren't captured.
+    calls = _present_options(run)
+    if len(calls) < 2:
+        return "n/a"
+    questions = [q for q in (_question_text(c) for c in calls) if q.strip()]
+    if len(questions) < 2:
+        return "review"
+    gray = False
+    for i in range(len(questions)):
+        for j in range(i + 1, len(questions)):
+            sim = similarity(questions[i], questions[j])
+            if sim >= SIM_HIGH:
+                return "wrong"
+            if sim >= SIM_GRAY:
+                gray = True
+    return "review" if gray else "met"
 
 
 def score_auto(run: Run, match: dict[str, Any]) -> str:
