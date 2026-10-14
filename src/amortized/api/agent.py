@@ -688,6 +688,18 @@ MAX_PROVENANCE_RETRIES = 1
 # cannot loop.
 MAX_INTERACTION_RERUNS = 1
 
+# Marks a gate's visible caveat (provenance / job-claim warning) so _run_turn's client-contract
+# restore keeps it in the turn result and the Studio client can surface it. See _caveat_part.
+_CAVEAT_TAG = "amortized_caveat"
+
+
+def _caveat_part(text: str) -> dict[str, Any]:
+    """A gate's visible caveat as a tagged text part. The #505 restore in _run_turn drops all
+    but the handler markers + phase backfill, so this tag is what keeps the caveat in the
+    client-facing result; the Studio client reads the tag and appends the caveat text to its
+    GET-derived content (the client renders session.text from GET, not turn.result)."""
+    return {"type": "text", "text": text, _CAVEAT_TAG: True}
+
 
 async def _ungrounded_ids(
     state: SessionState,
@@ -763,15 +775,12 @@ async def _apply_provenance_gate(
         )
         parts = list(current.get("parts") or [])
         parts.append(
-            {
-                "type": "text",
-                "text": (
-                    "\n\n⚠️ I couldn't verify the identifier(s) "
-                    f"{', '.join(violations)} against platform data in this "
-                    "session — treat them as unconfirmed until I fetch the real "
-                    "values."
-                ),
-            }
+            _caveat_part(
+                "\n\n⚠️ I couldn't verify the identifier(s) "
+                f"{', '.join(violations)} against platform data in this "
+                "session — treat them as unconfirmed until I fetch the real "
+                "values."
+            )
         )
         return {**current, "parts": parts}
     except Exception:
@@ -1305,7 +1314,7 @@ async def _apply_job_claim_gate(
             MAX_PROVENANCE_RETRIES, violations, active_id,
         )
         parts = list(current.get("parts") or [])
-        parts.append({"type": "text", "text": _job_claim_caveat(violations)})
+        parts.append(_caveat_part(_job_claim_caveat(violations)))
         return {**current, "parts": parts}
     except Exception:
         logger.warning("Job-claim gate failed (passing through)", exc_info=True)
@@ -1695,14 +1704,20 @@ async def _run_turn(
             if state.pending_rerun_steer:
                 state.pending_interaction_steer = state.pending_rerun_steer
                 state.pending_rerun_steer = None
-            # Restore the client contract (see the fetch comment above): ship the handler's
-            # POST markers plus ONLY the gate-synthesized phase backfill — the one part the
-            # client cannot get from its own GET. Every card/option/prompt the client
+            # Keep any gate caveat (the provenance/job-claim "couldn't verify / still
+            # contradicted" warning) in the client-facing result — it is a tagged text part the
+            # Studio client surfaces separately (#498 reads the tag and appends it to the GET
+            # content). The restore below otherwise drops everything but markers, so a caveat
+            # left out here would never reach the user.
+            caveat_parts = [p for p in (result.get("parts") or []) if p.get(_CAVEAT_TAG)]
+            # Restore the client contract (see the fetch comment above): ship the handler's POST
+            # markers, the gate-synthesized phase backfill, and any caveat text — the parts the
+            # client cannot otherwise get from its own GET. Every card/option/prompt the client
             # re-derives from GET, so leaking the fetched copies drops the GET's card (#505).
             phase_backfill = [
                 p for p in (result.get("parts") or []) if p.get("tool") == _BACKFILL_PHASE_TOOL
             ]
-            result["parts"] = [*client_parts, *phase_backfill]
+            result["parts"] = [*client_parts, *phase_backfill, *caveat_parts]
         if turn:
             turn.result = result
     except AgentTurnError as exc:
