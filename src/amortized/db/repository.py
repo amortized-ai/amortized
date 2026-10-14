@@ -146,14 +146,14 @@ class Repository:
         return await self.get_job(job_id)
 
     async def pick_pending_job(self, k8s_namespace: str = "") -> dict[str, Any] | None:
-        # Exclude dataset uploads and splits — they are processed by the
-        # API layer, not the worker. Document uploads carry source='document'
+        # Exclude dataset uploads, splits, and merges — they are processed by
+        # the API layer, not the worker. Document uploads carry source='document'
         # and remain worker-side. COALESCE guards against a source-less upload
         # (NULL IN (...) is NULL, which would silently exclude the job and hang
         # it in queued) and rescues any such jobs created before source was set.
         dataset_filter = (
             """AND NOT (type = 'upload' """
-            """AND COALESCE(config->>'source', '') IN ('upload', 'split'))"""
+            """AND COALESCE(config->>'source', '') IN ('upload', 'split', 'merge'))"""
         )
         if k8s_namespace:
             query = f"""UPDATE jobs SET status = $1

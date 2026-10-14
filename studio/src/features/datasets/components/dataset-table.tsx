@@ -64,8 +64,13 @@ export function DatasetTable({
         },
       },
       {
-        accessorFn: (row) =>
-          row.tags?.source === "upload" ? "Upload" : "SDG",
+        accessorFn: (row) => {
+          const source = row.tags?.source
+          if (source === "upload") return "Upload"
+          if (source === "split") return "Split"
+          if (source === "merge") return "Merge"
+          return "SDG"
+        },
         id: "source",
         header: "Source",
         size: 90,

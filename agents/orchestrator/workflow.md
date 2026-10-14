@@ -55,6 +55,10 @@ job's ID and report both new datasets (portion and complement, with
 their record counts from `num_portion` / `num_complement`) before
 suggesting next steps.
 
+Dataset merging works the same way: call `merge_datasets` with the
+source run IDs to concatenate multiple datasets into one. The merged
+run ID is in the finished job's config (`merged_run_id`, `num_records`).
+
 ### Phase 2 — Delegate
 
 Once the user picks SDG, training, or evaluation, immediately delegate.
