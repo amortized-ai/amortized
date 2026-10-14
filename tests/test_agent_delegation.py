@@ -7,7 +7,7 @@ orchestrator — the sole delegator — runs the producing subagent (sdg) and th
 resumes the caller via the existing completed_subagents + resume path.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -181,10 +181,13 @@ class TestRequestOrchestratorHelp:
 
         _run(agent._handle_subagent_message(state, "s1", "set it up", _body()))
 
-        # The caller is stashed AND armed as the pending help target for auto-resume;
-        # the orchestrator took over.
+        # The caller is stashed and the orchestrator took over — but because the orchestrator
+        # only acknowledged in text (no onward delegate), there's no producer to await, so the
+        # auto-resume stays DISARMED. Arming it here off the requester alone is the weak-latch
+        # bug: any unrelated later completion would then resurrect eval.
         assert state.completed_subagents["eval"] == eval_id
-        assert state.pending_help_target == "eval"
+        assert state.pending_help_target is None
+        assert state.pending_help_producer is None
         assert state.subagent_id is None
         assert state.subagent_target is None
         # The orchestrator got the structured ask (as morty), carrying the need + the
@@ -300,6 +303,88 @@ class TestRequestOrchestratorHelp:
         orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
         assert "[SUBAGENT COMPLETED]" in orch_msg[1]  # the completion path was taken
 
+    def test_unrelated_completion_does_not_resume_pending_consumer(self, router: _Router) -> None:
+        # Weak-latch guard (review #1): with eval awaiting sdg, a DIFFERENT subagent (training)
+        # finishing must NOT resurrect eval — only the awaited producer (sdg) does. Before the
+        # fix any completer != requester triggered the resume.
+        state = _make_state(router, orchestrator_script=[[_text_part("What next?")]])
+        eval_id = router.add_session([[_text_part("SHOULD NOT RUN")]])  # stashed; must stay put
+        state.completed_subagents = {"eval": eval_id}
+        state.pending_help_target = "eval"
+        state.pending_help_producer = "sdg"  # eval is waiting on sdg specifically
+        training_id = router.add_session(
+            [[_tool_part("signal_subagent_completion", {"summary": "training done"})]]
+        )
+        state.subagent_id = training_id
+        state.subagent_target = "training"
+
+        _run(agent._handle_subagent_message(state, "s1", "x", _body()))
+
+        assert state.subagent_id != eval_id  # eval NOT resumed
+        assert all(m[0] != eval_id for m in router.sent)  # stashed eval never messaged
+        assert state.pending_help_target == "eval"  # still awaiting its real producer (sdg)
+        orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
+        assert "[SUBAGENT COMPLETED]" in orch_msg[1]  # unrelated completion → orchestrator path
+
+    def test_resume_that_itself_completes_releases_control(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Review #2: if the resumed consumer finishes right in the resume turn, control must be
+        # released — not left assigned to it (with its completion stripped) until a later turn.
+        async def _no_advisory(*_a: Any, **_k: Any) -> None:
+            return None
+
+        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        state = _make_state(router)
+        eval_id = router.add_session(
+            [[_tool_part("signal_subagent_completion", {"summary": "eval done; scored 0.9"})]]
+        )
+        state.completed_subagents = {"eval": eval_id}
+        state.pending_help_target = "eval"
+        state.pending_help_producer = "sdg"
+        sdg_id = router.add_session(
+            [[_tool_part("signal_subagent_completion", {"summary": "sdg-1 done; 40 records"})]]
+        )
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+
+        _run(agent._handle_subagent_message(state, "s1", "x", _body()))
+
+        # sdg completed → eval auto-resumed; eval completed in the resume → control released.
+        assert state.subagent_id is None
+        assert state.subagent_target is None
+        assert state.completed_subagents.get("eval") == eval_id  # re-stashed on its completion
+        assert state.pending_help_target is None
+
+    def test_failed_producer_resumes_consumer_with_failure_context(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Review #3: a failed producer job hands back (not stall) and the consumer is resumed
+        # with a FAILURE context — never told the data "is ready".
+        async def _no_advisory(*_a: Any, **_k: Any) -> None:
+            return None
+
+        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        state = _make_state(router)
+        eval_id = router.add_session([[_text_part("I'll tell the user the data isn't available.")]])
+        state.completed_subagents = {"eval": eval_id}
+        state.pending_help_target = "eval"
+        state.pending_help_producer = "sdg"
+        sdg_id = router.add_session(
+            [[_tool_part("signal_subagent_completion", {"summary": "job sdg-1 FAILED"})]]
+        )
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+
+        text = "Job sdg-1 (sdg) finished with status: failed."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+
+        sdg_msg = next(m for m in router.sent if m[0] == sdg_id)
+        assert agent._SUBAGENT_JOB_FAILED_PROMPT in sdg_msg[1]  # defined failure hand-back
+        resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
+        assert "could NOT be produced" in resume_msg[1]
+        assert "is ready" not in resume_msg[1]
+
 
 class TestJobCompleteHandback:
     """When an active subagent's delegated job finishes, the server steers it to
@@ -330,14 +415,20 @@ class TestJobCompleteHandback:
         assert "d6be24ce" in forwarded  # [5] the job id is KEPT, not replaced away
         assert "signal_subagent_completion" in forwarded
 
-    def test_failed_job_not_rewritten(self, router: _Router) -> None:
+    def test_failed_job_rewrites_to_failure_handback(self, router: _Router) -> None:
+        # A failed job also gets a defined hand-back (previously it was left untouched, so the
+        # producer kept control and the flow could stall — Shabana review #3).
         state = self._active_sdg(router)
         text = (
             "Job d6be24ce (sdg) finished with status: failed."
             " Use present_options to suggest next steps to the user."
         )
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
-        assert router.sent[0][1] == text  # untouched — subagent handles the failure
+        forwarded = router.sent[0][1]
+        assert agent._SUBAGENT_JOB_FAILED_PROMPT in forwarded  # failure hand-back appended
+        assert "d6be24ce" in forwarded  # the job id is KEPT, not replaced away
+        assert "FAILED" in forwarded
+        assert "signal_subagent_completion" in forwarded
 
     def test_normal_message_not_rewritten(self, router: _Router) -> None:
         state = self._active_sdg(router)
