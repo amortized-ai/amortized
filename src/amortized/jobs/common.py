@@ -7,6 +7,8 @@ import logging
 import shlex
 from typing import Any
 
+import httpx
+
 import amortized.config as config_mod
 from amortized.core.mlflow_client import MLflowClient
 
@@ -51,6 +53,136 @@ async def fetch_document_chunks(document_id: str) -> list[str]:
         if text:
             chunks.append(text)
     return chunks
+
+
+async def is_lora_export(run_id: str) -> bool:
+    """True when the training run's model artifacts are a bare PEFT adapter.
+
+    lora_sft saves adapter_config.json/adapter_model.safetensors at the top
+    of model/ and no merged hf_format export; every other algorithm exports
+    model/hf_format/<step>/. Detection is by artifact listing, not the
+    parent job's algorithm field, so any peft-style export is handled.
+    """
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    if not tracking_uri:
+        return False
+    try:
+        from amortized.core.mlflow_client import MLflowClient
+
+        client = MLflowClient(tracking_uri)
+        files = await client.list_artifacts(run_id, "model")
+        return any(f.get("path") == "model/adapter_config.json" for f in files)
+    except (OSError, httpx.HTTPStatusError):
+        logger.debug("artifact listing failed for run %s", run_id, exc_info=True)
+        return False
+
+
+async def training_display_name(parent: dict[str, Any], run_id: str) -> str:
+    """Registered model name for a training run: MLflow tag, else the
+    registration-name pattern ({short}-{algo}-{job8}) training's on_success uses."""
+    tracking_uri = config_mod.settings.mlflow_tracking_uri
+    display = ""
+    if tracking_uri:
+        try:
+            from amortized.core.mlflow_client import MLflowClient
+
+            client = MLflowClient(tracking_uri)
+            run = await client.get_run(run_id)
+            tags = {t["key"]: t["value"] for t in run["data"].get("tags", [])}
+            display = tags.get("model_display_name", "")
+        except Exception:
+            logger.debug("Failed to read model_display_name for run %s", run_id, exc_info=True)
+    if not display:
+        parent_config = parent.get("config", {}) or {}
+        algorithm = str(parent_config.get("algorithm", "sft"))
+        base = str(parent_config.get("model_name_or_path", "") or "model")
+        short = base.split("/")[-1]
+        display = f"{short}-{algorithm}-{parent['id'][:8]}"
+    return display
+
+
+async def validate_training_parent(
+    config: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    """Validate and return the parent training job and its MLflow run ID.
+
+    Shared by both the serving/eval path (resolve_training_model) and the
+    training resume path so validation logic isn't duplicated.
+    """
+    from amortized.jobs.base import JobBuildError
+
+    training_job_id = str(config.get("training_job_id", "")).strip()
+    if not training_job_id:
+        raise JobBuildError("training_job_id is required when using a tuned model")
+
+    from amortized.db.connection import get_pool
+
+    async with get_pool().acquire() as conn:
+        from amortized.db.repository import Repository
+
+        parent = await Repository(conn).get_job(training_job_id)
+    if not parent or parent["type"] != "training":
+        raise JobBuildError(f"training_job_id {training_job_id!r} is not a training job")
+    if parent["status"] != "succeeded":
+        raise JobBuildError(
+            f"training job {training_job_id[:8]} has status {parent['status']!r}"
+            " — only succeeded training jobs can be used"
+        )
+    run_id = parent.get("mlflow_run_id", "")
+    if not run_id:
+        raise JobBuildError(f"training job {training_job_id[:8]} has no MLflow run")
+    return parent, run_id
+
+
+async def resolve_training_model(
+    config: dict[str, Any],
+    *,
+    skip_display_name: bool = False,
+) -> tuple[str, str, list[str]]:
+    """Resolve a tuned model from a training job's MLflow artifacts.
+
+    Returns (served_model_name, model_path, pre_commands). model_path is the
+    in-container directory the model checkpoint ends up in.
+
+    LoRA adapters are merged into the base model (merge-then-full-train)
+    because vLLM cannot serve bare adapters; for training resume the same
+    merge semantics apply. Non-LoRA checkpoints use the last step directly.
+
+    When *skip_display_name* is True the served_model_name resolution is
+    skipped (returns ``""``), avoiding a wasted MLflow round-trip when
+    the caller doesn't need it.
+    """
+    parent, run_id = await validate_training_parent(config)
+
+    if skip_display_name:
+        served_name = ""
+    else:
+        served_name = str(config.get("served_model_name", "")).strip()
+        if not served_name:
+            served_name = await training_display_name(parent, run_id)
+
+    local_dir = "/amortized/work/served_model"
+    if await is_lora_export(run_id):
+        pre_commands = [
+            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model"
+            f" -d {shlex.quote(local_dir)}",
+            "python3 /amortized/merge_lora.py"
+            f" {shlex.quote(local_dir)}/model {shlex.quote(local_dir)}/merged",
+            f"python3 /amortized/patch_model_config.py {shlex.quote(local_dir)}/merged",
+        ]
+        model_path = f"{local_dir}/merged"
+    else:
+        pre_commands = [
+            f"mlflow artifacts download -r {shlex.quote(run_id)} -a model"
+            f" -d {shlex.quote(local_dir)}",
+            "SERVE_MODEL_DIR=$(find"
+            f" {shlex.quote(local_dir)}/model/hf_format"
+            " -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)",
+            "python3 /amortized/patch_model_config.py $SERVE_MODEL_DIR",
+        ]
+        model_path = "$SERVE_MODEL_DIR"
+
+    return served_name, model_path, pre_commands
 
 
 async def resolve_parent_artifacts(

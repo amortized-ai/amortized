@@ -41,14 +41,24 @@ class LocalBackend:
             with open(filepath, "w") as f:
                 f.write(content)
 
-        # Transform container paths to local paths in the command
-        command = [
-            part.replace("/amortized/config.yaml", os.path.join(work_dir, "config.yaml"))
-            .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
-            .replace("/amortized/work", work_dir)
-            .replace("python3.11", sys.executable)
-            for part in spec.command
-        ]
+        # Transform container paths to local paths in the command.
+        # Config files (merge_lora.py, patch_model_config.py, etc.) are
+        # written to work_dir above; rewrite /amortized/<file> references
+        # so they resolve locally alongside /amortized/work and config.yaml.
+        def _rewrite(part: str) -> str:
+            return (
+                part.replace("/amortized/config.yaml", os.path.join(work_dir, "config.yaml"))
+                .replace("/amortized/work/config.yaml", os.path.join(work_dir, "config.yaml"))
+                .replace("/amortized/merge_lora.py", os.path.join(work_dir, "merge_lora.py"))
+                .replace(
+                    "/amortized/patch_model_config.py",
+                    os.path.join(work_dir, "patch_model_config.py"),
+                )
+                .replace("/amortized/work", work_dir)
+                .replace("python3.11", sys.executable)
+            )
+
+        command = [_rewrite(part) for part in spec.command]
 
         stdout_path = os.path.join(work_dir, "stdout.log")
         stderr_path = os.path.join(work_dir, "stderr.log")

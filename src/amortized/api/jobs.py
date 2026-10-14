@@ -35,6 +35,7 @@ from amortized.core.jobs import (
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
+from amortized.jobs.training import ALGO_ALIASES
 from amortized.models import (
     EvalJobRequest,
     Job,
@@ -195,6 +196,73 @@ async def _validate_training_data(
     return errors
 
 
+async def _validate_model_source(
+    config: dict[str, Any],
+    db: asyncpg.Connection,
+) -> tuple[list[str], list[str]]:
+    """Validate training_job_id when resuming from a finetuned model.
+
+    Returns (errors, warnings).
+    """
+    training_job_id = str(config.get("training_job_id", "") or "").strip()
+    if not training_job_id:
+        return [], []
+
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    model_name_or_path = str(config.get("model_name_or_path", "") or "").strip()
+    if model_name_or_path:
+        warnings.append(
+            "both model_name_or_path and training_job_id are set —"
+            " training_job_id takes precedence and model_name_or_path"
+            f" ('{model_name_or_path}') will be ignored"
+        )
+
+    repo = Repository(db)
+    parent = await repo.get_job(training_job_id)
+    if parent is None:
+        errors.append(f"training_job_id: job '{training_job_id}' not found")
+    elif parent.get("type") != "training":
+        errors.append(
+            f"training_job_id: job '{training_job_id}' is type"
+            f" '{parent.get('type')}' (must be 'training')"
+        )
+    elif parent.get("status") != "succeeded":
+        errors.append(
+            f"training_job_id: job '{training_job_id}' has status"
+            f" '{parent.get('status')}' (must be 'succeeded')"
+        )
+    elif not parent.get("mlflow_run_id"):
+        errors.append(
+            f"training_job_id: job '{training_job_id}' has no MLflow"
+            " artifacts — the model may not have been uploaded"
+        )
+    else:
+        parent_config = parent.get("config") or {}
+        if isinstance(parent_config, str):
+            try:
+                parent_config = json.loads(parent_config)
+            except (ValueError, TypeError):
+                parent_config = {}
+        parent_algo = str(parent_config.get("algorithm", "")).replace("-", "_")
+        parent_algo = ALGO_ALIASES.get(parent_algo, parent_algo)
+        if parent_algo and parent_algo not in _RESUMABLE_ALGORITHMS:
+            errors.append(
+                f"training_job_id: job '{training_job_id}' used algorithm"
+                f" '{parent_algo}' which does not produce a resumable"
+                f" checkpoint — only {sorted(_RESUMABLE_ALGORITHMS)} are"
+                " supported"
+            )
+        elif parent_algo in ("lora_sft",):
+            warnings.append(
+                "the parent job used LoRA — the adapter will be merged"
+                " into the base model and training will continue on full"
+                " weights (merge-then-full-train)"
+            )
+    return errors, warnings
+
+
 def _strip_eval_api_keys(job: Job) -> None:
     """Remove endpoint API keys from a job response before returning it."""
     if not isinstance(job.config, dict):
@@ -253,6 +321,8 @@ async def _validate_eval_data(
 
 
 _EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
+
+_RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
 
 
 async def _apply_classification_eval_mode(
@@ -354,8 +424,12 @@ async def create_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
+    model_errors, model_warnings = await _validate_model_source(config, db)
+    errors.extend(model_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
+    for w in model_warnings:
+        logger.warning("training job validation: %s", w)
 
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
@@ -828,6 +902,8 @@ async def validate_training_job(
     parent_job_id = config.pop("parent_job_id", "")
 
     errors = await _validate_training_data(config, parent_job_id, db)
+    model_errors, model_warnings = await _validate_model_source(config, db)
+    errors.extend(model_errors)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
 
@@ -845,6 +921,7 @@ async def validate_training_job(
         config=config,
         parent_job_id=parent_job_id,
         data_record_count=record_count,
+        warnings=model_warnings,
     )
 
 

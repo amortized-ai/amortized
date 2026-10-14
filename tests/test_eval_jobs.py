@@ -418,7 +418,7 @@ class TestEvalBuilder:
                 ],
             )
 
-        monkeypatch.setattr(eval_builder, "_resolve_training_model", fake_resolve)
+        monkeypatch.setattr(eval_builder, "resolve_training_model", fake_resolve)
 
         config = {**EVAL_BODY, "training_job_id": "tj-1", "judge": JUDGE}
         del config["endpoint"]
@@ -440,22 +440,22 @@ class TestEvalBuilder:
             async def list_artifacts(self, run_id, path):
                 return self._files
 
-        import amortized.jobs.eval as eb
+        import amortized.jobs.common as common
 
-        monkeypatch.setattr(eb.config_mod.settings, "mlflow_tracking_uri", "http://ml")
+        monkeypatch.setattr(common.config_mod.settings, "mlflow_tracking_uri", "http://ml")
         monkeypatch.setattr(
             "amortized.core.mlflow_client.MLflowClient",
             lambda uri: FakeClient(
                 [{"path": "model/adapter_config.json"}, {"path": "model/tokenizer.json"}]
             ),
         )
-        assert await eb._is_lora_export("run-1") is True
+        assert await common.is_lora_export("run-1") is True
 
         monkeypatch.setattr(
             "amortized.core.mlflow_client.MLflowClient",
             lambda uri: FakeClient([{"path": "model/hf_format"}]),
         )
-        assert await eb._is_lora_export("run-1") is False
+        assert await common.is_lora_export("run-1") is False
 
     @pytest.mark.asyncio
     async def test_build_rubric_requires_explicit_judge(self) -> None:
