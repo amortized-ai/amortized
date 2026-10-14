@@ -101,13 +101,23 @@ function extractToolCalls(text: string): {
 function parseOpenCodeResponse(response: OpenCodeResponse): {
   content: string
   toolResults: ToolResult[]
+  caveat: string
 } {
   let rawText = ""
+  let caveatText = ""
   const toolResults: ToolResult[] = []
 
   for (const part of response.parts) {
     if (part.type === "text") {
-      rawText += part.text ?? ""
+      // A gate's caveat (the proxy tags it with amortized_caveat) is surfaced separately
+      // and appended to the GET-derived content by the caller — otherwise it is lost when
+      // session.text wins the `session.text || parsed.content` selection. Keep it out of
+      // rawText so it isn't swallowed or double-counted against the GET's assistant text.
+      if (part.amortized_caveat) {
+        caveatText += part.text ?? ""
+      } else {
+        rawText += part.text ?? ""
+      }
     } else if (part.type === "tool") {
       toolResults.push({
         name: normalizeToolName(part.tool),
@@ -127,7 +137,16 @@ function parseOpenCodeResponse(response: OpenCodeResponse): {
     }
   }
 
-  return { content: cleanText, toolResults }
+  return { content: cleanText, toolResults, caveat: caveatText.trim() }
+}
+
+// Append a gate caveat (if any) to the GET-derived message content. The caveat is a
+// server-generated warning that lives only in the turn result (not opencode's history), so it
+// must be added onto session.text explicitly — appending the whole parsed.content instead
+// would duplicate the assistant text the GET already returned.
+function withCaveat(content: string, caveat: string): string {
+  if (!caveat) return content
+  return content ? `${content}\n\n${caveat}` : caveat
 }
 
 const UI_TOOLS = new Set([
@@ -561,7 +580,7 @@ export function useChat() {
           addMessage(convId, {
             id: generateId(),
             role: "assistant",
-            content: session.text || parsed.content,
+            content: withCaveat(session.text || parsed.content, parsed.caveat),
             timestamp: new Date().toISOString(),
             toolResults: pendingToolResults,
             proposedAction,
@@ -694,7 +713,7 @@ export function useChat() {
           const sessionMessages = await fetchSessionMessages(convId)
           const session = extractSessionData(sessionMessages, parsed.toolResults)
           const toolResults = dedupeConsecutiveOptions(convId, session.tools)
-          const responseContent = session.text || parsed.content
+          const responseContent = withCaveat(session.text || parsed.content, parsed.caveat)
 
           if (toolResults.length > 0) {
             setCurrentToolCall(toolResults[toolResults.length - 1]!)
@@ -919,7 +938,7 @@ export function useChat() {
         const proposedAction = buildProposedAction(notifyToolResults)
 
         useChatStore.getState().updateMessageFields(convId, placeholderId, {
-          content: session.text || parsed.content,
+          content: withCaveat(session.text || parsed.content, parsed.caveat),
           toolResults: notifyToolResults,
           proposedAction,
           phase: extractPhase(notifyToolResults),

@@ -87,6 +87,10 @@ export interface PhasePlan {
 export interface OpenCodePartText {
   type: "text"
   text: string
+  // Set by the amortized proxy on a gate's visible caveat (provenance/job-claim warning),
+  // so the client surfaces it separately and appends it to the GET-derived content instead
+  // of losing it to the `session.text || parsed.content` selection.
+  amortized_caveat?: boolean
 }
 
 export interface OpenCodePartToolInvocation {

@@ -129,6 +129,25 @@ describe("useChat", () => {
     expect(assistantMsg.toolResults[0]!.name).toBe("get_jobs")
   })
 
+  // A gate's safety caveat is tagged by the proxy; the client surfaces it separately and
+  // appends it to the GET-derived content, so it isn't lost to the session.text || parsed.content
+  // selection — and the untagged assistant text is not double-printed.
+  it("appends a tagged gate caveat to the content exactly once", async () => {
+    mockResponse.parts = [
+      { type: "text", text: "The job is ready." },
+      { type: "text", text: "⚠️ I couldn't verify job-xyz.", amortized_caveat: true },
+    ]
+
+    const { result } = renderHook(() => useChat())
+    await act(async () => {
+      await result.current.sendMessage("status?")
+    })
+
+    const assistantMsg = result.current.messages[1]!
+    expect(assistantMsg.content).toBe("The job is ready.\n\n⚠️ I couldn't verify job-xyz.")
+    expect(assistantMsg.content.match(/couldn't verify/g)).toHaveLength(1)
+  })
+
   // Regression for the send-lock leak: the lock was acquired under the generated convId but
   // released under lockId ("" for a new conversation), so the second message in every new
   // conversation was permanently blocked.
@@ -474,7 +493,13 @@ describe("useChat — per-conversation model", () => {
 
     // The job-completion send carries the conversation's model, and its new assistant
     // turn is stamped with it (not left unlabeled or defaulted to the global).
-    expect(sendOpenCodeMessage).toHaveBeenCalledWith("c1", expect.any(String), PINNED)
+    expect(sendOpenCodeMessage).toHaveBeenCalledWith(
+      "c1",
+      expect.any(String),
+      PINNED,
+      "job_complete",
+      "succeeded",
+    )
     const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
     const lastAssistant = [...conv.messages].reverse().find((m) => m.role === "assistant")!
     expect(lastAssistant.model).toBe(PINNED)
