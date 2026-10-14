@@ -28,6 +28,9 @@ export interface PersistedMessage {
   // Encoded model selection (provider::modelID) that produced this assistant turn,
   // captured from the send-time selection. Absent on legacy messages and user turns.
   model?: string
+  // Set on a job-completion continuation turn so the plan deriver can mark the phase
+  // terminal even when the driver never emits a "review" signal_phase (see ChatMessage).
+  terminal?: boolean
 }
 
 export interface PersistedConversation {

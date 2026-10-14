@@ -6,9 +6,14 @@ import { useChatStore } from "@/stores/chat-store"
 interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
+  placeholder?: string
 }
 
-export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  disabled = false,
+  placeholder = "Type a message...",
+}: ChatInputProps) {
   const convId = useChatStore((s) => s.currentConversationId)
   const value = useChatStore((s) => s.drafts[s.currentConversationId ?? ""] ?? "")
   const setValue = useCallback(
@@ -56,7 +61,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
-          placeholder="Type a message..."
+          placeholder={placeholder}
           disabled={disabled}
           rows={1}
           aria-label="Message input"
