@@ -115,8 +115,9 @@ options, each labeled with its name and the sibling models already scored
 on it — e.g. "Reuse <name> — already scored: <models>; comparable in the
 Evaluation tab". When the user picks one, pass its `eval_data_run_id` as
 `eval_data_run_id` and go straight to Step 1.5 (skip the split /
-generation paths). Only when the user wants a brand-new held-out set — or
-`recipe_match_available` is false (no same-task set exists yet) — fall
+generation paths). Whenever the user declines reuse — whether they want a
+brand-new held-out set, an uploaded or split dataset, or any other source —
+or `recipe_match_available` is false (no same-task set exists yet), fall
 through to the suggestions below. (If `training_recipe_known` is false the
 model was not trained from an SDG job, so nothing can be recipe-matched;
 you may still offer the listed sets, but note they are not verified
@@ -158,8 +159,10 @@ model (tuned or not):
 If none of these exist, a held-out eval set must be generated with an SDG
 job — you don't do this yourself; hand back to the orchestrator via
 `request_orchestrator_help` (see **Getting a held-out eval set** below).
-It runs SDG and resumes you at Step 3 with the new SDG job ID as
-`parent_job_id`.
+It runs SDG and resumes you with the new SDG job ID as `parent_job_id`;
+resume at Step 1.5 to confirm how much of the fresh set to score (a held-out
+request doesn't say how much to use), then continue to Step 3 — unless the
+user already fixed the amount.
 
 ### Step 1.5 — Confirm how much of the dataset to evaluate
 
@@ -198,9 +201,12 @@ nothing to poll, no endpoint URLs involved.
 **If Step 0 already settled the subject, do NOT re-ask the model source.**
 When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
-named HF model) and go straight to Step 3. Only present the options below
-when the subject is still open — the user said "evaluate a model" without
-naming one, or wants a non-trained endpoint.
+named HF model) and go straight to Step 3. If they named a gateway model
+(no endpoint URL), resolve it WITHOUT re-asking which model: call
+`get_eval_endpoint_suggestions`, match the name against `known_endpoints`,
+and set the eval's `endpoint` (base_url + model) — then go to Step 3. Only
+present the options below when the subject is still open — the user said
+"evaluate a model" without naming one, or wants a non-trained endpoint.
 
 Present the model-source options as clickable choices:
 
@@ -410,9 +416,10 @@ Call `request_orchestrator_help` with:
 - `context`: everything the orchestrator needs to produce the set AND to
   resume you with continuity — the eval subject (model and endpoint), the
   training job ID, the goal (a held-out eval set the user will evaluate
-  that model on), and where you resume (Step 3, metrics design, using the
-  new SDG job ID as `parent_job_id`). The orchestrator has no memory of
-  your session, so include it all.
+  that model on), and where you resume (Step 1.5 to confirm how much of the
+  new set to score, then Step 3 metrics design, using the new SDG job ID as
+  `parent_job_id`). The orchestrator has no memory of your session, so
+  include it all.
 
 **The eval set must mirror the model's training recipe** (same assessor
 prompt, teacher model, and output format) so the model is scored on the
@@ -429,8 +436,10 @@ training datasets, so do not imply the platform flags overlap.)
 
 When you are resumed with a `[RESUMED]` handoff that carries a new SDG job
 ID (the held-out set you asked for is ready), continue YOUR workflow at
-Step 3 (metrics design) using that job ID as `parent_job_id` — do not
-restart from Step 0 or re-ask for the endpoint.
+Step 1.5 — confirm how much of the fresh set to evaluate (it's newly
+generated, so the amount isn't settled yet), then Step 3 (metrics design)
+using that job ID as `parent_job_id`. Do not restart from Step 0 or re-ask
+for the endpoint. (Skip Step 1.5 only if the user already fixed the amount.)
 
 ## Failure Handling
 

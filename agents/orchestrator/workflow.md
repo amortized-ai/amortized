@@ -94,9 +94,12 @@ it can't produce itself (today: the eval or training agent needs a dataset
 generated first), it hands back to you with a `[SUBAGENT NEEDS HELP]`
 message naming the `need` and its `context`. Your only move is a single
 `delegate_to_subagent` to the agent that produces it — for a dataset,
-`target: "sdg"` with `resume: false` — forwarding the `need` and `context`
-so it builds exactly what was asked (e.g. a held-out eval set that mirrors
-the model's training recipe). Nothing else.
+`target: "sdg"` with `resume: false`. Give that producer ONLY a plain build
+order for the `need`, worded as if a user asked for that dataset directly
+(e.g. a held-out eval set that mirrors the model's training recipe). The
+`context` is background for YOU — do NOT pass it on: the producer is a leaf
+and must not learn about the requesting step, the resume, or anything else
+about the pipeline. Nothing else.
 
 You do NOT resume the requester yourself. Once that job finishes, the
 platform resumes the agent that asked for help automatically — you will not
