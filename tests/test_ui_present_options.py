@@ -132,6 +132,13 @@ def test_show_model_pricing_coerces_formatted_numbers() -> None:
     assert item.prompt_cost_per_1m == 0.037
     assert item.completion_cost_per_1m == 0.17
     assert item.context_length == 131072
+    # Scientific notation must survive coercion (was truncated to "1" by the prefix-only regex).
+    sci = ModelPricingItem(
+        model_id="m", name="m",
+        prompt_cost_per_1m="1e-6",  # type: ignore[arg-type]
+        completion_cost_per_1m=0.2, context_length=1000,
+    )
+    assert sci.prompt_cost_per_1m == 1e-6
 
 
 def test_context_length_coerces_suffix_and_float_strings() -> None:
@@ -151,3 +158,4 @@ def test_context_length_coerces_suffix_and_float_strings() -> None:
     assert _item("131072.0").context_length == 131072
     assert _item("128,000").context_length == 128000
     assert _item(200000).context_length == 200000
+    assert _item("1e6").context_length == 1_000_000  # scientific notation (was truncated to 1)

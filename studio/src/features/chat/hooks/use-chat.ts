@@ -341,6 +341,9 @@ function dedupeConsecutiveOptions(convId: string, toolResults: ToolResult[]): To
   const msgs = useChatStore.getState().getConversationMessages(convId)
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i]!
+    // A user response between the two cards breaks consecutiveness: a re-ask after the user
+    // answered is legitimate, not a stutter — keep the new card.
+    if (m.role === "user") return toolResults
     if (m.role !== "assistant") continue
     // Skip the current turn's empty placeholder assistant message.
     if (!m.content && (m.toolResults?.length ?? 0) === 0) continue

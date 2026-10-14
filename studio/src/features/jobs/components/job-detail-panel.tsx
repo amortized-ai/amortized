@@ -604,7 +604,9 @@ function EvalResultsTab({ job }: { job: Job }) {
     // sample, empty output, etc.). Say so plainly rather than render a blank
     // table or a misleading "0 scored" footer — never imply a score exists.
     const hasUsableScore = scoreEntries.some(([, s]) => s !== null && s !== undefined)
-    const noScores = results.num_scored === 0 || !hasUsableScore
+    // A classification eval reports accuracy/macro_f1/confusion instead of per-rubric scores
+    // (rendered separately below), so the score-specific "no scores" notice doesn't apply.
+    const noScores = !isClassification && (results.num_scored === 0 || !hasUsableScore)
     return (
       <div className="space-y-4 pt-2">
         {modelName ? (

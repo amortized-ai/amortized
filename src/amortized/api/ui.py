@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
 
-_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-# A leading number with an optional magnitude suffix: '128k', '1.5M', '131072'.
-_INT_RE = re.compile(r"(-?\d+(?:\.\d+)?)\s*([kKmMgG])?")
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+# A leading number (with an optional exponent) and an optional magnitude suffix:
+# '128k', '1.5M', '131072', '1e-6'.
+_INT_RE = re.compile(r"(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*([kKmMgG])?")
 _SUFFIX_MULTIPLIER = {"k": 1_000, "m": 1_000_000, "g": 1_000_000_000}
 
 

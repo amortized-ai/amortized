@@ -63,11 +63,14 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
         if (!isValidPhase(phase)) continue
         const step = String(data.step ?? "")
 
-        if (latestPhase && phase !== latestPhase) {
+        if (latestPhase && (phase !== latestPhase || terminalSeen)) {
+          // Reset on a phase change OR a new run in the SAME phase after a terminal one —
+          // otherwise a second same-phase run (e.g. a re-run SDG job) inherits the finished
+          // run's completed steps.
           seenLabels.clear()
           steps.length = 0
           terminalSeen = false
-          phaseChangedThisMsg = true
+          if (phase !== latestPhase) phaseChangedThisMsg = true
         }
         latestPhase = phase
 

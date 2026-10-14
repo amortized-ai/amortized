@@ -58,4 +58,18 @@ describe("derivePlan", () => {
     expect(plan?.steps.some((s) => s.status === "active")).toBe(true)
     expect(plan?.steps.every((s) => s.status === "completed")).toBe(false)
   })
+
+  it("resets completion when a new run starts in the same phase", () => {
+    // SDG run 1 finishes (terminal), then a second SDG run begins — the bar must reflect the
+    // new run in progress, not inherit run 1's completed steps.
+    const done1: ChatMessage = { ...sig("sdg", "execute"), terminal: true }
+    const plan = derivePlan([
+      sig("sdg", "gather_requirements"),
+      done1,
+      sig("sdg", "gather_requirements"),
+    ])
+    expect(plan?.phase).toBe("sdg")
+    expect(plan?.steps.some((s) => s.status === "active")).toBe(true)
+    expect(plan?.steps.every((s) => s.status === "completed")).toBe(false)
+  })
 })
