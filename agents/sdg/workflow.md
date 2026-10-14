@@ -118,10 +118,15 @@ the job fails. Omit it and the provider default is used.
 
 ## SDG Preview Flow
 
-Call the validation tool with `mode: "preview"` first for a ~10 sample
-test run. Once the preview succeeds and the user is happy, call again
-with `mode: "create"` for the full run. NEVER call with `mode: "create"`
-more than once per conversation for the same job.
+ALWAYS preview first by default: call the validation tool with
+`mode: "preview"` for a ~10 sample test run, let the user eyeball the
+output, then call again with `mode: "create"` for the full run. The
+preview is cheap and catches a bad recipe before a full generation, so
+strongly prefer it. The ONE exception: if the user EXPLICITLY asks to
+skip the preview (e.g. "just create it", "no preview, create directly"),
+honor that and go straight to `mode: "create"` — do not force a preview
+on a user who declined it. NEVER call with `mode: "create"` more than
+once per conversation for the same job.
 
 ## SDG Confirmation
 
@@ -174,8 +179,9 @@ Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
-Run the preview flow first (mode "preview"). Once the user approves
-the preview, validate with mode "create". The UI renders a
+Run the preview flow first (mode "preview") by default — see **SDG
+Preview Flow** — unless the user explicitly asked to skip it, in which
+case validate directly with mode "create". The UI renders a
 confirmation card — the user clicks confirm to submit the job.
 
 Write ONE short sentence before the tool call, then call it. No tables,
