@@ -1,11 +1,12 @@
 """Unit tests for the shared config-mirror primitives (core/mirror.py)."""
 
 import json
+from typing import Any
 
 from amortized.core import mirror
 
 
-def _sdg_cfg() -> dict:
+def _sdg_cfg() -> dict[str, Any]:
     return {
         "num_records": 100,
         "mode": "create",

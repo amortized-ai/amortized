@@ -626,7 +626,20 @@ async def retry_job(
     source = snapshot if isinstance(snapshot, dict) and snapshot else job.get("config")
     config = mirror.clone(source, spec, overrides=overrides)
 
-    parent_job_id = job.get("parent_job_id", "")
+    # SDG strips num_records as a non-recipe field (so the preview->full gate and
+    # clone-for-eval treat sample size as free). A retry reproduces the original run,
+    # though — restore its count unless the caller overrode it, else the builder's
+    # default (100) silently shrinks an unchanged rerun.
+    if job_type == JobType.sdg.value and "num_records" not in config:
+        src_records = mirror.coerce_config(source).get("num_records")
+        if src_records is not None:
+            config["num_records"] = src_records
+
+    # Resolve the parent the new job will actually store before validating it:
+    # core_create_job falls back to config's parent_job_id when the arg is empty, so
+    # a parent_job_id override would otherwise be stored unvalidated (linking the
+    # retry to a missing or unfinished parent).
+    parent_job_id = job.get("parent_job_id", "") or config.get("parent_job_id", "")
 
     # Per-type validation mirrors each create endpoint (SDG has none at this layer).
     if job_type == JobType.training.value:

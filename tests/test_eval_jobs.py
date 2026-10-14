@@ -771,7 +771,9 @@ class TestRetryEvalJob:
         assert new_job["type"] == "sdg"
         assert new_job["retry_of"] == "sdg-retry-1"
         assert new_job["config"]["topic"] == "rfe"  # recipe carried forward
-        assert "num_records" not in new_job["config"]  # SDG semantic key stripped
+        # An unchanged rerun reproduces the original volume — num_records is a
+        # non-recipe field the clone strips, so the retry path restores it from source.
+        assert new_job["config"]["num_records"] == 100
 
     @pytest.mark.asyncio
     async def test_retry_rerun_with_overrides(self, client: httpx.AsyncClient) -> None:
@@ -791,6 +793,31 @@ class TestRetryEvalJob:
         )
         assert response.status_code == 201, response.text
         assert response.json()["config"]["num_records"] == 2000
+
+    @pytest.mark.asyncio
+    async def test_retry_validates_overridden_parent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # A parent_job_id override must be validated: core_create_job pulls the parent
+        # from config when the arg is empty, so an unvalidated override would link the
+        # retry to a missing parent. The original job has no parent and a standalone
+        # data source (eval_data_run_id), so only the override introduces the parent.
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO jobs
+                       (id, type, status, config, request_config, created_at)
+                   VALUES ('eval-retry-parent', 'eval', 'failed',
+                           '{"eval_data_run_id": "run-x"}'::jsonb,
+                           '{"eval_data_run_id": "run-x"}'::jsonb, now())"""
+            )
+        response = await client.post(
+            "/api/v1/jobs/eval-retry-parent/retry",
+            json={"parent_job_id": "ghost-parent"},
+        )
+        assert response.status_code == 422, response.text
+        assert "ghost-parent" in response.json()["message"]
 
     @pytest.mark.asyncio
     async def test_retry_rejects_unsupported_type(
