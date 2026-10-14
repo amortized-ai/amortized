@@ -137,8 +137,8 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Retry a FAILED eval job by cloning its original request config verbatim (rubric text included \u2014 the new scores land in the same Evaluation tab comparison group). Only use this to re-run an eval UNCHANGED; to change anything, assemble a new config instead. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
-        "description": "Clone a failed eval job's original config into a new job.",
+        "summary": "Retry/rerun a FAILED or cancelled job (SDG, training, or eval) by cloning its original request config. With no overrides it re-runs the job UNCHANGED (for eval the new scores land in the same Evaluation tab comparison group); pass `overrides` to change specific knobs (e.g. num_train_epochs, num_records). The caller confirms before this creates the job \u2014 it is not a silent dispatch. Note: external-endpoint API keys are not retained, so keyed endpoints need resubmission.",
+        "description": "Clone a failed/cancelled job's original config into a new job of the same type.\n\nGeneralized from the former eval-only path: the shared mirror.clone drops each\ntype's runtime/lineage fields from the pre-dispatch snapshot and applies any\ncaller `overrides` (the rerun-with-a-tweak case). The frontend gates this behind\na confirmation step, so re-running an expensive training/SDG job is never a\nsingle misclick.",
         "operationId": "retry_job",
         "parameters": [
           {
@@ -151,6 +151,24 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Overrides"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Successful Response",
