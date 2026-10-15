@@ -412,7 +412,7 @@ def _enforce_single_interaction(
     monitor log is recorded from the raw opencode parts, not this result, so the
     batching stays visible/measurable there."""
     parts = result.get("parts") or []
-    first_q = first_card = first_review = None
+    first_q = first_card = last_card = first_review = None
     for i, part in enumerate(parts):
         # An errored tool call renders nothing — skip it so a failed validate_* can't lead
         # the turn and shadow the model's successful retry in the same turn (which would keep
@@ -422,8 +422,14 @@ def _enforce_single_interaction(
         name = _tool_name(part)
         if first_q is None and name == "present_options":
             first_q = i
-        if first_card is None and name in _CONFIRM_CARD_TOOLS:
-            first_card = i
+        if name in _CONFIRM_CARD_TOOLS:
+            # first_card fixes the ask-vs-confirm ORDER; last_card is the card we KEEP — the
+            # last valid one, so a corrected/re-validated config supersedes an earlier one.
+            # This matches the client's #459 "last valid wins" backward-walk; they must agree
+            # because the gate suppresses the rest, so the client can't recover a dropped card.
+            if first_card is None:
+                first_card = i
+            last_card = i
         if first_review is None and name in _REVIEW_CARD_TOOLS:
             first_review = i
 
@@ -454,8 +460,8 @@ def _enforce_single_interaction(
     # the model. The prompt review gate takes precedence, so this runs only when
     # prompt_gate is not already firing.
     unmet = (
-        _first_unmet_precondition(state, parts[first_card])
-        if (not ask_turn and not prompt_gate and first_card is not None)
+        _first_unmet_precondition(state, parts[last_card])
+        if (not ask_turn and not prompt_gate and last_card is not None)
         else None
     )
 
@@ -466,10 +472,11 @@ def _enforce_single_interaction(
         drop_review = False
     else:
         # Whichever interaction leads the turn is the one the model is really making;
-        # keep exactly that one and strip every OTHER interactive element. If a
-        # confirm proceeds with an already-reviewed prompt stacked on it, drop the
-        # now-redundant review card (its text is already inside the confirm card).
-        keep_index = first_q if ask_turn else first_card
+        # keep exactly that one and strip every OTHER interactive element. For a confirm
+        # turn that's the LAST valid card (last_card) — a corrected/re-validated config
+        # supersedes an earlier one. If a confirm proceeds with an already-reviewed prompt
+        # stacked on it, drop the now-redundant review card (its text is already inside it).
+        keep_index = first_q if ask_turn else last_card
         drop_review = not ask_turn and first_card is not None and review_sig is not None
 
     kept_indices = {
@@ -498,8 +505,8 @@ def _enforce_single_interaction(
         state.reviewed_card_sigs.add(review_sig)
     # When a confirm card actually renders (passed its preconditions), reset that job
     # type's prerequisite signals so a SECOND job of the type re-gates.
-    if not ask_turn and keep_index is not None and keep_index == first_card:
-        card = parts[first_card]
+    if not ask_turn and keep_index is not None and keep_index == last_card:
+        card = parts[keep_index]
         _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
 
     # A held card steers the MODEL to do the missing step first — delivered to its

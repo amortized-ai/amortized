@@ -530,6 +530,26 @@ class TestEnforceSingleInteraction:
         assert "ok-1" not in state.suppressed_call_ids
         assert "err-1" in state.suppressed_call_ids
 
+    def test_keeps_the_last_valid_confirm_card(self) -> None:
+        # Two successful validates in one turn (the model tweaked the config and
+        # re-validated): keep the LAST one, matching the client's #459 last-valid-wins
+        # backward-walk. The gate suppresses the rest, so it must agree with the client
+        # or it would hide the card #459 would have picked.
+        def _ok(call_id: str) -> dict[str, Any]:
+            return {
+                "type": "tool",
+                "tool": "mcp_amortized__validate_sdg_job",
+                "callID": call_id,
+                "state": {"status": "completed", "input": {"mode": "preview"}},
+            }
+
+        state = _fresh_state()
+        out = agent._enforce_single_interaction({"parts": [_ok("ok-1"), _ok("ok-2")]}, state)
+        kept = [p.get("callID") for p in out["parts"] if p.get("type") == "tool"]
+        assert kept == ["ok-2"]  # last valid wins
+        assert "ok-1" in state.suppressed_call_ids
+        assert "ok-2" not in state.suppressed_call_ids
+
     def test_confirm_turn_drops_repeat_confirm_card(self) -> None:
         result = {
             "parts": [
