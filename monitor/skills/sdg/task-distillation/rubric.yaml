@@ -7,7 +7,7 @@
 skill: sdg/task-distillation
 role: sdg
 guide: agents/sdg/skills/task-distillation/guide.md
-gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+gate: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 scoring: weighted
 steps:
   - id: asks_examples_first

@@ -4,7 +4,7 @@
 skill: training/osft
 role: training
 guide: agents/training/skills/knowledge-ingestion/osft/guide.md
-gate: { type: skill_loaded, role: training, path_contains: "skills/training/knowledge-ingestion/osft/" }
+gate: { type: skill_loaded, role: training, skill: "training-knowledge-ingestion-osft" }
 scoring: weighted
 steps:
   - id: reads_supported_models

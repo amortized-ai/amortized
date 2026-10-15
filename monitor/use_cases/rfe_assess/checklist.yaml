@@ -23,4 +23,4 @@ rows:
     aspect: B
     expected: "Loads the task-distillation SDG sub-skill (correct for a rubric/structured-eval task)"
     adjudicate: auto
-    match: { type: tool_called, tool: read, where: { role: sdg }, output_contains: "task-distillation/guide.md" }
+    match: { type: skill_loaded, skill: "sdg-task-distillation" }

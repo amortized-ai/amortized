@@ -4,7 +4,7 @@
 skill: sdg/knowledge-ingestion
 role: sdg
 guide: agents/sdg/skills/knowledge-ingestion/guide.md
-gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/knowledge-ingestion/" }
+gate: { type: skill_loaded, role: sdg, skill: "sdg-knowledge-ingestion" }
 scoring: weighted
 steps:
   - id: grounds_on_documents

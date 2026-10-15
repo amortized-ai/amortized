@@ -4,7 +4,7 @@
 skill: sdg/classification
 role: sdg
 guide: agents/sdg/skills/classification/guide.md
-gate: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/classification/" }
+gate: { type: skill_loaded, role: sdg, skill: "sdg-classification" }
 scoring: weighted
 steps:
   - id: stepwise_questions

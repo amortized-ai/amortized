@@ -14,13 +14,14 @@ def _run_with(*tool_calls: dict[str, Any]) -> Run:
 
 
 def _loaded_distillation(*extra: dict[str, Any]) -> Run:
-    read = {
-        "tool": "read",
+    load = {
+        "tool": "skill",
         "role": "sdg",
         "status": "completed",
-        "output": "skills/sdg/task-distillation/guide.md",
+        "skill": "sdg-task-distillation",
+        "input": {"name": "sdg-task-distillation"},
     }
-    return _run_with(read, *extra)
+    return _run_with(load, *extra)
 
 
 def test_load_rubrics_discovers_all() -> None:
@@ -44,9 +45,14 @@ def _distillation_rubric() -> dict[str, Any]:
 def test_gate_applies_only_when_skill_loaded() -> None:
     rb = _distillation_rubric()
     assert rubric.applies(_loaded_distillation(), rb) is True
-    # a run that loaded a different guide does not apply
+    # a run that loaded a different skill does not apply
     other = _run_with(
-        {"tool": "read", "role": "sdg", "output": "skills/sdg/classification/guide.md"}
+        {
+            "tool": "skill",
+            "role": "sdg",
+            "skill": "sdg-classification",
+            "input": {"name": "sdg-classification"},
+        }
     )
     assert rubric.applies(other, rb) is False
 
@@ -98,7 +104,7 @@ def test_gate_fail_closed_on_missing_or_unknown() -> None:
         "gate": {
             "type": "skill_loaded",
             "role": "sdg",
-            "path_contains": "skills/sdg/task-distillation/",
+            "skill": "sdg-task-distillation",
         },
         "steps": [{}],
     }

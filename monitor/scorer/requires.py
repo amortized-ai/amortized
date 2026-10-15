@@ -24,25 +24,61 @@ def requires_gate(name: str) -> Callable[[RequiresGate], RequiresGate]:
     return deco
 
 
-@requires_gate("skill_loaded")
-def _gate_skill_loaded(run: Run, requires: dict[str, Any]) -> bool:
-    """A `read` whose output echoes the guide path (`path_contains`), optionally
-    scoped to a subagent `role` (sub-skills belong to subagents, so role-scoping
-    disambiguates which agent loaded which guide). Reuses the same read/
-    output_contains detection as the auto `skill_loaded` mechanic rows."""
-    role = requires.get("role")
-    needle = requires.get("path_contains")
+def skill_role(skill_name: str | None) -> str | None:
+    """Subagent role implied by a flattened opencode skill name (sdg-* -> sdg,
+    training-* -> training)."""
+    if not skill_name:
+        return None
+    if skill_name.startswith("sdg-"):
+        return "sdg"
+    if skill_name.startswith("training-"):
+        return "training"
+    return None
+
+
+def skill_loaded(
+    run: Run,
+    *,
+    skill: str | None = None,
+    role: str | None = None,
+    path_contains: str | None = None,
+) -> bool:
+    """Whether the run loaded a (matching) sub-skill. Native opencode skills load via
+    the `skill` tool (`skill({name: "sdg-task-distillation"})`); its name is promoted
+    to the tool-call `skill` field. Matches by exact `skill` name and/or `role`
+    (derived from the name prefix or the call's role). Falls back to the pre-migration
+    `read` of a guide path (`path_contains`) for old logs."""
     for c in run.tool_calls:
-        if c.get("tool") != "read":
+        if c.get("tool") != "skill" or c.get("status") == "error":
             continue
-        if c.get("status") == "error":
-            continue  # an errored read didn't load the guide
-        if role and c.get("role") != role:
+        name = c.get("skill") or (c.get("input") or {}).get("name")
+        if skill and name != skill:
             continue
-        if needle and needle not in (c.get("output") or ""):
+        if role and (skill_role(name) or c.get("role")) != role:
             continue
         return True
+    # back-compat: pre-migration logs where the guide was loaded with `read`
+    if path_contains:
+        for c in run.tool_calls:
+            if c.get("tool") != "read" or c.get("status") == "error":
+                continue
+            if role and c.get("role") != role:
+                continue
+            if path_contains not in (c.get("output") or ""):
+                continue
+            return True
     return False
+
+
+@requires_gate("skill_loaded")
+def _gate_skill_loaded(run: Run, requires: dict[str, Any]) -> bool:
+    """Gate aspect-G / rubric rows on the matching sub-skill having been loaded."""
+    return skill_loaded(
+        run,
+        skill=requires.get("skill"),
+        role=requires.get("role"),
+        path_contains=requires.get("path_contains"),
+    )
 
 
 @requires_gate("eval_for_trained_model")

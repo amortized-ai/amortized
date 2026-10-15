@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from monitor.scorer.model import Run, _calls, _parse_dt
-from monitor.scorer.requires import _requires_met
+from monitor.scorer.requires import _requires_met, skill_loaded
 from monitor.scorer.similarity import (
     SIM_GRAY,
     SIM_HIGH,
@@ -135,6 +135,22 @@ def _m_tool_called(run: Run, match: dict[str, Any]) -> str:
                 continue
             return "n/a"
     return "missed"
+
+
+@matcher("skill_loaded")
+def _m_skill_loaded(run: Run, match: dict[str, Any]) -> str:
+    # A sub-skill was loaded via the native `skill` tool. `skill` = exact name,
+    # `role` = sdg|training (any sub-skill for that agent). met/missed.
+    return (
+        "met"
+        if skill_loaded(
+            run,
+            skill=match.get("skill"),
+            role=match.get("role"),
+            path_contains=match.get("path_contains"),
+        )
+        else "missed"
+    )
 
 
 @matcher("chained")

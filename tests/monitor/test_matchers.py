@@ -219,12 +219,55 @@ def test_model_choice() -> None:
     assert score_auto(_run(), m) == "n/a"
 
 
+# --- skill_loaded (native `skill` tool) ------------------------------------
+
+
+def _skill(name: str, role: str = "sdg", status: str = "completed") -> dict[str, Any]:
+    return {"tool": "skill", "role": role, "status": status, "skill": name, "input": {"name": name}}
+
+
+def test_skill_loaded_matcher_native_tool() -> None:
+    m_name = {"type": "skill_loaded", "skill": "sdg-task-distillation"}
+    m_role = {"type": "skill_loaded", "role": "sdg"}
+    assert score_auto(_run(_skill("sdg-task-distillation")), m_name) == "met"
+    assert score_auto(_run(_skill("sdg-task-distillation")), m_role) == "met"
+    # different skill / role -> missed
+    assert score_auto(_run(_skill("sdg-classification")), m_name) == "missed"
+    assert (
+        score_auto(
+            _run(_skill("training-knowledge-ingestion-osft", role="training")),
+            {"type": "skill_loaded", "role": "sdg"},
+        )
+        == "missed"
+    )
+    assert score_auto(_run(), m_name) == "missed"
+    # errored skill load doesn't count
+    assert score_auto(_run(_skill("sdg-task-distillation", status="error")), m_name) == "missed"
+
+
+def test_skill_loaded_role_from_name_prefix() -> None:
+    # role derived from the flattened name prefix even if the call lacks a role field
+    call = {
+        "tool": "skill",
+        "status": "completed",
+        "input": {"name": "training-embedding-classifier"},
+    }
+    assert score_auto(_run(call), {"type": "skill_loaded", "role": "training"}) == "met"
+    assert score_auto(_run(call), {"type": "skill_loaded", "role": "sdg"}) == "missed"
+
+
 # --- score_run gating ------------------------------------------------------
 
 
-def test_requires_skill_loaded_ignores_errored_read() -> None:
+def test_requires_skill_loaded_native_and_backcompat() -> None:
     from monitor.scorer.requires import _requires_met
 
+    # native: skill tool call by name
+    native_gate = {"type": "skill_loaded", "role": "sdg", "skill": "sdg-task-distillation"}
+    assert _requires_met(_run(_skill("sdg-task-distillation")), native_gate) is True
+    assert _requires_met(_run(_skill("sdg-classification")), native_gate) is False
+
+    # back-compat: pre-migration `read` of a guide path via path_contains
     gate = {"type": "skill_loaded", "role": "sdg", "path_contains": "skills/sdg/x/"}
     ok = _run(
         {"tool": "read", "role": "sdg", "status": "completed", "output": "skills/sdg/x/guide.md"}

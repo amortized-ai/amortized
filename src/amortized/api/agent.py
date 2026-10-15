@@ -443,6 +443,13 @@ async def _record_turn_metrics(
                         ]
                         if titles:
                             entry["options"] = titles
+                elif name == "skill":
+                    # opencode native skill load — skill({name: "sdg-task-distillation"}).
+                    # Promote the name so skill-adherence gates can tell which sub-skill
+                    # was loaded (replaces the old `read` of a guide.md path).
+                    skill_name = inp.get("name")
+                    if skill_name:
+                        entry["skill"] = skill_name
                 # Full tool input, secrets masked + size-bounded. Removes the
                 # "signal must be pre-captured" constraint: offline checks can read
                 # any input field (and all tools' inputs, not just the ones promoted
