@@ -21,6 +21,9 @@ function formatMethod(method: string): string {
     qlora: "QLoRA",
     qlora_sft: "QLoRA",
     osft: "OSFT",
+    embedding_sft: "Embedding Classifier",
+    classifier: "Embedding Classifier",
+    embedding: "Embedding Classifier",
   }
   return labels[method.toLowerCase()] ?? method
 }

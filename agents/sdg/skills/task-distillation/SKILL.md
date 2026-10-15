@@ -1,3 +1,16 @@
+---
+name: sdg-task-distillation
+description: >-
+  Generate synthetic training data that distills a frontier model's task
+  behavior into a smaller model. Use for rubric-based assessment and scoring,
+  structured evaluation, classification, extraction, summarization, routing,
+  and multi-step reasoning — any input→output task. Covers teacher-model
+  selection, variation sampling, the input/output column pipeline, and SFT
+  formatting.
+metadata:
+  stage: sdg
+---
+
 # Task Distillation — SDG Guide
 
 Distill a frontier model's task behavior into a smaller model.

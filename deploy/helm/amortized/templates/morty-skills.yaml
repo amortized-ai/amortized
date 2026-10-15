@@ -1,9 +1,10 @@
 {{- /*
 Reproduces the base `morty-skills` configMapGenerator. The base flattens the
-skills directory tree into single-level keys using `__` as the path separator
-(e.g. sdg/classification/guide.md -> sdg__classification__guide.md), because
+native skill tree into single-level keys using `__` as the path separator
+(e.g. sdg-classification/SKILL.md -> sdg-classification__SKILL.md), because
 ConfigMap keys may not contain `/`. The opencode Deployment mounts this ConfigMap
-with items[].path mapping each key back to its nested path, rebuilding the tree.
+with items[].path mapping each key back to its nested path, rebuilding the tree
+under .opencode/skills where opencode auto-discovers each skill.
 */ -}}
 {{- if .Values.opencode.enabled }}
 {{- $data := dict -}}

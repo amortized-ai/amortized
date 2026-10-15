@@ -132,7 +132,9 @@ async def _eval_runs_by_id() -> dict[str, dict[str, str]]:
 
 
 def _entry_from_job(
-    job: dict[str, Any], run_tags: dict[str, dict[str, str]]
+    job: dict[str, Any],
+    run_tags: dict[str, dict[str, str]],
+    training_labels: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     cfg = _job_config(job)
     model = str(
@@ -155,6 +157,17 @@ def _entry_from_job(
         if tags.get("num_samples"):
             with _Suppress():
                 num_samples = int(tags["num_samples"])
+    # Classification evals have no endpoint and don't tag eval_model, so derive
+    # the model identity from the config — otherwise a base-model run and a
+    # tuned-model run both fall back to "(unknown)" and get merged into one
+    # column instead of sitting side by side.
+    if not model:
+        training_job_id = str(cfg.get("training_job_id") or "").strip()
+        if training_job_id:
+            labels = training_labels or {}
+            model = labels.get(training_job_id, f"tuned-{training_job_id[:8]}")
+        elif cfg.get("model_name_or_path"):
+            model = str(cfg.get("model_name_or_path"))
     return {
         "job_id": job["id"],
         "model": model or "(unknown)",
@@ -195,6 +208,24 @@ async def list_evaluations(
     )
 
     run_tags = await _eval_runs_by_id()
+
+    # Readable labels for tuned-model (classification) evals that reference a
+    # training job — mirrors the training on_success naming so the eval column
+    # shows e.g. "all-MiniLM-L6-v2-embedding_sft-1a2b3c4d" instead of a raw id.
+    training_labels: dict[str, str] = {}
+    train_ids = {
+        tid
+        for job in eval_jobs
+        if (tid := str(_job_config(job).get("training_job_id") or "").strip())
+    }
+    for tid in train_ids:
+        tjob = await repo.get_job(tid)
+        if not tjob:
+            continue
+        tcfg = _job_config(tjob)
+        base = str(tcfg.get("model_name_or_path") or tcfg.get("model_id") or "model")
+        algo = str(tcfg.get("algorithm") or "sft")
+        training_labels[tid] = f"{base.split('/')[-1]}-{algo}-{tid[:8]}"
 
     # Dataset identity: parent SDG/upload job's MLflow run, else the
     # eval_data_run_id recorded in the config.
@@ -270,7 +301,7 @@ async def list_evaluations(
                 "latest_created_at": None,
             },
         )
-        group["evals"].append(_entry_from_job(job, run_tags))
+        group["evals"].append(_entry_from_job(job, run_tags, training_labels))
         # Jobs iterate newest-first; only the first (newest) one sets the
         # timestamp — later, older jobs must not clobber it. Prefer
         # completed_at: the eval finished then, not when it was queued.

@@ -6,6 +6,10 @@ export interface PersistedMessage {
   role: "user" | "assistant"
   content: string
   timestamp: string
+  // A failed turn: `content` holds the user-facing error text (shown in the chat). Marked so it is
+  // excluded from context replay — a restored session must not be told the assistant "said" an
+  // error (see summarizeConversation).
+  error?: boolean
   toolResults?: { name: string; result: string; collapsed: boolean }[]
   proposedAction?: {
     action: string

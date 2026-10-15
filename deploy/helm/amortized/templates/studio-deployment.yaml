@@ -27,9 +27,7 @@ spec:
       containers:
         - name: studio
           image: {{ include "amortized.image" .Values.images.studio }}
-          {{- with .Values.images.studio.pullPolicy }}
-          imagePullPolicy: {{ . }}
-          {{- end }}
+          imagePullPolicy: {{ include "amortized.pullPolicy" .Values.images.studio }}
           ports:
             - name: http
               containerPort: 8080

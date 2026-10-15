@@ -634,9 +634,11 @@ export function useChat() {
           _activeRequests.delete(convId)
           logger.error("OpenCode error", { error: err instanceof Error ? err.message : String(err) })
           // Keep the assistant placeholder and persist the error into it, so the failed
-          // turn survives navigation instead of vanishing.
+          // turn survives navigation instead of vanishing. Flag it as an error so context
+          // replay skips it (a failed turn is not something the assistant actually said).
           useChatStore.getState().updateMessageFields(convId, assistantId, {
             content: `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+            error: true,
           })
           setError(err instanceof Error ? err.message : "Unknown error")
           setChatState("error")

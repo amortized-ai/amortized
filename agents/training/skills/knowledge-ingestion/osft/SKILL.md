@@ -1,8 +1,31 @@
+---
+name: training-knowledge-ingestion-osft
+description: >-
+  Fine-tune a small model with OSFT (Optimized Supervised Fine-Tuning).
+  Recommended for knowledge ingestion, where it outperforms standard SFT by 30+
+  points in open-book settings. Trains a messages-format dataset, from an SDG job
+  (chained via parent_job_id) or an uploaded dataset / split (data_run_id).
+  Covers model selection, hyperparameter tuning by dataset size and compute,
+  OSFT's unfreeze_rank_ratio, and dataset chaining. Bundles the supported-model
+  list and a config template.
+metadata:
+  stage: training
+---
+
 # OSFT Training Guide
 
 OSFT (Optimized Supervised Fine-Tuning) is the recommended training method
 for knowledge ingestion. It outperforms standard SFT by 30+ percentage
 points in open-book settings.
+
+> **Scope.** This guide is written around document-grounded QA, but OSFT/SFT also
+> covers any plain **`messages`-based** fine-tune — including a **generative (LLM)
+> classifier** trained on `sdg-classification`-skill data. For those non-document
+> tasks, skip the document-specific steps below (uploads, chunk/coverage math) and
+> take the training data from the SDG `parent_job_id` as usual; the model,
+> epochs, and learning-rate guidance still apply. (Note: most classifier tasks
+> want the **`sdg-embedding-classifier`** sub-skill instead — this generative path is
+> the rare case where the user explicitly wants an LLM to emit the label.)
 
 ## How This Works
 
@@ -20,9 +43,9 @@ Every parameter is adjustable:
 
 Ask the user:
 
-1. **What model?** — Read `skills/training/supported_models.json` for
-   the list of supported models with HuggingFace IDs, sizes, and
-   descriptions. Present ONLY models from that file — do NOT invent
+1. **What model?** — Read `supported_models.json` (bundled with this
+   skill) for the list of supported models with HuggingFace IDs, sizes,
+   and descriptions. Present ONLY models from that file — do NOT invent
    other sizes or IDs. The model choice affects all other
    hyperparameters — set them after.
 2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the

@@ -8,5 +8,8 @@
       "enabled": true
     }
   },
-  "agent": { "build": { "disable": true }, "plan": { "disable": true } }
+  "agent": {
+    "build": { "disable": true },
+    "plan": { "disable": true }
+  }
 }

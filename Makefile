@@ -38,9 +38,25 @@ build-studio: ## Build studio image
 # Prompt
 # ──────────────────────────────────────────────
 
-AGENTS_DIR   := agents
-K8S_SKILLS   := k8s/base/morty-skills
-HELM_FILES   := deploy/helm/amortized/files
+AGENTS_DIR     := agents
+K8S_SKILLS     := k8s/base/morty-skills
+HELM_FILES     := deploy/helm/amortized/files
+
+# Build the native opencode skill tree at $(1). Every agents/*/skills/**/SKILL.md
+# becomes a skill dir named after its frontmatter `name:`, carrying its sibling
+# files (config template, model list, ...) EXCEPT reference-payload.json, which the
+# server recipe loader (core/recipes.py) reads from agents/ directly. Adding a
+# skill is just dropping a SKILL.md with a `name:` — no edit here.
+define gen_native_skills
+rm -rf $(1); \
+find $(AGENTS_DIR) -path '*/skills/*/SKILL.md' | while read skill; do \
+	d=$$(dirname "$$skill"); \
+	n=$$(sed -n 's/^name:[[:space:]]*//p' "$$skill" | head -1); \
+	if [ -z "$$n" ]; then echo "ERROR: no frontmatter name in $$skill" >&2; exit 1; fi; \
+	mkdir -p "$(1)/$$n"; \
+	find "$$d" -maxdepth 1 -type f ! -name reference-payload.json -exec cp {} "$(1)/$$n/" \; ; \
+done
+endef
 
 prompt: ## Generate k8s configs from agents directory
 	@cat $(AGENTS_DIR)/orchestrator/identity.md $(AGENTS_DIR)/orchestrator/workflow.md > k8s/base/morty-prompt.md
@@ -49,13 +65,8 @@ prompt: ## Generate k8s configs from agents directory
 	@cp $(AGENTS_DIR)/sdg/workflow.md k8s/base/morty-sdg-workflow.md
 	@cp $(AGENTS_DIR)/training/workflow.md k8s/base/morty-training-workflow.md
 	@cp $(AGENTS_DIR)/eval/workflow.md k8s/base/morty-eval-workflow.md
-	@rm -rf $(K8S_SKILLS)
-	@for agent in sdg training; do \
-		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
-			mkdir -p $(K8S_SKILLS)/$$agent; \
-			cp -r $(AGENTS_DIR)/$$agent/skills/* $(K8S_SKILLS)/$$agent/; \
-		fi; \
-	done
+	@# Native opencode skills: expanded in-pod to .opencode/skills/<skill>/SKILL.md.
+	@$(call gen_native_skills,$(K8S_SKILLS))
 	@# Helm chart carries the same persona + skills. A Helm package is self-contained
 	@# (it can't read files outside the chart dir), so the chart needs its own copy of
 	@# agents/ (the single source of truth). These are generated artifacts (gitignored),
@@ -68,12 +79,7 @@ prompt: ## Generate k8s configs from agents directory
 	@cp $(AGENTS_DIR)/sdg/workflow.md $(HELM_FILES)/morty-config/morty-sdg-workflow.md
 	@cp $(AGENTS_DIR)/training/workflow.md $(HELM_FILES)/morty-config/morty-training-workflow.md
 	@cp $(AGENTS_DIR)/eval/workflow.md $(HELM_FILES)/morty-config/morty-eval-workflow.md
-	@for agent in sdg training; do \
-		if [ -d $(AGENTS_DIR)/$$agent/skills ]; then \
-			mkdir -p $(HELM_FILES)/morty-skills/$$agent; \
-			cp -r $(AGENTS_DIR)/$$agent/skills/* $(HELM_FILES)/morty-skills/$$agent/; \
-		fi; \
-	done
+	@$(call gen_native_skills,$(HELM_FILES)/morty-skills)
 	@echo "Generated k8s + Helm configs from $(AGENTS_DIR)/"
 
 # ──────────────────────────────────────────────

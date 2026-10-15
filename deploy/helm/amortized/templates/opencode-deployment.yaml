@@ -76,7 +76,7 @@ spec:
               subPath: morty-training-workflow.md
               readOnly: true
             - name: morty-skills
-              mountPath: /app/workspace/skills
+              mountPath: /app/workspace/.opencode/skills
               readOnly: true
             {{- if eq .Values.model.provider "vertex" }}
             - name: gcp-credentials
@@ -113,10 +113,11 @@ spec:
         - name: morty-skills
           configMap:
             name: morty-skills
-            # Rebuild the skills tree directly: map each flattened ConfigMap key
-            # (sdg__classification__guide.md) back to its nested path
-            # (sdg/classification/guide.md). A ConfigMap volume's items[].path
-            # supports subdirectories, so no init container is needed to rebuild it.
+            # Rebuild the native skill tree directly: map each flattened ConfigMap
+            # key (sdg-classification__SKILL.md) back to its nested path
+            # (sdg-classification/SKILL.md) under .opencode/skills, where opencode
+            # auto-discovers it. A ConfigMap volume's items[].path supports
+            # subdirectories, so no init container is needed to rebuild it.
             items:
             {{- range $path, $_ := .Files.Glob "files/morty-skills/**" }}
             - key: {{ $path | trimPrefix "files/morty-skills/" | replace "/" "__" }}

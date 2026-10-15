@@ -4,13 +4,29 @@ import { getLogger } from "@/lib/logger"
 
 const logger = getLogger("use-providers")
 
+export interface ProviderModel {
+  id: string
+  name: string
+}
+
+export interface ProviderEntry {
+  id: string
+  name?: string
+  models?: ProviderModel[]
+}
+
 interface ProviderListResponse {
-  all: Array<{ id: string }>
+  all: ProviderEntry[]
   default: Record<string, string> | null
   connected: string[]
 }
 
-async function fetchProviderStatus(): Promise<Set<string>> {
+interface ProviderStatus {
+  connected: Set<string>
+  catalog: ProviderEntry[]
+}
+
+async function fetchProviderStatus(): Promise<ProviderStatus> {
   const resp = await fetch(`${getBaseUrl()}/agent/provider`, {
     headers: { "Content-Type": "application/json" },
   })
@@ -19,7 +35,10 @@ async function fetchProviderStatus(): Promise<Set<string>> {
     throw new Error(`Failed to fetch providers: ${resp.status}`)
   }
   const data: ProviderListResponse = await resp.json()
-  return new Set(data.connected ?? [])
+  return {
+    connected: new Set(data.connected ?? []),
+    catalog: Array.isArray(data.all) ? data.all : [],
+  }
 }
 
 export function useProviderStatus() {
@@ -33,6 +52,7 @@ export function useProviderStatus() {
 
   return {
     ...query,
-    connectedProviders: query.data ?? new Set<string>(),
+    connectedProviders: query.data?.connected ?? new Set<string>(),
+    providerCatalog: query.data?.catalog ?? [],
   }
 }

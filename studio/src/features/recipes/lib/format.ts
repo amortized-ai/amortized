@@ -29,6 +29,9 @@ const ALGORITHM_LABELS: Record<string, string> = {
   kto: "KTO",
   gkd: "GKD",
   gepa: "GEPA",
+  embedding_sft: "Embedding Classifier",
+  classifier: "Embedding Classifier",
+  embedding: "Embedding Classifier",
 }
 
 export function formatAlgorithm(algo: string): string {

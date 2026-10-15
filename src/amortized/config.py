@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     compute_namespace: str = Field("amortized-jobs", description="K8s namespace for jobs")
     image_registry: str = Field("ghcr.io/amortized-ai", description="Container image registry")
     image_pull_policy: str = Field("Always", description="K8s image pull policy for job containers")
+    job_image_tag: str = Field(
+        "latest",
+        description="Tag for the amortized-CI job images (eval, data-designer/SDG, document) as "
+        "{image_registry}/<name>:<tag>. Pin to a commit sha for a reproducible release; 'latest' "
+        "tracks main (may be unstable). The training image is separate (see training_image_tag).",
+    )
+    training_image_tag: str = Field(
+        "latest",
+        description="Tag for the training job image (ghcr.io/amortized-ai/training:<tag>). "
+        "Separate from job_image_tag: the training image is built upstream (training-hub), "
+        "not per amortized commit, so pin a published version (e.g. 0.1.0) for a "
+        "reproducible release.",
+    )
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
     mlflow_tracking_token_file: str = Field(
         "",
@@ -114,6 +127,12 @@ class Settings(BaseSettings):
     def resolved_monitor_log_dir(self) -> Path:
         return self.monitor_log_dir or (self.data_dir / "monitor")
 
+    @property
+    def resolved_training_image_tag(self) -> str:
+        """Training image tag, never empty. An empty override must not fall through to
+        job_image_tag (a CI commit sha that has no matching upstream training image)."""
+        return self.training_image_tag or "latest"
+
     model_config = {
         "env_prefix": "AMORTIZED_",
         "extra": "ignore",
@@ -121,3 +140,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def job_image(name: str, tag: str | None = None) -> str:
+    """Full image ref for a job container: ``{image_registry}/{name}:{tag or job_image_tag}``.
+    ``job_image_tag`` pins the amortized-CI job images (eval, data-designer/SDG, document) to a
+    release; pass an explicit ``tag`` for an image on a different lifecycle (the upstream training
+    image uses ``training_image_tag``). Default ``latest`` tracks main."""
+    return f"{settings.image_registry}/{name}:{tag or settings.job_image_tag}"

@@ -49,7 +49,7 @@ async def build(
 
     config_files["config.json"] = json.dumps(config_dict)
 
-    image = f"{config_mod.settings.image_registry}/document:latest"
+    image = config_mod.job_image("document")
 
     input_path = f"{input_dir}/{artifact_path}/{filename}"
     post_commands = [

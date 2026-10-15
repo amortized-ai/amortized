@@ -123,6 +123,7 @@ async def convert_document(
         )
 
     config_dict = {
+        "source": "document",
         "filename": filename,
         "chunker_type": chunker_type.value,
         "chunk_size": chunk_size,
@@ -189,6 +190,7 @@ async def convert_document_url(
         )
 
     config_dict = {
+        "source": "document",
         "filename": filename,
         "chunker_type": opts.chunker_type.value,
         "chunk_size": opts.chunk_size,

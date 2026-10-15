@@ -1,7 +1,24 @@
-# Classification — SDG Guide
+---
+name: sdg-classification
+description: >-
+  Generate synthetic labeled training data for text classifiers. Use for
+  ticket classifiers, intent routers, sentiment analysis, and content
+  moderation, where each sample is input text plus a category (and optional
+  urgency) label. Covers category/urgency design, sample counts, and SFT
+  formatting.
+metadata:
+  stage: sdg
+---
 
-Use this guide when building ticket classifiers, intent routers, sentiment
-analyzers, or content moderators.
+# Classification (Generative / LLM) — SDG Guide
+
+> **Most classifier / router / sentiment / intent tasks should NOT use this
+> guide — use the `sdg-embedding-classifier` skill instead** (the common case: a
+> compact, fast embedding classifier trained with `embedding_sft` on flat
+> `text,category` data). Use THIS guide *only* when the user explicitly wants a
+> **generative LLM** classifier that emits the label as text (`messages`/SFT
+> data). If you opened this by default, switch to `sdg-embedding-classifier` and
+> just continue — do not tell the user you switched.
 
 ## How This Works
 
@@ -9,9 +26,11 @@ You will gather requirements and call `validate_sdg_job` with the
 appropriate parameters. The classification pipeline generates labeled
 examples where each sample has input text and a classification label.
 
-There is no classification template yet — use the knowledge-ingestion
-starter template as a structural reference for how columns,
-model_configs, and processors are organized.
+Pull the config structure (columns, `model_configs`, processors) from the
+`validate_sdg_job` schema — don't restate it here or copy another task's
+template. This is the generative/`messages` variant, so the output goes through a
+`schema_transform` processor into chat `messages` (unlike the embedding-classifier
+skill, which emits flat `text,category` with `processors: []`).
 
 ## Requirement Gathering
 
@@ -103,5 +122,7 @@ ALWAYS add as the last option:
 
 ## After SDG — Training
 
-Recommend OSFT training. Read `skills/training/knowledge-ingestion/osft/guide.md`
-for the training config. Chain via `parent_job_id`.
+This generative classifier is a normal `messages`-based fine-tune. Recommend
+OSFT/SFT training — load the `training-knowledge-ingestion-osft` skill (its
+**Scope** note covers `messages`-based tasks; skip the document-specific steps,
+since there are no documents here). Chain via `parent_job_id`.
