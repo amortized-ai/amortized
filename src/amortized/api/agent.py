@@ -100,10 +100,15 @@ class SessionState:
     subagent_target: str | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     completed_subagents: dict[str, str] = field(default_factory=dict)
-    # (target, opencode_session_id) pairs for subagents that delegated to
-    # another subagent (e.g. eval → sdg). When the delegate completes,
-    # control returns to the delegating subagent, not the orchestrator.
-    subagent_stack: list[tuple[str, str]] = field(default_factory=list)
+    # The consumer (eval/training) that handed back via request_orchestrator_help and awaits
+    # a dataset: pending_help_target is the consumer to RESUME, pending_help_producer is the
+    # producer (sdg) it is WAITING ON. The proxy auto-resumes the consumer only when THAT
+    # producer completes — matching the awaited producer (not merely "some other subagent
+    # finished") stops an unrelated completion during a detour from spuriously resurrecting
+    # the consumer. Both are armed once the orchestrator actually delegates to the producer,
+    # and cleared together on resume/teardown.
+    pending_help_target: str | None = None
+    pending_help_producer: str | None = None
     last_activity: datetime = field(default_factory=lambda: datetime.now(UTC))
     # When this conversation's proxy state was created. A job whose DB created_at
     # predates this is from an EARLIER conversation, so reporting it as "just
@@ -245,7 +250,11 @@ async def _session_cleanup_loop() -> None:
 # Response scanning — detect delegation/completion from tool parts
 # ---------------------------------------------------------------------------
 
-INTERNAL_TOOLS = {"delegate_to_subagent", "signal_subagent_completion"}
+INTERNAL_TOOLS = {
+    "delegate_to_subagent",
+    "signal_subagent_completion",
+    "request_orchestrator_help",
+}
 
 # Injected in place of the generic job-completion nudge when an ACTIVE SUBAGENT's
 # delegated job finishes successfully — a terminal instruction to hand control
@@ -258,6 +267,38 @@ _SUBAGENT_JOB_DONE_PROMPT = (
     "Do NOT call any other tools (no get_job, list_jobs, get_dataset, "
     "get_dataset_samples, or present_options) and do NOT inspect or re-verify the "
     "dataset — hand control back now."
+)
+
+# Counterpart for a FAILED job. Without a defined hand-back, a weak producer keeps control
+# after its job fails (retrying / inspecting) and the flow stalls. Steer it to hand control
+# back immediately with a failure summary, so the proxy can resume the waiting consumer with
+# the bad news instead of hanging.
+_SUBAGENT_JOB_FAILED_PROMPT = (
+    "[SYSTEM EVENT] Your delegated job FAILED. Your task for this delegation is over. Your "
+    "ONLY next action is to call signal_subagent_completion with a short summary that states "
+    "the job FAILED and includes the job ID. Do NOT retry and do NOT call any other tools — "
+    "hand control back now."
+)
+
+# Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
+# a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
+# The orchestrator is the sole delegator, so its one job is to run the producing
+# subagent (sdg) — handing it ONLY a plain dataset build-order, never the caller's
+# {context} (that note is for the orchestrator; the producer is a leaf and must not
+# learn the rest of the pipeline exists). The resume is NOT its job — when the producer
+# completes, the proxy resumes the requester automatically (see pending_help_target).
+# {target}/{need}/{context} are filled from the caller's target and the tool's arguments.
+_SUBAGENT_HELP_PROMPT = (
+    "[SUBAGENT NEEDS HELP]\n"
+    "The {target} workflow needs a dataset it cannot produce itself.\n\n"
+    "dataset needed: {need}\n\n"
+    "background for YOU (do NOT pass this on): {context}\n\n"
+    "Your ONLY action this turn: a single delegate_to_subagent call to the producer "
+    '(target "sdg", resume: false). Its context must be ONLY a plain build order for '
+    "the dataset above, worded as if a user asked for that dataset directly — do NOT "
+    "mention the {target} step, resuming, waiting, or anything else about the pipeline "
+    "(the producer is a leaf and must not know the rest exists). The platform resumes "
+    "the {target} agent automatically once the job finishes."
 )
 
 
@@ -294,6 +335,21 @@ def _detect_completion(parts: list[dict[str, Any]]) -> str | None:
         if _tool_name(part) == "signal_subagent_completion":
             inp = _get_tool_input(part)
             return str(inp.get("summary", "")) or "Task completed."
+    return None
+
+
+def _detect_help_request(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """A subagent's request_orchestrator_help call → (need, context), else None.
+
+    A subagent is a leaf: it cannot delegate. When it needs a prerequisite it can't
+    produce itself (e.g. the eval agent needs a held-out dataset), it hands back to
+    the orchestrator with this structured request instead."""
+    for part in parts:
+        if part.get("type") != "tool":
+            continue
+        if _tool_name(part) == "request_orchestrator_help":
+            inp = _get_tool_input(part)
+            return (str(inp.get("need", "")), str(inp.get("context", "")))
     return None
 
 
@@ -650,7 +706,6 @@ async def _grounded_corpus(
     if state.subagent_id:
         sessions.add(state.subagent_id)
     sessions.update(state.completed_subagents.values())
-    sessions.update(sid for _t, sid in state.subagent_stack)
 
     chunks: list[str] = []
     for sid in sessions:
@@ -922,12 +977,11 @@ async def _fetch_job_by_token(
 
 def _session_ids(state: SessionState) -> set[str]:
     """Every opencode session making up this conversation — the orchestrator plus
-    the active and completed/stashed subagents."""
+    the active and completed subagents."""
     sessions = {state.orchestrator_id}
     if state.subagent_id:
         sessions.add(state.subagent_id)
     sessions.update(state.completed_subagents.values())
-    sessions.update(sid for _t, sid in state.subagent_stack)
     return sessions
 
 
@@ -1669,9 +1723,9 @@ async def _run_turn(
             result = await _apply_provenance_gate(state, result, body, msg_cache)
             result = await _apply_job_claim_gate(state, result, body, msg_cache)
             # Backfill the UI phase uniformly for every path (subagent completion,
-            # subagent→subagent delegation, orchestrator) — not just the one return
-            # inside the subagent handler — so the progress bar never strands on a
-            # stale phase on a hand-back/delegation turn.
+            # subagent help hand-back, orchestrator) — not just the one return inside
+            # the subagent handler — so the progress bar never strands on a stale
+            # phase on a hand-back/delegation turn.
             result = _ensure_phase_signal(state, result)
             result = _enforce_single_interaction(result, state)
             # Hard rail: if the gate held a committing card (unmet precondition), correct
@@ -1782,18 +1836,24 @@ async def _handle_subagent_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    # A subagent whose delegated job just finished successfully is done: steer it
-    # to hand control back immediately, instead of the generic "suggest next
-    # steps" nudge (which left weaker models looping on post-job inspection calls
-    # and never signalling completion). Only on success — a failed job still needs
-    # the subagent's own failure handling.
-    if body.event == "job_complete" and _job_succeeded(body, user_text):
-        # Keep the event text (it carries the job id the completion summary must report and
-        # the grounding corpus needs) and append the hand-back steer — don't replace it.
-        user_text = f"{user_text}\n\n{_SUBAGENT_JOB_DONE_PROMPT}"
+    # A subagent whose delegated job just finished is done: steer it to hand control back
+    # immediately, instead of the generic "suggest next steps" nudge (which left weaker
+    # models looping on post-job inspection calls and never signalling completion). BOTH
+    # outcomes get a defined hand-back — success resumes the waiting consumer with the
+    # dataset, failure resumes it with the bad news. (A failed job previously got no
+    # hand-back steer, so the producer kept control and the flow could stall.)
+    job_failed = False
+    if body.event == "job_complete":
+        # Keep the event text (it carries the job id both hand-back prompts must report and
+        # the grounding corpus needs) and append the steer — don't replace it.
+        if _job_succeeded(body, user_text):
+            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_DONE_PROMPT}"
+        else:
+            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_FAILED_PROMPT}"
+            job_failed = True
     else:
         # Deliver any steer the interaction gate parked on a prior held-card turn as the
-        # lead of this message. Skipped on a job_complete event (which replaces user_text
+        # lead of this message. Skipped on a job_complete event (which appends to user_text
         # above) so the steer stays parked for the next real turn instead of being lost.
         user_text = _consume_interaction_steer(state, user_text)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
@@ -1809,27 +1869,65 @@ async def _handle_subagent_message(
             logger.warning("Subagent session gone, tearing down: session=%s", session_id)
             state.subagent_id = None
             state.subagent_target = None
-            state.subagent_stack.clear()
+            state.pending_help_target = None
+            state.pending_help_producer = None
         raise
     except Exception:
         logger.exception("Subagent message failed: session=%s", session_id)
         raise
 
     latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
+    # Completion is checked before a help request: if a turn somehow carries both
+    # signals, "I'm done" wins and the help ask is ignored (a subagent that is
+    # finishing has nothing left to be helped with).
     summary = _detect_completion(latest_parts)
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
-        if state.subagent_target and state.subagent_id:
-            state.completed_subagents[state.subagent_target] = state.subagent_id
+        completer = state.subagent_target
+        if completer and state.subagent_id:
+            state.completed_subagents[completer] = state.subagent_id
         state.subagent_id = None
         state.subagent_target = None
 
-        if state.subagent_stack:
-            # A subagent delegated to this one (e.g. eval → sdg). Return
-            # control to the delegating subagent with the summary so it can
-            # continue its own workflow with full context.
-            resume_result = await _resume_parent_subagent(state, summary, body)
+        if state.pending_help_target and completer == state.pending_help_producer:
+            # Backend-driven resume: the producer (e.g. sdg) the consumer was WAITING ON just
+            # finished the prerequisite it requested via request_orchestrator_help. Resume
+            # that consumer directly instead of asking the orchestrator model to infer it —
+            # deterministic, so it can't misfire. Gating on the awaited producer (not "any
+            # other subagent finished") avoids resurrecting the consumer off an unrelated
+            # completion during a detour.
+            target = state.pending_help_target
+            state.pending_help_target = None
+            state.pending_help_producer = None
+            logger.info("Auto-resuming help requester: session=%s target=%s", session_id, target)
+            if job_failed:
+                resume_context = (
+                    f"The {target} prerequisite you requested could NOT be produced — the "
+                    f"job failed:\n{summary}\n\n"
+                    "Tell the user the dataset isn't available and ask how they want to "
+                    "proceed. Do NOT assume the data exists or continue as if it succeeded."
+                )
+            else:
+                resume_context = (
+                    f"The {target} prerequisite you requested is ready.\n{summary}\n\n"
+                    "Continue your own workflow with this result — do not restart it or "
+                    "re-ask the user for anything you already have."
+                )
+            resume_result = await _maybe_delegate(
+                state, session_id, (target, resume_context, True), summary, result, body
+            )
+            # The resumed consumer may itself finish in this same turn (e.g. eval scores and
+            # signals completion right after getting its dataset). Detect that and release
+            # control — otherwise it stays assigned to the consumer, with its completion
+            # stripped from the UI, until an unrelated next user turn.
+            if state.subagent_id and _detect_completion(
+                await _fetch_all_assistant_parts(state.subagent_id)
+            ):
+                if state.subagent_target:
+                    state.completed_subagents[state.subagent_target] = state.subagent_id
+                state.subagent_id = None
+                state.subagent_target = None
         else:
             resume_prompt = (
                 f"[SUBAGENT COMPLETED]\n{summary}\n\n"
@@ -1847,58 +1945,46 @@ async def _handle_subagent_message(
         result["info"] = resume_result.get("info", result.get("info", {}))
         return result
 
-    # A subagent may itself delegate (e.g. the eval agent hands off to the
-    # SDG agent to build a held-out eval set). Honor it: stash the current
-    # subagent on the stack so control returns here when the new one
-    # completes, then route to the new subagent.
-    delegation = _detect_delegation(latest_parts)
-    if delegation:
-        target, _, _ = delegation
-        logger.info(
-            "Subagent delegation: session=%s %s → %s",
-            session_id, state.subagent_target, target,
-        )
-        state.subagent_stack.append((state.subagent_target, state.subagent_id))  # type: ignore[arg-type]
-        sub_result = await _maybe_delegate(state, session_id, delegation, user_text, result, body)
+    # A subagent is a leaf — it cannot delegate. When it needs a prerequisite it
+    # can't produce itself (e.g. the eval agent needs a held-out dataset), it hands
+    # back via request_orchestrator_help. Stash the caller (as a completion does), let the
+    # orchestrator run the producer, then arm the auto-resume bound to that producer so when
+    # it completes the proxy resumes this caller automatically — the orchestrator only has to
+    # make the first hop (delegate to the producer), never the resume.
+    help_request = _detect_help_request(latest_parts)
+    if help_request and state.subagent_target and state.subagent_id:
+        need, help_context = help_request
+        target = state.subagent_target
+        logger.info("Subagent help request: session=%s target=%s", session_id, target)
+        state.completed_subagents[target] = state.subagent_id
+        state.subagent_id = None
+        state.subagent_target = None
+        seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
+        morty_result = await _orchestrator_turn(state, seed, body)
+        delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
+        # The leaf's [USER MESSAGE] is the dataset ask (need), NOT the orchestrator seed —
+        # the seed is the orchestrator's instruction sheet ("delegate to sdg…") and must
+        # never reach the producer, or a weak model obeys it instead of generating.
+        help_result = await _maybe_delegate(state, session_id, delegation, need, morty_result, body)
+        # Arm the auto-resume ONLY if the orchestrator actually delegated to a producer (now
+        # the active subagent): resume THIS consumer when THAT producer completes. If the
+        # orchestrator asked a clarifying question instead of delegating, there is no producer
+        # to await — leave the resume disarmed so an unrelated later completion can't
+        # resurrect the consumer (it stays stashed for an explicit resume).
+        if state.subagent_id and state.subagent_target and state.subagent_target != target:
+            state.pending_help_target = target
+            state.pending_help_producer = state.subagent_target
         response_parts = _strip_internal_tools(result.get("parts", []))
-        sub_result["parts"] = response_parts + _strip_internal_tools(sub_result.get("parts", []))
-        return sub_result
+        help_result["parts"] = response_parts + _strip_internal_tools(
+            help_result.get("parts", [])
+        )
+        return help_result
 
-    # Phase backfill is applied uniformly by _run_turn for every return path.
+    # Ordinary subagent turn (no completion, no help request). Strip internal tools
+    # defensively so a stray/denied hand-back call a subagent emits here is never
+    # surfaced to the user. Phase backfill is applied uniformly by _run_turn.
+    result["parts"] = _strip_internal_tools(result.get("parts", []))
     return result
-
-
-async def _resume_parent_subagent(
-    state: SessionState,
-    summary: str,
-    body: MessageRequest,
-) -> dict[str, Any]:
-    """Hand control back to the subagent that delegated, with the summary."""
-    parent_target, parent_id = state.subagent_stack.pop()
-    logger.info("Returning to parent subagent: target=%s", parent_target)
-    state.subagent_id = parent_id
-    state.subagent_target = parent_target
-
-    resume_prompt = (
-        f"[SUBAGENT COMPLETED]\n{summary}\n\n"
-        "The delegated workflow finished. Continue your own workflow with "
-        "this result — do not restart it or re-ask the user for information "
-        "you already have."
-    )
-    parent_result = await _proxy_send_message(
-        parent_id,
-        resume_prompt,
-        agent=parent_target,
-        model=body.model
-    )
-
-    # The parent may delegate again (e.g. on to another workflow); honor it
-    # the same way as the initial subagent delegation.
-    delegation = _detect_delegation(await _fetch_all_assistant_parts(parent_id))
-    if delegation:
-        state.subagent_stack.append((parent_target, parent_id))
-        return await _maybe_delegate(state, "", delegation, resume_prompt, parent_result, body)
-    return parent_result
 
 
 async def _orchestrator_turn(
@@ -1907,13 +1993,6 @@ async def _orchestrator_turn(
     body: MessageRequest,
 ) -> dict[str, Any]:
     return await _proxy_send_message(state.orchestrator_id, text, agent="morty", model=body.model)
-
-
-# A subagent may hand off to another subagent (e.g. eval → sdg), which
-# may hand off again. Bound the chain: each level holds an opencode
-# session open, and an agent stuck in a delegate loop would otherwise
-# grow the stack without limit.
-MAX_SUBAGENT_DEPTH = 4
 
 
 async def _maybe_delegate(
@@ -1928,25 +2007,6 @@ async def _maybe_delegate(
         return morty_result
 
     target, context, resume = delegation
-
-    if len(state.subagent_stack) >= MAX_SUBAGENT_DEPTH:
-        logger.warning(
-            "Subagent delegation depth limit reached: session=%s depth=%d",
-            session_id, len(state.subagent_stack),
-        )
-        return {
-            "info": morty_result.get("info", {}),
-            "parts": [
-                {
-                    "type": "text",
-                    "text": (
-                        "I can't hand this off further — the workflow has"
-                        " nested too many agents. Let's continue here"
-                        " instead of delegating again."
-                    ),
-                }
-            ],
-        }
 
     advisory = await _delegation_advisory(state, target, context, user_text)
     if advisory:

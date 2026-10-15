@@ -400,3 +400,45 @@ async def signal_subagent_completion(
     body: SubagentCompletionRequest,
 ) -> SubagentCompletionResponse:
     return SubagentCompletionResponse()
+
+
+class RequestOrchestratorHelpRequest(BaseModel):
+    need: str = Field(
+        ...,
+        description=(
+            "Short description of the prerequisite you cannot produce yourself and "
+            "need before you can finish (e.g. 'a held-out eval dataset for training "
+            "job <id>'). You run your OWN job; use this ONLY when a DIFFERENT kind of "
+            "job must run first."
+        ),
+    )
+    context: str = Field(
+        ...,
+        description=(
+            "Everything the orchestrator needs to fulfill the prerequisite AND resume "
+            "you afterward with continuity: what you were doing and the step to resume "
+            "at, the relevant job/model IDs, and the choices already made (e.g. the "
+            "eval subject and judge). The orchestrator has no memory of your session, "
+            "so this is all it has."
+        ),
+    )
+
+
+class RequestOrchestratorHelpResponse(BaseModel):
+    status: str = Field("ok")
+
+
+@router.post(
+    "/request_orchestrator_help",
+    response_model=RequestOrchestratorHelpResponse,
+    operation_id="request_orchestrator_help",
+    summary=(
+        "Hand back to the orchestrator to run a prerequisite job you cannot produce "
+        "yourself (e.g. generating a dataset), then resume you where you left off. "
+        "Use ONLY when a different kind of job must run first — never for your own job."
+    ),
+)
+async def request_orchestrator_help(
+    body: RequestOrchestratorHelpRequest,
+) -> RequestOrchestratorHelpResponse:
+    return RequestOrchestratorHelpResponse()
