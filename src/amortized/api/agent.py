@@ -23,7 +23,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api.agent_claims import (
-    _AWAIT_UPSTREAM_GUIDANCE,
     _job_claim_caveat,
     _job_claim_correction,
 )
@@ -1077,79 +1076,6 @@ async def _no_data_advisory(state: SessionState, target: str) -> str | None:
     )
 
 
-# A job that has not reached a terminal state — the step that depends on it cannot
-# advance yet. (Terminal = succeeded/failed/cancelled; failed/cancelled are handled
-# by the subagent's own failure path, not the "wait" advisory.)
-_INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
-
-# The upstream producer types each data-dependent target depends on — used only to
-# scope the delegation advisory, so an in-flight job of a type the target does NOT
-# depend on (unrelated work mentioned alongside the handoff) is not treated as a
-# prerequisite. The hard gate is field-driven (lineage.present_gated_fields); this is
-# the soft, prose-level companion and does not enforce anything.
-_TARGET_UPSTREAM_TYPES = {"training": {"sdg"}, "eval": {"sdg", "training"}}
-
-
-async def _upstream_not_ready_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
-    """The stage-gate at the delegation boundary (companion to the validate-time
-    'not_ready' check). When a training/eval handoff cites an upstream job that is
-    still in flight, steer the subagent to report the true status and wait rather
-    than build/confirm a downstream job whose prerequisite hasn't finished.
-
-    Keyed on the dependency graph, not symptoms. Only data-dependent downstream targets
-    (training/eval) are considered, and only a cited job whose *type is a producer* for
-    that target (_TARGET_UPSTREAM_TYPES) counts — an in-flight job of an unrelated type
-    the target does not depend on is NOT a prerequisite, so mentioning it (extra work
-    done alongside) does not block the handoff. A delegation to SDG (e.g. cloning a
-    recipe for an eval set "while training runs") is not a _DATA_DEPENDENT_TARGET, so
-    concurrent eval-set prep stays allowed. Fail-safe: any uncertainty/error returns
-    None, leaving the handoff unchanged.
-    """
-    if target not in _DATA_DEPENDENT_TARGETS:
-        return None
-    producers = _TARGET_UPSTREAM_TYPES.get(target, set())
-    try:
-        for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
-            job = await _fetch_job_by_token(token)
-            if not job or str(job.get("type") or "") not in producers:
-                continue  # not a job type this target depends on — not a prerequisite
-            if str(job.get("status") or "") in _INFLIGHT_STATUSES:
-                status = str(job.get("status") or "")
-                return (
-                    "[UPSTREAM NOT READY]\n"
-                    f"An upstream job this {target} step depends on ({token}) is still"
-                    f" '{status}', not finished. Do NOT build, confirm, or create the"
-                    f" {target} job yet — it cannot run until that job succeeds."
-                    f" Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
-                )
-    except Exception:
-        return None
-    return None
-
-
-async def _delegation_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
-    """The single ordered precondition gate at the delegation boundary — one evaluator
-    for all 'don't build the downstream job yet' preconditions, returning the FIRST
-    unmet one (or None), never stacking two overlapping advisories into one handoff.
-
-    Order is the dependency order the user must resolve: the DATA-AVAILABILITY fork
-    comes first — until a dataset is chosen there is nothing downstream to gate, and
-    naming an in-flight upstream would be premature (there may be no upstream at all).
-    Only once data is in play does the UPSTREAM-READY check apply (its upstream exists
-    and must be 'succeeded'). Folding the two sibling gates here removes the class of
-    double-fire where both prepend to the same handoff. New delegation preconditions
-    slot in as another ordered step, mirroring the confirm-card precondition order in
-    _enforce_single_interaction (prompt review → preview approval → confirm)."""
-    advisory = await _no_data_advisory(state, target)
-    if advisory:
-        return advisory
-    return await _upstream_not_ready_advisory(state, target, context, user_text)
-
-
 async def _job_claim_violations(
     state: SessionState,
     result: dict[str, Any],
@@ -2014,7 +1940,7 @@ async def _maybe_delegate(
 
     target, context, resume = delegation
 
-    advisory = await _delegation_advisory(state, target, context, user_text)
+    advisory = await _no_data_advisory(state, target)
     if advisory:
         context = f"{advisory}\n\n{context}" if context else advisory
 

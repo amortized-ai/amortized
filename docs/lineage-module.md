@@ -1,7 +1,7 @@
 # Design: field-driven job-dependency enforcement (`core/lineage.py`)
 
 **Status:** implemented. `core/lineage.py` (field-driven gate + upstream traversal) +
-Layer 1 / Layer 2 rewiring + producer-scoped delegation advisory + `tests/test_lineage.py`.
+Layer 1 / Layer 2 rewiring + `tests/test_lineage.py`.
 **Branch:** `feat/lineage` (off `main`)
 
 ## Problem
@@ -61,15 +61,15 @@ only owns *which* fields are gated references and how to walk them.
   training, validate_eval_job → eval}` — tool names are a proxy concept, so this lives in
   the proxy, not the pure module), then `present_gated_fields(tool_input)` gates each
   referenced upstream.
-- **Delegation advisory** (`_upstream_not_ready_advisory`): the soft, prose-level
-  companion at the handoff boundary. It is scoped to the target's upstream producer types
-  via a small local map in `agent.py` (`_TARGET_UPSTREAM_TYPES = {"training": {"sdg"},
-  "eval": {"sdg", "training"}}`) so an in-flight job of a type the target does **not**
-  depend on — unrelated work mentioned alongside the handoff — is not treated as a
-  prerequisite. Fail-safe: any uncertainty returns `None`, leaving the handoff unchanged.
 - **Stale-reuse check** (`_dispatch_provenance_violations`): uses `_DISPATCH_PARENT_TYPE`,
   derived in `agent.py` as `_DISPATCH_JOB_TYPE` minus SDG — the data-dependent downstream
   types (SDG is a dataset producer, not a consumer of one).
+
+The only soft, prose-level advisory left at the delegation boundary is the **data
+availability fork** (`_no_data_advisory`): when no dataset has been chosen this
+conversation, steer the subagent to let the user pick existing-vs-fresh rather than
+default to SDG. The earlier *upstream-not-ready* advisory was removed — it duplicated the
+hard create-time/dispatch gate in prose and needed prose job-id scraping to work.
 
 Create-time 422 behavior is unchanged for the real graph.
 
@@ -88,9 +88,9 @@ with the agent prompts. It was dropped as **not necessary** for correctness and
   failures exactly when iterating. The small win (catching a gated field the prompts never
   mention) did not justify that friction; prompt/code agreement is caught in review.
 
-The residual type-relationship facts (which tools are committing dispatches, advisory
-producer scoping) are tiny local constants in `agent.py` at their call sites, not a shared
-graph. `jobs.py` deals in job types directly and never needs them.
+The residual type knowledge (which tools are committing dispatches) is a tiny local
+constant in `agent.py` at its call site, not a shared graph. `jobs.py` deals in job types
+directly and never needs it.
 
 ## Tests
 
@@ -98,4 +98,4 @@ graph. `jobs.py` deals in job types directly and never needs them.
   any-type coverage, empty when no reference); ancestry (`job_ref`, full-chain walk,
   nearest-ancestor single/multi-hop, type-set, cycle-safety). ✅
 - `tests/test_agent_stage_gate.py`: Layer-2 not-ready gate, SDG dispatch is field-driven (no
-  special case), delegation advisory producer scoping. ✅
+  special case), the data-availability fork (`_no_data_advisory`). ✅
