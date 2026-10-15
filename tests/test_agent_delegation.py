@@ -208,7 +208,7 @@ class TestRequestOrchestratorHelp:
         async def _no_advisory(*_a: Any, **_k: Any) -> None:
             return None
 
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        monkeypatch.setattr(agent, "_no_data_advisory", _no_advisory)
 
         # The orchestrator only makes the FIRST hop (delegate to sdg). It is NOT scripted
         # to resume — the proxy resumes the requester automatically when sdg completes.
@@ -334,7 +334,7 @@ class TestRequestOrchestratorHelp:
         async def _no_advisory(*_a: Any, **_k: Any) -> None:
             return None
 
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        monkeypatch.setattr(agent, "_no_data_advisory", _no_advisory)
         state = _make_state(router)
         eval_id = router.add_session(
             [[_tool_part("signal_subagent_completion", {"summary": "eval done; scored 0.9"})]]
@@ -364,7 +364,7 @@ class TestRequestOrchestratorHelp:
         async def _no_advisory(*_a: Any, **_k: Any) -> None:
             return None
 
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        monkeypatch.setattr(agent, "_no_data_advisory", _no_advisory)
         state = _make_state(router)
         eval_id = router.add_session([[_text_part("I'll tell the user the data isn't available.")]])
         state.completed_subagents = {"eval": eval_id}

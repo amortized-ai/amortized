@@ -1,13 +1,11 @@
 """Tests for the Layer-2 stage-gate in the agent proxy.
 
-The stage-gate enforces the dependency invariant at the proxy: a training/eval step
-must not advance while an upstream job it depends on (the SDG dataset, or the model
-under eval) is not yet 'succeeded'. Two companion checks:
-  - a validate-time 'not_ready' violation (the dispatch tool call references an
-    in-flight upstream) that force-corrects Morty to report status and wait, and
-  - a delegation-boundary advisory (_upstream_not_ready_advisory) that steers a
-    subagent handoff the same way.
-Concurrent eval-set prep (an SDG clone while training runs) is NOT gated.
+The stage-gate enforces the dependency invariant at the proxy: a committing dispatch
+must not advance while an upstream job it references (the SDG dataset, or the model
+under eval) is not yet 'succeeded' — a validate-time 'not_ready' violation that
+force-corrects Morty to report status and wait. It is field-driven, so no job type is
+special-cased. Also covered here: the data-availability fork at the delegation boundary
+(_no_data_advisory).
 """
 
 import asyncio
@@ -110,7 +108,7 @@ class TestNotReadyGate:
     def test_training_on_inflight_sdg_corrects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(monkeypatch, {"sdgjob0001": _job(status="queued", jtype="sdg")})
-        out = _run(
+        _run(
             agent._apply_job_claim_gate(
                 state,
                 _dispatch_result("validate_training_job", {"parent_job_id": "sdgjob0001"}),
@@ -118,9 +116,8 @@ class TestNotReadyGate:
             )
         )
         assert len(sent) == 1
-        assert "the training dataset's job" in sent[0]
+        assert "the upstream job that produced this job's input" in sent[0]
         assert "'queued'" in sent[0]
-        _ = out
 
     def test_succeeded_upstream_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
@@ -139,16 +136,23 @@ class TestNotReadyGate:
         assert sent == []  # every upstream succeeded -> no gate
         assert out is result
 
-    def test_concurrent_sdg_prep_not_gated(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Cloning an SDG recipe for an eval set while training still runs: validate_sdg_job
-        # is not a gated dispatch, so an in-flight training_job_id in its input is ignored.
+    def test_sdg_dispatch_is_field_driven(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SDG gets no special case: an SDG dispatch that chains from an in-flight parent
+        # is gated like any other, and one with no upstream reference is not.
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {"trainjob01": _job(status="running", jtype="training")})
-        result = _dispatch_result(
-            "validate_sdg_job", {"training_job_id": "trainjob01"}
+        _patch(monkeypatch, {"sdgjob0001": _job(status="running", jtype="sdg")})
+        gated = _run(
+            agent._not_ready_violations(
+                state, _dispatch_result("validate_sdg_job", {"parent_job_id": "sdgjob0001"}), {}
+            )
         )
-        violations = _run(agent._not_ready_violations(state, result, {}))
-        assert violations == []
+        assert [v["kind"] for v in gated] == ["not_ready"]
+        ungated = _run(
+            agent._not_ready_violations(
+                state, _dispatch_result("validate_sdg_job", {"num_records": 1000}), {}
+            )
+        )
+        assert ungated == []
 
     def test_no_double_fire_with_stale_reuse(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # An upstream that is BOTH in-flight AND older than the session would match the
@@ -165,52 +169,11 @@ class TestNotReadyGate:
         assert violations[0]["token"] == "sdgjob00"
 
 
-class TestUpstreamNotReadyAdvisory:
-    _TID = "a1b2c3d4-1111-2222-3333-444455556666"
-
-    def test_eval_delegation_cites_inflight_training_advises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
-        advisory = _run(
-            agent._upstream_not_ready_advisory(
-                state, "eval", f"evaluate the tuned model from job {self._TID}", ""
-            )
-        )
-        assert advisory is not None
-        assert "[UPSTREAM NOT READY]" in advisory
-        assert "'running'" in advisory
-        assert "Do NOT build, confirm, or create" in advisory
-
-    def test_sdg_delegation_not_advised(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Delegating to SDG (e.g. clone the recipe for an eval set) is not data-dependent
-        # downstream, so concurrent prep while training runs is never gated here.
-        state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
-        advisory = _run(
-            agent._upstream_not_ready_advisory(
-                state, "sdg", f"clone recipe from training job {self._TID}", ""
-            )
-        )
-        assert advisory is None
-
-    def test_succeeded_upstream_no_advisory(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="succeeded", jtype="training")})
-        advisory = _run(
-            agent._upstream_not_ready_advisory(
-                state, "eval", f"evaluate model from job {self._TID}", ""
-            )
-        )
-        assert advisory is None
-
-
-class TestDelegationAdvisory:
-    """The ordered delegation-boundary gate: one evaluator returns the FIRST unmet
-    precondition (data fork → upstream ready), never both stacked into one handoff."""
-
-    _TID = "a1b2c3d4-1111-2222-3333-444455556666"
+class TestNoDataAdvisory:
+    """The data-availability fork at the delegation boundary: when no dataset has been
+    chosen this conversation, steer the subagent to let the user pick existing-vs-fresh
+    rather than silently defaulting to SDG. (The upstream-not-ready advisory was removed
+    — the hard create-time/dispatch gate owns 'prerequisite not finished'.)"""
 
     @staticmethod
     def _patch_has_data(monkeypatch: pytest.MonkeyPatch, has_data: bool) -> None:
@@ -219,47 +182,20 @@ class TestDelegationAdvisory:
 
         monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
 
-    def test_no_data_wins_and_does_not_also_stack_upstream(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # No dataset chosen AND an in-flight job is cited: the data fork is the decision
-        # to make first; the upstream advisory must NOT also be appended.
+    def test_fires_when_no_dataset_chosen(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
         self._patch_has_data(monkeypatch, False)
-        advisory = _run(
-            agent._delegation_advisory(
-                state, "training", f"train using job {self._TID}", ""
-            )
-        )
+        advisory = _run(agent._no_data_advisory(state, "training"))
         assert advisory is not None
         assert "[DATA AVAILABILITY]" in advisory
-        assert "[UPSTREAM NOT READY]" not in advisory  # no double-fire
 
-    def test_upstream_check_applies_once_data_is_in_play(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_none_when_data_already_chosen(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
         self._patch_has_data(monkeypatch, True)
-        advisory = _run(
-            agent._delegation_advisory(
-                state, "eval", f"evaluate the model from job {self._TID}", ""
-            )
-        )
-        assert advisory is not None
-        assert "[UPSTREAM NOT READY]" in advisory
-        assert "[DATA AVAILABILITY]" not in advisory
+        assert _run(agent._no_data_advisory(state, "eval")) is None
 
-    def test_no_advisory_when_data_chosen_and_upstream_succeeded(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_none_for_non_data_dependent_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SDG is not a data-dependent downstream target, so the fork never applies.
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="succeeded", jtype="training")})
-        self._patch_has_data(monkeypatch, True)
-        advisory = _run(
-            agent._delegation_advisory(
-                state, "eval", f"evaluate the model from job {self._TID}", ""
-            )
-        )
-        assert advisory is None
+        self._patch_has_data(monkeypatch, False)
+        assert _run(agent._no_data_advisory(state, "sdg")) is None
