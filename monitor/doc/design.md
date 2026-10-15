@@ -106,14 +106,27 @@ They are judged from assistant prose + `present_options` outputs + tool outputs
 (tool *inputs* / submitted configs aren't in the transcript), so each criterion is
 one observable there.
 
-### Redundancy rows (aspect F)
+### Redundancy rows (aspect F) — lexical + semantic
 
-Two `llm_judge` rows guard against repetitive prompting, judged from the logged
-`present_options` prompts (the question + options live in the tool *output*):
-`no_repeated_decisions` (Morty re-asks a point the user already decided in a
-previous/recent turn) and `no_duplicate_options` (a single prompt offers two
-options that mean the same thing). User replies aren't logged, so the judge treats
-a decision as already-made when the same choice was presented/recorded earlier.
+The duplicate/repeated-option checks are graded in **two tiers**:
+
+1. **Lexical (deterministic)** — `no_duplicate_options_auto` / `no_repeated_decisions_auto`
+   use the `duplicate_options` / `repeated_decision` matchers (`scorer/similarity.py`,
+   token-set Jaccard with `SIM_HIGH`/`SIM_GRAY` bands). They flag clear near-identical
+   option titles / re-asked questions deterministically: high overlap → `wrong`, gray
+   band → `review`, numeric-only differences treated as distinct, `repeated_decision`
+   scoped per delegation segment so training-set vs eval-set size aren't conflated.
+2. **Semantic (LLM backstop)** — the `no_duplicate_options` / `no_repeated_decisions`
+   `llm_judge` rows catch paraphrases the lexical tier misses (same meaning, different
+   wording), judged from the logged `present_options` question + option titles. User
+   replies aren't logged, so a decision is treated as already-made when the same choice
+   was presented earlier.
+
+> **Pending:** an **embedding-based** semantic tier (a deterministic `--embeddings`
+> path between lexical and full-LLM — cosine over option/question embeddings) was
+> deferred. Today it's lexical + LLM only; add `--embeddings` to catch paraphrase
+> duplicates without an LLM call. (Decision at design time: lexical default + optional
+> embeddings; the llm_judge rows stay the semantic backstop either way.)
 
 ## End-to-end testing loop
 
