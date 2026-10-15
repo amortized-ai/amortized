@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api import monitor_log
-from amortized.api.monitor_redact import redact
+from amortized.api.monitor_redact import scrub_text
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -393,10 +393,13 @@ async def _record_turn_metrics(
                         entry["status"] = part_state.get("status")
                     output = part_state.get("output")
                     if isinstance(output, str) and output:
-                        entry["output"] = output
-                # Promoted scalars — kept as first-class fields so the existing
-                # matchers read them directly (back-compat). The full redacted input
-                # is also captured below, so new offline checks need no logger edit.
+                        # tool output can echo endpoint creds -> value-scrub it
+                        entry["output"] = scrub_text(output)
+                # Allowlist: capture ONLY these known-safe input fields per tool. We
+                # never store the raw input dict, so secrets (api_key, base_url, …)
+                # never enter the log and there is no denylist to maintain. A new
+                # input-derived check adds the field it needs here. Free-text fields
+                # are value-scrubbed in case a user pasted a secret into a prompt.
                 if name == "delegate_to_subagent":
                     entry["target"] = inp.get("target")
                     # solo = the delegating message was the delegate call alone.
@@ -419,7 +422,8 @@ async def _record_turn_metrics(
                     mode = inp.get("mode")
                     if mode:
                         entry["mode"] = mode
-                    # Eval requires an explicit judge; promote its model name.
+                    # Eval requires an explicit judge; promote its model name only
+                    # (never the judge's base_url/api_key).
                     judge = inp.get("judge")
                     if isinstance(judge, dict) and judge.get("model"):
                         entry["judge"] = judge["model"]
@@ -433,11 +437,11 @@ async def _record_turn_metrics(
                 elif name == "present_options":
                     question = inp.get("question")
                     if question:
-                        entry["question"] = question
+                        entry["question"] = scrub_text(str(question))
                     options = inp.get("options")
                     if isinstance(options, list):
                         titles = [
-                            opt["title"]
+                            scrub_text(str(opt["title"]))
                             for opt in options
                             if isinstance(opt, dict) and opt.get("title")
                         ]
@@ -450,13 +454,11 @@ async def _record_turn_metrics(
                     skill_name = inp.get("name")
                     if skill_name:
                         entry["skill"] = skill_name
-                # Full tool input, secrets masked + size-bounded. Removes the
-                # "signal must be pre-captured" constraint: offline checks can read
-                # any input field (and all tools' inputs, not just the ones promoted
-                # above) without a logger change.
-                redacted = redact(inp)
-                if redacted:
-                    entry["input"] = redacted
+                elif name == "get_job":
+                    # job_id lets job_monitored correlate the poll to the created job.
+                    job_id = inp.get("job_id")
+                    if job_id:
+                        entry["job_id"] = job_id
                 tool_calls.append(entry)
 
         started = turn.started_at
@@ -890,7 +892,9 @@ async def _handle_subagent_message(
         target, _, _ = delegation
         logger.info(
             "Subagent delegation: session=%s %s → %s",
-            session_id, state.subagent_target, target,
+            session_id,
+            state.subagent_target,
+            target,
         )
         state.subagent_stack.append((state.subagent_target, state.subagent_id))  # type: ignore[arg-type]
         sub_result = await _maybe_delegate(state, session_id, delegation, user_text, result, body)
@@ -919,10 +923,7 @@ async def _resume_parent_subagent(
         "you already have."
     )
     parent_result = await _proxy_send_message(
-        parent_id,
-        resume_prompt,
-        agent=parent_target,
-        model=body.model
+        parent_id, resume_prompt, agent=parent_target, model=body.model
     )
 
     # The parent may delegate again (e.g. on to another workflow); honor it
@@ -965,7 +966,8 @@ async def _maybe_delegate(
     if len(state.subagent_stack) >= MAX_SUBAGENT_DEPTH:
         logger.warning(
             "Subagent delegation depth limit reached: session=%s depth=%d",
-            session_id, len(state.subagent_stack),
+            session_id,
+            len(state.subagent_stack),
         )
         return {
             "info": morty_result.get("info", {}),
@@ -1110,8 +1112,7 @@ async def list_providers() -> dict[str, Any]:
             # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
             allowed_base = {_strip_date_suffix(a) for a in allowed}
             filtered = [
-                m for m in out
-                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+                m for m in out if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
             ]
             if filtered:
                 out = filtered

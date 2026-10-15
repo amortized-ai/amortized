@@ -386,7 +386,7 @@ def _get_job_polls(run: Run) -> list[tuple[Any, str | None, bool, bool]]:
         for c in turn.get("tool_calls") or []:
             if c.get("tool") != "get_job":
                 continue
-            jid = (c.get("input") or {}).get("job_id")
+            jid = c.get("job_id")
             polls.append((tdt, jid, _is_terminal(c.get("output")), jid is not None))
     return polls
 
@@ -463,26 +463,15 @@ def _present_options(run: Run) -> list[dict[str, Any]]:
 
 
 def _option_texts(call: dict[str, Any]) -> list[str]:
-    """Option *titles* for a present_options call (the choice label). Deliberately
-    NOT title+description: a shared boilerplate description would make genuinely
-    distinct options (different model cards) look near-identical. Falls back to the
-    description only when a title is absent, then to the promoted `options` titles."""
-    opts = (call.get("input") or {}).get("options")
-    if isinstance(opts, list):
-        out: list[str] = []
-        for o in opts:
-            if isinstance(o, dict):
-                label = str(o.get("title") or o.get("description") or "").strip()
-                if label:
-                    out.append(label)
-        if out:
-            return out
+    """Option *titles* for a present_options call (the promoted `options` field — the
+    choice labels). Deliberately titles only: a shared boilerplate description would
+    make genuinely distinct options (different model cards) look near-identical."""
     titles = call.get("options")
     return [str(t) for t in titles] if isinstance(titles, list) else []
 
 
 def _question_text(call: dict[str, Any]) -> str:
-    return str(call.get("question") or (call.get("input") or {}).get("question") or "")
+    return str(call.get("question") or "")
 
 
 @matcher("duplicate_options")

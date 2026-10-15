@@ -60,7 +60,8 @@ _COLUMNS: dict[str, list[str]] = {
         "mode",
         "parent_job_id",
         "judge",
-        "input_json",
+        "job_id",
+        "skill",
     ],
     "texts": ["session_id", "turn_idx", "text_idx", "role", "text"],
     "jobs": [
@@ -113,7 +114,7 @@ CREATE TABLE IF NOT EXISTS turns (
 CREATE TABLE IF NOT EXISTS tool_calls (
     session_id TEXT, turn_idx INTEGER, call_idx INTEGER,
     role TEXT, tool TEXT, status TEXT,
-    target TEXT, mode TEXT, parent_job_id TEXT, judge TEXT, input_json TEXT,
+    target TEXT, mode TEXT, parent_job_id TEXT, judge TEXT, job_id TEXT, skill TEXT,
     PRIMARY KEY (session_id, turn_idx, call_idx)
 );
 CREATE TABLE IF NOT EXISTS texts (
@@ -233,7 +234,6 @@ def ingest(
                     },
                 )
                 for ci, call in enumerate(turn.get("tool_calls") or []):
-                    inp = call.get("input")
                     _insert(
                         conn,
                         "tool_calls",
@@ -248,7 +248,8 @@ def ingest(
                             "mode": call.get("mode"),
                             "parent_job_id": call.get("parent_job_id"),
                             "judge": call.get("judge"),
-                            "input_json": json.dumps(inp) if inp is not None else None,
+                            "job_id": call.get("job_id"),
+                            "skill": call.get("skill"),
                         },
                     )
                 for xi, txt in enumerate(turn.get("texts") or []):

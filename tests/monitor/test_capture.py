@@ -63,7 +63,7 @@ def test_gate_off_skips_fetch_and_write(
     assert captured == []
 
 
-def test_gate_on_captures_redacted_full_input(
+def test_gate_on_captures_allowlisted_fields_not_raw_input(
     monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
 ) -> None:
     monkeypatch.setattr(agent.settings, "monitor_enabled", True)
@@ -81,13 +81,32 @@ def test_gate_on_captures_redacted_full_input(
 
     assert len(captured) == 1
     call = captured[0]["tool_calls"][0]
-    # promoted scalars preserved for existing matchers
+    # only allowlisted safe fields are promoted
     assert call["parent_job_id"] == "train-1"
-    assert call["judge"] == "gpt-oss"
-    # full input captured, with the secret masked
-    assert call["input"]["parent_job_id"] == "train-1"
-    assert call["input"]["judge"]["model"] == "gpt-oss"
-    assert call["input"]["judge"]["api_key"] == "[REDACTED]"
+    assert call["judge"] == "gpt-oss"  # model only
+    # the raw input dict is NOT stored, so the secret never enters the log
+    assert "input" not in call
+    assert "sk-secret" not in repr(captured)
+
+
+def test_present_options_free_text_is_scrubbed(
+    monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
+) -> None:
+    monkeypatch.setattr(agent.settings, "monitor_enabled", True)
+    msg = _assistant_msg(
+        "m1",
+        "present_options",
+        {"question": "use key sk-ABCDEF0123456789 ?", "options": [{"title": "yes"}]},
+    )
+
+    async def _fetch(sid: str) -> list[dict[str, Any]]:
+        return [msg] if sid == "orch-1" else []
+
+    monkeypatch.setattr(agent, "_fetch_all_messages", _fetch)
+    _run(agent._record_turn_metrics(_state(), agent.TurnState(), "s1", "t1"))
+    call = captured[0]["tool_calls"][0]
+    assert "sk-ABCDEF0123456789" not in call["question"]  # value-scrubbed
+    assert call["options"] == ["yes"]
 
 
 def test_capture_never_raises_on_fetch_error(monkeypatch: pytest.MonkeyPatch) -> None:

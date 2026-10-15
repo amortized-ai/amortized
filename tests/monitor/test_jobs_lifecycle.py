@@ -26,7 +26,7 @@ def _get_job(job_id: str, status: str) -> dict[str, Any]:
         "tool": "get_job",
         "role": "training",
         "status": "completed",
-        "input": {"job_id": job_id},
+        "job_id": job_id,
         "output": f'{{"id":"{job_id}","status":"{status}"}}',
     }
 
@@ -108,7 +108,7 @@ def test_job_monitored_status_field_not_substring() -> None:
     poll = {
         "tool": "get_job",
         "role": "training",
-        "input": {"job_id": "t-1"},
+        "job_id": "t-1",
         "output": '{"id":"t-1","status":"running","last_error":"a step failed earlier"}',
     }
     run = _run([poll], [_job("training", "t-1")])

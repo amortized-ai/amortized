@@ -19,7 +19,6 @@ def _loaded_distillation(*extra: dict[str, Any]) -> Run:
         "role": "sdg",
         "status": "completed",
         "skill": "sdg-task-distillation",
-        "input": {"name": "sdg-task-distillation"},
     }
     return _run_with(load, *extra)
 
@@ -46,14 +45,7 @@ def test_gate_applies_only_when_skill_loaded() -> None:
     rb = _distillation_rubric()
     assert rubric.applies(_loaded_distillation(), rb) is True
     # a run that loaded a different skill does not apply
-    other = _run_with(
-        {
-            "tool": "skill",
-            "role": "sdg",
-            "skill": "sdg-classification",
-            "input": {"name": "sdg-classification"},
-        }
-    )
+    other = _run_with({"tool": "skill", "role": "sdg", "skill": "sdg-classification"})
     assert rubric.applies(other, rb) is False
 
 

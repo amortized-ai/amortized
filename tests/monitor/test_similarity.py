@@ -50,32 +50,14 @@ def test_duplicate_options_review_when_not_captured() -> None:
 
 
 def test_duplicate_options_wrong_on_identical_titles() -> None:
-    call = {
-        "tool": "present_options",
-        "role": "training",
-        "input": {
-            "options": [
-                {"title": "Use the full dataset", "description": "d1"},
-                {"title": "Use the full dataset", "description": "d2"},
-            ]
-        },
-    }
-    assert score_auto(_run(call), {"type": "duplicate_options"}) == "wrong"
+    # options are the promoted titles (we no longer store raw input)
+    run = _run(_po("Pick one", ["Use the full dataset", "Use the full dataset"]))
+    assert score_auto(run, {"type": "duplicate_options"}) == "wrong"
 
 
-def test_duplicate_options_distinct_titles_shared_description() -> None:
-    # boilerplate description must NOT make distinct model cards look duplicate
-    call = {
-        "tool": "present_options",
-        "role": "training",
-        "input": {
-            "options": [
-                {"title": "Qwen2.5-7B", "description": "a strong general-purpose model"},
-                {"title": "Llama-3-8B", "description": "a strong general-purpose model"},
-            ]
-        },
-    }
-    assert score_auto(_run(call), {"type": "duplicate_options"}) == "met"
+def test_duplicate_options_distinct_model_cards() -> None:
+    run = _run(_po("Which base model?", ["Qwen2.5-7B", "Llama-3-8B"]))
+    assert score_auto(run, {"type": "duplicate_options"}) == "met"
 
 
 def test_duplicate_options_numeric_sizes_are_distinct() -> None:

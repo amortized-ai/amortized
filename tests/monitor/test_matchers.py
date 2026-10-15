@@ -223,7 +223,7 @@ def test_model_choice() -> None:
 
 
 def _skill(name: str, role: str = "sdg", status: str = "completed") -> dict[str, Any]:
-    return {"tool": "skill", "role": role, "status": status, "skill": name, "input": {"name": name}}
+    return {"tool": "skill", "role": role, "status": status, "skill": name}
 
 
 def test_skill_loaded_matcher_native_tool() -> None:
@@ -246,12 +246,8 @@ def test_skill_loaded_matcher_native_tool() -> None:
 
 
 def test_skill_loaded_role_from_name_prefix() -> None:
-    # role derived from the flattened name prefix even if the call lacks a role field
-    call = {
-        "tool": "skill",
-        "status": "completed",
-        "input": {"name": "training-embedding-classifier"},
-    }
+    # role derived from the flattened skill name even if the call lacks a role field
+    call = {"tool": "skill", "status": "completed", "skill": "training-embedding-classifier"}
     assert score_auto(_run(call), {"type": "skill_loaded", "role": "training"}) == "met"
     assert score_auto(_run(call), {"type": "skill_loaded", "role": "sdg"}) == "missed"
 

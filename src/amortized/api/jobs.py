@@ -10,7 +10,6 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 
 from amortized.api import monitor_log
-from amortized.api.monitor_redact import redact
 from amortized.config import settings
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
@@ -55,11 +54,12 @@ def _job_response(row: dict[str, Any]) -> Job:
     return Job(**row)
 
 
-def _emit_job_created(http_request: Request, job: Job, config: dict[str, Any]) -> None:
+def _emit_job_created(http_request: Request, job: Job) -> None:
     """Record a monitor ``job_created`` event correlated to the Studio session that
     confirmed it (header ``X-Monitor-Session``, set by the frontend). Links the
     human-gated job submission back to the agent run so the monitor can check a job
-    was actually created + monitored. Best-effort; never breaks job creation."""
+    was actually created + monitored. Only safe derived fields are stored — never the
+    job config (which can carry api_key/base_url). Best-effort; never breaks creation."""
     try:
         if not settings.monitor_enabled:
             return
@@ -76,7 +76,6 @@ def _emit_job_created(http_request: Request, job: Job, config: dict[str, Any]) -
                 "parent_job_id": job.parent_job_id or "",
                 "mlflow_run_id": getattr(job, "mlflow_run_id", "") or "",
                 "user_id": getattr(job, "user_id", "") or "",
-                "config": redact(config),
             },
         )
     except Exception:
@@ -347,7 +346,7 @@ async def create_sdg_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     resp = _job_response(row)
-    _emit_job_created(http_request, resp, config)
+    _emit_job_created(http_request, resp)
     return resp
 
 
@@ -385,7 +384,7 @@ async def create_training_job(
     except InvalidJobStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     resp = _job_response(row)
-    _emit_job_created(http_request, resp, config)
+    _emit_job_created(http_request, resp)
     return resp
 
 
@@ -435,8 +434,8 @@ async def _persist_metric_set(
             if run.get("info", {}).get("lifecycle_stage") == "deleted":
                 await client.restore_run(dataset_run_id)
                 logger.info(
-                    "Restored soft-deleted dataset run %s to persist its"
-                    " eval metric set", dataset_run_id[:8],
+                    "Restored soft-deleted dataset run %s to persist its eval metric set",
+                    dataset_run_id[:8],
                 )
         except Exception:
             logger.warning(
@@ -445,9 +444,7 @@ async def _persist_metric_set(
                 exc_info=True,
             )
 
-    await set_mlflow_run_tag(
-        dataset_run_id, "eval_metric_set", _json.dumps(metric_set)
-    )
+    await set_mlflow_run_tag(dataset_run_id, "eval_metric_set", _json.dumps(metric_set))
 
 
 @router.post(
@@ -503,7 +500,7 @@ async def create_eval_job(
 
     response = _job_response(row)
     _strip_eval_api_keys(response)
-    _emit_job_created(http_request, response, config)
+    _emit_job_created(http_request, response)
     return response
 
 
@@ -590,7 +587,7 @@ async def retry_job(
     logger.info("Retrying eval job %s as %s", job_id[:8], row["id"][:8])
     response = _job_response(row)
     _strip_eval_api_keys(response)
-    _emit_job_created(http_request, response, config)
+    _emit_job_created(http_request, response)
     return response
 
 
@@ -755,10 +752,9 @@ async def _rubric_drift_warning(
                 cfg = json.loads(cfg)
             except ValueError:
                 continue
-        same_dataset = (
-            data_run_id
-            and str(cfg.get("eval_data_run_id") or "") == data_run_id
-        ) or (parent_job_id and job.get("parent_job_id") == parent_job_id)
+        same_dataset = (data_run_id and str(cfg.get("eval_data_run_id") or "") == data_run_id) or (
+            parent_job_id and job.get("parent_job_id") == parent_job_id
+        )
         if not same_dataset:
             continue
         existing = {
@@ -770,9 +766,7 @@ async def _rubric_drift_warning(
             continue
         if existing == submitted:
             return []  # exact reuse — nothing to warn about
-        changed = sorted(
-            n for n in existing if existing[n] != submitted.get(n, existing[n])
-        )
+        changed = sorted(n for n in existing if existing[n] != submitted.get(n, existing[n]))
         return [
             "this dataset already has evals with these rubric criteria"
             f" but different descriptions (changed: {', '.join(changed)})."

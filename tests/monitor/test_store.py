@@ -108,8 +108,8 @@ def test_cross_axis_query(tmp_path: Path) -> None:
         conn.close()
 
 
-def test_full_input_persisted_as_json(tmp_path: Path) -> None:
-    # synthesise a run whose tool call carries a full redacted input
+def test_promoted_fields_persisted(tmp_path: Path) -> None:
+    # we store only allowlisted promoted fields (no raw input dump)
     from monitor.scorer.model import Run
 
     run = Run(
@@ -120,11 +120,9 @@ def test_full_input_persisted_as_json(tmp_path: Path) -> None:
                 "role": "sdg",
                 "tokens": {},
                 "tool_calls": [
-                    {
-                        "tool": "validate_sdg_job",
-                        "role": "sdg",
-                        "input": {"mode": "preview", "config": {"n": 5}},
-                    }
+                    {"tool": "validate_sdg_job", "role": "sdg", "mode": "preview"},
+                    {"tool": "skill", "role": "sdg", "skill": "sdg-task-distillation"},
+                    {"tool": "get_job", "role": "sdg", "job_id": "j-1"},
                 ],
             }
         ],
@@ -133,10 +131,15 @@ def test_full_input_persisted_as_json(tmp_path: Path) -> None:
     store.ingest(db, [run], use_case="general", checklist={"rows": []}, scores={})
     conn = sqlite3.connect(db)
     try:
-        raw = conn.execute(
-            "SELECT input_json FROM tool_calls WHERE session_id = 's-input'"
-        ).fetchone()[0]
-        assert json.loads(raw)["config"]["n"] == 5
+        rows = conn.execute(
+            "SELECT tool, mode, skill, job_id FROM tool_calls "
+            "WHERE session_id = 's-input' ORDER BY call_idx"
+        ).fetchall()
+        assert rows == [
+            ("validate_sdg_job", "preview", None, None),
+            ("skill", None, "sdg-task-distillation", None),
+            ("get_job", None, None, "j-1"),
+        ]
     finally:
         conn.close()
 
