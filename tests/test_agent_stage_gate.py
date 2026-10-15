@@ -121,26 +121,6 @@ class TestNotReadyGate:
         assert "the upstream job that produced this job's input" in sent[0]
         assert "'queued'" in sent[0]
 
-    def test_beyond_graph_dispatch_is_gated_on_its_reference(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # A dispatch tool not in PIPELINE (e.g. validate_serve_job) is still gated,
-        # field-driven, on the in-flight prerequisite it references.
-        state = agent.SessionState(orchestrator_id="orch")
-        sent = _patch(monkeypatch, {"trainjob01": _job(status="running", jtype="training")})
-        out = _run(
-            agent._apply_job_claim_gate(
-                state,
-                _dispatch_result("validate_serve_job", {"training_job_id": "trainjob01"}),
-                _body(),
-            )
-        )
-        assert len(sent) == 1
-        assert "the model's training job" in sent[0]
-        assert "'running'" in sent[0]
-        assert out is not None
-        _ = out
-
     def test_succeeded_upstream_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
         sent = _patch(
@@ -158,14 +138,23 @@ class TestNotReadyGate:
         assert sent == []  # every upstream succeeded -> no gate
         assert out is result
 
-    def test_concurrent_sdg_prep_not_gated(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Cloning an SDG recipe for an eval set while training still runs: validate_sdg_job
-        # is not a gated dispatch, so an in-flight training_job_id in its input is ignored.
+    def test_sdg_dispatch_is_field_driven(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # SDG gets no special case: an SDG dispatch that chains from an in-flight parent
+        # is gated like any other, and one with no upstream reference is not.
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {"trainjob01": _job(status="running", jtype="training")})
-        result = _dispatch_result("validate_sdg_job", {"training_job_id": "trainjob01"})
-        violations = _run(agent._not_ready_violations(state, result, {}))
-        assert violations == []
+        _patch(monkeypatch, {"sdgjob0001": _job(status="running", jtype="sdg")})
+        gated = _run(
+            agent._not_ready_violations(
+                state, _dispatch_result("validate_sdg_job", {"parent_job_id": "sdgjob0001"}), {}
+            )
+        )
+        assert [v["kind"] for v in gated] == ["not_ready"]
+        ungated = _run(
+            agent._not_ready_violations(
+                state, _dispatch_result("validate_sdg_job", {"num_records": 1000}), {}
+            )
+        )
+        assert ungated == []
 
     def test_no_double_fire_with_stale_reuse(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # An upstream that is BOTH in-flight AND older than the session would match the

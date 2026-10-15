@@ -39,28 +39,9 @@ class TestFieldDrivenGate:
         assert [(f, j) for f, j, _ in refs] == [("training_job_id", "t-1")]
 
     def test_present_gated_fields_empty_when_no_references(self) -> None:
-        # an SDG dispatch carries no upstream job reference, so nothing is gated —
-        # cloning a recipe for an eval set may run while training is still in flight.
+        # a dispatch that references no upstream job (e.g. a from-scratch SDG) gates
+        # nothing — there is no special-casing by job type.
         assert lineage.present_gated_fields({"num_records": 1000}) == []
-
-
-class TestDispatchDerivation:
-    def test_dispatch_job_type_reads_the_tool_name(self) -> None:
-        assert lineage.dispatch_job_type("validate_training_job") == "training"
-        assert lineage.dispatch_job_type("validate_eval_job") == "eval"
-
-    def test_dispatch_job_type_skips_root(self) -> None:
-        # SDG is a root — its dispatch is never stage-gated (eval-set prep may run
-        # while training is still in flight).
-        assert lineage.dispatch_job_type("validate_sdg_job") is None
-
-    def test_dispatch_job_type_covers_beyond_graph(self) -> None:
-        # an unknown dispatch is still recognised; the stage-gate is field-driven
-        assert lineage.dispatch_job_type("validate_serve_job") == "serve"
-
-    def test_dispatch_job_type_ignores_non_dispatch_tools(self) -> None:
-        assert lineage.dispatch_job_type("get_job") is None
-        assert lineage.dispatch_job_type("split_dataset") is None
 
 
 class TestAncestry:

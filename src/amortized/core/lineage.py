@@ -30,7 +30,6 @@ fields are gated references and how to walk them.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
 from typing import Any
 
@@ -42,11 +41,6 @@ READY_STATUS = "succeeded"
 # these. One place owns the fact, shared by the create-time resolvers and the worker's
 # parent-artifact download.
 DATASET_PRODUCER_TYPES = frozenset({"sdg", "upload"})
-
-# Job types that produce from scratch and reference no upstream job — a dispatch of one
-# is never stage-gated, so e.g. cloning an SDG recipe for an eval set may run while a
-# training job is still in flight.
-ROOT_TYPES = frozenset({"sdg"})
 
 
 # The field-driven enforcement universe: every config key that references an upstream
@@ -71,22 +65,6 @@ def present_gated_fields(config: Mapping[str, Any]) -> list[tuple[str, str, str]
         if job_id:
             out.append((field, job_id, label))
     return out
-
-
-_DISPATCH_TOOL_RE = re.compile(r"^validate_(?P<type>\w+)_job$")
-
-
-def dispatch_job_type(tool_name: str) -> str | None:
-    """The job type a ``validate_<type>_job`` dispatch tool launches, or None if the
-    tool is not such a dispatch or launches a root type (``ROOT_TYPES`` — e.g. SDG,
-    whose eval-set prep is allowed to run alongside training). Otherwise the stage-gate
-    is field-driven: a dispatch is gated on whatever upstream references its input
-    carries, so a type "beyond the graph" is still gated on the prerequisites it names."""
-    m = _DISPATCH_TOOL_RE.match(tool_name)
-    if not m:
-        return None
-    jt = m.group("type")
-    return None if jt in ROOT_TYPES else jt
 
 
 # ---------------------------------------------------------------------------

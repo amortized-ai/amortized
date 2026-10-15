@@ -912,16 +912,22 @@ _SUBMITTED_CLAIM_RE = re.compile(
     re.I,
 )
 
-# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
-# a parent dataset. The call carries parent_job_id as a structured argument, so
-# dispatch provenance is verified from the parent's DB record, with no prose parsing.
-# Only data-dependent downstream types appear: an SDG dispatch has no parent chain
-# (cloning an SDG recipe for an eval set may run while training is still in flight), so
-# it is absent here. Check D ("not ready" — the stage-gate) needs no per-tool field map
-# at all: it is field-driven via lineage.present_gated_fields on the dispatch tool's
-# input, so any dispatch (including one "beyond the graph") is gated on the
-# prerequisites it actually references.
-_DISPATCH_PARENT_TYPE = {"validate_training_job": "training", "validate_eval_job": "eval"}
+# The committing dispatch tools and the job type each launches. The stage-gate
+# (Check D, _not_ready_violations) is otherwise field-driven via
+# lineage.present_gated_fields on the tool input; this map just restricts it to the
+# tools that actually commit a run, so an incidental job id on a read-only tool is not
+# treated as a dispatch.
+_DISPATCH_JOB_TYPE = {
+    "validate_sdg_job": "sdg",
+    "validate_training_job": "training",
+    "validate_eval_job": "eval",
+}
+
+# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto a
+# parent dataset, for the stale-reuse provenance check. The call carries parent_job_id
+# as a structured argument, verified from the parent's DB record with no prose parsing.
+# SDG is a dataset *producer*, not a consumer of one, so it is excluded.
+_DISPATCH_PARENT_TYPE = {t: jt for t, jt in _DISPATCH_JOB_TYPE.items() if jt != "sdg"}
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1291,23 +1297,22 @@ async def _not_ready_violations(
     result: dict[str, Any],
     job_cache: dict[str, dict[str, Any] | None],
 ) -> list[dict[str, Any]]:
-    """Check D — the stage-gate. A dispatch in this turn whose upstream job (the SDG
-    dataset, or the model under eval) is not yet 'succeeded' — i.e. the workflow is
-    being advanced before its prerequisite finished. Field-driven and purely
-    structural: for any dispatch tool, every upstream-job reference its input carries
-    (lineage.GATED_FIELDS) and that job's DB status; no prose. So a dispatch "beyond
-    the graph" is gated on exactly the prerequisites it names, and extra work elsewhere
-    is never a concern. Blocks forward movement so Morty reports the true status and
-    waits, instead of confirming/creating a job that can't run yet. Independent of job
-    age (unlike the stale-reuse 'dispatch' check) — it fires on any non-succeeded
-    upstream."""
+    """Check D — the stage-gate. A committing dispatch in this turn (_DISPATCH_JOB_TYPE)
+    whose upstream job (the SDG dataset, or the model under eval) is not yet 'succeeded'
+    — i.e. the workflow is being advanced before its prerequisite finished. Field-driven
+    and purely structural: for each dispatch tool, every upstream-job reference its input
+    carries (lineage.GATED_FIELDS) and that job's DB status; no prose. Each dispatch is
+    gated on exactly the prerequisites it names, so extra work elsewhere is never a
+    concern. Blocks forward movement so Morty reports the true status and waits, instead
+    of confirming/creating a job that can't run yet. Independent of job age (unlike the
+    stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
     violations: list[dict[str, Any]] = []
     for part in result.get("parts") or []:
         if part.get("type") != "tool":
             continue
-        dtype = lineage.dispatch_job_type(_tool_name(part))
+        dtype = _DISPATCH_JOB_TYPE.get(_tool_name(part))
         if dtype is None:
-            continue  # not a validate_<type>_job dispatch tool
+            continue  # not a committing dispatch tool
         inp = _get_tool_input(part)
         for _field, up_id, label in lineage.present_gated_fields(inp):
             up = await _fetch_job_by_token(up_id, job_cache)
