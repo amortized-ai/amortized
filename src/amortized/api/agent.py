@@ -915,14 +915,13 @@ _SUBMITTED_CLAIM_RE = re.compile(
 # Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
 # a parent dataset. The call carries parent_job_id as a structured argument, so
 # dispatch provenance is verified from the parent's DB record, with no prose parsing.
-# Derived from core/lineage so Layer 2 and the create-time validators (Layer 1) never
-# drift. Check D ("not ready" — the stage-gate) no longer needs a per-tool field map:
-# it is field-driven via lineage.present_gated_fields on the dispatch tool's input, so
-# any dispatch (including one "beyond the graph") is gated on the prerequisites it
-# actually references. validate_sdg_job has no gated upstream (cloning an SDG recipe
-# for an eval set may run while training is still in flight), so lineage.dispatch_job_type
-# returns None for it.
-_DISPATCH_PARENT_TYPE = lineage.dispatch_parent_type()
+# Only data-dependent downstream types appear: an SDG dispatch has no parent chain
+# (cloning an SDG recipe for an eval set may run while training is still in flight), so
+# it is absent here. Check D ("not ready" — the stage-gate) needs no per-tool field map
+# at all: it is field-driven via lineage.present_gated_fields on the dispatch tool's
+# input, so any dispatch (including one "beyond the graph") is gated on the
+# prerequisites it actually references.
+_DISPATCH_PARENT_TYPE = {"validate_training_job": "training", "validate_eval_job": "eval"}
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1077,6 +1076,13 @@ async def _no_data_advisory(state: SessionState, target: str) -> str | None:
 # by the subagent's own failure path, not the "wait" advisory.)
 _INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
 
+# The upstream producer types each data-dependent target depends on — used only to
+# scope the delegation advisory, so an in-flight job of a type the target does NOT
+# depend on (unrelated work mentioned alongside the handoff) is not treated as a
+# prerequisite. The hard gate is field-driven (lineage.present_gated_fields); this is
+# the soft, prose-level companion and does not enforce anything.
+_TARGET_UPSTREAM_TYPES = {"training": {"sdg"}, "eval": {"sdg", "training"}}
+
 
 async def _upstream_not_ready_advisory(
     state: SessionState, target: str, context: str, user_text: str
@@ -1088,16 +1094,16 @@ async def _upstream_not_ready_advisory(
 
     Keyed on the dependency graph, not symptoms. Only data-dependent downstream targets
     (training/eval) are considered, and only a cited job whose *type is a producer* for
-    that target (lineage.upstreams) counts — an in-flight job of an unrelated type the
-    target does not depend on is NOT a prerequisite, so mentioning it (extra work done
-    alongside) does not block the handoff. A delegation to SDG (e.g. cloning a recipe
-    for an eval set "while training runs") is not a _DATA_DEPENDENT_TARGET, so
+    that target (_TARGET_UPSTREAM_TYPES) counts — an in-flight job of an unrelated type
+    the target does not depend on is NOT a prerequisite, so mentioning it (extra work
+    done alongside) does not block the handoff. A delegation to SDG (e.g. cloning a
+    recipe for an eval set "while training runs") is not a _DATA_DEPENDENT_TARGET, so
     concurrent eval-set prep stays allowed. Fail-safe: any uncertainty/error returns
     None, leaving the handoff unchanged.
     """
     if target not in _DATA_DEPENDENT_TARGETS:
         return None
-    producers = {u.producer for u in lineage.upstreams(target)}
+    producers = _TARGET_UPSTREAM_TYPES.get(target, set())
     try:
         for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
             job = await _fetch_job_by_token(token)
@@ -1301,7 +1307,7 @@ async def _not_ready_violations(
             continue
         dtype = lineage.dispatch_job_type(_tool_name(part))
         if dtype is None:
-            continue  # not a dispatch, or a root (SDG) with no prerequisite
+            continue  # not a validate_<type>_job dispatch tool
         inp = _get_tool_input(part)
         for _field, up_id, label in lineage.present_gated_fields(inp):
             up = await _fetch_job_by_token(up_id, job_cache)
