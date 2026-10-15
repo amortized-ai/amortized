@@ -59,18 +59,26 @@ def test_gate_applies_only_when_skill_loaded() -> None:
 
 def test_auto_step_scored_llm_steps_default_review() -> None:
     rb = _distillation_rubric()
-    run = _loaded_distillation({"tool": "show_prompt", "role": "sdg", "status": "completed"})
+    # show_prompt (prompt_review -> met) + validate_sdg_job (emits_sdg_card -> met)
+    run = _loaded_distillation(
+        {"tool": "show_prompt", "role": "sdg", "status": "completed"},
+        {"tool": "validate_sdg_job", "role": "sdg", "status": "completed"},
+    )
     result = rubric.score_rubric(run, rb)  # no judge_map
     steps = {s["step_id"]: s["status"] for s in result["steps"]}
     assert steps["prompt_shown_before_validate"] == "met"  # auto via prompt_review
+    assert steps["emits_sdg_card"] == "met"  # auto via action_emitted
     assert steps["asks_examples_first"] == "review"  # llm, not judged
-    # only the met auto step counts -> 100%
+    # both auto steps met, llm steps excluded -> 100%
     assert result["adherence_pct"] == 100.0
 
 
 def test_weighted_adherence_and_skipped() -> None:
     rb = _distillation_rubric()
-    run = _loaded_distillation({"tool": "show_prompt", "role": "sdg", "status": "completed"})
+    run = _loaded_distillation(
+        {"tool": "show_prompt", "role": "sdg", "status": "completed"},
+        {"tool": "validate_sdg_job", "role": "sdg", "status": "completed"},
+    )
     judge_map = {
         "asks_examples_first": ("met", "asked early"),  # w2
         "confirms_output_format": ("missed", "never shown"),  # w2
@@ -78,11 +86,11 @@ def test_weighted_adherence_and_skipped() -> None:
         "teacher_name_verbatim": ("review", ""),  # excluded
     }
     result = rubric.score_rubric(run, rb, judge_map)
-    # met: asks_examples_first(2) + prompt_shown_before_validate(2) = 4
-    # denom: + confirms_output_format missed(2) = 6  -> 66.7
-    assert result["adherence_pct"] == 66.7
+    # met: asks(2) + prompt_shown_before_validate(2) + emits_sdg_card(2) = 6
+    # denom: + confirms_output_format missed(2) = 8  -> 75.0
+    assert result["adherence_pct"] == 75.0
     assert result["not_met"] == ["confirms_output_format"]
-    assert result["scored"] == 3  # 2 judged (met+missed) + 1 auto met
+    assert result["scored"] == 4  # asks met, confirms missed (judged) + prompt, emits (auto)
     assert result["pending"] == 1  # teacher_name_verbatim review
 
 

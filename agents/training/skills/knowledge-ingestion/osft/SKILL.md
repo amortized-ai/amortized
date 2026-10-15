@@ -10,6 +10,9 @@ description: >-
   list and a config template.
 metadata:
   stage: training
+  action_required: true
+  emits:
+    - validate_training_job
 ---
 
 # OSFT Training Guide

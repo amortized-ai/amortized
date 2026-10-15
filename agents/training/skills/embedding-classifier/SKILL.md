@@ -8,6 +8,9 @@ description: >-
   Pairs with the sdg-embedding-classifier skill.
 metadata:
   stage: training
+  action_required: true
+  emits:
+    - validate_training_job
 ---
 
 # Embedding Classifier — Training Guide

@@ -7,6 +7,9 @@ description: >-
   from coverage, groundedness constraints, and SFT formatting.
 metadata:
   stage: sdg
+  action_required: true
+  emits:
+    - validate_sdg_job
 ---
 
 # Knowledge Ingestion — SDG Guide

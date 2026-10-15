@@ -44,3 +44,9 @@ steps:
       "Configure a model". `wrong` if options include a model not in list_models or
       omit the configure-a-model fallback.
     detect: { type: llm_judge }
+
+  - id: emits_sdg_card
+    action_required: true
+    weight: 2
+    description: Emits the SDG config card (validate_sdg_job) after gathering requirements.
+    detect: { type: action_emitted, emits: [validate_sdg_job] }

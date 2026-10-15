@@ -7,6 +7,9 @@ description: >-
   text,category rows with no messages transform.
 metadata:
   stage: sdg
+  action_required: true
+  emits:
+    - validate_sdg_job
 ---
 
 # Embedding Classifier — Data Generation Guide

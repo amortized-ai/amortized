@@ -153,6 +153,17 @@ def _m_skill_loaded(run: Run, match: dict[str, Any]) -> str:
     )
 
 
+@matcher("action_emitted")
+def _m_action_emitted(run: Run, match: dict[str, Any]) -> str:
+    # An action-required step culminated in its tool emission (the validate_* card).
+    # `emits`/`tools` = the deliverable tool name(s). met if any fired; else missed.
+    tools = match.get("emits") or match.get("tools") or []
+    for c in run.tool_calls:
+        if c.get("tool") in tools:
+            return "met"
+    return "missed"
+
+
 @matcher("chained")
 def _m_chained(run: Run, match: dict[str, Any]) -> str:
     # A validate_* call carries a non-empty field from `any_of` — used for

@@ -51,3 +51,9 @@ steps:
       many GPUs they have or offer GPU-count options. `wrong` if it asks the user to
       choose a GPU count.
     detect: { type: llm_judge }
+
+  - id: emits_training_card
+    action_required: true
+    weight: 2
+    description: Emits the training config / VRAM card (validate_training_job) after gathering requirements.
+    detect: { type: action_emitted, emits: [validate_training_job] }

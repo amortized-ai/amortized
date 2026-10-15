@@ -57,3 +57,13 @@ steps:
       Composes the task system prompt and renders it with show_prompt before
       building the SDG config (guide Step 8).
     detect: { type: prompt_review }
+
+  - id: emits_sdg_card
+    order: 6
+    weight: 2
+    action_required: true
+    emits: [validate_sdg_job]
+    description: >
+      Emits the SDG config card (validate_sdg_job) after requirements are gathered —
+      does NOT merely announce it ("preparing the workflow…") and wait for a nudge.
+    detect: { type: action_emitted, emits: [validate_sdg_job] }

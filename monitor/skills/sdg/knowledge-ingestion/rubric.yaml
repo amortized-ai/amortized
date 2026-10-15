@@ -45,3 +45,9 @@ steps:
       confirmation table for optional adjustment. `wrong` if it asks the user to
       author the system prompt.
     detect: { type: llm_judge }
+
+  - id: emits_sdg_card
+    action_required: true
+    weight: 2
+    description: Emits the SDG config card (validate_sdg_job) after gathering requirements.
+    detect: { type: action_emitted, emits: [validate_sdg_job] }

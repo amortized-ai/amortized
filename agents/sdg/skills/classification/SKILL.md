@@ -8,6 +8,9 @@ description: >-
   formatting.
 metadata:
   stage: sdg
+  action_required: true
+  emits:
+    - validate_sdg_job
 ---
 
 # Classification (Generative / LLM) — SDG Guide
