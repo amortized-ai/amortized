@@ -201,9 +201,9 @@ asks to "improve performance on <dataset X>", X is the benchmark, not the
 training data — a FRESH training set must be generated for the same task.
 You don't generate data yourself (that is the SDG agent's job and you are a
 leaf): hand back to the orchestrator with `request_orchestrator_help` —
-`need` a fresh training set for the task, `context` the task, the benchmark
-dataset X (so the new set does not overlap it), and that you resume with
-the new SDG job's dataset as the training data. SDG runs and you are resumed
+`need` a fresh training set for the task that does not overlap benchmark
+dataset X; `context` the task and that you resume with the new SDG job's
+dataset as the training data. SDG runs and you are resumed
 with a `[RESUMED]` handoff that carries the new SDG job id; continue from
 data confirmation (`get_dataset` on the new set) as usual. Only train
 directly on X if the user explicitly confirms it and accepts the leakage

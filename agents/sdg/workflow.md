@@ -165,7 +165,7 @@ training job ID, don't pick a sub-skill or design a new recipe — ask only the 
 count (`present_options`, sensible default), call
 `clone_sdg_config_for_eval(training_job_id, num_records)`, and pass its config straight
 to validate. Don't hand-assemble it (teacher/prompt drift), and don't compare datasets
-afterward (fresh sampling is the isolation; eval validation flags overlap). If there's
+afterward (fresh sampling is the isolation; eval validation also warns on overlap). If there's
 no parent SDG to mirror, offer a fresh set from scratch or a user-provided config — and if
 they choose a fresh set, route by task and load a sub-skill exactly like the "Otherwise"
 step below (a fresh set still needs a loaded guide for Phase 2; don't skip skill-loading

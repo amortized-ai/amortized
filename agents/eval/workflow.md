@@ -431,8 +431,9 @@ clones the training recipe deterministically (`clone_sdg_config_for_eval`)
 — only fresh inputs change, and those fresh inputs ARE the held-out
 isolation, so do not ask anyone to verify non-overlap by comparing
 datasets afterward. (Eval-job validation checks dataset availability, model
-compatibility, and rubric requirements — it does not compare the eval and
-training datasets, so do not imply the platform flags overlap.)
+compatibility, and rubric requirements, and also warns — best-effort,
+non-blocking — when the eval inputs overlap the model's training data, so
+the platform catches leakage for you; no manual comparison needed.)
 
 When you are resumed with a `[RESUMED]` handoff that carries a new SDG job
 ID (the held-out set you asked for is ready), continue YOUR workflow at
