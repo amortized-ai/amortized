@@ -389,6 +389,12 @@ adherence% = Σ weight(met) / Σ weight(met + wrong + missed)    (n/a, review ex
 steps, and (with `--store`) writes the `rubric_scores` table. Dropping a new
 `rubric.yaml` into the skills tree adds a graded skill with no code change.
 
+> **Pending:** rubrics exist for `sdg/task-distillation`, `sdg/classification`,
+> `sdg/knowledge-ingestion`, and `training/osft`. The `embedding-classifier` skill
+> (both sdg and training) has no graded rubric yet — those runs still get the generic
+> role-based `skill_loaded` rows + the SKILL.md action contract, just not per-step
+> adherence. Follow-up: add `monitor/skills/{sdg,training}/embedding-classifier/rubric.yaml`.
+
 ## Action contract (`action_required`)
 
 Each native skill declares, in its `SKILL.md` frontmatter `metadata:`, the tool it is
