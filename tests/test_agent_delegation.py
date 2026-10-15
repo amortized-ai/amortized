@@ -504,6 +504,32 @@ class TestEnforceSingleInteraction:
         assert "present_options" not in tools  # no options under the confirm card
         assert tools == ["validate_training_job", "show_vram_estimate", "signal_phase"]
 
+    def test_errored_card_does_not_shadow_the_successful_retry(self) -> None:
+        # The model's validate_* errored, it self-corrected and re-validated in the SAME
+        # turn. The gate must keep the COMPLETED card (so the UI renders it) and suppress
+        # the dead errored one — not keep the error and strip the live card (which left the
+        # confirm card showing as a collapsed error chip).
+        err = {
+            "type": "tool",
+            "tool": "mcp_amortized__validate_sdg_job",
+            "callID": "err-1",
+            "state": {"status": "error", "error": "Input validation error"},
+        }
+        ok = {
+            "type": "tool",
+            "tool": "mcp_amortized__validate_sdg_job",
+            "callID": "ok-1",
+            "state": {"status": "completed", "input": {"mode": "preview"}},
+        }
+        state = _fresh_state()
+        out = agent._enforce_single_interaction({"parts": [err, ok]}, state)
+        kept = [p.get("callID") for p in out["parts"] if p.get("type") == "tool"]
+        assert kept == ["ok-1"]  # the live card survives; the dead errored one is dropped
+        # get_session_messages filters suppressed_call_ids, so the live card must NOT be
+        # suppressed (client renders it) while the errored chip IS hidden.
+        assert "ok-1" not in state.suppressed_call_ids
+        assert "err-1" in state.suppressed_call_ids
+
     def test_confirm_turn_drops_repeat_confirm_card(self) -> None:
         result = {
             "parts": [

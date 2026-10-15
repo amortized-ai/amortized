@@ -36,7 +36,7 @@ from amortized.api.agent_confirm import (
     _reset_confirm_signals,
     _review_card_signature,
 )
-from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
     _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
 )
@@ -414,6 +414,11 @@ def _enforce_single_interaction(
     parts = result.get("parts") or []
     first_q = first_card = first_review = None
     for i, part in enumerate(parts):
+        # An errored tool call renders nothing — skip it so a failed validate_* can't lead
+        # the turn and shadow the model's successful retry in the same turn (which would keep
+        # the dead card and strip the live one the user must confirm).
+        if _part_errored(part):
+            continue
         name = _tool_name(part)
         if first_q is None and name == "present_options":
             first_q = i
