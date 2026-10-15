@@ -174,7 +174,12 @@ def main() -> None:
             reasons=judge_reasons,
         )
         if rubric_results:
-            store.ingest_rubrics(args.store, args.use_case, rubric_results)
+            store.ingest_rubrics(
+                args.store,
+                args.use_case,
+                rubric_results,
+                sessions=[r.session_id for r in runs],
+            )
         print(f"\nIngested {len(runs)} run(s) into {args.store}")
         if args.export:
             fmt, out_dir = args.export

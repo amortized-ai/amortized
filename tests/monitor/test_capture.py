@@ -89,6 +89,30 @@ def test_gate_on_captures_allowlisted_fields_not_raw_input(
     assert "sk-secret" not in repr(captured)
 
 
+def test_assistant_text_is_scrubbed(
+    monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
+) -> None:
+    monkeypatch.setattr(agent.settings, "monitor_enabled", True)
+    msg = {
+        "info": {
+            "id": "m1",
+            "role": "assistant",
+            "tokens": {"input": 5, "output": 2},
+            "time": {"created": 1},
+        },
+        # the model echoes a secret the user pasted
+        "parts": [{"type": "text", "text": "Sure, using key sk-ABCDEF0123456789 now."}],
+    }
+
+    async def _fetch(sid: str) -> list[dict[str, Any]]:
+        return [msg] if sid == "orch-1" else []
+
+    monkeypatch.setattr(agent, "_fetch_all_messages", _fetch)
+    _run(agent._record_turn_metrics(_state(), agent.TurnState(), "s1", "t1"))
+    text = captured[0]["texts"][0]["text"]
+    assert "sk-ABCDEF0123456789" not in text  # assistant prose is value-scrubbed too
+
+
 def test_present_options_free_text_is_scrubbed(
     monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
 ) -> None:

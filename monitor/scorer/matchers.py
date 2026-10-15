@@ -89,16 +89,21 @@ def _catalog_names(run: Run) -> set[str]:
     names: set[str] = set()
     for tool in ("list_models", "get_eval_endpoint_suggestions"):
         for c in _calls(run, tool):
+            output = c.get("output") or ""
             try:
-                data = json.loads(c.get("output") or "")
+                data = json.loads(output)
             except (json.JSONDecodeError, TypeError):
-                continue
-            if not isinstance(data, dict):
-                continue
-            for key in ("models", "known_endpoints"):
-                for e in data.get(key) or []:
-                    if isinstance(e, dict) and e.get("name"):
-                        names.add(str(e["name"]))
+                data = None
+            if isinstance(data, dict):
+                for key in ("models", "known_endpoints"):
+                    for e in data.get(key) or []:
+                        if isinstance(e, dict) and e.get("name"):
+                            names.add(str(e["name"]))
+            else:
+                # output may be truncated/scrubbed (not valid JSON) — fall back to a
+                # regex for the exact `"name": "..."` field so a large catalog doesn't
+                # silently disable judge_valid. `"name"` won't match `"model_name"`.
+                names.update(re.findall(r'"name"\s*:\s*"([^"]+)"', output))
     return names
 
 
@@ -576,19 +581,21 @@ def _m_context_after_switch(run: Run, match: dict[str, Any]) -> str:
         return "n/a"
     before_q: list[str] = []
     after_q: list[str] = []
-    captured_any = False
+    post_switch_prompts = 0  # present_options AFTER the switch, captured or not
     for i, turn in enumerate(run.counted_turns):
         for c in turn.get("tool_calls") or []:
             if c.get("tool") != "present_options":
                 continue
+            if i >= idx:
+                post_switch_prompts += 1
             q = _question_text(c)
             if not q.strip():
                 continue
-            captured_any = True
             (after_q if i >= idx else before_q).append(q)
     if not after_q:
-        # either no post-switch prompts, or none captured
-        return "review" if not captured_any and _present_options(run) else "n/a"
+        # post-switch prompts exist but none captured a question -> logging gap
+        # (review); no post-switch prompts at all -> nothing to judge (n/a).
+        return "review" if post_switch_prompts else "n/a"
     if not before_q:
         return "met"  # nothing decided before the switch to re-ask
     gray = False

@@ -301,11 +301,20 @@ def ingest(
         conn.close()
 
 
-def ingest_rubrics(db_path: Path, use_case: str, results: list[dict[str, Any]]) -> None:
-    """Write (or replace) graded rubric step rows. `results` is score_all()'s output."""
+def ingest_rubrics(
+    db_path: Path,
+    use_case: str,
+    results: list[dict[str, Any]],
+    sessions: list[str] | None = None,
+) -> None:
+    """Write (or replace) graded rubric step rows. `results` is score_all()'s output.
+    `sessions` is every session being (re)ingested: clear rubric_scores for ALL of
+    them, not just those with results, so a session whose rubric no longer applies
+    doesn't keep stale rows from a prior run."""
     conn = connect(db_path)
     try:
-        for sid in {r["session_id"] for r in results}:
+        clear = set(sessions or []) | {r["session_id"] for r in results}
+        for sid in clear:
             conn.execute(
                 "DELETE FROM rubric_scores WHERE session_id = ? AND use_case = ?", (sid, use_case)
             )

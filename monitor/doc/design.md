@@ -13,6 +13,14 @@ For commands, see [`../README.md`](../README.md).
    session), so token totals are correct across delegation and multi-step tool
    loops.
 
+   > **Cost note.** This dedup re-fetches each involved session's full message
+   > history on every turn (orchestrator + active/completed/stacked subagents),
+   > discarding already-seen ids — so capture cost grows with conversation length
+   > (≈ O(turns × history)). With the monitor **on by default**, that cost is paid
+   > on the turn-completion path in production too. If it matters on a given deploy,
+   > set `AMORTIZED_MONITOR_ENABLED=false`. (Future optimization: incremental fetch
+   > once opencode exposes an after-cursor on `/session/{id}/message`.)
+
 2. **Completion (frontend).** The platform has no workflow-completion signal —
    the orchestrator loops forever offering next steps. So the tester clicks
    **"Mark complete"** in the Studio chat header (success / gave-up), which posts
@@ -360,11 +368,14 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
 ```
 
 > **Correlation limitation.** The `job_created` record is tied to a run only when
-> the creator passes `X-Monitor-Session` — i.e. the Studio confirm flow. Jobs
-> created outside Studio (direct CLI/API, or an agent-triggered `retry_job` via the
-> stateless MCP server, which carries no session header) emit no correlated record,
-> so `*_job_created` can read `missed` for those paths. Monitor runs are Studio-
-> driven, so this is expected; it's a known gap for non-Studio creation.
+> the creator passes `X-Monitor-Session` — i.e. the Studio **chat-confirm** flow
+> (`confirmAction`). Jobs created by any path without that header emit no correlated
+> record: direct CLI/API, the Jobs-tab **retry** button, the Recipes-tab re-execute,
+> and an agent-triggered `retry_job` via the stateless MCP server. Those are not part
+> of an agent-driven eval run (no agent session exists to correlate to), so this is
+> expected — but a run whose *only* job creation came through one of them will read
+> `*_job_created: missed`. (`_emit_job_created` is wired on `retry_job` defensively so
+> it works if a header is ever present.)
 
 ## Structured store (`--store` / `--export`)
 

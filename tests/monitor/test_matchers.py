@@ -191,6 +191,25 @@ def test_judge_valid() -> None:
     assert score_auto(_run(), m) == "missed"
 
 
+def test_judge_valid_tolerates_truncated_catalog() -> None:
+    # a large list_models output that scrub_text truncated is no longer valid JSON;
+    # _catalog_names must still extract names via regex so judge_valid keeps working.
+    truncated = (
+        '{"models":[{"name":"gpt-oss","model_name":"openai/gpt-oss-120b"},{"nam…[+9000 chars]'
+    )
+    run = _run(
+        {"tool": "list_models", "output": truncated},
+        {"tool": "validate_eval_job", "judge": "gpt-oss"},
+    )
+    assert score_auto(run, {"type": "judge_valid"}) == "met"
+    # a mangled name (the model_name, not name) is still caught as wrong
+    run2 = _run(
+        {"tool": "list_models", "output": truncated},
+        {"tool": "validate_eval_job", "judge": "openai/gpt-oss-120b"},
+    )
+    assert score_auto(run2, {"type": "judge_valid"}) == "wrong"
+
+
 def test_eval_phase() -> None:
     m = {"type": "eval_phase"}
     base = {"tool": "validate_eval_job", "role": "eval"}

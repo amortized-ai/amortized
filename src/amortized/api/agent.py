@@ -380,7 +380,9 @@ async def _record_turn_metrics(
             msg_has_text = bool(msg_text)
             msg_tool_count = sum(1 for p in msg_parts if p.get("type") == "tool")
             if msg_has_text:
-                texts.append({"role": role, "text": msg_text})
+                # assistant prose can echo a secret the user pasted -> value-scrub it,
+                # same as present_options text and tool output.
+                texts.append({"role": role, "text": scrub_text(msg_text)})
             for part in msg_parts:
                 if part.get("type") != "tool":
                     continue

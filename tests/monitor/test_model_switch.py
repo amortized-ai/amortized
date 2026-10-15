@@ -60,6 +60,16 @@ def test_context_after_switch_met_on_new_question() -> None:
     assert score_auto(run, {"type": "context_after_switch"}) == "met"
 
 
+def test_context_after_switch_review_when_postswitch_question_uncaptured() -> None:
+    # pre-switch prompt captured; post-switch prompt exists but its question wasn't
+    # captured (logging gap) -> review, not n/a (the bug: captured_any hid it).
+    pre = _turn("opus", "How many examples should we generate?")
+    post = _turn("sonnet")  # switch turn...
+    post["tool_calls"] = [{"tool": "present_options", "role": "orchestrator"}]  # no question
+    run = _run(pre, post)
+    assert score_auto(run, {"type": "context_after_switch"}) == "review"
+
+
 def test_context_after_switch_met_when_nothing_before() -> None:
     run = _run(
         _turn("opus"),

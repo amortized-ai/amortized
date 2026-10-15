@@ -144,6 +144,31 @@ def test_promoted_fields_persisted(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_ingest_rubrics_clears_stale_rows(tmp_path: Path) -> None:
+    db = tmp_path / "r.sqlite"
+    rb = {
+        "session_id": "s1",
+        "skill": "sdg/task-distillation",
+        "role": "sdg",
+        "adherence_pct": 100.0,
+        "steps": [{"step_id": "x", "status": "met", "weight": 1.0, "reason": ""}],
+    }
+    # first ingest: rubric applied to s1
+    store.ingest_rubrics(db, "general", [rb], sessions=["s1"])
+    conn = sqlite3.connect(db)
+    assert (
+        conn.execute("SELECT COUNT(*) FROM rubric_scores WHERE session_id='s1'").fetchone()[0] == 1
+    )
+    conn.close()
+    # re-ingest s1 with NO rubric results (gate no longer applies) -> stale rows cleared
+    store.ingest_rubrics(db, "general", [], sessions=["s1"])
+    conn = sqlite3.connect(db)
+    assert (
+        conn.execute("SELECT COUNT(*) FROM rubric_scores WHERE session_id='s1'").fetchone()[0] == 0
+    )
+    conn.close()
+
+
 def test_export_json_and_csv(tmp_path: Path) -> None:
     db = tmp_path / "runs.sqlite"
     _ingest(db)
