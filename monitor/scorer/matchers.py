@@ -15,11 +15,32 @@ from typing import Any
 from monitor.scorer.model import Run, _calls, _parse_dt, turn_is_stall
 from monitor.scorer.requires import _requires_met, skill_loaded
 from monitor.scorer.similarity import (
+    SIM_EMBED_HIGH,
     SIM_GRAY,
     SIM_HIGH,
     differs_only_numerically,
+    embedding_similarity,
     similarity,
 )
+
+
+def _pair_verdict(a: str, b: str) -> str:
+    """Compare two option/question strings -> "same" | "gray" | "distinct".
+
+    Lexical first (token-set Jaccard); when the `--embeddings` tier is enabled, cosine
+    over embeddings resolves the lexical gray band and catches paraphrases. A
+    numeric-only difference ("1000" vs "2000") is always a distinct choice.
+    """
+    if differs_only_numerically(a, b):
+        return "distinct"
+    if similarity(a, b) >= SIM_HIGH:
+        return "same"
+    esim = embedding_similarity(a, b)  # None when embeddings disabled
+    if esim is not None:
+        # embeddings enabled -> they decide the uncertain band
+        return "same" if esim >= SIM_EMBED_HIGH else "distinct"
+    return "gray" if similarity(a, b) >= SIM_GRAY else "distinct"
+
 
 Matcher = Callable[[Run, dict[str, Any]], str]
 MATCHERS: dict[str, Matcher] = {}
@@ -493,13 +514,10 @@ def _m_duplicate_options(run: Run, match: dict[str, Any]) -> str:
         checkable = True
         for i in range(len(texts)):
             for j in range(i + 1, len(texts)):
-                # options differing only by a number are distinct choices, not dups
-                if differs_only_numerically(texts[i], texts[j]):
-                    continue
-                sim = similarity(texts[i], texts[j])
-                if sim >= SIM_HIGH:
+                verdict = _pair_verdict(texts[i], texts[j])
+                if verdict == "same":
                     return "wrong"
-                if sim >= SIM_GRAY:
+                if verdict == "gray":
                     gray = True
     if not checkable:
         return "review"
@@ -538,12 +556,10 @@ def _m_repeated_decision(run: Run, match: dict[str, Any]) -> str:
     for questions in segments.values():
         for i in range(len(questions)):
             for j in range(i + 1, len(questions)):
-                if differs_only_numerically(questions[i], questions[j]):
-                    continue
-                sim = similarity(questions[i], questions[j])
-                if sim >= SIM_HIGH:
+                verdict = _pair_verdict(questions[i], questions[j])
+                if verdict == "same":
                     return "wrong"
-                if sim >= SIM_GRAY:
+                if verdict == "gray":
                     gray = True
     return "review" if gray else "met"
 
@@ -578,10 +594,10 @@ def _m_context_after_switch(run: Run, match: dict[str, Any]) -> str:
     gray = False
     for qa in after_q:
         for qb in before_q:
-            sim = similarity(qa, qb)
-            if sim >= SIM_HIGH:
+            verdict = _pair_verdict(qa, qb)
+            if verdict == "same":
                 return "wrong"
-            if sim >= SIM_GRAY:
+            if verdict == "gray":
                 gray = True
     return "review" if gray else "met"
 

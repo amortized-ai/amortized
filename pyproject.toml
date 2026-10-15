@@ -52,6 +52,8 @@ monitor = [
     # parquet export (process_monitor_logs.py --export parquet); json/csv need neither.
     "pandas>=2.0",
     "pyarrow>=14.0",
+    # semantic embedding tier for the redundancy checks (--embeddings).
+    "sentence-transformers>=2.2",
 ]
 
 [tool.setuptools.packages.find]

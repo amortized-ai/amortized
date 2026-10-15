@@ -87,6 +87,18 @@ def main() -> None:
         "llm_judge steps are judged when --llm-judge is also set",
     )
     parser.add_argument(
+        "--embeddings",
+        action="store_true",
+        help="Add the semantic embedding tier to the duplicate/repeated-option checks "
+        "(cosine over option/question embeddings; needs the `monitor` extra). Catches "
+        "paraphrase duplicates and resolves the lexical gray band without an LLM call.",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        default="all-MiniLM-L6-v2",
+        help="sentence-transformers model for --embeddings (default: all-MiniLM-L6-v2)",
+    )
+    parser.add_argument(
         "--store",
         type=Path,
         help="Ingest raw logs + scores into a SQLite DB at this path (idempotent)",
@@ -101,6 +113,11 @@ def main() -> None:
 
     if not args.log_dir.is_dir():
         sys.exit(f"Not a directory: {args.log_dir}")
+
+    if args.embeddings:
+        from monitor.scorer import similarity
+
+        similarity.set_embedder(similarity.default_embedder(args.embedding_model))
 
     checklist = load_checklist(args.use_case)
     runs = load_runs(args.log_dir)

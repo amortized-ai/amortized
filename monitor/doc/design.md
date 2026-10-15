@@ -108,7 +108,7 @@ one observable there.
 
 ### Redundancy rows (aspect F) — lexical + semantic
 
-The duplicate/repeated-option checks are graded in **two tiers**:
+The duplicate/repeated-option checks are graded in **three tiers**:
 
 1. **Lexical (deterministic)** — `no_duplicate_options_auto` / `no_repeated_decisions_auto`
    use the `duplicate_options` / `repeated_decision` matchers (`scorer/similarity.py`,
@@ -116,17 +116,19 @@ The duplicate/repeated-option checks are graded in **two tiers**:
    option titles / re-asked questions deterministically: high overlap → `wrong`, gray
    band → `review`, numeric-only differences treated as distinct, `repeated_decision`
    scoped per delegation segment so training-set vs eval-set size aren't conflated.
-2. **Semantic (LLM backstop)** — the `no_duplicate_options` / `no_repeated_decisions`
-   `llm_judge` rows catch paraphrases the lexical tier misses (same meaning, different
-   wording), judged from the logged `present_options` question + option titles. User
-   replies aren't logged, so a decision is treated as already-made when the same choice
-   was presented earlier.
-
-> **Pending:** an **embedding-based** semantic tier (a deterministic `--embeddings`
-> path between lexical and full-LLM — cosine over option/question embeddings) was
-> deferred. Today it's lexical + LLM only; add `--embeddings` to catch paraphrase
-> duplicates without an LLM call. (Decision at design time: lexical default + optional
-> embeddings; the llm_judge rows stay the semantic backstop either way.)
+2. **Semantic embeddings (optional, `--embeddings`)** — when enabled, cosine over
+   option/question embeddings (`SIM_EMBED_HIGH`, `scorer/similarity.py` via a pluggable
+   `set_embedder`; default sentence-transformers behind the `monitor` extra) resolves
+   the lexical gray band and catches paraphrase duplicates the lexical tier misses
+   entirely ("use the whole dataset" vs "use the entire corpus"), with no LLM call. A
+   numeric-only difference stays a distinct choice regardless. Shared by all three
+   redundancy matchers (`duplicate_options`, `repeated_decision`, `context_after_switch`)
+   via `_pair_verdict`.
+3. **Semantic (LLM backstop)** — the `no_duplicate_options` / `no_repeated_decisions`
+   `llm_judge` rows remain the final backstop (same meaning, different wording), judged
+   from the logged `present_options` question + option titles. User replies aren't
+   logged, so a decision is treated as already-made when the same choice was presented
+   earlier.
 
 ## End-to-end testing loop
 
