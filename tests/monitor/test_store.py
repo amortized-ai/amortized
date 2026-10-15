@@ -96,9 +96,11 @@ def test_cross_axis_query(tmp_path: Path) -> None:
         models = {r[0] for r in rows}
         assert "claude-opus-4-8" in models
         assert "claude-sonnet-5-5" in models
-        # the failing beta run has 0 met
+        # the failing beta run scores far worse than the clean alpha run
         beta = next(r for r in rows if r[0] == "claude-sonnet-5-5")
-        assert beta[1] == 0
+        alpha = next(r for r in rows if r[0] == "claude-opus-4-8")
+        assert beta[1] < alpha[1]  # fewer met
+        assert beta[1] <= 1  # at most the no-stall freebie (it errored out immediately)
         # per-role tool_calls breakdown
         roles = {r[0] for r in conn.execute("SELECT DISTINCT role FROM tool_calls").fetchall()}
         assert {"sdg", "training", "eval"} <= roles

@@ -84,13 +84,15 @@ default when a signal is absent), `n/a`, `review`.
 ### Conditional rows — `requires`
 
 A row may carry a `requires:` precondition. When it isn't satisfied for a run the
-row scores `n/a` (and, for `llm_judge` rows, is *not* sent to the judge). Today the
-only type is `skill_loaded` — a `read` whose output echoes a guide path
-(`path_contains`), optionally scoped to a subagent `role` (sub-skills belong to
-subagents, so the role disambiguates which agent loaded which guide):
+row scores `n/a` (and, for `llm_judge` rows, is *not* sent to the judge). The main
+type is `skill_loaded` — matching the opencode **native `skill` tool** call
+(`skill({name: "sdg-task-distillation"})`, whose name is promoted to the tool-call
+`skill` field) by exact `skill:` name and/or `role` (derived from the `sdg-`/
+`training-` name prefix). A pre-migration `read` of a guide path (`path_contains`) is
+accepted as a back-compat fallback for old logs:
 
 ```yaml
-requires: { type: skill_loaded, role: sdg, path_contains: "skills/sdg/task-distillation/" }
+requires: { type: skill_loaded, role: sdg, skill: "sdg-task-distillation" }
 ```
 
 This gates the **skill-adherence** rows (aspect **G**). On top of the auto
@@ -386,3 +388,35 @@ adherence% = Σ weight(met) / Σ weight(met + wrong + missed)    (n/a, review ex
 `--skill-rubric` prints per-run adherence % + each step's status + the skipped
 steps, and (with `--store`) writes the `rubric_scores` table. Dropping a new
 `rubric.yaml` into the skills tree adds a graded skill with no code change.
+
+## Action contract (`action_required`)
+
+Each native skill declares, in its `SKILL.md` frontmatter `metadata:`, the tool it is
+expected to emit — the authored contract, readable by both opencode and the monitor:
+
+```yaml
+metadata:
+  stage: sdg
+  action_required: true
+  emits: [validate_sdg_job]
+```
+
+`scorer/skills.py` reads these contracts; `deliverable_tools()` is the union of all
+`emits` (the set of tools that count as real progress). Rubrics also carry per-step
+`action_required`/`emits` scored by the `action_emitted` matcher (the deliverable tool
+actually fired).
+
+## Stall detection
+
+A **stall** is a turn that announced work ("I'm preparing the workflow…") with **zero
+tool calls**, then needed a user nudge to actually act — a violation of workflow.md's
+"NEVER narrate your internal process" that inflates turns-to-complete.
+
+- `Run.stall_turns` (reported per run + stored) counts turns with assistant prose,
+  no tool calls, and forward-looking promise text (`STALL_PROMISE_RE`).
+- The `no_stall` matcher scores `wrong` when a stall turn is followed by a later turn
+  that resumes progress (a nudge-recovered stall — the user-visible failure); `met`
+  when there is none; `review` when stalls exist but none recovered (likely abandoned,
+  captured by the completion/outcome rows) or when no assistant text was captured.
+- The `no_empty_promise_stall` `llm_judge` row is the semantic backstop (claim-vs-action
+  over the logged `texts` + `tool_calls`).

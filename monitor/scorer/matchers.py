@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from monitor.scorer.model import Run, _calls, _parse_dt
+from monitor.scorer.model import Run, _calls, _parse_dt, turn_is_stall
 from monitor.scorer.requires import _requires_met, skill_loaded
 from monitor.scorer.similarity import (
     SIM_GRAY,
@@ -434,6 +434,28 @@ def _m_job_monitored(run: Run, match: dict[str, Any]) -> str:
     if any(v == "wrong" for v in verdicts):
         return "wrong"
     return "missed"
+
+
+@matcher("no_stall")
+def _m_no_stall(run: Run, match: dict[str, Any]) -> str:
+    # The agent announced work but made no tool call, then needed a nudge: a stall
+    # turn (promise prose + zero tool calls) followed by a later turn that resumes
+    # progress (any tool call) = `wrong` (the user-visible failure). No stall -> met;
+    # stalls present but never recovered (e.g. trailing / abandoned) -> review (still
+    # surfaced, but captured by completion/outcome rows); no assistant text captured
+    # anywhere -> review (logging dependency); no turns -> n/a.
+    turns = run.counted_turns
+    if not turns:
+        return "n/a"
+    if not any(t.get("texts") for t in turns):
+        return "review"
+    stalls = [i for i, t in enumerate(turns) if turn_is_stall(t)]
+    if not stalls:
+        return "met"
+    for i in stalls:
+        if any(turns[j].get("tool_calls") for j in range(i + 1, len(turns))):
+            return "wrong"  # nudge-recovered stall
+    return "review"
 
 
 def _present_options(run: Run) -> list[dict[str, Any]]:

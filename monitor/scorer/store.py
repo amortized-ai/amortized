@@ -34,6 +34,7 @@ _COLUMNS: dict[str, list[str]] = {
         "cost",
         "wall_clock_s",
         "avg_latency_s",
+        "stall_turns",
     ],
     "turns": [
         "session_id",
@@ -100,6 +101,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     session_id TEXT, use_case TEXT, model TEXT, outcome TEXT,
     turns INTEGER, tokens INTEGER, cost REAL, wall_clock_s REAL, avg_latency_s REAL,
+    stall_turns INTEGER,
     PRIMARY KEY (session_id, use_case)
 );
 CREATE TABLE IF NOT EXISTS turns (
@@ -208,6 +210,7 @@ def ingest(
                     "cost": run.total_cost,
                     "wall_clock_s": run.wall_clock_s,
                     "avg_latency_s": run.avg_latency_s,
+                    "stall_turns": run.stall_turns,
                 },
             )
             for ti, turn in enumerate(run.counted_turns):

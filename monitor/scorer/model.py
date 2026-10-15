@@ -8,12 +8,34 @@ checklist overlays.
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
+
+# Forward-looking "I'm about to act" prose. A turn that emits this but no tool call
+# is a stall — it announced work and stopped, needing a user nudge to actually act.
+STALL_PROMISE_RE = re.compile(
+    r"prepar(e|ing)|setting up|generating|put together|assembl|"
+    r"i['\u2019]?ll (now|go ahead|create|prepare|put together|assemble|start)|"
+    r"one moment|working on (it|the)|let me (set up|prepare|assemble|put together|get)|"
+    r"hang tight|stand by|give me a (moment|sec)",
+    re.IGNORECASE,
+)
+
+
+def turn_is_stall(turn: dict[str, Any]) -> bool:
+    """A turn that produced assistant prose, made ZERO tool calls, and the prose
+    promises imminent action (vs. asking a question or concluding)."""
+    texts = turn.get("texts") or []
+    if not texts or turn.get("tool_calls"):
+        return False
+    joined = " ".join(str(t.get("text", "")) for t in texts)
+    return bool(STALL_PROMISE_RE.search(joined))
+
 
 try:
     import yaml
@@ -113,6 +135,13 @@ class Run:
     @property
     def outcome(self) -> str | None:
         return self.completion.get("outcome") if self.completion else None
+
+    @property
+    def stall_turns(self) -> int:
+        """Turns that announced work ("preparing the workflow…") but made no tool
+        call — the agent stalled and needed a nudge. An efficiency defect (inflates
+        turns-to-complete); see the `no_stall` matcher for whether a nudge recovered."""
+        return sum(1 for t in self.counted_turns if turn_is_stall(t))
 
     @property
     def models(self) -> list[str]:

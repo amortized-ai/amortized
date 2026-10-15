@@ -520,6 +520,29 @@ rows:
       observable behavior only — the proxy cannot see opencode's context re-feed.)
     adjudicate: llm_judge
 
+  # ---- Stalls: announce-without-action (needs a nudge) ----------------------
+  # The agent emits "I'm preparing the workflow…" with NO tool call, then needs a
+  # user nudge to actually emit the card. workflow.md forbids this ("NEVER narrate
+  # your internal process"); it inflates turns-to-complete. See also Run.stall_turns.
+  - id: no_stall_auto
+    stage: "No stall (announce without action)"
+    aspect: F
+    expected: >
+      No turn announces imminent work ("preparing…", "I'll now generate…") with zero
+      tool calls and then needs a later nudge turn to actually act.
+    adjudicate: auto
+    match: { type: no_stall }
+
+  - id: no_empty_promise_stall
+    stage: "No empty-promise stalls"
+    aspect: F
+    expected: >
+      The agent never says it will do something (emit the card, generate, set up) and
+      then ends the turn without doing it, forcing the user to nudge it to continue.
+      `wrong` if a turn promises an action, emits no tool call, and a later turn then
+      performs it; `met` otherwise; `n/a` for a single-turn run.
+    adjudicate: llm_judge
+
   # ---- Skill adherence (aspect G) -------------------------------------------
   # On top of the auto skill-LOADING rows (sdg_skill_loaded / train_skill_loaded,
   # which only assert a guide was read), these check whether the workflow FOLLOWED

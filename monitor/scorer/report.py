@@ -59,7 +59,8 @@ def print_per_run(
             f"- turns-to-complete: **{run.turns_to_complete}**   "
             f"tokens excl. cache: **{_fmt(run.total_tokens, 'int')}**   "
             f"cost: {_fmt(run.total_cost, '$')}   "
-            f"wall-clock: {_fmt(run.wall_clock_s, 's')}"
+            f"wall-clock: {_fmt(run.wall_clock_s, 's')}   "
+            f"stalls: {run.stall_turns}"
         )
         print(
             f"- response latency: avg {_fmt(run.avg_latency_s, 's')}   "
@@ -146,6 +147,7 @@ def print_comparison(
         "session",
         "outcome",
         "turns",
+        "stalls",
         "tokens (excl cache)",
         "cost",
         "time",
@@ -181,6 +183,7 @@ def print_comparison(
             run.session_id[:8],
             run.outcome or "(not marked)",
             str(run.turns_to_complete),
+            str(run.stall_turns),
             _fmt(run.total_tokens, "int"),
             _fmt(run.total_cost, "$"),
             _fmt(run.wall_clock_s, "s"),
