@@ -1588,13 +1588,12 @@ async def get_session_messages(session_id: str) -> Any:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
     messages = await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
-    try:
-        if isinstance(messages, list):
-            _bind_sdg_prompt_to_approved(messages)
-    except Exception:
-        logger.warning("SDG prompt-bind failed (passing through)", exc_info=True)
-    # Drop the cards the interaction gate stripped from the turn result, so the UI (which
-    # re-fetches this raw history) doesn't re-render a card the gate removed.
+    # Drop the cards the interaction gate stripped from the turn result FIRST, so the UI
+    # (which re-fetches this raw history) doesn't re-render a card the gate removed — and so
+    # the prompt-bind below only ever sees the LIVE parts. Binding before filtering made the
+    # bind pass walk suppressed parts too: a stripped show_prompt could feed the approved
+    # prompt set, and an errored validate card (now suppressed per the gate fix) could be
+    # touched. With the errored card dropped here first, binding lands only on the live one.
     if isinstance(messages, list) and state.suppressed_call_ids:
         for msg in messages:
             parts = msg.get("parts") if isinstance(msg, dict) else None
@@ -1602,6 +1601,11 @@ async def get_session_messages(session_id: str) -> Any:
                 msg["parts"] = [
                     p for p in parts if str(p.get("callID")) not in state.suppressed_call_ids
                 ]
+    try:
+        if isinstance(messages, list):
+            _bind_sdg_prompt_to_approved(messages)
+    except Exception:
+        logger.warning("SDG prompt-bind failed (passing through)", exc_info=True)
     return messages
 
 
