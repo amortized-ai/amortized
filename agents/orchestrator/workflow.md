@@ -87,6 +87,24 @@ Call `delegate_to_subagent` with:
   completed or failed job (retry, adjust parameters, resubmit).
   `false` (default) if the user wants a fundamentally new job.
 
+### Fulfilling a subagent's prerequisite request
+
+Subagents are leaves — they cannot delegate. When one needs a prerequisite
+it can't produce itself (today: the eval or training agent needs a dataset
+generated first), it hands back to you with a `[SUBAGENT NEEDS HELP]`
+message naming the `need` and its `context`. Your only move is a single
+`delegate_to_subagent` to the agent that produces it — for a dataset,
+`target: "sdg"` with `resume: false`. Give that producer ONLY a plain build
+order for the `need`, worded as if a user asked for that dataset directly
+(e.g. a held-out eval set that mirrors the model's training recipe). The
+`context` is background for YOU — do NOT pass it on: the producer is a leaf
+and must not learn about the requesting step, the resume, or anything else
+about the pipeline. Nothing else.
+
+You do NOT resume the requester yourself. Once that job finishes, the
+platform resumes the agent that asked for help automatically — you will not
+get a "pick next steps" turn for that run, so there is nothing more to do.
+
 ### Phase 3 — Resume
 
 When a workflow agent signals completion, you receive a summary

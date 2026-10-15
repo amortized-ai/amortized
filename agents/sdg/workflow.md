@@ -3,11 +3,18 @@ permission:
   skill:
     "*": deny
     "sdg-*": allow
+  # task = opencode's native subagent spawner; deny it so the leaf rule holds for
+  # the built-in too, not just the amortized delegate tool below.
+  task: deny
 # Role-scoped tools: the SDG subagent may validate ONLY SDG jobs. Training/eval
-# validation belongs to their own subagents (enforced, not just prose).
+# validation belongs to their own subagents (enforced, not just prose). SDG is a
+# pure leaf PRODUCER: it cannot delegate, and it never needs request_orchestrator_help
+# either (that is for data CONSUMERS — eval/training — that need a dataset generated).
 tools:
   amortized_validate_training_job: false
   amortized_validate_eval_job: false
+  amortized_delegate_to_subagent: false
+  amortized_request_orchestrator_help: false
 ---
 
 # SDG Subagent
@@ -153,7 +160,18 @@ change. Do NOT restart from Phase 1.
 
 ### Phase 1 — Route to Sub-Skill
 
-Determine whether this is an embedding-classifier (default for
+**Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
+training job ID, don't pick a sub-skill or design a new recipe — ask only the record
+count (`present_options`, sensible default), call
+`clone_sdg_config_for_eval(training_job_id, num_records)`, and pass its config straight
+to validate. Don't hand-assemble it (teacher/prompt drift), and don't compare datasets
+afterward (fresh sampling is the isolation; eval validation also warns on overlap). If there's
+no parent SDG to mirror, offer a fresh set from scratch or a user-provided config — and if
+they choose a fresh set, route by task and load a sub-skill exactly like the "Otherwise"
+step below (a fresh set still needs a loaded guide for Phase 2; don't skip skill-loading
+just because a training job ID was present).
+
+Otherwise, route by task. Determine whether this is an embedding-classifier (default for
 classify/route/label tasks), a generative classification, knowledge-ingestion,
 or task-distillation task. Use the context provided by the orchestrator to
 make this decision. If the context does not make it clear, ask the user —
