@@ -11,10 +11,10 @@ and per-aspect performance scored against an expected-aspect checklist.
 > runs and the scoring are done against your kind deploy — not on a laptop. The
 > commands below assume a shell on the devbox that hosts the cluster.
 
-> **Enable the monitor first.** Capture is off by default (production writes
-> nothing). Set `AMORTIZED_MONITOR_ENABLED=true` on the server deploy you test
-> against — otherwise no logs are written and the "Mark complete" button is
-> hidden in Studio.
+> **Monitor is on by default.** Capture runs on every deploy, writing logs and
+> showing the "Mark complete" button in Studio. Set `AMORTIZED_MONITOR_ENABLED=false`
+> on a deploy that should not be evaluated (skips the per-turn capture + its message
+> fan-out / log-volume cost).
 
 For how it all works (logging, checklist, scoring internals, log shapes) see
 [`doc/design.md`](doc/design.md).

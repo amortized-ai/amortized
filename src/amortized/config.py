@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
     monitor_enabled: bool = Field(
-        default=False,
+        default=True,
         description="Master switch for the monitor capture path (per-turn metrics, full "
-        "tool-input capture, job-created records, and the mark-complete endpoint). Off by "
-        "default so production writes nothing and pays no capture cost; enable "
-        "(AMORTIZED_MONITOR_ENABLED=true) only on an evaluation deploy.",
+        "tool-input capture, job-created records, and the mark-complete endpoint). On by "
+        "default; set AMORTIZED_MONITOR_ENABLED=false to disable capture (and its per-turn "
+        "message fan-out / log-volume cost) on a deploy that should not be evaluated.",
     )
     monitor_log_dir: Path | None = Field(
         default=None,

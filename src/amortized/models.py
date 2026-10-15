@@ -255,7 +255,7 @@ class ConfigResponse(BaseModel):
     mlflow_gateway_uri: str = ""
     image_registry: str = ""
     available_backends: list[str] = Field(default_factory=list)
-    monitor_enabled: bool = False
+    monitor_enabled: bool = True
 
 
 # ---------------------------------------------------------------------------

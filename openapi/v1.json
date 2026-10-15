@@ -2619,7 +2619,7 @@
           "monitor_enabled": {
             "type": "boolean",
             "title": "Monitor Enabled",
-            "default": false
+            "default": true
           }
         },
         "type": "object",
