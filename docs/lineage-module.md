@@ -57,12 +57,12 @@ only owns *which* fields are gated references and how to walk them.
   stays inline — it is about *which source* is chosen, not graph ordering — so training
   still skips the parent gate when a direct `data_path` is supplied.
 - **Layer 2** (`api/agent.py`): `_not_ready_violations` recognises a committing dispatch via
-  a small local map (`_DISPATCH_JOB_TYPE = {validate_sdg_job → sdg, validate_training_job →
-  training, validate_eval_job → eval}` — tool names are a proxy concept, so this lives in
-  the proxy, not the pure module), then `present_gated_fields(tool_input)` gates each
-  referenced upstream.
+  the validate-tool→type map (`_TYPE_BY_VALIDATE_TOOL`; tool names are a proxy concept, so
+  this correspondence is owned in the proxy, not the pure module — its single source is
+  `_JOB_TYPE_FOR_CONFIRM` in `agent_confirm`, the confirm cards being these same tools), then
+  `present_gated_fields(tool_input)` gates each referenced upstream.
 - **Stale-reuse check** (`_dispatch_provenance_violations`): uses `_DISPATCH_PARENT_TYPE`,
-  derived in `agent.py` as `_DISPATCH_JOB_TYPE` minus SDG — the data-dependent downstream
+  derived in `agent.py` as `_TYPE_BY_VALIDATE_TOOL` minus SDG — the data-dependent downstream
   types (SDG is a dataset producer, not a consumer of one).
 
 The only soft, prose-level advisory left at the delegation boundary is the **data

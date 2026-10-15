@@ -28,6 +28,7 @@ from amortized.api.agent_claims import (
 )
 from amortized.api.agent_confirm import (
     _CONFIRM_CARD_TOOLS,
+    _CONFIRM_TOOL_FOR_JOB_TYPE,
     _JOB_TYPE_FOR_CONFIRM,
     _REVIEW_CARD_TOOLS,
     _first_unmet_precondition,
@@ -519,8 +520,11 @@ def _enforce_single_interaction(
     return {**result, "parts": kept}
 
 
-# Active subagent → the workflow phase its turns belong to (UI progress bar).
-_PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
+# Active subagent → the workflow phase its turns belong to (UI progress bar). The phase
+# name equals the subagent target, so derive it from _VALID_TARGETS rather than re-listing
+# the types: a target that drives a turn always has a matching phase, and the two sets
+# cannot fall out of sync (a missing phase would strand the UI bar on a stale stage).
+_PHASE_FOR_TARGET = {t: t for t in _VALID_TARGETS}
 
 
 # Synthetic tool name for the phase signal _ensure_phase_signal backfills when the model
@@ -887,12 +891,11 @@ _REUSE_DISCLOSED_RE = re.compile(
     r"|from (a |an )?(prior|earlier|previous)|from before)",
     re.I,
 )
-_VALIDATE_TOOL_BY_TYPE = {
-    "sdg": "validate_sdg_job",
-    "training": "validate_training_job",
-    "eval": "validate_eval_job",
-}
-_TYPE_BY_VALIDATE_TOOL = {tool: jtype for jtype, tool in _VALIDATE_TOOL_BY_TYPE.items()}
+# Job type ↔ its validate_*_job tool. The correspondence is owned once by
+# _JOB_TYPE_FOR_CONFIRM in agent_confirm (the confirm cards ARE these tools); alias it here
+# under validate-centric names so the fact lives in a single place and cannot drift.
+_VALIDATE_TOOL_BY_TYPE = _CONFIRM_TOOL_FOR_JOB_TYPE
+_TYPE_BY_VALIDATE_TOOL = _JOB_TYPE_FOR_CONFIRM
 
 # Check E ("premature submit") — a validate_*_job tool call only RENDERS a confirmation
 # card; the job is created solely when the user clicks Confirm on it (the frontend POSTs
@@ -911,22 +914,13 @@ _SUBMITTED_CLAIM_RE = re.compile(
     re.I,
 )
 
-# The committing dispatch tools and the job type each launches. The stage-gate
-# (Check D, _not_ready_violations) is otherwise field-driven via
-# lineage.present_gated_fields on the tool input; this map just restricts it to the
-# tools that actually commit a run, so an incidental job id on a read-only tool is not
-# treated as a dispatch.
-_DISPATCH_JOB_TYPE = {
-    "validate_sdg_job": "sdg",
-    "validate_training_job": "training",
-    "validate_eval_job": "eval",
-}
-
 # Check C — downstream dispatch tools Morty calls to commit a training/eval run onto a
 # parent dataset, for the stale-reuse provenance check. The call carries parent_job_id
 # as a structured argument, verified from the parent's DB record with no prose parsing.
-# SDG is a dataset *producer*, not a consumer of one, so it is excluded.
-_DISPATCH_PARENT_TYPE = {t: jt for t, jt in _DISPATCH_JOB_TYPE.items() if jt != "sdg"}
+# SDG is a dataset *producer*, not a consumer of one, so it is excluded. (Check D, the
+# field-driven stage-gate, keys on the full _TYPE_BY_VALIDATE_TOOL — every committing
+# dispatch — so an incidental job id on a read-only tool is never treated as a dispatch.)
+_DISPATCH_PARENT_TYPE = {t: jt for t, jt in _TYPE_BY_VALIDATE_TOOL.items() if jt != "sdg"}
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1223,7 +1217,7 @@ async def _not_ready_violations(
     result: dict[str, Any],
     job_cache: dict[str, dict[str, Any] | None],
 ) -> list[dict[str, Any]]:
-    """Check D — the stage-gate. A committing dispatch in this turn (_DISPATCH_JOB_TYPE)
+    """Check D — the stage-gate. A committing dispatch in this turn (_TYPE_BY_VALIDATE_TOOL)
     whose upstream job (the SDG dataset, or the model under eval) is not yet 'succeeded'
     — i.e. the workflow is being advanced before its prerequisite finished. Field-driven
     and purely structural: for each dispatch tool, every upstream-job reference its input
@@ -1236,7 +1230,7 @@ async def _not_ready_violations(
     for part in result.get("parts") or []:
         if part.get("type") != "tool":
             continue
-        dtype = _DISPATCH_JOB_TYPE.get(_tool_name(part))
+        dtype = _TYPE_BY_VALIDATE_TOOL.get(_tool_name(part))
         if dtype is None:
             continue  # not a committing dispatch tool
         inp = _get_tool_input(part)
