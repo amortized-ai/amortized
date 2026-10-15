@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     )
     data_dir: Path = Path("./data")
     recipes_dir: Path | None = None
+    monitor_log_dir: Path | None = Field(
+        default=None,
+        description="Directory for per-session monitor JSONL logs (testing metrics), one "
+        "<session_id>.jsonl file per conversation. Defaults to <data_dir>/monitor so it lands on "
+        "the writable/persistent data volume in-cluster.",
+    )
 
     api_key: str = Field(default="", description="API key for auth (empty = no auth)")
     cors_origins: str = Field(default="*", description="Comma-separated allowed CORS origins")
@@ -115,6 +121,10 @@ class Settings(BaseSettings):
         """Training image tag, never empty. An empty override must not fall through to
         job_image_tag (a CI commit sha that has no matching upstream training image)."""
         return self.training_image_tag or "latest"
+
+    @property
+    def resolved_monitor_log_dir(self) -> Path:
+        return self.monitor_log_dir or (self.data_dir / "monitor")
 
     model_config = {
         "env_prefix": "AMORTIZED_",

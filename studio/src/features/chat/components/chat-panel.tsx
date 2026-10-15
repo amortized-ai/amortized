@@ -12,6 +12,7 @@ import { SessionStatusBanner } from "./session-status-banner"
 import { MessageList } from "./message-list"
 import { ChatInput } from "./chat-input"
 import { PlanProgress } from "./plan-progress"
+import { MarkCompleteButton } from "./mark-complete-button"
 import { derivePlan } from "../utils/derive-plan-steps"
 
 function ChatPanelContent() {
@@ -56,6 +57,7 @@ function ChatPanelContent() {
       <SheetHeader className="border-b p-4">
         <div className="flex items-center justify-between">
           <SheetTitle>Chat</SheetTitle>
+          <MarkCompleteButton />
         </div>
       </SheetHeader>
       <PlanProgress plan={phasePlan} />
