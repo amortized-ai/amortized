@@ -75,7 +75,52 @@ def test_weighted_adherence_and_skipped() -> None:
     # met: asks_examples_first(2) + prompt_shown_before_validate(2) = 4
     # denom: + confirms_output_format missed(2) = 6  -> 66.7
     assert result["adherence_pct"] == 66.7
-    assert result["skipped"] == ["confirms_output_format"]
+    assert result["not_met"] == ["confirms_output_format"]
+    assert result["scored"] == 3  # 2 judged (met+missed) + 1 auto met
+    assert result["pending"] == 1  # teacher_name_verbatim review
+
+
+def test_not_met_includes_judge_wrong() -> None:
+    # the judge emits `wrong` (never `missed`); not_met must surface it
+    rb = _distillation_rubric()
+    run = _loaded_distillation()
+    judge_map = {"confirms_output_format": ("wrong", "went straight to validate")}
+    result = rubric.score_rubric(run, rb, judge_map)
+    assert "confirms_output_format" in result["not_met"]
+
+
+def test_gate_fail_closed_on_missing_or_unknown() -> None:
+    run = _loaded_distillation()
+    assert rubric.applies(run, {"skill": "x", "steps": [{}]}) is False  # no gate
+    assert rubric.applies(run, {"gate": {"type": "skil_loaded"}, "steps": [{}]}) is False  # typo
+    # a known gate still works
+    good = {
+        "gate": {
+            "type": "skill_loaded",
+            "role": "sdg",
+            "path_contains": "skills/sdg/task-distillation/",
+        },
+        "steps": [{}],
+    }
+    assert rubric.applies(run, good) is True
+
+
+def test_judge_failure_marked_distinct_from_na(monkeypatch: Any) -> None:
+    rubrics = [r for r in rubric.load_rubrics() if r["skill"] == "sdg/task-distillation"]
+    run = _loaded_distillation()
+
+    def _boom_call(model: str):
+        def call(system: str, prompt: str) -> str:
+            raise RuntimeError("judge down")
+
+        return call
+
+    monkeypatch.setattr(rubric, "_make_judge_call", _boom_call)
+    judge = rubric.judge_rubrics([run], rubrics, "fake")
+    step_map = judge[(run.session_id, "sdg/task-distillation")]
+    status, reason = step_map["asks_examples_first"]
+    assert status == "review"
+    assert reason == "judge call failed"
 
 
 def test_score_all_only_applicable(monkeypatch: Any) -> None:

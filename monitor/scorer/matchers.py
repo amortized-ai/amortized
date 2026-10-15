@@ -12,9 +12,14 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from monitor.scorer.model import Run, _calls
+from monitor.scorer.model import Run, _calls, _parse_dt
 from monitor.scorer.requires import _requires_met
-from monitor.scorer.similarity import SIM_GRAY, SIM_HIGH, similarity
+from monitor.scorer.similarity import (
+    SIM_GRAY,
+    SIM_HIGH,
+    differs_only_numerically,
+    similarity,
+)
 
 Matcher = Callable[[Run, dict[str, Any]], str]
 MATCHERS: dict[str, Matcher] = {}
@@ -327,6 +332,36 @@ def _m_judge_valid(run: Run, match: dict[str, Any]) -> str:
 
 
 _TERMINAL_STATUSES = ("succeeded", "failed", "cancelled")
+_STATUS_RE = re.compile(r'"status"\s*:\s*"([a-z_]+)"', re.IGNORECASE)
+
+
+def _is_terminal(output: str | None) -> bool:
+    """True if a get_job output's STATUS FIELD is terminal (not a substring match,
+    so `last_error: a step failed` with status=running is not a false terminal)."""
+    if not output:
+        return False
+    try:
+        data = json.loads(output)
+        if isinstance(data, dict):
+            return str(data.get("status", "")).lower() in _TERMINAL_STATUSES
+    except (json.JSONDecodeError, TypeError):
+        pass
+    m = _STATUS_RE.search(output)
+    return bool(m and m.group(1).lower() in _TERMINAL_STATUSES)
+
+
+def _get_job_polls(run: Run) -> list[tuple[Any, str | None, bool, bool]]:
+    """(turn_dt, job_id, is_terminal, had_job_id) for each get_job call, with the
+    poll's turn timestamp for ordering against job creation."""
+    polls: list[tuple[Any, str | None, bool, bool]] = []
+    for turn in run.counted_turns:
+        tdt = _parse_dt(turn.get("ts"))
+        for c in turn.get("tool_calls") or []:
+            if c.get("tool") != "get_job":
+                continue
+            jid = (c.get("input") or {}).get("job_id")
+            polls.append((tdt, jid, _is_terminal(c.get("output")), jid is not None))
+    return polls
 
 
 @matcher("job_created")
@@ -342,28 +377,36 @@ def _m_job_created(run: Run, match: dict[str, Any]) -> str:
 
 @matcher("job_monitored")
 def _m_job_monitored(run: Run, match: dict[str, Any]) -> str:
-    # After creation, the agent polled get_job for that job until a terminal status
-    # (succeeded/failed/cancelled) before moving on. n/a if nothing was created;
-    # missed if the created job was never polled; wrong if polled but never reached
-    # a terminal status in the logged output.
+    # EACH created job of the type must be polled via get_job — by job id, AFTER it
+    # was created — until a terminal status. n/a if nothing created; review if polls
+    # exist but none carry a job id (log predates input capture); wrong if any job
+    # was polled yet never reached terminal; missed if a created job was never polled.
     jt = match.get("job_type")
     jobs = [j for j in run.jobs if not jt or j.get("job_type") == jt]
     if not jobs:
         return "n/a"
-    job_ids = {j.get("job_id") for j in jobs if j.get("job_id")}
-    get_calls = _calls(run, "get_job")
-    if not get_calls:
-        return "missed"
-    saw_job = False
-    for c in get_calls:
-        jid = (c.get("input") or {}).get("job_id")
-        out = (c.get("output") or "").lower()
-        # match by job_id when captured; else fall back to any get_job (old logs)
-        if jid is None or jid in job_ids:
-            saw_job = True
-            if any(t in out for t in _TERMINAL_STATUSES):
-                return "met"
-    return "wrong" if saw_job else "missed"
+    polls = _get_job_polls(run)
+    if polls and not any(p[3] for p in polls):
+        return "review"  # get_job called but job id never captured -> can't correlate
+    verdicts: list[str] = []
+    for job in jobs:
+        jid = job.get("job_id")
+        created = _parse_dt(job.get("ts"))
+        # polls for THIS job that occurred at/after its creation
+        relevant = [
+            p for p in polls if p[1] == jid and (created is None or p[0] is None or p[0] >= created)
+        ]
+        if not relevant:
+            verdicts.append("missed")  # never polled (or only polled before creation)
+        elif any(p[2] for p in relevant):
+            verdicts.append("met")
+        else:
+            verdicts.append("wrong")  # polled but never terminal
+    if all(v == "met" for v in verdicts):
+        return "met"
+    if any(v == "wrong" for v in verdicts):
+        return "wrong"
+    return "missed"
 
 
 def _present_options(run: Run) -> list[dict[str, Any]]:
@@ -371,16 +414,18 @@ def _present_options(run: Run) -> list[dict[str, Any]]:
 
 
 def _option_texts(call: dict[str, Any]) -> list[str]:
-    """Option strings for a present_options call. Prefers the full captured input
-    (title + description), falls back to the promoted `options` titles."""
+    """Option *titles* for a present_options call (the choice label). Deliberately
+    NOT title+description: a shared boilerplate description would make genuinely
+    distinct options (different model cards) look near-identical. Falls back to the
+    description only when a title is absent, then to the promoted `options` titles."""
     opts = (call.get("input") or {}).get("options")
     if isinstance(opts, list):
         out: list[str] = []
         for o in opts:
             if isinstance(o, dict):
-                s = " ".join(str(o[k]) for k in ("title", "description") if o.get(k))
-                if s.strip():
-                    out.append(s)
+                label = str(o.get("title") or o.get("description") or "").strip()
+                if label:
+                    out.append(label)
         if out:
             return out
     titles = call.get("options")
@@ -410,6 +455,9 @@ def _m_duplicate_options(run: Run, match: dict[str, Any]) -> str:
         checkable = True
         for i in range(len(texts)):
             for j in range(i + 1, len(texts)):
+                # options differing only by a number are distinct choices, not dups
+                if differs_only_numerically(texts[i], texts[j]):
+                    continue
                 sim = similarity(texts[i], texts[j])
                 if sim >= SIM_HIGH:
                     return "wrong"
@@ -422,24 +470,43 @@ def _m_duplicate_options(run: Run, match: dict[str, Any]) -> str:
 
 @matcher("repeated_decision")
 def _m_repeated_decision(run: Run, match: dict[str, Any]) -> str:
-    # Deterministic pre-filter for `no_repeated_decisions`: two present_options
-    # prompts that re-ask a near-identical question (user replies aren't logged, so
-    # a re-asked question is the observable signal). n/a with <2 prompts; review if
-    # prompts exist but questions weren't captured.
+    # Deterministic pre-filter for `no_repeated_decisions`: a present_options prompt
+    # that re-asks a near-identical question ALREADY asked *in the same stage*. We
+    # segment by delegate_to_subagent so the same question for different stages/
+    # datasets (training-set size vs held-out eval-set size — a legitimately fresh
+    # decision) is NOT flagged. n/a with <2 prompts; review if questions weren't
+    # captured; numeric-only differences are treated as distinct.
     calls = _present_options(run)
     if len(calls) < 2:
         return "n/a"
-    questions = [q for q in (_question_text(c) for c in calls) if q.strip()]
-    if len(questions) < 2:
+    # bucket questions by delegation segment, in order
+    segments: dict[int, list[str]] = {}
+    seg = 0
+    captured_any = False
+    for c in run.tool_calls:
+        if c.get("tool") == "delegate_to_subagent":
+            seg += 1
+            continue
+        if c.get("tool") != "present_options":
+            continue
+        q = _question_text(c)
+        if not q.strip():
+            continue
+        captured_any = True
+        segments.setdefault(seg, []).append(q)
+    if not captured_any:
         return "review"
     gray = False
-    for i in range(len(questions)):
-        for j in range(i + 1, len(questions)):
-            sim = similarity(questions[i], questions[j])
-            if sim >= SIM_HIGH:
-                return "wrong"
-            if sim >= SIM_GRAY:
-                gray = True
+    for questions in segments.values():
+        for i in range(len(questions)):
+            for j in range(i + 1, len(questions)):
+                if differs_only_numerically(questions[i], questions[j]):
+                    continue
+                sim = similarity(questions[i], questions[j])
+                if sim >= SIM_HIGH:
+                    return "wrong"
+                if sim >= SIM_GRAY:
+                    gray = True
     return "review" if gray else "met"
 
 

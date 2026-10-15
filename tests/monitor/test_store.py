@@ -52,6 +52,35 @@ def test_ingest_is_idempotent(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_ingest_preserves_other_use_case(tmp_path: Path) -> None:
+    # Re-ingesting one use case must not drop the same session's other-use-case rows.
+    db = tmp_path / "runs.sqlite"
+    runs = load_runs(_FIXTURES / "logs")
+    general = load_checklist("general")
+    rfe = load_checklist("rfe_assess")
+    gscores = {r.session_id: score_run(r, general) for r in runs}
+    rscores = {r.session_id: score_run(r, rfe) for r in runs}
+
+    store.ingest(db, runs, use_case="general", checklist=general, scores=gscores)
+    store.ingest(db, runs, use_case="rfe_assess", checklist=rfe, scores=rscores)
+    # re-ingest general again: must keep the rfe_assess rows
+    store.ingest(db, runs, use_case="general", checklist=general, scores=gscores)
+
+    conn = sqlite3.connect(db)
+    try:
+        use_cases = {
+            r[0] for r in conn.execute("SELECT DISTINCT use_case FROM row_scores").fetchall()
+        }
+        assert use_cases == {"general", "rfe_assess"}
+        # runs now holds both use cases for the same session
+        n_runs = conn.execute(
+            "SELECT COUNT(*) FROM runs WHERE session_id = 'sess-alpha'"
+        ).fetchone()[0]
+        assert n_runs == 2
+    finally:
+        conn.close()
+
+
 def test_cross_axis_query(tmp_path: Path) -> None:
     db = tmp_path / "runs.sqlite"
     _ingest(db)

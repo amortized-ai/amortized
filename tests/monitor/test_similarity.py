@@ -49,18 +49,39 @@ def test_duplicate_options_review_when_not_captured() -> None:
     assert score_auto(run, {"type": "duplicate_options"}) == "review"
 
 
-def test_duplicate_options_uses_full_input_descriptions() -> None:
+def test_duplicate_options_wrong_on_identical_titles() -> None:
     call = {
         "tool": "present_options",
         "role": "training",
         "input": {
             "options": [
-                {"title": "A", "description": "train on the full dataset"},
-                {"title": "B", "description": "train on the full dataset"},
+                {"title": "Use the full dataset", "description": "d1"},
+                {"title": "Use the full dataset", "description": "d2"},
             ]
         },
     }
     assert score_auto(_run(call), {"type": "duplicate_options"}) == "wrong"
+
+
+def test_duplicate_options_distinct_titles_shared_description() -> None:
+    # boilerplate description must NOT make distinct model cards look duplicate
+    call = {
+        "tool": "present_options",
+        "role": "training",
+        "input": {
+            "options": [
+                {"title": "Qwen2.5-7B", "description": "a strong general-purpose model"},
+                {"title": "Llama-3-8B", "description": "a strong general-purpose model"},
+            ]
+        },
+    }
+    assert score_auto(_run(call), {"type": "duplicate_options"}) == "met"
+
+
+def test_duplicate_options_numeric_sizes_are_distinct() -> None:
+    # size choices differing only by a number are distinct, not duplicates -> met
+    run = _run(_po("How many examples?", ["Generate 1000 examples", "Generate 2000 examples"]))
+    assert score_auto(run, {"type": "duplicate_options"}) == "met"
 
 
 # --- repeated_decision -----------------------------------------------------
@@ -93,3 +114,26 @@ def test_repeated_decision_review_when_questions_missing() -> None:
         {"tool": "present_options", "role": "sdg"},
     )
     assert score_auto(run, {"type": "repeated_decision"}) == "review"
+
+
+def test_repeated_decision_scoped_by_stage() -> None:
+    # the SAME question in two different delegation segments (training-set size vs
+    # held-out eval-set size) is a fresh decision per stage -> not flagged.
+    delegate = {"tool": "delegate_to_subagent", "role": "orchestrator", "target": "training"}
+    delegate2 = {"tool": "delegate_to_subagent", "role": "orchestrator", "target": "eval"}
+    run = _run(
+        delegate,
+        _po("How many examples should we generate?", ["1000", "2000"]),
+        delegate2,
+        _po("How many examples should we generate?", ["1000", "2000"]),
+    )
+    assert score_auto(run, {"type": "repeated_decision"}) == "met"
+
+
+def test_repeated_decision_flags_reask_within_stage() -> None:
+    # same question twice within ONE segment (no delegate between) -> wrong
+    run = _run(
+        _po("How many examples should we generate?", ["1000", "2000"]),
+        _po("How many examples should we generate?", ["1000", "4000"]),
+    )
+    assert score_auto(run, {"type": "repeated_decision"}) == "wrong"

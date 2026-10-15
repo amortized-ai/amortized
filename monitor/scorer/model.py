@@ -188,7 +188,9 @@ def load_runs(log_dir: Path) -> list[Run]:
     return runs
 
 
-def load_checklist(use_case: str) -> dict[str, Any]:
+def load_checklist(use_case: str, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
+    if use_case in _seen:
+        sys.exit(f"checklist `extends` cycle involving {use_case!r}")
     path = CHECKLIST_DIR / use_case / "checklist.yaml"
     if not path.exists():
         sys.exit(f"No checklist for use-case {use_case!r} at {path}")
@@ -198,7 +200,7 @@ def load_checklist(use_case: str) -> dict[str, Any]:
     # then overlay-only rows appended.
     parent = data.get("extends")
     if parent:
-        base_rows = load_checklist(parent).get("rows", [])
+        base_rows = load_checklist(parent, _seen | {use_case}).get("rows", [])
         overlay_rows = data.get("rows", [])
         overlay_by_id = {r["id"]: r for r in overlay_rows}
         base_ids = {r["id"] for r in base_rows}

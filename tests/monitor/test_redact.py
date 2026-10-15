@@ -41,6 +41,71 @@ def test_does_not_overmatch_author() -> None:
     assert out == {"author": "alice", "authority": "high"}
 
 
+def test_preserves_monitor_relevant_token_fields() -> None:
+    # these are exactly the SDG/training fields the monitor exists to analyse —
+    # they must NOT be masked despite containing the substring "token".
+    out = redact(
+        {
+            "max_tokens": 2048,
+            "max_new_tokens": 512,
+            "max_tokens_per_gpu": 4096,
+            "num_tokens": 100,
+            "tokenizer": "Qwen/Qwen2.5",
+            "total_tokens": 999,
+        }
+    )
+    assert out == {
+        "max_tokens": 2048,
+        "max_new_tokens": 512,
+        "max_tokens_per_gpu": 4096,
+        "num_tokens": 100,
+        "tokenizer": "Qwen/Qwen2.5",
+        "total_tokens": 999,
+    }
+
+
+def test_masks_token_suffix_and_access_token() -> None:
+    out = redact({"access_token": "abc", "refresh_token": "def", "session_token": "ghi"})
+    assert out == {
+        "access_token": _REDACTED,
+        "refresh_token": _REDACTED,
+        "session_token": _REDACTED,
+    }
+
+
+def test_scrubs_url_embedded_credentials() -> None:
+    out = redact({"base_url": "https://user:s3cr3t@mlflow.svc:5000/api"})
+    assert "s3cr3t" not in out["base_url"]
+    assert out["base_url"] == f"https://{_REDACTED}@mlflow.svc:5000/api"
+
+
+def test_scrubs_env_assignment_in_free_text() -> None:
+    out = redact({"cmd": "export OPENAI_API_KEY=sk-abcdef1234567890 && run"})
+    assert "sk-abcdef1234567890" not in out["cmd"]
+    assert "OPENAI_API_KEY=" in out["cmd"]
+
+
+def test_scrubs_bearer_jwt_and_provider_keys() -> None:
+    out = redact(
+        {
+            "note": "call with Bearer abcdef0123456789 header",
+            "jwt": "token is eyJhbGciOi.eyJzdWIiOi.SflKxwRJSM here",
+            "k": "key sk-ABCDEF0123456789 leaked",
+            "aws": "id AKIAIOSFODNN7EXAMPLE used",
+        }
+    )
+    assert "abcdef0123456789" not in out["note"]
+    assert "eyJhbGciOi.eyJzdWIiOi.SflKxwRJSM" not in out["jwt"]
+    assert "sk-ABCDEF0123456789" not in out["k"]
+    assert "AKIAIOSFODNN7EXAMPLE" not in out["aws"]
+
+
+def test_scrubs_secret_shaped_value_under_nonsecret_key() -> None:
+    # a secret in a non-secret-keyed field is still masked (value scrub)
+    out = redact({"description": "set your key: sk-ABCDEF0123456789XYZ"})
+    assert "sk-ABCDEF0123456789XYZ" not in out["description"]
+
+
 def test_masks_nested_secret() -> None:
     out = redact({"judge": {"model": "gpt-oss", "api_key": "secret"}})
     assert out["judge"]["model"] == "gpt-oss"

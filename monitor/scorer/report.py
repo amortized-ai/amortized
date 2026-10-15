@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from monitor.scorer.model import Run
-from monitor.scorer.store import _row_role
+from monitor.scorer.store import row_role
 
 
 def _fmt(value: Any, kind: str) -> str:
@@ -91,7 +91,7 @@ def print_role_breakdown(
         sc = scores[run.session_id]
         buckets: dict[str, list[int]] = {}
         for row in checklist["rows"]:
-            role = _row_role(row) or "workflow"
+            role = row_role(row) or "workflow"
             status = sc[row["id"]]
             if status in ("met", "wrong", "missed"):
                 b = buckets.setdefault(role, [0, 0])
@@ -120,15 +120,20 @@ def print_rubrics(results: list[dict[str, Any]]) -> None:
         print(f"### {session_id}")
         for rb in rubrics:
             pct = rb["adherence_pct"]
-            pct_str = f"{pct:.0f}%" if pct is not None else "n/a"
-            print(f"- **{rb['skill']}** ({rb['role']}): adherence **{pct_str}**")
+            scored, total, pending = rb["scored"], rb["total"], rb["pending"]
+            if pct is None:
+                hint = " — run --llm-judge" if pending else ""
+                head = f"not graded ({scored}/{total} steps scored{hint})"
+            else:
+                head = f"adherence **{pct:.0f}%** ({scored}/{total} scored, {pending} pending)"
+            print(f"- **{rb['skill']}** ({rb['role']}): {head}")
             for step in rb["steps"]:
                 reason = f"  |  {step['reason']}" if step.get("reason") else ""
                 print(
                     f"    - [{step['status']:>6}] {step['step_id']} (w{step['weight']:g}){reason}"
                 )
-            if rb["skipped"]:
-                print(f"    skipped: {', '.join(rb['skipped'])}")
+            if rb["not_met"]:
+                print(f"    not met: {', '.join(rb['not_met'])}")
         print()
 
 

@@ -222,6 +222,25 @@ def test_model_choice() -> None:
 # --- score_run gating ------------------------------------------------------
 
 
+def test_requires_skill_loaded_ignores_errored_read() -> None:
+    from monitor.scorer.requires import _requires_met
+
+    gate = {"type": "skill_loaded", "role": "sdg", "path_contains": "skills/sdg/x/"}
+    ok = _run(
+        {"tool": "read", "role": "sdg", "status": "completed", "output": "skills/sdg/x/guide.md"}
+    )
+    errored = _run(
+        {
+            "tool": "read",
+            "role": "sdg",
+            "status": "error",
+            "output": "skills/sdg/x/guide.md: not found",
+        }
+    )
+    assert _requires_met(ok, gate) is True
+    assert _requires_met(errored, gate) is False  # errored read didn't load it
+
+
 def test_score_run_gates_on_requires() -> None:
     checklist = {
         "rows": [

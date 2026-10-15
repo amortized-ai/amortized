@@ -342,6 +342,13 @@ was actually captured, or the matcher (tool name / output text) needs tuning.
   "mlflow_run_id": "…", "user_id": "…", "config": { "...": "redacted" }, "ts": "…" }
 ```
 
+> **Correlation limitation.** The `job_created` record is tied to a run only when
+> the creator passes `X-Monitor-Session` — i.e. the Studio confirm flow. Jobs
+> created outside Studio (direct CLI/API, or an agent-triggered `retry_job` via the
+> stateless MCP server, which carries no session header) emit no correlated record,
+> so `*_job_created` can read `missed` for those paths. Monitor runs are Studio-
+> driven, so this is expected; it's a known gap for non-Studio creation.
+
 ## Structured store (`--store` / `--export`)
 
 JSONL stays the write-ahead capture format (the online path must never block on a

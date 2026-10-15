@@ -539,6 +539,7 @@ async def retry_job(
     logger.info("Retrying eval job %s as %s", job_id[:8], row["id"][:8])
     response = _job_response(row)
     _strip_eval_api_keys(response)
+    _emit_job_created(http_request, response, config)
     return response
 
 

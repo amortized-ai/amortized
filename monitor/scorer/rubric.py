@@ -31,7 +31,7 @@ from monitor.scorer.judge import (
 )
 from monitor.scorer.matchers import score_auto
 from monitor.scorer.model import Run
-from monitor.scorer.requires import _requires_met
+from monitor.scorer.requires import REQUIRES, _requires_met
 
 RUBRICS_DIR = Path(__file__).resolve().parent.parent / "skills"
 
@@ -48,7 +48,13 @@ def load_rubrics(rubrics_dir: Path = RUBRICS_DIR) -> list[dict[str, Any]]:
 
 
 def applies(run: Run, rubric: dict[str, Any]) -> bool:
-    return _requires_met(run, rubric.get("gate"))
+    # Fail-closed: a rubric with no gate, or a gate of an unknown/typo'd type, never
+    # applies — otherwise a dropped-in rubric.yaml would be scored against every
+    # session, the exact cross-contamination the gate exists to prevent.
+    gate = rubric.get("gate")
+    if not isinstance(gate, dict) or gate.get("type") not in REQUIRES:
+        return False
+    return _requires_met(run, gate)
 
 
 def _adherence_pct(steps: list[dict[str, Any]]) -> float | None:
@@ -76,14 +82,22 @@ def score_rubric(
         steps_out.append(
             {"step_id": step["id"], "status": status, "weight": weight, "reason": reason}
         )
-    skipped = [s["step_id"] for s in steps_out if s["status"] == "missed"]
+    # not_met covers both omitted (missed) and done-wrong (wrong) — the judge emits
+    # `wrong` for a skipped-or-botched step, never `missed`, so reporting only
+    # `missed` would hide every judged failure.
+    not_met = [s["step_id"] for s in steps_out if s["status"] in ("missed", "wrong")]
+    scored = sum(1 for s in steps_out if s["status"] in ("met", "wrong", "missed"))
+    pending = sum(1 for s in steps_out if s["status"] == "review")
     return {
         "session_id": run.session_id,
         "skill": rubric["skill"],
         "role": rubric.get("role"),
         "adherence_pct": _adherence_pct(steps_out),
         "steps": steps_out,
-        "skipped": skipped,
+        "not_met": not_met,
+        "scored": scored,  # steps that counted toward adherence (met+wrong+missed)
+        "pending": pending,  # review steps (judge not run / failed / undecided)
+        "total": len(steps_out),
     }
 
 
@@ -113,6 +127,7 @@ def judge_rubrics(
             f"SKILL: {rb['skill']} — judge each row_id against the transcript.\n"
             f"RUBRIC:\n{rubric_payload}\n\nTRANSCRIPT:\n{_judge_evidence(run)}"
         )
+        failed = False
         try:
             data = _parse_judge_json(call(_JUDGE_SYSTEM, prompt))
         except Exception as exc:
@@ -121,6 +136,7 @@ def judge_rubrics(
                 file=sys.stderr,
             )
             data = {}
+            failed = True
         step_map: dict[str, tuple[str, str]] = {}
         for s in llm_steps:
             entry = data.get(s["id"])
@@ -130,7 +146,12 @@ def judge_rubrics(
                 verdict, reason = entry, ""
             else:
                 verdict, reason = None, ""
-            step_map[s["id"]] = (_norm_verdict(verdict), str(reason).strip())
+            norm = _norm_verdict(verdict)
+            # Distinguish a judge gap from a genuine n/a: a bare review verdict after a
+            # failed/empty call is "judge didn't decide", not "didn't apply".
+            if norm == "review" and not str(reason).strip():
+                reason = "judge call failed" if failed else "judge returned no verdict"
+            step_map[s["id"]] = (norm, str(reason).strip())
         out[(run.session_id, rb["skill"])] = step_map
     return out
 

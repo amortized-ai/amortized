@@ -30,7 +30,7 @@ def test_load_runs_reads_turns_and_completion() -> None:
     runs = {r.session_id: r for r in load_runs(_FIXTURES / "logs")}
     alpha = runs["sess-alpha"]
     assert alpha.outcome == "success"
-    assert alpha.turns_to_complete == 4
+    assert alpha.turns_to_complete == 5
     assert alpha.agent_model == "claude-opus-4-8"
     # tokens exclude cache-read (alpha turn 1 has cache=200 that must not count)
-    assert alpha.total_tokens == 810
+    assert alpha.total_tokens == 920

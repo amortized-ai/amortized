@@ -35,6 +35,8 @@ def _gate_skill_loaded(run: Run, requires: dict[str, Any]) -> bool:
     for c in run.tool_calls:
         if c.get("tool") != "read":
             continue
+        if c.get("status") == "error":
+            continue  # an errored read didn't load the guide
         if role and c.get("role") != role:
             continue
         if needle and needle not in (c.get("output") or ""):

@@ -22,6 +22,7 @@ SIM_HIGH = 0.7
 SIM_GRAY = 0.5
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+_NUM_RE = re.compile(r"^\d+(?:\.\d+)?$")
 
 
 def _tokens(text: str) -> set[str]:
@@ -38,10 +39,9 @@ def similarity(a: str, b: str) -> float:
     return inter / union if union else 0.0
 
 
-def worst_pair(texts: list[str]) -> float:
-    """Highest pairwise similarity among the texts (0.0 if fewer than two)."""
-    hi = 0.0
-    for i in range(len(texts)):
-        for j in range(i + 1, len(texts)):
-            hi = max(hi, similarity(texts[i], texts[j]))
-    return hi
+def differs_only_numerically(a: str, b: str) -> bool:
+    """True when two strings differ ONLY by numeric tokens (e.g. "Generate 1000"
+    vs "Generate 2000"). Such options are distinct *choices*, not duplicates, so
+    the redundancy matchers must not flag or defer them."""
+    diff = _tokens(a) ^ _tokens(b)
+    return bool(diff) and all(_NUM_RE.match(t) for t in diff)
