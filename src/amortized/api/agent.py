@@ -46,7 +46,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
-from amortized.api.phases import phase_block, subagent_phase, with_block
+from amortized.api.phases import phase_block, subagent_phase, system_reminder, with_block
 from amortized.config import settings
 from amortized.core import lineage
 
@@ -1768,7 +1768,7 @@ def _consume_interaction_steer(state: SessionState, user_text: str) -> str:
     model receives it as the lead of its next message and does the missing step itself.
     The steer is model-directed and is never shown to the user."""
     if state.pending_interaction_steer:
-        user_text = f"{state.pending_interaction_steer}\n\n{user_text}"
+        user_text = f"{system_reminder(state.pending_interaction_steer)}\n\n{user_text}"
         state.pending_interaction_steer = None
     return user_text
 
@@ -1790,9 +1790,9 @@ async def _handle_subagent_message(
         # Keep the event text (it carries the job id both hand-back prompts must report and
         # the grounding corpus needs) and append the steer — don't replace it.
         if _job_succeeded(body, user_text):
-            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_DONE_PROMPT}"
+            user_text = f"{user_text}\n\n{system_reminder(_SUBAGENT_JOB_DONE_PROMPT)}"
         else:
-            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_FAILED_PROMPT}"
+            user_text = f"{user_text}\n\n{system_reminder(_SUBAGENT_JOB_FAILED_PROMPT)}"
             job_failed = True
     else:
         # Re-inject the current phase's block each ongoing turn (not just at the first
@@ -1922,7 +1922,7 @@ async def _handle_subagent_message(
         seed = seed_tmpl.format(target=target, need=need, context=help_context)
         morty_result = await _orchestrator_turn(state, seed, body)
         delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
-        # The leaf's [USER MESSAGE] is the dataset ask (need), NOT the orchestrator seed —
+        # The leaf's user text is the dataset ask (need), NOT the orchestrator seed —
         # the seed is the orchestrator's instruction sheet ("delegate to sdg…") and must
         # never reach the producer, or a weak model obeys it instead of generating.
         help_result = await _maybe_delegate(state, session_id, delegation, need, morty_result, body)
@@ -1978,10 +1978,11 @@ async def _maybe_delegate(
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
         # Inject the block for the phase the subagent last signalled, so a resume lands
         # it back on the right step with that step's full instructions in the turn.
+        framing = system_reminder(f"[RESUMED]\n{context}")
         handoff_msg = with_block(
             target,
             subagent_phase(target, state.last_signal_step),
-            f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}",
+            f"{framing}\n\n{user_text}",
         )
         sub_result = await _proxy_send_message(
             stashed_id, handoff_msg, agent=target, model=body.model
@@ -1994,10 +1995,11 @@ async def _maybe_delegate(
         # previous subagent so subagent_phase() resolves to the first section, and inject
         # that section's block as the lead of the handoff.
         state.last_signal_step = ""
+        framing = system_reminder(f"[CONTEXT]\n{context}")
         handoff_msg = with_block(
             target,
             subagent_phase(target, state.last_signal_step),
-            f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}",
+            f"{framing}\n\n{user_text}",
         )
         sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
         state.subagent_id = sub_id
@@ -2017,7 +2019,7 @@ async def _handle_orchestrator_message(
     # its phase by control-flow path. A fresh user turn is intake→delegate; a job-status
     # event with no active subagent is the monitor case. Inject the block ONLY into the
     # text the orchestrator reads — the clean user_text still flows to _maybe_delegate as
-    # the subagent's [USER MESSAGE], so orchestrator-only guidance never leaks downstream.
+    # the subagent's user text, so orchestrator-only guidance never leaks downstream.
     if body.event == "job_complete":
         orch_text = with_block("orchestrator", "monitor", user_text)
     else:

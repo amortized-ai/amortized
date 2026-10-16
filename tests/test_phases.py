@@ -64,7 +64,9 @@ class TestWithBlock:
     def test_prepends_block(self, phase_root: Path) -> None:
         _write(phase_root, "eval", "step-0-what-to-eval", "ENTRY BLOCK")
         out = phases.with_block("eval", "step-0-what-to-eval", "turn text")
-        assert out == "ENTRY BLOCK\n\nturn text"
+        # The block is wrapped in a system-reminder so it reads as a system directive,
+        # not user text; the clean turn text trails outside the wrapper.
+        assert out == "<system-reminder>\nENTRY BLOCK\n</system-reminder>\n\nturn text"
 
     def test_noop_when_block_absent(self, phase_root: Path) -> None:
         # Unmigrated agent / unknown phase → the turn text is returned unchanged.
@@ -75,7 +77,10 @@ class TestWithBlock:
 
     def test_block_only_when_text_empty(self, phase_root: Path) -> None:
         _write(phase_root, "orchestrator", "resume", "RESUME BLOCK")
-        assert phases.with_block("orchestrator", "resume", "") == "RESUME BLOCK"
+        assert (
+            phases.with_block("orchestrator", "resume", "")
+            == "<system-reminder>\nRESUME BLOCK\n</system-reminder>"
+        )
 
 
 class TestRealCatalog:
