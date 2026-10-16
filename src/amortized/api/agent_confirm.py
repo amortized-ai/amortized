@@ -258,9 +258,10 @@ def _record_confirm_signals(
 
 
 def _reset_confirm_signals(state: SessionState, job_type: str) -> None:
-    """Clear a job type's prerequisite signals once its confirm card has rendered, so a
-    SECOND job of that type in the same conversation must re-establish them — each gate
-    resets its own signal."""
+    """Clear a job type's prerequisite signals when a new delegation for that target begins
+    (see _maybe_delegate), so a NEW job of that type must re-establish them while an
+    in-session refinement of an already-shown card keeps them — each gate resets its own
+    signal."""
     tool = _CONFIRM_TOOL_FOR_JOB_TYPE.get(job_type, "")
     for gate in _CONFIRM_PRECONDITIONS.get(tool, ()):
         if gate.reset is not None:

@@ -404,8 +404,9 @@ def _enforce_single_interaction(
           metric set presented for approval, and the evaluation setup offered (the judge has
           no default), before the job card.
       These prerequisite ACTIONS are tracked as session signals accumulated as turns
-      render them (_record_confirm_signals) and cleared once the job card renders
-      (_reset_confirm_signals) so a second job of the type re-gates. (Readiness
+      render them (_record_confirm_signals) and cleared when a new delegation for that
+      target begins (_reset_confirm_signals in _maybe_delegate) so a NEW job of the type
+      re-gates while an in-session refinement of the same card does not. (Readiness
       prerequisites that need the DB — an upstream job being 'succeeded' — live in the
       async stage-gate _not_ready_violations, deduped there against dispatch-provenance;
       this function is the sync half that turns on session-local signals.)
@@ -509,11 +510,13 @@ def _enforce_single_interaction(
     # so the next confirm that re-includes it proceeds instead of re-gating.
     if review_sig is not None and not drop_review:
         state.reviewed_card_sigs.add(review_sig)
-    # When a confirm card actually renders (passed its preconditions), reset that job
-    # type's prerequisite signals so a SECOND job of the type re-gates.
-    if not ask_turn and keep_index is not None and keep_index == last_card:
-        card = parts[keep_index]
-        _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
+    # NB: the confirm signals are NOT reset here when the card renders. Resetting on render
+    # treated a mere REFINEMENT of the same not-yet-submitted card (e.g. the user tweaks
+    # epochs, so the model re-issues validate_training_job) as a brand-new job and re-gated
+    # it — bouncing the model back to re-ask the model/data it already settled. The reset
+    # now happens at the delegation boundary (_maybe_delegate) instead, so a genuinely new
+    # job (a fresh delegation) re-gates while in-session refinements and the eval base-model
+    # reuse cycle keep their signals.
 
     # A held card steers the MODEL to do the missing step first — delivered to its
     # session on the next turn (see _handle_*_message), NOT appended to the user-facing
@@ -2180,6 +2183,13 @@ async def _maybe_delegate(
         return morty_result
 
     target, context, resume = delegation
+
+    # A (re)delegation starts or restarts a job for this target, so re-establish its
+    # confirm-card preconditions: clear the target's accumulated signals (data confirmed,
+    # model/judge offered, VRAM shown, metrics approved) so the new job must earn them
+    # again. In-session refinements of an already-shown card do NOT pass through here, so
+    # they keep their signals and no longer bounce back through the gate.
+    _reset_confirm_signals(state, target)
 
     advisory = await _no_data_advisory(state, target)
     if advisory:

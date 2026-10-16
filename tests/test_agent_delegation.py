@@ -800,7 +800,8 @@ class TestTrainingConfirmPreconditions:
     """A validate_training_job card may render only after the user has (in order)
     confirmed the data, been offered a model/method choice, and seen the VRAM estimate —
     the training arm of the confirm-card precondition evaluator. Signals accumulate as
-    turns render them and reset once the job card renders."""
+    turns render them and reset when a new delegation begins (not when the card renders),
+    so an in-session refinement of the same card does not re-gate."""
 
     def _confirm(self) -> dict[str, Any]:
         return {"parts": [_tool_part("validate_training_job", {"algorithm": "osft"})]}
@@ -869,18 +870,33 @@ class TestTrainingConfirmPreconditions:
         out = agent._enforce_single_interaction(result, state)
         assert "validate_training_job" in _tools(out)
 
-    def test_second_job_re_gates_after_confirm(self) -> None:
+    def test_refinement_re_renders_without_re_gating(self) -> None:
+        # Rendering the card no longer clears the signals, so a REFINEMENT of the same
+        # not-yet-submitted card (the model re-issues validate_training_job after the user
+        # tweaks a parameter) renders again instead of bouncing back through the gate.
         state = _fresh_state()
         state.shown_vram = True
         state.confirmed_data = True
         state.offered_choice.add("training")
         out1 = agent._enforce_single_interaction(self._confirm(), state)
-        assert "validate_training_job" in _tools(out1)  # first job passes
-        # The signals were cleared, so a second training job must re-establish them.
+        assert "validate_training_job" in _tools(out1)  # first render
+        assert state.shown_vram is True  # signals persist across the render
+        assert "training" in state.offered_choice
+        out2 = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_training_job" in _tools(out2)  # refinement renders, no bounce
+
+    def test_new_delegation_re_gates(self) -> None:
+        # A genuinely new job re-gates: the delegation boundary (_maybe_delegate) resets the
+        # target's signals, so the next confirm must re-establish them.
+        state = _fresh_state()
+        state.shown_vram = True
+        state.confirmed_data = True
+        state.offered_choice.add("training")
+        agent._reset_confirm_signals(state, "training")  # what _maybe_delegate does
         assert state.shown_vram is False
         assert "training" not in state.offered_choice
-        out2 = agent._enforce_single_interaction(self._confirm(), state)
-        assert "validate_training_job" not in _tools(out2)
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_training_job" not in _tools(out)
 
 
 class TestEvalConfirmPreconditions:

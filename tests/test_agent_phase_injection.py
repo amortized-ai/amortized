@@ -120,6 +120,25 @@ class TestSubagentInjection:
         assert "step-1_5-how-much" in sent
         assert "[RESUMED]" in sent
 
+    def test_delegation_resets_target_confirm_signals(self, router: _Router) -> None:
+        # A (re)delegation re-establishes the target's confirm preconditions, so a new job
+        # re-gates — while other targets' signals are left untouched.
+        state = agent.SessionState(orchestrator_id=router.add())
+        state.confirmed_data = True
+        state.shown_vram = True
+        state.offered_choice.update({"training", "eval"})
+        state.metrics_reviewed = True
+        router.queue([[_text_part("hi")]])
+
+        _run(agent._maybe_delegate(state, "s", ("training", "ctx", False), "go", {}, _body()))
+
+        assert state.confirmed_data is False
+        assert state.shown_vram is False
+        assert "training" not in state.offered_choice
+        # eval's signals are a different target's — untouched by a training delegation
+        assert "eval" in state.offered_choice
+        assert state.metrics_reviewed is True
+
 
 class TestOrchestratorInjection:
     def test_fresh_turn_injects_intake_and_delegate(self, router: _Router) -> None:
