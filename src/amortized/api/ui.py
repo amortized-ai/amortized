@@ -294,15 +294,12 @@ class SignalPhaseRequest(BaseModel):
     step: str = Field(
         "",
         description=(
-            "Current step within the phase. Signal transitions in order: "
-            "understand_task (identified what the user wants to build), "
-            "load_skill (read the relevant skill guide), "
-            "gather_requirements (asking user for parameters — signal on first ask), "
-            "estimate_cost (checking models, pricing, or VRAM estimates), "
-            "confirm (presenting the job validation/confirmation card), "
-            "execute (job has been submitted), "
-            "review (checking job results or presenting next steps). "
-            "Signal the step you are currently at. Do not repeat a step already signaled."
+            "Slug of the workflow phase you are currently in — the exact slug shown in "
+            "the [ACTIVE PHASE] block you were handed and in your workflow outline, e.g. "
+            "'phase-2-gather' (sdg/training) or 'step-1-dataset' (eval). This advances "
+            "the UI progress bar and tells the platform which phase's instructions to "
+            "keep in front of you. Signal the phase you are at now; do not skip ahead "
+            "and do not repeat a phase already signalled."
         ),
     )
 

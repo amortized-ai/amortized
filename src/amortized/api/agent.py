@@ -46,6 +46,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
+from amortized.api.phases import phase_block, subagent_phase, with_block
 from amortized.config import settings
 from amortized.core import lineage
 
@@ -1794,8 +1795,18 @@ async def _handle_subagent_message(
             user_text = f"{user_text}\n\n{_SUBAGENT_JOB_FAILED_PROMPT}"
             job_failed = True
     else:
+        # Re-inject the current phase's block each ongoing turn (not just at the first
+        # handoff), so the active step's full instructions stay in the freshest position.
+        # Skipped on job_complete, which carries its own terminal hand-back steer above.
+        target_for_phase = state.subagent_target or ""
+        user_text = with_block(
+            target_for_phase,
+            subagent_phase(target_for_phase, state.last_signal_step),
+            user_text,
+        )
         # Deliver any steer the interaction gate parked on a prior held-card turn as the
-        # lead of this message. Skipped on a job_complete event (which appends to user_text
+        # lead of this message (ahead of the phase block — an urgent correction outranks
+        # ambient framing). Skipped on a job_complete event (which appends to user_text
         # above) so the steer stays parked for the next real turn instead of being lost.
         user_text = _consume_interaction_steer(state, user_text)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
@@ -1877,7 +1888,11 @@ async def _handle_subagent_message(
                 "already expressed intent) or call present_options with next "
                 "steps. Do NOT respond with only text."
             )
-            morty_result = await _orchestrator_turn(state, resume_prompt, body)
+            # The resume block (Phase 3) leads the orchestrator turn; the clean
+            # resume_prompt still flows to _maybe_delegate as the next handoff's text.
+            morty_result = await _orchestrator_turn(
+                state, with_block("orchestrator", "resume", resume_prompt), body
+            )
             delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
             resume_result = await _maybe_delegate(
                 state, session_id, delegation, resume_prompt, morty_result, body
@@ -1901,7 +1916,10 @@ async def _handle_subagent_message(
         state.completed_subagents[target] = state.subagent_id
         state.subagent_id = None
         state.subagent_target = None
-        seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
+        # Prefer the externalized fulfill_help phase block (same {target}/{need}/{context}
+        # placeholders); fall back to the inline constant if the file isn't present.
+        seed_tmpl = phase_block("orchestrator", "fulfill_help") or _SUBAGENT_HELP_PROMPT
+        seed = seed_tmpl.format(target=target, need=need, context=help_context)
         morty_result = await _orchestrator_turn(state, seed, body)
         delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
         # The leaf's [USER MESSAGE] is the dataset ask (need), NOT the orchestrator seed —
@@ -1958,7 +1976,13 @@ async def _maybe_delegate(
 
     if stashed_id:
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
-        handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        # Inject the block for the phase the subagent last signalled, so a resume lands
+        # it back on the right step with that step's full instructions in the turn.
+        handoff_msg = with_block(
+            target,
+            subagent_phase(target, state.last_signal_step),
+            f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}",
+        )
         sub_result = await _proxy_send_message(
             stashed_id, handoff_msg, agent=target, model=body.model
         )
@@ -1966,7 +1990,15 @@ async def _maybe_delegate(
     else:
         logger.info("New subagent: target=%s session=%s", target, session_id)
         sub_id = await _proxy_create_session()
-        handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        # A fresh subagent starts at its entry phase: clear any step carried over from a
+        # previous subagent so subagent_phase() resolves to the first section, and inject
+        # that section's block as the lead of the handoff.
+        state.last_signal_step = ""
+        handoff_msg = with_block(
+            target,
+            subagent_phase(target, state.last_signal_step),
+            f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}",
+        )
         sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
         state.subagent_id = sub_id
 
@@ -1981,7 +2013,18 @@ async def _handle_orchestrator_message(
     body: MessageRequest,
 ) -> dict[str, Any]:
     user_text = _consume_interaction_steer(state, user_text)
-    morty_result = await _orchestrator_turn(state, user_text, body)
+    # The orchestrator never calls signal_phase (it is a primary agent); the proxy picks
+    # its phase by control-flow path. A fresh user turn is intake→delegate; a job-status
+    # event with no active subagent is the monitor case. Inject the block ONLY into the
+    # text the orchestrator reads — the clean user_text still flows to _maybe_delegate as
+    # the subagent's [USER MESSAGE], so orchestrator-only guidance never leaks downstream.
+    if body.event == "job_complete":
+        orch_text = with_block("orchestrator", "monitor", user_text)
+    else:
+        orch_text = with_block(
+            "orchestrator", "delegate", with_block("orchestrator", "intake", user_text)
+        )
+    morty_result = await _orchestrator_turn(state, orch_text, body)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 

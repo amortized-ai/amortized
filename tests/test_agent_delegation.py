@@ -431,9 +431,14 @@ class TestJobCompleteHandback:
         assert "signal_subagent_completion" in forwarded
 
     def test_normal_message_not_rewritten(self, router: _Router) -> None:
+        # A normal (non job_complete) turn gets the active phase block injected but NOT
+        # the job-done hand-back steer that rewrites a job_complete turn.
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
-        assert router.sent[0][1] == "confirm"
+        sent = router.sent[0][1]
+        assert sent.endswith("confirm")  # user text preserved, not rewritten
+        assert agent._SUBAGENT_JOB_DONE_PROMPT not in sent  # no job-done steer
+        assert "phase-1-route" in sent  # entry phase block injected
 
 
 class TestEnforceSingleInteraction:
@@ -740,9 +745,9 @@ class TestCommittingCardReRun:
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
         sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
-        assert sub_sends[0] == "train it"  # the original turn
+        assert sub_sends[0].endswith("train it")  # the original turn (phase block injected)
         assert len(sub_sends) == 2  # the gate re-ran the model once (the hard rail)
-        assert sub_sends[1] != "train it"  # the re-run posted the data-precondition steer
+        assert sub_sends[1] != sub_sends[0]  # the re-run posted the data-precondition steer
         assert state.pending_rerun_steer is None  # consumed, not carried over
 
     def test_no_rerun_when_preconditions_met(self, router: _Router) -> None:
@@ -760,7 +765,8 @@ class TestCommittingCardReRun:
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
         sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
-        assert sub_sends == ["train it"]  # no re-run
+        assert len(sub_sends) == 1  # no re-run
+        assert sub_sends[0].endswith("train it")  # phase block injected, user text preserved
         assert state.pending_rerun_steer is None
 
     def test_rerun_exhaustion_defers_the_steer(self, router: _Router) -> None:
