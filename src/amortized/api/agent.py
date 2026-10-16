@@ -150,6 +150,8 @@ class SessionState:
     shown_vram: bool = False  # estimate_training_resources rendered (training)
     confirmed_data: bool = False  # a dataset tool (get_dataset/…) rendered (training data)
     offered_choice: set[str] = field(default_factory=set)  # targets that asked present_options
+    eval_data_confirmed: bool = False  # a dataset tool rendered inside the eval subagent
+    metrics_reviewed: bool = False  # eval rubric/metric set presented for approval (eval)
     # callIDs of interactive cards (stacked present_options, a repeat confirm, a redundant
     # review) the interaction gate stripped from a turn result. get_session_messages filters
     # these so a card removed from the result is also absent from the raw opencode history the
@@ -397,8 +399,9 @@ def _enforce_single_interaction(
         · Training — the user must have confirmed the data (get_dataset shown), been
           offered a base-model/method choice (present_options in the training step),
           and seen the VRAM estimate, before the job card.
-        · Eval — the user must have been offered the evaluation setup (judge has no
-          default) before the job card.
+        · Eval — the eval dataset must have been confirmed (get_dataset shown), the rubric/
+          metric set presented for approval, and the evaluation setup offered (the judge has
+          no default), before the job card.
       These prerequisite ACTIONS are tracked as session signals accumulated as turns
       render them (_record_confirm_signals) and cleared once the job card renders
       (_reset_confirm_signals) so a second job of the type re-gates. (Readiness

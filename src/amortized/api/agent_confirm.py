@@ -3,7 +3,8 @@ that consults it) deciding whether a validate_* confirmation card may render thi
 must hold while a prerequisite setup step fires first.
 
 This is the SYNC half of the stage-gating — it turns on and reads session-local signals
-(preview approved, data confirmed, model/judge offered, VRAM shown). Readiness
+(preview approved, data confirmed, model/judge offered, VRAM shown, eval metrics approved).
+Readiness
 preconditions that need the DB (an upstream job being 'succeeded') live in the async
 stage-gate `_not_ready_violations` in agent.py. `_enforce_single_interaction` (agent.py)
 is the consumer: it keeps whichever interaction leads a turn and holds a card whose first
@@ -79,6 +80,39 @@ _EVAL_CHOICE_NUDGE = (
     "no default — ask which model to judge with (present_options, a soft suggestion is "
     "fine) and wait for their reply before confirming the eval job."
 )
+_EVAL_DATA_NUDGE = (
+    "Confirm the eval dataset before the job card. Call get_dataset on the eval run and "
+    "show the user its record count — the eval set's own size — so they confirm what will "
+    "be scored (auto-resolving a dataset is not the same as the user confirming it)."
+)
+_EVAL_METRICS_NUDGE = (
+    "Present the eval metrics for approval before the job card. Show the rubric criteria as "
+    "a table and ask with present_options ('Looks good, continue' / 'Suggest changes'); "
+    "wait for the user to approve them before confirming the eval job."
+)
+
+
+# The two eval-only present_options are the judge offer and the rubric approval; only their
+# CONTENT tells them apart. A rubric approval is recognized by the metric vocabulary in its
+# question/step, or by the approval options step-3-metrics mandates — so the judge offer
+# ("Which judge model?") does not accidentally satisfy the metrics gate.
+_METRICS_REVIEW_TERMS = ("metric", "rubric", "criteri")
+_METRICS_APPROVAL_LABELS = ("suggest changes", "looks good", "reuse these metrics")
+
+
+def _is_metrics_review(part: dict[str, Any]) -> bool:
+    if _tool_name(part) != "present_options":
+        return False
+    inp = _get_tool_input(part)
+    haystack = f"{inp.get('question', '')} {inp.get('step', '')}".lower()
+    if any(term in haystack for term in _METRICS_REVIEW_TERMS):
+        return True
+    for opt in inp.get("options") or []:
+        if isinstance(opt, dict):
+            label = f"{opt.get('title', '')} {opt.get('value', '')}".lower()
+            if any(approval in label for approval in _METRICS_APPROVAL_LABELS):
+                return True
+    return False
 
 
 def _record_vram(s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str) -> None:
@@ -93,6 +127,30 @@ def _record_vram(s: SessionState, parts: list[dict[str, Any]], ask: bool, target
 def _record_data(s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str) -> None:
     if target == "training" and any(_tool_name(p) in _DATA_CONFIRM_TOOLS for p in parts):
         s.confirmed_data = True
+
+
+def _record_eval_data(s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str) -> None:
+    # The eval dataset's own confirmation — scoped to the eval subagent so a training
+    # get_dataset can't pre-satisfy it (mirrors the target-scoping on _record_data/_record_vram).
+    if target == "eval" and any(_tool_name(p) in _DATA_CONFIRM_TOOLS for p in parts):
+        s.eval_data_confirmed = True
+
+
+def _record_metrics(s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str) -> None:
+    if target == "eval" and any(_is_metrics_review(p) for p in parts):
+        s.metrics_reviewed = True
+
+
+def _record_eval_choice(
+    s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str
+) -> None:
+    # The judge/setup offer — a NON-metrics eval present_options. The metrics-approval
+    # present_options has its own gate, so it must not also satisfy the judge gate (else a
+    # model could approve metrics and skip the judge offer entirely).
+    if ask and target == "eval" and any(
+        _tool_name(p) == "present_options" and not _is_metrics_review(p) for p in parts
+    ):
+        s.offered_choice.add("eval")
 
 
 def _record_choice(choice: str) -> _SignalRecorder:
@@ -160,8 +218,16 @@ _CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
     ),
     "validate_eval_job": (
         _ConfirmGate(
+            "data", lambda s, c: s.eval_data_confirmed, _EVAL_DATA_NUDGE,
+            record=_record_eval_data, reset=lambda s: setattr(s, "eval_data_confirmed", False),
+        ),
+        _ConfirmGate(
+            "metrics", lambda s, c: s.metrics_reviewed, _EVAL_METRICS_NUDGE,
+            record=_record_metrics, reset=lambda s: setattr(s, "metrics_reviewed", False),
+        ),
+        _ConfirmGate(
             "choice", lambda s, c: "eval" in s.offered_choice, _EVAL_CHOICE_NUDGE,
-            record=_record_choice("eval"), reset=_reset_choice("eval"),
+            record=_record_eval_choice, reset=_reset_choice("eval"),
         ),
     ),
 }
