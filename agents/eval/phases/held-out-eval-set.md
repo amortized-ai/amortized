@@ -8,13 +8,19 @@ the orchestrator with `request_orchestrator_help`. CALL the tool — do NOT
 describe handing off in prose. The SDG job runs, and you are resumed here
 with the finished dataset, so you never leave the eval workflow.
 
+First ask the user how many eval records to generate (offer a sensible
+default, e.g. 100) — the SDG agent must not pick the count on its own.
+Carry that number into the request below so it generates exactly that many.
+
 Call `request_orchestrator_help` with:
 
 - `need`: a held-out eval set for the model you are evaluating — name the
-  training job, e.g. "a held-out eval dataset for training job <id>".
+  training job AND the record count the user chose, e.g. "a 100-record
+  held-out eval dataset for training job <id>".
 - `context`: everything the orchestrator needs to produce the set AND to
   resume you with continuity — the eval subject (model and endpoint), the
-  training job ID, the goal (a held-out eval set the user will evaluate
+  training job ID, the record count the user chose, the goal (a held-out
+  eval set the user will evaluate
   that model on), and where you resume (Step 1.5 / `step-1_5-how-much` to
   confirm how much of the new set to score, then Step 3 / `step-3-metrics`
   metrics design, using the new SDG job ID as `parent_job_id`). The

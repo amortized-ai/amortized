@@ -23,14 +23,20 @@ If `get_eval_results` reports `num_scored` of 0 (or null/empty scores),
 the eval produced no usable results — say so plainly, check the job logs,
 and diagnose the cause.
 
-Interpret the numbers
+Report the scores table FIRST (above). Only then interpret the numbers
 plainly and offer next steps: evaluate another model to compare, train
-again with different data or parameters, or accept the model. If they
-choose to evaluate another model (e.g. the base model for a tuned-vs-base
-comparison), start a FRESH eval cycle for it — assemble that model's
-config and go to Step 4 (`step-4-validate`) (`validate_eval_job` →
-confirmation card). Do NOT ask the user to submit it or hand you a job ID,
-and do NOT use `present_options` as a submit control.
+again with different data or parameters, or accept the model. Do NOT begin
+assembling or re-configuring another eval (e.g. re-asking the judge) before
+you have shown this job's results and the user has chosen to continue.
+
+If they choose to evaluate another model (e.g. the base model for a
+tuned-vs-base comparison), first SAY plainly that you are now evaluating
+that model (name it) for comparison on the same eval set and metric set —
+do not jump straight to the judge or the confirmation card. Then start a
+FRESH eval cycle for it — assemble that model's config and go to Step 4
+(`step-4-validate`) (`validate_eval_job` → confirmation card). Do NOT ask
+the user to submit it or hand you a job ID, and do NOT use `present_options`
+as a submit control.
 
 Cross-model comparisons live in the Studio **Evaluation tab**: every
 model evaluated on the same dataset with the same metric set appears

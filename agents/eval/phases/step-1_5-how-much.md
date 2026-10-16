@@ -3,8 +3,11 @@ Call `signal_phase` this response with the step for the phase you are in — thi
 
 Once the dataset is chosen, ALWAYS confirm data usage with the user
 before assembling the job config — never silently evaluate the whole
-dataset. Call `get_dataset` on the run ID and present its record
-count, then ask:
+dataset. Call `get_dataset` on the eval dataset's run ID and present
+THAT record count — the eval set's own size. Do NOT reuse or reference
+record counts from the training data (its preview or full sample count
+mentioned in the handoff context are a different dataset); the eval set
+does not "replace" or continue them. Then ask:
 
 - "Use all N records" (the default)
 - "Use a portion — split the dataset first" (the user gives a count
