@@ -125,15 +125,19 @@ For each existing gate: classify it **invariant** vs **nudge**, then move it to 
 
 | Current gate | Class | Target mechanism |
 |---|---|---|
-| `_SUBAGENT_JOB_DONE/FAILED_PROMPT` (injected as a turn) | orchestration handoff | proxy already drives resume in code (#501) — pass the subagent the **payload** (dataset id + summary) as a tool-result-shaped input, not an imperative user turn. |
-| `_SUBAGENT_HELP_PROMPT` | orchestration handoff | same: deliver `need` as a tool/handoff payload in the orchestrator's input channel, not an in-band `user`/`[SYSTEM EVENT]` message. |
-| `_apply_provenance_gate` + `MAX_PROVENANCE_RETRIES` | fabrication | **delete**; replace with UI-renders-from-tool-outputs (§4.4) + one system-prompt rule. If a silent safeguard is still wanted, make it a **filter** (strip/annotate the unverified claim) — never a model re-run. |
-| `_apply_job_claim_gate` / `_dispatch_provenance_violations` (advancing past failed/absent upstream) | invariant | move to the **tool precondition** on `create_*`/`validate_*`: refuse with a tool error when the parent job isn't `succeeded`. (Worked example below.) |
-| `_enforce_single_interaction` + `MAX_INTERACTION_RERUNS` | invariant (ordering) | enforce in the **confirm/preview tool**: the committing tool returns a tool error if its precondition (review approved, preview seen) is unmet, instead of re-running the model. |
+> Note (reconciled with §4b): a free-standing tool-result is **not expressible** through opencode's message API, so the handoff/steer rows below use the **`system` channel** (opencode's message-level `system` field) rather than a "tool-result-shaped payload". The neutral event *fact* (e.g. the completed job id) still rides the user `text`; only the imperative moves to `system`.
+
+| Current gate | Class | Target mechanism (as implemented) |
+|---|---|---|
+| `_SUBAGENT_JOB_DONE/FAILED_PROMPT` (was appended to the user turn) | orchestration handoff | deliver the imperative on the **`system` channel** (every tier) with the job-id event fact kept in the user `text`; the standing hand-back rule also lives in the subagent personas. |
+| `_SUBAGENT_HELP_PROMPT` / `[SUBAGENT COMPLETED]` resume seed | orchestration handoff | these are turn-*drivers* for a programmatic orchestrator turn (like `[CONTEXT]`/`[RESUMED]`), so they stay user-role by necessity; they are not reactive corrections. |
+| `_apply_provenance_gate` | fabrication | **annotation-only** — a silent caveat, **no model re-run**, both tiers (the UI renders ids/status from tool outputs, §4.4) + a persona no-fabrication rule. |
+| `_apply_job_claim_gate` / `_dispatch_provenance_violations` (advancing past a non-succeeded upstream) | invariant | enforced at the **tool precondition** (`validate_*`/`create_*` → `_require_dependency_succeeded` → 422 tool error); the agent prose gate is deleted (frontier) and retained only as weak-tier scaffolding. |
+| `_enforce_single_interaction` + `MAX_INTERACTION_RERUNS` | invariant (ordering) | the card **stripping** is a silent filter (both tiers); the in-turn **re-run** is weak-tier-only, and a held card is demoted to a `system`-channel soft steer for a frontier driver. |
 
 Cross-cutting:
-- **No `user` role (or in-band `[SYSTEM EVENT]` user text) for system intent.** If injection is unavoidable, use system/developer role and keep it out of durable history.
-- **Tier the remaining scaffolds** behind a driver-capability flag.
+- **No `user` role for a reactive CORRECTION/steer** — those go on the `system` channel (every tier). Turn-*driving* handoffs (`[CONTEXT]`/`[RESUMED]`/help/completion seeds) remain user-role by necessity.
+- **Tier the weak-only scaffolds** (the job-claim gate + the in-turn re-run) behind `agent_driver_tier`; structural invariants stay on for both tiers.
 
 ---
 

@@ -1373,11 +1373,11 @@ async def _proxy_send_message(
 ) -> dict[str, Any]:
     """POST a turn to opencode. ``text`` is the user-role part; ``system`` (when given) is
     delivered via opencode's message-level ``system`` field — an instruction the model reads
-    as SYSTEM context rather than as a user utterance. The proxy uses ``system`` to deliver
-    backend course-correction / handoff steers to a frontier driver without polluting the
-    user channel (which makes strong models servile and poisons the transcript); weak drivers
-    de-prioritise system notes, so for them the same steer is delivered on the user channel
-    (see _deliver_steer)."""
+    as SYSTEM context rather than as a user utterance. The proxy routes backend hand-back /
+    interaction steers through ``system`` for EVERY driver tier (not the user channel), so a
+    strong model isn't made servile and the transcript isn't polluted; the neutral event fact
+    (e.g. the completed job id) still rides the user ``text``. Tier only governs the weak-only
+    scaffolding in _run_turn (the job-claim gate + the in-turn re-run), not this channel."""
     payload: dict[str, Any] = {"parts": [{"type": "text", "text": text}]}
     if agent:
         payload["agent"] = agent

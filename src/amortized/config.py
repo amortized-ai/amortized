@@ -1,6 +1,7 @@
 """Application configuration via environment variables."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -88,7 +89,7 @@ class Settings(BaseSettings):
     agent_upstream_insecure_tls: bool = Field(
         False, description="Skip TLS verification for the agent upstream (not recommended)."
     )
-    agent_driver_tier: str = Field(
+    agent_driver_tier: Literal["frontier", "weak"] = Field(
         "frontier",
         description="Capability tier of the agent's LLM driver. 'frontier' (e.g. "
         "claude-opus-4-8) runs the clean Agent/User/Tools loop: structural invariants stay "
@@ -127,8 +128,10 @@ class Settings(BaseSettings):
         in-band steer messages). Off for a frontier driver — it reads tool errors and
         self-corrects, and the scaffolding measurably restrains it — and on for a weak
         driver that needs the training wheels. Structural invariants (tool preconditions,
-        card suppression) are NOT gated by this; they are always on."""
-        return self.agent_driver_tier.strip().lower() != "frontier"
+        card suppression) are NOT gated by this; they are always on. (agent_driver_tier is a
+        Literal, so only 'frontier'/'weak' are possible — a typo is rejected at startup rather
+        than silently selecting a tier.)"""
+        return self.agent_driver_tier == "weak"
 
     @property
     def resolved_training_image_tag(self) -> str:
