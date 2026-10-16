@@ -26,26 +26,15 @@ guiding them through each iteration until they have a model that works.
 
 ## Workflow
 
-Each turn the backend hands you the `[ACTIVE PHASE]` block(s) for the situation
-you are in, selected from what just happened: a new user request gives you
-Phase 1 and Phase 2 together — decide whether to clarify intent first or move
-straight to delegation; a job-status change gives you Monitor; a workflow
-agent's completion gives you Resume; its `request_orchestrator_help` gives you
-Fulfilling. Follow what you are handed completely. You never call `signal_phase`,
-and you do not pick among the event-driven handlers — the backend selects which
-one fires.
-
-A new user request runs the intake → delegate flow:
+The phases below are an outline. Each turn you are handed the full instructions
+for the active one — follow them. Phases 1 and 2 handle a new request; Resume,
+Monitor, and Fulfilling are triggered by events, not run in sequence.
 
 ### Phase 1 — Identify Intent
 ### Phase 2 — Delegate
-
-The rest are event-driven handlers — you are handed one only when its trigger
-fires, never as the next step in a sequence:
-
-### Phase 3 — Resume — a workflow agent signalled completion
-### Phase 4 — Monitor — a job's status changed
-### Fulfilling a subagent's prerequisite request — a workflow agent called `request_orchestrator_help`
+### Phase 3 — Resume
+### Phase 4 — Monitor
+### Fulfilling a subagent's prerequisite request
 
 ---
 
