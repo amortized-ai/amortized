@@ -96,7 +96,11 @@ class TestSubagentInjection:
         # entry phase block (step-0), not the stale step-3, leads the handoff
         assert "step-0-what-to-eval" in sent
         assert "Confirm WHAT to evaluate" in sent
-        assert "[USER MESSAGE]\nevaluate it" in sent
+        # injected framing is wrapped as a system-reminder; the clean user text trails
+        # outside it (and is the end of the message), so it reads as the user's own words
+        assert "<system-reminder>" in sent
+        assert "[CONTEXT]" in sent
+        assert sent.endswith("evaluate it")
         # a fresh subagent's cursor is reset to its entry phase
         assert state.last_signal_step == ""
 

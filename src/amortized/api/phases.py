@@ -80,12 +80,22 @@ def subagent_phase(agent: str, step: str | None) -> str | None:
     return _FIRST_PHASE.get(agent or "")
 
 
+def system_reminder(text: str) -> str:
+    """Wrap platform-injected steering in a `<system-reminder>` block so the model reads
+    it as a system directive, not as words the user typed. Used for every prepended or
+    appended turn-message injection (phase blocks, steers, hand-off framing) so the clean
+    user text stays the only user-authored part of the turn."""
+    return f"<system-reminder>\n{text}\n</system-reminder>"
+
+
 def with_block(agent: str, phase: str | None, text: str) -> str:
     """Prepend the (agent, phase) block to a turn message, if one exists.
 
+    The block is wrapped in a `<system-reminder>` so it does not read as user text.
     No-op when phase is None or the agent/phase has no block, so callers can wrap every
     handoff unconditionally without first checking migration state."""
     block = phase_block(agent, phase) if phase else None
     if not block:
         return text
-    return f"{block}\n\n{text}" if text else block
+    wrapped = system_reminder(block)
+    return f"{wrapped}\n\n{text}" if text else wrapped

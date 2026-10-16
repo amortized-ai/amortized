@@ -682,8 +682,9 @@ def test_held_card_steer_is_delivered_to_the_model_next_turn_then_cleared() -> N
     state = _fresh_state()
     state.pending_interaction_steer = "Show the SDG preview before the full run."
     led = agent._consume_interaction_steer(state, "yes, go")
-    assert led.startswith("Show the SDG preview before the full run.")
-    assert "yes, go" in led
+    # The steer leads as a system-reminder (not user text); the user text trails after it.
+    assert led.startswith("<system-reminder>\nShow the SDG preview before the full run.")
+    assert led.endswith("yes, go")
     assert state.pending_interaction_steer is None
     assert agent._consume_interaction_steer(state, "next") == "next"  # nothing parked
 
@@ -701,8 +702,9 @@ class TestInteractionSteerDelivery:
         state.pending_interaction_steer = "Show the preview first."
         _run(agent._handle_subagent_message(state, "s1", "go ahead", _body(text="go ahead")))
         sent = next(t for (sid, t, _a) in router.sent if sid == sub)
-        assert sent.startswith("Show the preview first.")
-        assert "go ahead" in sent
+        # steer leads as a system-reminder, ahead of the phase block; user text trails clean
+        assert sent.startswith("<system-reminder>\nShow the preview first.")
+        assert sent.endswith("go ahead")
         assert state.pending_interaction_steer is None  # consumed
 
     def test_job_complete_keeps_the_steer_parked(self, router: _Router) -> None:
