@@ -23,7 +23,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api.agent_claims import (
-    _AWAIT_UPSTREAM_GUIDANCE,
     _job_claim_caveat,
     _job_claim_correction,
 )
@@ -787,60 +786,28 @@ async def _apply_provenance_gate(
     body: MessageRequest,
     cache: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Block + force-correct fabricated identifiers before they reach the user."""
+    """Annotate (never re-run) an ungrounded identifier the model stated in prose.
+
+    This used to force-correct the model (post a "[GROUNDING VIOLATION]" message to its
+    session and re-run), which restrains a frontier driver — it reads the scold as the
+    user contradicting it — and spends a model round-trip on every false positive. It is
+    also unnecessary: the Studio client renders every card, job id, and status from
+    structured tool OUTPUTS, not model prose (see studio/.../parse-tool-result.ts and
+    message-bubble.tsx — the JobMonitorCard id comes from a tool result, and there is no
+    prose job-id regex), so a fabricated id in prose is cosmetic text that cannot seed a
+    job card or nav link. Fabrication is prevented at the source by a persona rule ("never
+    state an id you didn't get from a tool"); here we only append a silent, visible caveat
+    so the user is warned — a filter, never a correction. The caveat is a tagged text part
+    the client surfaces separately (see _caveat_part)."""
     try:
         violations = await _ungrounded_ids(state, result, cache)
         if not violations:
             return result
-
-        active_id = state.subagent_id or state.orchestrator_id
-        agent = state.subagent_target if state.subagent_id else "morty"
-        current = result
-        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
-            logger.warning(
-                "Provenance gate: ungrounded identifier(s) %s session=%s agent=%s "
-                "(correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
-            )
-            correction = (
-                "[GROUNDING VIOLATION — internal system check, not from the user]\n"
-                "Your previous reply stated identifier(s) that appear in NO tool result, "
-                f"system event, or user message in this conversation: {', '.join(violations)}.\n"
-                "Do NOT invent job IDs, run IDs, dataset IDs, model names, or metrics. "
-                "Re-send your reply to the user using ONLY values that came from a tool "
-                "result in this session. If you do not have a real value, do not state "
-                "one — call the appropriate tool to fetch it first, or tell the user you "
-                "don't have it yet."
-            )
-            post = await _proxy_send_message(
-                active_id, correction, agent=agent, model=body.model
-            )
-            # The correction adds new messages to the active session; drop its cached
-            # copy so re-grounding fetches them (other sessions stay cached).
-            if cache is not None:
-                cache.pop(active_id, None)
-            # Re-ground the model's ACTUAL corrected reply: the POST response carries only
-            # step markers, so re-checking it would find no text and always "pass" — the
-            # real reply text is in the GET parts. (A correction may also call a tool that
-            # now surfaces the id legitimately.)
-            refetched = await _fetch_all_assistant_parts(active_id)
-            # Fall back to the POST parts if the fetch is empty (a transient GET failure,
-            # or a test without a live opencode) so the recheck still sees the reply.
-            current = {**post, "parts": refetched or post.get("parts") or []}
-            violations = await _ungrounded_ids(state, current, cache)
-            if not violations:
-                return current
-
-        # Exhausted the correction and the model still states an unverified id.
-        # Rather than discard a possibly-correct reply (a tightened-but-imperfect
-        # id detector can still false-positive), keep it and append a visible
-        # caveat naming the unverified id(s) so the user is warned without losing
-        # content.
-        logger.warning(
-            "Provenance gate: still ungrounded after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+        logger.info(
+            "Provenance: ungrounded identifier(s) %s session=%s (annotating, not correcting)",
+            violations, state.subagent_id or state.orchestrator_id,
         )
-        parts = list(current.get("parts") or [])
+        parts = list(result.get("parts") or [])
         parts.append(
             _caveat_part(
                 "\n\n⚠️ I couldn't verify the identifier(s) "
@@ -849,9 +816,9 @@ async def _apply_provenance_gate(
                 "values."
             )
         )
-        return {**current, "parts": parts}
+        return {**result, "parts": parts}
     except Exception:
-        logger.warning("Provenance gate failed (passing through)", exc_info=True)
+        logger.warning("Provenance annotation failed (passing through)", exc_info=True)
         return result
 
 
@@ -929,20 +896,6 @@ _SUBMITTED_CLAIM_RE = re.compile(
 _DISPATCH_PARENT_TYPE = {
     "validate_training_job": "training",
     "validate_eval_job": "eval",
-}
-
-# Check D ("not ready") — the stage-gate. A downstream dispatch maps to the upstream
-# job-id field(s) it depends on, each of which must be 'succeeded' before the step can
-# advance. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and are
-# validated downstream, so they are not listed. validate_sdg_job is intentionally
-# absent: cloning an SDG recipe for an eval set may run while training is still in
-# flight ("prep eval set now"), so eval-set prep is NOT gated here.
-_DISPATCH_UPSTREAM_FIELDS = {
-    "validate_training_job": [("parent_job_id", "the training dataset's job")],
-    "validate_eval_job": [
-        ("parent_job_id", "the eval dataset's job"),
-        ("training_job_id", "the model's training job"),
-    ],
 }
 
 def _as_utc(value: Any) -> datetime | None:
@@ -1093,64 +1046,20 @@ async def _no_data_advisory(state: SessionState, target: str) -> str | None:
     )
 
 
-# A job that has not reached a terminal state — the step that depends on it cannot
-# advance yet. (Terminal = succeeded/failed/cancelled; failed/cancelled are handled
-# by the subagent's own failure path, not the "wait" advisory.)
-_INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
-
-
-async def _upstream_not_ready_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
-    """The stage-gate at the delegation boundary (companion to the validate-time
-    'not_ready' check). When a training/eval handoff cites an upstream job that is
-    still in flight, steer the subagent to report the true status and wait rather
-    than build/confirm a downstream job whose prerequisite hasn't finished.
-
-    Keyed on the dependency graph, not symptoms: only data-dependent downstream
-    targets (training/eval), only a cited job that resolves to an in-flight status.
-    A delegation to SDG (e.g. cloning a recipe for an eval set "while training runs")
-    is NOT a _DATA_DEPENDENT_TARGET, so concurrent eval-set prep stays allowed.
-    Fail-safe: any uncertainty/error returns None, leaving the handoff unchanged.
-    """
-    if target not in _DATA_DEPENDENT_TARGETS:
-        return None
-    try:
-        for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
-            job = await _fetch_job_by_token(token)
-            if job and str(job.get("status") or "") in _INFLIGHT_STATUSES:
-                status = str(job.get("status") or "")
-                return (
-                    "[UPSTREAM NOT READY]\n"
-                    f"An upstream job this {target} step depends on ({token}) is still"
-                    f" '{status}', not finished. Do NOT build, confirm, or create the"
-                    f" {target} job yet — it cannot run until that job succeeds."
-                    f" Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
-                )
-    except Exception:
-        return None
-    return None
-
-
 async def _delegation_advisory(
     state: SessionState, target: str, context: str, user_text: str
 ) -> str | None:
-    """The single ordered precondition gate at the delegation boundary — one evaluator
-    for all 'don't build the downstream job yet' preconditions, returning the FIRST
-    unmet one (or None), never stacking two overlapping advisories into one handoff.
+    """Handoff-CONTEXT advisory for a downstream (training/eval) delegation.
 
-    Order is the dependency order the user must resolve: the DATA-AVAILABILITY fork
-    comes first — until a dataset is chosen there is nothing downstream to gate, and
-    naming an in-flight upstream would be premature (there may be no upstream at all).
-    Only once data is in play does the UPSTREAM-READY check apply (its upstream exists
-    and must be 'succeeded'). Folding the two sibling gates here removes the class of
-    double-fire where both prepend to the same handoff. New delegation preconditions
-    slot in as another ordered step, mirroring the confirm-card precondition order in
-    _enforce_single_interaction (prompt review → preview approval → confirm)."""
-    advisory = await _no_data_advisory(state, target)
-    if advisory:
-        return advisory
-    return await _upstream_not_ready_advisory(state, target, context, user_text)
+    Returns the data-availability fork when no dataset has been chosen yet — i.e. framing
+    the new subagent should surface to the user (choose existing data vs. generate), not a
+    mid-conversation user-channel correction. The former UPSTREAM-READY branch was REMOVED:
+    that invariant ("don't build a downstream job on a non-'succeeded' upstream") is enforced
+    structurally at the tool boundary — validate_training_job / validate_eval_job call
+    _require_dependency_succeeded and return a 422 that surfaces to the model as a readable
+    tool error (see api/jobs.py) — so re-asserting it here as injected prose was redundant and
+    just added another in-band steer. See docs/agent-gates-proposal.md."""
+    return await _no_data_advisory(state, target)
 
 
 async def _job_claim_violations(
@@ -1195,14 +1104,12 @@ async def _job_claim_violations(
                     {"token": token, "kind": "reuse", "status": status, "type": jtype, "num": num}
                 )
     flagged = {v["token"] for v in violations if v.get("token")}
-    # Check D — the stage-gate: a training/eval dispatch this turn whose upstream job
-    # isn't 'succeeded' yet. Structural (tool-arg + DB status), fires regardless of
-    # prose. Run before Check C so "wait for it to finish" wins over "disclose reuse"
-    # when an upstream is both in-flight and old. Dedup by upstream prefix.
-    for v in await _not_ready_violations(state, result, job_cache):
-        if v["token"] not in flagged:
-            violations.append(v)
-            flagged.add(v["token"])
+    # (The former Check D — "stage-gate: a dispatch whose upstream isn't 'succeeded'" — was
+    # removed. That invariant is enforced structurally at the tool boundary:
+    # _require_dependency_succeeded runs inside validate_training_job / validate_eval_job and
+    # returns HTTP 422, which fastapi-mcp surfaces to the model as a readable TOOL ERROR the
+    # moment it calls the tool. Re-checking it here only to force-correct the model after the
+    # fact was redundant and restrained a frontier driver. See api/jobs.py.)
     # Check C — a training/eval dispatch this turn onto a stale, undisclosed parent
     # dataset. Keyed on the dispatch tool call's parent_job_id, independent of prose,
     # so it fires even when the reply names no id. Dedup against A/B/D by parent prefix.
@@ -1295,57 +1202,19 @@ async def _dispatch_provenance_violations(
     return violations
 
 
-async def _not_ready_violations(
-    state: SessionState,
-    result: dict[str, Any],
-    job_cache: dict[str, dict[str, Any] | None],
-) -> list[dict[str, Any]]:
-    """Check D — the stage-gate. A training/eval dispatch in this turn whose upstream
-    job (the SDG dataset, or the model under eval) is not yet 'succeeded' — i.e. the
-    workflow is being advanced before its prerequisite finished. Purely structural:
-    the dispatch tool call's upstream id argument and that job's DB status; no prose.
-    Blocks forward movement so Morty reports the true status and waits, instead of
-    confirming/creating a job that can't run yet. Independent of job age (unlike the
-    stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
-    violations: list[dict[str, Any]] = []
-    for part in result.get("parts") or []:
-        if part.get("type") != "tool":
-            continue
-        downstream = _tool_name(part)
-        fields = _DISPATCH_UPSTREAM_FIELDS.get(downstream)
-        if not fields:
-            continue
-        dtype = _DISPATCH_PARENT_TYPE.get(downstream, "")
-        inp = _get_tool_input(part)
-        for field_name, label in fields:
-            up_id = str(inp.get(field_name) or "")
-            if not up_id:
-                continue  # reference absent — Layer 1 fail-closes at create time
-            up = await _fetch_job_by_token(up_id, job_cache)
-            if not up:
-                continue  # unresolvable — not a stage-gate concern (fabrication gate owns it)
-            status = str(up.get("status") or "")
-            if status == "succeeded":
-                continue
-            violations.append(
-                {
-                    "token": up_id[:8],
-                    "kind": "not_ready",
-                    "status": status,
-                    "type": dtype,
-                    "label": label,
-                }
-            )
-    return violations
-
-
 async def _apply_job_claim_gate(
     state: SessionState,
     result: dict[str, Any],
     body: MessageRequest,
     cache: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Verify + force-correct false job-completion / stale-reuse claims."""
+    """Verify + force-correct false job-completion / stale-reuse claims (WEAK-tier only).
+
+    This is model-behavior scaffolding and is invoked by _run_turn ONLY when
+    settings.agent_scaffolding_enabled (a weak driver). A frontier driver skips it entirely:
+    the real invariant (don't advance past a non-'succeeded' upstream) is enforced at the tool
+    boundary, and the UI renders from tool outputs so a prose over-claim is cosmetic. See
+    docs/agent-gates-proposal.md."""
     try:
         job_cache: dict[str, dict[str, Any] | None] = {}
         violations = await _job_claim_violations(state, result, cache, job_cache)
@@ -1499,12 +1368,22 @@ async def _proxy_send_message(
     text: str,
     agent: str | None = None,
     model: MessageModel | None = None,
+    system: str | None = None,
 ) -> dict[str, Any]:
+    """POST a turn to opencode. ``text`` is the user-role part; ``system`` (when given) is
+    delivered via opencode's message-level ``system`` field — an instruction the model reads
+    as SYSTEM context rather than as a user utterance. The proxy uses ``system`` to deliver
+    backend course-correction / handoff steers to a frontier driver without polluting the
+    user channel (which makes strong models servile and poisons the transcript); weak drivers
+    de-prioritise system notes, so for them the same steer is delivered on the user channel
+    (see _deliver_steer)."""
     payload: dict[str, Any] = {"parts": [{"type": "text", "text": text}]}
     if agent:
         payload["agent"] = agent
     if model:
         payload["model"] = model.model_dump(exclude_none=True)
+    if system:
+        payload["system"] = system
     resp = await _client().post(
         f"{_opencode_url()}/session/{session_id}/message",
         json=payload,
@@ -1736,42 +1615,58 @@ async def _run_turn(
             # (the client re-derives content from its own GET regardless).
             if fetched:
                 result["parts"] = fetched
+            # Provenance is annotation-only (silent caveat, no re-run) for every driver —
+            # see _apply_provenance_gate.
             result = await _apply_provenance_gate(state, result, body, msg_cache)
-            result = await _apply_job_claim_gate(state, result, body, msg_cache)
+            # Prose-claim policing (job-claim gate) is model-behavior SCAFFOLDING, so it runs
+            # ONLY for a weak driver. A frontier driver gets the clean loop: the real
+            # invariant (don't advance past a non-'succeeded' upstream) is enforced at the
+            # tool boundary as a 422 tool error (validate_*/_require_dependency_succeeded), the
+            # Studio UI renders cards/ids/status from tool OUTPUTS (so a prose over-claim is
+            # cosmetic, not a functional error), and the A/B showed force-correcting a strong
+            # model in the user channel just makes it servile. See docs/agent-gates-proposal.md.
+            if settings.agent_scaffolding_enabled:
+                result = await _apply_job_claim_gate(state, result, body, msg_cache)
             # Backfill the UI phase uniformly for every path (subagent completion,
             # subagent help hand-back, orchestrator) — not just the one return inside
             # the subagent handler — so the progress bar never strands on a stale
-            # phase on a hand-back/delegation turn.
+            # phase on a hand-back/delegation turn. (Silent filter — both tiers.)
             result = _ensure_phase_signal(state, result)
+            # The interaction gate's card STRIPPING/suppression is a silent filter (it never
+            # messages the model), so it runs for both tiers. Only its STEER delivery differs.
             result = _enforce_single_interaction(result, state)
-            # Hard rail: if the gate held a committing card (unmet precondition), correct
-            # the model NOW and re-render, so the premature card never reaches the client
-            # this turn — the stale turn falls behind the steer (a user-role message the
-            # client never shows), exactly like the provenance gate. Bounded so a driver
-            # that keeps jumping the gun can't loop.
-            reruns = 0
-            while state.pending_rerun_steer and reruns < MAX_INTERACTION_RERUNS:
-                reruns += 1
-                steer = state.pending_rerun_steer
-                state.pending_rerun_steer = None
-                steer_agent = state.subagent_target if state.subagent_id else "morty"
-                logger.info(
-                    "Interaction gate: held a committing card; re-running the model to "
-                    "clear it (session=%s agent=%s)", session_id, steer_agent,
-                )
-                await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
-                refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
-                if refetched:
-                    result["parts"] = refetched
-                result = await _apply_provenance_gate(state, result, body, msg_cache)
-                result = await _apply_job_claim_gate(state, result, body, msg_cache)
-                result = _ensure_phase_signal(state, result)
-                result = _enforce_single_interaction(result, state)
-            # Exhausted (the driver re-emitted the premature card despite the correction).
-            # Don't silently drop the steer — that dead-ends: the card is held yet the model
-            # is never told why. Defer it as a soft interaction steer so the model receives
-            # the correction on its NEXT turn and can render the prerequisite step first.
-            if state.pending_rerun_steer:
+            if settings.agent_scaffolding_enabled:
+                # Weak driver, HARD rail: a held committing card re-runs the model in-turn
+                # (user channel) so the premature card never reaches the client this turn.
+                # Bounded so a driver that keeps jumping the gun can't loop.
+                reruns = 0
+                while state.pending_rerun_steer and reruns < MAX_INTERACTION_RERUNS:
+                    reruns += 1
+                    steer = state.pending_rerun_steer
+                    state.pending_rerun_steer = None
+                    steer_agent = state.subagent_target if state.subagent_id else "morty"
+                    logger.info(
+                        "Interaction gate: held a committing card; re-running the model to "
+                        "clear it (session=%s agent=%s)", session_id, steer_agent,
+                    )
+                    await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
+                    refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+                    if refetched:
+                        result["parts"] = refetched
+                    result = await _apply_provenance_gate(state, result, body, msg_cache)
+                    result = await _apply_job_claim_gate(state, result, body, msg_cache)
+                    result = _ensure_phase_signal(state, result)
+                    result = _enforce_single_interaction(result, state)
+                # Exhausted (the driver re-emitted the card despite the correction). Don't drop
+                # the steer — defer it as a soft steer so the model gets it on its NEXT turn.
+                if state.pending_rerun_steer:
+                    state.pending_interaction_steer = state.pending_rerun_steer
+                    state.pending_rerun_steer = None
+            elif state.pending_rerun_steer:
+                # Frontier driver: NO in-turn re-run (it spends a round-trip and the card is
+                # already stripped silently above). Demote the hold to a soft steer delivered
+                # on the model's next turn via the SYSTEM channel (clean on strong models),
+                # so it stops re-emitting the card without a user-channel scolding this turn.
                 state.pending_interaction_steer = state.pending_rerun_steer
                 state.pending_rerun_steer = None
             # Keep any gate caveat (the provenance/job-claim "couldn't verify / still
@@ -1836,14 +1731,20 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     }
 
 
-def _consume_interaction_steer(state: SessionState, user_text: str) -> str:
-    """Prepend any steer the interaction gate parked on a prior held-card turn, so the
-    model receives it as the lead of its next message and does the missing step itself.
-    The steer is model-directed and is never shown to the user."""
-    if state.pending_interaction_steer:
-        user_text = f"{state.pending_interaction_steer}\n\n{user_text}"
-        state.pending_interaction_steer = None
-    return user_text
+def _consume_interaction_steer(state: SessionState, user_text: str) -> tuple[str, str | None]:
+    """Consume a steer the interaction gate parked on a prior held-card turn. Returns
+    ``(user_text, system)`` — the steer is model-directed and never shown to the user, and it
+    is delivered on the SYSTEM channel (not the user channel) for EVERY driver: that is the
+    proper place for a system-initiated instruction, it keeps a strong model from going servile,
+    and it degrades gracefully if the driver tier is misclassified (the real invariants are
+    enforced at the tool boundary regardless, so a de-prioritised soft steer never breaks the
+    flow). Tier only controls the harder weak-model insurance (the in-turn re-run), not this
+    soft steer. See docs/agent-gates-proposal.md."""
+    steer = state.pending_interaction_steer
+    if not steer:
+        return user_text, None
+    state.pending_interaction_steer = None
+    return user_text, steer
 
 
 async def _handle_subagent_message(
@@ -1859,19 +1760,24 @@ async def _handle_subagent_message(
     # dataset, failure resumes it with the bad news. (A failed job previously got no
     # hand-back steer, so the producer kept control and the flow could stall.)
     job_failed = False
+    steer_system: str | None = None
     if body.event == "job_complete":
-        # Keep the event text (it carries the job id both hand-back prompts must report and
-        # the grounding corpus needs) and append the steer — don't replace it.
-        if _job_succeeded(body, user_text):
-            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_DONE_PROMPT}"
-        else:
-            user_text = f"{user_text}\n\n{_SUBAGENT_JOB_FAILED_PROMPT}"
-            job_failed = True
+        # The neutral event fact (the job id, which the hand-back must report and the grounding
+        # corpus needs) stays in the user part. The hand-back IMPERATIVE ("your task is done —
+        # signal completion now, don't inspect") is delivered on the SYSTEM channel for every
+        # driver, not appended to the user text: it is a system-initiated instruction, so it
+        # belongs in the system channel rather than masquerading as a user turn. The standing
+        # hand-back rule also lives in the subagent persona (agents/*/*.md), so this per-turn
+        # system note only reinforces it. See docs/agent-gates-proposal.md.
+        succeeded = _job_succeeded(body, user_text)
+        job_failed = not succeeded
+        steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT
     else:
-        # Deliver any steer the interaction gate parked on a prior held-card turn as the
-        # lead of this message. Skipped on a job_complete event (which appends to user_text
-        # above) so the steer stays parked for the next real turn instead of being lost.
-        user_text = _consume_interaction_steer(state, user_text)
+        # Deliver any steer the interaction gate parked on a prior held-card turn. Channel is
+        # tier-dependent (user text for weak, system for frontier) — see _consume_interaction_steer.
+        # Skipped on a job_complete event (handled above) so the steer stays parked for the
+        # next real turn instead of being lost.
+        user_text, steer_system = _consume_interaction_steer(state, user_text)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1879,6 +1785,7 @@ async def _handle_subagent_message(
             user_text,
             agent=state.subagent_target,
             model=body.model,
+            system=steer_system,
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
@@ -2007,8 +1914,11 @@ async def _orchestrator_turn(
     state: SessionState,
     text: str,
     body: MessageRequest,
+    system: str | None = None,
 ) -> dict[str, Any]:
-    return await _proxy_send_message(state.orchestrator_id, text, agent="morty", model=body.model)
+    return await _proxy_send_message(
+        state.orchestrator_id, text, agent="morty", model=body.model, system=system
+    )
 
 
 async def _maybe_delegate(
@@ -2054,8 +1964,8 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    user_text = _consume_interaction_steer(state, user_text)
-    morty_result = await _orchestrator_turn(state, user_text, body)
+    user_text, steer_system = _consume_interaction_steer(state, user_text)
+    morty_result = await _orchestrator_turn(state, user_text, body, system=steer_system)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 

@@ -35,7 +35,8 @@ class _Router:
         self.script: dict[str, list[list[dict[str, Any]]]] = {}
         # session_id -> parts of the most recent response
         self.last_parts: dict[str, list[dict[str, Any]]] = {}
-        self.sent: list[tuple[str, str, str | None]] = []
+        # (session_id, text, agent, system) — system is the system-channel steer, if any.
+        self.sent: list[tuple[str, str, str | None, str | None]] = []
         # sessions handed out by _proxy_create_session, in order
         self._new_session_queue: list[str] = []
 
@@ -57,8 +58,9 @@ class _Router:
         text: str,
         agent: str | None = None,
         model: Any = None,
+        system: str | None = None,
     ) -> dict[str, Any]:
-        self.sent.append((session_id, text, agent))
+        self.sent.append((session_id, text, agent, system))
         script = self.script.get(session_id) or []
         parts = script.pop(0) if script else []
         self.last_parts[session_id] = parts
@@ -380,7 +382,8 @@ class TestRequestOrchestratorHelp:
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
 
         sdg_msg = next(m for m in router.sent if m[0] == sdg_id)
-        assert agent._SUBAGENT_JOB_FAILED_PROMPT in sdg_msg[1]  # defined failure hand-back
+        # failure hand-back delivered on the system channel (4th tuple element)
+        assert sdg_msg[3] == agent._SUBAGENT_JOB_FAILED_PROMPT
         resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
         assert "could NOT be produced" in resume_msg[1]
         assert "is ready" not in resume_msg[1]
@@ -399,7 +402,10 @@ class TestJobCompleteHandback:
         state.subagent_target = "sdg"
         return state
 
-    def test_success_event_rewrites_to_handback(self, router: _Router) -> None:
+    def test_success_event_delivers_handback_on_system_channel(self, router: _Router) -> None:
+        # The hand-back IMPERATIVE now rides the system channel (not appended to the user text),
+        # so it reads as a system instruction rather than a fake user turn. The neutral event
+        # fact (the job id) stays in the user part so the hand-back can report it.
         state = self._active_sdg(router)
         text = (
             "Job d6be24ce (sdg) finished with status: succeeded."
@@ -410,30 +416,37 @@ class TestJobCompleteHandback:
                 state, "s1", text, _body(event="job_complete")
             )
         )
-        forwarded = router.sent[0][1]
-        assert agent._SUBAGENT_JOB_DONE_PROMPT in forwarded  # hand-back steer appended
-        assert "d6be24ce" in forwarded  # [5] the job id is KEPT, not replaced away
-        assert "signal_subagent_completion" in forwarded
+        forwarded_text = router.sent[0][1]
+        forwarded_system = router.sent[0][3]
+        assert forwarded_system == agent._SUBAGENT_JOB_DONE_PROMPT
+        assert "signal_subagent_completion" in (forwarded_system or "")
+        assert "d6be24ce" in forwarded_text  # job id KEPT in the user part
+        assert agent._SUBAGENT_JOB_DONE_PROMPT not in forwarded_text  # NOT on the user channel
 
-    def test_failed_job_rewrites_to_failure_handback(self, router: _Router) -> None:
+    def test_failed_job_delivers_failure_handback_on_system_channel(
+        self, router: _Router
+    ) -> None:
         # A failed job also gets a defined hand-back (previously it was left untouched, so the
-        # producer kept control and the flow could stall — Shabana review #3).
+        # producer kept control and the flow could stall — Shabana review #3) — on the system
+        # channel, same as success.
         state = self._active_sdg(router)
         text = (
             "Job d6be24ce (sdg) finished with status: failed."
             " Use present_options to suggest next steps to the user."
         )
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
-        forwarded = router.sent[0][1]
-        assert agent._SUBAGENT_JOB_FAILED_PROMPT in forwarded  # failure hand-back appended
-        assert "d6be24ce" in forwarded  # the job id is KEPT, not replaced away
-        assert "FAILED" in forwarded
-        assert "signal_subagent_completion" in forwarded
+        forwarded_text = router.sent[0][1]
+        forwarded_system = router.sent[0][3]
+        assert forwarded_system == agent._SUBAGENT_JOB_FAILED_PROMPT
+        assert "FAILED" in (forwarded_system or "")
+        assert "signal_subagent_completion" in (forwarded_system or "")
+        assert "d6be24ce" in forwarded_text  # job id KEPT in the user part
 
     def test_normal_message_not_rewritten(self, router: _Router) -> None:
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
         assert router.sent[0][1] == "confirm"
+        assert router.sent[0][3] is None  # no system steer on an ordinary turn
 
 
 class TestEnforceSingleInteraction:
@@ -670,34 +683,34 @@ def _nudge(state: Any) -> str:
     return state.pending_rerun_steer or state.pending_interaction_steer or ""
 
 
-def test_held_card_steer_is_delivered_to_the_model_next_turn_then_cleared() -> None:
-    # [3] The gate parks a MODEL-directed steer on the session; the next message to that
-    # session leads with it (so the model does the missing step itself), then it clears —
-    # the steer is never shown to the user.
+def test_held_card_steer_is_delivered_on_the_system_channel_then_cleared() -> None:
+    # The gate parks a MODEL-directed steer; _consume_interaction_steer returns it on the
+    # SYSTEM channel (not folded into the user text), then clears it — the steer is never
+    # shown to the user and never masquerades as a user turn.
     state = _fresh_state()
     state.pending_interaction_steer = "Show the SDG preview before the full run."
-    led = agent._consume_interaction_steer(state, "yes, go")
-    assert led.startswith("Show the SDG preview before the full run.")
-    assert "yes, go" in led
+    user_text, system = agent._consume_interaction_steer(state, "yes, go")
+    assert user_text == "yes, go"  # user text untouched
+    assert system == "Show the SDG preview before the full run."  # steer on the system channel
     assert state.pending_interaction_steer is None
-    assert agent._consume_interaction_steer(state, "next") == "next"  # nothing parked
+    assert agent._consume_interaction_steer(state, "next") == ("next", None)  # nothing parked
 
 
 class TestInteractionSteerDelivery:
-    """The gate parks a model-directed steer on the session; the next handler turn leads
-    the model's message with it — except a job_complete event (which replaces user_text),
-    where the steer stays parked for the next real turn (R2-A)."""
+    """The gate parks a model-directed steer on the session; the next handler turn delivers it
+    on the SYSTEM channel — except a job_complete event (which carries its own system steer),
+    where the parked steer stays parked for the next real turn (R2-A)."""
 
-    def test_subagent_turn_leads_with_the_parked_steer(self, router: _Router) -> None:
+    def test_subagent_turn_delivers_parked_steer_on_system_channel(self, router: _Router) -> None:
         sub = router.add_session([[_text_part("ok")]])
         state = _make_state(router)
         state.subagent_id = sub
         state.subagent_target = "sdg"
         state.pending_interaction_steer = "Show the preview first."
         _run(agent._handle_subagent_message(state, "s1", "go ahead", _body(text="go ahead")))
-        sent = next(t for (sid, t, _a) in router.sent if sid == sub)
-        assert sent.startswith("Show the preview first.")
-        assert "go ahead" in sent
+        text, system = next((t, s) for (sid, t, _a, s) in router.sent if sid == sub)
+        assert text == "go ahead"  # user text untouched (steer not folded in)
+        assert system == "Show the preview first."  # steer delivered on the system channel
         assert state.pending_interaction_steer is None  # consumed
 
     def test_job_complete_keeps_the_steer_parked(self, router: _Router) -> None:
@@ -712,17 +725,23 @@ class TestInteractionSteerDelivery:
                 _body(text="ignored", event="job_complete", outcome="succeeded"),
             )
         )
-        sent = next(t for (sid, t, _a) in router.sent if sid == sub)
-        assert agent._SUBAGENT_JOB_DONE_PROMPT in sent  # job-done prompt forwarded
-        assert "Show the preview first." not in sent  # steer NOT consumed on job_complete
+        _text, system = next((t, s) for (sid, t, _a, s) in router.sent if sid == sub)
+        assert system == agent._SUBAGENT_JOB_DONE_PROMPT  # job-done steer on the system channel
         assert state.pending_interaction_steer == "Show the preview first."  # stays parked
 
 
 class TestCommittingCardReRun:
     """A held committing card (unmet precondition) triggers an in-turn model re-run — the
     hard rail — so the premature card never reaches the client (it falls behind the steer
-    message). Validated on the training data precondition; SDG previewing is a soft prompt
-    default, not a gate, so it is deliberately NOT re-run."""
+    message). This is WEAK-driver insurance: it runs only when agent_scaffolding_enabled, so
+    the class pins the weak tier. The card is still stripped silently for a frontier driver
+    (see test_frontier_holds_card_without_rerun); only the costly in-turn re-run is weak-only.
+    Validated on the training data precondition; SDG previewing is a soft prompt default, not a
+    gate, so it is deliberately NOT re-run."""
+
+    @pytest.fixture(autouse=True)
+    def _weak_tier(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(agent.settings, "agent_driver_tier", "weak")
 
     def test_unmet_precondition_reruns_the_model(self, router: _Router) -> None:
         # Turn 1: the subagent jumps to a training confirm with no data/model/VRAM shown ->
@@ -739,7 +758,7 @@ class TestCommittingCardReRun:
         tid = "turn-1"
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
-        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        sub_sends = [t for (sid, t, _a, _s) in router.sent if sid == sub]
         assert sub_sends[0] == "train it"  # the original turn
         assert len(sub_sends) == 2  # the gate re-ran the model once (the hard rail)
         assert sub_sends[1] != "train it"  # the re-run posted the data-precondition steer
@@ -759,7 +778,7 @@ class TestCommittingCardReRun:
         tid = "turn-1"
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
-        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        sub_sends = [t for (sid, t, _a, _s) in router.sent if sid == sub]
         assert sub_sends == ["train it"]  # no re-run
         assert state.pending_rerun_steer is None
 
@@ -780,12 +799,33 @@ class TestCommittingCardReRun:
         tid = "turn-1"
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
-        sub_sends = [t for (sid, t, _a) in router.sent if sid == sub]
+        sub_sends = [t for (sid, t, _a, _s) in router.sent if sid == sub]
         assert len(sub_sends) == 2  # original + exactly one re-run
         assert state.pending_rerun_steer is None  # hard steer cleared
         # The fix: deferred, not lost — the model receives the correction next turn.
         assert state.pending_interaction_steer
         assert "data" in state.pending_interaction_steer.lower()
+
+    def test_frontier_holds_card_without_rerun(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A frontier driver gets the CLEAN loop: the premature card is still stripped silently
+        # (the card never reaches the client), but there is NO in-turn re-run — the hold is
+        # demoted to a soft steer delivered on the model's next turn via the system channel.
+        monkeypatch.setattr(agent.settings, "agent_driver_tier", "frontier")
+        sub = router.add_session(
+            [[_tool_part("validate_training_job", {"algorithm": "osft"})]]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "training"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "train it", _body(text="train it")))
+        sub_sends = [t for (sid, t, _a, _s) in router.sent if sid == sub]
+        assert sub_sends == ["train it"]  # NO in-turn re-run (no second send) — the clean loop
+        assert state.pending_rerun_steer is None  # not left as a hard rail
+        assert state.pending_interaction_steer  # demoted to a soft (system-channel) steer instead
 
 
 class TestTrainingConfirmPreconditions:
@@ -978,7 +1018,7 @@ class TestNoDataAdvisory:
                 _body(),
             )
         )
-        sent = [text for sid, text, _ag in router.sent if sid == sub_id]
+        sent = [text for sid, text, _ag, _sys in router.sent if sid == sub_id]
         return sub_id, sent
 
     def test_advisory_prepended_to_training_handoff(

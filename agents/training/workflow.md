@@ -124,6 +124,16 @@ it as the `parent_job_id` without asking.
 
 ---
 
+## Reporting facts & identifiers
+
+- **Never invent identifiers or metrics.** Only report a job ID, run ID, dataset ID, or
+  score that came from a tool result in THIS session. If you don't have a real value yet,
+  call the tool that returns it or tell the user you don't have it — don't make one up.
+- A `validate_*_job` call only renders a confirmation card; the job is created when the user
+  clicks **Confirm**. Don't say a job is queued/running/submitted off a validate call.
+- If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
+  status and what must happen first — don't proceed as if the step succeeded.
+
 ## Session Types
 
 **`[CONTEXT]` — Fresh delegation.** The orchestrator routed a new task

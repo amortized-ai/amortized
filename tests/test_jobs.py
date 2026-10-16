@@ -185,6 +185,44 @@ class TestCreateJob:
         assert response.status_code == 201
 
 
+class TestUpstreamDependencyPrecondition:
+    """The 'don't advance past a non-succeeded upstream' invariant is enforced at the TOOL
+    boundary: validate_*/create_* call _require_dependency_succeeded and return HTTP 422, which
+    fastapi-mcp surfaces to the agent as a readable tool error it self-corrects from. This is
+    the structural home of the invariant (it replaces the former agent.py prose stage-gate —
+    see docs/agent-gates-proposal.md), so it is enforced for every driver tier."""
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_nonexistent_parent(self, client: httpx.AsyncClient) -> None:
+        # parent_job_id as the data source (no data_path) referencing a job that doesn't exist.
+        resp = await _create_training(client, parent_job_id="no-such-job", data_path="")
+        assert resp.status_code == 422
+        assert "parent_job_id" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_unsucceeded_parent(self, client: httpx.AsyncClient) -> None:
+        # A freshly-created SDG job is 'queued', not 'succeeded' — training on it must be rejected.
+        sdg = await _create_sdg(client)
+        assert sdg.status_code == 201
+        parent_id = sdg.json()["id"]
+        resp = await _create_training(client, parent_job_id=parent_id, data_path="")
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_validate_training_also_rejects_unsucceeded_parent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # The same invariant fires on the AGENT-facing validate_* tool (the model sees this 422
+        # as a tool error), not only on the frontend create_* path.
+        sdg = await _create_sdg(client)
+        parent_id = sdg.json()["id"]
+        body = {**TRAINING_BODY, "data_path": "", "parent_job_id": parent_id}
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+
 class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_empty(self, client: httpx.AsyncClient) -> None:
