@@ -388,8 +388,10 @@ def _enforce_single_interaction(
       driver jumped to the job card without the mandated setup. Fix: the card is held
       and the model is steered to do the missing step first. The prerequisites per job
       type are declared in _CONFIRM_PRECONDITIONS and the first unmet one fires:
-        · SDG full run (mode="create") — a preview of the SAME recipe must have been
-          shown standalone first (tracked by recipe signature; an edited recipe
+        · SDG — the user must have been offered the teacher model (which has no
+          default) via present_options before the job card.
+          For the SDG full run (mode="create"), a preview of the SAME recipe must have
+          been shown standalone first (tracked by recipe signature; an edited recipe
           re-gates). A preview shown standalone records its signature; the matching
           full-job confirm then proceeds on a later turn.
         · Training — the user must have confirmed the data (get_dataset shown), been

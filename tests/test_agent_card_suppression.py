@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from amortized.api import agent
+from amortized.api import agent, agent_confirm
 
 
 def _tool_part(tool: str, input: dict[str, Any], call_id: str | None = None) -> dict[str, Any]:
@@ -118,6 +118,53 @@ class TestSuppressionRecording:
         )
         # Turn 1 strips opts1; turn 2 keeps the leading question (opts2), strips opts3.
         assert state.suppressed_call_ids == {"opts1", "opts3"}
+
+
+class TestSdgTeacherGate:
+    """The SDG confirm card requires the no-default teacher model to have been offered via
+    present_options first, without double-gating preview→create."""
+
+    def test_sdg_confirm_held_without_teacher_choice(self) -> None:
+        result = {"parts": [_tool_part("validate_sdg_job", {"mode": "preview"}, call_id="card")]}
+        state = _fresh_state()
+        out = agent._enforce_single_interaction(result, state)
+        # Card held: not in the client-facing result, callID recorded, model re-steered.
+        assert "validate_sdg_job" not in _tool_names(out["parts"])
+        assert state.suppressed_call_ids == {"card"}
+        assert state.pending_rerun_steer == agent_confirm._SDG_TEACHER_NUDGE
+
+    def test_sdg_confirm_renders_after_teacher_choice(self) -> None:
+        result = {"parts": [_tool_part("validate_sdg_job", {"mode": "preview"}, call_id="card")]}
+        state = _fresh_state()
+        state.offered_choice.add("sdg")
+        out = agent._enforce_single_interaction(result, state)
+        assert _tool_names(out["parts"]) == ["validate_sdg_job"]
+        assert state.suppressed_call_ids == set()
+        assert state.pending_rerun_steer is None
+
+    def test_sdg_preview_create_not_double_gated(self) -> None:
+        # preview and create are two validate_sdg_job calls for the same job. reset=None keeps
+        # the teacher signal set, so the create card isn't re-held after the preview renders.
+        state = _fresh_state()
+        state.offered_choice.add("sdg")
+        out_prev = agent._enforce_single_interaction(
+            {"parts": [_tool_part("validate_sdg_job", {"mode": "preview"}, call_id="prev")]}, state
+        )
+        assert _tool_names(out_prev["parts"]) == ["validate_sdg_job"]
+        assert "sdg" in state.offered_choice  # not cleared on render (reset=None)
+        out_create = agent._enforce_single_interaction(
+            {"parts": [_tool_part("validate_sdg_job", {"mode": "create"}, call_id="create")]}, state
+        )
+        assert _tool_names(out_create["parts"]) == ["validate_sdg_job"]
+        assert state.pending_rerun_steer is None
+
+    def test_first_unmet_precondition_teacher_gate(self) -> None:
+        card = _tool_part("validate_sdg_job", {"mode": "preview"})
+        state = _fresh_state()
+        gate = agent_confirm._first_unmet_precondition(state, card)
+        assert gate is not None and gate.name == "teacher"
+        state.offered_choice.add("sdg")
+        assert agent_confirm._first_unmet_precondition(state, card) is None
 
 
 class TestGetSessionMessagesFiltersSuppressed:

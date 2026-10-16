@@ -73,6 +73,11 @@ _EVAL_CHOICE_NUDGE = (
     "no default — ask which model to judge with (present_options, a soft suggestion is "
     "fine) and wait for their reply before confirming the eval job."
 )
+_SDG_TEACHER_NUDGE = (
+    "Let the user choose the teacher model before the job card. The teacher model has no "
+    "default — call list_models and offer the available teachers with present_options, then "
+    "wait for their reply before confirming the SDG job."
+)
 
 
 def _record_vram(s: SessionState, parts: list[dict[str, Any]], ask: bool, target: str) -> None:
@@ -135,35 +140,51 @@ class _ConfirmGate:
 # `_not_ready_violations`, deduped there against the dispatch-provenance check; this
 # table is the SYNC half that turns on session-local signals.)
 _CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
-    # No SDG precondition: previewing before a full run is a strong PROMPT default (see the
-    # sdg workflow), not a hard gate — a capable model, or an explicit user "skip the
-    # preview", may create directly. Hard gates stay only for user-independent prereqs.
+    "validate_sdg_job": (
+        _ConfirmGate(
+            "teacher",
+            lambda s, c: "sdg" in s.offered_choice,
+            _SDG_TEACHER_NUDGE,
+            record=_record_choice("sdg"),
+            reset=None,
+        ),
+    ),
     "validate_training_job": (
         _ConfirmGate(
-            "data", lambda s, c: s.confirmed_data, _TRAINING_DATA_NUDGE,
-            record=_record_data, reset=lambda s: setattr(s, "confirmed_data", False),
+            "data",
+            lambda s, c: s.confirmed_data,
+            _TRAINING_DATA_NUDGE,
+            record=_record_data,
+            reset=lambda s: setattr(s, "confirmed_data", False),
         ),
         _ConfirmGate(
-            "model", lambda s, c: "training" in s.offered_choice, _TRAINING_MODEL_NUDGE,
-            record=_record_choice("training"), reset=_reset_choice("training"),
+            "model",
+            lambda s, c: "training" in s.offered_choice,
+            _TRAINING_MODEL_NUDGE,
+            record=_record_choice("training"),
+            reset=_reset_choice("training"),
         ),
         _ConfirmGate(
-            "vram", lambda s, c: s.shown_vram, _TRAINING_VRAM_NUDGE,
-            record=_record_vram, reset=lambda s: setattr(s, "shown_vram", False),
+            "vram",
+            lambda s, c: s.shown_vram,
+            _TRAINING_VRAM_NUDGE,
+            record=_record_vram,
+            reset=lambda s: setattr(s, "shown_vram", False),
         ),
     ),
     "validate_eval_job": (
         _ConfirmGate(
-            "choice", lambda s, c: "eval" in s.offered_choice, _EVAL_CHOICE_NUDGE,
-            record=_record_choice("eval"), reset=_reset_choice("eval"),
+            "choice",
+            lambda s, c: "eval" in s.offered_choice,
+            _EVAL_CHOICE_NUDGE,
+            record=_record_choice("eval"),
+            reset=_reset_choice("eval"),
         ),
     ),
 }
 
 
-def _first_unmet_precondition(
-    state: SessionState, card: dict[str, Any]
-) -> _ConfirmGate | None:
+def _first_unmet_precondition(state: SessionState, card: dict[str, Any]) -> _ConfirmGate | None:
     """The first precondition the leading confirm card has not satisfied, or None."""
     for gate in _CONFIRM_PRECONDITIONS.get(_tool_name(card), ()):
         if not gate.satisfied(state, card):

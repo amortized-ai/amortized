@@ -558,6 +558,7 @@ class TestEnforceSingleInteraction:
         # re-shows the SAME prompt before validate must be able to confirm — the
         # confirm proceeds and the now-redundant review card is dropped instead.
         state = _fresh_state()
+        state.offered_choice.add("sdg")  # teacher precondition met: isolate the review gate
         prompt = {"title": "Assessor system prompt", "prompt": "You are a reviewer."}
         turn1 = {
             "parts": [

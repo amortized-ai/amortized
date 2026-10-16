@@ -49,7 +49,10 @@ Follow the workflow's one-question-per-turn rules. Gather, in order:
    distribution instead of the model's guess. Do NOT invent the style yourself. If
    the user genuinely has no examples, say quality will be lower and offer to
    proceed with the model's best guess (or to look at a real sample first).
-4. **Teacher model** — per the workflow's `list_models` rules.
+4. **Teacher model** — call `list_models` to get the available teacher models
+   (each has a `name` and a `provider`). Present ONLY those models as options
+   and wait for the user's choice (never auto-select one). If none are returned,
+   stop — no teacher-model provider is configured.
 5. **Samples** — recommend ≥ 100 per category (`num_records = categories × 100`).
    Then also generate a second, smaller run (different seed, same categories) as a
    held-out **eval** dataset.
