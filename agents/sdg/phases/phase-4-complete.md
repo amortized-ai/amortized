@@ -1,5 +1,5 @@
 ### Phase 4 — Signal Completion
-(`signal_phase` step: `phase-4-complete`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-4-complete`.
 
 When the job succeeds, preview the generated data using the job's
 `mlflow_run_id` so the user can verify quality.

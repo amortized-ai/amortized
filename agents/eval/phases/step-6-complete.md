@@ -1,5 +1,5 @@
 ### Step 6 — Signal Completion
-(`signal_phase` step: `step-6-complete`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-6-complete`.
 
 Do NOT signal yet. After the job is submitted, stay active: the job's
 `[SYSTEM EVENT]` completion notification arrives in YOUR session, and

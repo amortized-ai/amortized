@@ -1,5 +1,5 @@
 ### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set
-(`signal_phase` step: `held-out-eval-set`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `held-out-eval-set`.
 
 When a held-out eval dataset does not exist yet (see the `step-1-dataset`
 phase), you cannot generate one yourself — generating data is the SDG

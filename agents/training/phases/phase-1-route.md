@@ -1,5 +1,5 @@
 ### Phase 1 — Route to Sub-Skill
-(`signal_phase` step: `phase-1-route`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-1-route`.
 
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for

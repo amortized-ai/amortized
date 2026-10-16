@@ -1,5 +1,5 @@
 ### Phase 1 — Route to Sub-Skill
-(`signal_phase` step: `phase-1-route`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-1-route`.
 
 **Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
 training job ID, don't pick a sub-skill or design a new recipe — ask only the record

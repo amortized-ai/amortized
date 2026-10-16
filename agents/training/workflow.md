@@ -152,10 +152,10 @@ block containing the full instructions for the phase you are in right now —
 follow that block exactly and do not work ahead to a later phase. The phases,
 in order:
 
-### Phase 1 — Route to Sub-Skill
-### Phase 2 — Gather Requirements
-### Phase 3 — Validate and Confirm
-### Phase 4 — Signal Completion
+### Phase 1 — Route to Sub-Skill (signal_phase step: `phase-1-route`)
+### Phase 2 — Gather Requirements (signal_phase step: `phase-2-gather`)
+### Phase 3 — Validate and Confirm (signal_phase step: `phase-3-validate`)
+### Phase 4 — Signal Completion (signal_phase step: `phase-4-complete`)
 
 ---
 

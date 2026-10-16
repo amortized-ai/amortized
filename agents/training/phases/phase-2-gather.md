@@ -1,5 +1,5 @@
 ### Phase 2 — Gather Requirements
-(`signal_phase` step: `phase-2-gather`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-2-gather`.
 
 Follow the loaded guide's requirement-gathering steps.
 

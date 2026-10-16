@@ -1,5 +1,5 @@
 ### Step 1 — Confirm the eval dataset
-(`signal_phase` step: `step-1-dataset`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-1-dataset`.
 
 The eval dataset needs a `messages` column. The trailing assistant
 message is used as the reference answer.

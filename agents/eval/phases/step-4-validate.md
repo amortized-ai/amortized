@@ -1,5 +1,5 @@
 ### Step 4 — Validate and submit
-(`signal_phase` step: `step-4-validate`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-4-validate`.
 
 **First, check whether this eval already exists.** Call `list_evaluations`
 — it returns evaluation groups (one per dataset × metric set) with the

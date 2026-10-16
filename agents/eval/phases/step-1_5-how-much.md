@@ -1,5 +1,5 @@
 ### Step 1.5 — Confirm how much of the dataset to evaluate
-(`signal_phase` step: `step-1_5-how-much`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-1_5-how-much`.
 
 Once the dataset is chosen, ALWAYS confirm data usage with the user
 before assembling the job config — never silently evaluate the whole

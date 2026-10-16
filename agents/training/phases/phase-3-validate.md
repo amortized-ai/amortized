@@ -1,5 +1,5 @@
 ### Phase 3 — Validate and Confirm
-(`signal_phase` step: `phase-3-validate`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-3-validate`.
 
 **Precondition — data usage confirmed.** Before `validate_training_job`,
 you MUST have already called `get_dataset` on the training data's run ID

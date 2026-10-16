@@ -1,5 +1,5 @@
 ### Phase 3 — Validate and Confirm
-(`signal_phase` step: `phase-3-validate`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-3-validate`.
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
