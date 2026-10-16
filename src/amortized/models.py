@@ -198,6 +198,10 @@ class ValidatedJobConfig(BaseModel):
     # user always sees them even when the model omits them from its prose. Kept out
     # of `config` so they are never re-submitted to the create endpoint.
     data_record_count: int | None = None
+    # Tunable hyperparameters the submitted config left unset, so the trainer's own
+    # default applies. The card renders these as "trainer default" so a value the model
+    # narrated but never wrote into the config cannot masquerade as the effective setting.
+    trainer_default_fields: list[str] = Field(default_factory=list)
     # The assessor/system prompt the teacher follows (and that ships in the SFT
     # training data), resolved server-side from the SDG config so the card renders
     # the real prompt instead of the client guessing it from config internals.

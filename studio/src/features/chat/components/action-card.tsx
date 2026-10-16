@@ -59,6 +59,23 @@ function extractSdgSummary(
   return rows
 }
 
+// Labels for the tunable training fields the backend reports as unset (trainer default),
+// matching the row labels extractTrainingSummary uses for the set ones.
+const TRAINER_DEFAULT_LABELS: Record<string, string> = {
+  learning_rate: "Learning rate",
+  num_train_epochs: "Epochs",
+  per_device_train_batch_size: "Batch size",
+  gradient_accumulation_steps: "Grad accumulation",
+  max_length: "Max seq length",
+  warmup_ratio: "Warmup ratio",
+  seed: "Seed",
+  lora_r: "LoRA rank",
+  lora_alpha: "LoRA alpha",
+  lora_dropout: "LoRA dropout",
+  loss_type: "Loss type",
+  batch_sampler: "Batch sampler",
+}
+
 function extractTrainingSummary(config: Record<string, unknown>): [string, string][] {
   const rows: [string, string][] = []
 
@@ -153,6 +170,14 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   // config), so the user always sees how many records they're about to train on.
   if (action.jobType === "training" && typeof action.dataRecordCount === "number") {
     summary.push(["Training records", action.dataRecordCount.toLocaleString()])
+  }
+  // Tunable hyperparameters the config left unset fall back to the trainer's own default.
+  // Show them explicitly so a value narrated in prose but never set can't look effective.
+  if (action.jobType === "training") {
+    for (const field of action.trainerDefaultFields ?? []) {
+      const label = TRAINER_DEFAULT_LABELS[field]
+      if (label) summary.push([label, "trainer default"])
+    }
   }
 
   return (
