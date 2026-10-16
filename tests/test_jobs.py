@@ -222,6 +222,41 @@ class TestUpstreamDependencyPrecondition:
         assert resp.status_code == 422
         assert "succeeded" in str(resp.json()).lower()
 
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unsucceeded_dataset_parent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Eval has TWO upstream deps; the dataset parent (parent_job_id) must be 'succeeded'.
+        sdg = await _create_sdg(client)
+        parent_id = sdg.json()["id"]
+        body = {
+            "model_name_or_path": "Qwen/Qwen3.5-0.8B",
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "parent_job_id": parent_id,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unsucceeded_training_model(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Eval's other upstream dep: the model under eval (training_job_id) must be 'succeeded'.
+        # A fresh training job is 'queued', so evaluating it must be rejected at validate time.
+        tr = await _create_training(client)
+        tr_id = tr.json()["id"]
+        body = {
+            "training_job_id": tr_id,
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "eval_data_run_id": "d" * 32,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
 
 class TestListJobs:
     @pytest.mark.asyncio
