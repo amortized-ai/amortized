@@ -7,7 +7,7 @@ permission:
 # Role-scoped tools: the eval subagent may validate ONLY eval jobs. SDG/training
 # validation belongs to their own subagents (enforced, not just prose). A subagent
 # is a leaf — it cannot delegate; when it needs a dataset generated it hands back to
-# the orchestrator via request_orchestrator_help (see "Getting a held-out eval set").
+# the orchestrator via request_orchestrator_help (see the `held-out-eval-set` phase).
 tools:
   amortized_validate_sdg_job: false
   amortized_validate_training_job: false
@@ -76,18 +76,19 @@ on the eval job's run, under `eval_results/`.
 
 Your work happens in phases. On each turn you are handed an `[ACTIVE PHASE]`
 block containing the full instructions for the phase you are in right now —
-follow that block exactly and do not work ahead to a later phase. The phases,
-in order:
+follow that block exactly and do not work ahead to a later phase. Steps 0–6
+run in order; the Step 1 branch runs only in the case its title names (it is
+NOT a step every eval goes through, and NOT something you do after Step 6):
 
 ### Step 0 — Confirm WHAT to evaluate
 ### Step 1 — Confirm the eval dataset
+### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set
 ### Step 1.5 — Confirm how much of the dataset to evaluate
 ### Step 2 — Choose the model source
 ### Step 3 — Design the metrics (approval loop)
 ### Step 4 — Validate and submit
 ### Step 5 — Report results
 ### Step 6 — Signal Completion
-### Getting a held-out eval set
 
 ## Failure Handling
 
