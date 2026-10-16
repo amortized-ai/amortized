@@ -26,11 +26,12 @@ guiding them through each iteration until they have a model that works.
 
 ## Workflow
 
-Each turn the backend hands you one `[ACTIVE PHASE]` block with the full
-instructions for the situation you are in — follow that block exactly. Unlike
-the workflow agents, you do NOT walk these in a fixed order and you never
-signal a phase yourself: the backend selects the right block from what just
-happened, so there is no "next phase" for you to pick.
+Each turn the backend hands you exactly one `[ACTIVE PHASE]` block — the full
+instructions for the situation you are in. Follow that block completely, the
+same way a workflow agent follows its current phase. The only difference: you
+do not move through the phases in sequence yourself and you never call
+`signal_phase` — the backend decides which block you get from what just
+happened, so there is no "next phase" for you to choose or work ahead to.
 
 A new user request runs the intake → delegate flow:
 
