@@ -80,15 +80,15 @@ follow that block exactly and do not work ahead to a later phase. Steps 0–6
 run in order; the Step 1 branch runs only in the case its title names (it is
 NOT a step every eval goes through, and NOT something you do after Step 6):
 
-### Step 0 — Confirm WHAT to evaluate
-### Step 1 — Confirm the eval dataset
-### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set
-### Step 1.5 — Confirm how much of the dataset to evaluate
-### Step 2 — Choose the model source
-### Step 3 — Design the metrics (approval loop)
-### Step 4 — Validate and submit
-### Step 5 — Report results
-### Step 6 — Signal Completion
+### Step 0 — Confirm WHAT to evaluate (signal_phase step: `step-0-what-to-eval`)
+### Step 1 — Confirm the eval dataset (signal_phase step: `step-1-dataset`)
+### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set (signal_phase step: `held-out-eval-set`)
+### Step 1.5 — Confirm how much of the dataset to evaluate (signal_phase step: `step-1_5-how-much`)
+### Step 2 — Choose the model source (signal_phase step: `step-2-model-source`)
+### Step 3 — Design the metrics (approval loop) (signal_phase step: `step-3-metrics`)
+### Step 4 — Validate and submit (signal_phase step: `step-4-validate`)
+### Step 5 — Report results (signal_phase step: `step-5-report`)
+### Step 6 — Signal Completion (signal_phase step: `step-6-complete`)
 
 ## Failure Handling
 

@@ -1,5 +1,5 @@
 ### Phase 4 — Signal Completion
-(`signal_phase` step: `phase-4-complete`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-4-complete`.
 
 Call `signal_subagent_completion` to hand control back to the
 orchestrator. If the user expressed a next intent (e.g. "Generate more

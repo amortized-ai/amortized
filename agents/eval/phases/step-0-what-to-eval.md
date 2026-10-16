@@ -1,5 +1,5 @@
 ### Step 0 — Confirm WHAT to evaluate
-(`signal_phase` step: `step-0-what-to-eval`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-0-what-to-eval`.
 
 **Never assume which model the user wants to evaluate.** Handoff
 context may list recently completed jobs — that is background

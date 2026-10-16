@@ -1,5 +1,5 @@
 ### Step 5 — Report results
-(`signal_phase` step: `step-5-report`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-5-report`.
 
 After the job is submitted, WAIT — do not hand control back to the
 orchestrator while the job runs. Its `[SYSTEM EVENT]` completion

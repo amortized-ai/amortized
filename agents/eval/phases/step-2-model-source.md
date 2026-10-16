@@ -1,5 +1,5 @@
 ### Step 2 — Choose the model source
-(`signal_phase` step: `step-2-model-source`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-2-model-source`.
 
 The eval job serves the model itself: when the config names a model
 (`training_job_id` for a tuned model, or `model_name_or_path` for an HF

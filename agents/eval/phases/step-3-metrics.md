@@ -1,5 +1,5 @@
 ### Step 3 — Design the metrics (approval loop)
-(`signal_phase` step: `step-3-metrics`)
+Call `signal_phase` this response with the step for the phase you are in — this phase: `step-3-metrics`.
 
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
