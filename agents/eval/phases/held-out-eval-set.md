@@ -1,4 +1,4 @@
-### Getting a held-out eval set
+### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set
 (`signal_phase` step: `held-out-eval-set`)
 
 When a held-out eval dataset does not exist yet (see the `step-1-dataset`
