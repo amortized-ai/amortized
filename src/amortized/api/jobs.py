@@ -329,9 +329,49 @@ async def _validate_eval_data(
     return errors
 
 
+# Tunable training hyperparameters that fall back to the trainer's own default when unset
+# (amortized does not inject a value — training-hub does). validate_training_job reports
+# which of these the config left unset so the card can show "trainer default" instead of the
+# user being misled by a value the model narrated but never wrote into the config. Generic
+# across hyperparameters — not a batch-size-specific patch. Which fields are "tunable" depends
+# on the algorithm: the generic optimization knobs always apply; LoRA adapter knobs only when
+# PEFT/LoRA is in play; embedding-specific knobs only for embedding runs.
+_GENERIC_TUNABLE_FIELDS = (
+    "learning_rate",
+    "num_train_epochs",
+    "per_device_train_batch_size",
+    "gradient_accumulation_steps",
+    "max_length",
+    "warmup_ratio",
+    "seed",
+)
+# LoRA adapter knobs — meaningful only when the run uses PEFT/LoRA; irrelevant (and never
+# defaulted) for full fine-tunes or OSFT, so don't surface them there.
+_LORA_TUNABLE_FIELDS = ("lora_r", "lora_alpha", "lora_dropout")
+# Embedding/classifier-specific knobs the trainer defaults; only meaningful for those runs.
+_EMBEDDING_TUNABLE_FIELDS = ("loss_type", "batch_sampler")
+
 _EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
 
+# Algorithms that train LoRA adapters (vs. full-parameter or OSFT); gate LoRA knobs on these.
+_LORA_ALGORITHMS = {"lora_sft", "lora_grpo"}
+
 _RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
+
+
+def _trainer_default_fields(config: dict[str, Any]) -> list[str]:
+    """The tunable hyperparameters the config left unset, so the trainer's own default
+    applies — surfaced on the confirmation card as 'trainer default'. The candidate set is
+    algorithm-aware: generic optimization knobs always, plus LoRA knobs for PEFT/LoRA runs or
+    embedding knobs for embedding runs — so we never claim a knob is "defaulted" that the
+    algorithm doesn't even use."""
+    algorithm = str(config.get("algorithm") or "").replace("-", "_")
+    candidates = list(_GENERIC_TUNABLE_FIELDS)
+    if algorithm in _EMBEDDING_ALGORITHMS:
+        candidates += _EMBEDDING_TUNABLE_FIELDS
+    elif algorithm in _LORA_ALGORITHMS or config.get("use_peft"):
+        candidates += _LORA_TUNABLE_FIELDS
+    return [f for f in candidates if config.get(f) is None]
 
 
 async def _apply_classification_eval_mode(
@@ -915,6 +955,9 @@ async def clone_sdg_config_for_eval(
         "The UI renders a confirmation card with ALL parameters — do NOT output "
         "a markdown table, parameter list, or config summary before or after this "
         "tool call. Write ONE short sentence, then call this tool. "
+        "Any hyperparameter you mention to the user must be an explicit field in "
+        "this config; fields you leave unset use the trainer default and the card "
+        "shows them as such — do not state a value you did not set. "
         "Set parent_job_id to chain from a completed SDG job."
     ),
 )
@@ -946,6 +989,7 @@ async def validate_training_job(
         config=config,
         parent_job_id=parent_job_id,
         data_record_count=record_count,
+        trainer_default_fields=_trainer_default_fields(config),
         warnings=model_warnings,
     )
 

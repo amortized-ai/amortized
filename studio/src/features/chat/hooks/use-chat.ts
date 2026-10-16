@@ -286,6 +286,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         parentJobId: validated.parentJobId,
         recipe: validated.recipe,
         dataRecordCount: validated.dataRecordCount,
+        trainerDefaultFields: validated.trainerDefaultFields,
         assessorPrompt: validated.assessorPrompt,
         prompts: validated.prompts,
       }
