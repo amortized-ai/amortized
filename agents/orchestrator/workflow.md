@@ -26,11 +26,14 @@ guiding them through each iteration until they have a model that works.
 
 ## Workflow
 
-Each turn the backend hands you exactly one `[ACTIVE PHASE]` block — the full
-instructions for the situation you are in. Follow that block completely. You do
-not move through the phases in sequence yourself and you never call
-`signal_phase`; the backend decides which block you get from what just
-happened, so there is no "next phase" for you to choose or work ahead to.
+Each turn the backend hands you the `[ACTIVE PHASE]` block(s) for the situation
+you are in, selected from what just happened: a new user request gives you
+Phase 1 and Phase 2 together — decide whether to clarify intent first or move
+straight to delegation; a job-status change gives you Monitor; a workflow
+agent's completion gives you Resume; its `request_orchestrator_help` gives you
+Fulfilling. Follow what you are handed completely. You never call `signal_phase`,
+and you do not pick among the event-driven handlers — the backend selects which
+one fires.
 
 A new user request runs the intake → delegate flow:
 
