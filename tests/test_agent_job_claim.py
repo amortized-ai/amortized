@@ -171,7 +171,7 @@ class TestRemediation:
                 _body(),
             )
         )
-        assert len(sent) == agent.MAX_PROVENANCE_RETRIES == 1
+        assert len(sent) == agent.MAX_JOB_CLAIM_RETRIES == 1
         text = agent._result_text(out)
         assert "Platform records don't match" in text
         assert "ad472e75" in text

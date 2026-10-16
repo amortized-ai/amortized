@@ -91,89 +91,78 @@ class TestProvenanceGate:
         assert out is result  # unchanged
         assert sent == []  # no correction triggered
 
-    def test_ungrounded_id_triggers_correction(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ungrounded_id_gets_caveat_and_no_correction(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The gate is now ANNOTATION-ONLY: an ungrounded id gets a silent caveat appended,
+        # and the model is NEVER force-corrected (no re-run). Force-correcting restrained a
+        # frontier driver, and it is unnecessary — the UI renders cards/ids from tool outputs,
+        # so a fabricated id in prose is cosmetic text, not a functional error.
         state = agent.SessionState(orchestrator_id="orch")
         self._patch_corpus(monkeypatch, {"orch": "no ids here"})
 
-        corrections: list[tuple[str, Any]] = []
+        sent: list[Any] = []
 
-        async def _send(sid: str, text: str, **k: Any) -> dict[str, Any]:
-            corrections.append((sid, k.get("agent")))
-            return _text_result("Here are your options — no fabricated ids.")
+        async def _send(*a: Any, **k: Any) -> dict[str, Any]:
+            sent.append(a)
+            return _text_result("should never be called")
 
         monkeypatch.setattr(agent, "_proxy_send_message", _send)
 
         result = _text_result("Submitted job a1b2c3d4 with model mixtral, accuracy 0.92.")
         out = _run(agent._apply_provenance_gate(state, result, _body()))
 
-        assert len(corrections) == 1
-        assert corrections[0] == ("orch", "morty")
-        assert "no fabricated ids" in agent._result_text(out)
-
-    def test_persistent_fabrication_gets_caveat(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        state = agent.SessionState(orchestrator_id="orch")
-        self._patch_corpus(monkeypatch, {"orch": ""})
-
-        calls = 0
-
-        async def _send(*a: Any, **k: Any) -> dict[str, Any]:
-            # Model doubles down with the same fabricated id on the correction.
-            nonlocal calls
-            calls += 1
-            return _text_result("It's definitely job a1b2c3d4.")
-
-        monkeypatch.setattr(agent, "_proxy_send_message", _send)
-
-        result = _text_result("Submitted job a1b2c3d4.")
-        out = _run(agent._apply_provenance_gate(state, result, _body()))
-
-        # Capped at one correction; then the reply is kept with an appended caveat
-        # (rather than discarded) naming the unverified id.
-        assert calls == agent.MAX_PROVENANCE_RETRIES == 1
+        assert sent == []  # no correction/re-run sent to the model
         text = agent._result_text(out)
         assert "couldn't verify" in text.lower()
-        assert "a1b2c3d4" in text  # named in the caveat so the user is warned
+        assert "a1b2c3d4" in text  # the unverified id is named in the caveat
 
-    def test_correction_succeeds_within_retry_budget(
+    def test_caveat_appends_once_without_re_running(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        # Even for a hard fabrication, the gate appends exactly one caveat and does not loop /
+        # re-run the model (the provenance gate no longer has any force-correction cycle).
         state = agent.SessionState(orchestrator_id="orch")
         self._patch_corpus(monkeypatch, {"orch": ""})
 
-        calls = 0
+        sent: list[Any] = []
 
         async def _send(*a: Any, **k: Any) -> dict[str, Any]:
-            # Self-heals on the first correction (within the budget of 1).
-            nonlocal calls
-            calls += 1
-            return _text_result("Here are your grounded next steps.")
+            sent.append(a)
+            return _text_result("unused")
 
         monkeypatch.setattr(agent, "_proxy_send_message", _send)
 
         result = _text_result("Submitted job a1b2c3d4.")
         out = _run(agent._apply_provenance_gate(state, result, _body()))
 
-        assert calls == 1  # stopped as soon as the reply was clean
-        assert "grounded next steps" in agent._result_text(out)
+        assert sent == []
+        caveats = [p for p in out["parts"] if p.get(agent._CAVEAT_TAG)]
+        assert len(caveats) == 1  # single appended caveat, no re-run cycle
+        assert "a1b2c3d4" in caveats[0]["text"]
 
-    def test_correction_routed_to_active_subagent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_subagent_ungrounded_id_gets_caveat_no_send(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Works the same when a subagent is active: caveat appended, no correction sent.
         state = agent.SessionState(orchestrator_id="orch")
         state.subagent_id = "sub-eval"
         state.subagent_target = "eval"
         self._patch_corpus(monkeypatch, {"orch": "", "sub-eval": ""})
 
-        routed: list[tuple[str, Any]] = []
+        sent: list[Any] = []
 
-        async def _send(sid: str, text: str, **k: Any) -> dict[str, Any]:
-            routed.append((sid, k.get("agent")))
-            return _text_result("clean")
+        async def _send(*a: Any, **k: Any) -> dict[str, Any]:
+            sent.append(a)
+            return _text_result("unused")
 
         monkeypatch.setattr(agent, "_proxy_send_message", _send)
 
         result = _text_result("Eval done on job a1b2c3d4.")
-        _run(agent._apply_provenance_gate(state, result, _body()))
+        out = _run(agent._apply_provenance_gate(state, result, _body()))
 
-        assert routed == [("sub-eval", "eval")]
+        assert sent == []
+        assert "a1b2c3d4" in agent._result_text(out)
 
     def test_no_text_is_noop(self, monkeypatch: pytest.MonkeyPatch) -> None:
         state = agent.SessionState(orchestrator_id="orch")
