@@ -121,7 +121,7 @@ class TestProvenanceGate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # Even for a hard fabrication, the gate appends exactly one caveat and does not loop /
-        # re-run the model (there is no MAX_PROVENANCE_RETRIES correction cycle anymore).
+        # re-run the model (the provenance gate no longer has any force-correction cycle).
         state = agent.SessionState(orchestrator_id="orch")
         self._patch_corpus(monkeypatch, {"orch": ""})
 

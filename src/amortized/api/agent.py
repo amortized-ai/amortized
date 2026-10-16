@@ -398,10 +398,11 @@ def _enforce_single_interaction(
           default) before the job card.
       These prerequisite ACTIONS are tracked as session signals accumulated as turns
       render them (_record_confirm_signals) and cleared once the job card renders
-      (_reset_confirm_signals) so a second job of the type re-gates. (Readiness
-      prerequisites that need the DB — an upstream job being 'succeeded' — live in the
-      async stage-gate _not_ready_violations, deduped there against dispatch-provenance;
-      this function is the sync half that turns on session-local signals.)
+      (_reset_confirm_signals) so a second job of the type re-gates. (The DB-backed readiness
+      prerequisite — an upstream job being 'succeeded' — is enforced separately and
+      structurally at the tool boundary: validate_*/create_* call _require_dependency_succeeded
+      and return a 422 the model reads as a tool error. This function is only the sync,
+      session-local UI-ordering half.)
 
     Whichever interaction LEADS the turn is kept; every OTHER interactive element
     (extra questions, repeat/stacked confirm cards) is stripped. Passive content
@@ -742,12 +743,12 @@ async def _grounded_corpus(
     return "\n".join(chunks).lower()
 
 
-# How many times to force-correct a reply that states a fabricated identifier
-# before giving up and appending a caveat. Each attempt re-grounds against a
-# freshly-fetched corpus (a correction may call a tool that surfaces the id for
-# real), so a legitimately-recoverable turn self-heals on the first pass. Capped at
-# 1: further retries rarely recover and multiply model round-trips per turn.
-MAX_PROVENANCE_RETRIES = 1
+# How many times the WEAK-tier job-claim gate force-corrects a reply whose job claim the DB
+# contradicts before giving up and appending a caveat. (The fabrication/provenance gate no
+# longer re-runs the model at all — it is annotation-only — so this cap governs only the
+# job-claim correction loop.) Capped at 1: further retries rarely recover and multiply model
+# round-trips per turn.
+MAX_JOB_CLAIM_RETRIES = 1
 
 # How many times _run_turn re-runs the model to clear a held committing card (the hard
 # rail): one correction attempt, then let the turn through so a non-complying driver
@@ -1224,10 +1225,10 @@ async def _apply_job_claim_gate(
         active_id = state.subagent_id or state.orchestrator_id
         agent = state.subagent_target if state.subagent_id else "morty"
         current = result
-        for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
+        for attempt in range(1, MAX_JOB_CLAIM_RETRIES + 1):
             logger.warning(
                 "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+                violations, active_id, agent, attempt, MAX_JOB_CLAIM_RETRIES,
             )
             post = await _proxy_send_message(
                 active_id, _job_claim_correction(violations), agent=agent, model=body.model
@@ -1246,7 +1247,7 @@ async def _apply_job_claim_gate(
 
         logger.warning(
             "Job-claim gate: still contradicted after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+            MAX_JOB_CLAIM_RETRIES, violations, active_id,
         )
         parts = list(current.get("parts") or [])
         parts.append(_caveat_part(_job_claim_caveat(violations)))
