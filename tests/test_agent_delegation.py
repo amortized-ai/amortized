@@ -884,30 +884,89 @@ class TestTrainingConfirmPreconditions:
 
 
 class TestEvalConfirmPreconditions:
-    """A validate_eval_job card may render only after the user has been offered the
-    evaluation setup (the judge model has no default) — the eval arm of the evaluator."""
+    """A validate_eval_job card may render only after its ordered prerequisites: the eval
+    dataset confirmed (get_dataset), the rubric/metric set presented for approval, and the
+    evaluation setup offered (the judge has no default). The first unmet one holds the card."""
 
     def _confirm(self) -> dict[str, Any]:
         return {"parts": [_tool_part("validate_eval_job", {"training_job_id": "t1"})]}
 
-    def test_held_until_a_choice_was_offered(self) -> None:
+    def _eval_state(self) -> agent.SessionState:
         state = _fresh_state()
+        state.subagent_target = "eval"
+        return state
+
+    def _see(self, state: agent.SessionState, part: dict[str, Any]) -> None:
+        agent._enforce_single_interaction({"parts": [part]}, state)
+
+    def _see_data(self, state: agent.SessionState) -> None:
+        self._see(state, _tool_part("get_dataset", {"run_id": "r1"}))
+
+    def _see_metrics(self, state: agent.SessionState) -> None:
+        self._see(
+            state,
+            _tool_part(
+                "present_options",
+                {"question": "Approve these metrics?",
+                 "options": [{"title": "Suggest changes", "value": "change them"}]},
+            ),
+        )
+
+    def _see_judge(self, state: agent.SessionState) -> None:
+        self._see(state, _tool_part("present_options", {"question": "Which judge model?"}))
+
+    def test_fresh_state_holds_on_data(self) -> None:
+        state = self._eval_state()
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" not in _tools(out)
+        assert "get_dataset" in _nudge(state).lower()
+
+    def test_holds_on_metrics_after_data(self) -> None:
+        state = self._eval_state()
+        self._see_data(state)
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" not in _tools(out)
+        assert "metric" in _nudge(state).lower()
+
+    def test_judge_offer_does_not_satisfy_metrics(self) -> None:
+        # A judge present_options satisfies the judge gate but NOT the metrics gate.
+        state = self._eval_state()
+        self._see_data(state)
+        self._see_judge(state)
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" not in _tools(out)
+        assert "metric" in _nudge(state).lower()
+
+    def test_metrics_review_does_not_satisfy_judge(self) -> None:
+        # The metrics-approval present_options must not double as the judge/setup offer.
+        state = self._eval_state()
+        self._see_data(state)
+        self._see_metrics(state)
         out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_eval_job" not in _tools(out)
         assert "judge" in _nudge(state).lower()
 
-    def test_renders_after_eval_choice_offered(self) -> None:
-        state = _fresh_state()
-        state.subagent_target = "eval"
-        agent._enforce_single_interaction(
-            {"parts": [_tool_part("present_options", {"question": "Which judge model?"})]},
-            state,
-        )
+    def test_renders_after_all_three(self) -> None:
+        state = self._eval_state()
+        self._see_data(state)
+        self._see_metrics(state)
+        self._see_judge(state)
         out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_eval_job" in _tools(out)
 
+    def test_training_data_does_not_satisfy_eval_data(self) -> None:
+        state = self._eval_state()
+        state.confirmed_data = True  # training's data signal, not the eval set's
+        state.metrics_reviewed = True
+        state.offered_choice.add("eval")
+        out = agent._enforce_single_interaction(self._confirm(), state)
+        assert "validate_eval_job" not in _tools(out)
+        assert "get_dataset" in _nudge(state).lower()
+
     def test_training_choice_does_not_satisfy_eval(self) -> None:
-        state = _fresh_state()
+        state = self._eval_state()
+        state.eval_data_confirmed = True
+        state.metrics_reviewed = True
         state.offered_choice.add("training")  # a training choice is not an eval choice
         out = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_eval_job" not in _tools(out)
