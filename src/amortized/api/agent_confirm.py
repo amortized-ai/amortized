@@ -22,11 +22,17 @@ from amortized.api.agent_parts import _get_tool_input, _tool_name
 if TYPE_CHECKING:
     from amortized.api.agent import SessionState
 
-_CONFIRM_CARD_TOOLS = {
-    "validate_training_job",
-    "validate_eval_job",
-    "validate_sdg_job",
+# The validate_*_job tools that render a job-launch confirmation card, and the job type
+# each one commits. This map is the single source of truth for that correspondence across
+# the proxy (agent.py imports it); the tool set and the inverse derive from it, so a new
+# job type is declared in exactly one place and the three can never drift apart.
+_JOB_TYPE_FOR_CONFIRM = {
+    "validate_sdg_job": "sdg",
+    "validate_training_job": "training",
+    "validate_eval_job": "eval",
 }
+_CONFIRM_TOOL_FOR_JOB_TYPE = {jtype: tool for tool, jtype in _JOB_TYPE_FOR_CONFIRM.items()}
+_CONFIRM_CARD_TOOLS = frozenset(_JOB_TYPE_FOR_CONFIRM)
 
 # Tools whose result renders a card the user must REVIEW/approve before the job it
 # gates is confirmed (e.g. an assessor/system prompt that ships in the training
@@ -183,14 +189,6 @@ def _record_confirm_signals(
         for gate in gates:
             if gate.record is not None:
                 gate.record(state, parts, ask_turn, target)
-
-
-_JOB_TYPE_FOR_CONFIRM = {
-    "validate_sdg_job": "sdg",
-    "validate_training_job": "training",
-    "validate_eval_job": "eval",
-}
-_CONFIRM_TOOL_FOR_JOB_TYPE = {jtype: tool for tool, jtype in _JOB_TYPE_FOR_CONFIRM.items()}
 
 
 def _reset_confirm_signals(state: SessionState, job_type: str) -> None:

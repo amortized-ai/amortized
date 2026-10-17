@@ -23,12 +23,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from amortized.api.agent_claims import (
-    _AWAIT_UPSTREAM_GUIDANCE,
     _job_claim_caveat,
     _job_claim_correction,
 )
 from amortized.api.agent_confirm import (
     _CONFIRM_CARD_TOOLS,
+    _CONFIRM_TOOL_FOR_JOB_TYPE,
     _JOB_TYPE_FOR_CONFIRM,
     _REVIEW_CARD_TOOLS,
     _first_unmet_precondition,
@@ -47,6 +47,7 @@ from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
 from amortized.config import settings
+from amortized.core import lineage
 
 logger = logging.getLogger(__name__)
 
@@ -531,8 +532,11 @@ def _enforce_single_interaction(
     return {**result, "parts": kept}
 
 
-# Active subagent → the workflow phase its turns belong to (UI progress bar).
-_PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
+# Active subagent → the workflow phase its turns belong to (UI progress bar). The phase
+# name equals the subagent target, so derive it from _VALID_TARGETS rather than re-listing
+# the types: a target that drives a turn always has a matching phase, and the two sets
+# cannot fall out of sync (a missing phase would strand the UI bar on a stale stage).
+_PHASE_FOR_TARGET = {t: t for t in _VALID_TARGETS}
 
 
 # Synthetic tool name for the phase signal _ensure_phase_signal backfills when the model
@@ -899,12 +903,11 @@ _REUSE_DISCLOSED_RE = re.compile(
     r"|from (a |an )?(prior|earlier|previous)|from before)",
     re.I,
 )
-_VALIDATE_TOOL_BY_TYPE = {
-    "sdg": "validate_sdg_job",
-    "training": "validate_training_job",
-    "eval": "validate_eval_job",
-}
-_TYPE_BY_VALIDATE_TOOL = {tool: jtype for jtype, tool in _VALIDATE_TOOL_BY_TYPE.items()}
+# Job type ↔ its validate_*_job tool. The correspondence is owned once by
+# _JOB_TYPE_FOR_CONFIRM in agent_confirm (the confirm cards ARE these tools); alias it here
+# under validate-centric names so the fact lives in a single place and cannot drift.
+_VALIDATE_TOOL_BY_TYPE = _CONFIRM_TOOL_FOR_JOB_TYPE
+_TYPE_BY_VALIDATE_TOOL = _JOB_TYPE_FOR_CONFIRM
 
 # Check E ("premature submit") — a validate_*_job tool call only RENDERS a confirmation
 # card; the job is created solely when the user clicks Confirm on it (the frontend POSTs
@@ -923,27 +926,13 @@ _SUBMITTED_CLAIM_RE = re.compile(
     re.I,
 )
 
-# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto
-# a parent dataset. The call carries parent_job_id as a structured argument, so
-# dispatch provenance is verified from the parent's DB record, with no prose parsing.
-_DISPATCH_PARENT_TYPE = {
-    "validate_training_job": "training",
-    "validate_eval_job": "eval",
-}
-
-# Check D ("not ready") — the stage-gate. A downstream dispatch maps to the upstream
-# job-id field(s) it depends on, each of which must be 'succeeded' before the step can
-# advance. data_run_id / eval_data_run_id are MLflow run ids (not jobs) and are
-# validated downstream, so they are not listed. validate_sdg_job is intentionally
-# absent: cloning an SDG recipe for an eval set may run while training is still in
-# flight ("prep eval set now"), so eval-set prep is NOT gated here.
-_DISPATCH_UPSTREAM_FIELDS = {
-    "validate_training_job": [("parent_job_id", "the training dataset's job")],
-    "validate_eval_job": [
-        ("parent_job_id", "the eval dataset's job"),
-        ("training_job_id", "the model's training job"),
-    ],
-}
+# Check C — downstream dispatch tools Morty calls to commit a training/eval run onto a
+# parent dataset, for the stale-reuse provenance check. The call carries parent_job_id
+# as a structured argument, verified from the parent's DB record with no prose parsing.
+# SDG is a dataset *producer*, not a consumer of one, so it is excluded. (Check D, the
+# field-driven stage-gate, keys on the full _TYPE_BY_VALIDATE_TOOL — every committing
+# dispatch — so an incidental job id on a read-only tool is never treated as a dispatch.)
+_DISPATCH_PARENT_TYPE = {t: jt for t, jt in _TYPE_BY_VALIDATE_TOOL.items() if jt != "sdg"}
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1093,66 +1082,6 @@ async def _no_data_advisory(state: SessionState, target: str) -> str | None:
     )
 
 
-# A job that has not reached a terminal state — the step that depends on it cannot
-# advance yet. (Terminal = succeeded/failed/cancelled; failed/cancelled are handled
-# by the subagent's own failure path, not the "wait" advisory.)
-_INFLIGHT_STATUSES = {"queued", "provisioning", "running"}
-
-
-async def _upstream_not_ready_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
-    """The stage-gate at the delegation boundary (companion to the validate-time
-    'not_ready' check). When a training/eval handoff cites an upstream job that is
-    still in flight, steer the subagent to report the true status and wait rather
-    than build/confirm a downstream job whose prerequisite hasn't finished.
-
-    Keyed on the dependency graph, not symptoms: only data-dependent downstream
-    targets (training/eval), only a cited job that resolves to an in-flight status.
-    A delegation to SDG (e.g. cloning a recipe for an eval set "while training runs")
-    is NOT a _DATA_DEPENDENT_TARGET, so concurrent eval-set prep stays allowed.
-    Fail-safe: any uncertainty/error returns None, leaving the handoff unchanged.
-    """
-    if target not in _DATA_DEPENDENT_TARGETS:
-        return None
-    try:
-        for token in sorted(_extract_id_candidates(f"{context}\n{user_text}")):
-            job = await _fetch_job_by_token(token)
-            if job and str(job.get("status") or "") in _INFLIGHT_STATUSES:
-                status = str(job.get("status") or "")
-                return (
-                    "[UPSTREAM NOT READY]\n"
-                    f"An upstream job this {target} step depends on ({token}) is still"
-                    f" '{status}', not finished. Do NOT build, confirm, or create the"
-                    f" {target} job yet — it cannot run until that job succeeds."
-                    f" Instead, {_AWAIT_UPSTREAM_GUIDANCE}."
-                )
-    except Exception:
-        return None
-    return None
-
-
-async def _delegation_advisory(
-    state: SessionState, target: str, context: str, user_text: str
-) -> str | None:
-    """The single ordered precondition gate at the delegation boundary — one evaluator
-    for all 'don't build the downstream job yet' preconditions, returning the FIRST
-    unmet one (or None), never stacking two overlapping advisories into one handoff.
-
-    Order is the dependency order the user must resolve: the DATA-AVAILABILITY fork
-    comes first — until a dataset is chosen there is nothing downstream to gate, and
-    naming an in-flight upstream would be premature (there may be no upstream at all).
-    Only once data is in play does the UPSTREAM-READY check apply (its upstream exists
-    and must be 'succeeded'). Folding the two sibling gates here removes the class of
-    double-fire where both prepend to the same handoff. New delegation preconditions
-    slot in as another ordered step, mirroring the confirm-card precondition order in
-    _enforce_single_interaction (prompt review → preview approval → confirm)."""
-    advisory = await _no_data_advisory(state, target)
-    if advisory:
-        return advisory
-    return await _upstream_not_ready_advisory(state, target, context, user_text)
-
-
 async def _job_claim_violations(
     state: SessionState,
     result: dict[str, Any],
@@ -1300,32 +1229,29 @@ async def _not_ready_violations(
     result: dict[str, Any],
     job_cache: dict[str, dict[str, Any] | None],
 ) -> list[dict[str, Any]]:
-    """Check D — the stage-gate. A training/eval dispatch in this turn whose upstream
-    job (the SDG dataset, or the model under eval) is not yet 'succeeded' — i.e. the
-    workflow is being advanced before its prerequisite finished. Purely structural:
-    the dispatch tool call's upstream id argument and that job's DB status; no prose.
-    Blocks forward movement so Morty reports the true status and waits, instead of
-    confirming/creating a job that can't run yet. Independent of job age (unlike the
+    """Check D — the stage-gate. A committing dispatch in this turn (_TYPE_BY_VALIDATE_TOOL)
+    whose upstream job (the SDG dataset, or the model under eval) is not yet 'succeeded'
+    — i.e. the workflow is being advanced before its prerequisite finished. Field-driven
+    and purely structural: for each dispatch tool, every upstream-job reference its input
+    carries (lineage.GATED_FIELDS) and that job's DB status; no prose. Each dispatch is
+    gated on exactly the prerequisites it names, so extra work elsewhere is never a
+    concern. Blocks forward movement so Morty reports the true status and waits, instead
+    of confirming/creating a job that can't run yet. Independent of job age (unlike the
     stale-reuse 'dispatch' check) — it fires on any non-succeeded upstream."""
     violations: list[dict[str, Any]] = []
     for part in result.get("parts") or []:
         if part.get("type") != "tool":
             continue
-        downstream = _tool_name(part)
-        fields = _DISPATCH_UPSTREAM_FIELDS.get(downstream)
-        if not fields:
-            continue
-        dtype = _DISPATCH_PARENT_TYPE.get(downstream, "")
+        dtype = _TYPE_BY_VALIDATE_TOOL.get(_tool_name(part))
+        if dtype is None:
+            continue  # not a committing dispatch tool
         inp = _get_tool_input(part)
-        for field_name, label in fields:
-            up_id = str(inp.get(field_name) or "")
-            if not up_id:
-                continue  # reference absent — Layer 1 fail-closes at create time
+        for _field, up_id, label in lineage.present_gated_fields(inp):
             up = await _fetch_job_by_token(up_id, job_cache)
             if not up:
                 continue  # unresolvable — not a stage-gate concern (fabrication gate owns it)
             status = str(up.get("status") or "")
-            if status == "succeeded":
+            if status == lineage.READY_STATUS:
                 continue
             violations.append(
                 {
@@ -2024,7 +1950,7 @@ async def _maybe_delegate(
 
     target, context, resume = delegation
 
-    advisory = await _delegation_advisory(state, target, context, user_text)
+    advisory = await _no_data_advisory(state, target)
     if advisory:
         context = f"{advisory}\n\n{context}" if context else advisory
 

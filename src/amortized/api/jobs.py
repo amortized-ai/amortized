@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
-from amortized.core import mirror
+from amortized.core import lineage, mirror
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -170,6 +170,17 @@ async def _require_dependency_succeeded(
     return []
 
 
+async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[str]:
+    """Field-driven dependency gate: every upstream *job* this config references
+    (lineage.GATED_FIELDS) must be ``succeeded``. Keys on the fields present, not on
+    the job type, so this is the same rule for any node — including one "beyond the
+    graph" — and Layer 2 (the proxy stage-gate) gates the identical field set."""
+    errors: list[str] = []
+    for field, job_id, _label in lineage.present_gated_fields(refs):
+        errors += await _require_dependency_succeeded(repo, job_id, field)
+    return errors
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -189,9 +200,11 @@ async def _validate_training_data(
         )
         return errors
 
-    if parent_job_id and not data_path:
-        repo = Repository(db)
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
+    # parent_job_id is an alternative data source to data_path: only gate the SDG
+    # chain edge when it's the source in play (no direct data_path override). Any other
+    # upstream-job reference on the config is gated too (field-driven).
+    refs = {**config, "parent_job_id": parent_job_id if not data_path else ""}
+    errors += await _gate_upstream_refs(Repository(db), refs)
 
     return errors
 
@@ -307,15 +320,11 @@ async def _validate_eval_data(
         )
         return errors
 
-    repo = Repository(db)
-    if parent_job_id:
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
-
-    # The model under eval must itself have finished training — otherwise there is
-    # no adapter to score. This is the training -> eval edge of the dependency
-    # invariant (the SDG -> {training,eval} edge is parent_job_id above).
-    if training_job_id:
-        errors += await _require_dependency_succeeded(repo, training_job_id, "training_job_id")
+    # Field-driven gate: the dataset parent (SDG/upload) and training_job_id (the model
+    # under eval — it must have finished training, else there is no adapter to score),
+    # plus any other upstream-job reference present on the config.
+    refs = {**config, "parent_job_id": parent_job_id, "training_job_id": training_job_id}
+    errors += await _gate_upstream_refs(Repository(db), refs)
 
     return errors
 
@@ -493,8 +502,8 @@ async def _persist_metric_set(
             if run.get("info", {}).get("lifecycle_stage") == "deleted":
                 await client.restore_run(dataset_run_id)
                 logger.info(
-                    "Restored soft-deleted dataset run %s to persist its"
-                    " eval metric set", dataset_run_id[:8],
+                    "Restored soft-deleted dataset run %s to persist its eval metric set",
+                    dataset_run_id[:8],
                 )
         except Exception:
             logger.warning(
@@ -503,9 +512,7 @@ async def _persist_metric_set(
                 exc_info=True,
             )
 
-    await set_mlflow_run_tag(
-        dataset_run_id, "eval_metric_set", _json.dumps(metric_set)
-    )
+    await set_mlflow_run_tag(dataset_run_id, "eval_metric_set", _json.dumps(metric_set))
 
 
 @router.post(
@@ -600,9 +607,7 @@ async def retry_job(
     job_type = str(job.get("type") or "")
     spec = mirror.MIRROR_SPECS.get(job_type)
     if spec is None:
-        raise HTTPException(
-            status_code=422, detail=f"job type '{job_type}' cannot be retried"
-        )
+        raise HTTPException(status_code=422, detail=f"job type '{job_type}' cannot be retried")
     if job.get("status") not in (JobStatus.failed.value, JobStatus.cancelled.value):
         raise HTTPException(
             status_code=422,
@@ -1047,10 +1052,9 @@ async def _rubric_drift_warning(
     submitted = {str(c["name"]): str(c.get("description", "")) for c in inline}
     for job in candidates:
         cfg = _coerce_config(job.get("config"))
-        same_dataset = (
-            data_run_id
-            and str(cfg.get("eval_data_run_id") or "") == data_run_id
-        ) or (parent_job_id and job.get("parent_job_id") == parent_job_id)
+        same_dataset = (data_run_id and str(cfg.get("eval_data_run_id") or "") == data_run_id) or (
+            parent_job_id and job.get("parent_job_id") == parent_job_id
+        )
         if not same_dataset:
             continue
         existing = {
@@ -1062,9 +1066,7 @@ async def _rubric_drift_warning(
             continue
         if existing == submitted:
             return []  # exact reuse — nothing to warn about
-        changed = sorted(
-            n for n in existing if existing[n] != submitted.get(n, existing[n])
-        )
+        changed = sorted(n for n in existing if existing[n] != submitted.get(n, existing[n]))
         return [
             "this dataset already has evals with these rubric criteria"
             f" but different descriptions (changed: {', '.join(changed)})."
@@ -1077,9 +1079,7 @@ async def _rubric_drift_warning(
     return []
 
 
-_SdgSignature = tuple[
-    tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]
-]
+_SdgSignature = tuple[tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]]
 
 
 def _sdg_signature(cfg: Any) -> _SdgSignature | None:
@@ -1147,13 +1147,15 @@ async def _training_sdg_mirror_warning(
     training = await repo.get_job(training_job_id)
     if not training:
         return []
-    train_sdg_id = str(training.get("parent_job_id") or "")
-    if not train_sdg_id:
+    # The SDG that produced the model's training data — the nearest SDG ancestor,
+    # following the lineage chain rather than only the direct parent.
+    train_sdg = await lineage.nearest_ancestor(training, "sdg", repo.get_job)
+    if not train_sdg:
         return []  # training data not chained from an SDG job -> nothing to mirror
+    train_sdg_id = str(train_sdg.get("id") or "")
 
-    train_sdg = await repo.get_job(train_sdg_id)
     eval_sdg = await repo.get_job(str(parent_job_id))
-    if not train_sdg or not eval_sdg:
+    if not eval_sdg:
         return []
 
     train_sig = _sdg_signature(train_sdg.get("config"))
@@ -1174,8 +1176,7 @@ async def _training_sdg_mirror_warning(
         diffs.append("assessor/system prompt")
     if train_sig[2] != eval_sig[2]:
         diffs.append(
-            f"topic (training SDG: {train_sig[2] or 'none'};"
-            f" eval SDG: {eval_sig[2] or 'none'})"
+            f"topic (training SDG: {train_sig[2] or 'none'}; eval SDG: {eval_sig[2] or 'none'})"
         )
     if train_sig[3] != eval_sig[3]:
         diffs.append("source documents")
@@ -1245,18 +1246,14 @@ async def _dataset_record_count(run_id: str) -> int | None:
         paths = await _find_dataset_artifacts(mlflow, run_id)
         total = 0
         for path in paths:
-            total += sum(
-                1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path))
-            )
+            total += sum(1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path)))
         return total if paths else None
     except Exception:
         logger.warning("record count: failed to load dataset %s", run_id[:8], exc_info=True)
         return None
 
 
-async def _resolve_data_run(
-    repo: Repository, parent_job_id: str, data_run_id: str
-) -> str:
+async def _resolve_data_run(repo: Repository, parent_job_id: str, data_run_id: str) -> str:
     """MLflow run holding a dataset, from either a parent job or a direct run id."""
     if parent_job_id:
         job = await repo.get_job(parent_job_id)
@@ -1273,21 +1270,19 @@ async def _resolve_data_run(
 async def _resolve_training_data_run(repo: Repository, training_job_id: str) -> str:
     """MLflow run holding the data a training job actually trained on.
 
-    Prefer the exact `data_run_id` the job used (e.g. a split complement), else
-    the parent SDG job's MLflow run."""
+    Prefer the exact `data_run_id` the job used (e.g. a split complement), else the
+    nearest dataset-producing ancestor's MLflow run — walking the lineage chain, so
+    this resolves even when the dataset producer is more than one hop upstream."""
     training = await repo.get_job(training_job_id)
     if not training:
         return ""
-    cfg = training.get("config") or {}
-    if isinstance(cfg, str):
-        try:
-            cfg = json.loads(cfg)
-        except ValueError:
-            cfg = {}
-    data_run_id = str((cfg or {}).get("data_run_id") or "")
+    data_run_id = str(lineage.job_ref(training, "data_run_id") or "")
     if data_run_id:
         return data_run_id
-    return await _resolve_data_run(repo, str(training.get("parent_job_id") or ""), "")
+    producer = await lineage.nearest_ancestor(
+        training, lineage.DATASET_PRODUCER_TYPES, repo.get_job
+    )
+    return str(producer.get("mlflow_run_id") or "") if producer else ""
 
 
 async def _eval_overlap_warning(
