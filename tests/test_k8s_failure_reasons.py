@@ -155,3 +155,103 @@ class TestJobConditionMessage:
     def test_no_failure_condition(self) -> None:
         job = _job(conditions=[{"type": "Complete", "reason": "Completed", "message": ""}])
         assert KubernetesBackend._job_condition_message(job) is None
+
+
+class _FakeSecretCore:
+    def __init__(self, create_error: Exception | None = None) -> None:
+        self._create_error = create_error
+        self.created: list[str] = []
+        self.replaced: list[str] = []
+
+    async def create_namespaced_secret(self, namespace: str, body: object) -> None:
+        if self._create_error is not None:
+            raise self._create_error
+        self.created.append(body.metadata.name)  # type: ignore[attr-defined]
+
+    async def replace_namespaced_secret(self, name: str, namespace: str, body: object) -> None:
+        self.replaced.append(name)
+
+
+class TestStatusNotFound:
+    """status() must infer 'resource gone' from the HTTP 404, not the error text —
+    a 409/500 body can embed '404' (e.g. inside a UUID) and must not be misread."""
+
+    def _status_for_error(self, monkeypatch, error: Exception):
+        import kubernetes_asyncio.client as k8s_client
+
+        from amortized.backends import BackendHandle
+
+        class _FakeBatch:
+            async def read_namespaced_job(self, name: str, namespace: str) -> object:
+                raise error
+
+        async def _fake_get_client() -> None:
+            return None
+
+        monkeypatch.setattr(k8s_client, "BatchV1Api", lambda api_client: _FakeBatch())
+        backend = _backend()
+        monkeypatch.setattr(backend, "_get_client", _fake_get_client)
+        handle = BackendHandle(backend_name="kubernetes", job_id="j1", scheduler_id="amortized-j1")
+        return _run(backend.status(handle))
+
+    def test_404_marks_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        bs = self._status_for_error(monkeypatch, ApiException(status=404))
+        assert bs.not_found is True
+        assert bs.running is False
+
+    def test_500_is_not_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        bs = self._status_for_error(monkeypatch, ApiException(status=500))
+        assert bs.not_found is False
+
+    def test_409_body_with_404_substring_is_not_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        err = ApiException(status=409, reason="Conflict: amortized-a404b1c2 already exists")
+        bs = self._status_for_error(monkeypatch, err)
+        assert bs.not_found is False
+
+
+class TestIdempotentSecret:
+    """A requeued job's resubmit must not collide on a Secret left by an earlier submit."""
+
+    def test_replaces_secret_on_conflict(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+        from kubernetes_asyncio.client import ApiException
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore(create_error=ApiException(status=409))
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.replaced == ["amortized-j1-env"]
+
+    def test_reraises_non_conflict_error(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+        import pytest
+        from kubernetes_asyncio.client import ApiException
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore(create_error=ApiException(status=500))
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        with pytest.raises(ApiException):
+            _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.replaced == []
+
+    def test_no_replace_on_clean_create(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore()
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.created == ["amortized-j1-env"]
+        assert fake.replaced == []

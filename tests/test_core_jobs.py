@@ -12,6 +12,7 @@ from amortized.core.jobs import (
     JobNotFoundError,
     cancel_job,
     create_job,
+    estimate_gpu_demand,
     get_job,
     list_jobs,
 )
@@ -85,6 +86,22 @@ class TestCreateJob:
             parent_job_id="parent-123",
         )
         assert row["parent_job_id"] == "parent-123"
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_job_over_gpu_budget(self, repo: Repository) -> None:
+        # Default gpu_budget is 1, so a 2-GPU training could never be admitted — reject
+        # it at creation with a clear error rather than letting it sit silently queued.
+        with pytest.raises(InvalidJobStateError, match="GPU budget"):
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={
+                    "algorithm": "sft",
+                    "model_name_or_path": "t",
+                    "data_path": "t.jsonl",
+                    "nproc_per_node": 2,
+                },
+            )
 
 
 class TestGetJob:
@@ -184,3 +201,37 @@ class TestCancelJob:
         await cancel_job(repo, created["id"])
         result = await cancel_job(repo, created["id"])
         assert result["status"] == "cancelled"
+
+
+class TestEstimateGpuDemand:
+    """estimate_gpu_demand must mirror the per-builder Resources(gpus=...)."""
+
+    def test_training_defaults_to_one_gpu(self) -> None:
+        assert estimate_gpu_demand({"type": "training", "config": {"algorithm": "sft"}}) == 1
+
+    def test_training_respects_nproc_per_node(self) -> None:
+        assert estimate_gpu_demand({"type": "training", "config": {"nproc_per_node": 2}}) == 2
+
+    def test_sdg_and_upload_need_no_gpu(self) -> None:
+        assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0
+        assert estimate_gpu_demand({"type": "upload", "config": {"source": "document"}}) == 0
+
+    def test_eval_external_endpoint_needs_no_gpu(self) -> None:
+        job = {"type": "eval", "config": {"endpoint": {"base_url": "http://x/v1", "model": "m"}}}
+        assert estimate_gpu_demand(job) == 0
+
+    def test_eval_embedded_serving_needs_gpu(self) -> None:
+        assert estimate_gpu_demand({"type": "eval", "config": {"training_job_id": "t1"}}) == 1
+        job = {"type": "eval", "config": {"model_name_or_path": "Qwen/x"}}
+        assert estimate_gpu_demand(job) == 1
+
+    def test_eval_classification_defaults_to_cpu(self) -> None:
+        # An embedding classifier eval encodes on CPU by default (gpus=0).
+        job = {"type": "eval", "config": {"eval_mode": "classification", "training_job_id": "t1"}}
+        assert estimate_gpu_demand(job) == 0
+
+    def test_config_as_json_string_is_parsed(self) -> None:
+        import json
+
+        job = {"type": "training", "config": json.dumps({"nproc_per_node": 3})}
+        assert estimate_gpu_demand(job) == 3

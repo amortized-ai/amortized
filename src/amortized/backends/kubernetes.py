@@ -47,6 +47,16 @@ class KubernetesBackend:
     def _resource_name(self, job_id: str) -> str:
         return f"amortized-{job_id[:53]}"
 
+    def reconstruct_handle(self, job_id: str) -> BackendHandle:
+        """The Job name is derived from the job id, so status() needs only that —
+        recovery can reconcile a submitted Job whose handle was never persisted."""
+        return BackendHandle(
+            backend_name=self.name,
+            job_id=job_id,
+            scheduler_id=self._resource_name(job_id),
+            container_id="job",
+        )
+
     async def _get_client(self) -> Any:
         if self._client is None:
             from kubernetes_asyncio import config
@@ -290,7 +300,7 @@ class KubernetesBackend:
         )
 
     async def _create_secret(self, spec: JobSpec, resource_name: str, api_client: Any) -> None:
-        from kubernetes_asyncio.client import CoreV1Api, V1ObjectMeta, V1Secret
+        from kubernetes_asyncio.client import ApiException, CoreV1Api, V1ObjectMeta, V1Secret
 
         if not spec.env:
             return
@@ -305,10 +315,18 @@ class KubernetesBackend:
         )
 
         core = CoreV1Api(api_client)
-        await core.create_namespaced_secret(self._namespace, secret)
+        try:
+            await core.create_namespaced_secret(self._namespace, secret)
+        except ApiException as e:
+            if e.status != 409:
+                raise
+            # Left over from a submit that crashed before the Job was created; replace it
+            # so a requeued job re-dispatches cleanly instead of colliding on the name.
+            await core.replace_namespaced_secret(f"{resource_name}-env", self._namespace, secret)
 
     async def _submit_job(self, spec: JobSpec) -> BackendHandle:
         from kubernetes_asyncio.client import (
+            ApiException,
             BatchV1Api,
             CoreV1Api,
             V1Job,
@@ -325,7 +343,15 @@ class KubernetesBackend:
         await self._create_secret(spec, resource_name, api_client)
 
         config_map = self._build_config_map(spec, resource_name)
-        await core.create_namespaced_config_map(self._namespace, config_map)
+        try:
+            await core.create_namespaced_config_map(self._namespace, config_map)
+        except ApiException as e:
+            if e.status != 409:
+                raise
+            # See _create_secret: replace a leftover ConfigMap so a requeued job re-dispatches.
+            await core.replace_namespaced_config_map(
+                f"{resource_name}-config", self._namespace, config_map
+            )
 
         mount_gcp = await self._gcp_secret_exists()
         pod_spec = self._build_pod_spec(spec, resource_name, mount_gcp=mount_gcp)
@@ -459,8 +485,12 @@ class KubernetesBackend:
         try:
             job = await batch.read_namespaced_job(resource_name, self._namespace)
         except Exception as e:
-            err_str = str(e)
-            if "404" in err_str or "NotFound" in err_str:
+            # Trust the HTTP status, not a substring of the error text: an ApiException
+            # string includes the response body, and a 409/500 body or a connection
+            # error can contain "404" (in a UUID or URL) and be misread as "resource gone"
+            # — which now drives recovery (requeue / fail), so a false positive double-submits.
+            not_found = getattr(e, "status", None) == 404
+            if not_found:
                 msg = (
                     f"Job '{resource_name}' no longer exists."
                     " It may have been cancelled or cleaned up."
@@ -473,7 +503,7 @@ class KubernetesBackend:
                 self._namespace,
                 e,
             )
-            return BackendStatus(running=False, error=msg)
+            return BackendStatus(running=False, error=msg, not_found=not_found)
 
         status = job.status
         if status.succeeded and status.succeeded > 0:

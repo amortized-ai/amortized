@@ -12,6 +12,10 @@ data:
   AMORTIZED_COMPUTE_BACKEND: "kubernetes"
   AMORTIZED_COMPUTE_NAMESPACE: "amortized-jobs"
   AMORTIZED_IMAGE_REGISTRY: "ghcr.io/amortized-ai"
+  # Job concurrency + GPU admission. GPU_BUDGET must match this deploy's GPU
+  # ResourceQuota — a per-user overlay raises both together before running multi-GPU jobs.
+  AMORTIZED_MAX_CONCURRENT_JOBS: "4"
+  AMORTIZED_GPU_BUDGET: "1"
   AMORTIZED_EXTERNAL_URL: "http://amortized-server.amortized.svc.cluster.local:8000"
   AMORTIZED_AGENT_SERVER_URL: "http://amortized-server.amortized.svc.cluster.local:8000"
   # Platform engineer: set these to your MLflow and S3 endpoints

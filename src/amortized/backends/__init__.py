@@ -36,6 +36,10 @@ class BackendStatus:
     # (e.g. a pod stuck in ImagePullBackoff). The worker should cancel the
     # resource — the cluster's own TTL cleanup never fires for it.
     reclaim: bool = False
+    # True only when the backend CONFIRMS the resource is gone (e.g. a 404).
+    # Distinguishes a definitive "absent" from a transient status error so restart
+    # recovery doesn't requeue a possibly-live job on a transient blip.
+    not_found: bool = False
 
 
 @dataclass
@@ -71,3 +75,7 @@ class ComputeBackend(Protocol):
     async def status(self, handle: BackendHandle) -> BackendStatus: ...
     async def cancel(self, handle: BackendHandle) -> None: ...
     def logs(self, handle: BackendHandle) -> AsyncIterator[str]: ...
+    # Rebuild a job's handle from its id alone (no submit response), for restart
+    # recovery of a job whose handle was never persisted. Return None when the backend
+    # has no id-derivable resource name, so recovery falls back to requeue.
+    def reconstruct_handle(self, job_id: str) -> BackendHandle | None: ...

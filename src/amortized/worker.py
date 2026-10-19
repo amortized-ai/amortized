@@ -15,7 +15,7 @@ import amortized.config as config_mod
 from amortized._mlflow_job_sitecustomize import SITECUSTOMIZE_SOURCE
 from amortized.backends import BackendHandle, Capability, JobSpec
 from amortized.core.compute import MissingCapabilityError, check_capabilities, get_backend
-from amortized.core.jobs import deserialize_handle
+from amortized.core.jobs import deserialize_handle, estimate_gpu_demand
 from amortized.db.repository import Repository
 from amortized.jobs import get_builder
 from amortized.jobs.base import JobBuildError
@@ -195,6 +195,57 @@ async def _pick_pending_job() -> dict[str, Any] | None:
         )
 
 
+# Batch size for paging through queued jobs when looking for one that fits the GPU
+# budget. The worker pages through the WHOLE queue, so this only bounds each read.
+_CANDIDATE_BATCH = 100
+
+
+async def _claim_runnable_job(ns: str, gpu_free: int) -> dict[str, Any] | None:
+    """Claim the oldest queued job whose GPU demand fits ``gpu_free``.
+
+    Scanning oldest-first and skipping GPU jobs that don't fit lets CPU jobs
+    (demand 0) run past a queued GPU job that is waiting on the budget — the core
+    of "a quick SDG/eval never blocks behind a training run". Pages through the full
+    queue via a keyset cursor so a fitting job is never missed just because unfittable
+    GPU jobs filled the first page. The claim is atomic (``status = queued`` guard), so
+    concurrent workers never double-run a job.
+    """
+    from amortized.db.connection import get_pool
+
+    async with get_pool().acquire() as conn:
+        repo = Repository(conn)
+        after_created_at: str | None = None
+        after_id: str | None = None
+        while True:
+            candidates = await repo.list_queued_candidates(
+                ns, _CANDIDATE_BATCH, after_created_at, after_id
+            )
+            if not candidates:
+                return None
+            for candidate in candidates:
+                if estimate_gpu_demand(candidate) <= gpu_free:
+                    claimed = await repo.claim_job(candidate["id"], ns)
+                    if claimed is not None:
+                        return claimed
+            if len(candidates) < _CANDIDATE_BATCH:
+                return None
+            after_created_at = candidates[-1]["created_at"]
+            after_id = candidates[-1]["id"]
+
+
+def _job_output_dir(job_type: str, job_id: str) -> str:
+    """Local directory for a job's outputs/logs, namespaced by job id."""
+    output_dir_names = {
+        JobType.training.value: "training_output",
+        JobType.sdg.value: "sdg_output",
+        JobType.upload.value: "upload_output",
+        JobType.eval.value: "eval_output",
+    }
+    dir_name = output_dir_names.get(job_type, f"{job_type}_output")
+    base_dir = str(config_mod.settings.data_dir / dir_name)
+    return os.path.abspath(os.path.expanduser(os.path.join(base_dir, job_id)))
+
+
 async def _resolve_mlflow_artifact_uri(mlflow_run_id: str) -> str:
     tracking_uri = config_mod.settings.mlflow_tracking_uri
     if not tracking_uri or not mlflow_run_id:
@@ -286,15 +337,7 @@ async def _run_job(job: dict[str, Any]) -> None:
     backend_name = config_mod.settings.resolved_default_backend
 
     # --- Output directory ---
-    output_dir_names = {
-        JobType.training.value: "training_output",
-        JobType.sdg.value: "sdg_output",
-        JobType.upload.value: "upload_output",
-        JobType.eval.value: "eval_output",
-    }
-    dir_name = output_dir_names.get(job_type, f"{job_type}_output")
-    base_dir = str(config_mod.settings.data_dir / dir_name)
-    output_dir = os.path.abspath(os.path.expanduser(os.path.join(base_dir, job_id)))
+    output_dir = _job_output_dir(job_type, job_id)
 
     if job_type == JobType.training.value or "output_dir" not in config:
         config["output_dir"] = output_dir
@@ -453,20 +496,77 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     try:
         handle = await backend.submit(spec)
-        handle_json = _serialize_handle(handle)
-
-        k8s_job_name = handle.scheduler_id or ""
+    except Exception as exc:
+        await _finish_mlflow_run(mlflow_run_id, "FAILED")
+        error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
+        try:
+            stderr_path = os.path.join(output_dir, "stderr.log")
+            os.makedirs(output_dir, exist_ok=True)
+            with open(stderr_path, "a") as f:
+                f.write(f"[amortized] Job failed before starting: {error_text}\n")
+            fallback_handle = _serialize_handle(
+                BackendHandle(
+                    backend_name=backend_name,
+                    job_id=job_id,
+                    remote_dir=output_dir,
+                )
+            )
+        except Exception:
+            fallback_handle = None
         await _update_job(
             job_id,
-            status=JobStatus.provisioning.value,
-            started_at=now,
-            backend_handle=handle_json,
-            k8s_job_name=k8s_job_name,
+            status=JobStatus.failed.value,
+            completed_at=datetime.now(UTC),
+            error=error_text,
+            backend_handle=fallback_handle,
         )
+        logger.exception("Job %s failed during submission", job_id)
+        return
 
-        # --- Poll until completion ---
+    await _update_job(
+        job_id,
+        status=JobStatus.provisioning.value,
+        started_at=now,
+        backend_handle=_serialize_handle(handle),
+        k8s_job_name=handle.scheduler_id or "",
+    )
+
+    await _poll_and_finalize(
+        job,
+        backend=backend,
+        backend_name=backend_name,
+        handle=handle,
+        mlflow_run_id=mlflow_run_id,
+        mlflow_tag_type=mlflow_tag_type,
+        output_dir=output_dir,
+        builder=builder,
+    )
+
+
+async def _poll_and_finalize(
+    job: dict[str, Any],
+    *,
+    backend: Any,
+    backend_name: str,
+    handle: BackendHandle,
+    mlflow_run_id: str,
+    mlflow_tag_type: str,
+    output_dir: str,
+    builder: Any,
+    already_running: bool = False,
+) -> None:
+    """Poll a dispatched job to completion and record its outcome.
+
+    Shared by _run_job (right after submit) and _resume_job (after a restart).
+    The compute runs out-of-process, so this is almost all I/O wait — many of
+    these run concurrently as worker tasks. On worker shutdown the task is
+    cancelled mid-poll; CancelledError is not an ``Exception`` so it propagates,
+    leaving the job 'running' for a restart to resume.
+    """
+    job_id = job["id"]
+    try:
         poll_interval = 2.0
-        transitioned_to_running = False
+        transitioned_to_running = already_running
         while True:
             status = await backend.status(handle)
             if not status.running:
@@ -495,7 +595,8 @@ async def _run_job(job: dict[str, Any]) -> None:
 
                 async with _get_pool().acquire() as conn:
                     fresh_job = await Repository(conn).get_job(job_id)
-                await builder.on_success(fresh_job or job, mlflow_run_id)
+                if builder is not None:
+                    await builder.on_success(fresh_job or job, mlflow_run_id)
                 await _finish_mlflow_run(mlflow_run_id, critical=True)
 
             await _update_job(
@@ -543,29 +644,52 @@ async def _run_job(job: dict[str, Any]) -> None:
 
     except Exception as exc:
         await _finish_mlflow_run(mlflow_run_id, "FAILED")
-        error_text = f"Job '{job_id}' failed during submission to backend '{backend_name}': {exc}"
+        error_text = f"Job '{job_id}' failed during execution on backend '{backend_name}': {exc}"
         try:
             stderr_path = os.path.join(output_dir, "stderr.log")
             os.makedirs(output_dir, exist_ok=True)
             with open(stderr_path, "a") as f:
-                f.write(f"[amortized] Job failed before starting: {error_text}\n")
-            fallback_handle = _serialize_handle(
-                BackendHandle(
-                    backend_name=backend_name,
-                    job_id=job_id,
-                    remote_dir=output_dir,
-                )
-            )
+                f.write(f"[amortized] {error_text}\n")
         except Exception:
-            fallback_handle = None
+            pass
         await _update_job(
             job_id,
             status=JobStatus.failed.value,
             completed_at=datetime.now(UTC),
             error=error_text,
-            backend_handle=fallback_handle,
         )
-        logger.exception("Job %s failed with exception", job_id)
+        logger.exception("Job %s failed during execution", job_id)
+
+
+async def _resume_job(job: dict[str, Any]) -> None:
+    """Resume polling a job a previous worker left in-flight (after a restart)."""
+    job_id = job["id"]
+    job_type = job["type"]
+    handle = deserialize_handle(job.get("backend_handle"))
+    if handle is None:
+        logger.warning("Cannot resume job %s — no backend handle recorded", job_id)
+        return
+    try:
+        backend = get_backend(handle.backend_name)
+    except KeyError:
+        await _update_job(
+            job_id,
+            status=JobStatus.failed.value,
+            completed_at=datetime.now(UTC),
+            error=f"Cannot resume job — unknown backend {handle.backend_name!r}",
+        )
+        return
+    await _poll_and_finalize(
+        job,
+        backend=backend,
+        backend_name=handle.backend_name,
+        handle=handle,
+        mlflow_run_id=job.get("mlflow_run_id") or "",
+        mlflow_tag_type=job_type,
+        output_dir=_job_output_dir(job_type, job_id),
+        builder=get_builder(job_type),
+        already_running=job.get("status") == JobStatus.running.value,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -573,62 +697,199 @@ async def _run_job(job: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def cleanup_orphaned_jobs() -> None:
+async def _resume_inflight_jobs() -> list[dict[str, Any]]:
+    """Reconcile jobs a previous worker left mid-flight across a restart.
+
+    Returns the jobs the caller should resume polling: those still running, and those
+    that finished while the worker was down (so the poll loop records the outcome).
+    A job whose backend resource is CONFIRMED gone is requeued (if 'provisioning', so it
+    re-dispatches cleanly) or failed (if 'running'). When the status is INDETERMINATE —
+    the status call raised, or returned a non-404 error — the job is left untouched for a
+    later retry, so a transient backend blip never requeues a live resource into a
+    double-submit.
+
+    A 'provisioning' row with no saved handle is ambiguous: the worker may have crashed
+    between backend.submit() (which creates the named resource) and persisting its handle.
+    We reconstruct the backend's deterministic handle and reconcile it the same way, so an
+    already-submitted job is adopted instead of being requeued into a name collision.
+    """
     from amortized.db.connection import get_pool
 
     ns = config_mod.settings.compute_namespace
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
-        running_jobs = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
+        inflight = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
+        inflight += await repo.list_jobs(status=JobStatus.provisioning, k8s_namespace=ns)
 
     now = datetime.now(UTC)
 
-    for job in running_jobs:
-        job_id = job["id"]
-        handle_json = job.get("backend_handle")
-
-        alive = False
-        handle = deserialize_handle(handle_json)
-        if handle is not None:
-            try:
-                backend = get_backend(handle.backend_name)
-                bs = await backend.status(handle)
-                alive = bs.running
-            except KeyError:
-                pass
-
-        if alive:
-            logger.info("Re-adopted running job %s", job_id)
-        else:
-            async with get_pool().acquire() as conn:
+    async def _mark_gone(job: dict[str, Any]) -> None:
+        # Guard the write on the status we read: the API may cancel (or another worker may
+        # finalize) the job between the status read and here. An id-only UPDATE would clobber
+        # that newer state — requeue a cancelled job, or fail a finished one.
+        async with get_pool().acquire() as conn:
+            if job["status"] == JobStatus.provisioning.value:
                 result = await conn.execute(
-                    """UPDATE jobs SET status = $1, completed_at = $2,
-                       error = $3 WHERE id = $4 AND status = $5""",
+                    "UPDATE jobs SET status = $1 WHERE id = $2 AND status = $3",
+                    JobStatus.queued.value,
+                    job["id"],
+                    JobStatus.provisioning.value,
+                )
+                if result == "UPDATE 1":
+                    logger.warning(
+                        "Requeued job %s (provisioning, resource gone) after restart", job["id"]
+                    )
+            else:
+                result = await conn.execute(
+                    """UPDATE jobs SET status = $1, completed_at = $2, error = $3
+                       WHERE id = $4 AND status = $5""",
                     JobStatus.failed.value,
                     now,
                     "Orphaned job — process no longer running",
-                    job_id,
+                    job["id"],
                     JobStatus.running.value,
                 )
-            if result == "UPDATE 1":
-                logger.warning("Marked orphaned job %s as failed", job_id)
+                if result == "UPDATE 1":
+                    logger.warning("Marked orphaned job %s as failed", job["id"])
+
+    async def _persist_reconstructed_handle(job: dict[str, Any], handle: BackendHandle) -> bool:
+        # The handle was rebuilt from the job id, not read from the DB. Persist it (guarded on
+        # the status we read) so _resume_job can poll the adopted resource — otherwise it bails
+        # on the missing handle, leaking the live Job while its GPU budget is released.
+        raw = _serialize_handle(handle)
+        async with get_pool().acquire() as conn:
+            result = await conn.execute(
+                "UPDATE jobs SET backend_handle = $1, k8s_job_name = $2 "
+                "WHERE id = $3 AND status = $4",
+                raw,
+                handle.scheduler_id or "",
+                job["id"],
+                job["status"],
+            )
+        if result != "UPDATE 1":
+            return False
+        job["backend_handle"] = raw
+        return True
+
+    resumable: list[dict[str, Any]] = []
+    for job in inflight:
+        handle = deserialize_handle(job.get("backend_handle"))
+        reconstructed = False
+        if handle is None:
+            # No saved handle: reconstruct the deterministic one so we reconcile against
+            # the live resource below instead of blindly requeuing an already-submitted
+            # job. Backends with no job-id-derivable name return None → nothing to adopt.
+            try:
+                backend = get_backend(config_mod.settings.resolved_default_backend)
+            except KeyError:
+                await _mark_gone(job)  # no backend to probe with
+                continue
+            handle = backend.reconstruct_handle(job["id"])
+            if handle is None:
+                await _mark_gone(job)  # never got a backend resource
+                continue
+            reconstructed = True
+        else:
+            try:
+                backend = get_backend(handle.backend_name)
+            except KeyError:
+                await _mark_gone(job)  # backend no longer registered
+                continue
+        try:
+            bs = await backend.status(handle)
+        except Exception:
+            logger.warning(
+                "Status check raised for job %s during recovery — leaving it for a later retry",
+                job["id"],
+                exc_info=True,
+            )
+            continue  # indeterminate: never requeue/fail a possibly-live resource
+        if bs.running:
+            if reconstructed and not await _persist_reconstructed_handle(job, handle):
+                continue  # status changed under us → don't resume a now-stale job
+            resumable.append(job)
+            logger.info("Resuming in-flight job %s (type=%s)", job["id"], job["type"])
+        elif bs.exit_code is not None:
+            if reconstructed and not await _persist_reconstructed_handle(job, handle):
+                continue
+            resumable.append(job)  # finished while we were down → poll loop records the outcome
+            logger.info("Resuming job %s to record its completion", job["id"])
+        elif bs.not_found:
+            await _mark_gone(job)  # backend confirms the resource is gone
+        else:
+            logger.warning(
+                "Indeterminate status for job %s during recovery — leaving it for a later retry",
+                job["id"],
+            )
+    return resumable
 
 
 async def worker_loop(poll_interval: float = 2.0) -> None:
+    """Dispatch queued jobs as a bounded, GPU-budget-aware concurrent pool.
+
+    Up to ``max_concurrent_jobs`` run at once; a job is admitted only when its
+    GPU demand fits the remaining ``gpu_budget`` (CPU jobs always fit), so a quick
+    SDG/eval never waits behind a running training job, and GPU jobs that don't fit
+    stay queued instead of being pushed at the cluster to fail on quota.
+    """
     ns = config_mod.settings.compute_namespace
-    logger.info("Worker started (poll interval: %.1fs, namespace: %s)", poll_interval, ns)
+    max_concurrent = max(1, config_mod.settings.max_concurrent_jobs)
+    gpu_budget = max(0, config_mod.settings.gpu_budget)
+    logger.info(
+        "Worker started (max_concurrent=%d, gpu_budget=%d, poll=%.1fs, namespace=%s)",
+        max_concurrent,
+        gpu_budget,
+        poll_interval,
+        ns,
+    )
+
+    # task -> GPU demand it holds, so the loop can bound the budget and reap on done.
+    in_flight: dict[asyncio.Task[None], int] = {}
+
+    def _reap(task: asyncio.Task[None]) -> None:
+        in_flight.pop(task, None)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("Job task crashed", exc_info=task.exception())
+
+    def _track(task: asyncio.Task[None], demand: int) -> None:
+        in_flight[task] = demand
+        task.add_done_callback(_reap)
+
+    # Restart recovery: resume jobs a previous worker left running (seeds the budget).
+    try:
+        for resumed in await _resume_inflight_jobs():
+            _track(asyncio.create_task(_resume_job(resumed)), estimate_gpu_demand(resumed))
+    except Exception:
+        logger.exception("Error recovering in-flight jobs on startup")
 
     while True:
         try:
-            job = await _pick_pending_job()
-            if job is not None:
-                logger.info("Picked job %s (type=%s)", job["id"], job["type"])
-                await _run_job(job)
-                logger.info("Finished processing job %s", job["id"])
-            else:
+            admitted = False
+            while len(in_flight) < max_concurrent:
+                gpu_free = gpu_budget - sum(in_flight.values())
+                job = await _claim_runnable_job(ns, gpu_free)
+                if job is None:
+                    break
+                demand = estimate_gpu_demand(job)
+                logger.info(
+                    "Admitting job %s (type=%s, gpus=%d, in_flight=%d/%d)",
+                    job["id"],
+                    job["type"],
+                    demand,
+                    len(in_flight) + 1,
+                    max_concurrent,
+                )
+                _track(asyncio.create_task(_run_job(job)), demand)
+                admitted = True
+            if not admitted:
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:
-            logger.info("Worker shutting down")
+            pending = list(in_flight)
+            logger.info("Worker shutting down; detaching %d in-flight job(s)", len(pending))
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
             break
         except Exception:
             logger.exception("Worker error — retrying in %ss", poll_interval)

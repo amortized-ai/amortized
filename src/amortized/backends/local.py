@@ -31,6 +31,10 @@ class LocalBackend:
     def capabilities(self) -> set[Capability]:
         return {Capability.LOG_STREAM, Capability.STOP}
 
+    def reconstruct_handle(self, job_id: str) -> BackendHandle | None:
+        # A local job is a PID that does not survive a restart — nothing to reconcile.
+        return None
+
     async def submit(self, spec: JobSpec) -> BackendHandle:
         work_dir = os.path.expanduser(spec.work_dir)
         os.makedirs(work_dir, exist_ok=True)

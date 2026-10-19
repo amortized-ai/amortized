@@ -40,6 +40,23 @@ class Settings(BaseSettings):
         "not per amortized commit, so pin a published version (e.g. 0.1.0) for a "
         "reproducible release.",
     )
+
+    max_concurrent_jobs: int = Field(
+        4,
+        ge=1,
+        description="How many jobs the worker runs at once. Jobs execute as separate "
+        "out-of-process compute (K8s Jobs / local subprocesses), so the worker only "
+        "submits and polls them — this bounds how many it tracks concurrently. 1 "
+        "restores the legacy strictly-serial behavior.",
+    )
+    gpu_budget: int = Field(
+        1,
+        ge=0,
+        description="GPUs the worker may commit to in-flight jobs at once. A GPU job "
+        "stays queued until it fits the remaining budget; CPU jobs (SDG, external-"
+        "endpoint eval) are never gated. Set to match the namespace GPU ResourceQuota "
+        "(the per-user GPU_PER_USER on RHOAI); the default of 1 never over-subscribes.",
+    )
     mlflow_tracking_uri: str = Field("", description="MLflow tracking URI (empty = disabled)")
     mlflow_tracking_token_file: str = Field(
         "",

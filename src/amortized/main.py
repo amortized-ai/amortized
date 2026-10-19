@@ -26,7 +26,7 @@ from amortized.core.compute import get_all_backends, register_backend
 from amortized.db import close_db, init_db
 from amortized.mcp.server import create_mcp_server, shutdown_mcp_transport
 from amortized.models import ConfigResponse, HealthResponse
-from amortized.worker import cleanup_orphaned_jobs, worker_loop
+from amortized.worker import worker_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -107,7 +107,6 @@ def _load_backends() -> None:
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
     _load_backends()
-    await cleanup_orphaned_jobs()
     await agent.startup()
     logger.info("Amortized runtime started")
 
