@@ -180,8 +180,7 @@ class TestDeferredCardJobType:
         assert state.deferred_card_job_type == "eval"
         assert state.pending_rerun_steer == agent_confirm._EVAL_CHOICE_NUDGE
 
-    def test_stripped_card_behind_question_sets_deferred_job_type(self) -> None:
-        # Question leads, card stripped as non-leading (ask-leads path): same deferral.
+    def test_ask_leads_card_not_deferred(self) -> None:
         result = {
             "parts": [
                 _tool_part("present_options", {"question": "judge?"}, call_id="opts"),
@@ -190,7 +189,7 @@ class TestDeferredCardJobType:
         }
         state = _fresh_state()
         agent._enforce_single_interaction(result, state)
-        assert state.deferred_card_job_type == "eval"
+        assert state.deferred_card_job_type is None
 
     def test_rendered_card_clears_deferred_job_type(self) -> None:
         state = _training_ready()

@@ -849,8 +849,10 @@ class TestDeferredCardReEmit:
         assert state.pending_rerun_steer is None
         assert state.pending_interaction_steer is None
 
-    def test_ask_leads_question_then_card_parks_reemit(self, router: _Router) -> None:
-        # Card + question in one turn, question leads → card stripped as non-leading (no rerun).
+    def test_ask_leads_question_does_not_park_reemit(self, router: _Router) -> None:
+        # Card + question in one turn, question leads → card stripped as non-leading. The model
+        # is asking its OWN question, so NO re-emit steer is parked (re-rendering before the
+        # user's answer is processed would be wrong) — only gate-held cards re-emit.
         sub = router.add_session(
             [
                 [
@@ -866,8 +868,7 @@ class TestDeferredCardReEmit:
         state.turns[tid] = agent.TurnState()
         _run(agent._run_turn(state, "s1", tid, "run eval", _body(text="run eval")))
         assert "eval" in state.offered_choice
-        assert state.pending_interaction_steer is not None
-        assert "currently displayed" in state.pending_interaction_steer
+        assert state.pending_interaction_steer is None
 
     def test_prompt_gate_steer_not_clobbered(self, router: _Router) -> None:
         # The prompt-review gate parks its own steer; the re-emit rail must not overwrite it.

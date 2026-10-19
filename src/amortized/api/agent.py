@@ -519,14 +519,13 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
         card = parts[keep_index]
         _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
 
-    # A committing card was DEFERRED this turn if it was present but did not survive into the
-    # kept result (held for an unmet precondition, stripped behind a leading question, or held
-    # by the prompt gate). _run_turn turns this into a next-turn re-emit steer once the
-    # prerequisite is met. last_card in kept_indices ⟺ the card RENDERED — clear then, so a
-    # superseded earlier card or a rerun that re-emits the card in the same turn can't leave
-    # a stale deferral.
+    # A committing card was DEFERRED this turn only when a GATE HELD it — an unmet precondition
+    # or the prompt-review gate — so _run_turn can re-emit it once the prerequisite is met. NOT
+    # when the model voluntarily led with a question (ask_turn): there the user is answering the
+    # model's own question, and parking a re-emit could re-render the card before that answer is
+    # processed.
     if last_card is not None:
-        if last_card not in kept_indices:
+        if unmet is not None or prompt_gate:
             card_tool = _tool_name(parts[last_card])
             state.deferred_card_job_type = _JOB_TYPE_FOR_CONFIRM.get(card_tool, "")
         else:
