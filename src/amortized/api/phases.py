@@ -235,6 +235,36 @@ def skill_step_count(skill_name: str | None) -> int:
     return len(_skill_steps(skill_name))
 
 
+def _step_heading(block: str) -> str:
+    """The step block's first heading line, stripped of leading `#`/space (e.g.
+    `### Step 3 — Output format` → `Step 3 — Output format`), or "" if none."""
+    for line in block.splitlines():
+        s = line.strip()
+        if s:
+            return s.lstrip("#").strip()
+    return ""
+
+
+def skill_step_title(skill_name: str | None, idx: int) -> str | None:
+    """The heading text of a skill's `idx`-th step (for a 'still to gather' list), or None
+    when the skill is not stepped or `idx` is out of range."""
+    block = skill_step_block(skill_name, idx)
+    return _step_heading(block) if block is not None else None
+
+
+def skill_optional_step_indices(skill_name: str | None) -> frozenset[int]:
+    """Indices of steps marked OPTIONAL — their heading contains "(optional)". These are
+    injectable if the driver reaches them, but never counted as a required gap (so coverage
+    tracking neither lists them as outstanding nor pulls the driver back to them)."""
+    if not skill_name:
+        return frozenset()
+    return frozenset(
+        idx
+        for idx, block in enumerate(_skill_steps(skill_name))
+        if "optional" in _step_heading(block).lower()
+    )
+
+
 def skill_step_block(skill_name: str | None, idx: int) -> str | None:
     """The `idx`-th (0-based) step-detail block for a skill, or None when the skill is not
     stepped or `idx` is out of range (past the last step — nothing more to inject)."""

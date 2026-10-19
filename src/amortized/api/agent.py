@@ -49,12 +49,14 @@ from amortized.api.agent_sdg_prompt import (
 )
 from amortized.api.phases import (
     phase_block,
+    skill_optional_step_indices,
+    skill_step_block,
     skill_step_count,
     skill_step_index_for_slug,
+    skill_step_title,
     subagent_phase,
     system_reminder,
     with_block,
-    with_skill_step_block,
 )
 from amortized.config import settings
 from amortized.core import lineage
@@ -138,12 +140,14 @@ class SessionState:
     # opencode `skill` tool call), keyed by target so one subagent's skill never bleeds into
     # another's turns. Drives per-step skill injection for stepped skills.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
-    # Per-target cursor into the active stepped skill's step slices: the index of the step
-    # whose detail to inject next. NOT a turn counter — it is bound to the step the model
-    # actually reached, advanced (monotonically) from the `present_options.step` the driver
-    # stamps on its question cards (see _advance_skill_cursor). Reset when a fresh session is
-    # delegated to the target.
-    skill_step_idx: dict[str, int] = field(default_factory=dict)
+    # Per-target COVERAGE set for the active stepped skill: the indices of the steps the driver
+    # has actually reached (resolved from the `present_options.step` it stamps on its question
+    # cards — see _advance_skill_cursor). Not a turn counter and not a high-water mark: it records
+    # exactly which steps are done, so a driver that JUMPS ahead leaves the skipped steps
+    # uncovered and the proxy re-injects the lowest uncovered one next (filling the hole) and can
+    # tell the driver what is still outstanding. Reset when a fresh session is delegated to the
+    # target. See _with_active_skill_step and _next_skill_step.
+    skill_steps_done: dict[str, set[int]] = field(default_factory=dict)
     # Last raw `present_options.step` value seen per target, so the cursor's degraded fallback
     # (an unrecognized free-text label → advance by one) stays idempotent across the interaction
     # rerun loop, which re-observes the same card several times in one turn.
@@ -626,12 +630,29 @@ _RESIDENT_SKILL_STEPS = 1
 _BACKFILL_PHASE_TOOL = "mcp_amortized__signal_phase"
 
 
-def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
-    """Prepend the active stepped skill's current step-detail block to a gather turn.
+def _next_skill_step(skill: str | None, done: set[int], count: int) -> int:
+    """The index of the next step to inject: the lowest UNCOVERED step, so a hole left by a
+    driver that jumped ahead is filled before any later step is re-surfaced. Resident step(s)
+    (baked into SKILL.md at build time) are skipped. Required steps come first; an optional step
+    is only offered once every required step is covered (it never blocks). Returns `count` when
+    nothing is left to inject."""
+    optional = skill_optional_step_indices(skill)
+    injectable = range(_RESIDENT_SKILL_STEPS, count)
+    required_gap = [i for i in injectable if i not in done and i not in optional]
+    if required_gap:
+        return min(required_gap)
+    optional_gap = [i for i in injectable if i not in done and i in optional]
+    return min(optional_gap) if optional_gap else count
 
-    Inject-only: it reads the cursor but never advances it. Advancing is content-driven and
-    happens when the model's RESPONSE is processed (_advance_skill_cursor), so a turn where the
-    driver stalls, re-asks, or jumps ahead moves the cursor to match — never blindly one-per-turn.
+
+def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
+    """Prepend the active stepped skill's next step-detail block — plus a short list of the
+    steps still outstanding — to a gather turn.
+
+    "Next" is the lowest UNCOVERED step (see _next_skill_step), so a driver that jumped ahead is
+    pulled back to fill the skipped step rather than losing it. Inject-only: it reads the coverage
+    set but never mutates it — advancing is content-driven and happens when the model's RESPONSE
+    is processed (_advance_skill_cursor).
 
     No-op outside the gather phase, when no skill is active, or when the active skill is not
     stepped (opt-in by `steps/` presence) — so callers wrap every gather turn without first
@@ -639,28 +660,47 @@ def _with_active_skill_step(state: SessionState, target: str, phase: str | None,
     if phase != _GATHER_PHASE:
         return text
     skill = state.active_skill_by_target.get(target)
-    if not skill_step_count(skill):
+    count = skill_step_count(skill)
+    if not count:
         return text
-    # Step 1 is appended into the served SKILL.md at build time (gen_native_skills), so it is
-    # already present when the skill loads. The cursor therefore starts PAST it — the first
-    # injected turn gets step 2 — and thereafter tracks the step the driver reports reaching.
-    idx = state.skill_step_idx.get(target, _RESIDENT_SKILL_STEPS)
-    return with_skill_step_block(skill, idx, text)
+    done = state.skill_steps_done.get(target, set())
+    nxt = _next_skill_step(skill, done, count)
+    block = skill_step_block(skill, nxt)
+    # The HOLES a driver left by jumping ahead: required steps it skipped (uncovered and below
+    # the furthest step it reached), excluding the one being injected now. Future steps it simply
+    # hasn't reached yet are NOT listed (the resident outline already shows those) — only the
+    # ones it owes. So a jumped-ahead driver is told exactly what to come back for.
+    optional = skill_optional_step_indices(skill)
+    frontier = max(done) if done else _RESIDENT_SKILL_STEPS - 1
+    outstanding: list[str] = []
+    for i in range(_RESIDENT_SKILL_STEPS, frontier):
+        if i == nxt or i in done or i in optional:
+            continue
+        title = skill_step_title(skill, i)
+        if title:
+            outstanding.append(title)
+    if not block and not outstanding:
+        return text
+    sections: list[str] = []
+    if outstanding:
+        sections.append("Steps still to gather before building: " + "; ".join(outstanding) + ".")
+    if block:
+        sections.append(block)
+    injected = system_reminder("\n\n".join(sections))
+    return f"{injected}\n\n{text}" if text else injected
 
 
 def _advance_skill_cursor(state: SessionState, target: str, parts: list[dict[str, Any]]) -> None:
-    """Bind the per-target step cursor to the step the model actually reached this turn.
+    """Mark the steps the model actually reached this turn as covered.
 
     The driver stamps each gather question's `present_options.step` with the current step's slug
-    (the step blocks instruct it to). Resolve those slugs to step indices and move the cursor to
-    one past the furthest reached — so a bundled turn catches up, a jumped-to step is honoured,
-    and a stall/re-ask holds the cursor (re-injecting, never skipping). Idempotent across the
-    interaction rerun loop (max()-based; the fallback is guarded by the last raw slug), so it is
-    safe to call on every pass over the response parts.
+    (the step blocks instruct it to). Resolve those slugs to indices and add them to the coverage
+    set — so a bundled turn marks several, a jumped-to step is recorded (leaving the skipped ones
+    uncovered for re-injection), and a stall/re-ask is a no-op (adding an index already present).
 
-    Fallback: when the stamped value matches no step slug (the driver used its own label), degrade
-    to a single forward step per NEW question so gathering still progresses rather than stranding —
-    but only the crisp slug path can jump multiple steps or hold on a repeat."""
+    Fallback: when a stamped value matches no step slug (the driver used its own label), degrade
+    to marking the step we were injecting as covered — but only on a NEW label, so the interaction
+    rerun loop re-observing the same card does not advance twice."""
     skill = state.active_skill_by_target.get(target)
     count = skill_step_count(skill)
     if not count:
@@ -672,17 +712,18 @@ def _advance_skill_cursor(state: SessionState, target: str, parts: list[dict[str
     ]
     asked = [s for s in asked if s]
     if not asked:
-        return  # no question posed → no evidence of forward progress; hold the cursor
-    cur = state.skill_step_idx.get(target, _RESIDENT_SKILL_STEPS)
-    detected = max((skill_step_index_for_slug(skill, s) for s in asked), default=-1)
-    if detected >= 0:
-        new = max(cur, detected + 1)  # crisp content anchor: catch up, honour a jump, hold a repeat
+        return  # no question posed → no evidence of progress; coverage unchanged
+    done = state.skill_steps_done.setdefault(target, set())
+    recognized = {i for s in asked if (i := skill_step_index_for_slug(skill, s)) >= 0}
+    if recognized:
+        done.update(recognized)  # crisp content anchor: record exactly the steps reached
     elif asked[-1] != state.skill_last_asked.get(target):
-        new = cur + 1  # unrecognized label on a NEW question: degrade to one forward step
-    else:
-        new = cur  # unrecognized label we already counted (rerun / unchanged) → hold
+        # unrecognized NEW label → cover the step currently being injected
+        nxt = _next_skill_step(skill, done, count)
+        if nxt < count:
+            done.add(nxt)
+    # else: unrecognized label already counted (rerun / unchanged) → hold
     state.skill_last_asked[target] = asked[-1]
-    state.skill_step_idx[target] = min(new, count)
 
 
 def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
@@ -2444,7 +2485,7 @@ async def _maybe_delegate(
         # re-loads its own skill and walks the steps from the start.
         state.last_signal_step = ""
         state.active_skill_by_target.pop(target, None)
-        state.skill_step_idx.pop(target, None)
+        state.skill_steps_done.pop(target, None)
         state.skill_last_asked.pop(target, None)
         framing = system_reminder(f"[CONTEXT]\n{context}")
         handoff_msg = with_block(

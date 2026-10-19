@@ -120,95 +120,114 @@ def test_skill_recording_per_target_no_bleed() -> None:
     assert state.active_skill_by_target["eval"] == "other"
 
 
-# ── agent.py: the gather-turn cursor ────────────────────────────────────────────
+# ── agent.py: the gather-turn step coverage ──────────────────────────────────────
 
 
 def test_inject_is_resident_aware_and_does_not_advance() -> None:
     # Step 1 is baked into the served SKILL.md at build time, so injection starts at step 2
-    # (the first NON-resident step). Injection is READ-ONLY now: the cursor is advanced by the
-    # response handler, not by the act of injecting, so two injections with no response between
-    # them surface the SAME step.
+    # (the lowest NON-resident uncovered step). Injection is READ-ONLY: coverage is recorded by
+    # the response handler, not by the act of injecting, so two injections with no response
+    # between them surface the SAME step.
     assert agent._RESIDENT_SKILL_STEPS == 1
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
 
     out1 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
     assert "### Step 2" in out1 and "### Step 1" not in out1
+    assert "still to gather" not in out1.lower()  # nothing covered yet → no holes behind
     out2 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert "### Step 2" in out2  # unchanged: injection never advances the cursor itself
-    assert state.skill_step_idx.get("sdg") is None  # no write from injection
+    assert "### Step 2" in out2  # unchanged: injection never records coverage itself
+    assert state.skill_steps_done.get("sdg") is None  # no write from injection
 
 
-def test_cursor_tracks_reported_step() -> None:
-    # The cursor follows the step the driver reports reaching via present_options.step: asking
-    # step 2's question (slug "examples", index 1) moves the cursor to inject step 3 next.
+def test_coverage_tracks_reported_step() -> None:
+    # Coverage follows the step the driver reports reaching via present_options.step: asking
+    # step 2's question (slug "examples", index 1) records it, so the next injected step is 3.
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])
-    assert state.skill_step_idx["sdg"] == 2
+    assert state.skill_steps_done["sdg"] == {1}
     out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
     assert "### Step 3" in out
 
 
-def test_cursor_catches_up_on_a_jump() -> None:
-    # A driver that jumps ahead (asks step 4's question) must not keep getting stale early steps:
-    # the cursor leaps to one past the furthest reached, honouring a prefixed/odd-cased label too.
+def test_jump_ahead_leaves_holes_filled_lowest_first() -> None:
+    # A driver that jumps ahead (asks step 2 then step 5) leaves steps 3-4 UNCOVERED. The next
+    # injection pulls it back to the lowest hole (step 3), and the turn lists the remaining hole
+    # (step 4) as still-to-gather — so the skipped steps are never silently lost.
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
-    agent._advance_skill_cursor(state, "sdg", [_present_options_part("04-task-criteria")])
-    assert state.skill_step_idx["sdg"] == 4  # index 3 reached → inject step 5 next
-
-
-def test_cursor_holds_on_stall_or_reask() -> None:
-    # Re-asking the same step (or a stall) must NOT skip ahead: the cursor holds so the step is
-    # re-injected, never jumped over.
-    state = agent.SessionState(orchestrator_id="o")
-    state.active_skill_by_target["sdg"] = PILOT
-    state.skill_step_idx["sdg"] = 2
-    agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])  # index 1 < cur
-    assert state.skill_step_idx["sdg"] == 2  # max(2, 2) — held
-
-
-def test_cursor_no_question_no_advance() -> None:
-    # A turn with no present_options (narration only, or a non-gather tool) is no evidence of
-    # forward progress — the cursor must not move.
-    state = agent.SessionState(orchestrator_id="o")
-    state.active_skill_by_target["sdg"] = PILOT
-    state.skill_step_idx["sdg"] = 2
-    agent._advance_skill_cursor(state, "sdg", [_signal_part("phase-2-gather")])
-    assert state.skill_step_idx["sdg"] == 2
-
-
-def test_cursor_fallback_for_unrecognized_label_is_idempotent() -> None:
-    # A driver that ignores the slug vocabulary (free-text label) still makes gathering progress
-    # (one forward step per NEW question) — but a repeat of the same label (e.g. the interaction
-    # rerun re-observing the card) must not double-count.
-    state = agent.SessionState(orchestrator_id="o")
-    state.active_skill_by_target["sdg"] = PILOT
-    state.skill_step_idx["sdg"] = 2
-    agent._advance_skill_cursor(state, "sdg", [_present_options_part("my-own-label")])
-    assert state.skill_step_idx["sdg"] == 3  # unrecognized, new → +1
-    agent._advance_skill_cursor(state, "sdg", [_present_options_part("my-own-label")])
-    assert state.skill_step_idx["sdg"] == 3  # same label again → held (rerun-safe)
-
-
-def test_cursor_clamps_at_last_step() -> None:
-    state = agent.SessionState(orchestrator_id="o")
-    state.active_skill_by_target["sdg"] = PILOT
-    state.skill_step_idx["sdg"] = 9  # exhausted (count == 9)
-    agent._advance_skill_cursor(state, "sdg", [_present_options_part("generate-outputs")])
-    assert state.skill_step_idx["sdg"] == 9  # never past the last step
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])  # index 1
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("variation-dimensions")])  # 4
+    assert state.skill_steps_done["sdg"] == {1, 4}
     out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert out == "u"  # nothing more to inject
+    assert "### Step 3" in out  # pulled BACK to the lowest hole, not forward to step 6
+    assert "still to gather" in out.lower()
+    assert "Task criteria" in out  # step 4 (index 3) flagged as still outstanding
+
+
+def test_reask_a_covered_step_is_idempotent() -> None:
+    # Re-asking a step already covered (a stall, or the interaction rerun re-observing the card)
+    # must not change coverage — the set-add is naturally idempotent.
+    state = agent.SessionState(orchestrator_id="o")
+    state.active_skill_by_target["sdg"] = PILOT
+    state.skill_steps_done["sdg"] = {1}
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])  # idx 1, covered
+    assert state.skill_steps_done["sdg"] == {1}
+
+
+def test_no_question_no_coverage_change() -> None:
+    # A turn with no present_options (narration only, or a non-gather tool) is no evidence of
+    # progress — coverage must not change.
+    state = agent.SessionState(orchestrator_id="o")
+    state.active_skill_by_target["sdg"] = PILOT
+    state.skill_steps_done["sdg"] = {1, 2}
+    agent._advance_skill_cursor(state, "sdg", [_signal_part("phase-2-gather")])
+    assert state.skill_steps_done["sdg"] == {1, 2}
+
+
+def test_fallback_for_unrecognized_label_covers_current_step_idempotently() -> None:
+    # A driver that ignores the slug vocabulary (free-text label) still makes gathering progress
+    # by covering the step currently being injected — but a repeat of the same label (e.g. the
+    # interaction rerun re-observing the card) must not double-count.
+    state = agent.SessionState(orchestrator_id="o")
+    state.active_skill_by_target["sdg"] = PILOT
+    state.skill_steps_done["sdg"] = {1}  # next injectable is index 2
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("my-own-label")])
+    assert state.skill_steps_done["sdg"] == {1, 2}  # unrecognized, new → cover the current step
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("my-own-label")])
+    assert state.skill_steps_done["sdg"] == {1, 2}  # same label again → held (rerun-safe)
+
+
+def test_all_covered_injects_nothing() -> None:
+    state = agent.SessionState(orchestrator_id="o")
+    state.active_skill_by_target["sdg"] = PILOT
+    state.skill_steps_done["sdg"] = set(range(9))  # every step covered (count == 9)
+    agent._advance_skill_cursor(state, "sdg", [_present_options_part("generate-outputs")])
+    assert state.skill_steps_done["sdg"] == set(range(9))  # unchanged
+    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    assert out == "u"  # nothing left to inject
+
+
+def test_optional_step_never_blocks_or_lists() -> None:
+    # Step 9 is marked "(optional)". With every REQUIRED step covered but the optional one not,
+    # the optional step is offered (its detail is still useful) but it is NOT listed as an
+    # outstanding hole, so it never blocks the move to building.
+    state = agent.SessionState(orchestrator_id="o")
+    state.active_skill_by_target["sdg"] = PILOT
+    state.skill_steps_done["sdg"] = set(range(8))  # indices 0-7 (all required) covered; 8 optional
+    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    assert "### Step 9" in out  # the optional step is still offered
+    assert "still to gather" not in out.lower()  # but never flagged as an outstanding hole
 
 
 def test_no_injection_outside_gather_phase() -> None:
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
-    # building/validating: step detail must not bleed in, cursor must not move
+    # building/validating: step detail must not bleed in, coverage must not change
     out = agent._with_active_skill_step(state, "sdg", "phase-3-validate", "u")
     assert out == "u"
-    assert "sdg" not in state.skill_step_idx
+    assert "sdg" not in state.skill_steps_done
 
 
 def test_non_stepped_skill_is_noop() -> None:
@@ -216,6 +235,6 @@ def test_non_stepped_skill_is_noop() -> None:
     state.active_skill_by_target["sdg"] = NON_STEPPED  # inline list, no steps/ dir
     out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
     assert out == "u"
-    assert "sdg" not in state.skill_step_idx
+    assert "sdg" not in state.skill_steps_done
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("whatever")])
-    assert "sdg" not in state.skill_step_idx  # non-stepped → nothing to advance
+    assert "sdg" not in state.skill_steps_done  # non-stepped → nothing to track
