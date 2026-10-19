@@ -183,6 +183,16 @@ class SessionState:
     # this covers the non-committing strips it doesn't. Cumulative (callIDs are unique; bounded
     # by the session's tool-call count). See _enforce_single_interaction.
     suppressed_call_ids: set[str] = field(default_factory=set)
+    # OpenCode message ids of the user-role STEERS the proxy injects mid-turn (a correction
+    # gate's re-prompt, the committing-card rerun). opencode's only proxy→model channel is a
+    # POST that records a user message, so a gate that fires mid-turn plants an extra user
+    # message BETWEEN the real user turn and the card the model already emitted. The client
+    # scopes "this turn" to everything after the LAST user message, so that injected steer
+    # shifts the boundary forward and orphans the card (it renders as stale history, not an
+    # actionable confirm). We hide these ids from the client-facing GET /message so the turn
+    # boundary stays the real user turn and the card survives. Cumulative, bounded by the
+    # session's correction count. See get_session_messages and _record_injected_steer.
+    suppressed_user_msg_ids: set[str] = field(default_factory=set)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -727,6 +737,35 @@ async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str,
         return []
 
 
+def _last_user_msg_id(messages: list[dict[str, Any]]) -> str | None:
+    """The opencode id of the most recent user-role message, or None."""
+    for msg in reversed(messages):
+        if msg.get("info", {}).get("role") == "user":
+            mid = msg.get("info", {}).get("id")
+            return str(mid) if mid is not None else None
+    return None
+
+
+async def _refetch_after_steer(
+    state: SessionState, opencode_session_id: str
+) -> list[dict[str, Any]]:
+    """Re-fetch a session's corrected assistant reply after a gate POSTs a user-role steer,
+    AND record that steer's message id so the client-facing GET can hide it.
+
+    A correction gate's only channel to re-prompt the model is a POST that opencode records as
+    a user message. That injected user message would otherwise become the client's turn
+    boundary, orphaning any confirm card the model emitted earlier in the same logical turn (it
+    would render as stale history, not an actionable card). The just-POSTed steer is the LAST
+    user message in the history, so we capture its id into ``suppressed_user_msg_ids`` (a
+    best-effort full fetch — a miss just means no hiding, never a broken turn). The corrected
+    reply itself still comes from ``_fetch_all_assistant_parts`` so the gate's re-check logic
+    (and its test mocks) are unchanged."""
+    steer_id = _last_user_msg_id(await _fetch_all_messages(opencode_session_id))
+    if steer_id:
+        state.suppressed_user_msg_ids.add(steer_id)
+    return await _fetch_all_assistant_parts(opencode_session_id)
+
+
 # ---------------------------------------------------------------------------
 # Monitor metrics capture (best-effort; never breaks a turn)
 # ---------------------------------------------------------------------------
@@ -942,8 +981,9 @@ async def _apply_provenance_gate(
             # Re-ground the model's ACTUAL corrected reply: the POST response carries only
             # step markers, so re-checking it would find no text and always "pass" — the
             # real reply text is in the GET parts. (A correction may also call a tool that
-            # now surfaces the id legitimately.)
-            refetched = await _fetch_all_assistant_parts(active_id)
+            # now surfaces the id legitimately.) Also hides the correction's user message from
+            # the client turn boundary (see _refetch_after_steer).
+            refetched = await _refetch_after_steer(state, active_id)
             # Fall back to the POST parts if the fetch is empty (a transient GET failure,
             # or a test without a live opencode) so the recheck still sees the reply.
             current = {**post, "parts": refetched or post.get("parts") or []}
@@ -1416,7 +1456,9 @@ async def _apply_job_claim_gate(
                 cache.pop(active_id, None)
             # Re-check the model's ACTUAL corrected reply (POST = step markers only; the
             # real text is in the GET parts), else the recheck sees no claim and "passes".
-            refetched = await _fetch_all_assistant_parts(active_id)
+            # Also hides the correction's user message from the client turn boundary so a
+            # confirm card emitted before this gate fired is not orphaned (_refetch_after_steer).
+            refetched = await _refetch_after_steer(state, active_id)
             # Fall back to the POST parts if the fetch is empty (a transient GET failure,
             # or a test without a live opencode) so the recheck still sees the reply.
             current = {**post, "parts": refetched or post.get("parts") or []}
@@ -1818,6 +1860,20 @@ async def get_session_messages(session_id: str) -> Any:
         raise HTTPException(status_code=404, detail="unknown session")
     target_id = state.subagent_id or state.orchestrator_id
     messages = await _proxy_get(target_id, "message", {"info": {}, "parts": []}, session_id)
+    # Hide the user-role steers the proxy injected mid-turn (correction gates, committing-card
+    # rerun). The client scopes "this turn" to everything after the last user message; leaving
+    # an injected steer in shifts that boundary past a confirm card the model already emitted,
+    # so the card renders as stale history instead of an actionable card. Dropping these makes
+    # the real user turn the boundary again. See SessionState.suppressed_user_msg_ids.
+    if isinstance(messages, list) and state.suppressed_user_msg_ids:
+        messages = [
+            msg
+            for msg in messages
+            if not (
+                isinstance(msg, dict)
+                and str(msg.get("info", {}).get("id")) in state.suppressed_user_msg_ids
+            )
+        ]
     # Drop the cards the interaction gate stripped from the turn result FIRST, so the UI
     # (which re-fetches this raw history) doesn't re-render a card the gate removed — and so
     # the prompt-bind below only ever sees the LIVE parts. Binding before filtering made the
@@ -1992,7 +2048,7 @@ async def _run_turn(
                     steer_agent,
                 )
                 await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
-                refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+                refetched = _strip_internal_tools(await _refetch_after_steer(state, active_id))
                 if refetched:
                     result["parts"] = refetched
                 result = await _apply_provenance_gate(state, result, body, msg_cache)
