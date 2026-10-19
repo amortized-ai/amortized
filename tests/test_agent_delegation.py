@@ -519,6 +519,7 @@ class TestEnforceSingleInteraction:
             "state": {"status": "completed", "input": {"mode": "preview"}},
         }
         state = _fresh_state()
+        state.offered_choice.add("sdg")  # teacher precondition met: isolate errored-shadow
         out = agent._enforce_single_interaction({"parts": [err, ok]}, state)
         kept = [p.get("callID") for p in out["parts"] if p.get("type") == "tool"]
         assert kept == ["ok-1"]  # the live card survives; the dead errored one is dropped
@@ -541,6 +542,7 @@ class TestEnforceSingleInteraction:
             }
 
         state = _fresh_state()
+        state.offered_choice.add("sdg")  # teacher precondition met: isolate the keep-last logic
         out = agent._enforce_single_interaction({"parts": [_ok("ok-1"), _ok("ok-2")]}, state)
         kept = [p.get("callID") for p in out["parts"] if p.get("type") == "tool"]
         assert kept == ["ok-2"]  # last valid wins

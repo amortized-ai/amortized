@@ -200,6 +200,20 @@ class TestDeferredCardJobType:
         assert _tool_names(out["parts"]) == ["validate_training_job"]  # rendered
         assert state.deferred_card_job_type is None
 
+    def test_keep_last_valid_card_not_flagged_as_deferred(self) -> None:
+        state = _fresh_state()
+        state.offered_choice.add("sdg")  # teacher precondition met → the last card renders
+        agent._enforce_single_interaction(
+            {
+                "parts": [
+                    _tool_part("validate_sdg_job", {"mode": "preview"}, call_id="ok-1"),
+                    _tool_part("validate_sdg_job", {"mode": "preview"}, call_id="ok-2"),
+                ]
+            },
+            state,
+        )
+        assert state.deferred_card_job_type is None
+
     def test_no_card_leaves_deferred_job_type_untouched(self) -> None:
         # The gate must not touch the field when no committing card is in the turn (so the
         # rerun's question-only _enforce call preserves the value set by the first call).

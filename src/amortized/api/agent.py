@@ -522,11 +522,12 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
     # A committing card was DEFERRED this turn if it was present but did not survive into the
     # kept result (held for an unmet precondition, stripped behind a leading question, or held
     # by the prompt gate). _run_turn turns this into a next-turn re-emit steer once the
-    # prerequisite is met. Clear it when the card RENDERS (first_card in kept_indices) so a rerun
-    # that re-emits the card in the same turn can't leave a stale deferral → spurious re-emit.
-    if first_card is not None:
-        if first_card not in kept_indices:
-            card_tool = _tool_name(parts[first_card])
+    # prerequisite is met. last_card in kept_indices ⟺ the card RENDERED — clear then, so a
+    # superseded earlier card or a rerun that re-emits the card in the same turn can't leave
+    # a stale deferral.
+    if last_card is not None:
+        if last_card not in kept_indices:
+            card_tool = _tool_name(parts[last_card])
             state.deferred_card_job_type = _JOB_TYPE_FOR_CONFIRM.get(card_tool, "")
         else:
             state.deferred_card_job_type = None
