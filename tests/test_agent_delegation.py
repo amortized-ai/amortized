@@ -11,7 +11,11 @@ from typing import Any, ClassVar
 
 import pytest
 
-from amortized.api import agent
+from amortized.api import agent, agent_confirm
+
+
+def _tool_names(parts: list[dict[str, Any]]) -> list[str]:
+    return [agent._tool_name(p) for p in parts if p.get("type") == "tool"]
 
 
 def _tool_part(tool: str, input: dict[str, Any]) -> dict[str, Any]:
@@ -73,6 +77,7 @@ def router(monkeypatch: pytest.MonkeyPatch) -> _Router:
     r = _Router()
     monkeypatch.setattr(agent, "_proxy_send_message", r.send)
     monkeypatch.setattr(agent, "_fetch_all_assistant_parts", r.fetch_parts)
+
     async def _create() -> str:
         if r._new_session_queue:
             return r._new_session_queue.pop(0)
@@ -119,7 +124,7 @@ class TestSubagentCompletion:
     the sole delegator — which resumes the conversation."""
 
     def test_subagent_completion_without_stack_resumes_orchestrator(self, router: _Router) -> None:
-        state = _make_state(router, orchestrator_script=[[ _text_part("What next?") ]])
+        state = _make_state(router, orchestrator_script=[[_text_part("What next?")]])
         sdg_id = router.add_session(
             [[_tool_part("signal_subagent_completion", {"summary": "done"})]]
         )
@@ -250,11 +255,7 @@ class TestRequestOrchestratorHelp:
         )
 
         # Turn A: eval → request_orchestrator_help → orchestrator → delegate(sdg).
-        _run(
-            agent._handle_subagent_message(
-                state, "s1", "evaluate t1 on a fresh set", _body()
-            )
-        )
+        _run(agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body()))
         assert state.subagent_target == "sdg"  # sdg is now active
         assert state.subagent_id == sdg_id
         assert state.completed_subagents == {"eval": eval_id}  # caller stashed
@@ -405,11 +406,7 @@ class TestJobCompleteHandback:
             "Job d6be24ce (sdg) finished with status: succeeded."
             " Use present_options to suggest next steps to the user."
         )
-        _run(
-            agent._handle_subagent_message(
-                state, "s1", text, _body(event="job_complete")
-            )
-        )
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
         forwarded = router.sent[0][1]
         assert agent._SUBAGENT_JOB_DONE_PROMPT in forwarded  # hand-back steer appended
         assert "d6be24ce" in forwarded  # [5] the job id is KEPT, not replaced away
@@ -663,7 +660,9 @@ class TestInteractionSteerDelivery:
         state.pending_interaction_steer = "Show the preview first."
         _run(
             agent._handle_subagent_message(
-                state, "s1", "ignored",
+                state,
+                "s1",
+                "ignored",
                 _body(text="ignored", event="job_complete", outcome="succeeded"),
             )
         )
@@ -702,9 +701,7 @@ class TestCommittingCardReRun:
 
     def test_no_rerun_when_preconditions_met(self, router: _Router) -> None:
         # All training preconditions satisfied -> the confirm is NOT held and NOT re-run.
-        sub = router.add_session(
-            [[_tool_part("validate_training_job", {"algorithm": "osft"})]]
-        )
+        sub = router.add_session([[_tool_part("validate_training_job", {"algorithm": "osft"})]])
         state = _make_state(router)
         state.subagent_id = sub
         state.subagent_target = "training"
@@ -741,6 +738,109 @@ class TestCommittingCardReRun:
         # The fix: deferred, not lost — the model receives the correction next turn.
         assert state.pending_interaction_steer
         assert "data" in state.pending_interaction_steer.lower()
+        # Exhaustion takes precedence: the re-emit rail must NOT clobber the data nudge.
+        assert "currently displayed" not in state.pending_interaction_steer
+
+
+class TestDeferredCardReEmit:
+    """When the gate defers a committing card and surfaces its prerequisite instead, it parks a
+    re-emit steer once the prerequisite is met, so the model re-renders the card next turn (its
+    history shows the validate_* succeeded, so it won't re-call it unprompted)."""
+
+    def test_eval_hold_then_question_parks_reemit_steer(self, router: _Router) -> None:
+        sub = router.add_session(
+            [
+                [_tool_part("validate_eval_job", {})],  # turn 1: card held (judge unmet)
+                [_tool_part("present_options", {"question": "judge?"})],  # rerun: judge question
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "run base eval", _body(text="run base eval")))
+        assert state.pending_rerun_steer is None
+        assert "eval" in state.offered_choice  # the rerun's question satisfied the judge gate
+        assert state.pending_interaction_steer is not None
+        assert "validate_eval_job" in state.pending_interaction_steer
+        assert "currently displayed" in state.pending_interaction_steer
+        assert state.deferred_card_job_type == "eval"  # flagged for re-emit next turn
+
+    def test_reemit_steer_delivered_then_card_renders(self, router: _Router) -> None:
+        sub = router.add_session([[_tool_part("validate_eval_job", {})]])  # model re-emits
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+        state.offered_choice.add("eval")  # judge already chosen last turn
+        state.pending_interaction_steer = agent_confirm._reemit_card_nudge("eval")
+        tid = "turn-2"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s2", tid, "Keep gpt-oss", _body(text="Keep gpt-oss")))
+        sent = next(t for (sid, t, _a) in router.sent if sid == sub)
+        assert "currently displayed" in sent  # steer led the message
+        assert "Keep gpt-oss" in sent
+        assert state.pending_interaction_steer is None  # consumed
+        assert "validate_eval_job" in _tool_names(state.turns[tid].result["parts"])  # rendered
+
+    def test_no_reemit_when_preconditions_still_unmet(self, router: _Router) -> None:
+        # Training is multi-gate: a rerun that satisfies only `data` must NOT park a re-emit
+        # (model/vram still unmet); the precondition gate re-steers to the next gate instead.
+        sub = router.add_session(
+            [
+                [_tool_part("validate_training_job", {})],  # held: data unmet first
+                [_tool_part("get_dataset", {"run_id": "r1"})],  # rerun: only data satisfied
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "training"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "train", _body(text="train")))
+        assert state.pending_rerun_steer is None
+        assert state.pending_interaction_steer is None
+
+    def test_ask_leads_question_then_card_parks_reemit(self, router: _Router) -> None:
+        # Card + question in one turn, question leads → card stripped as non-leading (no rerun).
+        sub = router.add_session(
+            [
+                [
+                    _tool_part("present_options", {"question": "judge?"}),
+                    _tool_part("validate_eval_job", {}),
+                ]
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "eval"
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "run eval", _body(text="run eval")))
+        assert "eval" in state.offered_choice
+        assert state.pending_interaction_steer is not None
+        assert "currently displayed" in state.pending_interaction_steer
+
+    def test_prompt_gate_steer_not_clobbered(self, router: _Router) -> None:
+        # The prompt-review gate parks its own steer; the re-emit rail must not overwrite it.
+        sub = router.add_session(
+            [
+                [
+                    _tool_part("show_prompt", {"prompt": "You are an assessor."}),
+                    _tool_part("validate_sdg_job", {"mode": "preview"}),
+                ]
+            ]
+        )
+        state = _make_state(router)
+        state.subagent_id = sub
+        state.subagent_target = "sdg"
+        state.offered_choice.add("sdg")  # teacher gate satisfied → only the prompt gate holds
+        tid = "turn-1"
+        state.turns[tid] = agent.TurnState()
+        _run(agent._run_turn(state, "s1", tid, "go", _body(text="go")))
+        assert state.pending_interaction_steer is not None
+        assert "review" in state.pending_interaction_steer.lower()
+        assert "currently displayed" not in state.pending_interaction_steer
 
 
 class TestTrainingConfirmPreconditions:
@@ -888,9 +988,7 @@ class TestPhaseBackfill:
     def test_does_not_duplicate_when_subagent_signals(self) -> None:
         state = self._sub_state()
         result = {
-            "parts": [
-                _tool_part("signal_phase", {"phase": "sdg", "step": "gather_requirements"})
-            ]
+            "parts": [_tool_part("signal_phase", {"phase": "sdg", "step": "gather_requirements"})]
         }
         out = agent._ensure_phase_signal(state, result)
 
@@ -969,9 +1067,7 @@ class TestNoDataAdvisory:
         _sub_id, sent = self._delegate(router, "sdg")
         assert "[DATA AVAILABILITY]" not in sent[0]
 
-    def test_advisory_suppressed_on_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_advisory_suppressed_on_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Fail-safe: any error determining conversation state → no advisory.
         async def _boom(*_a: Any, **_k: Any) -> bool:
             raise RuntimeError("opencode unreachable")
@@ -1014,18 +1110,14 @@ class TestConversationHasDataset:
         )
         assert self._run_check() is True
 
-    def test_specific_dataset_tool_touched_counts(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_specific_dataset_tool_touched_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._setup(
             monkeypatch,
             messages=[{"info": {}, "parts": [_tool_part("get_dataset_samples", {})]}],
         )
         assert self._run_check() is True
 
-    def test_merely_listing_datasets_is_not_a_choice(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_merely_listing_datasets_is_not_a_choice(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Browsing the catalog is not choosing a dataset — the fork must still fire.
         self._setup(
             monkeypatch,
@@ -1051,9 +1143,7 @@ class TestConversationHasDataset:
         )
         assert self._run_check() is False
 
-    def test_bare_training_request_has_no_dataset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_bare_training_request_has_no_dataset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._setup(
             monkeypatch,
             messages=[self._user_msg("train a model to assess RFEs")],

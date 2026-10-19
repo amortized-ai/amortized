@@ -31,8 +31,10 @@ from amortized.api.agent_confirm import (
     _CONFIRM_CARD_TOOLS,
     _JOB_TYPE_FOR_CONFIRM,
     _REVIEW_CARD_TOOLS,
+    _confirm_preconditions_met,
     _first_unmet_precondition,
     _record_confirm_signals,
+    _reemit_card_nudge,
     _reset_confirm_signals,
     _review_card_signature,
 )
@@ -156,6 +158,14 @@ class SessionState:
     # this covers the non-committing strips it doesn't. Cumulative (callIDs are unique; bounded
     # by the session's tool-call count). See _enforce_single_interaction.
     suppressed_call_ids: set[str] = field(default_factory=set)
+    # Per-turn scratch: the job type of a committing card the interaction gate DEFERRED this
+    # turn (held for an unmet precondition, or stripped behind a leading question). _run_turn
+    # reads it after the rerun loop and, once the prerequisite is met, parks a re-emit
+    # pending_interaction_steer so the model re-renders the card next turn — its opencode
+    # history shows the validate_* succeeded, so without this it narrates "the card is up" and
+    # never re-calls it (empty-promise stall). Reset at the start of each turn's gate block;
+    # never crosses turns.
+    deferred_card_job_type: str | None = None
 
 
 _sessions: dict[str, SessionState] = {}
@@ -357,9 +367,7 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
-def _enforce_single_interaction(
-    result: dict[str, Any], state: SessionState
-) -> dict[str, Any]:
+def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> dict[str, Any]:
     """A turn either ASKS the user one question or CONFIRMS one job — never both.
 
     present_options asks a question and MUST end the turn; a validate_* renders a
@@ -498,6 +506,18 @@ def _enforce_single_interaction(
     if not ask_turn and keep_index is not None and keep_index == first_card:
         card = parts[first_card]
         _reset_confirm_signals(state, _JOB_TYPE_FOR_CONFIRM.get(_tool_name(card), ""))
+
+    # A committing card was DEFERRED this turn if it was present but did not survive into the
+    # kept result (held for an unmet precondition, stripped behind a leading question, or held
+    # by the prompt gate). _run_turn turns this into a next-turn re-emit steer once the
+    # prerequisite is met. Clear it when the card RENDERS (first_card in kept_indices) so a rerun
+    # that re-emits the card in the same turn can't leave a stale deferral → spurious re-emit.
+    if first_card is not None:
+        if first_card not in kept_indices:
+            card_tool = _tool_name(parts[first_card])
+            state.deferred_card_job_type = _JOB_TYPE_FOR_CONFIRM.get(card_tool, "")
+        else:
+            state.deferred_card_job_type = None
 
     # A held card steers the MODEL to do the missing step first — delivered to its
     # session on the next turn (see _handle_*_message), NOT appended to the user-facing
@@ -665,9 +685,7 @@ async def _fetch_all_messages(
 
 # UUID, or any hex run of >=8 chars (job/run ids are UUIDs; models often surface a
 # short prefix). Anchored so pure-prose words can't match (hex letters are a-f).
-_ID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}"
-)
+_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}")
 
 
 def _extract_id_candidates(text: str) -> set[str]:
@@ -790,7 +808,11 @@ async def _apply_provenance_gate(
             logger.warning(
                 "Provenance gate: ungrounded identifier(s) %s session=%s agent=%s "
                 "(correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+                violations,
+                active_id,
+                agent,
+                attempt,
+                MAX_PROVENANCE_RETRIES,
             )
             correction = (
                 "[GROUNDING VIOLATION — internal system check, not from the user]\n"
@@ -802,9 +824,7 @@ async def _apply_provenance_gate(
                 "one — call the appropriate tool to fetch it first, or tell the user you "
                 "don't have it yet."
             )
-            post = await _proxy_send_message(
-                active_id, correction, agent=agent, model=body.model
-            )
+            post = await _proxy_send_message(active_id, correction, agent=agent, model=body.model)
             # The correction adds new messages to the active session; drop its cached
             # copy so re-grounding fetches them (other sessions stay cached).
             if cache is not None:
@@ -828,7 +848,9 @@ async def _apply_provenance_gate(
         # content.
         logger.warning(
             "Provenance gate: still ungrounded after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+            MAX_PROVENANCE_RETRIES,
+            violations,
+            active_id,
         )
         parts = list(current.get("parts") or [])
         parts.append(
@@ -934,6 +956,7 @@ _DISPATCH_UPSTREAM_FIELDS = {
         ("training_job_id", "the model's training job"),
     ],
 }
+
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1348,7 +1371,11 @@ async def _apply_job_claim_gate(
         for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
             logger.warning(
                 "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+                violations,
+                active_id,
+                agent,
+                attempt,
+                MAX_PROVENANCE_RETRIES,
             )
             post = await _proxy_send_message(
                 active_id, _job_claim_correction(violations), agent=agent, model=body.model
@@ -1367,7 +1394,9 @@ async def _apply_job_claim_gate(
 
         logger.warning(
             "Job-claim gate: still contradicted after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+            MAX_PROVENANCE_RETRIES,
+            violations,
+            active_id,
         )
         parts = list(current.get("parts") or [])
         parts.append(_caveat_part(_job_claim_caveat(violations)))
@@ -1729,6 +1758,10 @@ async def _run_turn(
             # the subagent handler — so the progress bar never strands on a stale
             # phase on a hand-back/delegation turn.
             result = _ensure_phase_signal(state, result)
+            # Per-turn reset of the deferred-card scratch before the gate runs (see
+            # SessionState.deferred_card_job_type); the handlers above have already consumed
+            # any parked steer, so this never races the steer the gate may set below.
+            state.deferred_card_job_type = None
             result = _enforce_single_interaction(result, state)
             # Hard rail: if the gate held a committing card (unmet precondition), correct
             # the model NOW and re-render, so the premature card never reaches the client
@@ -1743,7 +1776,9 @@ async def _run_turn(
                 steer_agent = state.subagent_target if state.subagent_id else "morty"
                 logger.info(
                     "Interaction gate: held a committing card; re-running the model to "
-                    "clear it (session=%s agent=%s)", session_id, steer_agent,
+                    "clear it (session=%s agent=%s)",
+                    session_id,
+                    steer_agent,
                 )
                 await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
                 refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
@@ -1760,6 +1795,18 @@ async def _run_turn(
             if state.pending_rerun_steer:
                 state.pending_interaction_steer = state.pending_rerun_steer
                 state.pending_rerun_steer = None
+            # Re-emit rail: the gate deferred a committing card this turn (held for a
+            # prerequisite, or stripped behind a leading question) and surfaced the prerequisite
+            # instead. Once every precondition is now met, steer the model to re-call the confirm
+            # tool next turn — its history shows the validate_* succeeded, so without this it
+            # claims "the card is up" and never re-emits it (empty-promise stall). Skipped when a
+            # steer is already parked (exhaustion above / prompt-gate) so neither is clobbered.
+            elif (
+                state.deferred_card_job_type
+                and not state.pending_interaction_steer
+                and _confirm_preconditions_met(state, state.deferred_card_job_type)
+            ):
+                state.pending_interaction_steer = _reemit_card_nudge(state.deferred_card_job_type)
             # Keep any gate caveat (the provenance/job-claim "couldn't verify / still
             # contradicted" warning) in the client-facing result — it is a tagged text part the
             # Studio client surfaces separately (#498 reads the tag and appends it to the GET
@@ -1977,9 +2024,7 @@ async def _handle_subagent_message(
             state.pending_help_target = target
             state.pending_help_producer = state.subagent_target
         response_parts = _strip_internal_tools(result.get("parts", []))
-        help_result["parts"] = response_parts + _strip_internal_tools(
-            help_result.get("parts", [])
-        )
+        help_result["parts"] = response_parts + _strip_internal_tools(help_result.get("parts", []))
         return help_result
 
     # Ordinary subagent turn (no completion, no help request). Strip internal tools
@@ -2144,8 +2189,7 @@ async def list_providers() -> dict[str, Any]:
             # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
             allowed_base = {_strip_date_suffix(a) for a in allowed}
             filtered = [
-                m for m in out
-                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+                m for m in out if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
             ]
             if filtered:
                 out = filtered

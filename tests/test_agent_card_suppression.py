@@ -132,6 +132,7 @@ class TestSdgTeacherGate:
         assert "validate_sdg_job" not in _tool_names(out["parts"])
         assert state.suppressed_call_ids == {"card"}
         assert state.pending_rerun_steer == agent_confirm._SDG_TEACHER_NUDGE
+        assert state.deferred_card_job_type == "sdg"  # flagged for re-emit once teacher chosen
 
     def test_sdg_confirm_renders_after_teacher_choice(self) -> None:
         result = {"parts": [_tool_part("validate_sdg_job", {"mode": "preview"}, call_id="card")]}
@@ -165,6 +166,48 @@ class TestSdgTeacherGate:
         assert gate is not None and gate.name == "teacher"
         state.offered_choice.add("sdg")
         assert agent_confirm._first_unmet_precondition(state, card) is None
+
+
+class TestDeferredCardJobType:
+    """_enforce_single_interaction flags the job type of a committing card it DEFERRED so
+    _run_turn can park a re-emit steer once the prerequisite is met."""
+
+    def test_held_eval_card_sets_deferred_job_type(self) -> None:
+        result = {"parts": [_tool_part("validate_eval_job", {}, call_id="card")]}
+        state = _fresh_state()
+        agent._enforce_single_interaction(result, state)
+        assert state.deferred_card_job_type == "eval"
+        assert state.pending_rerun_steer == agent_confirm._EVAL_CHOICE_NUDGE
+
+    def test_stripped_card_behind_question_sets_deferred_job_type(self) -> None:
+        # Question leads, card stripped as non-leading (ask-leads path): same deferral.
+        result = {
+            "parts": [
+                _tool_part("present_options", {"question": "judge?"}, call_id="opts"),
+                _tool_part("validate_eval_job", {}, call_id="card"),
+            ]
+        }
+        state = _fresh_state()
+        agent._enforce_single_interaction(result, state)
+        assert state.deferred_card_job_type == "eval"
+
+    def test_rendered_card_clears_deferred_job_type(self) -> None:
+        state = _training_ready()
+        state.deferred_card_job_type = "stale"  # a prior turn's value must not linger
+        result = {"parts": [_tool_part("validate_training_job", {}, call_id="card")]}
+        out = agent._enforce_single_interaction(result, state)
+        assert _tool_names(out["parts"]) == ["validate_training_job"]  # rendered
+        assert state.deferred_card_job_type is None
+
+    def test_no_card_leaves_deferred_job_type_untouched(self) -> None:
+        # The gate must not touch the field when no committing card is in the turn (so the
+        # rerun's question-only _enforce call preserves the value set by the first call).
+        state = _fresh_state()
+        state.deferred_card_job_type = "eval"
+        agent._enforce_single_interaction(
+            {"parts": [_tool_part("present_options", {"question": "?"}, call_id="opts")]}, state
+        )
+        assert state.deferred_card_job_type == "eval"
 
 
 class TestGetSessionMessagesFiltersSuppressed:

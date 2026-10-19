@@ -222,3 +222,31 @@ def _reset_confirm_signals(state: SessionState, job_type: str) -> None:
     for gate in _CONFIRM_PRECONDITIONS.get(tool, ()):
         if gate.reset is not None:
             gate.reset(state)
+
+
+def _confirm_preconditions_met(state: SessionState, job_type: str) -> bool:
+    """True once every ordered precondition for a job type's confirm card is satisfied.
+    Used to decide a DEFERRED card may be re-emitted next turn (vs. a multi-gate job where
+    only one prerequisite was just done and the card would simply be re-held).
+
+    NOTE: passes a synthetic card carrying only the tool name — valid because every current
+    gate's `satisfied` reads `state`, not card input. If a future gate reads the card, store
+    the real deferred card parts on the session and pass them here instead."""
+    tool = _CONFIRM_TOOL_FOR_JOB_TYPE.get(job_type)
+    if not tool:
+        return False
+    return _first_unmet_precondition(state, {"tool": tool}) is None
+
+
+def _reemit_card_nudge(job_type: str) -> str:
+    """Model-directed steer (never shown to the user) parked when a committing card was
+    DEFERRED (held for an unmet precondition, or stripped behind a leading question) and its
+    prerequisite has since been satisfied: the card is NOT on screen, so tell the model to
+    re-call the confirm tool rather than claim a card is already shown (empty-promise stall)."""
+    tool = _CONFIRM_TOOL_FOR_JOB_TYPE.get(job_type, "")
+    return (
+        f"The {job_type} job confirmation card is NOT currently displayed to the user. Your "
+        f"earlier {tool} did not render a card — it was withheld until the prerequisite step "
+        f"was completed, which has now happened. Do NOT tell the user a confirmation card is "
+        f"already shown. Call {tool} again now to render the confirmation card so they can Confirm."
+    )
