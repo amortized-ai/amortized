@@ -502,6 +502,55 @@ class TestJobCompleteHandback:
         assert agent._SUBAGENT_JOB_DONE_PROMPT not in sent  # no job-done steer
         assert "phase-1-route" in sent  # entry phase block injected
 
+    def test_preview_completion_steers_to_full_run_not_handback(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A PREVIEW (10-row sample) completing is NOT the deliverable: the producer must run
+        # the full create run, not hand back — else the orchestrator advances to training on a
+        # preview. Steer to the preview-done prompt, never the generic hand-back.
+        async def _fetch(token: str, cache: Any = None) -> dict[str, Any]:
+            return {"type": "sdg", "status": "succeeded", "config": {"mode": "preview"}}
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        state = self._active_sdg(router)
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        forwarded = router.sent[0][1]
+        assert agent._SUBAGENT_PREVIEW_DONE_PROMPT in forwarded  # run the full create run
+        assert agent._SUBAGENT_JOB_DONE_PROMPT not in forwarded  # NOT a completion hand-back
+        assert "d6be24ce" in forwarded  # job id kept
+
+    def test_create_completion_still_hands_back(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The full create run (no preview mode) completing IS a real completion → hand back.
+        async def _fetch(token: str, cache: Any = None) -> dict[str, Any]:
+            return {"type": "sdg", "status": "succeeded", "config": {"num_records": 500}}
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        state = self._active_sdg(router)
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        forwarded = router.sent[0][1]
+        assert agent._SUBAGENT_JOB_DONE_PROMPT in forwarded
+        assert agent._SUBAGENT_PREVIEW_DONE_PROMPT not in forwarded
+
+    def test_completed_job_is_sdg_preview_helper(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        jobs: dict[str, dict[str, Any]] = {
+            "aa11bb22": {"type": "sdg", "config": {"mode": "preview"}},
+            "cc33dd44": {"type": "sdg", "config": {"num_records": 500}},
+            "ee55ff66": {"type": "training", "config": {"mode": "preview"}},  # not sdg
+        }
+
+        async def _fetch(token: str, cache: Any = None) -> dict[str, Any] | None:
+            return jobs.get(token)
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        assert _run(agent._completed_job_is_sdg_preview("Job aa11bb22 (sdg) ... succeeded"))
+        assert not _run(agent._completed_job_is_sdg_preview("Job cc33dd44 (sdg) ... succeeded"))
+        assert not _run(agent._completed_job_is_sdg_preview("Job ee55ff66 ... succeeded"))
+        assert not _run(agent._completed_job_is_sdg_preview("no id here"))
+
 
 class TestEnforceSingleInteraction:
     """A turn either ASKS one question or CONFIRMS one job, never both. Whichever

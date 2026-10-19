@@ -1,7 +1,12 @@
 ### Phase 4 — Signal Completion
 Call `signal_phase` this response with the step for the phase you are in — this phase: `phase-4-complete`.
 
-When the job succeeds, preview the generated data using the job's
+Only reach this phase once the FULL run (mode "create") has succeeded. A
+`preview` job finishing is NOT completion — it is only the small sample. If the
+job that just finished was a preview, do NOT complete: show the sample, then run
+the full `mode: "create"` job and wait for IT to finish first.
+
+When the full (create) job succeeds, preview the generated data using the job's
 `mlflow_run_id` so the user can verify quality.
 
 Then call `signal_subagent_completion` to hand control back to the
