@@ -304,8 +304,9 @@ async def _build_classification_eval(
         config_files=config_files,
         pre_commands=pre_commands,
         post_commands=[post_cmd],
-        # Encoding a small eval set is fast; GPU optional (0 = CPU, no quota).
-        resources=Resources(gpus=int(config.get("nproc_per_node", 0)), cpus=4, memory_gb=8),
+        # Classification eval encodes a small set on CPU by design (no GPU/quota);
+        # nproc_per_node is documented as ignored here, so don't let it request GPUs.
+        resources=Resources(gpus=0, cpus=4, memory_gb=8),
         # Classification eval runs in the training image (sentence-transformers) — pin it with
         # training_image_tag (upstream lifecycle), not job_image_tag.
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),

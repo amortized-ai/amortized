@@ -28,7 +28,7 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     building. Keep in sync with ``amortized.jobs.*``:
       - training        -> nproc_per_node (default 1)
       - sdg / upload     -> 0
-      - eval, classification mode        -> nproc_per_node (default 0)
+      - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
       - eval, embedded serving (training_job_id / model_name_or_path, no endpoint)
                                           -> nproc_per_node (default 1)
       - eval, external endpoint          -> 0
@@ -51,7 +51,7 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":
-            return _nproc(0)
+            return 0  # classification eval is CPU-only by design; nproc_per_node is ignored
         has_model_source = bool(
             str(config.get("training_job_id", "")).strip()
             or str(config.get("model_name_or_path", "")).strip()
