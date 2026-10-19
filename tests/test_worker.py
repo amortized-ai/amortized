@@ -260,6 +260,7 @@ class TestRecovery:
         # The reconstructed handle must be persisted, or _resume_job bails on the missing
         # handle and the live Job leaks while its GPU budget is released.
         assert row["backend_handle"]  # non-empty → the reconstructed handle was written
+        assert row["k8s_job_name"] == "amortized-nohandle1"  # record matches a normal submit
 
     @pytest.mark.asyncio
     async def test_resume_requeues_no_handle_job_when_resource_absent(

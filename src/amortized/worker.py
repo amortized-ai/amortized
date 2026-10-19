@@ -759,8 +759,10 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
         raw = _serialize_handle(handle)
         async with get_pool().acquire() as conn:
             result = await conn.execute(
-                "UPDATE jobs SET backend_handle = $1 WHERE id = $2 AND status = $3",
+                "UPDATE jobs SET backend_handle = $1, k8s_job_name = $2 "
+                "WHERE id = $3 AND status = $4",
                 raw,
+                handle.scheduler_id or "",
                 job["id"],
                 job["status"],
             )
