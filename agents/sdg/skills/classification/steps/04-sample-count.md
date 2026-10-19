@@ -12,5 +12,3 @@ Call `present_options` with step="sdg-samples" and these options:
 
 Distribution: keep categories roughly balanced unless the real-world
 distribution is known, in which case weight to match it.
-
-When you ask the user about this step, call present_options with step: "sample-count".

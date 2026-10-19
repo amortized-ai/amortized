@@ -61,6 +61,18 @@ def test_step_slug_resolves_with_normalization() -> None:
     assert phases.skill_step_index_for_slug("no-such-skill", "examples") == -1
 
 
+def test_step_slug_read_from_in_file_stamp() -> None:
+    # The slug is the value the step block ALREADY tells the driver to stamp, not the filename.
+    # Classification's steps declare an `sdg-*` vocabulary; it must resolve. Regression: deriving
+    # the slug from the filename made these never match, silently dropping the cursor back to blind
+    # turn-counting for classification.
+    assert phases.skill_step_index_for_slug("sdg-classification", "sdg-domain") == 0
+    assert phases.skill_step_index_for_slug("sdg-classification", "sdg-samples") == 3
+    assert phases.skill_step_index_for_slug("sdg-classification", "sdg-teacher-model") == 4
+    # the filename stem is NOT this skill's vocabulary, so it must not accidentally match
+    assert phases.skill_step_index_for_slug("sdg-classification", "domain") == -1
+
+
 def test_with_skill_step_block_wraps_and_noops() -> None:
     wrapped = phases.with_skill_step_block(PILOT, 0, "hi")
     assert wrapped.startswith("<system-reminder>")

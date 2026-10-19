@@ -13,5 +13,3 @@ For customer support, call `present_options` with step="sdg-categories" and thes
 For other domains, suggest 3-4 relevant groupings.
 
 STOP here. Do NOT continue to step 3 in this message.
-
-When you ask the user about this step, call present_options with step: "categories".

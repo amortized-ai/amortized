@@ -10,5 +10,3 @@ Call `present_options` with step="sdg-domain" and these options:
 - title: "E-commerce", description: "Orders, shipping, returns, product questions", value: "E-commerce — Orders, shipping, returns, product questions"
 
 STOP here. Do NOT continue to step 2 in this message.
-
-When you ask the user about this step, call present_options with step: "domain".

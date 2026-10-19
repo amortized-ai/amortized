@@ -153,12 +153,19 @@ def _skill_index() -> dict[str, tuple[str, str]]:
     return index
 
 
-# A step's canonical slug is its filename stem minus the ordering prefix: `03-output-format.md`
-# → `output-format`. This is the vocabulary the driver is told to stamp onto `present_options.step`
-# so the proxy can bind the injection cursor to the step the model actually reached (agent.py),
-# instead of counting turns. _norm_step normalizes both sides of that match so a driver that emits
-# `Output Format`, `output_format`, or `03-output-format` still resolves.
+# A step's canonical slug is the value it already tells the driver to stamp onto
+# `present_options.step` — e.g. `Call present_options with step="sdg-domain"` → `sdg-domain`. The
+# step block is the SINGLE source of truth, so the value the driver emits and the value the proxy
+# resolves can never drift (deriving the slug from the filename instead silently broke skills whose
+# in-file stamp used a different vocabulary). A block with no explicit stamp falls back to its
+# filename stem minus the ordering prefix (`03-output-format.md` → `output-format`). _norm_step
+# normalizes both sides so a driver emitting `Output Format`/`output_format`/`03-output-format`
+# still resolves.
 _STEP_PREFIX = re.compile(r"^\d+[-_ ]*")
+_STEP_STAMP_RE = re.compile(
+    r"present_options[^\n]*?\bstep\s*[=:]\s*[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
 
 
 def _norm_step(value: str) -> str:
@@ -167,13 +174,20 @@ def _norm_step(value: str) -> str:
     return out.strip("-")
 
 
+def _step_slug(path: Path, text: str) -> str:
+    """The step id the driver is told to stamp on `present_options.step` for this step: the value
+    from the block's own present_options instruction, else the filename stem (both normalized)."""
+    match = _STEP_STAMP_RE.search(text)
+    return _norm_step(match.group(1) if match else path.stem)
+
+
 @lru_cache(maxsize=256)
 def _skill_step_entries(skill_name: str) -> tuple[tuple[str, str], ...]:
-    """The ordered `(slug, detail-block)` pairs for a skill, or () when it is unknown or has
-    no `steps/` dir (not a stepped skill — no injection). `slug` is the normalized filename
-    stem (the step id the driver stamps on `present_options.step`); the block is the file body.
-    Files are ordered by name, so they must carry a zero-padded numeric prefix (01-, 02-, …).
-    Empty files are skipped, so slug and block indices stay aligned. Cached like `_load`."""
+    """The ordered `(slug, detail-block)` pairs for a skill, or () when it is unknown or has no
+    `steps/` dir (not a stepped skill — no injection). `slug` is the step id the driver stamps on
+    `present_options.step` (see _step_slug); the block is the file body. Files are ordered by name,
+    so they must carry a zero-padded numeric prefix (01-, 02-, …). Empty files are skipped, so slug
+    and block indices stay aligned. Cached like `_load`."""
     entry = _skill_index().get(skill_name)
     if entry is None:
         return ()
@@ -190,7 +204,7 @@ def _skill_step_entries(skill_name: str) -> tuple[tuple[str, str], ...]:
         except OSError:
             continue
         if text:
-            out.append((_norm_step(path.stem), text))
+            out.append((_step_slug(path, text), text))
     return tuple(out)
 
 
