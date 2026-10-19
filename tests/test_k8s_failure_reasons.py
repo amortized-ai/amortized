@@ -155,3 +155,60 @@ class TestJobConditionMessage:
     def test_no_failure_condition(self) -> None:
         job = _job(conditions=[{"type": "Complete", "reason": "Completed", "message": ""}])
         assert KubernetesBackend._job_condition_message(job) is None
+
+
+class _FakeSecretCore:
+    def __init__(self, create_error: Exception | None = None) -> None:
+        self._create_error = create_error
+        self.created: list[str] = []
+        self.replaced: list[str] = []
+
+    async def create_namespaced_secret(self, namespace: str, body: object) -> None:
+        if self._create_error is not None:
+            raise self._create_error
+        self.created.append(body.metadata.name)  # type: ignore[attr-defined]
+
+    async def replace_namespaced_secret(self, name: str, namespace: str, body: object) -> None:
+        self.replaced.append(name)
+
+
+class TestIdempotentSecret:
+    """A requeued job's resubmit must not collide on a Secret left by an earlier submit."""
+
+    def test_replaces_secret_on_conflict(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+        from kubernetes_asyncio.client import ApiException
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore(create_error=ApiException(status=409))
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.replaced == ["amortized-j1-env"]
+
+    def test_reraises_non_conflict_error(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+        import pytest
+        from kubernetes_asyncio.client import ApiException
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore(create_error=ApiException(status=500))
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        with pytest.raises(ApiException):
+            _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.replaced == []
+
+    def test_no_replace_on_clean_create(self, monkeypatch) -> None:
+        import kubernetes_asyncio.client as k8s_client
+
+        from amortized.backends import JobSpec
+
+        fake = _FakeSecretCore()
+        monkeypatch.setattr(k8s_client, "CoreV1Api", lambda api_client: fake)
+        spec = JobSpec(job_id="j1", command=["x"], env={"FOO": "bar"})
+        _run(_backend()._create_secret(spec, "amortized-j1", api_client=None))
+        assert fake.created == ["amortized-j1-env"]
+        assert fake.replaced == []

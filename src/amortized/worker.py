@@ -697,47 +697,6 @@ async def _resume_job(job: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def cleanup_orphaned_jobs() -> None:
-    from amortized.db.connection import get_pool
-
-    ns = config_mod.settings.compute_namespace
-    async with get_pool().acquire() as conn:
-        repo = Repository(conn)
-        running_jobs = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
-
-    now = datetime.now(UTC)
-
-    for job in running_jobs:
-        job_id = job["id"]
-        handle_json = job.get("backend_handle")
-
-        alive = False
-        handle = deserialize_handle(handle_json)
-        if handle is not None:
-            try:
-                backend = get_backend(handle.backend_name)
-                bs = await backend.status(handle)
-                alive = bs.running
-            except KeyError:
-                pass
-
-        if alive:
-            logger.info("Re-adopted running job %s", job_id)
-        else:
-            async with get_pool().acquire() as conn:
-                result = await conn.execute(
-                    """UPDATE jobs SET status = $1, completed_at = $2,
-                       error = $3 WHERE id = $4 AND status = $5""",
-                    JobStatus.failed.value,
-                    now,
-                    "Orphaned job — process no longer running",
-                    job_id,
-                    JobStatus.running.value,
-                )
-            if result == "UPDATE 1":
-                logger.warning("Marked orphaned job %s as failed", job_id)
-
-
 async def _resume_inflight_jobs() -> list[dict[str, Any]]:
     """Reconcile jobs a previous worker left mid-flight across a restart.
 
@@ -748,6 +707,11 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
     the status call raised, or returned a non-404 error — the job is left untouched for a
     later retry, so a transient backend blip never requeues a live resource into a
     double-submit.
+
+    A 'provisioning' row with no saved handle is ambiguous: the worker may have crashed
+    between backend.submit() (which creates the named resource) and persisting its handle.
+    We reconstruct the backend's deterministic handle and reconcile it the same way, so an
+    already-submitted job is adopted instead of being requeued into a name collision.
     """
     from amortized.db.connection import get_pool
 
@@ -776,13 +740,24 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
     for job in inflight:
         handle = deserialize_handle(job.get("backend_handle"))
         if handle is None:
-            await _mark_gone(job)  # never got a backend resource
-            continue
-        try:
-            backend = get_backend(handle.backend_name)
-        except KeyError:
-            await _mark_gone(job)  # backend no longer registered
-            continue
+            # No saved handle: reconstruct the deterministic one so we reconcile against
+            # the live resource below instead of blindly requeuing an already-submitted
+            # job. Backends with no job-id-derivable name return None → nothing to adopt.
+            try:
+                backend = get_backend(config_mod.settings.resolved_default_backend)
+            except KeyError:
+                await _mark_gone(job)  # no backend to probe with
+                continue
+            handle = backend.reconstruct_handle(job["id"])
+            if handle is None:
+                await _mark_gone(job)  # never got a backend resource
+                continue
+        else:
+            try:
+                backend = get_backend(handle.backend_name)
+            except KeyError:
+                await _mark_gone(job)  # backend no longer registered
+                continue
         try:
             bs = await backend.status(handle)
         except Exception:

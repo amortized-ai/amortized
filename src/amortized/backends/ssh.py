@@ -39,6 +39,10 @@ class SSHBackend:
     def capabilities(self) -> set[Capability]:
         return {Capability.GPU, Capability.LOG_STREAM, Capability.STOP}
 
+    def reconstruct_handle(self, job_id: str) -> BackendHandle | None:
+        # The remote pid/dir is assigned at submit and not derivable from the job id.
+        return None
+
     async def _run(self, conn: Any, cmd: str, *, check: bool = False) -> str:
         """Run a command over SSH, stripping MOTD/banner noise from stdout."""
         marker = f"__amortized_{uuid.uuid4().hex[:12]}__"

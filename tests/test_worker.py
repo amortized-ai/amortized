@@ -218,35 +218,117 @@ class TestRecovery:
         assert row is not None
         assert row["status"] == "queued"  # confirmed gone → requeued
 
-
-class TestOrphanedJobCleanup:
     @pytest.mark.asyncio
-    async def test_cleanup_orphaned_jobs(self, client: httpx.AsyncClient) -> None:
-        from amortized.worker import cleanup_orphaned_jobs
+    async def test_resume_adopts_submitted_job_with_no_saved_handle(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A crash between submit() and persisting the handle leaves a provisioning row
+        with no handle though the backend resource exists. Recovery must reconstruct the
+        deterministic handle and adopt the live resource, NOT requeue it into a collision."""
+        import amortized.config as config_mod
+        from amortized.backends import BackendHandle, BackendStatus
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
 
-        response = await client.post(
-            "/api/v1/jobs/training",
-            json={
-                "algorithm": "sft",
-                "model_name_or_path": "test/model",
-                "data_path": "./data.jsonl",
-            },
-        )
-        job_id = response.json()["id"]
-
-        async with asyncpg.create_pool(dsn=TEST_DATABASE_URL) as pool, pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE jobs SET status = $1 WHERE id = $2",
-                "running",
-                job_id,
+        ns = config_mod.settings.compute_namespace
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="nohandle1", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
             )
+            await repo.update_job("nohandle1", status="provisioning")  # no backend_handle
 
-        await cleanup_orphaned_jobs()
+        fake = MagicMock()
+        fake.reconstruct_handle = MagicMock(
+            return_value=BackendHandle(
+                backend_name="kubernetes", job_id="nohandle1", scheduler_id="amortized-nohandle1"
+            )
+        )
+        fake.status = AsyncMock(return_value=BackendStatus(running=True))
+        with patch("amortized.worker.get_backend", return_value=fake):
+            resumable = await _resume_inflight_jobs()
 
-        response = await client.get(f"/api/v1/jobs/{job_id}")
-        data = response.json()
-        assert data["status"] == "failed"
-        assert "Orphaned" in (data.get("error") or "")
+        assert "nohandle1" in [j["id"] for j in resumable]  # adopted, not requeued
+        fake.reconstruct_handle.assert_called_once_with("nohandle1")
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("nohandle1")
+        assert row is not None
+        assert row["status"] == "provisioning"  # left for the poll loop to finalize
+
+    @pytest.mark.asyncio
+    async def test_resume_requeues_no_handle_job_when_resource_absent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """No saved handle AND the reconstructed resource is confirmed gone → requeue."""
+        import amortized.config as config_mod
+        from amortized.backends import BackendHandle, BackendStatus
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
+
+        ns = config_mod.settings.compute_namespace
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="nohandle2", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.update_job("nohandle2", status="provisioning")
+
+        fake = MagicMock()
+        fake.reconstruct_handle = MagicMock(
+            return_value=BackendHandle(
+                backend_name="kubernetes", job_id="nohandle2", scheduler_id="amortized-nohandle2"
+            )
+        )
+        fake.status = AsyncMock(return_value=BackendStatus(running=False, not_found=True))
+        with patch("amortized.worker.get_backend", return_value=fake):
+            await _resume_inflight_jobs()
+
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("nohandle2")
+        assert row is not None
+        assert row["status"] == "queued"  # confirmed gone → requeued
+
+    @pytest.mark.asyncio
+    async def test_resume_finalizes_running_job_that_finished_during_downtime(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A 'running' job that completed while the worker was down must be resumed so the
+        poll loop records its real outcome — not marked failed as an orphan."""
+        import amortized.config as config_mod
+        from amortized.backends import BackendStatus
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
+
+        ns = config_mod.settings.compute_namespace
+        handle = (
+            '{"backend_name": "kubernetes", "job_id": "fin1", "scheduler_id": "amortized-fin1"}'
+        )
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="fin1", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.update_job("fin1", status="running", backend_handle=handle)
+
+        fake = MagicMock()
+        fake.status = AsyncMock(return_value=BackendStatus(running=False, exit_code=0))
+        with patch("amortized.worker.get_backend", return_value=fake):
+            resumable = await _resume_inflight_jobs()
+
+        assert "fin1" in [j["id"] for j in resumable]  # resumed to finalize, not failed
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("fin1")
+        assert row is not None
+        assert row["status"] == "running"  # untouched; the poll loop will record success
 
 
 class TestCancelRunningJob:

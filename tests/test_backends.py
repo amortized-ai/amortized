@@ -52,6 +52,25 @@ class TestBackendHandle:
         assert h.container_id is None
 
 
+class TestReconstructHandle:
+    def test_kubernetes_handle_is_derivable_from_job_id(self) -> None:
+        from amortized.backends.kubernetes import KubernetesBackend
+
+        backend = KubernetesBackend(namespace="test-jobs")
+        handle = backend.reconstruct_handle("abc123")
+        assert handle is not None
+        # status() reads the Job by this name, so it must match what submit() created.
+        assert handle.scheduler_id == "amortized-abc123"
+        assert handle.backend_name == backend.name
+        assert handle.job_id == "abc123"
+
+    def test_backends_without_derivable_name_return_none(self) -> None:
+        from amortized.backends.local import LocalBackend
+
+        assert LocalBackend().reconstruct_handle("j1") is None
+        assert SSHBackend(host="h").reconstruct_handle("j1") is None
+
+
 class TestBackendStatus:
     def test_running(self) -> None:
         s = BackendStatus(running=True)
