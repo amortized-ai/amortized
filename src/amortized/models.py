@@ -124,6 +124,16 @@ class TrainingJobConfig(BaseModel):
         description="embedding_sft: warmup fraction of total steps (0.0-1.0)",
     )
     seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
+    nproc_per_node: int = Field(
+        1,
+        ge=1,
+        description=(
+            "GPUs for this single training job (single-node multi-GPU). Training Hub"
+            " launches torchrun across this many GPUs, and the pod requests that many"
+            " nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            " Must be <= the per-user GPU budget."
+        ),
+    )
     topic: str = Field(
         "",
         description="1-5 word model topic for tracking (e.g. 'support ticket classification')",
@@ -529,6 +539,17 @@ class EvalJobConfig(BaseModel):
         ),
     )
     temperature: float = Field(0.0, description="Sampling temperature for evaluated endpoints")
+    nproc_per_node: int = Field(
+        1,
+        ge=1,
+        description=(
+            "GPUs for an in-job-served model (training_job_id / model_name_or_path): vLLM"
+            " serves with --tensor-parallel-size set to this, and the pod requests that many"
+            " nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
+            " Ignored for external-endpoint and classification evals. Must be <= the per-user"
+            " GPU budget."
+        ),
+    )
     eval_data_run_id: str = Field(
         "",
         description=(

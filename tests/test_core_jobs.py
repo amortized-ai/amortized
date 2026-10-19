@@ -230,6 +230,15 @@ class TestEstimateGpuDemand:
         job = {"type": "eval", "config": {"eval_mode": "classification", "training_job_id": "t1"}}
         assert estimate_gpu_demand(job) == 0
 
+    def test_eval_classification_ignores_nproc_per_node(self) -> None:
+        # nproc_per_node is documented as ignored for classification; an explicit value
+        # must not make it request a GPU (it stays CPU-only, so admission can't be starved).
+        job = {
+            "type": "eval",
+            "config": {"eval_mode": "classification", "training_job_id": "t1", "nproc_per_node": 2},
+        }
+        assert estimate_gpu_demand(job) == 0
+
     def test_config_as_json_string_is_parsed(self) -> None:
         import json
 

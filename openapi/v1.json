@@ -3573,6 +3573,13 @@
             "description": "Sampling temperature for evaluated endpoints",
             "default": 0.0
           },
+          "nproc_per_node": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Nproc Per Node",
+            "description": "GPUs for an in-job-served model (training_job_id / model_name_or_path): vLLM serves with --tensor-parallel-size set to this, and the pod requests that many nvidia.com/gpu \u2014 so it needs ONE node with >= nproc_per_node GPUs. Default 1. Ignored for external-endpoint and classification evals. Must be <= the per-user GPU budget.",
+            "default": 1
+          },
           "eval_data_run_id": {
             "type": "string",
             "title": "Eval Data Run Id",
@@ -6834,6 +6841,13 @@
             ],
             "title": "Seed",
             "description": "embedding_sft: random seed"
+          },
+          "nproc_per_node": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Nproc Per Node",
+            "description": "GPUs for this single training job (single-node multi-GPU). Training Hub launches torchrun across this many GPUs, and the pod requests that many nvidia.com/gpu \u2014 so it needs ONE node with >= nproc_per_node GPUs. Default 1. Must be <= the per-user GPU budget.",
+            "default": 1
           },
           "topic": {
             "type": "string",

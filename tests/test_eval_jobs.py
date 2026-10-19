@@ -288,6 +288,59 @@ class TestEvalBuilder:
         assert any("eval_results" in c and "log-artifacts" in c for c in result.post_commands)
 
     @pytest.mark.asyncio
+    async def test_build_embedded_multi_gpu_sets_tensor_parallel(self) -> None:
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "judge": JUDGE,
+            "nproc_per_node": 2,
+        }
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert result.resources.gpus == 2
+        assert "--tensor-parallel-size 2" in result.command[2]
+
+    @pytest.mark.asyncio
+    async def test_build_embedded_single_gpu_no_tensor_parallel(self) -> None:
+        config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert result.resources.gpus == 1
+        assert "--tensor-parallel-size" not in result.command[2]
+
+    @pytest.mark.asyncio
+    async def test_build_multi_gpu_sets_tp_despite_substring_in_other_arg(self) -> None:
+        # A vllm_arg that merely contains the substring (not the flag) must NOT suppress
+        # the auto --tensor-parallel-size, or the second GPU would sit unused.
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "judge": JUDGE,
+            "nproc_per_node": 2,
+            "vllm_args": ["--served-model-name=tensor-parallel-size-x"],
+        }
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        assert "--tensor-parallel-size 2" in result.command[2]
+
+    @pytest.mark.asyncio
+    async def test_build_multi_gpu_honors_caller_tensor_parallel_override(self) -> None:
+        # An explicit caller TP flag (incl. the -tp short form) is a deliberate override:
+        # don't also auto-add --tensor-parallel-size, which would double-specify it.
+        config = {
+            **EVAL_BODY,
+            "model_name_or_path": "Qwen/Qwen3.5-4B",
+            "judge": JUDGE,
+            "nproc_per_node": 2,
+            "vllm_args": ["-tp", "2"],
+        }
+        del config["endpoint"]
+        result = await eval_builder.build({"id": "j1", "type": "eval"}, config, {})
+        cmd = result.command[2]
+        assert "--tensor-parallel-size 2" not in cmd  # auto-add suppressed by the override
+        assert "-tp 2" in cmd  # caller's flag is passed through
+
+    @pytest.mark.asyncio
     async def test_build_embeds_serving_for_model_name(self) -> None:
         config = {**EVAL_BODY, "model_name_or_path": "Qwen/Qwen3.5-4B", "judge": JUDGE}
         del config["endpoint"]
