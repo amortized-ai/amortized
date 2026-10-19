@@ -149,8 +149,14 @@ async def _build_embedded_serving(
     serve_cmd += f" --port {int(port)}"
     serve_cmd += f" --gpu-memory-utilization {gpu_memory_utilization}"
     # Multi-GPU: shard the model across the pod's GPUs with tensor parallelism. Only
-    # auto-set when the caller didn't pass their own --tensor-parallel-size in vllm_args.
-    if gpus > 1 and not any("tensor-parallel-size" in a for a in vllm_args):
+    # auto-set when the caller hasn't already set it in vllm_args — match the real flag
+    # (--tensor-parallel-size / -tp), not a loose substring a model name could trip.
+    caller_set_tp = any(
+        a in ("--tensor-parallel-size", "-tp")
+        or a.startswith(("--tensor-parallel-size=", "-tp="))
+        for a in vllm_args
+    )
+    if gpus > 1 and not caller_set_tp:
         serve_cmd += f" --tensor-parallel-size {int(gpus)}"
     for extra in config.get("vllm_args", []) or []:
         if extra:
