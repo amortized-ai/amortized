@@ -47,6 +47,13 @@ HELM_FILES     := deploy/helm/amortized/files
 # files (config template, model list, ...) EXCEPT reference-payload.json, which the
 # server recipe loader (core/recipes.py) reads from agents/ directly. Adding a
 # skill is just dropping a SKILL.md with a `name:` — no edit here.
+#
+# A stepped skill (one with a steps/ dir) gets its FIRST step appended to the served
+# SKILL.md, wrapped in the same <system-reminder> the proxy uses for later steps, so
+# step 1's detail is present deterministically the moment the skill loads (same loop),
+# not a turn later. The proxy injects steps 2..N at runtime (the cursor starts past the
+# resident first step). steps/ itself is never copied (maxdepth 1) — only step 1's text
+# rides along, inside SKILL.md.
 define gen_native_skills
 rm -rf $(1); \
 find $(AGENTS_DIR) -path '*/skills/*/SKILL.md' | while read skill; do \
@@ -55,6 +62,12 @@ find $(AGENTS_DIR) -path '*/skills/*/SKILL.md' | while read skill; do \
 	if [ -z "$$n" ]; then echo "ERROR: no frontmatter name in $$skill" >&2; exit 1; fi; \
 	mkdir -p "$(1)/$$n"; \
 	find "$$d" -maxdepth 1 -type f ! -name reference-payload.json -exec cp {} "$(1)/$$n/" \; ; \
+	first=$$(ls "$$d"/steps/*.md 2>/dev/null | sort | head -1); \
+	if [ -n "$$first" ]; then \
+		printf '\n\n<system-reminder>\n' >> "$(1)/$$n/SKILL.md"; \
+		cat "$$first" >> "$(1)/$$n/SKILL.md"; \
+		printf '</system-reminder>\n' >> "$(1)/$$n/SKILL.md"; \
+	fi; \
 done
 endef
 

@@ -94,14 +94,18 @@ def test_skill_recording_per_target_no_bleed() -> None:
 # ── agent.py: the gather-turn cursor ────────────────────────────────────────────
 
 
-def test_cursor_injects_then_advances_per_turn() -> None:
+def test_cursor_starts_past_resident_step1_and_advances() -> None:
+    # Step 1 is baked into the served SKILL.md at build time, so the runtime cursor must
+    # start at step 2 (the first NON-resident step) and advance one per gather turn.
+    assert agent._RESIDENT_SKILL_STEPS == 1
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
 
     out1 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert "### Step 1" in out1 and state.skill_step_idx["sdg"] == 1
+    assert "### Step 2" in out1 and "### Step 1" not in out1
+    assert state.skill_step_idx["sdg"] == 2
     out2 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert "### Step 2" in out2 and state.skill_step_idx["sdg"] == 2
+    assert "### Step 3" in out2 and state.skill_step_idx["sdg"] == 3
 
 
 def test_cursor_stops_at_last_step() -> None:

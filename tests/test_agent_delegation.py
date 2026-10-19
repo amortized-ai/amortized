@@ -282,16 +282,42 @@ class TestRequestOrchestratorHelp:
         # The orchestrator was NOT consulted for the resume (backend-driven).
         assert all(m[0] != state.orchestrator_id for m in router.sent[sent_before:])
 
-    def test_completion_wins_over_simultaneous_help(self, router: _Router) -> None:
-        # A turn carrying BOTH signal_subagent_completion AND request_orchestrator_help:
-        # completion wins (a finishing subagent has nothing left to be helped with), so
-        # it hands back to the orchestrator and arms no pending help target.
+    def test_help_wins_over_simultaneous_completion(self, router: _Router) -> None:
+        # A weak driver bundles BOTH signal_subagent_completion AND request_orchestrator_help
+        # with a real need in one turn. A subagent still naming a prerequisite is NOT done, so
+        # help wins: the structured hand-back + auto-resume arming survive instead of being
+        # discarded by the completion path (the eval→sdg→eval stall).
+        state = _make_state(router, orchestrator_script=[[_text_part("On it.")]])
+        # A distinctive need that does NOT appear in the fulfill_help template, so matching it
+        # proves the structured ask was substituted in (not just template boilerplate).
+        need = "a frobnicated holdout corpus"
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part("signal_subagent_completion", {"summary": "done"}),
+                    _tool_part("request_orchestrator_help", {"need": need, "context": "c"}),
+                ]
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+
+        _run(agent._handle_subagent_message(state, "s1", "x", _body()))
+
+        orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
+        assert "[SUBAGENT NEEDS HELP]" in orch_msg[1]  # the help path was taken, not completion
+        assert need in orch_msg[1]  # the structured need rode along
+        assert state.completed_subagents["eval"] == eval_id  # caller stashed, as a completion would
+
+    def test_completion_wins_when_help_names_no_need(self, router: _Router) -> None:
+        # Completion still wins when a co-emitted help call carries no real need — there is no
+        # prerequisite to fulfil, so "I'm done" is honoured and the orchestrator is resumed.
         state = _make_state(router, orchestrator_script=[[_text_part("What next?")]])
         state.subagent_id = router.add_session(
             [
                 [
                     _tool_part("signal_subagent_completion", {"summary": "done"}),
-                    _tool_part("request_orchestrator_help", {"need": "n", "context": "c"}),
+                    _tool_part("request_orchestrator_help", {"need": "  ", "context": ""}),
                 ]
             ]
         )
@@ -299,9 +325,9 @@ class TestRequestOrchestratorHelp:
 
         _run(agent._handle_subagent_message(state, "s1", "x", _body()))
 
-        assert state.pending_help_target is None  # help ignored; no auto-resume armed
+        assert state.pending_help_target is None
         orch_msg = next(m for m in router.sent if m[0] == state.orchestrator_id)
-        assert "[SUBAGENT COMPLETED]" in orch_msg[1]  # the completion path was taken
+        assert "[SUBAGENT COMPLETED]" in orch_msg[1]
 
     def test_unrelated_completion_does_not_resume_pending_consumer(self, router: _Router) -> None:
         # Weak-latch guard (review #1): with eval awaiting sdg, a DIFFERENT subagent (training)
@@ -384,6 +410,42 @@ class TestRequestOrchestratorHelp:
         resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
         assert "could NOT be produced" in resume_msg[1]
         assert "is ready" not in resume_msg[1]
+
+
+class TestResumePreservesConfirmSignals:
+    """A RESUME is the same workflow continuing (auto-resume after help, failed-job retry,
+    eval base-model reuse) — the user's earlier confirmations still stand, so _maybe_delegate
+    must NOT wipe the target's confirm-card preconditions. Resetting there held the confirm
+    card until the user prodded (deployed-run bug b1). A FRESH delegation still resets."""
+
+    def _spy_reset(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        calls: list[str] = []
+        monkeypatch.setattr(
+            agent, "_reset_confirm_signals", lambda state, job_type: calls.append(job_type)
+        )
+        return calls
+
+    def test_fresh_delegation_resets(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = self._spy_reset(monkeypatch)
+        state = _make_state(router)
+        router.queue_session([[_text_part("ok")]])  # fresh subagent session
+        delegation = ("sdg", "build a dataset", False)
+        _run(agent._maybe_delegate(state, "s1", delegation, "u", {"parts": []}, _body()))
+        assert calls == ["sdg"]  # fresh job must re-earn its preconditions
+
+    def test_resume_does_not_reset(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = self._spy_reset(monkeypatch)
+        state = _make_state(router)
+        stashed = router.add_session([[_text_part("resumed")]])
+        state.completed_subagents = {"sdg": stashed}
+        delegation = ("sdg", "continue", True)
+        _run(agent._maybe_delegate(state, "s1", delegation, "u", {"parts": []}, _body()))
+        assert calls == []  # resume keeps the standing confirmations
+        assert state.subagent_id == stashed  # the stashed session was resumed
 
 
 class TestJobCompleteHandback:

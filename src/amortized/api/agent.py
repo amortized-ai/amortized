@@ -565,6 +565,11 @@ _PHASE_FOR_TARGET = {t: t for t in _VALID_TARGETS}
 # body). Matches the `signal_phase.step` slug the sdg/training gather phase reports.
 _GATHER_PHASE = "phase-2-gather"
 
+# How many leading steps of a stepped skill ship INSIDE the served SKILL.md (appended by
+# gen_native_skills), hence are already present at load and must NOT be re-injected. Keep in
+# sync with the Makefile append (currently the first step only).
+_RESIDENT_SKILL_STEPS = 1
+
 
 # Synthetic tool name for the phase signal _ensure_phase_signal backfills when the model
 # forgot to call signal_phase. Deliberately distinct from opencode's real
@@ -587,7 +592,10 @@ def _with_active_skill_step(state: SessionState, target: str, phase: str | None,
     count = skill_step_count(skill)
     if not count:
         return text
-    idx = state.skill_step_idx.get(target, 0)
+    # Step 1 is appended into the served SKILL.md at build time (gen_native_skills), so it is
+    # already present when the skill loads. The cursor therefore starts PAST it — the first
+    # injected turn gets step 2 — and advances one step per gather turn through the rest.
+    idx = state.skill_step_idx.get(target, _RESIDENT_SKILL_STEPS)
     text = with_skill_step_block(skill, idx, text)
     if idx < count:
         state.skill_step_idx[target] = idx + 1
@@ -2112,12 +2120,16 @@ async def _handle_subagent_message(
         raise
 
     latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
-    # Completion is checked before a help request: if a turn somehow carries both
-    # signals, "I'm done" wins and the help ask is ignored (a subagent that is
-    # finishing has nothing left to be helped with).
+    # A weak driver sometimes bundles signal_subagent_completion AND request_orchestrator_help
+    # into one turn. A subagent that still names a prerequisite it needs is NOT actually done —
+    # taking the completion path there discarded the structured hand-back AND its auto-resume
+    # arming (the eval→sdg→eval stall). So when BOTH are present and the help names a real need,
+    # help wins; completion only wins when no such help ask rides with it.
+    help_request = _detect_help_request(latest_parts)
+    help_wins = bool(help_request and help_request[0].strip())
     summary = _detect_completion(latest_parts)
 
-    if summary:
+    if summary and not help_wins:
         logger.info("Subagent completion signal received: session=%s", session_id)
         completer = state.subagent_target
         if completer and state.subagent_id:
@@ -2190,7 +2202,6 @@ async def _handle_subagent_message(
     # orchestrator run the producer, then arm the auto-resume bound to that producer so when
     # it completes the proxy resumes this caller automatically — the orchestrator only has to
     # make the first hop (delegate to the producer), never the resume.
-    help_request = _detect_help_request(latest_parts)
     if help_request and state.subagent_target and state.subagent_id:
         need, help_context = help_request
         target = state.subagent_target
@@ -2248,12 +2259,17 @@ async def _maybe_delegate(
 
     target, context, resume = delegation
 
-    # A (re)delegation starts or restarts a job for this target, so re-establish its
-    # confirm-card preconditions: clear the target's accumulated signals (data confirmed,
-    # model/judge offered, VRAM shown, metrics approved) so the new job must earn them
-    # again. In-session refinements of an already-shown card do NOT pass through here, so
-    # they keep their signals and no longer bounce back through the gate.
-    _reset_confirm_signals(state, target)
+    # A FRESH delegation starts a NEW job for this target, so re-establish its confirm-card
+    # preconditions: clear the target's accumulated signals (data confirmed, model/judge
+    # offered, VRAM shown, metrics approved) so the new job must earn them again. A RESUME,
+    # though, is the same workflow continuing — an auto-resume after a help request, a
+    # failed-job retry, or the eval base-model reuse cycle — where the user's earlier
+    # confirmations still stand; resetting there wiped signals the driver won't re-offer and
+    # held the confirm card until the user prodded. So reset only when NOT resuming.
+    # (In-session refinements of an already-shown card do NOT pass through here at all, so
+    # they keep their signals regardless.)
+    if not resume:
+        _reset_confirm_signals(state, target)
 
     advisory = await _no_data_advisory(state, target)
     if advisory:
