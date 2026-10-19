@@ -752,9 +752,27 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
                 if result == "UPDATE 1":
                     logger.warning("Marked orphaned job %s as failed", job["id"])
 
+    async def _persist_reconstructed_handle(job: dict[str, Any], handle: BackendHandle) -> bool:
+        # The handle was rebuilt from the job id, not read from the DB. Persist it (guarded on
+        # the status we read) so _resume_job can poll the adopted resource — otherwise it bails
+        # on the missing handle, leaking the live Job while its GPU budget is released.
+        raw = _serialize_handle(handle)
+        async with get_pool().acquire() as conn:
+            result = await conn.execute(
+                "UPDATE jobs SET backend_handle = $1 WHERE id = $2 AND status = $3",
+                raw,
+                job["id"],
+                job["status"],
+            )
+        if result != "UPDATE 1":
+            return False
+        job["backend_handle"] = raw
+        return True
+
     resumable: list[dict[str, Any]] = []
     for job in inflight:
         handle = deserialize_handle(job.get("backend_handle"))
+        reconstructed = False
         if handle is None:
             # No saved handle: reconstruct the deterministic one so we reconcile against
             # the live resource below instead of blindly requeuing an already-submitted
@@ -768,6 +786,7 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
             if handle is None:
                 await _mark_gone(job)  # never got a backend resource
                 continue
+            reconstructed = True
         else:
             try:
                 backend = get_backend(handle.backend_name)
@@ -784,9 +803,13 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
             )
             continue  # indeterminate: never requeue/fail a possibly-live resource
         if bs.running:
+            if reconstructed and not await _persist_reconstructed_handle(job, handle):
+                continue  # status changed under us → don't resume a now-stale job
             resumable.append(job)
             logger.info("Resuming in-flight job %s (type=%s)", job["id"], job["type"])
         elif bs.exit_code is not None:
+            if reconstructed and not await _persist_reconstructed_handle(job, handle):
+                continue
             resumable.append(job)  # finished while we were down → poll loop records the outcome
             logger.info("Resuming job %s to record its completion", job["id"])
         elif bs.not_found:
