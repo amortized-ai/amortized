@@ -71,6 +71,33 @@ class TestRequireDependencySucceeded:
         errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "parent_job_id"))
         assert errs == []
 
+    def test_preview_sdg_rejected(self) -> None:
+        repo = self._repo({"j1": _succeeded(type="sdg", config={"mode": "preview"})})
+        errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "parent_job_id"))
+        assert len(errs) == 1 and "PREVIEW" in errs[0]
+
+    def test_preview_sdg_config_as_json_string(self) -> None:
+        repo = self._repo({"j1": _succeeded(type="sdg", config='{"mode": "preview"}')})
+        errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "parent_job_id"))
+        assert len(errs) == 1 and "PREVIEW" in errs[0]
+
+    def test_create_sdg_allowed(self) -> None:
+        repo = self._repo({"j1": _succeeded(type="sdg", config={"mode": "create"})})
+        errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "parent_job_id"))
+        assert errs == []
+
+    def test_sdg_without_mode_allowed(self) -> None:
+        # a full create run that omits mode (defaults to create) must not be flagged
+        repo = self._repo({"j1": _succeeded(type="sdg", config={})})
+        errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "parent_job_id"))
+        assert errs == []
+
+    def test_preview_check_only_applies_to_sdg(self) -> None:
+        # a training job reference carrying a stray mode=preview must not be mis-gated
+        repo = self._repo({"j1": _succeeded(type="training", config={"mode": "preview"})})
+        errs = _run(jobs_mod._require_dependency_succeeded(repo, "j1", "training_job_id"))
+        assert errs == []
+
 
 class TestValidateEvalData:
     def test_inflight_training_job_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:

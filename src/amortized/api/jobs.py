@@ -167,6 +167,22 @@ async def _require_dependency_succeeded(
             f"{label}: job '{job_id}' has no MLflow artifacts — it may not"
             " have finished producing its output"
         ]
+    # A preview SDG run succeeds with artifacts but holds only ~10 rows — it is a
+    # config sanity check, not a dataset. Fail-close any downstream job (training or
+    # eval) that references one so a preview can never silently become training data;
+    # the driver must run a full 'create' and reference that instead.
+    if job.get("type") == "sdg":
+        cfg = job.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except (ValueError, TypeError):
+                cfg = {}
+        if isinstance(cfg, dict) and cfg.get("mode") == "preview":
+            return [
+                f"{label}: job '{job_id}' is a PREVIEW SDG run (~10 rows), not a full"
+                " dataset — run a full 'create' SDG job and reference that instead"
+            ]
     return []
 
 
