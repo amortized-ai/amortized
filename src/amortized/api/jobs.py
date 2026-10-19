@@ -206,7 +206,84 @@ async def _validate_training_data(
     refs = {**config, "parent_job_id": parent_job_id if not data_path else ""}
     errors += await _gate_upstream_refs(Repository(db), refs)
 
+    # Only inspect the dataset once availability + lineage are clean: upstream is then
+    # succeeded, so the dataset is materialized and a read reflects the real shape.
+    if not errors:
+        errors += await _training_shape_violations(config, parent_job_id, db)
+
     return errors
+
+
+async def _training_shape_violations(
+    config: dict[str, Any],
+    parent_job_id: str,
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Fail-closed check that the resolved training dataset has the SHAPE the chosen
+    algorithm needs: chat-SFT algorithms consume ``messages``; embedding algorithms consume
+    flat text/label columns.
+
+    Complements the SDG-side processor gate (which guarantees a well-formed SFT *config*) by
+    catching a dataset that is empty or the wrong shape for THIS run — at the layer where the
+    algorithm is actually known. Best-effort on transient MLflow errors (a flaky backend must
+    never block an otherwise-valid confirmation card), but a definitively empty dataset or a
+    confirmed shape mismatch is a hard error. Only MLflow-backed sources are inspectable; a
+    direct ``data_path`` is opaque here and skipped."""
+    if config.get("data_path"):
+        return []
+    data_run_id = str(config.get("data_run_id", "") or "")
+    data_run = data_run_id or await _resolve_data_run(Repository(db), parent_job_id, "")
+    if not data_run:
+        return []
+
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    try:
+        mlflow = _mlflow_client()
+        paths = await _find_dataset_artifacts(mlflow, data_run)
+        records = _parse_records(paths[0], await mlflow.get_artifact(data_run, paths[0]))
+        first = records[0] if records else None
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return [
+                f"training data: dataset run '{data_run[:8]}' has no data artifact — the SDG"
+                " job produced an empty dataset. Regenerate the data before training."
+            ]
+        return []  # transient/other → best-effort, don't block the card
+    except Exception:
+        logger.warning("shape check: cannot read dataset %s", data_run[:8], exc_info=True)
+        return []
+
+    if first is None:
+        return [
+            f"training data: dataset run '{data_run[:8]}' has no rows. Regenerate the data"
+            " before training."
+        ]
+
+    algorithm = str(config.get("algorithm", "")).replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
+    columns = sorted(first.keys())
+    if algorithm in _EMBEDDING_ALGORITHMS:
+        text_col = str(config.get("text_column") or "text")
+        label_col = str(config.get("label_column") or "category")
+        missing = [c for c in (text_col, label_col) if c not in first]
+        if missing:
+            return [
+                f"training data: algorithm '{algorithm}' needs flat columns {missing}, but"
+                f" the dataset has {columns}. Use an embedding-classifier dataset"
+                " (text + category) for this algorithm."
+            ]
+    elif algorithm in _SFT_MESSAGES_ALGORITHMS and "messages" not in first:
+        return [
+            f"training data: algorithm '{algorithm}' needs SFT `messages` data, but the"
+            f" dataset rows have {columns} and no `messages`. Regenerate the SDG data with"
+            " an sft_chat schema_transform processor."
+        ]
+    return []
 
 
 async def _validate_model_source(
@@ -357,6 +434,11 @@ _EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
 _LORA_ALGORITHMS = {"lora_sft", "lora_grpo"}
 
 _RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
+
+# Chat-SFT algorithms that consume the `messages` column. Preference/RL algorithms
+# (dpo, grpo, kto, gkd) use different schemas, so they are deliberately NOT shape-checked
+# for `messages` — a missing check is safe; a wrong one would false-reject valid data.
+_SFT_MESSAGES_ALGORITHMS = {"sft", "lora_sft", "osft"}
 
 
 def _trainer_default_fields(config: dict[str, Any]) -> list[str]:

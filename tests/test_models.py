@@ -6,9 +6,23 @@ from pydantic import ValidationError
 from amortized.models import (
     JobStatus,
     JobType,
+    SDGJobRequest,
     TrainingJobConfig,
     TrainingJobRequest,
 )
+
+_SAMPLER_COL = {
+    "column_type": "sampler",
+    "name": "d",
+    "sampler_type": "category",
+    "params": {"values": ["a"]},
+}
+_SFT_PROC = {
+    "name": "sft_chat",
+    "processor_type": "schema_transform",
+    "template": {"messages": [{"role": "user", "content": "{{ d }}"}]},
+}
+_DROP_PROC = {"name": "drop_intermediate", "processor_type": "drop_columns", "column_names": ["d"]}
 
 
 class TestTrainingJobConfig:
@@ -198,3 +212,37 @@ class TestEnums:
     def test_job_type_values(self) -> None:
         assert JobType.training.value == "training"
         assert JobType.sdg.value == "sdg"
+
+
+class TestSDGProcessorGate:
+    """The final processor must materialize the dataset (a schema_transform emitting
+    `messages`); a trailing non-materializing step would silently upload an empty
+    generated_data. An empty processors list (flat output) is allowed."""
+
+    def test_empty_processors_allowed(self) -> None:
+        # embedding-classifier style: flat output, uploads raw parquet-files
+        SDGJobRequest(columns=[_SAMPLER_COL], processors=[])
+
+    def test_schema_transform_last_allowed(self) -> None:
+        SDGJobRequest(columns=[_SAMPLER_COL], processors=[_SFT_PROC])
+
+    def test_drop_before_sft_allowed(self) -> None:
+        # earlier steps are fine as long as the materializing one is LAST
+        SDGJobRequest(columns=[_SAMPLER_COL], processors=[_DROP_PROC, _SFT_PROC])
+
+    def test_drop_only_rejected(self) -> None:
+        with pytest.raises(ValidationError) as exc:
+            SDGJobRequest(columns=[_SAMPLER_COL], processors=[_DROP_PROC])
+        assert any("schema_transform" in e["msg"] for e in exc.value.errors())
+
+    def test_trailing_drop_rejected(self) -> None:
+        # materializer present but not last → upload would point at the drop dir
+        with pytest.raises(ValidationError) as exc:
+            SDGJobRequest(columns=[_SAMPLER_COL], processors=[_SFT_PROC, _DROP_PROC])
+        assert any("schema_transform" in e["msg"] for e in exc.value.errors())
+
+    def test_schema_transform_without_messages_rejected(self) -> None:
+        bad = {"name": "x", "processor_type": "schema_transform", "template": {}}
+        with pytest.raises(ValidationError) as exc:
+            SDGJobRequest(columns=[_SAMPLER_COL], processors=[bad])
+        assert any("schema_transform" in e["msg"] for e in exc.value.errors())

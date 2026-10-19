@@ -102,20 +102,15 @@ class TrainingJobConfig(BaseModel):
             " 'category' for the embedding-classifier SDG datasets."
         ),
     )
-    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (
-        Field(
-            None,
-            description=(
-                "embedding_sft contrastive loss: batch_all_triplet, "
-                "batch_hard_triplet, or mnrl"
-            ),
-        )
+    loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = Field(
+        None,
+        description=(
+            "embedding_sft contrastive loss: batch_all_triplet, batch_hard_triplet, or mnrl"
+        ),
     )
     batch_sampler: Literal["group_by_label", "no_duplicates", "default"] | None = Field(
         None,
-        description=(
-            "embedding_sft batch sampler: group_by_label, no_duplicates, or default"
-        ),
+        description=("embedding_sft batch sampler: group_by_label, no_duplicates, or default"),
     )
     warmup_ratio: float | None = Field(
         None,
@@ -427,6 +422,41 @@ class SDGJobRequest(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def check_sft_processor(self) -> "SDGJobRequest":
+        """A non-empty processors chain must END in a materializing schema_transform that
+        emits SFT ``messages``.
+
+        The ``generated_data`` upload path (jobs/sdg.py) is derived from the LAST
+        processor's output dir, so a trailing non-materializing step — e.g. a
+        ``drop_columns`` — points it at a dir with no training-ready dataset: the job then
+        "succeeds" with an empty dataset that silently breaks downstream training (observed
+        with a GLM-flash config whose only processor was a ``drop_columns``). An empty
+        processors list is allowed — that is the flat-output path (e.g. embedding-classifier)
+        which uploads the raw parquet-files. The materializing step is identified by its
+        ``processor_type`` + a messages template, not by name (both ``sft_chat`` and
+        ``sft_format`` are used in the skills)."""
+        if not self.processors:
+            return self
+        last = self.processors[-1]
+        template = getattr(last, "template", None)
+        if isinstance(template, dict):
+            messages = template.get("messages")
+        else:
+            messages = getattr(template, "messages", None)
+        if getattr(last, "processor_type", "") == "schema_transform" and messages:
+            return self
+        label = getattr(last, "name", "") or getattr(last, "processor_type", "") or "unknown"
+        msg = (
+            "processors: the final processor must be a schema_transform that emits SFT "
+            f"messages (the sft_chat processor), but it is '{label}'. That produces no "
+            "training-ready dataset — the generated_data upload would be empty and break "
+            "training. Make the sft_chat schema_transform the LAST processor (keep any "
+            "earlier steps before it), or use an empty processors list only for flat "
+            "(non-SFT) output."
+        )
+        raise ValueError(msg)
+
 
 # ---------------------------------------------------------------------------
 # Eval job models — compare two model endpoints on an eval dataset
@@ -568,9 +598,7 @@ class EvalJobConfig(BaseModel):
     )
     label_column: str = Field(
         "label",
-        description=(
-            "Name of the label column in the eval dataset (classification mode)"
-        ),
+        description=("Name of the label column in the eval dataset (classification mode)"),
     )
     anchors_per_class: int = Field(
         16,
@@ -683,6 +711,7 @@ class DatasetSplitRequest(BaseModel):
     complement_name: str = Field(
         "", description="Label for the complement dataset (default: derived)"
     )
+
 
 class DatasetMergeRequest(BaseModel):
     """Merge several datasets into one dataset.
