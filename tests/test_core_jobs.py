@@ -87,6 +87,22 @@ class TestCreateJob:
         )
         assert row["parent_job_id"] == "parent-123"
 
+    @pytest.mark.asyncio
+    async def test_create_rejects_job_over_gpu_budget(self, repo: Repository) -> None:
+        # Default gpu_budget is 1, so a 2-GPU training could never be admitted — reject
+        # it at creation with a clear error rather than letting it sit silently queued.
+        with pytest.raises(InvalidJobStateError, match="GPU budget"):
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={
+                    "algorithm": "sft",
+                    "model_name_or_path": "t",
+                    "data_path": "t.jsonl",
+                    "nproc_per_node": 2,
+                },
+            )
+
 
 class TestGetJob:
     @pytest.mark.asyncio

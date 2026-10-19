@@ -45,7 +45,11 @@ const MODEL_KEY_SECRET = 'amortized-model-key';
 const GPU_PER_USER = process.env.GPU_PER_USER || '1';
 // The server's in-process GPU budget mirrors the per-user GPU ResourceQuota (gpuQuota)
 // so it queues GPU jobs to fit the quota instead of dispatching them to fail on it.
-const GPU_BUDGET = Number.parseInt(GPU_PER_USER, 10) || 1;
+// Fall back to 1 only when GPU_PER_USER is unparseable — keep an explicit "0" as 0 so
+// the budget matches a 0-GPU quota (otherwise the worker would admit a job that then
+// fails on the quota).
+const _gpuPerUserParsed = Number.parseInt(GPU_PER_USER, 10);
+const GPU_BUDGET = Number.isNaN(_gpuPerUserParsed) ? 1 : _gpuPerUserParsed;
 
 const labels = { app: 'amortized', 'app.kubernetes.io/managed-by': 'studio-gateway' };
 

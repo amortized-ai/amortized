@@ -276,3 +276,16 @@ class TestJobCRUD:
     @pytest.mark.asyncio
     async def test_claim_job_missing_returns_none(self, repo: Repository) -> None:
         assert await repo.claim_job("nope") is None
+
+    @pytest.mark.asyncio
+    async def test_list_queued_candidates_keyset_pagination(self, repo: Repository) -> None:
+        for i in range(3):
+            await repo.create_job(
+                job_id=f"k{i}", job_type=JobType.training, config={},
+                created_at=f"2026-01-01T00:00:0{i}+00:00",
+            )
+        page1 = await repo.list_queued_candidates("", 2)
+        assert [j["id"] for j in page1] == ["k0", "k1"]
+        last = page1[-1]
+        page2 = await repo.list_queued_candidates("", 2, last["created_at"], last["id"])
+        assert [j["id"] for j in page2] == ["k2"]

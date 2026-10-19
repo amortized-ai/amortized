@@ -36,6 +36,10 @@ class BackendStatus:
     # (e.g. a pod stuck in ImagePullBackoff). The worker should cancel the
     # resource — the cluster's own TTL cleanup never fires for it.
     reclaim: bool = False
+    # True only when the backend CONFIRMS the resource is gone (e.g. a 404).
+    # Distinguishes a definitive "absent" from a transient status error so restart
+    # recovery doesn't requeue a possibly-live job on a transient blip.
+    not_found: bool = False
 
 
 @dataclass

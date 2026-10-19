@@ -460,7 +460,8 @@ class KubernetesBackend:
             job = await batch.read_namespaced_job(resource_name, self._namespace)
         except Exception as e:
             err_str = str(e)
-            if "404" in err_str or "NotFound" in err_str:
+            not_found = "404" in err_str or "NotFound" in err_str
+            if not_found:
                 msg = (
                     f"Job '{resource_name}' no longer exists."
                     " It may have been cancelled or cleaned up."
@@ -473,7 +474,7 @@ class KubernetesBackend:
                 self._namespace,
                 e,
             )
-            return BackendStatus(running=False, error=msg)
+            return BackendStatus(running=False, error=msg, not_found=not_found)
 
         status = job.status
         if status.succeeded and status.succeeded > 0:

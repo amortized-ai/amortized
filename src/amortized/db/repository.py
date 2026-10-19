@@ -201,32 +201,39 @@ class Repository:
         return _row_to_job(row)
 
     async def list_queued_candidates(
-        self, k8s_namespace: str, limit: int
+        self,
+        k8s_namespace: str,
+        limit: int,
+        after_created_at: str | datetime | None = None,
+        after_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Oldest-first worker-eligible queued jobs (read-only, no claim).
 
         The worker scans these and claims the oldest that fits its resource budget
         via ``claim_job`` — so a GPU job that doesn't fit is skipped and the CPU
         jobs behind it still run. Same exclusion as ``pick_pending_job``.
+
+        Supports keyset pagination via ``(after_created_at, after_id)`` so the worker
+        can page through the whole queue: a CPU job must never be stranded behind a
+        full page of unfittable GPU jobs.
         """
+        conds = ["status = $1"]
+        params: list[Any] = [JobStatus.queued.value]
         if k8s_namespace:
-            rows = await self.conn.fetch(
-                f"""SELECT * FROM jobs
-                    WHERE status = $1 AND k8s_namespace = $2
-                    {_WORKER_ELIGIBLE_FILTER}
-                    ORDER BY created_at ASC
-                    LIMIT $3""",
-                JobStatus.queued.value, k8s_namespace, limit,
-            )
-        else:
-            rows = await self.conn.fetch(
-                f"""SELECT * FROM jobs
-                    WHERE status = $1
-                    {_WORKER_ELIGIBLE_FILTER}
-                    ORDER BY created_at ASC
-                    LIMIT $2""",
-                JobStatus.queued.value, limit,
-            )
+            params.append(k8s_namespace)
+            conds.append(f"k8s_namespace = ${len(params)}")
+        if after_created_at is not None and after_id is not None:
+            params.append(_parse_ts(after_created_at))
+            ts_idx = len(params)
+            params.append(after_id)
+            id_idx = len(params)
+            conds.append(f"(created_at, id) > (${ts_idx}, ${id_idx})")
+        params.append(limit)
+        query = (
+            f"SELECT * FROM jobs WHERE {' AND '.join(conds)} {_WORKER_ELIGIBLE_FILTER} "
+            f"ORDER BY created_at ASC, id ASC LIMIT ${len(params)}"
+        )
+        rows = await self.conn.fetch(query, *params)
         return [_row_to_job(row) for row in rows]
 
     async def claim_job(

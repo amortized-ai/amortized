@@ -119,6 +119,105 @@ class TestResourceAwareAdmission:
         # Both claimed — nothing runnable remains.
         assert await _claim_runnable_job(ns, gpu_free=1) is None
 
+    @pytest.mark.asyncio
+    async def test_cpu_job_found_past_a_full_page_of_unfittable_gpu_jobs(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A CPU job must not be stranded behind a full page of unfittable GPU jobs —
+        _claim_runnable_job pages through the whole queue (keyset cursor)."""
+        import amortized.config as config_mod
+        import amortized.worker as worker_mod
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _claim_runnable_job
+
+        monkeypatch.setattr(worker_mod, "_CANDIDATE_BATCH", 2)  # force multi-page scan
+        ns = config_mod.settings.compute_namespace
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            for i in range(3):  # three unfittable GPU jobs span the first page(s)
+                await repo.create_job(
+                    job_id=f"gpu{i}", job_type=JobType.training, config={"algorithm": "sft"},
+                    created_at=f"2026-01-01T00:00:0{i}+00:00", k8s_namespace=ns,
+                )
+            await repo.create_job(
+                job_id="cpu-last", job_type=JobType.sdg, config={},
+                created_at="2026-01-01T00:00:09+00:00", k8s_namespace=ns,
+            )
+
+        # Budget exhausted: all 3 GPU jobs skipped across pages, the CPU job still claimed.
+        claimed = await _claim_runnable_job(ns, gpu_free=0)
+        assert claimed is not None
+        assert claimed["id"] == "cpu-last"
+
+
+class TestRecovery:
+    @pytest.mark.asyncio
+    async def test_resume_leaves_provisioning_job_on_indeterminate_status(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A transient status failure must NOT requeue a provisioning job (the resource
+        may be live → double-submit). Leave it untouched for a later retry."""
+        import amortized.config as config_mod
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
+
+        ns = config_mod.settings.compute_namespace
+        handle = '{"backend_name": "kubernetes", "job_id": "prov1"}'
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="prov1", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.update_job("prov1", status="provisioning", backend_handle=handle)
+
+        fake = MagicMock()
+        fake.status = AsyncMock(side_effect=RuntimeError("transient API blip"))
+        with patch("amortized.worker.get_backend", return_value=fake):
+            resumable = await _resume_inflight_jobs()
+
+        assert "prov1" not in [j["id"] for j in resumable]
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("prov1")
+        assert row is not None
+        assert row["status"] == "provisioning"  # left for retry, NOT requeued
+
+    @pytest.mark.asyncio
+    async def test_resume_requeues_provisioning_job_when_resource_confirmed_gone(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A 404 (not_found) is a confirmed-gone signal → requeue the provisioning job."""
+        import amortized.config as config_mod
+        from amortized.backends import BackendStatus
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
+
+        ns = config_mod.settings.compute_namespace
+        handle = '{"backend_name": "kubernetes", "job_id": "gone1"}'
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="gone1", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.update_job("gone1", status="provisioning", backend_handle=handle)
+
+        fake = MagicMock()
+        fake.status = AsyncMock(return_value=BackendStatus(running=False, not_found=True))
+        with patch("amortized.worker.get_backend", return_value=fake):
+            await _resume_inflight_jobs()
+
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("gone1")
+        assert row is not None
+        assert row["status"] == "queued"  # confirmed gone → requeued
+
 
 class TestOrphanedJobCleanup:
     @pytest.mark.asyncio

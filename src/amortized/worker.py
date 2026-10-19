@@ -195,9 +195,9 @@ async def _pick_pending_job() -> dict[str, Any] | None:
         )
 
 
-# How many of the oldest queued jobs to scan when looking for one that fits the GPU
-# budget. A per-user queue is tiny; this just bounds the read in a pathological case.
-_CANDIDATE_SCAN_LIMIT = 100
+# Batch size for paging through queued jobs when looking for one that fits the GPU
+# budget. The worker pages through the WHOLE queue, so this only bounds each read.
+_CANDIDATE_BATCH = 100
 
 
 async def _claim_runnable_job(ns: str, gpu_free: int) -> dict[str, Any] | None:
@@ -205,20 +205,32 @@ async def _claim_runnable_job(ns: str, gpu_free: int) -> dict[str, Any] | None:
 
     Scanning oldest-first and skipping GPU jobs that don't fit lets CPU jobs
     (demand 0) run past a queued GPU job that is waiting on the budget — the core
-    of "a quick SDG/eval never blocks behind a training run". The claim is atomic
-    (``status = queued`` guard), so concurrent workers never double-run a job.
+    of "a quick SDG/eval never blocks behind a training run". Pages through the full
+    queue via a keyset cursor so a fitting job is never missed just because unfittable
+    GPU jobs filled the first page. The claim is atomic (``status = queued`` guard), so
+    concurrent workers never double-run a job.
     """
     from amortized.db.connection import get_pool
 
     async with get_pool().acquire() as conn:
         repo = Repository(conn)
-        candidates = await repo.list_queued_candidates(ns, _CANDIDATE_SCAN_LIMIT)
-        for candidate in candidates:
-            if estimate_gpu_demand(candidate) <= gpu_free:
-                claimed = await repo.claim_job(candidate["id"], ns)
-                if claimed is not None:
-                    return claimed
-    return None
+        after_created_at: str | None = None
+        after_id: str | None = None
+        while True:
+            candidates = await repo.list_queued_candidates(
+                ns, _CANDIDATE_BATCH, after_created_at, after_id
+            )
+            if not candidates:
+                return None
+            for candidate in candidates:
+                if estimate_gpu_demand(candidate) <= gpu_free:
+                    claimed = await repo.claim_job(candidate["id"], ns)
+                    if claimed is not None:
+                        return claimed
+            if len(candidates) < _CANDIDATE_BATCH:
+                return None
+            after_created_at = candidates[-1]["created_at"]
+            after_id = candidates[-1]["id"]
 
 
 def _job_output_dir(job_type: str, job_id: str) -> str:
@@ -729,10 +741,13 @@ async def cleanup_orphaned_jobs() -> None:
 async def _resume_inflight_jobs() -> list[dict[str, Any]]:
     """Reconcile jobs a previous worker left mid-flight across a restart.
 
-    Returns the jobs whose backend resource is still alive, so the caller can
-    resume polling them — which both completes them and releases their GPU budget.
-    A job whose resource is gone is failed (if it was 'running') or requeued (if it
-    was 'provisioning' — it crashed before dispatch, so it can run cleanly again).
+    Returns the jobs the caller should resume polling: those still running, and those
+    that finished while the worker was down (so the poll loop records the outcome).
+    A job whose backend resource is CONFIRMED gone is requeued (if 'provisioning', so it
+    re-dispatches cleanly) or failed (if 'running'). When the status is INDETERMINATE —
+    the status call raised, or returned a non-404 error — the job is left untouched for a
+    later retry, so a transient backend blip never requeues a live resource into a
+    double-submit.
     """
     from amortized.db.connection import get_pool
 
@@ -742,27 +757,12 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
         inflight = await repo.list_jobs(status=JobStatus.running, k8s_namespace=ns)
         inflight += await repo.list_jobs(status=JobStatus.provisioning, k8s_namespace=ns)
 
-    resumable: list[dict[str, Any]] = []
     now = datetime.now(UTC)
-    for job in inflight:
-        handle = deserialize_handle(job.get("backend_handle"))
-        alive = False
-        if handle is not None:
-            try:
-                backend = get_backend(handle.backend_name)
-                alive = (await backend.status(handle)).running
-            except KeyError:
-                pass
-            except Exception:
-                logger.warning(
-                    "Status check failed for job %s during recovery", job["id"], exc_info=True
-                )
-        if alive:
-            resumable.append(job)
-            logger.info("Resuming in-flight job %s (type=%s)", job["id"], job["type"])
-        elif job["status"] == JobStatus.provisioning.value:
+
+    async def _mark_gone(job: dict[str, Any]) -> None:
+        if job["status"] == JobStatus.provisioning.value:
             await _update_job(job["id"], status=JobStatus.queued.value)
-            logger.warning("Requeued job %s stuck in provisioning after restart", job["id"])
+            logger.warning("Requeued job %s (provisioning, resource gone) after restart", job["id"])
         else:
             await _update_job(
                 job["id"],
@@ -771,6 +771,40 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
                 error="Orphaned job — process no longer running",
             )
             logger.warning("Marked orphaned job %s as failed", job["id"])
+
+    resumable: list[dict[str, Any]] = []
+    for job in inflight:
+        handle = deserialize_handle(job.get("backend_handle"))
+        if handle is None:
+            await _mark_gone(job)  # never got a backend resource
+            continue
+        try:
+            backend = get_backend(handle.backend_name)
+        except KeyError:
+            await _mark_gone(job)  # backend no longer registered
+            continue
+        try:
+            bs = await backend.status(handle)
+        except Exception:
+            logger.warning(
+                "Status check raised for job %s during recovery — leaving it for a later retry",
+                job["id"],
+                exc_info=True,
+            )
+            continue  # indeterminate: never requeue/fail a possibly-live resource
+        if bs.running:
+            resumable.append(job)
+            logger.info("Resuming in-flight job %s (type=%s)", job["id"], job["type"])
+        elif bs.exit_code is not None:
+            resumable.append(job)  # finished while we were down → poll loop records the outcome
+            logger.info("Resuming job %s to record its completion", job["id"])
+        elif bs.not_found:
+            await _mark_gone(job)  # backend confirms the resource is gone
+        else:
+            logger.warning(
+                "Indeterminate status for job %s during recovery — leaving it for a later retry",
+                job["id"],
+            )
     return resumable
 
 
