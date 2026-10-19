@@ -72,8 +72,9 @@ class TestSuppressionRecording:
         }
         state = _training_ready()
         agent._enforce_single_interaction(result, state)
-        # The leading confirm card is kept; the stacked options and the repeat card are stripped.
-        assert state.suppressed_call_ids == {"opts", "card2"}
+        # The LAST valid confirm card is kept (matching the client's #459 last-valid-wins);
+        # the stacked options and the earlier duplicate are stripped.
+        assert state.suppressed_call_ids == {"opts", "card1"}
 
     def test_prompt_gate_held_confirm_card_callid_recorded(self) -> None:
         # show_prompt (never reviewed) with a confirm card stacked under it: the review wins,
