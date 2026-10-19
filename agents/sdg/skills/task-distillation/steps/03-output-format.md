@@ -6,3 +6,5 @@ provided only raw inputs (no outputs), ask for the desired format.
 Verify your format against any given example to check correctness.
 Output a complete demo using placeholder content so the user can
 confirm the format before proceeding.
+
+When you ask the user about this step, call present_options with step: "output-format".

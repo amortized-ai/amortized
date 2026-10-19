@@ -33,3 +33,5 @@ For example, a document with 50 chunks of mean 400 tokens:
 
 Show the user the actual numbers, the multiplier, and the coverage
 tier so they understand the reasoning.
+
+When you ask the user about this step, call present_options with step: "sample-count".

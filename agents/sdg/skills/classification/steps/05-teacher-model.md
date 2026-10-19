@@ -8,3 +8,5 @@ stop — no teacher-model provider is configured on the server.
 Call `present_options` with step="sdg-teacher-model" and each model as an option.
 ALWAYS add as the last option:
 - title: "Configure a model", description: "Configure a teacher-model provider key on the server", value: "Configure a model — Configure a teacher-model provider key on the server"
+
+When you ask the user about this step, call present_options with step: "teacher-model".

@@ -15,3 +15,5 @@ complete prompt text), then ask them to approve or adjust it. `show_prompt`
 is the only way the user sees the prompt, so render it before asking them to
 review or approve it. The same prompt is used in both the output-generating
 column `system_prompt` and the SFT processor system message.
+
+When you ask the user about this step, call present_options with step: "system-prompt".

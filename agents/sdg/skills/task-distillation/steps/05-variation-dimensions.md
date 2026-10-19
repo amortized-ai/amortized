@@ -7,3 +7,5 @@ Infer axes of diversity from the user's examples:
 - **Structure** — format variations (formal, terse, detailed)
 
 Each becomes a sampler column. Only ask if ambiguous.
+
+When you ask the user about this step, call present_options with step: "variation-dimensions".

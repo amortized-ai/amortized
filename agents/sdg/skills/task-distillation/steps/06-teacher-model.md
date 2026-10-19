@@ -7,3 +7,5 @@ not shorten, re-prefix, or modify the `name` string (e.g., if
 string, not `openai/gpt-oss-120b`). Present ONLY those models as
 options. If no models are returned, stop — no teacher-model provider
 is configured on the server.
+
+When you ask the user about this step, call present_options with step: "teacher-model".

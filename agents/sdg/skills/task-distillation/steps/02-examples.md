@@ -19,3 +19,5 @@ you want to generate inputs or use your own." Skip the input
 generation column (Section 3) and wire the corpus directly into the
 output column via a data-source column. Only the output half of the
 pipeline is needed.
+
+When you ask the user about this step, call present_options with step: "examples".

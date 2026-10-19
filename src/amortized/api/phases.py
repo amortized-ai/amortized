@@ -26,6 +26,7 @@ was split from stay side by side and version together.
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -152,11 +153,27 @@ def _skill_index() -> dict[str, tuple[str, str]]:
     return index
 
 
+# A step's canonical slug is its filename stem minus the ordering prefix: `03-output-format.md`
+# → `output-format`. This is the vocabulary the driver is told to stamp onto `present_options.step`
+# so the proxy can bind the injection cursor to the step the model actually reached (agent.py),
+# instead of counting turns. _norm_step normalizes both sides of that match so a driver that emits
+# `Output Format`, `output_format`, or `03-output-format` still resolves.
+_STEP_PREFIX = re.compile(r"^\d+[-_ ]*")
+
+
+def _norm_step(value: str) -> str:
+    out = _STEP_PREFIX.sub("", value.strip().lower())
+    out = re.sub(r"[\s_]+", "-", out)
+    return out.strip("-")
+
+
 @lru_cache(maxsize=256)
-def _skill_steps(skill_name: str) -> tuple[str, ...]:
-    """The ordered step-detail blocks for a skill, or () when it is unknown or has no
-    `steps/` dir (i.e. not a stepped skill — no injection). Files are ordered by name, so
-    they must carry a zero-padded numeric prefix (01-, 02-, …). Cached like `_load`."""
+def _skill_step_entries(skill_name: str) -> tuple[tuple[str, str], ...]:
+    """The ordered `(slug, detail-block)` pairs for a skill, or () when it is unknown or has
+    no `steps/` dir (not a stepped skill — no injection). `slug` is the normalized filename
+    stem (the step id the driver stamps on `present_options.step`); the block is the file body.
+    Files are ordered by name, so they must carry a zero-padded numeric prefix (01-, 02-, …).
+    Empty files are skipped, so slug and block indices stay aligned. Cached like `_load`."""
     entry = _skill_index().get(skill_name)
     if entry is None:
         return ()
@@ -166,15 +183,35 @@ def _skill_steps(skill_name: str) -> tuple[str, ...]:
         files = sorted(steps_dir.glob("*.md"))
     except OSError:
         return ()
-    blocks: list[str] = []
+    out: list[tuple[str, str]] = []
     for path in files:
         try:
             text = path.read_text(encoding="utf-8").strip()
         except OSError:
             continue
         if text:
-            blocks.append(text)
-    return tuple(blocks)
+            out.append((_norm_step(path.stem), text))
+    return tuple(out)
+
+
+def _skill_steps(skill_name: str) -> tuple[str, ...]:
+    """The ordered step-detail blocks for a skill (see _skill_step_entries)."""
+    return tuple(block for _slug, block in _skill_step_entries(skill_name))
+
+
+def skill_step_index_for_slug(skill_name: str | None, value: str | None) -> int:
+    """Resolve a `present_options.step` value the driver reported to the 0-based index of the
+    matching step, or -1 when the skill is not stepped or the value matches no step. Matching
+    is on the normalized slug, so prefix/case/separator drift still resolves."""
+    if not skill_name or not value:
+        return -1
+    target = _norm_step(value)
+    if not target:
+        return -1
+    for idx, (slug, _block) in enumerate(_skill_step_entries(skill_name)):
+        if slug == target:
+            return idx
+    return -1
 
 
 def skill_step_count(skill_name: str | None) -> int:

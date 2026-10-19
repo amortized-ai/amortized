@@ -50,6 +50,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.phases import (
     phase_block,
     skill_step_count,
+    skill_step_index_for_slug,
     subagent_phase,
     system_reminder,
     with_block,
@@ -138,9 +139,15 @@ class SessionState:
     # another's turns. Drives per-step skill injection for stepped skills.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
     # Per-target cursor into the active stepped skill's step slices: the index of the step
-    # whose detail to inject next. Advances one step per subagent turn while a stepped skill
-    # is active; reset when a fresh session is delegated to the target.
+    # whose detail to inject next. NOT a turn counter — it is bound to the step the model
+    # actually reached, advanced (monotonically) from the `present_options.step` the driver
+    # stamps on its question cards (see _advance_skill_cursor). Reset when a fresh session is
+    # delegated to the target.
     skill_step_idx: dict[str, int] = field(default_factory=dict)
+    # Last raw `present_options.step` value seen per target, so the cursor's degraded fallback
+    # (an unrecognized free-text label → advance by one) stays idempotent across the interaction
+    # rerun loop, which re-observes the same card several times in one turn.
+    skill_last_asked: dict[str, str] = field(default_factory=dict)
     # Content signatures of review cards (e.g. an assessor prompt) already rendered
     # to the user standalone. The review gate fires only for a prompt NOT in this
     # set; once shown, a later confirm that re-includes the same prompt is allowed
@@ -579,27 +586,62 @@ _BACKFILL_PHASE_TOOL = "mcp_amortized__signal_phase"
 
 
 def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
-    """Prepend the active stepped skill's current step-detail block to a gather turn, then
-    advance the per-target cursor so the next turn gets the next step.
+    """Prepend the active stepped skill's current step-detail block to a gather turn.
+
+    Inject-only: it reads the cursor but never advances it. Advancing is content-driven and
+    happens when the model's RESPONSE is processed (_advance_skill_cursor), so a turn where the
+    driver stalls, re-asks, or jumps ahead moves the cursor to match — never blindly one-per-turn.
 
     No-op outside the gather phase, when no skill is active, or when the active skill is not
     stepped (opt-in by `steps/` presence) — so callers wrap every gather turn without first
-    checking skill state. Called once per subagent turn (the message handler / resume
-    handoff), NOT in _ensure_phase_signal which can run twice on an interaction rerun."""
+    checking skill state."""
     if phase != _GATHER_PHASE:
         return text
     skill = state.active_skill_by_target.get(target)
-    count = skill_step_count(skill)
-    if not count:
+    if not skill_step_count(skill):
         return text
     # Step 1 is appended into the served SKILL.md at build time (gen_native_skills), so it is
     # already present when the skill loads. The cursor therefore starts PAST it — the first
-    # injected turn gets step 2 — and advances one step per gather turn through the rest.
+    # injected turn gets step 2 — and thereafter tracks the step the driver reports reaching.
     idx = state.skill_step_idx.get(target, _RESIDENT_SKILL_STEPS)
-    text = with_skill_step_block(skill, idx, text)
-    if idx < count:
-        state.skill_step_idx[target] = idx + 1
-    return text
+    return with_skill_step_block(skill, idx, text)
+
+
+def _advance_skill_cursor(state: SessionState, target: str, parts: list[dict[str, Any]]) -> None:
+    """Bind the per-target step cursor to the step the model actually reached this turn.
+
+    The driver stamps each gather question's `present_options.step` with the current step's slug
+    (the step blocks instruct it to). Resolve those slugs to step indices and move the cursor to
+    one past the furthest reached — so a bundled turn catches up, a jumped-to step is honoured,
+    and a stall/re-ask holds the cursor (re-injecting, never skipping). Idempotent across the
+    interaction rerun loop (max()-based; the fallback is guarded by the last raw slug), so it is
+    safe to call on every pass over the response parts.
+
+    Fallback: when the stamped value matches no step slug (the driver used its own label), degrade
+    to a single forward step per NEW question so gathering still progresses rather than stranding —
+    but only the crisp slug path can jump multiple steps or hold on a repeat."""
+    skill = state.active_skill_by_target.get(target)
+    count = skill_step_count(skill)
+    if not count:
+        return
+    asked = [
+        str(_get_tool_input(p).get("step") or "").strip()
+        for p in parts
+        if _tool_name(p) == "present_options"
+    ]
+    asked = [s for s in asked if s]
+    if not asked:
+        return  # no question posed → no evidence of forward progress; hold the cursor
+    cur = state.skill_step_idx.get(target, _RESIDENT_SKILL_STEPS)
+    detected = max((skill_step_index_for_slug(skill, s) for s in asked), default=-1)
+    if detected >= 0:
+        new = max(cur, detected + 1)  # crisp content anchor: catch up, honour a jump, hold a repeat
+    elif asked[-1] != state.skill_last_asked.get(target):
+        new = cur + 1  # unrecognized label on a NEW question: degrade to one forward step
+    else:
+        new = cur  # unrecognized label we already counted (rerun / unchanged) → hold
+    state.skill_last_asked[target] = asked[-1]
+    state.skill_step_idx[target] = min(new, count)
 
 
 def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
@@ -631,6 +673,12 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
             skill_name = _get_tool_input(part).get("name")
             if skill_name and state.subagent_target:
                 state.active_skill_by_target[state.subagent_target] = str(skill_name)
+    # Bind the stepped-skill cursor to the step this turn reached, from the question cards'
+    # stamped step id. Only in the gather phase (where steps are injected), and after the loop
+    # so a skill loaded / phase signalled in the same turn is already recorded.
+    target = state.subagent_target
+    if target and subagent_phase(target, state.last_signal_step) == _GATHER_PHASE:
+        _advance_skill_cursor(state, target, parts)
     if signalled:
         return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
@@ -2302,6 +2350,7 @@ async def _maybe_delegate(
         state.last_signal_step = ""
         state.active_skill_by_target.pop(target, None)
         state.skill_step_idx.pop(target, None)
+        state.skill_last_asked.pop(target, None)
         framing = system_reminder(f"[CONTEXT]\n{context}")
         handoff_msg = with_block(
             target,
