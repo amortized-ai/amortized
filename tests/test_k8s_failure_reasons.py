@@ -172,6 +172,49 @@ class _FakeSecretCore:
         self.replaced.append(name)
 
 
+class TestStatusNotFound:
+    """status() must infer 'resource gone' from the HTTP 404, not the error text —
+    a 409/500 body can embed '404' (e.g. inside a UUID) and must not be misread."""
+
+    def _status_for_error(self, monkeypatch, error: Exception):
+        import kubernetes_asyncio.client as k8s_client
+
+        from amortized.backends import BackendHandle
+
+        class _FakeBatch:
+            async def read_namespaced_job(self, name: str, namespace: str) -> object:
+                raise error
+
+        async def _fake_get_client() -> None:
+            return None
+
+        monkeypatch.setattr(k8s_client, "BatchV1Api", lambda api_client: _FakeBatch())
+        backend = _backend()
+        monkeypatch.setattr(backend, "_get_client", _fake_get_client)
+        handle = BackendHandle(backend_name="kubernetes", job_id="j1", scheduler_id="amortized-j1")
+        return _run(backend.status(handle))
+
+    def test_404_marks_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        bs = self._status_for_error(monkeypatch, ApiException(status=404))
+        assert bs.not_found is True
+        assert bs.running is False
+
+    def test_500_is_not_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        bs = self._status_for_error(monkeypatch, ApiException(status=500))
+        assert bs.not_found is False
+
+    def test_409_body_with_404_substring_is_not_not_found(self, monkeypatch) -> None:
+        from kubernetes_asyncio.client import ApiException
+
+        err = ApiException(status=409, reason="Conflict: amortized-a404b1c2 already exists")
+        bs = self._status_for_error(monkeypatch, err)
+        assert bs.not_found is False
+
+
 class TestIdempotentSecret:
     """A requeued job's resubmit must not collide on a Secret left by an earlier submit."""
 

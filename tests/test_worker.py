@@ -330,6 +330,48 @@ class TestRecovery:
         assert row is not None
         assert row["status"] == "running"  # untouched; the poll loop will record success
 
+    @pytest.mark.asyncio
+    async def test_resume_does_not_clobber_a_job_cancelled_mid_recovery(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """If the API cancels a provisioning job while recovery is checking its backend
+        status, the status-guarded update must not requeue the now-cancelled job."""
+        import amortized.config as config_mod
+        from amortized.backends import BackendStatus
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+        from amortized.models import JobType
+        from amortized.worker import _resume_inflight_jobs
+
+        ns = config_mod.settings.compute_namespace
+        handle = (
+            '{"backend_name": "kubernetes", "job_id": "race1",'
+            ' "scheduler_id": "amortized-race1"}'
+        )
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            await repo.create_job(
+                job_id="race1", job_type=JobType.training, config={"algorithm": "sft"},
+                created_at="2026-01-01T00:00:00+00:00", k8s_namespace=ns,
+            )
+            await repo.update_job("race1", status="provisioning", backend_handle=handle)
+
+        async def _cancel_then_report_gone(_handle: object) -> BackendStatus:
+            # The API cancels the job during the status check (the TOCTOU window).
+            async with get_pool().acquire() as conn:
+                await Repository(conn).update_job("race1", status="cancelled")
+            return BackendStatus(running=False, not_found=True)
+
+        fake = MagicMock()
+        fake.status = AsyncMock(side_effect=_cancel_then_report_gone)
+        with patch("amortized.worker.get_backend", return_value=fake):
+            await _resume_inflight_jobs()
+
+        async with get_pool().acquire() as conn:
+            row = await Repository(conn).get_job("race1")
+        assert row is not None
+        assert row["status"] == "cancelled"  # guard prevented the requeue
+
 
 class TestCancelRunningJob:
     @pytest.mark.asyncio

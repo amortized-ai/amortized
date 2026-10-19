@@ -485,8 +485,11 @@ class KubernetesBackend:
         try:
             job = await batch.read_namespaced_job(resource_name, self._namespace)
         except Exception as e:
-            err_str = str(e)
-            not_found = "404" in err_str or "NotFound" in err_str
+            # Trust the HTTP status, not a substring of the error text: an ApiException
+            # string includes the response body, and a 409/500 body or a connection
+            # error can contain "404" (in a UUID or URL) and be misread as "resource gone"
+            # — which now drives recovery (requeue / fail), so a false positive double-submits.
+            not_found = getattr(e, "status", None) == 404
             if not_found:
                 msg = (
                     f"Job '{resource_name}' no longer exists."

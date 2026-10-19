@@ -724,17 +724,33 @@ async def _resume_inflight_jobs() -> list[dict[str, Any]]:
     now = datetime.now(UTC)
 
     async def _mark_gone(job: dict[str, Any]) -> None:
-        if job["status"] == JobStatus.provisioning.value:
-            await _update_job(job["id"], status=JobStatus.queued.value)
-            logger.warning("Requeued job %s (provisioning, resource gone) after restart", job["id"])
-        else:
-            await _update_job(
-                job["id"],
-                status=JobStatus.failed.value,
-                completed_at=now,
-                error="Orphaned job — process no longer running",
-            )
-            logger.warning("Marked orphaned job %s as failed", job["id"])
+        # Guard the write on the status we read: the API may cancel (or another worker may
+        # finalize) the job between the status read and here. An id-only UPDATE would clobber
+        # that newer state — requeue a cancelled job, or fail a finished one.
+        async with get_pool().acquire() as conn:
+            if job["status"] == JobStatus.provisioning.value:
+                result = await conn.execute(
+                    "UPDATE jobs SET status = $1 WHERE id = $2 AND status = $3",
+                    JobStatus.queued.value,
+                    job["id"],
+                    JobStatus.provisioning.value,
+                )
+                if result == "UPDATE 1":
+                    logger.warning(
+                        "Requeued job %s (provisioning, resource gone) after restart", job["id"]
+                    )
+            else:
+                result = await conn.execute(
+                    """UPDATE jobs SET status = $1, completed_at = $2, error = $3
+                       WHERE id = $4 AND status = $5""",
+                    JobStatus.failed.value,
+                    now,
+                    "Orphaned job — process no longer running",
+                    job["id"],
+                    JobStatus.running.value,
+                )
+                if result == "UPDATE 1":
+                    logger.warning("Marked orphaned job %s as failed", job["id"])
 
     resumable: list[dict[str, Any]] = []
     for job in inflight:
