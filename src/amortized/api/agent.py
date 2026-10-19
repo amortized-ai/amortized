@@ -47,7 +47,14 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
-from amortized.api.phases import phase_block, subagent_phase, system_reminder, with_block
+from amortized.api.phases import (
+    phase_block,
+    skill_step_count,
+    subagent_phase,
+    system_reminder,
+    with_block,
+    with_skill_step_block,
+)
 from amortized.config import settings
 from amortized.core import lineage
 
@@ -126,6 +133,14 @@ class SessionState:
     # signal_phase the server can backfill the UI progress bar at the right step
     # instead of snapping it back to the start of the phase.
     last_signal_step: str = ""
+    # The skill each subagent target has loaded (its frontmatter `name`, captured from the
+    # opencode `skill` tool call), keyed by target so one subagent's skill never bleeds into
+    # another's turns. Drives per-step skill injection for stepped skills.
+    active_skill_by_target: dict[str, str] = field(default_factory=dict)
+    # Per-target cursor into the active stepped skill's step slices: the index of the step
+    # whose detail to inject next. Advances one step per subagent turn while a stepped skill
+    # is active; reset when a fresh session is delegated to the target.
+    skill_step_idx: dict[str, int] = field(default_factory=dict)
     # Content signatures of review cards (e.g. an assessor prompt) already rendered
     # to the user standalone. The review gate fires only for a prompt NOT in this
     # set; once shown, a later confirm that re-includes the same prompt is allowed
@@ -362,9 +377,7 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
-def _enforce_single_interaction(
-    result: dict[str, Any], state: SessionState
-) -> dict[str, Any]:
+def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> dict[str, Any]:
     """A turn either ASKS the user one question or CONFIRMS one job — never both.
 
     present_options asks a question and MUST end the turn; a validate_* renders a
@@ -546,12 +559,39 @@ def _enforce_single_interaction(
 # cannot fall out of sync (a missing phase would strand the UI bar on a stale stage).
 _PHASE_FOR_TARGET = {t: t for t in _VALID_TARGETS}
 
+# The phase during which a stepped skill's per-step detail is surfaced: requirement
+# gathering. Per-step injection is confined to this phase so leftover step slices can't
+# bleed into the later config-building/validate turns (whose detail stays in the SKILL.md
+# body). Matches the `signal_phase.step` slug the sdg/training gather phase reports.
+_GATHER_PHASE = "phase-2-gather"
+
 
 # Synthetic tool name for the phase signal _ensure_phase_signal backfills when the model
 # forgot to call signal_phase. Deliberately distinct from opencode's real
 # `amortized_signal_phase` so _run_turn can keep this backfill (the client's own GET lacks
 # it) while dropping the other fetched tool parts it must not ship to the client (issue #505).
 _BACKFILL_PHASE_TOOL = "mcp_amortized__signal_phase"
+
+
+def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
+    """Prepend the active stepped skill's current step-detail block to a gather turn, then
+    advance the per-target cursor so the next turn gets the next step.
+
+    No-op outside the gather phase, when no skill is active, or when the active skill is not
+    stepped (opt-in by `steps/` presence) — so callers wrap every gather turn without first
+    checking skill state. Called once per subagent turn (the message handler / resume
+    handoff), NOT in _ensure_phase_signal which can run twice on an interaction rerun."""
+    if phase != _GATHER_PHASE:
+        return text
+    skill = state.active_skill_by_target.get(target)
+    count = skill_step_count(skill)
+    if not count:
+        return text
+    idx = state.skill_step_idx.get(target, 0)
+    text = with_skill_step_block(skill, idx, text)
+    if idx < count:
+        state.skill_step_idx[target] = idx + 1
+    return text
 
 
 def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
@@ -567,12 +607,24 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
     if not phase:
         return result
     parts = result.get("parts") or []
+    signalled = False
     for part in parts:
-        if _tool_name(part) == "signal_phase":
+        name = _tool_name(part)
+        if name == "signal_phase":
             step = _get_tool_input(part).get("step")
             if step:
                 state.last_signal_step = str(step)
-            return result  # model signalled this turn; nothing to backfill
+            signalled = True
+        elif name == "skill":
+            # opencode-native skill load: record which skill this target has active so the
+            # proxy can inject that skill's per-step detail. Scanned in the same pass (not an
+            # early return) because the skill call often trails a signal_phase in the turn.
+            # Idempotent — safe if this runs twice in a turn (the interaction rerun loop).
+            skill_name = _get_tool_input(part).get("name")
+            if skill_name and state.subagent_target:
+                state.active_skill_by_target[state.subagent_target] = str(skill_name)
+    if signalled:
+        return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
     result["parts"] = [
         *parts,
@@ -687,9 +739,7 @@ async def _fetch_all_messages(
 
 # UUID, or any hex run of >=8 chars (job/run ids are UUIDs; models often surface a
 # short prefix). Anchored so pure-prose words can't match (hex letters are a-f).
-_ID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}"
-)
+_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}")
 
 
 def _extract_id_candidates(text: str) -> set[str]:
@@ -812,7 +862,11 @@ async def _apply_provenance_gate(
             logger.warning(
                 "Provenance gate: ungrounded identifier(s) %s session=%s agent=%s "
                 "(correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+                violations,
+                active_id,
+                agent,
+                attempt,
+                MAX_PROVENANCE_RETRIES,
             )
             correction = (
                 "[GROUNDING VIOLATION — internal system check, not from the user]\n"
@@ -824,9 +878,7 @@ async def _apply_provenance_gate(
                 "one — call the appropriate tool to fetch it first, or tell the user you "
                 "don't have it yet."
             )
-            post = await _proxy_send_message(
-                active_id, correction, agent=agent, model=body.model
-            )
+            post = await _proxy_send_message(active_id, correction, agent=agent, model=body.model)
             # The correction adds new messages to the active session; drop its cached
             # copy so re-grounding fetches them (other sessions stay cached).
             if cache is not None:
@@ -850,7 +902,9 @@ async def _apply_provenance_gate(
         # content.
         logger.warning(
             "Provenance gate: still ungrounded after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+            MAX_PROVENANCE_RETRIES,
+            violations,
+            active_id,
         )
         parts = list(current.get("parts") or [])
         parts.append(
@@ -941,6 +995,7 @@ _SUBMITTED_CLAIM_RE = re.compile(
 # field-driven stage-gate, keys on the full _TYPE_BY_VALIDATE_TOOL — every committing
 # dispatch — so an incidental job id on a read-only tool is never treated as a dispatch.)
 _DISPATCH_PARENT_TYPE = {t: jt for t, jt in _TYPE_BY_VALIDATE_TOOL.items() if jt != "sdg"}
+
 
 def _as_utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
@@ -1292,7 +1347,11 @@ async def _apply_job_claim_gate(
         for attempt in range(1, MAX_PROVENANCE_RETRIES + 1):
             logger.warning(
                 "Job-claim gate: contradicted claim(s) %s session=%s agent=%s (correction %d/%d)",
-                violations, active_id, agent, attempt, MAX_PROVENANCE_RETRIES,
+                violations,
+                active_id,
+                agent,
+                attempt,
+                MAX_PROVENANCE_RETRIES,
             )
             post = await _proxy_send_message(
                 active_id, _job_claim_correction(violations), agent=agent, model=body.model
@@ -1311,7 +1370,9 @@ async def _apply_job_claim_gate(
 
         logger.warning(
             "Job-claim gate: still contradicted after %d correction(s) %s session=%s",
-            MAX_PROVENANCE_RETRIES, violations, active_id,
+            MAX_PROVENANCE_RETRIES,
+            violations,
+            active_id,
         )
         parts = list(current.get("parts") or [])
         parts.append(_caveat_part(_job_claim_caveat(violations)))
@@ -1870,7 +1931,9 @@ async def _run_turn(
                 steer_agent = state.subagent_target if state.subagent_id else "morty"
                 logger.info(
                     "Interaction gate: held a committing card; re-running the model to "
-                    "clear it (session=%s agent=%s)", session_id, steer_agent,
+                    "clear it (session=%s agent=%s)",
+                    session_id,
+                    steer_agent,
                 )
                 await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
                 refetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
@@ -2015,11 +2078,14 @@ async def _handle_subagent_message(
         # handoff), so the active step's full instructions stay in the freshest position.
         # Skipped on job_complete, which carries its own terminal hand-back steer above.
         target_for_phase = state.subagent_target or ""
-        user_text = with_block(
-            target_for_phase,
-            subagent_phase(target_for_phase, state.last_signal_step),
-            user_text,
-        )
+        phase_for_turn = subagent_phase(target_for_phase, state.last_signal_step)
+        # During gathering, surface the active stepped skill's current step detail (one step
+        # per turn) just under the phase block, then advance the cursor so the next turn gets
+        # the next step. The skill's titles + body stay resident, so this only moves the
+        # freshest detail forward — it never hides the outline. Advanced exactly here (once
+        # per turn), not in _ensure_phase_signal (which can run twice on a rerun).
+        user_text = _with_active_skill_step(state, target_for_phase, phase_for_turn, user_text)
+        user_text = with_block(target_for_phase, phase_for_turn, user_text)
         # Deliver any steer the interaction gate parked on a prior held-card turn as the
         # lead of this message (ahead of the phase block — an urgent correction outranks
         # ambient framing). Skipped on a job_complete event (which appends to user_text
@@ -2151,9 +2217,7 @@ async def _handle_subagent_message(
             state.pending_help_target = target
             state.pending_help_producer = state.subagent_target
         response_parts = _strip_internal_tools(result.get("parts", []))
-        help_result["parts"] = response_parts + _strip_internal_tools(
-            help_result.get("parts", [])
-        )
+        help_result["parts"] = response_parts + _strip_internal_tools(help_result.get("parts", []))
         return help_result
 
     # Ordinary subagent turn (no completion, no help request). Strip internal tools
@@ -2202,11 +2266,11 @@ async def _maybe_delegate(
         # Inject the block for the phase the subagent last signalled, so a resume lands
         # it back on the right step with that step's full instructions in the turn.
         framing = system_reminder(f"[RESUMED]\n{context}")
-        handoff_msg = with_block(
-            target,
-            subagent_phase(target, state.last_signal_step),
-            f"{framing}\n\n{user_text}",
+        resume_phase = subagent_phase(target, state.last_signal_step)
+        resume_msg = _with_active_skill_step(
+            state, target, resume_phase, f"{framing}\n\n{user_text}"
         )
+        handoff_msg = with_block(target, resume_phase, resume_msg)
         sub_result = await _proxy_send_message(
             stashed_id, handoff_msg, agent=target, model=body.model
         )
@@ -2216,8 +2280,12 @@ async def _maybe_delegate(
         sub_id = await _proxy_create_session()
         # A fresh subagent starts at its entry phase: clear any step carried over from a
         # previous subagent so subagent_phase() resolves to the first section, and inject
-        # that section's block as the lead of the handoff.
+        # that section's block as the lead of the handoff. Also drop any skill the prior
+        # session for this target had loaded and reset its step cursor — the fresh subagent
+        # re-loads its own skill and walks the steps from the start.
         state.last_signal_step = ""
+        state.active_skill_by_target.pop(target, None)
+        state.skill_step_idx.pop(target, None)
         framing = system_reminder(f"[CONTEXT]\n{context}")
         handoff_msg = with_block(
             target,
@@ -2352,8 +2420,7 @@ async def list_providers() -> dict[str, Any]:
             # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
             allowed_base = {_strip_date_suffix(a) for a in allowed}
             filtered = [
-                m for m in out
-                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+                m for m in out if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
             ]
             if filtered:
                 out = filtered

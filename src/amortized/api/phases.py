@@ -99,3 +99,109 @@ def with_block(agent: str, phase: str | None, text: str) -> str:
         return text
     wrapped = system_reminder(block)
     return f"{wrapped}\n\n{text}" if text else wrapped
+
+
+# ── Per-step SKILL slices ──────────────────────────────────────────────────────
+# Same idea as workflow phase injection, one level down and finer-grained. When a subagent
+# loads a skill, opencode dumps the whole SKILL.md into its context. For a skill with a clear
+# numbered-step gathering sequence, that whole body at once is more than a weak driver tracks.
+# Fix: the SKILL.md keeps everything — routing, rules, the Step N TITLES (as an outline), and
+# every non-step section (column pipeline, model config, checklist, …) — but each step's
+# DETAIL body moves to `agents/<agent>/skills/<skill>/steps/<NN>-<slug>.md`, and the proxy
+# injects one step's detail at a time as the subagent advances through gathering. The outline
+# of titles stays resident so the driver is always oriented; the injected block surfaces the
+# current step's detail in the freshest position.
+#
+# Opt-in by file presence: a skill with no `steps/` dir gets nothing injected and its full
+# SKILL.md drives it as before. The `steps/` subdir sits one level below the skill dir, so
+# `gen_native_skills` (maxdepth-1 copy) never ships it into opencode's skill tree; it lives
+# only in the server image (COPY agents/) for injection here. Skills are keyed by their
+# frontmatter `name` (what the `skill` tool call reports), resolved to a dir via the index.
+
+
+def _frontmatter_name(text: str) -> str | None:
+    """The `name:` from a SKILL.md YAML frontmatter block, or None."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("name:"):
+            return line[len("name:") :].strip()
+    return None
+
+
+@lru_cache(maxsize=1)
+def _skill_index() -> dict[str, tuple[str, str]]:
+    """Map each skill's frontmatter `name` → (agent, skill-dir relative to the agent's
+    skills/ root). Built once by scanning agents/*/skills/**/SKILL.md; the skill tool call
+    reports the name, and this resolves it to where the step slices live."""
+    base = _get_base_dir() / "agents"
+    index: dict[str, tuple[str, str]] = {}
+    for skill_md in base.glob("*/skills/**/SKILL.md"):
+        try:
+            name = _frontmatter_name(skill_md.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if not name:
+            continue
+        agent = skill_md.relative_to(base).parts[0]
+        reldir = skill_md.parent.relative_to(base / agent / "skills").as_posix()
+        index[name] = (agent, reldir)
+    return index
+
+
+@lru_cache(maxsize=256)
+def _skill_steps(skill_name: str) -> tuple[str, ...]:
+    """The ordered step-detail blocks for a skill, or () when it is unknown or has no
+    `steps/` dir (i.e. not a stepped skill — no injection). Files are ordered by name, so
+    they must carry a zero-padded numeric prefix (01-, 02-, …). Cached like `_load`."""
+    entry = _skill_index().get(skill_name)
+    if entry is None:
+        return ()
+    agent, reldir = entry
+    steps_dir = _get_base_dir() / "agents" / agent / "skills" / reldir / "steps"
+    try:
+        files = sorted(steps_dir.glob("*.md"))
+    except OSError:
+        return ()
+    blocks: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            blocks.append(text)
+    return tuple(blocks)
+
+
+def skill_step_count(skill_name: str | None) -> int:
+    """How many step slices a skill has (0 if it is not a stepped skill)."""
+    if not skill_name:
+        return 0
+    return len(_skill_steps(skill_name))
+
+
+def skill_step_block(skill_name: str | None, idx: int) -> str | None:
+    """The `idx`-th (0-based) step-detail block for a skill, or None when the skill is not
+    stepped or `idx` is out of range (past the last step — nothing more to inject)."""
+    if not skill_name or idx < 0:
+        return None
+    steps = _skill_steps(skill_name)
+    if idx >= len(steps):
+        return None
+    return steps[idx]
+
+
+def with_skill_step_block(skill_name: str | None, idx: int, text: str) -> str:
+    """Prepend a skill's `idx`-th step-detail block to a turn message, if one exists.
+
+    Wrapped in a `<system-reminder>` like `with_block`. No-op when the skill is not stepped
+    or `idx` is out of range, so callers wrap unconditionally."""
+    block = skill_step_block(skill_name, idx)
+    if not block:
+        return text
+    wrapped = system_reminder(block)
+    return f"{wrapped}\n\n{text}" if text else wrapped
