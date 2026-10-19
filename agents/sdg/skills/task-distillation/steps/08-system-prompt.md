@@ -16,13 +16,12 @@ is the only way the user sees the prompt, so render it before asking them to
 review or approve it. The same prompt is used in both the output-generating
 column `system_prompt` and the SFT processor system message.
 
-If the user ADJUSTS the prompt — changes a threshold (e.g. "≥7 is pass"),
-rewords a rule, adds or drops a constraint — fold their change into the full
-prompt text and render the UPDATED prompt with `show_prompt` AGAIN for
-re-approval. Stay on this step, repeating that render → approve loop, until
-they explicitly approve the prompt as shown. An adjustment is NOT approval:
-do NOT advance to the confirm card (`validate_sdg_job`) on an edit, and never
-respond to an edit by writing or editing a file — the prompt exists only in
-the `show_prompt` tool call.
+If the user replies with ANYTHING other than a clear approval, treat it as an
+edit: fold their request into the full prompt text and render the UPDATED
+prompt with `show_prompt` AGAIN for re-approval. Repeat this render → approve
+loop, staying on this step, until they explicitly approve the prompt as shown.
+An edit is never an approval: do NOT advance to the confirm card
+(`validate_sdg_job`) on an edit, and do NOT respond to one by writing or
+editing a file — the prompt exists only in the `show_prompt` tool call.
 
 When you ask the user about this step, call present_options with step: "system-prompt".
