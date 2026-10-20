@@ -212,6 +212,15 @@ class TestEstimateGpuDemand:
     def test_training_respects_nproc_per_node(self) -> None:
         assert estimate_gpu_demand({"type": "training", "config": {"nproc_per_node": 2}}) == 2
 
+    def test_embedding_sft_training_needs_no_gpu(self) -> None:
+        # embedding_sft (and its classifier/embedding aliases) trains CPU-only in-process, so it
+        # requests 0 GPUs regardless of nproc_per_node — matches the builder (issue #486).
+        for algo in ("embedding_sft", "classifier", "embedding"):
+            assert estimate_gpu_demand({"type": "training", "config": {"algorithm": algo}}) == 0
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "embedding_sft", "nproc_per_node": 4}}
+        ) == 0
+
     def test_sdg_and_upload_need_no_gpu(self) -> None:
         assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0
         assert estimate_gpu_demand({"type": "upload", "config": {"source": "document"}}) == 0

@@ -24,6 +24,8 @@ This flow is different from the LLM training sub-skills (OSFT/SFT/LoRA):
   (lora/qlora/osft/sft) to present.
 - The base is a small **sentence-transformers** model, so **skip the VRAM cards**
   and student-model-size comparison — they don't apply. Just pick a base model.
+- It **trains on CPU — no GPU is required** (the job requests 0 GPUs and schedules on
+  any node, so it never consumes the GPU quota). Don't mention GPUs or VRAM to the user.
 
 ## Requirement gathering
 

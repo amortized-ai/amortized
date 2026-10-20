@@ -158,6 +158,53 @@ class TestBuildResumeFromFinetuned:
         assert "merge_lora.py" not in result.config_files
 
 
+class TestBuildGpuResources:
+    """embedding_sft trains CPU-only in-process (no torchrun); other algorithms scale GPUs
+    with nproc_per_node. See issue #486."""
+
+    @pytest.mark.asyncio
+    async def test_embedding_sft_requests_zero_gpus(self) -> None:
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "emb1", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+    @pytest.mark.asyncio
+    async def test_embedding_sft_ignores_nproc_per_node(self) -> None:
+        # nproc_per_node is ignored by embedding_sft, so it must not request GPUs even if set.
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+            "nproc_per_node": 4,
+        }
+        result = await training_builder.build({"id": "emb2", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+    @pytest.mark.asyncio
+    async def test_classifier_alias_requests_zero_gpus(self) -> None:
+        config = {
+            "algorithm": "classifier",  # alias -> embedding_sft
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "emb3", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+    @pytest.mark.asyncio
+    async def test_sft_still_requests_gpu(self) -> None:
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "meta-llama/Llama-3.1-8B",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "sft1", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
+
 class TestDataRunIdSkipped:
     def test_data_run_id_not_in_training_hub_config(self) -> None:
         config = {

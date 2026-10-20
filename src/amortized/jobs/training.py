@@ -177,12 +177,18 @@ async def build(
         f"mlflow artifacts log-artifacts -l {shlex.quote(output_dir)} -r $MLFLOW_RUN_ID -a model"
     )
 
+    # embedding_sft trains in-process via SentenceTransformerTrainer (no torchrun) and picks
+    # CUDA only if torch.cuda.is_available() — so it runs CPU-only on any node, and nproc_per_node
+    # is ignored. Request 0 GPUs for it (no nvidia nodeSelector/runtimeclass → schedules anywhere,
+    # frees the GPU quota). All other algorithms scale with nproc_per_node. Keep this in sync with
+    # estimate_gpu_demand() in core/jobs.py. See issue #486.
+    gpus = 0 if algorithm == "embedding_sft" else config.get("nproc_per_node", 1)
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
         pre_commands=model_pre_commands,
         post_commands=[post_cmd],
-        resources=Resources(gpus=config.get("nproc_per_node", 1)),
+        resources=Resources(gpus=gpus),
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=dict(config),
     )

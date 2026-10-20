@@ -18,6 +18,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("amortized.core.jobs")
 
+# embedding_sft (and its classifier/embedding aliases) trains in-process via
+# SentenceTransformerTrainer — CPU-only, no torchrun, nproc_per_node ignored — so it requests
+# 0 GPUs. Kept in sync with the embedding_sft branch in jobs/training.py (issue #486) and the
+# ALGO_ALIASES there.
+_CPU_TRAINING_ALGORITHMS = frozenset({"embedding_sft", "classifier", "embedding"})
+
 
 def estimate_gpu_demand(job: dict[str, Any]) -> int:
     """Best-effort count of GPUs a job's pod will request, from its (type, config).
@@ -26,7 +32,8 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     count is only known after the (async, side-effecting) builder runs. This mirrors
     the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
     building. Keep in sync with ``amortized.jobs.*``:
-      - training        -> nproc_per_node (default 1)
+      - training, embedding_sft/classifier -> 0 (CPU-only, in-process; nproc_per_node ignored)
+      - training, other algorithms         -> nproc_per_node (default 1)
       - sdg / upload     -> 0
       - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
       - eval, embedded serving (training_job_id / model_name_or_path, no endpoint)
@@ -48,6 +55,8 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
 
     job_type = job.get("type")
     if job_type == JobType.training.value:
+        if str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS:
+            return 0  # embedding_sft trains CPU-only in-process; nproc_per_node is ignored
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":
