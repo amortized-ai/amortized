@@ -178,6 +178,15 @@ async def build(
         resolved_config["mode"] = mode
     if topic:
         resolved_config["topic"] = topic
+    # Keep document_ids in the PERSISTED config so the job stays reproducible and
+    # clonable. build() pops document_ids and resolves seed_config.source.path to the
+    # runtime "/tmp/chunks" staging dir; persisting ONLY that resolved form (via
+    # worker._update_job(config=resolved_config)) leaves a clone/retry with a seed that
+    # points at /tmp/chunks and no document_ids to re-stage from, so DataDesigner fails
+    # with "Seed source directory '/tmp/chunks' does not exist". Restoring document_ids
+    # lets the next build() re-fetch the chunks and re-stage them.
+    if document_ids:
+        resolved_config["document_ids"] = document_ids
 
     return JobBuildResult(
         command=cmd,
