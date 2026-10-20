@@ -3651,6 +3651,12 @@
             "title": "Parent Job Id",
             "description": "Parent SDG/upload job ID holding the eval dataset",
             "default": ""
+          },
+          "acknowledge_warnings": {
+            "type": "boolean",
+            "title": "Acknowledge Warnings",
+            "description": "Set true ONLY after relaying validation warnings (leakage, rubric drift, recipe mismatch) to the user and they chose to proceed. Leave false on the first validate so a warning surfaces as a tool error for the user to decide.",
+            "default": false
           }
         },
         "additionalProperties": true,
