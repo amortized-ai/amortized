@@ -664,6 +664,17 @@ class EvalJobConfig(BaseModel):
 
 class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
+    acknowledge_warnings: str = Field(
+        "",
+        description=(
+            "Acknowledgment TOKEN for validation warnings. Leave empty on the first"
+            " validate: any warning (leakage, rubric drift, recipe mismatch) returns a 422"
+            " whose message contains a token. Relay the warning(s) to the user; only if"
+            " they choose to proceed, re-validate with this set to that exact token. The"
+            " token is tied to the specific warnings, so changing the config yields a new"
+            " warning set and a new token - forcing a fresh decision, never suppressing it."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

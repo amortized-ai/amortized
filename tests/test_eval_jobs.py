@@ -673,16 +673,36 @@ class TestRubricDriftWarning:
         async with _db_conn._pool.acquire() as conn:
             await conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = $1", job_id)
 
+        # Unacknowledged: a decision-warning now surfaces as a 422 tool error, so the
+        # agent relays it and gets the user's decision before any confirmation card.
+        drift_body = {
+            **EVAL_BODY,
+            "rubric": [{"name": "verdict_accuracy", "description": "paraphrased text"}],
+        }
+        response = await client.post("/api/v1/jobs/eval/validate", json=drift_body)
+        assert response.status_code == 422, response.text
+        body_str = str(response.json()).lower()
+        assert "comparable" in body_str
+        assert "verdict_accuracy" in body_str
+
+        # A stale/incorrect token does NOT suppress the warning (binding is enforced).
+        bad = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**drift_body, "acknowledge_warnings": "deadbeefdead"},
+        )
+        assert bad.status_code == 422, bad.text
+
+        # Acknowledged with the token from the 422: validate succeeds and carries the
+        # warning on the card.
+        import re as _re
+
+        m = _re.search(r'acknowledge_warnings="?([0-9a-f]{12})', str(response.json()))
+        assert m, response.text
         response = await client.post(
             "/api/v1/jobs/eval/validate",
-            json={
-                **EVAL_BODY,
-                "rubric": [
-                    {"name": "verdict_accuracy", "description": "paraphrased text"}
-                ],
-            },
+            json={**drift_body, "acknowledge_warnings": m.group(1)},
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         warnings = response.json()["warnings"]
         assert warnings and "NOT be comparable" in warnings[0]
         assert "verdict_accuracy" in warnings[0]
