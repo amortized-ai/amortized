@@ -198,6 +198,12 @@ def _config_fp(*keys: str) -> _Fingerprint:
 # (the MCP tool auto-derives from the endpoint body), so these are top-level keys.
 _FP_TRAIN_DATA = _config_fp("parent_job_id", "data_run_id", "data_path")
 _FP_TRAIN_MODEL = _config_fp("model_name_or_path", "training_job_id", "algorithm")
+# KNOWN GAP: GPU count is NOT in this fingerprint. num_gpus is not a declared
+# TrainingJobConfig field (the model is extra="allow"; GPU count lives in a separate
+# ComputeSpec), so changing ONLY the GPU count would not re-gate the VRAM estimate even
+# though per-GPU VRAM changes. Everything the config itself carries that affects VRAM is
+# covered below. If/when GPU count reaches the validate_training_job tool input, add its
+# key here so a GPU-count change re-shows the estimate.
 _FP_TRAIN_VRAM = _config_fp(
     "model_name_or_path", "training_job_id", "algorithm",
     "per_device_train_batch_size", "max_length", "gradient_accumulation_steps",
