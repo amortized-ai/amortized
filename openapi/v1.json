@@ -2106,6 +2106,61 @@
         }
       }
     },
+    "/agent/session/{session_id}/monitor/complete": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Mark Run Complete",
+        "description": "Record a human-declared run completion for monitor metrics.\n\nStudio calls this when the tester marks a test run done. It defines the\nboundary for turns-to-complete and total-tokens; the product itself has no\nworkflow-completion signal (the orchestrator loops indefinitely).",
+        "operationId": "mark_run_complete_agent_session__session_id__monitor_complete_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mark Run Complete Agent Session  Session Id  Monitor Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/session/{session_id}/turn/{turn_id}": {
       "get": {
         "tags": [
@@ -2764,6 +2819,39 @@
         ],
         "title": "ColumnInequalityConstraint",
         "description": "Constrain a sampler column to be less/greater than another sampler column.\n\nOnly applies to sampler columns.\n\nAttributes:\n    rhs (required): Name of the other sampler column to compare against.\n    operator (required): Comparison operator (lt, le, gt, ge).\n\nInherited Attributes:\n    target_column (required): Name of the sampler column this constraint applies to."
+      },
+      "CompletionRequest": {
+        "properties": {
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": "success"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "CompletionRequest"
       },
       "ConfigResponse": {
         "properties": {
@@ -3503,6 +3591,18 @@
       },
       "EvalJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "rubric": {
             "items": {
               "$ref": "#/components/schemas/EvalRubricCriterion"
@@ -5505,6 +5605,18 @@
       },
       "SDGJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "columns": {
             "items": {
               "anyOf": [
@@ -6193,7 +6305,7 @@
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Current step within the phase. Signal transitions in order: understand_task (identified what the user wants to build), load_skill (read the relevant skill guide), gather_requirements (asking user for parameters \u2014 signal on first ask), estimate_cost (checking models, pricing, or VRAM estimates), confirm (presenting the job validation/confirmation card), execute (job has been submitted), review (checking job results or presenting next steps). Signal the step you are currently at. Do not repeat a step already signaled.",
+            "description": "Slug of the workflow phase you are currently in \u2014 the exact slug shown in the [ACTIVE PHASE] block you were handed and in your workflow outline, e.g. 'phase-2-gather' (sdg/training) or 'step-1-dataset' (eval). This advances the UI progress bar and tells the platform which phase's instructions to keep in front of you. Signal the phase you are at now; do not skip ahead and do not repeat a phase already signalled.",
             "default": ""
           }
         },
@@ -6555,6 +6667,18 @@
       },
       "TrainingJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "algorithm": {
             "type": "string",
             "title": "Algorithm",
@@ -7072,6 +7196,13 @@
               }
             ],
             "title": "Data Record Count"
+          },
+          "trainer_default_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Trainer Default Fields"
           },
           "assessor_prompt": {
             "anyOf": [
