@@ -79,17 +79,25 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("ckpt_output_dir", output_dir)
         thub_config.setdefault("data_output_dir", output_dir + "/processed_data")
 
-    if algorithm in ("sft", "lora_sft"):
-        batch = thub_config.pop("micro_batch_size", 2)
-        thub_config.setdefault("effective_batch_size", batch * 4)
-        thub_config.setdefault("max_seq_len", 2048)
-        thub_config.setdefault("max_batch_len", 60000)
-    elif algorithm == "osft":
+    if algorithm in ("sft", "osft"):
+        # sft and osft share the instructlab-training path, so `thub sft`/`thub osft` take the
+        # same knobs: effective_batch_size, max_seq_len, max_tokens_per_gpu, and a *required*
+        # learning_rate. (`thub sft` rejects max_batch_len — "not a recognized sft parameter" —
+        # and errors on a missing learning_rate.) A caller-provided learning_rate is preserved;
+        # osft's unfreeze_rank_ratio flows through the generic field map from the job config.
         batch = thub_config.pop("micro_batch_size", 2)
         thub_config.setdefault("effective_batch_size", batch * 4)
         thub_config.setdefault("max_seq_len", 2048)
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
+    elif algorithm == "lora_sft":
+        # `thub lora-sft` uses micro_batch_size + its own learning_rate default (2e-4) and has no
+        # max_tokens_per_gpu knob. Kept as-is (incl. the harmless, ignored max_batch_len) to avoid
+        # changing the established lora_sft behavior.
+        batch = thub_config.pop("micro_batch_size", 2)
+        thub_config.setdefault("effective_batch_size", batch * 4)
+        thub_config.setdefault("max_seq_len", 2048)
+        thub_config.setdefault("max_batch_len", 60000)
     elif algorithm == "embedding_sft":
         # Contrastive embedding fine-tuning (classifiers/routers). It uses
         # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
