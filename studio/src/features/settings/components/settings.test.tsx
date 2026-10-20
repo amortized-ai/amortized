@@ -117,6 +117,7 @@ describe("SettingsPage", () => {
   })
 
   it("hides the AI Gateway section when no gateway is configured (enterprise-MLflow)", async () => {
+    mockGetGatewayRoutes.mockClear()
     mockGetHealth.mockResolvedValue(healthOk)
     mockGetConfig.mockResolvedValue({ ...config, mlflow_gateway_uri: null })
     mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
@@ -131,5 +132,7 @@ describe("SettingsPage", () => {
     // ...but the vestigial AI Gateway section + its external "Add Endpoint" link are gone.
     expect(screen.queryByTestId("add-gateway-route")).not.toBeInTheDocument()
     expect(screen.queryByText("AI Gateway")).not.toBeInTheDocument()
+    // ...and the gateway-routes fetch is skipped (no 404 against an unserved gateway).
+    expect(mockGetGatewayRoutes).not.toHaveBeenCalled()
   })
 })

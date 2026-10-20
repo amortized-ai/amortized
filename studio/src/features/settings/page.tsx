@@ -186,7 +186,9 @@ function AgentProviderSection() {
 export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
   const { data: healthData } = useHealth({ refetchInterval: 30000 })
-  const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
+  const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes({
+    enabled: !!config?.mlflow_gateway_uri,
+  })
   const { data: modelProvider } = useModelProvider()
   const [routeSearch, setRouteSearch] = useState("")
   // In the hybrid gateway deployment the per-user BYOK "Model Provider" card is the
