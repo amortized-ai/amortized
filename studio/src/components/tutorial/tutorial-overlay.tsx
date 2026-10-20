@@ -262,6 +262,12 @@ export function TutorialOverlay() {
   if (!active || !displayedStep) return null
 
   const spotlightIdx = getSpotlightIndex(displayedStepIndex)
+  // Keep the settings-step copy consistent with the (conditionally hidden) AI Gateway
+  // link: on enterprise-MLflow the gateway is vestigial, so don't tell users it must run.
+  const stepDescription =
+    displayedStep.id === "settings" && !config?.mlflow_gateway_uri
+      ? "Check that the Backend API and MLflow (artifact tracking) are connected."
+      : displayedStep.description
   const isFirstSpotlight = spotlightIdx === 0
   const isLastSpotlight = spotlightIdx === SPOTLIGHT_COUNT - 1
 
@@ -468,7 +474,7 @@ export function TutorialOverlay() {
             {displayedStep.title}
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            {displayedStep.description}
+            {stepDescription}
           </p>
 
           {displayedStep.id === "settings" && (
