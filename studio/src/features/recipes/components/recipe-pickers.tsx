@@ -1,5 +1,5 @@
-import { useContext } from "react"
-import { Check, X } from "lucide-react"
+import { useContext, useState } from "react"
+import { Check, ChevronDown, X } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -16,12 +16,18 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { useDocuments } from "@/features/documents/api/use-documents"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useProviderStatus } from "@/features/chat/api/use-providers"
 import { FieldLabel, FieldDescription } from "./recipe-fields"
 import { SdgModelAliasesContext } from "./recipe-field-utils"
+import { isPlaceholder } from "../lib/placeholders"
 
 // Separator used to encode provider+model into a single Radix Select value
 // (model ids can contain ":" / "-", so use a control char that never appears).
@@ -44,9 +50,10 @@ export function DocumentPickerField({
   description,
   required,
 }: PickerFieldProps) {
+  const [open, setOpen] = useState(false)
   const { data: documents = [] } = useDocuments()
   const selected = Array.isArray(value)
-    ? (value.filter((v) => typeof v === "string") as string[])
+    ? (value.filter((v): v is string => typeof v === "string" && !isPlaceholder(v)))
     : []
   const nameFor = (id: string) =>
     documents.find((d) => d.document_id === id)?.filename ?? id
@@ -82,29 +89,41 @@ export function DocumentPickerField({
           ))}
         </div>
       )}
-      <div className="rounded-md border">
-        <Command>
-          <CommandInput placeholder="Search documents..." className="h-9" />
-          <CommandList className="max-h-[180px]">
-            <CommandEmpty>No documents found.</CommandEmpty>
-            {documents.map((doc) => {
-              const isSel = selected.includes(doc.document_id)
-              return (
-                <CommandItem
-                  key={doc.document_id}
-                  value={`${doc.filename} ${doc.document_id}`}
-                  onSelect={() => toggle(doc.document_id)}
-                >
-                  <Check
-                    className={cn("h-4 w-4", isSel ? "opacity-100" : "opacity-0")}
-                  />
-                  <span className="truncate">{doc.filename}</span>
-                </CommandItem>
-              )
-            })}
-          </CommandList>
-        </Command>
-      </div>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors hover:border-border">
+          <span className="text-muted-foreground">
+            {selected.length > 0 ? `${selected.length} selected` : "Select documents..."}
+          </span>
+          <ChevronDown
+            className={cn("h-4 w-4 opacity-50 transition-transform", open && "rotate-180")}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 rounded-md border">
+            <Command>
+              <CommandInput placeholder="Search documents..." className="h-9" />
+              <CommandList className="max-h-[180px]">
+                <CommandEmpty>No documents found.</CommandEmpty>
+                {documents.map((doc) => {
+                  const isSel = selected.includes(doc.document_id)
+                  return (
+                    <CommandItem
+                      key={doc.document_id}
+                      value={`${doc.filename} ${doc.document_id}`}
+                      onSelect={() => toggle(doc.document_id)}
+                    >
+                      <Check
+                        className={cn("h-4 w-4 shrink-0", isSel ? "opacity-100" : "opacity-0")}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{doc.filename}</span>
+                    </CommandItem>
+                  )
+                })}
+              </CommandList>
+            </Command>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
       <FieldDescription text={description} />
     </div>
   )
@@ -130,7 +149,8 @@ export function DatasetPickerField({
       name: d.name,
     }))
     .filter((o) => o.key)
-  const current = typeof value === "string" ? value : ""
+  const raw = typeof value === "string" ? value : ""
+  const current = isPlaceholder(raw) ? "" : raw
   const known = options.some((o) => o.key === current)
 
   return (
@@ -176,10 +196,12 @@ export function ModelPickerField({
   required?: boolean
 }) {
   const { providerCatalog } = useProviderStatus()
+  // A template placeholder (e.g. "<from-list_models>") counts as unset.
+  const effectiveModel = isPlaceholder(model) ? "" : model
   const known = providerCatalog.some(
-    (p) => p.id === provider && (p.models ?? []).some((m) => m.id === model),
+    (p) => p.id === provider && (p.models ?? []).some((m) => m.id === effectiveModel),
   )
-  const current = model ? `${provider}${MODEL_SEP}${model}` : ""
+  const current = effectiveModel ? `${provider}${MODEL_SEP}${effectiveModel}` : ""
 
   return (
     <div className="space-y-1">
@@ -195,9 +217,9 @@ export function ModelPickerField({
           <SelectValue placeholder="Select a model..." />
         </SelectTrigger>
         <SelectContent>
-          {model && !known && (
+          {effectiveModel && !known && (
             <SelectItem value={current} disabled className="text-muted-foreground">
-              {model} (unavailable)
+              {effectiveModel} (unavailable)
             </SelectItem>
           )}
           {providerCatalog.map((p) => {

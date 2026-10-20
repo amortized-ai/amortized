@@ -177,11 +177,24 @@ describe("RecipeConfigForm", () => {
     )
     // selected document shown by filename (not raw id)
     expect(screen.getAllByText("Doc One").length).toBeGreaterThan(0)
-    // other documents offered in the picker list
+    // list is collapsed by default
+    expect(screen.queryByText("Doc Two")).not.toBeInTheDocument()
+    // expand the collapsible → other documents are offered
+    fireEvent.click(screen.getByText("1 selected"))
     expect(screen.getByText("Doc Two")).toBeInTheDocument()
     // removing the selection bubbles the updated config up
     fireEvent.click(screen.getByLabelText("Remove Doc One"))
     expect(onChange).toHaveBeenCalledWith({ document_ids: [] })
+  })
+
+  it("ignores template placeholder tokens in document_ids", () => {
+    const config = { document_ids: ["<doc-id-from-list_documents>"] }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} />,
+    )
+    // placeholder is treated as unset → no badge, empty-state label shown
+    expect(screen.queryByText("<doc-id-from-list_documents>")).not.toBeInTheDocument()
+    expect(screen.getByText("Select documents...")).toBeInTheDocument()
   })
 
   it("renders a dataset picker for parent_job_id", () => {
