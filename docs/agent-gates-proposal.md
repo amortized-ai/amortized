@@ -137,21 +137,19 @@ So: **guardrails as tool contracts (cheap, universal) + prompting scaffolds (gat
 
 For each existing gate: classify it **invariant** vs **nudge**, then move it to the right mechanism.
 
-| Current gate | Class | Target mechanism |
-|---|---|---|
-> Note (reconciled with §4b): a free-standing tool-result is **not expressible** through opencode's message API, so the handoff/steer rows below use the **`system` channel** (opencode's message-level `system` field) rather than a "tool-result-shaped payload". The neutral event *fact* (e.g. the completed job id) still rides the user `text`; only the imperative moves to `system`.
+What shipped (per §4c — everything below is **deleted**, not tier-gated, except where noted):
 
-| Current gate | Class | Target mechanism (as implemented) |
+| Former gate | Class | Shipped outcome |
 |---|---|---|
-| `_SUBAGENT_JOB_DONE/FAILED_PROMPT` (was appended to the user turn) | orchestration handoff | deliver the imperative on the **`system` channel** (every tier) with the job-id event fact kept in the user `text`; the standing hand-back rule also lives in the subagent personas. |
-| `_SUBAGENT_HELP_PROMPT` / `[SUBAGENT COMPLETED]` resume seed | orchestration handoff | these are turn-*drivers* for a programmatic orchestrator turn (like `[CONTEXT]`/`[RESUMED]`), so they stay user-role by necessity; they are not reactive corrections. |
-| `_apply_provenance_gate` | fabrication | **annotation-only** — a silent caveat, **no model re-run**, both tiers (the UI renders ids/status from tool outputs, §4.4) + a persona no-fabrication rule. |
-| `_apply_job_claim_gate` / `_dispatch_provenance_violations` (advancing past a non-succeeded upstream) | invariant | enforced at the **tool precondition** (`validate_*`/`create_*` → `_require_dependency_succeeded` → 422 tool error); the agent prose gate is deleted (frontier) and retained only as weak-tier scaffolding. |
-| `_enforce_single_interaction` + `MAX_INTERACTION_RERUNS` | invariant (ordering) | the card **stripping** is a silent filter (both tiers); the in-turn **re-run** is weak-tier-only, and a held card is demoted to a `system`-channel soft steer for a frontier driver. |
+| `_apply_provenance_gate` (+ annotation) | fabrication | **Deleted.** The UI renders ids/status from tool OUTPUTS, not prose, so a fabricated id is inert; a persona no-fabrication rule prevents it at the source. |
+| `_apply_job_claim_gate` / `_dispatch_provenance_violations` | invariant + prose-policing | The invariant (don't advance past a non-`succeeded` upstream) is the **tool-boundary 422** (`validate_*`/`create_*` → `_require_dependency_succeeded`), always-on. The prose-claim gate is **deleted** (not tiered). |
+| `_enforce_single_interaction` (stripping) + the in-turn re-run | ordering | **Deleted.** One-interaction-per-turn is the tool's `agent_instruction` HALT directive (outranks the system prompt) + the "ask one question at a time" persona rule; the frontend renders one card per type, so a non-compliant driver degrades gracefully. |
+| Confirm-card ordering preconditions (`agent_confirm.py`) | ordering | **Deleted.** The VRAM/data/model/judge steps are mandated by the training/eval **workflows**, so coverage lives in the skill. (Follow-up: also put `resource_estimate` on the card.) |
+| Driver-tier flag (`agent_driver_tier`) | — | **Deleted.** With the scaffolds gone it gated nothing. |
+| `_SUBAGENT_JOB_DONE/FAILED_PROMPT` | handoff | **Kept**, on the **`system` channel** (event fact on the user `text`); reinforced by a persona hand-back rule. |
+| `_SUBAGENT_HELP_PROMPT` / `[SUBAGENT COMPLETED]` resume seed | handoff | **Kept**, user-role — these are turn-*drivers* for a programmatic turn (like `[CONTEXT]`/`[RESUMED]`), not reactive corrections. |
 
-Cross-cutting:
-- **No `user` role for a reactive CORRECTION/steer** — those go on the `system` channel (every tier). Turn-*driving* handoffs (`[CONTEXT]`/`[RESUMED]`/help/completion seeds) remain user-role by necessity.
-- **Tier the weak-only scaffolds** (the job-claim gate + the in-turn re-run) behind `agent_driver_tier`; structural invariants stay on for both tiers.
+Cross-cutting: there is no reactive-correction layer anymore, so no gate re-authors a `user` turn; the only system-channel use is the hand-back imperative. Structural invariants live at the tool boundary and are always-on for every driver.
 
 ---
 

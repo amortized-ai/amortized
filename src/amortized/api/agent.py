@@ -307,8 +307,6 @@ def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
 
 
-
-
 # Active subagent → the workflow phase its turns belong to (UI progress bar).
 _PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
 
@@ -432,82 +430,13 @@ async def _fetch_all_messages(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Anti-fabrication provenance gate
-# ---------------------------------------------------------------------------
-#
-# An identifier the assistant states to the user must have appeared somewhere the
-# model legitimately saw it — a tool result, a system event, a user message, or a
-# delegation handoff. One that appears nowhere in the whole conversation's tool
-# I/O or user/system text is fabricated (the GLM-5.3-flash run invented a job id
-# `a1b2c3d4`, a model `mixtral`, and a `0.92` score — the id was the clean tell).
-#
-# Deliberately conservative: only ID-shaped hex/UUID tokens are checked (not
-# free-form metrics or model names, which cannot be flagged without false
-# positives), a token is grounded by *substring* match (so an abbreviated prefix
-# of a real UUID still passes), and bare hex runs must mix digits and letters (so
-# pure-decimal counts and pure-hex words are never treated as identifiers). On a
-# violation we force-correct once: make the model re-answer grounded; if it still
-# can't, we relay its reply with an appended caveat naming the unverified id(s)
-# rather than discard a possibly-correct answer.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Job-claim verification gate
-# ---------------------------------------------------------------------------
-#
-# The provenance gate above checks that an id the model states EXISTS in the
-# conversation. This gate goes one level deeper: when the model reports a job to
-# the user, it checks that the job's real DB record MATCHES the claim. Three general
-# checks (not keyed to one symptom):
-#   A. state truth    — "finished/ready/generated" => DB status must be succeeded.
-#   B. flow attribution — "just ran/generated" for a job created in an EARLIER
-#      conversation, with no matching validate_*_job this session and no reuse
-#      disclosure => undisclosed stale reuse (caught the 200-requested /
-#      500-record-stale-job substitution).
-#   C. dispatch provenance — a training/eval dispatch THIS turn (a validate_*_job
-#      tool call) whose parent_job_id is a dataset from an EARLIER conversation, not
-#      run or disclosed as reused this session => undisclosed stale substitution,
-#      caught at the point of action. Keyed on the tool call's structured
-#      parent_job_id argument, not on prose, so phrasing cannot evade it.
-#   E. premature submission — a validate_*_job card is rendered THIS turn (the job is
-#      created only when the user clicks Confirm) yet the prose claims it is already
-#      submitted/queued/running/generating => false, caught before it misleads the user
-#      (the GLM-5.3-flash run said "the dataset generation is underway … job queued" off
-#      a validate call, with a fabricated job id). Structural: validate_* call + claim.
-# Same remediation shape as the provenance gate: force-correct once, else append a
-# visible caveat rather than discard. Reuse is NOT blocked — only forced to be
-# disclosed — so legitimate reuse (e.g. the eval flow) keeps working.
-
+# The validate_* tool each job type exposes — used to detect whether a fresh job of that
+# type was set up in this conversation (see _session_has_validate / _conversation_has_dataset).
 _VALIDATE_TOOL_BY_TYPE = {
     "sdg": "validate_sdg_job",
     "training": "validate_training_job",
     "eval": "validate_eval_job",
 }
-
-
-
-
-
-
-
 
 
 def _session_ids(state: SessionState) -> set[str]:
@@ -632,14 +561,6 @@ async def _delegation_advisory(
     return await _no_data_advisory(state, target)
 
 
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # Upstream helpers
 # ---------------------------------------------------------------------------
@@ -756,11 +677,10 @@ async def _proxy_send_message(
 ) -> dict[str, Any]:
     """POST a turn to opencode. ``text`` is the user-role part; ``system`` (when given) is
     delivered via opencode's message-level ``system`` field — an instruction the model reads
-    as SYSTEM context rather than as a user utterance. The proxy routes backend hand-back /
-    interaction steers through ``system`` for EVERY driver tier (not the user channel), so a
-    strong model isn't made servile and the transcript isn't polluted; the neutral event fact
-    (e.g. the completed job id) still rides the user ``text``. Tier only governs the weak-only
-    scaffolding in _run_turn (the job-claim gate + the in-turn re-run), not this channel."""
+    as SYSTEM context rather than as a user utterance. The proxy's one use of ``system`` is the
+    subagent hand-back imperative (on a job_complete event): the imperative rides ``system`` so
+    it isn't a fake user turn, while the neutral event fact (e.g. the completed job id) stays in
+    the user ``text``."""
     payload: dict[str, Any] = {"parts": [{"type": "text", "text": text}]}
     if agent:
         payload["agent"] = agent
@@ -971,8 +891,8 @@ async def _run_turn(
             #
             # There is no gate/correction/stripping layer here anymore: structural invariants
             # are enforced at the tool boundary (validate_*/create_* -> 422 tool error), the
-            # UI renders state from tool OUTPUTS (not prose), fabrication/over-claim prevention
-            # lives in the personas, and the confirm card carries its own resource estimate —
+            # UI renders state from tool OUTPUTS (not prose), and fabrication/over-claim/ordering
+            # prevention lives in the personas and the tool agent_instruction halt directives —
             # so the agent's context stays equal to what the user sees (AX = UX). See
             # docs/agent-gates-proposal.md.
             active_id = state.subagent_id or state.orchestrator_id
@@ -1031,8 +951,6 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
         "error_status": turn.error_status,
         "error_code": turn.error_code,
     }
-
-
 
 
 async def _handle_subagent_message(
