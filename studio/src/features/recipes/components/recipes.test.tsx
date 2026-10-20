@@ -21,11 +21,15 @@ vi.mock("@/features/datasets/api/use-datasets", () => ({
   }),
 }))
 
-vi.mock("@/features/chat/api/use-providers", () => ({
-  useProviderStatus: () => ({
-    providerCatalog: [
-      { id: "openai", name: "OpenAI", models: [{ id: "gpt-4o", name: "GPT-4o" }] },
-    ],
+vi.mock("@/features/recipes/api/use-gateway-models", () => ({
+  useGatewayModels: () => ({
+    data: {
+      models: [
+        { name: "gpt-oss", provider: "gateway", model_name: "openai/gpt-oss-120b" },
+        { name: "gpt-4o", provider: "openai", model_name: "gpt-4o" },
+      ],
+      gateway_url: "",
+    },
   }),
 }))
 

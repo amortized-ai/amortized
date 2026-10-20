@@ -1,4 +1,4 @@
-import { useContext, useState } from "react"
+import { useContext, useEffect, useRef, useState } from "react"
 import { Check, ChevronDown, X } from "lucide-react"
 import {
   Select,
@@ -24,7 +24,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useDocuments } from "@/features/documents/api/use-documents"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
-import { useProviderStatus } from "@/features/chat/api/use-providers"
+import { useGatewayModels } from "../api/use-gateway-models"
 import { FieldLabel, FieldDescription } from "./recipe-fields"
 import { SdgModelAliasesContext } from "./recipe-field-utils"
 import { isPlaceholder } from "../lib/placeholders"
@@ -51,6 +51,7 @@ export function DocumentPickerField({
   required,
 }: PickerFieldProps) {
   const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
   const { data: documents = [] } = useDocuments()
   const selected = Array.isArray(value)
     ? (value.filter((v): v is string => typeof v === "string" && !isPlaceholder(v)))
@@ -66,8 +67,27 @@ export function DocumentPickerField({
     )
   }
 
+  // Collapse when the user clicks outside the field (combobox behavior — the
+  // Collapsible alone only closes when its trigger is clicked again).
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [open])
+
   return (
-    <div className="space-y-1.5">
+    <div
+      ref={containerRef}
+      className="space-y-1.5"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") setOpen(false)
+      }}
+    >
       <FieldLabel label={label} required={required} />
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -110,7 +130,10 @@ export function DocumentPickerField({
                     <CommandItem
                       key={doc.document_id}
                       value={`${doc.filename} ${doc.document_id}`}
-                      onSelect={() => toggle(doc.document_id)}
+                      onSelect={() => {
+                        toggle(doc.document_id)
+                        setOpen(false)
+                      }}
                     >
                       <Check
                         className={cn("h-4 w-4 shrink-0", isSel ? "opacity-100" : "opacity-0")}
@@ -195,13 +218,20 @@ export function ModelPickerField({
   description?: string
   required?: boolean
 }) {
-  const { providerCatalog } = useProviderStatus()
+  const { data } = useGatewayModels()
+  const models = data?.models ?? []
   // A template placeholder (e.g. "<from-list_models>") counts as unset.
   const effectiveModel = isPlaceholder(model) ? "" : model
-  const known = providerCatalog.some(
-    (p) => p.id === provider && (p.models ?? []).some((m) => m.id === effectiveModel),
-  )
+  const known = models.some((m) => m.name === effectiveModel && m.provider === provider)
   const current = effectiveModel ? `${provider}${MODEL_SEP}${effectiveModel}` : ""
+
+  // Group the catalog by provider (e.g. "gateway", "openai") for the dropdown.
+  const groups = new Map<string, typeof models>()
+  for (const m of models) {
+    const arr = groups.get(m.provider) ?? []
+    arr.push(m)
+    groups.set(m.provider, arr)
+  }
 
   return (
     <div className="space-y-1">
@@ -222,25 +252,19 @@ export function ModelPickerField({
               {effectiveModel} (unavailable)
             </SelectItem>
           )}
-          {providerCatalog.map((p) => {
-            const models = p.models ?? []
-            if (models.length === 0) return null
-            return (
-              <SelectGroup key={p.id}>
-                <SelectLabel className="text-xs text-muted-foreground">
-                  {p.name ?? p.id}
-                </SelectLabel>
-                {models.map((m) => (
-                  <SelectItem
-                    key={`${p.id}${MODEL_SEP}${m.id}`}
-                    value={`${p.id}${MODEL_SEP}${m.id}`}
-                  >
-                    {m.name || m.id}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )
-          })}
+          {[...groups.entries()].map(([prov, mods]) => (
+            <SelectGroup key={prov}>
+              <SelectLabel className="text-xs text-muted-foreground">{prov}</SelectLabel>
+              {mods.map((m) => (
+                <SelectItem
+                  key={`${m.provider}${MODEL_SEP}${m.name}`}
+                  value={`${m.provider}${MODEL_SEP}${m.name}`}
+                >
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
         </SelectContent>
       </Select>
       <FieldDescription text={description} />
