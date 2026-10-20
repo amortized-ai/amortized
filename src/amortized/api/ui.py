@@ -95,9 +95,10 @@ class PresentOptionsResponse(BaseModel):
     # Authoritative server directive the model reads in the tool result. The system
     # prompt already says "ask one question, then wait", but weaker drivers batch
     # several present_options + a validate_* into one turn and never wait; a tool
-    # result outranks the prompt, so repeat the stop here. As a backstop the proxy's
-    # _enforce_single_interaction keeps this turn's passive content but strips any
-    # additional interactions (other present_options / validate_*) from it (agent.py).
+    # result outranks the system prompt, so this directive IS the enforcement (the proxy
+    # no longer strips stacked interactions — the halt here plus the "ask one question at a
+    # time" persona rule keep a turn to a single interactive element, keeping what the agent
+    # emits equal to what the user sees).
     agent_instruction: str = Field(default=_PRESENT_OPTIONS_HALT, exclude=False)
 
 
@@ -181,8 +182,8 @@ class ShowPromptResponse(BaseModel):
     # Server directive the model reads in the tool result. A weaker driver shows
     # the assessor prompt and stacks a validate_* confirm card under it in the same
     # turn, so the user confirms the job before reviewing the prompt. A tool result
-    # outranks the system prompt; the proxy also drops the stacked confirm card as
-    # a backstop (see _enforce_single_interaction in agent.py).
+    # outranks the system prompt, so this directive keeps the prompt on its own turn
+    # (the proxy no longer strips a stacked confirm card).
     agent_instruction: str = Field(default=_SHOW_PROMPT_REVIEW, exclude=False)
 
 

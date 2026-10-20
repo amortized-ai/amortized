@@ -1,7 +1,6 @@
 """Application configuration via environment variables."""
 
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -89,17 +88,6 @@ class Settings(BaseSettings):
     agent_upstream_insecure_tls: bool = Field(
         False, description="Skip TLS verification for the agent upstream (not recommended)."
     )
-    agent_driver_tier: Literal["frontier", "weak"] = Field(
-        "frontier",
-        description="Capability tier of the agent's LLM driver. 'frontier' (e.g. "
-        "claude-opus-4-8) runs the clean Agent/User/Tools loop: structural invariants stay "
-        "enforced at the tool boundary (validate_* preconditions return readable tool errors), "
-        "but the conversational scaffolding — model-behavior force-correction re-runs and "
-        "in-band steer messages — is disabled, because a strong model reads a tool error as an "
-        "observation and self-corrects without being scolded in the user channel. 'weak' (e.g. "
-        "glm-flash) re-enables that scaffolding. Structural invariants are enforced in BOTH "
-        "tiers; only the scaffolding is tier-gated.",
-    )
     external_url: str = Field("", description="Externally reachable server URL")
     gateway_url: str = Field("", description="MLflow AI Gateway URL for LLM routing")
     default_backend: str = Field(
@@ -121,17 +109,6 @@ class Settings(BaseSettings):
     @property
     def resolved_default_backend(self) -> str:
         return self.default_backend or self.compute_backend or "local"
-
-    @property
-    def agent_scaffolding_enabled(self) -> bool:
-        """Whether to run the model-behavior scaffolding (force-correction re-runs and
-        in-band steer messages). Off for a frontier driver — it reads tool errors and
-        self-corrects, and the scaffolding measurably restrains it — and on for a weak
-        driver that needs the training wheels. Structural invariants (tool preconditions,
-        card suppression) are NOT gated by this; they are always on. (agent_driver_tier is a
-        Literal, so only 'frontier'/'weak' are possible — a typo is rejected at startup rather
-        than silently selecting a tier.)"""
-        return self.agent_driver_tier == "weak"
 
     @property
     def resolved_training_image_tag(self) -> str:

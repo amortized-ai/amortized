@@ -106,7 +106,21 @@ Two findings from validating the proposal against the live opencode API and a ch
 2. For the **residue that cannot be tool-shaped** (premature-submit prose, stale-reuse disclosure, state-truth prose claims, the subagent handoffs, interaction-ordering steers): **channel-tier it** — `frontier` uses the clean `system` channel (or drops the purely cosmetic ones, since the UI renders from tool outputs); `weak` keeps the `user` channel (the only one it obeys).
 3. The §6 handoff migration is **not a free swap** — it moves from `user` to `system` (weak-unreliable), so it must be tiered, not globally switched.
 
-## 5. The opus-vs-GLM compromise
+## 4c. Final design (post-review, 2026-10-20): remove, don't tier
+
+Review feedback (eshwarprasadS) pushed the thesis to its conclusion under one principle — **AX = UX**: keep the agent's context equal to what the user sees. The tiering in §5 below is **superseded**; the shipped design *removes* the conversational scaffolding rather than tier-gating it, because once the gates are gone the tier gates nothing:
+
+- **Structural invariants stay at the tool boundary, always-on** — `validate_*`/`create_*` → 422 via `_require_dependency_succeeded` (don't advance past a non-`succeeded` upstream), for every driver. Verified live (blocks queued, passes succeeded; training/eval dual-dep).
+- **Provenance gate — deleted** (annotation included): the UI renders ids/status from tool **outputs**, not prose, so a fabricated id is inert; the persona forbids it at the source. The caveat was agent-didn't-author text and never fired.
+- **Job-claim gate — deleted** (not tiered): the only correctness piece (upstream-ready) is the tool-boundary 422; "queued"-style over-claims are cosmetic given tool-rendered state; the persona prevents them.
+- **Interaction ordering** — the server **no longer strips** stacked cards or re-runs the model. One-interaction-per-turn is enforced by the tool's own `agent_instruction` HALT directive (which outranks the system prompt) + the "ask one question at a time" persona rule; the frontend already renders one card per type (`.find` / last-valid), so a non-compliant driver degrades gracefully, never breaks. This keeps *what the agent emits == what the user sees* (no silent stripping drift).
+- **Ordering preconditions (VRAM/data/model before the confirm card) — deleted**: the training/eval **workflows still mandate** those steps ("you MUST show VRAM estimates before model options"), so the coverage lives in the skill, not a backstop gate. (Follow-up #5: also put a server-computed `resource_estimate` *on* the confirm card so the cost is guaranteed-visible at the decision point — a model→size resolver + card render, scoped separately.)
+- **Driver-tier flag — deleted**: a static frontier/weak label is a moving maintenance target, and with the scaffolding gone it gated nothing.
+- **Subagent hand-back — kept** on the `system` channel (event fact on the user channel), validated live on both a frontier (opus-4.8) and a real weak driver (GLM 5.3).
+
+Net on `agent.py`: **−800 lines**, no gate/correction/stripping layer — the proxy routes, backfills the UI phase, and relays; everything else is the tool boundary + personas + the card.
+
+## 5. The opus-vs-GLM compromise *(superseded by §4c — kept for history)*
 
 Decouple **invariants** from **scaffolding**:
 

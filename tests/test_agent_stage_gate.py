@@ -100,7 +100,6 @@ class TestDelegationAdvisory:
         # No dataset chosen AND an in-flight job is cited: the data fork is the decision
         # to make first; the upstream advisory must NOT also be appended.
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="running", jtype="training")})
         self._patch_has_data(monkeypatch, False)
         advisory = _run(
             agent._delegation_advisory(
@@ -109,13 +108,14 @@ class TestDelegationAdvisory:
         )
         assert advisory is not None
         assert "[DATA AVAILABILITY]" in advisory
-        assert "[UPSTREAM NOT READY]" not in advisory  # no double-fire
+        # The upstream-ready check no longer lives here (it's a tool-boundary 422); the
+        # delegation advisory only surfaces the data-availability fork.
+        assert "[UPSTREAM NOT READY]" not in advisory
 
     def test_no_advisory_when_data_chosen_and_upstream_succeeded(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         state = agent.SessionState(orchestrator_id="orch")
-        _patch(monkeypatch, {self._TID: _job(status="succeeded", jtype="training")})
         self._patch_has_data(monkeypatch, True)
         advisory = _run(
             agent._delegation_advisory(
