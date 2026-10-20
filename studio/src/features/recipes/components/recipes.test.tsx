@@ -206,16 +206,6 @@ describe("RecipeConfigForm", () => {
     expect(onChange).toHaveBeenCalledWith({ document_ids: [] })
   })
 
-  it("ignores template placeholder tokens in document_ids", () => {
-    const config = { document_ids: ["<doc-id-from-list_documents>"] }
-    render(
-      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} />,
-    )
-    // placeholder is treated as unset → no badge, empty-state label shown
-    expect(screen.queryByText("<doc-id-from-list_documents>")).not.toBeInTheDocument()
-    expect(screen.getByText("Select documents...")).toBeInTheDocument()
-  })
-
   it("renders a dataset picker for parent_job_id", () => {
     const config = { parent_job_id: "" }
     render(

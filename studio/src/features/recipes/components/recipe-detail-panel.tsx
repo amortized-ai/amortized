@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/resizable"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
 import { RecipeConfigForm } from "./recipe-config-form"
+import { stripPlaceholders } from "../lib/placeholders"
 import { useCreateJobFromConfig, useConfigSchemas } from "../api/use-recipes"
 import {
   formatRecipeType,
@@ -37,8 +38,11 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
   const { data: schemas } = useConfigSchemas()
+  // Strip placeholder tokens (e.g. "<doc-id-from-list_documents>") on load so they
+  // are never carried as values — pickers show an empty state and nothing bogus is
+  // submitted. The tokens are an agent-resolution signal, not real config values.
   const [config, setConfig] = useState<Record<string, unknown>>(
-    () => structuredClone(job.config ?? {}),
+    () => stripPlaceholders(structuredClone(job.config ?? {})),
   )
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)

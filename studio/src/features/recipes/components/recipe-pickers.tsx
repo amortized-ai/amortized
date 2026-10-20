@@ -27,7 +27,6 @@ import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useGatewayModels } from "../api/use-gateway-models"
 import { FieldLabel, FieldDescription } from "./recipe-fields"
 import { SdgModelAliasesContext } from "./recipe-field-utils"
-import { isPlaceholder } from "../lib/placeholders"
 
 // Separator used to encode provider+model into a single Radix Select value
 // (model ids can contain ":" / "-", so use a control char that never appears).
@@ -54,7 +53,7 @@ export function DocumentPickerField({
   const containerRef = useRef<HTMLDivElement>(null)
   const { data: documents = [] } = useDocuments()
   const selected = Array.isArray(value)
-    ? (value.filter((v): v is string => typeof v === "string" && !isPlaceholder(v)))
+    ? (value.filter((v): v is string => typeof v === "string"))
     : []
   const nameFor = (id: string) =>
     documents.find((d) => d.document_id === id)?.filename ?? id
@@ -172,8 +171,7 @@ export function DatasetPickerField({
       name: d.name,
     }))
     .filter((o) => o.key)
-  const raw = typeof value === "string" ? value : ""
-  const current = isPlaceholder(raw) ? "" : raw
+  const current = typeof value === "string" ? value : ""
   const known = options.some((o) => o.key === current)
 
   return (
@@ -220,10 +218,8 @@ export function ModelPickerField({
 }) {
   const { data } = useGatewayModels()
   const models = data?.models ?? []
-  // A template placeholder (e.g. "<from-list_models>") counts as unset.
-  const effectiveModel = isPlaceholder(model) ? "" : model
-  const known = models.some((m) => m.name === effectiveModel && m.provider === provider)
-  const current = effectiveModel ? `${provider}${MODEL_SEP}${effectiveModel}` : ""
+  const known = models.some((m) => m.name === model && m.provider === provider)
+  const current = model ? `${provider}${MODEL_SEP}${model}` : ""
 
   // Group the catalog by provider (e.g. "gateway", "openai") for the dropdown.
   const groups = new Map<string, typeof models>()
@@ -247,9 +243,9 @@ export function ModelPickerField({
           <SelectValue placeholder="Select a model..." />
         </SelectTrigger>
         <SelectContent>
-          {effectiveModel && !known && (
+          {model && !known && (
             <SelectItem value={current} disabled className="text-muted-foreground">
-              {effectiveModel} (unavailable)
+              {model} (unavailable)
             </SelectItem>
           )}
           {[...groups.entries()].map(([prov, mods]) => (
