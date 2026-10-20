@@ -107,3 +107,35 @@ def test_config_json_still_runs_normal_validation() -> None:
     bad = {**_SDG, "columns": [{"column_type": "llm-text", "name": "x", "model_alias": "nope"}]}
     with pytest.raises(ValueError, match=r"model_configs|model_alias"):
         SDGJobRequest(config_json=json.dumps(bad))
+
+
+@pytest.mark.parametrize(
+    "model", [SDGJobRequest, TrainingJobRequest, EvalJobRequest]
+)
+def test_no_required_fields_in_schema(model: Any) -> None:
+    """The MCP layer validates a tool call against the model's JSON schema BEFORE the
+    config_json expansion runs. If any flat field is schema-required, a config_json-only
+    call is rejected there with e.g. "'columns' is a required property" and never reaches
+    expansion (the live bug the first deploy hit). So no field may be schema-required."""
+    assert model.model_json_schema().get("required", []) == []
+
+
+@pytest.mark.parametrize(
+    ("model", "cfg"),
+    [(SDGJobRequest, _SDG), (TrainingJobRequest, _TRAIN), (EvalJobRequest, _EVAL)],
+)
+def test_config_json_only_without_flat_fields(model: Any, cfg: dict[str, Any]) -> None:
+    """A config_json-only call (no flat columns/algorithm/etc.) validates — this is exactly
+    the shape the agent sends and the shape the MCP schema must accept."""
+    m = model(config_json=json.dumps(cfg))
+    assert m.model_dump(exclude_none=True) == model(**cfg).model_dump(exclude_none=True)
+
+
+def test_empty_call_still_rejected() -> None:
+    """Dropping schema-required does not make an empty config valid: the after-expansion
+    checks still fire. SDG's points the agent at config_json; training is rejected by its
+    inherited model-source check first (still rejected, just a different message)."""
+    with pytest.raises(ValueError, match="config_json"):
+        SDGJobRequest()
+    with pytest.raises(ValueError):
+        TrainingJobRequest()
