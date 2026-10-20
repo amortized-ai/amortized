@@ -5644,7 +5644,7 @@
             },
             "type": "array",
             "title": "Columns",
-            "description": "Generation pipeline columns. Evaluated in order; later columns reference earlier ones via {{ column_name }}"
+            "description": "Generation pipeline columns. Evaluated in order; later columns reference earlier ones via {{ column_name }}. Required (non-empty) unless the whole config is passed via config_json."
           },
           "model_configs": {
             "items": {
@@ -5745,9 +5745,6 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "columns"
-        ],
         "title": "SDGJobRequest"
       },
       "SamplerColumnConfig": {
@@ -6669,7 +6666,8 @@
           "algorithm": {
             "type": "string",
             "title": "Algorithm",
-            "description": "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd)"
+            "description": "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd). Required unless the whole config is passed via config_json.",
+            "default": ""
           },
           "model_name_or_path": {
             "type": "string",
@@ -6974,9 +6972,6 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "algorithm"
-        ],
         "title": "TrainingJobRequest"
       },
       "UUIDSamplerParams": {
