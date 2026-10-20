@@ -203,6 +203,26 @@ class TrainingJobConfig(BaseModel):
 class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
 
+    # Override the base (where algorithm is required) so a config_json-only call passes
+    # MCP input validation; the real requirement is enforced after config_json expansion.
+    algorithm: str = Field(
+        "",
+        description=(
+            "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd). "
+            "Required unless the whole config is passed via config_json."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def check_algorithm_present(self) -> "TrainingJobRequest":
+        if not self.algorithm:
+            msg = (
+                "algorithm is required — provide the config fields, "
+                "or pass the entire config as a single config_json string"
+            )
+            raise ValueError(msg)
+        return self
+
 
 class Job(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -383,10 +403,11 @@ class SDGJobRequest(_ConfigJsonMixin):
     model_config = ConfigDict(extra="forbid")
 
     columns: list[SDGColumn] = Field(
-        ...,
+        default_factory=list,
         description=(
             "Generation pipeline columns. Evaluated in order; "
-            "later columns reference earlier ones via {{ column_name }}"
+            "later columns reference earlier ones via {{ column_name }}. "
+            "Required (non-empty) unless the whole config is passed via config_json."
         ),
     )
     model_configs: list[DDModelConfig] = Field(
@@ -443,6 +464,19 @@ class SDGJobRequest(_ConfigJsonMixin):
             "~10 samples and verify config before committing"
         ),
     )
+
+    @model_validator(mode="after")
+    def check_columns_present(self) -> "SDGJobRequest":
+        # columns is schema-optional so a config_json-only call passes MCP input
+        # validation and reaches here, where config_json has already expanded into
+        # the fields. Enforce the real requirement after that expansion.
+        if not self.columns:
+            msg = (
+                "columns must be a non-empty list — provide the config fields, "
+                "or pass the entire config as a single config_json string"
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":
