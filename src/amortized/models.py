@@ -213,15 +213,20 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
         ),
     )
 
-    @model_validator(mode="after")
-    def check_algorithm_present(self) -> "TrainingJobRequest":
-        if not self.algorithm:
+    @model_validator(mode="before")
+    @classmethod
+    def _require_algorithm_key(cls, data: Any) -> Any:
+        # Mirror the base's key-required contract (algorithm was required there) while
+        # keeping the field schema-optional so a config_json-only call passes MCP input
+        # validation. Only the KEY is enforced — not non-emptiness — so this does not
+        # change what the base accepted. config_json counts as providing it.
+        if isinstance(data, dict) and not data.get("config_json") and "algorithm" not in data:
             msg = (
-                "algorithm is required — provide the config fields, "
+                "algorithm is a required property — provide it, "
                 "or pass the entire config as a single config_json string"
             )
             raise ValueError(msg)
-        return self
+        return data
 
 
 class Job(BaseModel):
@@ -465,18 +470,21 @@ class SDGJobRequest(_ConfigJsonMixin):
         ),
     )
 
-    @model_validator(mode="after")
-    def check_columns_present(self) -> "SDGJobRequest":
+    @model_validator(mode="before")
+    @classmethod
+    def _require_columns_key(cls, data: Any) -> Any:
         # columns is schema-optional so a config_json-only call passes MCP input
-        # validation and reaches here, where config_json has already expanded into
-        # the fields. Enforce the real requirement after that expansion.
-        if not self.columns:
+        # validation (which checks the schema's required list before pydantic runs).
+        # Preserve the original contract otherwise: the columns KEY must be present
+        # (an EMPTY list stays allowed — DD permits it, see test_empty_columns_list).
+        # config_json counts as providing it (it expands to the config, columns and all).
+        if isinstance(data, dict) and not data.get("config_json") and "columns" not in data:
             msg = (
-                "columns must be a non-empty list — provide the config fields, "
+                "columns is a required property — provide it (an empty list is allowed), "
                 "or pass the entire config as a single config_json string"
             )
             raise ValueError(msg)
-        return self
+        return data
 
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":
