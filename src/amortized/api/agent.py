@@ -132,10 +132,13 @@ class SessionState:
     # opencode assistant-message ids already attributed to a monitor turn record,
     # so each message is counted once even across delegating turns / sessions.
     seen_message_ids: set[str] = field(default_factory=set)
-    # Last workflow step a subagent actually signalled, so when it forgets to call
-    # signal_phase the server can backfill the UI progress bar at the right step
-    # instead of snapping it back to the start of the phase.
-    last_signal_step: str = ""
+    # Last workflow step a subagent actually signalled, keyed by target so one
+    # subagent's phase never bleeds into another's turns: a cross-target resume (e.g.
+    # re-training right after an eval) must read its OWN last step, not whichever
+    # target signalled most recently. When a subagent forgets to call signal_phase
+    # the server backfills the UI progress bar at that target's last step instead of
+    # snapping it back to the start of the phase. Reset per target on fresh delegation.
+    last_signal_step_by_target: dict[str, str] = field(default_factory=dict)
     # The skill each subagent target has loaded (its frontmatter `name`, captured from the
     # opencode `skill` tool call), keyed by target so one subagent's skill never bleeds into
     # another's turns. Drives per-step skill injection for stepped skills.
@@ -745,7 +748,7 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
         if name == "signal_phase":
             step = _get_tool_input(part).get("step")
             if step:
-                state.last_signal_step = str(step)
+                state.last_signal_step_by_target[state.subagent_target or ""] = str(step)
             signalled = True
         elif name == "skill":
             # opencode-native skill load: record which skill this target has active so the
@@ -759,11 +762,18 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
     # stamped step id. Only in the gather phase (where steps are injected), and after the loop
     # so a skill loaded / phase signalled in the same turn is already recorded.
     target = state.subagent_target
-    if target and subagent_phase(target, state.last_signal_step) == _GATHER_PHASE:
+    if (
+        target
+        and subagent_phase(target, state.last_signal_step_by_target.get(target, ""))
+        == _GATHER_PHASE
+    ):
         _advance_skill_cursor(state, target, parts)
     if signalled:
         return result  # model signalled this turn; nothing to backfill
-    payload = {"phase": phase, "step": state.last_signal_step}
+    payload = {
+        "phase": phase,
+        "step": state.last_signal_step_by_target.get(state.subagent_target or "", ""),
+    }
     result["parts"] = [
         *parts,
         {
@@ -2270,7 +2280,9 @@ async def _handle_subagent_message(
         # handoff), so the active step's full instructions stay in the freshest position.
         # Skipped on job_complete, which carries its own terminal hand-back steer above.
         target_for_phase = state.subagent_target or ""
-        phase_for_turn = subagent_phase(target_for_phase, state.last_signal_step)
+        phase_for_turn = subagent_phase(
+            target_for_phase, state.last_signal_step_by_target.get(target_for_phase, "")
+        )
         # During gathering, surface the active stepped skill's current step detail (one step
         # per turn) just under the phase block, then advance the cursor so the next turn gets
         # the next step. The skill's titles + body stay resident, so this only moves the
@@ -2466,7 +2478,7 @@ async def _maybe_delegate(
         # Inject the block for the phase the subagent last signalled, so a resume lands
         # it back on the right step with that step's full instructions in the turn.
         framing = system_reminder(f"[RESUMED]\n{context}")
-        resume_phase = subagent_phase(target, state.last_signal_step)
+        resume_phase = subagent_phase(target, state.last_signal_step_by_target.get(target, ""))
         resume_msg = _with_active_skill_step(
             state, target, resume_phase, f"{framing}\n\n{user_text}"
         )
@@ -2478,19 +2490,20 @@ async def _maybe_delegate(
     else:
         logger.info("New subagent: target=%s session=%s", target, session_id)
         sub_id = await _proxy_create_session()
-        # A fresh subagent starts at its entry phase: clear any step carried over from a
-        # previous subagent so subagent_phase() resolves to the first section, and inject
-        # that section's block as the lead of the handoff. Also drop any skill the prior
-        # session for this target had loaded and reset its step cursor — the fresh subagent
-        # re-loads its own skill and walks the steps from the start.
-        state.last_signal_step = ""
+        # A fresh subagent starts at its entry phase: clear this target's carried-over step
+        # so subagent_phase() resolves to the first section, and inject that section's block
+        # as the lead of the handoff. Also drop any skill the prior session for this target
+        # had loaded and reset its step cursor — the fresh subagent re-loads its own skill
+        # and walks the steps from the start. All per-target, so a fresh delegation to one
+        # target never disturbs another target's resumable state.
+        state.last_signal_step_by_target.pop(target, None)
         state.active_skill_by_target.pop(target, None)
         state.skill_steps_done.pop(target, None)
         state.skill_last_asked.pop(target, None)
         framing = system_reminder(f"[CONTEXT]\n{context}")
         handoff_msg = with_block(
             target,
-            subagent_phase(target, state.last_signal_step),
+            subagent_phase(target, state.last_signal_step_by_target.get(target, "")),
             f"{framing}\n\n{user_text}",
         )
         sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)

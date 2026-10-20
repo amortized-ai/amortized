@@ -1134,11 +1134,12 @@ class TestPhaseBackfill:
         out = agent._ensure_phase_signal(state, result)
 
         assert len(_signal_phase_results(out["parts"])) == 1
-        assert state.last_signal_step == "gather_requirements"  # remembered for next turn
+        # remembered for next turn, under this subagent's target
+        assert state.last_signal_step_by_target["sdg"] == "gather_requirements"
 
     def test_backfill_carries_last_signalled_step(self) -> None:
         state = self._sub_state()
-        state.last_signal_step = "confirm"
+        state.last_signal_step_by_target["sdg"] = "confirm"
         result = {"parts": [_text_part("still working")]}
         out = agent._ensure_phase_signal(state, result)
 

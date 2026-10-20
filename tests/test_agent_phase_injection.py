@@ -83,7 +83,7 @@ def _body(text: str = "hi", event: str | None = None) -> agent.MessageRequest:
 class TestSubagentInjection:
     def test_fresh_eval_delegation_injects_entry_phase(self, router: _Router) -> None:
         state = agent.SessionState(orchestrator_id=router.add())
-        state.last_signal_step = "step-3-metrics"  # stale from a prior subagent
+        state.last_signal_step_by_target["eval"] = "step-3-metrics"  # stale from a prior eval
         new_sid = router.queue([[_text_part("Which model?")]])
 
         _run(
@@ -102,13 +102,13 @@ class TestSubagentInjection:
         assert "[CONTEXT]" in sent
         assert sent.endswith("evaluate it")
         # a fresh subagent's cursor is reset to its entry phase
-        assert state.last_signal_step == ""
+        assert state.last_signal_step_by_target.get("eval", "") == ""
 
     def test_resume_injects_last_signalled_phase(self, router: _Router) -> None:
         stashed = router.add([[_text_part("resumed")]])
         state = agent.SessionState(orchestrator_id=router.add())
         state.completed_subagents["eval"] = stashed
-        state.last_signal_step = "step-1_5-how-much"
+        state.last_signal_step_by_target["eval"] = "step-1_5-how-much"
 
         _run(
             agent._maybe_delegate(
@@ -119,6 +119,27 @@ class TestSubagentInjection:
         sent = router.text_to(stashed)
         assert "step-1_5-how-much" in sent
         assert "[RESUMED]" in sent
+
+    def test_resume_ignores_other_targets_last_step(self, router: _Router) -> None:
+        # The step is per-target: resuming eval must read eval's OWN last step, never a
+        # slug another target (here training) signalled more recently. Regression for the
+        # cross-target bleed where a global last_signal_step let eval's phase land on the
+        # training bar / inject the wrong phase block on a re-train-then-eval resume.
+        stashed = router.add([[_text_part("resumed")]])
+        state = agent.SessionState(orchestrator_id=router.add())
+        state.completed_subagents["eval"] = stashed
+        state.last_signal_step_by_target["eval"] = "step-1_5-how-much"
+        state.last_signal_step_by_target["training"] = "phase-4-complete"  # stale, other target
+
+        _run(
+            agent._maybe_delegate(
+                state, "s", ("eval", "set ready", True), "continue", {}, _body()
+            )
+        )
+
+        sent = router.text_to(stashed)
+        assert "step-1_5-how-much" in sent  # eval's own step
+        assert "phase-4-complete" not in sent  # training's step did not leak in
 
     def test_delegation_resets_target_confirm_signals(self, router: _Router) -> None:
         # A (re)delegation re-establishes the target's confirm preconditions, so a new job
