@@ -14,6 +14,7 @@ unmet precondition this table names.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -164,13 +165,50 @@ def _record_choice(choice: str) -> _SignalRecorder:
     return record
 
 
-def _reset_choice(choice: str) -> Callable[[SessionState], None]:
-    return lambda s: s.offered_choice.discard(choice)
-
-
 # A gate's signal recorder: given the turn's parts, whether a question leads it, and the
 # active subagent target, turn on the session signal this gate reads.
 _SignalRecorder = Callable[["SessionState", list[dict[str, Any]], bool, str], None]
+
+# A gate's config fingerprint: a stable hash of ONLY the validate_* input fields this gate's
+# prerequisite is about (the dataset identity for `data`, the base model for `model`, the
+# VRAM-affecting hyperparameters for `vram`). Compared against the fingerprint stamped when
+# the card last rendered: equal → the prerequisite still holds (an unchanged resubmit or a
+# refinement of an unrelated field renders with no hold); different → that one field changed,
+# so re-gate just that prerequisite (a new base model re-asks model + VRAM, not the data).
+_Fingerprint = Callable[[dict[str, Any]], str]
+
+
+def _config_fp(*keys: str) -> _Fingerprint:
+    """Fingerprint exactly `keys` from a validate_* card's input. An explicit key list (not
+    the whole dict) so an irrelevant extra field — both configs are extra='allow' — never
+    spuriously re-gates; missing keys hash as null, so dropping a field (e.g. the broken
+    max_tokens_per_gpu) that no gate tracks leaves every fingerprint unchanged."""
+
+    def fp(card_input: dict[str, Any]) -> str:
+        payload = {k: card_input.get(k) for k in keys}
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
+    return fp
+
+
+# Per-gate fingerprint field lists, keyed to the real validate_* request models
+# (TrainingJobRequest/EvalJobRequest in models.py). The tool-call input is the FLAT request
+# (the MCP tool auto-derives from the endpoint body), so these are top-level keys.
+_FP_TRAIN_DATA = _config_fp("parent_job_id", "data_run_id", "data_path")
+_FP_TRAIN_MODEL = _config_fp("model_name_or_path", "training_job_id", "algorithm")
+_FP_TRAIN_VRAM = _config_fp(
+    "model_name_or_path", "training_job_id", "algorithm",
+    "per_device_train_batch_size", "max_length", "gradient_accumulation_steps",
+    "gradient_checkpointing", "bf16", "load_in_4bit", "use_peft",
+    "lora_r", "lora_alpha", "lora_dropout", "unfreeze_rank_ratio",
+)
+_FP_EVAL_DATA = _config_fp("parent_job_id", "eval_data_run_id")
+_FP_EVAL_METRICS = _config_fp("rubric", "eval_mode")
+_FP_EVAL_CHOICE = _config_fp(
+    "judge", "endpoint", "training_job_id", "model_name_or_path", "served_model_name"
+)
 
 
 @dataclass(frozen=True)
@@ -178,16 +216,16 @@ class _ConfirmGate:
     """One ordered precondition a confirm card must clear before it may render. Each gate
     owns the whole lifecycle of its prerequisite: the predicate that reads the session
     signal (`satisfied`), the steer emitted when unmet (`nudge`), how the signal is turned
-    ON from a turn's activity (`record`), and how it is cleared once the card renders so a
-    second job of the type re-gates (`reset`). `record`/`reset` are None for a gate whose
-    signal is maintained elsewhere (the SDG preview sig is recorded when the preview card
-    itself renders)."""
+    ON from a turn's activity (`record`), and the fingerprint of the config fields this
+    prerequisite covers (`fingerprint`) — stamped when the card renders and compared on the
+    next card so a CHANGED field re-gates while an unchanged resubmit does not. `record`/
+    `fingerprint` are None for a gate whose signal is maintained elsewhere."""
 
     name: str
     satisfied: Callable[[SessionState, dict[str, Any]], bool]
     nudge: str
     record: _SignalRecorder | None = None
-    reset: Callable[[SessionState], None] | None = None
+    fingerprint: _Fingerprint | None = None
 
 
 # The confirm-card precondition registry — the single ordered table the gate consults to
@@ -205,29 +243,29 @@ _CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
     "validate_training_job": (
         _ConfirmGate(
             "data", lambda s, c: s.confirmed_data, _TRAINING_DATA_NUDGE,
-            record=_record_data, reset=lambda s: setattr(s, "confirmed_data", False),
+            record=_record_data, fingerprint=_FP_TRAIN_DATA,
         ),
         _ConfirmGate(
             "model", lambda s, c: "training" in s.offered_choice, _TRAINING_MODEL_NUDGE,
-            record=_record_choice("training"), reset=_reset_choice("training"),
+            record=_record_choice("training"), fingerprint=_FP_TRAIN_MODEL,
         ),
         _ConfirmGate(
             "vram", lambda s, c: s.shown_vram, _TRAINING_VRAM_NUDGE,
-            record=_record_vram, reset=lambda s: setattr(s, "shown_vram", False),
+            record=_record_vram, fingerprint=_FP_TRAIN_VRAM,
         ),
     ),
     "validate_eval_job": (
         _ConfirmGate(
             "data", lambda s, c: s.eval_data_confirmed, _EVAL_DATA_NUDGE,
-            record=_record_eval_data, reset=lambda s: setattr(s, "eval_data_confirmed", False),
+            record=_record_eval_data, fingerprint=_FP_EVAL_DATA,
         ),
         _ConfirmGate(
             "metrics", lambda s, c: s.metrics_reviewed, _EVAL_METRICS_NUDGE,
-            record=_record_metrics, reset=lambda s: setattr(s, "metrics_reviewed", False),
+            record=_record_metrics, fingerprint=_FP_EVAL_METRICS,
         ),
         _ConfirmGate(
             "choice", lambda s, c: "eval" in s.offered_choice, _EVAL_CHOICE_NUDGE,
-            record=_record_eval_choice, reset=_reset_choice("eval"),
+            record=_record_eval_choice, fingerprint=_FP_EVAL_CHOICE,
         ),
     ),
 }
@@ -236,10 +274,20 @@ _CONFIRM_PRECONDITIONS: dict[str, tuple[_ConfirmGate, ...]] = {
 def _first_unmet_precondition(
     state: SessionState, card: dict[str, Any]
 ) -> _ConfirmGate | None:
-    """The first precondition the leading confirm card has not satisfied, or None."""
-    for gate in _CONFIRM_PRECONDITIONS.get(_tool_name(card), ()):
+    """The first precondition the leading confirm card has not satisfied, or None. A gate is
+    unmet if its signal was never earned OR — once earned — the config field it covers has
+    CHANGED since the card last rendered (fingerprint mismatch), so a new base model re-asks
+    model + VRAM while an unchanged resubmit renders. The first-ever card has no stored
+    fingerprint to compare against, so it gates on the signal alone."""
+    tool = _tool_name(card)
+    card_input = _get_tool_input(card)
+    for gate in _CONFIRM_PRECONDITIONS.get(tool, ()):
         if not gate.satisfied(state, card):
             return gate
+        if gate.fingerprint is not None:
+            stored = state.gate_fp.get((tool, gate.name))
+            if stored is not None and stored != gate.fingerprint(card_input):
+                return gate
     return None
 
 
@@ -257,12 +305,14 @@ def _record_confirm_signals(
                 gate.record(state, parts, ask_turn, target)
 
 
-def _reset_confirm_signals(state: SessionState, job_type: str) -> None:
-    """Clear a job type's prerequisite signals when a new delegation for that target begins
-    (see _maybe_delegate), so a NEW job of that type must re-establish them while an
-    in-session refinement of an already-shown card keeps them — each gate resets its own
-    signal."""
-    tool = _CONFIRM_TOOL_FOR_JOB_TYPE.get(job_type, "")
+def _stamp_confirm_fingerprints(state: SessionState, card: dict[str, Any]) -> None:
+    """Record the config fingerprint of each gate's covered fields when a validate_* card
+    RENDERS (see _enforce_single_interaction), so the NEXT card for the same job re-gates only
+    the prerequisites whose fields changed. Replaces the old per-delegation signal reset: a
+    same-config resubmit now matches every fingerprint and renders without a hold (the
+    deployed-run bug where a 'fresh' resubmit wiped still-valid signals and held the card)."""
+    tool = _tool_name(card)
+    card_input = _get_tool_input(card)
     for gate in _CONFIRM_PRECONDITIONS.get(tool, ()):
-        if gate.reset is not None:
-            gate.reset(state)
+        if gate.fingerprint is not None:
+            state.gate_fp[(tool, gate.name)] = gate.fingerprint(card_input)

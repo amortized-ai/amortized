@@ -120,9 +120,9 @@ class TestSubagentInjection:
         assert "step-1_5-how-much" in sent
         assert "[RESUMED]" in sent
 
-    def test_delegation_resets_target_confirm_signals(self, router: _Router) -> None:
-        # A (re)delegation re-establishes the target's confirm preconditions, so a new job
-        # re-gates — while other targets' signals are left untouched.
+    def test_delegation_keeps_target_confirm_signals(self, router: _Router) -> None:
+        # Delegation no longer wipes confirm signals — they persist for the session and a new
+        # job re-gates by config fingerprint at the card, not by a delegation-boundary reset.
         state = agent.SessionState(orchestrator_id=router.add())
         state.confirmed_data = True
         state.shown_vram = True
@@ -132,10 +132,9 @@ class TestSubagentInjection:
 
         _run(agent._maybe_delegate(state, "s", ("training", "ctx", False), "go", {}, _body()))
 
-        assert state.confirmed_data is False
-        assert state.shown_vram is False
-        assert "training" not in state.offered_choice
-        # eval's signals are a different target's — untouched by a training delegation
+        assert state.confirmed_data is True
+        assert state.shown_vram is True
+        assert "training" in state.offered_choice
         assert "eval" in state.offered_choice
         assert state.metrics_reviewed is True
 

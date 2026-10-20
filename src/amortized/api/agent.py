@@ -34,8 +34,8 @@ from amortized.api.agent_confirm import (
     _REVIEW_CARD_TOOLS,
     _first_unmet_precondition,
     _record_confirm_signals,
-    _reset_confirm_signals,
     _review_card_signature,
+    _stamp_confirm_fingerprints,
 )
 from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
@@ -172,14 +172,21 @@ class SessionState:
     pending_rerun_steer: str | None = None
     # Prerequisite ACTIONS a confirm card requires, accumulated as turns render them, so
     # the (sync) confirm-precondition evaluator can hold a validate_* card the model
-    # jumped to without the mandated setup. Reset for a job type once its confirm card
-    # renders, so a SECOND job of that type in the same conversation re-gates. See
-    # _enforce_single_interaction / _CONFIRM_PRECONDITIONS.
+    # jumped to without the mandated setup. These signals PERSIST for the session; a later
+    # job of the same type re-gates not by wiping them but by fingerprint mismatch (the
+    # config field a gate covers changed since the card last rendered). See
+    # _enforce_single_interaction / _CONFIRM_PRECONDITIONS / gate_fp.
     shown_vram: bool = False  # estimate_training_resources rendered (training)
     confirmed_data: bool = False  # a dataset tool (get_dataset/…) rendered (training data)
     offered_choice: set[str] = field(default_factory=set)  # targets that asked present_options
     eval_data_confirmed: bool = False  # a dataset tool rendered inside the eval subagent
     metrics_reviewed: bool = False  # eval rubric/metric set presented for approval (eval)
+    # Per-gate config fingerprint stamped when a validate_* card renders, keyed by
+    # (confirm tool, gate name). On the next card for that job, a gate whose fingerprint
+    # changed re-gates (a new base model re-asks model + VRAM) while an unchanged resubmit
+    # matches every fingerprint and renders with no hold. Replaces the old delegation-boundary
+    # signal reset. See _stamp_confirm_fingerprints / _first_unmet_precondition.
+    gate_fp: dict[tuple[str, str], str] = field(default_factory=dict)
     # callIDs of interactive cards (stacked present_options, a repeat confirm, a redundant
     # review) the interaction gate stripped from a turn result. get_session_messages filters
     # these so a card removed from the result is also absent from the raw opencode history the
@@ -470,9 +477,10 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
           metric set presented for approval, and the evaluation setup offered (the judge has
           no default), before the job card.
       These prerequisite ACTIONS are tracked as session signals accumulated as turns
-      render them (_record_confirm_signals) and cleared when a new delegation for that
-      target begins (_reset_confirm_signals in _maybe_delegate) so a NEW job of the type
-      re-gates while an in-session refinement of the same card does not. (Readiness
+      render them (_record_confirm_signals) and PERSIST for the session; a later job of the
+      type re-gates by config fingerprint (the field a gate covers changed since the card
+      last rendered — _stamp_confirm_fingerprints / gate_fp) so a new base model re-asks
+      model + VRAM while an unchanged resubmit or an unrelated refinement does not. (Readiness
       prerequisites that need the DB — an upstream job being 'succeeded' — live in the
       async stage-gate _not_ready_violations, deduped there against dispatch-provenance;
       this function is the sync half that turns on session-local signals.)
@@ -613,13 +621,13 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
     # not recorded — a deferred review must still get its own turn later.
     if review_sig is not None and first_review not in strip_review_idx:
         state.reviewed_card_sigs.add(review_sig)
-    # NB: the confirm signals are NOT reset here when the card renders. Resetting on render
-    # treated a mere REFINEMENT of the same not-yet-submitted card (e.g. the user tweaks
-    # epochs, so the model re-issues validate_training_job) as a brand-new job and re-gated
-    # it — bouncing the model back to re-ask the model/data it already settled. The reset
-    # now happens at the delegation boundary (_maybe_delegate) instead, so a genuinely new
-    # job (a fresh delegation) re-gates while in-session refinements and the eval base-model
-    # reuse cycle keep their signals.
+    # When a confirm card actually RENDERS (confirm turn, no unmet precondition), stamp the
+    # per-gate config fingerprint, so the NEXT validate_* for this job re-gates only the
+    # prerequisites whose fields changed: an unchanged resubmit or a refinement of an
+    # unrelated field (epochs) matches every fingerprint and renders with no hold, while a
+    # new base model re-asks model + VRAM. This replaces the old delegation-boundary reset.
+    if not ask_turn and not prompt_gate and unmet is None and last_card is not None:
+        _stamp_confirm_fingerprints(state, parts[last_card])
 
     # A held card steers the MODEL to do the missing step first — delivered to its
     # session on the next turn (see _handle_*_message), NOT appended to the user-facing
@@ -2489,17 +2497,14 @@ async def _maybe_delegate(
 
     target, context, resume = delegation
 
-    # A FRESH delegation starts a NEW job for this target, so re-establish its confirm-card
-    # preconditions: clear the target's accumulated signals (data confirmed, model/judge
-    # offered, VRAM shown, metrics approved) so the new job must earn them again. A RESUME,
-    # though, is the same workflow continuing — an auto-resume after a help request, a
-    # failed-job retry, or the eval base-model reuse cycle — where the user's earlier
-    # confirmations still stand; resetting there wiped signals the driver won't re-offer and
-    # held the confirm card until the user prodded. So reset only when NOT resuming.
-    # (In-session refinements of an already-shown card do NOT pass through here at all, so
-    # they keep their signals regardless.)
-    if not resume:
-        _reset_confirm_signals(state, target)
+    # NB: delegation no longer wipes this target's confirm-card signals. Re-gating is now
+    # driven by config fingerprint at the card (_first_unmet_precondition / gate_fp): a job
+    # whose base model / data / VRAM-params differ from what last rendered re-earns exactly
+    # those prerequisites, while a same-config resubmit (a 'fresh' retry dropping a broken
+    # field, a failed-job retry, the eval base-model reuse cycle) renders with no hold. The
+    # old `if not resume: _reset_confirm_signals` keyed on the driver's `resume` flag, which a
+    # weak driver set wrong on a 'fresh' resubmit — wiping still-valid signals it never
+    # re-offered and stranding the confirm card until the user prodded (deployed-run bug b1).
 
     advisory = await _no_data_advisory(state, target)
     if advisory:

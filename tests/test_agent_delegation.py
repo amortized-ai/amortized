@@ -412,39 +412,38 @@ class TestRequestOrchestratorHelp:
         assert "is ready" not in resume_msg[1]
 
 
-class TestResumePreservesConfirmSignals:
-    """A RESUME is the same workflow continuing (auto-resume after help, failed-job retry,
-    eval base-model reuse) — the user's earlier confirmations still stand, so _maybe_delegate
-    must NOT wipe the target's confirm-card preconditions. Resetting there held the confirm
-    card until the user prodded (deployed-run bug b1). A FRESH delegation still resets."""
+class TestDelegationPreservesConfirmSignals:
+    """Delegation no longer wipes a target's confirm-card signals — re-gating is config-
+    fingerprint driven at the card (see TestTrainingConfirmPreconditions). So the user's
+    standing confirmations survive BOTH a fresh delegation and a resume; a genuinely new job
+    re-gates only because its config fingerprint differs, not because delegation reset it.
+    Keying the old reset on the driver's `resume` flag wiped still-valid signals a weak driver
+    never re-offered and stranded the confirm card until the user prodded (deployed-run bug b1)."""
 
-    def _spy_reset(self, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-        calls: list[str] = []
-        monkeypatch.setattr(
-            agent, "_reset_confirm_signals", lambda state, job_type: calls.append(job_type)
-        )
-        return calls
-
-    def test_fresh_delegation_resets(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        calls = self._spy_reset(monkeypatch)
+    def _state_with_signals(self, router: _Router) -> agent.SessionState:
         state = _make_state(router)
+        state.shown_vram = True
+        state.confirmed_data = True
+        state.offered_choice.add("training")
+        return state
+
+    def test_fresh_delegation_keeps_signals(self, router: _Router) -> None:
+        state = self._state_with_signals(router)
         router.queue_session([[_text_part("ok")]])  # fresh subagent session
-        delegation = ("sdg", "build a dataset", False)
+        delegation = ("training", "train a model", False)
         _run(agent._maybe_delegate(state, "s1", delegation, "u", {"parts": []}, _body()))
-        assert calls == ["sdg"]  # fresh job must re-earn its preconditions
+        assert state.shown_vram is True  # fresh delegation does NOT wipe signals
+        assert state.confirmed_data is True
+        assert "training" in state.offered_choice
 
-    def test_resume_does_not_reset(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        calls = self._spy_reset(monkeypatch)
-        state = _make_state(router)
+    def test_resume_keeps_signals(self, router: _Router) -> None:
+        state = self._state_with_signals(router)
         stashed = router.add_session([[_text_part("resumed")]])
-        state.completed_subagents = {"sdg": stashed}
-        delegation = ("sdg", "continue", True)
+        state.completed_subagents = {"training": stashed}
+        delegation = ("training", "continue", True)
         _run(agent._maybe_delegate(state, "s1", delegation, "u", {"parts": []}, _body()))
-        assert calls == []  # resume keeps the standing confirmations
+        assert state.shown_vram is True  # resume keeps the standing confirmations
+        assert "training" in state.offered_choice
         assert state.subagent_id == stashed  # the stashed session was resumed
 
 
@@ -915,8 +914,9 @@ class TestTrainingConfirmPreconditions:
     """A validate_training_job card may render only after the user has (in order)
     confirmed the data, been offered a model/method choice, and seen the VRAM estimate —
     the training arm of the confirm-card precondition evaluator. Signals accumulate as
-    turns render them and reset when a new delegation begins (not when the card renders),
-    so an in-session refinement of the same card does not re-gate."""
+    turns render them and PERSIST for the session; a later job re-gates by config
+    fingerprint (the covered field changed since the card rendered), so an unchanged
+    resubmit or an unrelated refinement renders while a new base model re-gates."""
 
     def _confirm(self) -> dict[str, Any]:
         return {"parts": [_tool_part("validate_training_job", {"algorithm": "osft"})]}
@@ -1000,17 +1000,19 @@ class TestTrainingConfirmPreconditions:
         out2 = agent._enforce_single_interaction(self._confirm(), state)
         assert "validate_training_job" in _tools(out2)  # refinement renders, no bounce
 
-    def test_new_delegation_re_gates(self) -> None:
-        # A genuinely new job re-gates: the delegation boundary (_maybe_delegate) resets the
-        # target's signals, so the next confirm must re-establish them.
+    def test_changed_config_re_gates(self) -> None:
+        # A genuinely new job re-gates by config fingerprint: after a card renders for one base
+        # model, a confirm for a DIFFERENT base model is held (model + VRAM fingerprints moved),
+        # with no delegation-boundary reset involved.
         state = _fresh_state()
+        state.subagent_target = "training"
         state.shown_vram = True
         state.confirmed_data = True
         state.offered_choice.add("training")
-        agent._reset_confirm_signals(state, "training")  # what _maybe_delegate does
-        assert state.shown_vram is False
-        assert "training" not in state.offered_choice
-        out = agent._enforce_single_interaction(self._confirm(), state)
+        first = {"parts": [_tool_part("validate_training_job", {"model_name_or_path": "A"})]}
+        assert "validate_training_job" in _tools(agent._enforce_single_interaction(first, state))
+        second = {"parts": [_tool_part("validate_training_job", {"model_name_or_path": "B"})]}
+        out = agent._enforce_single_interaction(second, state)
         assert "validate_training_job" not in _tools(out)
 
 
