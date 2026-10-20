@@ -22,6 +22,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from amortized.api import monitor_log
 from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
     _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
@@ -968,7 +969,216 @@ async def _run_turn(
         if turn:
             turn.active = False
             turn.finished_at = datetime.now(UTC)
+            await _record_turn_metrics(state, turn, session_id, turn_id)
         state.last_activity = datetime.now(UTC)
+
+
+async def _record_turn_metrics(
+    state: SessionState,
+    turn: TurnState,
+    session_id: str,
+    turn_id: str,
+) -> None:
+    """Append one monitor ``turn`` record. Attributes every opencode assistant
+    message to exactly one proxy turn (dedup by id across all of the
+    conversation's sessions), which fixes both the delegation undercount (a
+    single active-session read misses subagents) and the within-turn undercount
+    (multi-step tool loops span several assistant messages).
+    """
+    try:
+        role_by_session: dict[str, str] = {state.orchestrator_id: "orchestrator"}
+        if state.subagent_id and state.subagent_target:
+            role_by_session[state.subagent_id] = state.subagent_target
+        for target, sid in state.completed_subagents.items():
+            role_by_session.setdefault(sid, target)
+
+        new_msgs: list[tuple[int, str, dict[str, Any]]] = []
+        for sid, role in role_by_session.items():
+            for msg in await _fetch_all_messages(sid):
+                info = msg.get("info") or {}
+                if info.get("role") != "assistant":
+                    continue
+                mid = info.get("id")
+                if not mid or mid in state.seen_message_ids:
+                    continue
+                state.seen_message_ids.add(mid)
+                created = _coerce_int((info.get("time") or {}).get("created"))
+                new_msgs.append((created, role, msg))
+        new_msgs.sort(key=lambda item: item[0])
+
+        tokens = {"input": 0, "output": 0, "reasoning": 0, "cache": 0}
+        tokens_by_role: dict[str, int] = {}
+        cost = 0.0
+        model_id: str | None = None
+        provider_id: str | None = None
+        tool_calls: list[dict[str, Any]] = []
+        # Assistant prose, in chronological message order. Lets an offline LLM
+        # judge check grounding/fabrication (claim-vs-tool-output) from the log
+        # alone, instead of a human reading the live transcript.
+        texts: list[dict[str, Any]] = []
+
+        for _created, role, msg in new_msgs:
+            info = msg.get("info") or {}
+            msg_tokens = info.get("tokens") or {}
+            msg_total = 0
+            for key in ("input", "output", "reasoning", "cache"):
+                val = _coerce_int(msg_tokens.get(key))
+                tokens[key] += val
+                msg_total += val
+            tokens_by_role[role] = tokens_by_role.get(role, 0) + msg_total
+            msg_cost = info.get("cost")
+            if isinstance(msg_cost, (int, float)) and not isinstance(msg_cost, bool):
+                cost += float(msg_cost)
+            if info.get("modelID"):
+                model_id = info.get("modelID")
+            if info.get("providerID"):
+                provider_id = info.get("providerID")
+            msg_parts = msg.get("parts") or []
+            # Per-message signals for `clean_delegation`: whether this assistant
+            # message emitted any text and how many tool parts it carried. Phase 2
+            # requires the delegating message to be ONLY the delegate call.
+            msg_text = "\n".join(
+                p["text"].strip()
+                for p in msg_parts
+                if p.get("type") == "text" and (p.get("text") or "").strip()
+            )
+            msg_has_text = bool(msg_text)
+            msg_tool_count = sum(1 for p in msg_parts if p.get("type") == "tool")
+            if msg_has_text:
+                texts.append({"role": role, "text": msg_text})
+            for part in msg_parts:
+                if part.get("type") != "tool":
+                    continue
+                name = _tool_name(part)
+                entry: dict[str, Any] = {"tool": name, "role": role}
+                part_state = part.get("state")
+                if isinstance(part_state, dict):
+                    if part_state.get("status"):
+                        entry["status"] = part_state.get("status")
+                    output = part_state.get("output")
+                    if isinstance(output, str) and output:
+                        entry["output"] = output
+                if name == "delegate_to_subagent":
+                    entry["target"] = _get_tool_input(part).get("target")
+                    # solo = the delegating message was the delegate call alone.
+                    entry["solo"] = (not msg_has_text) and msg_tool_count == 1
+                elif name.startswith("validate_"):
+                    # Capture pipeline-wiring inputs so chaining (SDG->training->eval
+                    # via parent_job_id) is checkable offline. Config args aren't
+                    # otherwise logged; only record the fields when present/non-empty.
+                    inp = _get_tool_input(part)
+                    # `training_job_id` on an eval config = the subject under eval is
+                    # a tuned model (not a base/gateway model) — lets the monitor gate
+                    # "eval set must mirror the training pipeline" checks on that case.
+                    for key in (
+                        "parent_job_id",
+                        "data_run_id",
+                        "eval_data_run_id",
+                        "training_job_id",
+                    ):
+                        cfg_val = inp.get(key)
+                        if cfg_val:
+                            entry[key] = cfg_val
+                    # `mode` (preview/create) makes the SDG preview-before-create
+                    # ordering checkable offline.
+                    mode = inp.get("mode")
+                    if mode:
+                        entry["mode"] = mode
+                    # Eval requires an explicit judge; record its model only
+                    # (never base_url/api_key) so "judge set" is checkable.
+                    judge = inp.get("judge")
+                    if isinstance(judge, dict) and judge.get("model"):
+                        entry["judge"] = judge["model"]
+                elif name == "signal_phase":
+                    # Capture phase/step so the UI progress signal is checkable
+                    # offline (e.g. the eval stage must signal phase=eval, not
+                    # a stale training phase).
+                    inp = _get_tool_input(part)
+                    phase = inp.get("phase")
+                    if phase:
+                        entry["phase"] = phase
+                    step = inp.get("step")
+                    if step:
+                        entry["step"] = step
+                elif name == "present_options":
+                    # Capture the question and option titles so "a real choice
+                    # was offered" (e.g. the training base-model list) is
+                    # checkable offline — the option content is not otherwise
+                    # logged, so without this the monitor cannot tell whether
+                    # Morty presented options or auto-picked.
+                    inp = _get_tool_input(part)
+                    question = inp.get("question")
+                    if question:
+                        entry["question"] = question
+                    options = inp.get("options")
+                    if isinstance(options, list):
+                        titles = [
+                            opt["title"]
+                            for opt in options
+                            if isinstance(opt, dict) and opt.get("title")
+                        ]
+                        if titles:
+                            entry["options"] = titles
+                tool_calls.append(entry)
+
+        started = turn.started_at
+        finished = turn.finished_at
+        duration_ms = (
+            int((finished - started).total_seconds() * 1000)
+            if started is not None and finished is not None
+            else None
+        )
+        monitor_log.append_record(
+            session_id,
+            {
+                "kind": "turn",
+                "session_id": session_id,
+                "conversation_root": state.orchestrator_id,
+                "turn_id": turn_id,
+                "role": state.subagent_target if state.subagent_id else "orchestrator",
+                "model": model_id,
+                "provider": provider_id,
+                "tokens": {**tokens, "total": sum(tokens.values())},
+                "tokens_by_role": tokens_by_role,
+                "cost": cost,
+                "tool_calls": tool_calls,
+                "texts": texts,
+                "started_at": started.isoformat() if started else None,
+                "finished_at": finished.isoformat() if finished else None,
+                "duration_ms": duration_ms,
+            },
+        )
+    except Exception:
+        logger.warning("monitor: failed to record turn metrics turn=%s", turn_id, exc_info=True)
+
+
+class CompletionRequest(BaseModel):
+    turn_id: str | None = None
+    outcome: str = "success"  # "success" | "gave_up"
+    note: str | None = None
+
+
+@router.post("/session/{session_id}/monitor/complete")
+async def mark_run_complete(session_id: str, body: CompletionRequest) -> dict[str, Any]:
+    """Record a human-declared run completion for monitor metrics.
+
+    Studio calls this when the tester marks a test run done. It defines the
+    boundary for turns-to-complete and total-tokens; the product itself has no
+    workflow-completion signal (the orchestrator loops indefinitely).
+    """
+    state = _sessions.get(session_id)
+    monitor_log.append_record(
+        session_id,
+        {
+            "kind": "completion",
+            "session_id": session_id,
+            "conversation_root": state.orchestrator_id if state else None,
+            "turn_id": body.turn_id,
+            "outcome": body.outcome,
+            "note": body.note,
+        },
+    )
+    return {"ok": True}
 
 
 @router.get("/session/{session_id}/turn/{turn_id}")
