@@ -173,6 +173,21 @@ describe("RecipeConfigForm", () => {
     expect(screen.getByText("topic")).toBeInTheDocument()
   })
 
+  it("opens a required section when the schema loads after mount (cold load)", () => {
+    const config = { columns: [{ column_type: "sampler", name: "topic" }] }
+    // Mount before the schema is available (async useQuery not yet resolved).
+    const { rerender } = render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} />,
+    )
+    expect(screen.queryByText("topic")).not.toBeInTheDocument()
+    // Schema arrives → the required Columns section must open, not stay collapsed.
+    const schema = { sdg: { required: ["columns"], properties: { columns: {} } } }
+    rerender(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} schema={schema} />,
+    )
+    expect(screen.getByText("topic")).toBeInTheDocument()
+  })
+
   it("renders a document picker for document_ids and toggling updates the array", () => {
     const onChange = vi.fn()
     const config = { document_ids: ["d1"] }

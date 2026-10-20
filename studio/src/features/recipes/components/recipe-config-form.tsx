@@ -780,7 +780,7 @@ function TrainingConfigForm({
       )}
 
       {advancedKeys.length > 0 && (
-        <Section title="Advanced" defaultOpen={hasRequired(advancedKeys)}>
+        <Section key={`advanced:${hasRequired(advancedKeys)}`} title="Advanced" defaultOpen={hasRequired(advancedKeys)}>
           {advancedKeys.map((key) => (
             <RecursiveField
               key={key}
@@ -795,7 +795,7 @@ function TrainingConfigForm({
       )}
 
       {otherKeys.length > 0 && (
-        <Section title="Other Parameters" defaultOpen={hasRequired(otherKeys)}>
+        <Section key={`other:${hasRequired(otherKeys)}`} title="Other Parameters" defaultOpen={hasRequired(otherKeys)}>
           {otherKeys.map((key) => (
             <RecursiveField
               key={key}
@@ -864,8 +864,10 @@ function SdgConfigForm({
           if (Array.isArray(value) && value.length === 0 && key !== "document_ids") return null
           const isRequired = requiredTop.includes(key)
           const open = isRequired || key === "document_ids"
+          // Key on `open` so the section remounts (re-seeding its open state) when
+          // `open` flips false→true as the schema loads async after mount.
           return (
-            <Section key={key} title={formatLabel(key)} defaultOpen={open} required={isRequired}>
+            <Section key={`${key}:${open}`} title={formatLabel(key)} defaultOpen={open} required={isRequired}>
               <RecursiveField
                 fieldKey={key}
                 value={value}
