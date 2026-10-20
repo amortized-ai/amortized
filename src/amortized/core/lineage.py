@@ -8,11 +8,11 @@ else happened — extra steps, loops, re-runs, out-of-order exploration are all 
 
 So enforcement is **field-driven**. ``GATED_FIELDS`` is the universe of config keys
 that reference an upstream *job* by id; ``present_gated_fields(config)`` returns the
-ones actually present on the job being launched. Both enforcement layers call it:
-  * the fail-closed validators in ``api/jobs.py`` (Layer 1 — a downstream job cannot
-    be *created* until every upstream job it references is ``succeeded``);
-  * the proxy stage-gate in ``api/agent.py`` (Layer 2 — Morty cannot *advance* a
-    dispatch whose upstream is still in flight).
+ones actually present on the job being launched. Enforcement lives at a single place —
+the ``validate_*`` tool boundary: the fail-closed validators in ``api/jobs.py`` call
+it so a downstream job cannot be *created* (nor its config *validated*) until every
+upstream job it references is ``succeeded``. A weak driver reads the ``422`` as a ReAct
+observation and self-corrects; there is no separate reactive proxy gate.
 Because it keys on the fields present, not on a modelled job type, a type "beyond the
 graph" is still gated on exactly the prerequisites it names, and nothing forces a
 global sdg → training → eval sequence. Fields that reference an MLflow *run*
