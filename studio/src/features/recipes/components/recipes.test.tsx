@@ -6,6 +6,29 @@ import { buildRecipeEntries } from "../lib/format"
 import type { Job } from "@/types/api"
 import type { DatasetInfo } from "../lib/format"
 
+vi.mock("@/features/documents/api/use-documents", () => ({
+  useDocuments: () => ({
+    data: [
+      { document_id: "d1", filename: "Doc One", format: "pdf", mlflow_run_id: null, created_at: null },
+      { document_id: "d2", filename: "Doc Two", format: "pdf", mlflow_run_id: null, created_at: null },
+    ],
+  }),
+}))
+
+vi.mock("@/features/datasets/api/use-datasets", () => ({
+  useDatasets: () => ({
+    data: [{ run_id: "r1", name: "My Dataset", tags: { job_id: "job-xyz" } }],
+  }),
+}))
+
+vi.mock("@/features/chat/api/use-providers", () => ({
+  useProviderStatus: () => ({
+    providerCatalog: [
+      { id: "openai", name: "OpenAI", models: [{ id: "gpt-4o", name: "GPT-4o" }] },
+    ],
+  }),
+}))
+
 function makeJob(overrides: Partial<Job> = {}): Job {
   return {
     id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -130,5 +153,82 @@ describe("RecipeConfigForm", () => {
     )
     expect(screen.getByText("Generation Settings")).toBeInTheDocument()
     expect(screen.getByDisplayValue("50")).toBeInTheDocument()
+  })
+
+  it("marks required fields and opens their section", () => {
+    const schema = {
+      sdg: { required: ["columns"], properties: { columns: { description: "Pipeline columns" } } },
+    }
+    const config = { columns: [{ column_type: "sampler", name: "topic" }] }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} schema={schema} />,
+    )
+    // required marker rendered on the Columns section header
+    expect(screen.getAllByLabelText("required").length).toBeGreaterThan(0)
+    // section is open by default → its item is visible
+    expect(screen.getByText("topic")).toBeInTheDocument()
+  })
+
+  it("renders a document picker for document_ids and toggling updates the array", () => {
+    const onChange = vi.fn()
+    const config = { document_ids: ["d1"] }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={onChange} />,
+    )
+    // selected document shown by filename (not raw id)
+    expect(screen.getAllByText("Doc One").length).toBeGreaterThan(0)
+    // other documents offered in the picker list
+    expect(screen.getByText("Doc Two")).toBeInTheDocument()
+    // removing the selection bubbles the updated config up
+    fireEvent.click(screen.getByLabelText("Remove Doc One"))
+    expect(onChange).toHaveBeenCalledWith({ document_ids: [] })
+  })
+
+  it("renders a dataset picker for parent_job_id", () => {
+    const config = { parent_job_id: "" }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} />,
+    )
+    expect(screen.getByText("Parent Job Id")).toBeInTheDocument()
+    expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
+  })
+
+  it("renders a dataset picker for data_run_id (run-id mode)", () => {
+    // data_run_id lands in Training's "Other Parameters"; mark it required so
+    // that section opens and the picker renders.
+    const schema = {
+      training: {
+        required: ["data_run_id"],
+        properties: { data_run_id: { description: "MLflow run holding the dataset" } },
+      },
+    }
+    const config = { data_run_id: "" }
+    render(
+      <RecipeConfigForm type="training" config={config} onChange={vi.fn()} schema={schema} />,
+    )
+    expect(screen.getByText("Data Run Id")).toBeInTheDocument()
+    expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
+  })
+
+  it("renders a catalog model picker for model_configs entries", () => {
+    const schema = { sdg: { required: ["model_configs"] } }
+    const config = { model_configs: [{ alias: "text", model: "gpt-4o", provider: "openai" }] }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} schema={schema} />,
+    )
+    // model_configs section opened (required) → the model picker renders
+    expect(screen.getByText("Model")).toBeInTheDocument()
+  })
+
+  it("renders a model_alias dropdown for columns", () => {
+    const schema = { sdg: { required: ["columns"] } }
+    const config = {
+      model_configs: [{ alias: "text", model: "gpt-4o", provider: "openai" }],
+      columns: [{ column_type: "llm-text", name: "answer", model_alias: "text" }],
+    }
+    render(
+      <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} schema={schema} />,
+    )
+    expect(screen.getByText("Model Alias")).toBeInTheDocument()
   })
 })
