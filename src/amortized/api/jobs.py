@@ -977,6 +977,14 @@ async def get_job_duration_stats(
 # ---------------------------------------------------------------------------
 
 
+def _warnings_ack_token(warnings: list[str]) -> str:
+    """Short digest of a validation warning set, returned on a warning 422 and echoed
+    back as acknowledge_warnings to proceed. Binding the acknowledgment to the exact
+    warnings means a changed config (different warnings -> different token) forces a
+    fresh decision, so an unseen warning can never be suppressed by a stale one."""
+    return hashlib.sha256("\n".join(sorted(warnings)).encode()).hexdigest()[:12]
+
+
 @router.post(
     "/eval/validate",
     response_model=ValidatedJobConfig,
@@ -994,7 +1002,7 @@ async def validate_eval_job(
     """Validate an eval job config without creating it."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
-    acknowledge_warnings = bool(config.pop("acknowledge_warnings", False))
+    acknowledge_warnings = str(config.pop("acknowledge_warnings", "") or "")
 
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
@@ -1022,8 +1030,12 @@ async def validate_eval_job(
     # A decision-requiring warning blocks the confirm card until the user weighs in:
     # surface it as a TOOL ERROR (not a 200 + card) so the model relays it and gets a
     # decision FIRST, instead of stacking a present_options on an already-rendered card.
-    # The model re-validates with acknowledge_warnings=true once the user accepts.
-    if warnings and not acknowledge_warnings:
+    # The acknowledgment is bound to THIS warning set via a token: the model re-validates
+    # with acknowledge_warnings=<token> once the user accepts. A changed config yields a
+    # different warning set (and token), so a stale/blanket acknowledgment can never
+    # suppress a warning the user has not seen.
+    token = _warnings_ack_token(warnings) if warnings else ""
+    if warnings and acknowledge_warnings != token:
         raise HTTPException(
             status_code=422,
             detail=[
@@ -1031,8 +1043,9 @@ async def validate_eval_job(
                 *warnings,
                 "Relay the warning(s) to the user and ask whether to proceed or use a"
                 " different eval set. If they accept, re-call validate_eval_job with"
-                " acknowledge_warnings=true to get the confirmation card. Do NOT present"
-                " a confirmation card or stack options until they decide.",
+                f' acknowledge_warnings="{token}" (copy this token verbatim) to get the'
+                " confirmation card. Do NOT present a confirmation card or stack options"
+                " until they decide.",
             ],
         )
 

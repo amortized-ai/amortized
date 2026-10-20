@@ -632,10 +632,22 @@ class TestRubricDriftWarning:
         assert "comparable" in body_str
         assert "verdict_accuracy" in body_str
 
-        # Acknowledged: the same validate succeeds and carries the warning on the card.
+        # A stale/incorrect token does NOT suppress the warning (binding is enforced).
+        bad = await client.post(
+            "/api/v1/jobs/eval/validate",
+            json={**drift_body, "acknowledge_warnings": "deadbeefdead"},
+        )
+        assert bad.status_code == 422, bad.text
+
+        # Acknowledged with the token from the 422: validate succeeds and carries the
+        # warning on the card.
+        import re as _re
+
+        m = _re.search(r'acknowledge_warnings="?([0-9a-f]{12})', str(response.json()))
+        assert m, response.text
         response = await client.post(
             "/api/v1/jobs/eval/validate",
-            json={**drift_body, "acknowledge_warnings": True},
+            json={**drift_body, "acknowledge_warnings": m.group(1)},
         )
         assert response.status_code == 200, response.text
         warnings = response.json()["warnings"]
