@@ -131,6 +131,13 @@ def test_config_json_only_without_flat_fields(model: Any, cfg: dict[str, Any]) -
     assert m.model_dump(exclude_none=True) == model(**cfg).model_dump(exclude_none=True)
 
 
+def test_empty_columns_list_still_accepted() -> None:
+    """Making columns schema-optional must NOT start rejecting an empty columns list —
+    DD allows it and test_sdg_endpoint.test_empty_columns_list expects 201. Only a wholly
+    MISSING columns key (and no config_json) is rejected."""
+    SDGJobRequest(columns=[])  # must not raise
+
+
 def test_empty_call_still_rejected() -> None:
     """Dropping schema-required does not make an empty config valid: the after-expansion
     checks still fire. SDG's points the agent at config_json; training is rejected by its
