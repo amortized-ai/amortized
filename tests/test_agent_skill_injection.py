@@ -107,7 +107,7 @@ def test_skill_load_recorded_even_with_signal_in_same_turn() -> None:
     state.subagent_target = "sdg"
     result = {"parts": [_signal_part("phase-2-gather"), _skill_part(PILOT)]}
     agent._ensure_phase_signal(state, result)
-    assert state.last_signal_step_by_target["sdg"] == "phase-2-gather"
+    assert state.last_signal_step == "phase-2-gather"
     assert state.active_skill_by_target["sdg"] == PILOT
 
 

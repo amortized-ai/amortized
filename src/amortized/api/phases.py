@@ -32,11 +32,10 @@ from pathlib import Path
 
 from amortized.core.recipes import _get_base_dir
 
-# The phase a freshly delegated subagent starts at, before it has signalled anything of
-# its own (that target's last_signal_step_by_target entry is absent/""). The key is the
-# first section slug in that agent's workflow. Keep in sync with the
-# agents/<agent>/phases/ filenames and the thinned workflow.md outline. The
-# orchestrator is absent: it never signals — the
+# The phase a freshly delegated subagent starts at, before it has signalled anything
+# of its own (state.last_signal_step is still ""). The key is the first section slug
+# in that agent's workflow. Keep in sync with the agents/<agent>/phases/ filenames and
+# the thinned workflow.md outline. The orchestrator is absent: it never signals — the
 # proxy picks its phase by control-flow path (see agent.py).
 _FIRST_PHASE: dict[str, str] = {
     "sdg": "phase-1-route",
