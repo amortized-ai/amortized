@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { useUIStore } from "@/stores/ui-store"
 import { cn } from "@/lib/utils"
 import { TUTORIAL_STEPS } from "./tutorial-steps"
+import { useConfig } from "@/features/settings/api/use-settings"
 
 interface TargetRect {
   top: number
@@ -115,6 +116,7 @@ export function TutorialOverlay() {
   const prevStep = useUIStore((s) => s.prevTutorialStep)
   const completeTutorial = useUIStore((s) => s.completeTutorial)
   const skipTutorial = useUIStore((s) => s.skipTutorial)
+  const { data: config } = useConfig()
 
   const totalSteps = TUTORIAL_STEPS.length
 
@@ -480,12 +482,14 @@ export function TutorialOverlay() {
                 <Server className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Setup Backend &
                 MLflow
               </a>
+              {config?.mlflow_gateway_uri && (
               <a
                 href={`${getBaseUrl()}/mlflow/#/gateway`}
                 className="flex items-center gap-2 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs transition-colors hover:bg-muted hover:border-border"
               >
                 <Zap className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Configure AI Gateway
               </a>
+              )}
             </div>
           )}
 

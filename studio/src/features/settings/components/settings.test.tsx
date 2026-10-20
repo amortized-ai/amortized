@@ -68,11 +68,12 @@ describe("SettingsPage", () => {
 
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument()
     expect(screen.getByText("System")).toBeInTheDocument()
-    expect(screen.getAllByText("AI Gateway").length).toBeGreaterThanOrEqual(1)
 
     await waitFor(() => {
       expect(screen.getByText("http://mlflow:5000")).toBeInTheDocument()
     })
+    // AI Gateway section renders once config (with a gateway URI) has loaded
+    expect(screen.getAllByText("AI Gateway").length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText("kubernetes").length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("0.3.0")).toBeInTheDocument()
   })
@@ -113,5 +114,22 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(screen.getByText(/No endpoints configured/)).toBeInTheDocument()
     })
+  })
+
+  it("hides the AI Gateway section when no gateway is configured (enterprise-MLflow)", async () => {
+    mockGetHealth.mockResolvedValue(healthOk)
+    mockGetConfig.mockResolvedValue({ ...config, mlflow_gateway_uri: null })
+    mockGetGatewayRoutes.mockResolvedValue({ routes: [] })
+    mockSearchMlflowRuns.mockResolvedValue({ runs: [] })
+
+    render(<SettingsPage />, { wrapper })
+
+    // Platform Configuration still renders (gateway-independent)...
+    await waitFor(() => {
+      expect(screen.getByText("http://mlflow:5000")).toBeInTheDocument()
+    })
+    // ...but the vestigial AI Gateway section + its external "Add Endpoint" link are gone.
+    expect(screen.queryByTestId("add-gateway-route")).not.toBeInTheDocument()
+    expect(screen.queryByText("AI Gateway")).not.toBeInTheDocument()
   })
 })
