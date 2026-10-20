@@ -643,6 +643,14 @@ class EvalJobConfig(BaseModel):
 
 class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
+    acknowledge_warnings: bool = Field(
+        False,
+        description=(
+            "Set true ONLY after relaying validation warnings (leakage, rubric drift,"
+            " recipe mismatch) to the user and they chose to proceed. Leave false on the"
+            " first validate so a warning surfaces as a tool error for the user to decide."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

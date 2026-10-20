@@ -994,6 +994,7 @@ async def validate_eval_job(
     """Validate an eval job config without creating it."""
     config = request.model_dump(exclude_none=True, exclude_unset=True)
     parent_job_id = config.pop("parent_job_id", "")
+    acknowledge_warnings = bool(config.pop("acknowledge_warnings", False))
 
     errors = await _validate_eval_data(config, parent_job_id, db)
     errors.extend(await _apply_classification_eval_mode(config, db))
@@ -1017,6 +1018,23 @@ async def validate_eval_job(
     warnings = await _rubric_drift_warning(config, parent_job_id, db)
     warnings.extend(await _training_sdg_mirror_warning(config, parent_job_id, db))
     warnings.extend(await _eval_overlap_warning(config, parent_job_id, db))
+
+    # A decision-requiring warning blocks the confirm card until the user weighs in:
+    # surface it as a TOOL ERROR (not a 200 + card) so the model relays it and gets a
+    # decision FIRST, instead of stacking a present_options on an already-rendered card.
+    # The model re-validates with acknowledge_warnings=true once the user accepts.
+    if warnings and not acknowledge_warnings:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                "WARNING (needs a user decision - NOT a config error to silently fix):",
+                *warnings,
+                "Relay the warning(s) to the user and ask whether to proceed or use a"
+                " different eval set. If they accept, re-call validate_eval_job with"
+                " acknowledge_warnings=true to get the confirmation card. Do NOT present"
+                " a confirmation card or stack options until they decide.",
+            ],
+        )
 
     return ValidatedJobConfig(
         job_type=JobType.eval,

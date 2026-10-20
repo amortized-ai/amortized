@@ -620,16 +620,24 @@ class TestRubricDriftWarning:
         async with _db_conn._pool.acquire() as conn:
             await conn.execute("UPDATE jobs SET status = 'succeeded' WHERE id = $1", job_id)
 
+        # Unacknowledged: a decision-warning now surfaces as a 422 tool error, so the
+        # agent relays it and gets the user's decision before any confirmation card.
+        drift_body = {
+            **EVAL_BODY,
+            "rubric": [{"name": "verdict_accuracy", "description": "paraphrased text"}],
+        }
+        response = await client.post("/api/v1/jobs/eval/validate", json=drift_body)
+        assert response.status_code == 422, response.text
+        body_str = str(response.json()).lower()
+        assert "comparable" in body_str
+        assert "verdict_accuracy" in body_str
+
+        # Acknowledged: the same validate succeeds and carries the warning on the card.
         response = await client.post(
             "/api/v1/jobs/eval/validate",
-            json={
-                **EVAL_BODY,
-                "rubric": [
-                    {"name": "verdict_accuracy", "description": "paraphrased text"}
-                ],
-            },
+            json={**drift_body, "acknowledge_warnings": True},
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         warnings = response.json()["warnings"]
         assert warnings and "NOT be comparable" in warnings[0]
         assert "verdict_accuracy" in warnings[0]
