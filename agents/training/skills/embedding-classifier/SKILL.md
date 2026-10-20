@@ -24,8 +24,12 @@ This flow is different from the LLM training sub-skills (OSFT/SFT/LoRA):
   (lora/qlora/osft/sft) to present.
 - The base is a small **sentence-transformers** model, so **skip the VRAM cards**
   and student-model-size comparison — they don't apply. Just pick a base model.
-- It **trains on CPU — no GPU is required** (the job requests 0 GPUs and schedules on
-  any node, so it never consumes the GPU quota). Don't mention GPUs or VRAM to the user.
+- It **trains on CPU by default** (the job requests 0 GPUs, schedules on any node,
+  and doesn't touch the GPU quota) — so skip the VRAM cards. A GPU is **optional**:
+  set `train_on_gpu=True` to reserve one GPU, which is ~100x faster. CPU is fine for
+  small/quick runs; a GPU matters for many epochs or large datasets (rough rule:
+  CPU trains ~25 samples/s, so samples × epochs ÷ 25 ≈ seconds on CPU — if that's
+  more than a few minutes, offer the GPU opt-in). See "Device" below.
 
 ## Requirement gathering
 
@@ -42,6 +46,10 @@ Follow the workflow's one-question-per-turn rules. Gather:
 3. **Epochs** — default 25 for a few-hundred-example dataset; more for small
    datasets, fewer for large ones. Don't ask about learning rate / batch size /
    loss unless the user brings them up.
+4. **Device** — defaults to CPU (`train_on_gpu=False`). Estimate the CPU runtime
+   (`samples × epochs ÷ 25 ≈ seconds`); if it's more than a few minutes, offer to
+   run on a GPU (`train_on_gpu=True`, ~100x faster) so the user can choose speed vs.
+   leaving the GPU quota free. For small/quick runs just use the CPU default silently.
 
 ## Config
 
@@ -51,7 +59,9 @@ parameter — `algorithm`, `model_name_or_path`, `text_column`, `label_column`,
 `loss_type` / `batch_sampler` / `warmup_ratio` / `seed`. Pull the structure from
 that schema and set `algorithm="embedding_sft"`; sensible defaults apply
 (`batch_all_triplet` loss, `group_by_label` sampler, lr 2e-5, batch 32) if you
-leave the optional knobs unset. No VRAM card is needed for this sub-skill.
+leave the optional knobs unset. Pass `train_on_gpu=True` only when the user opts into
+GPU training (see "Device" above); otherwise leave it unset for the CPU default. No
+VRAM card is needed for this sub-skill.
 
 ## Hold-out for evaluation
 

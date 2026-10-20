@@ -32,7 +32,8 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     count is only known after the (async, side-effecting) builder runs. This mirrors
     the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
     building. Keep in sync with ``amortized.jobs.*``:
-      - training, embedding_sft/classifier -> 0 (CPU-only, in-process; nproc_per_node ignored)
+      - training, embedding_sft/classifier -> train_on_gpu ? 1 : 0 (single-device, in-process;
+                                              CPU by default, 1-GPU opt-in; nproc_per_node ignored)
       - training, other algorithms         -> nproc_per_node (default 1)
       - sdg / upload     -> 0
       - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
@@ -56,7 +57,9 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     job_type = job.get("type")
     if job_type == JobType.training.value:
         if str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS:
-            return 0  # embedding_sft trains CPU-only in-process; nproc_per_node is ignored
+            # embedding_sft trains in-process on a single device: CPU by default,
+            # 1-GPU opt-in via train_on_gpu. nproc_per_node is ignored (no torchrun).
+            return 1 if config.get("train_on_gpu") else 0
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":

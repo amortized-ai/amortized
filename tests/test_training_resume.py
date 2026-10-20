@@ -159,11 +159,12 @@ class TestBuildResumeFromFinetuned:
 
 
 class TestBuildGpuResources:
-    """embedding_sft trains CPU-only in-process (no torchrun); other algorithms scale GPUs
-    with nproc_per_node. See issue #486."""
+    """embedding_sft trains in-process on a single device: CPU by default (0 GPUs), 1-GPU opt-in
+    via train_on_gpu, nproc_per_node ignored. Other algorithms scale with nproc_per_node.
+    See issue #486."""
 
     @pytest.mark.asyncio
-    async def test_embedding_sft_requests_zero_gpus(self) -> None:
+    async def test_embedding_sft_defaults_to_cpu(self) -> None:
         config = {
             "algorithm": "embedding_sft",
             "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
@@ -173,8 +174,21 @@ class TestBuildGpuResources:
         assert result.resources.gpus == 0
 
     @pytest.mark.asyncio
+    async def test_embedding_sft_opts_into_one_gpu(self) -> None:
+        # train_on_gpu=True reserves exactly one GPU (single-device, not a count).
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+            "train_on_gpu": True,
+        }
+        result = await training_builder.build({"id": "emb_gpu", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
+    @pytest.mark.asyncio
     async def test_embedding_sft_ignores_nproc_per_node(self) -> None:
-        # nproc_per_node is ignored by embedding_sft, so it must not request GPUs even if set.
+        # nproc_per_node (torchrun semantics) is ignored by embedding_sft: even a large value
+        # with train_on_gpu stays at one GPU, and without the opt-in it stays on CPU.
         config = {
             "algorithm": "embedding_sft",
             "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
@@ -184,8 +198,12 @@ class TestBuildGpuResources:
         result = await training_builder.build({"id": "emb2", "type": "training"}, config, {})
         assert result.resources.gpus == 0
 
+        config["train_on_gpu"] = True
+        result = await training_builder.build({"id": "emb2g", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
     @pytest.mark.asyncio
-    async def test_classifier_alias_requests_zero_gpus(self) -> None:
+    async def test_classifier_alias_defaults_to_cpu(self) -> None:
         config = {
             "algorithm": "classifier",  # alias -> embedding_sft
             "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
