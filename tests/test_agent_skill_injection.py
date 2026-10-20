@@ -73,6 +73,19 @@ def test_step_slug_read_from_in_file_stamp() -> None:
     assert phases.skill_step_index_for_slug("sdg-classification", "domain") == -1
 
 
+def test_step_is_review_identifies_the_show_prompt_step() -> None:
+    # The gate pairs a review card with its approval question by step: the approval question
+    # carries the slug of the step whose detail drives show_prompt. Task-distillation's step 8
+    # ("system-prompt") is that step; no other step is a review step.
+    assert phases.skill_step_is_review(PILOT, "system-prompt") is True
+    assert phases.skill_step_is_review(PILOT, "08-system-prompt") is True  # prefix-tolerant
+    assert phases.skill_step_is_review(PILOT, "examples") is False  # a non-review step
+    assert phases.skill_step_is_review(PILOT, "nope") is False
+    assert phases.skill_step_is_review(PILOT, None) is False
+    assert phases.skill_step_is_review(None, "system-prompt") is False
+    assert phases.skill_step_is_review("no-such-skill", "system-prompt") is False
+
+
 def test_with_skill_step_block_wraps_and_noops() -> None:
     wrapped = phases.with_skill_step_block(PILOT, 0, "hi")
     assert wrapped.startswith("<system-reminder>")

@@ -121,6 +121,132 @@ class TestSuppressionRecording:
         assert state.suppressed_call_ids == {"opts1", "opts3"}
 
 
+PILOT = "sdg-task-distillation"  # stepped skill; step 08 ("system-prompt") drives show_prompt
+
+
+def _sdg_skill_state() -> agent.SessionState:
+    # An sdg subagent with the task-distillation skill loaded, so the gate can resolve which
+    # present_options.step is the prompt-approval step (the one that drives show_prompt).
+    state = _fresh_state()
+    state.subagent_target = "sdg"
+    state.active_skill_by_target["sdg"] = PILOT
+    return state
+
+
+def _q(step: str, call_id: str, question: str = "?") -> dict[str, Any]:
+    return _tool_part("present_options", {"question": question, "step": step}, call_id=call_id)
+
+
+def _rev(call_id: str, prompt: str = "p") -> dict[str, Any]:
+    return _tool_part("show_prompt", {"prompt": prompt}, call_id=call_id)
+
+
+class TestAskTurnReviewPairing:
+    """An ask-turn carries ONE interaction. A review card is kept only when the leading question
+    is APPROVING it — detected by step: the approval question carries the prompt step's own slug
+    (the step that drives show_prompt). A review under any other question is a bundled extra and
+    is deferred (stripped now, NOT recorded as reviewed, so it gets its own turn later). Pairing
+    is by step, so the order of prompt-vs-question does not matter (no overfitting to order)."""
+
+    def test_review_paired_with_its_approval_question_is_kept(self) -> None:
+        # The approval question is stamped step="system-prompt" (the show_prompt step), so the
+        # prompt and its approve/edit question are one interaction — both kept, either order.
+        for parts in (
+            [
+                _tool_part("show_prompt", {"prompt": "You are an assessor."}, call_id="rev"),
+                _tool_part("present_options", {"question": "Approve?", "step": "system-prompt"}),
+            ],
+            [  # reversed order must behave identically — pairing is by step, not position
+                _tool_part("present_options", {"question": "Approve?", "step": "system-prompt"}),
+                _tool_part("show_prompt", {"prompt": "You are an assessor."}, call_id="rev"),
+            ],
+        ):
+            state = _sdg_skill_state()
+            out = agent._enforce_single_interaction({"parts": list(parts)}, state)
+            assert set(_tool_names(out["parts"])) == {"show_prompt", "present_options"}
+            assert state.suppressed_call_ids == set()
+
+    def test_review_under_unrelated_question_is_deferred(self) -> None:
+        # The leading question is step="examples" (a non-review step), so both prompts are later
+        # steps the driver bundled in — deferred, and not recorded as reviewed.
+        result = {
+            "parts": [
+                _tool_part("present_options", {"question": "Examples?", "step": "examples"}),
+                _tool_part("show_prompt", {"prompt": "You are an assessor."}, call_id="rev1"),
+                _tool_part("show_prompt", {"prompt": "Generate a ticket."}, call_id="rev2"),
+            ]
+        }
+        state = _sdg_skill_state()
+        out = agent._enforce_single_interaction(result, state)
+        assert _tool_names(out["parts"]) == ["present_options"]
+        assert state.suppressed_call_ids == {"rev1", "rev2"}
+        assert state.reviewed_card_sigs == set()
+        assert state.pending_interaction_steer is not None  # soft steer parked
+
+    def test_multiple_questions_and_reviews_collapse_to_one_interaction(self) -> None:
+        # The repro: many questions + many prompts in one turn. Keep the leading question; strip
+        # the extra questions AND every review (the leading question approves none of them).
+        result = {
+            "parts": [
+                _q("examples", "q1"),
+                _rev("rev1", "assessor"),
+                _tool_part("show_model_pricing", {"models": []}, call_id="price"),
+                _q("variation-dimensions", "q2"),
+                _rev("rev2", "ticket"),
+            ]
+        }
+        state = _sdg_skill_state()
+        out = agent._enforce_single_interaction(result, state)
+        # One question survives; the passive pricing card rides along; all reviews + extra q gone.
+        assert _tool_names(out["parts"]) == ["present_options", "show_model_pricing"]
+        assert state.suppressed_call_ids == {"rev1", "q2", "rev2"}
+
+    def test_paired_review_plus_bundled_extra_keeps_only_the_pair(self) -> None:
+        # Leading question IS a prompt approval (step="system-prompt") AND an unrelated second
+        # prompt + question are bundled. Keep the approved prompt + its question; strip the rest.
+        result = {
+            "parts": [
+                _q("system-prompt", "q1", "Approve?"),
+                _rev("keep", "assessor"),
+                _q("examples", "q2", "Examples?"),
+                _rev("drop", "other"),
+            ]
+        }
+        state = _sdg_skill_state()
+        out = agent._enforce_single_interaction(result, state)
+        assert set(_tool_names(out["parts"])) == {"present_options", "show_prompt"}
+        assert state.suppressed_call_ids == {"q2", "drop"}
+
+    def test_lenient_fallback_keeps_lone_review_when_step_unknown(self) -> None:
+        # No active skill / no step stamp: the gate can't pair by step, so a LONE review under a
+        # LONE question is treated as the documented review-and-approve pair and kept.
+        result = {
+            "parts": [
+                _tool_part("present_options", {"question": "Approve this prompt?"}, call_id="q"),
+                _tool_part("show_prompt", {"prompt": "You are an assessor."}, call_id="rev"),
+            ]
+        }
+        state = _fresh_state()  # no skill, no step
+        out = agent._enforce_single_interaction(result, state)
+        assert set(_tool_names(out["parts"])) == {"present_options", "show_prompt"}
+        assert state.suppressed_call_ids == set()
+
+    def test_lenient_fallback_defers_when_bundled_even_if_step_unknown(self) -> None:
+        # Fallback only trusts a 1:1 pair. With the step unresolvable AND multiple reviews, it is
+        # bundling, not an approval turn — defer all reviews.
+        result = {
+            "parts": [
+                _tool_part("present_options", {"question": "Approve?"}, call_id="q"),
+                _tool_part("show_prompt", {"prompt": "a"}, call_id="rev1"),
+                _tool_part("show_prompt", {"prompt": "b"}, call_id="rev2"),
+            ]
+        }
+        state = _fresh_state()
+        out = agent._enforce_single_interaction(result, state)
+        assert _tool_names(out["parts"]) == ["present_options"]
+        assert state.suppressed_call_ids == {"rev1", "rev2"}
+
+
 class TestGetSessionMessagesFiltersSuppressed:
     def test_suppressed_callids_filtered_from_history(
         self, monkeypatch: pytest.MonkeyPatch

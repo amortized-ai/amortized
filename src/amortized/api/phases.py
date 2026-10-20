@@ -235,6 +235,28 @@ def skill_step_count(skill_name: str | None) -> int:
     return len(_skill_steps(skill_name))
 
 
+# The review-card tool a step's detail drives (a prompt the user must review/approve). Kept as a
+# literal here rather than imported from agent_confirm so phases.py stays free of the api.agent
+# layer; the two must agree (there is only this one review tool today).
+_REVIEW_TOOL_IN_STEP = "show_prompt"
+
+
+def skill_step_is_review(skill_name: str | None, step_value: str | None) -> bool:
+    """True when `step_value` (a present_options.step the driver stamped) names a step whose
+    detail block drives a review card (a show_prompt). The approval question for a prompt carries
+    that step's own slug, so a review card legitimately shares a turn only with a question on such
+    a step — the gate defers review cards stacked under a question on any OTHER step."""
+    if not skill_name or not step_value:
+        return False
+    target = _norm_step(step_value)
+    if not target:
+        return False
+    return any(
+        slug == target and _REVIEW_TOOL_IN_STEP in block
+        for slug, block in _skill_step_entries(skill_name)
+    )
+
+
 def _step_heading(block: str) -> str:
     """The step block's first heading line, stripped of leading `#`/space (e.g.
     `### Step 3 — Output format` → `Step 3 — Output format`), or "" if none."""

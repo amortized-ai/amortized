@@ -558,12 +558,15 @@ class TestEnforceSingleInteraction:
     the UI never shows a question batched with a confirm card."""
 
     def test_ask_turn_keeps_only_first_question_but_preserves_passive_parts(self) -> None:
-        # Extra questions and a premature confirm card are stripped, but passive
-        # content (text, show_* cards) is kept so the user still sees context.
+        # Extra questions and a premature confirm card are stripped; a passive DISPLAY card
+        # (show_model_pricing) and text ride along as context for the leading question. A
+        # review card (show_prompt) stacked AFTER the question is a separate review-and-approve
+        # ask belonging to a later (stripped) question, so it is deferred to its own turn.
         result = {
             "parts": [
                 _text_part("here are your options"),
                 _tool_part("present_options", {"question": "which teacher?"}),
+                _tool_part("show_model_pricing", {}),
                 _tool_part("present_options", {"question": "how many records?"}),
                 _tool_part("show_prompt", {}),
                 _tool_part("present_options", {"question": "prompt ok?"}),
@@ -574,7 +577,8 @@ class TestEnforceSingleInteraction:
         tools = [agent._tool_name(p) for p in out["parts"] if p.get("type") == "tool"]
         assert tools.count("present_options") == 1  # exactly one question survives
         assert "validate_sdg_job" not in tools  # premature confirm card dropped
-        assert "show_prompt" in tools  # passive display card preserved
+        assert "show_model_pricing" in tools  # passive display card preserved
+        assert "show_prompt" not in tools  # stacked review card deferred to its own turn
         assert any(p.get("type") == "text" for p in out["parts"])  # text preserved
 
     def test_ask_turn_preserves_text_written_after_the_question(self) -> None:

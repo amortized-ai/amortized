@@ -53,6 +53,7 @@ from amortized.api.phases import (
     skill_step_block,
     skill_step_count,
     skill_step_index_for_slug,
+    skill_step_is_review,
     skill_step_title,
     subagent_phase,
     system_reminder,
@@ -551,6 +552,41 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
         keep_index = first_q if ask_turn else last_card
         drop_review = not ask_turn and first_card is not None and review_sig is not None
 
+    # Which review cards to strip, by index. Mirror of the stacked-options strip — the turn's
+    # one real interaction stays, bundled extras are deferred — but keyed on RELATEDNESS, not
+    # position. Two mutually-exclusive reasons:
+    #   · confirm turn (drop_review): the prompt is already reviewed and its text is inside the
+    #     confirm card, so every review card is redundant — drop all.
+    #   · ask turn: keep only a review the leading question is APPROVING. A prompt's approval
+    #     question carries the prompt step's own slug (e.g. step="system-prompt"), the step whose
+    #     detail drives show_prompt; so the review is related iff the kept question sits on such a
+    #     step. A review under any OTHER question (threshold, teacher, …) is a later step the
+    #     driver bundled in — defer it. Pairing is by step, so the order of the two does not
+    #     matter. When the step can't be resolved (driver didn't stamp it / not a stepped skill),
+    #     fall back to the stacked-options heuristic: a lone review under a lone question is the
+    #     documented review-and-approve pair; any bundling (extra questions or reviews) is not.
+    review_indices = [
+        i
+        for i, part in enumerate(parts)
+        if _tool_name(part) in _REVIEW_CARD_TOOLS and not _part_errored(part)
+    ]
+    active_skill = state.active_skill_by_target.get(state.subagent_target or "")
+    kept_q_step = (
+        _get_tool_input(parts[first_q]).get("step") if ask_turn and first_q is not None else None
+    )
+    num_questions = sum(
+        1 for part in parts if _tool_name(part) == "present_options" and not _part_errored(part)
+    )
+    step_resolves = ask_turn and skill_step_index_for_slug(active_skill, kept_q_step) >= 0
+    review_is_approval = ask_turn and (
+        skill_step_is_review(active_skill, kept_q_step)
+        or (not step_resolves and num_questions == 1 and len(review_indices) == 1)
+    )
+    keep_review = review_indices[0] if (review_is_approval and review_indices) else None
+    strip_review_idx = {
+        i for i in review_indices if drop_review or (ask_turn and i != keep_review)
+    }
+    deferred_review = ask_turn and bool(strip_review_idx)  # ask-turn defers (not confirm drops)
     kept_indices = {
         i
         for i, part in enumerate(parts)
@@ -558,7 +594,7 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
         or (
             _tool_name(part) != "present_options"
             and _tool_name(part) not in _CONFIRM_CARD_TOOLS
-            and not (drop_review and _tool_name(part) in _REVIEW_CARD_TOOLS)
+            and i not in strip_review_idx
         )
     }
     kept = [part for i, part in enumerate(parts) if i in kept_indices]
@@ -572,8 +608,10 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
             if call_id:
                 state.suppressed_call_ids.add(str(call_id))
     # Mark the prompt reviewed once it is actually rendered to the user this turn,
-    # so the next confirm that re-includes it proceeds instead of re-gating.
-    if review_sig is not None and not drop_review:
+    # so the next confirm that re-includes it proceeds instead of re-gating. A review
+    # that was stripped (confirm-turn drop or ask-turn defer) was NOT rendered, so it is
+    # not recorded — a deferred review must still get its own turn later.
+    if review_sig is not None and first_review not in strip_review_idx:
         state.reviewed_card_sigs.add(review_sig)
     # NB: the confirm signals are NOT reset here when the card renders. Resetting on render
     # treated a mere REFINEMENT of the same not-yet-submitted card (e.g. the user tweaks
@@ -599,6 +637,14 @@ def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> 
             "You stacked a job confirmation under a prompt the user has not reviewed "
             "yet. Show the prompt on its own for review first; present the job "
             "confirmation only on a later turn, after the user approves the prompt."
+        )
+    elif deferred_review:
+        # SOFT rail: the question renders this turn; steer the model, on its next turn, to
+        # stop stacking a review card (and anything else) under it. One ask per turn.
+        state.pending_interaction_steer = (
+            "You stacked a review card under a question in one turn. A turn asks the user "
+            "ONE thing: present the question on its own now, and show the card for review on "
+            "its own later turn — never both at once."
         )
     if len(kept) == len(parts):
         return result
