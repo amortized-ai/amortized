@@ -190,7 +190,8 @@ async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[st
     """Field-driven dependency gate: every upstream *job* this config references
     (lineage.GATED_FIELDS) must be ``succeeded``. Keys on the fields present, not on
     the job type, so this is the same rule for any node — including one "beyond the
-    graph" — and Layer 2 (the proxy stage-gate) gates the identical field set."""
+    graph". This is the single enforcement point (the ``validate_*`` tool boundary);
+    the reactive proxy stage-gate is gone — the ``422`` is what steers the driver."""
     errors: list[str] = []
     for field, job_id, _label in lineage.present_gated_fields(refs):
         errors += await _require_dependency_succeeded(repo, job_id, field)

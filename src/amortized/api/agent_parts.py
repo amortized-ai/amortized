@@ -1,8 +1,8 @@
-"""Tool-part primitives shared by the agent proxy and its gate submodules.
+"""Tool-part primitives shared by the agent proxy and its submodules.
 
 These parse the opencode message `parts` shape and are the one low-level dependency the
-gate submodules (agent_confirm, agent_sdg_prompt) share. They live in this leaf module so
-those submodules need not import the heavyweight `agent` module (which would be a cycle).
+`agent_sdg_prompt` submodule shares. They live in this leaf module so that submodule
+need not import the heavyweight `agent` module (which would be a cycle).
 """
 
 from __future__ import annotations
