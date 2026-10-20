@@ -433,8 +433,20 @@ def _detect_help_request(parts: list[dict[str, Any]]) -> tuple[str, str] | None:
     return None
 
 
-def _strip_internal_tools(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [p for p in parts if _tool_name(p) not in INTERNAL_TOOLS]
+def _surface_through_dispatch(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # A terminal dispatch ack (delegate_to_subagent / signal_subagent_completion /
+    # request_orchestrator_help) ENDS the turn. opencode runs the whole tool loop, so a
+    # weak driver keeps generating after the ack and narrates work that hasn't happened
+    # ("I've kicked off…", "it's underway") — see _SUBMITTED_CLAIM_RE. Surface only up to
+    # the first such tool, dropping it AND any speculative tail. Detection runs on the raw
+    # fetched parts (_detect_delegation/_detect_help_request/_detect_completion), so the
+    # dispatch is still seen and acted on; the break only hides the tail from the user.
+    out: list[dict[str, Any]] = []
+    for p in parts:
+        if _tool_name(p) in INTERNAL_TOOLS:
+            break
+        out.append(p)
+    return out
 
 
 def _enforce_single_interaction(result: dict[str, Any], state: SessionState) -> dict[str, Any]:
@@ -2142,7 +2154,7 @@ async def _run_turn(
             # duplicate (issue #505). Snapshot the handler's POST markers for the client,
             # feed the gates the real parts, then restore the client contract after the gates.
             client_parts = result.get("parts") or []
-            fetched = _strip_internal_tools(await _fetch_all_assistant_parts(active_id))
+            fetched = _surface_through_dispatch(await _fetch_all_assistant_parts(active_id))
             # Only replace on a successful fetch — a transient GET failure returns [],
             # and blanking the parts would needlessly no-op every gate below for that turn
             # (the client re-derives content from its own GET regardless).
@@ -2174,7 +2186,7 @@ async def _run_turn(
                     steer_agent,
                 )
                 await _proxy_send_message(active_id, steer, agent=steer_agent, model=body.model)
-                refetched = _strip_internal_tools(await _refetch_after_steer(state, active_id))
+                refetched = _surface_through_dispatch(await _refetch_after_steer(state, active_id))
                 if refetched:
                     result["parts"] = refetched
                 result = await _apply_provenance_gate(state, result, body, msg_cache)
@@ -2429,8 +2441,8 @@ async def _handle_subagent_message(
             resume_result = await _maybe_delegate(
                 state, session_id, delegation, resume_prompt, morty_result, body
             )
-        response_parts = _strip_internal_tools(result.get("parts", []))
-        result["parts"] = response_parts + _strip_internal_tools(resume_result.get("parts", []))
+        response_parts = _surface_through_dispatch(result.get("parts", []))
+        result["parts"] = response_parts + _surface_through_dispatch(resume_result.get("parts", []))
         result["info"] = resume_result.get("info", result.get("info", {}))
         return result
 
@@ -2465,14 +2477,16 @@ async def _handle_subagent_message(
         if state.subagent_id and state.subagent_target and state.subagent_target != target:
             state.pending_help_target = target
             state.pending_help_producer = state.subagent_target
-        response_parts = _strip_internal_tools(result.get("parts", []))
-        help_result["parts"] = response_parts + _strip_internal_tools(help_result.get("parts", []))
+        response_parts = _surface_through_dispatch(result.get("parts", []))
+        help_result["parts"] = response_parts + _surface_through_dispatch(
+            help_result.get("parts", [])
+        )
         return help_result
 
     # Ordinary subagent turn (no completion, no help request). Strip internal tools
     # defensively so a stray/denied hand-back call a subagent emits here is never
     # surfaced to the user. Phase backfill is applied uniformly by _run_turn.
-    result["parts"] = _strip_internal_tools(result.get("parts", []))
+    result["parts"] = _surface_through_dispatch(result.get("parts", []))
     return result
 
 
