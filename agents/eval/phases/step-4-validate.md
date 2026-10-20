@@ -10,7 +10,12 @@ SAME setup (temperature, sample count, judge) averages into that model's
 existing column; a different setup makes a new column. Only continue below
 if they want a fresh run.
 
-Call `validate_eval_job` with the assembled config. If validation
+Call `validate_eval_job` with the assembled config. Pass it as a SINGLE
+`config_json` argument whose value is the entire config serialized as a
+JSON string (every field — rubric, judge, endpoints, eval_mode,
+parent_job_id — inside that one string): a large multi-argument call
+(especially a rubric with multi-line criteria) can be corrupted in
+transit, one `config_json` string round-trips reliably. If validation
 fails (422), read the error, fix the config (e.g. set a judge
 explicitly when there is no SDG ancestor to auto-fill one), and call
 `validate_eval_job` AGAIN — do not present a text summary of a config

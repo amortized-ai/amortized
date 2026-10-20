@@ -10,6 +10,16 @@ Preview Flow** — unless the user explicitly asked to skip it, in which
 case validate directly with mode "create". The UI renders a
 confirmation card — the user clicks confirm to submit the job.
 
+**HOW TO CALL `validate_sdg_job` — pass the whole config as ONE argument.**
+Build the complete config, then call `validate_sdg_job` with a SINGLE
+`config_json` argument whose value is the entire config serialized as a JSON
+string (every field — columns, model_configs, processors, num_records, mode,
+topic, parent_job_id — goes INSIDE that one string). Do NOT pass columns /
+model_configs / processors as separate arguments: a large multi-argument call
+can be corrupted in transit and fail validation. One `config_json` string
+round-trips reliably. Example shape:
+`validate_sdg_job(config_json="{\"columns\": [...], \"model_configs\": [...], \"mode\": \"preview\", ...}")`.
+
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries. If validation fails, read the error,
 ask a natural follow-up to get the missing information, fix the config,

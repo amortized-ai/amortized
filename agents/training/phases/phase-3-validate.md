@@ -14,9 +14,12 @@ If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
 Estimate training resources with the final configuration and show the
-VRAM card. Call `validate_training_job` with the assembled config.
-The UI renders a confirmation card — the user clicks confirm to
-submit the job.
+VRAM card. Call `validate_training_job` with the assembled config. Pass
+it as a SINGLE `config_json` argument whose value is the entire config
+serialized as a JSON string (every field inside that one string) — a
+large multi-argument call can be corrupted in transit, one `config_json`
+string round-trips reliably. The UI renders a confirmation card — the
+user clicks confirm to submit the job.
 
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries.
