@@ -1,11 +1,54 @@
 """Pydantic models for the Amortized v1 API."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class _ConfigJsonMixin(BaseModel):
+    """Single-string escape hatch for weak models whose tool-call encoder corrupts large
+    multi-argument calls.
+
+    Observed with GLM-5.3-Flash: its native ``<arg_key>/<arg_value>`` tool-call format is
+    mis-parsed for configs ≳5KB — the nested arguments get merged into the first field, so
+    ``validate_sdg_job`` never parses and the agent spins (session ses_ea63dced…, 27 failed
+    attempts). A SINGLE string argument round-trips intact (the ``write`` tool proves this),
+    so letting the agent pass the ENTIRE config as one ``config_json`` string sidesteps the
+    bug for any model. When ``config_json`` is set it FULLY REPLACES the flat arguments.
+    """
+
+    config_json: str | None = Field(
+        default=None,
+        description=(
+            "The entire job config as ONE JSON-string argument. PREFER THIS for any "
+            "non-trivial config: put every field inside this single string instead of "
+            "passing columns/model_configs/etc. as separate arguments. When set, all other "
+            "arguments are ignored. Avoids a tool-call corruption some models hit on large "
+            "multi-field calls."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_config_json(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw = data.get("config_json")
+            if raw not in (None, ""):
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError) as e:
+                    msg = f"config_json must be a valid JSON object string: {e}"
+                    raise ValueError(msg) from e
+                if not isinstance(parsed, dict):
+                    msg = "config_json must decode to a JSON object (the config fields)"
+                    raise ValueError(msg)
+                parsed.pop("config_json", None)
+                return parsed
+        return data
 
 
 class JobType(StrEnum):
@@ -164,7 +207,7 @@ class TrainingJobConfig(BaseModel):
         return self
 
 
-class TrainingJobRequest(TrainingJobConfig):
+class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
 
 
@@ -347,7 +390,7 @@ from data_designer.config.processor_types import ProcessorConfigT as SDGProcesso
 from data_designer.config.sampler_constraints import ColumnConstraintInputT  # noqa: E402
 
 
-class SDGJobRequest(BaseModel):
+class SDGJobRequest(_ConfigJsonMixin):
     model_config = ConfigDict(extra="forbid")
 
     columns: list[SDGColumn] = Field(
@@ -673,7 +716,7 @@ class EvalJobConfig(BaseModel):
         return self
 
 
-class EvalJobRequest(EvalJobConfig):
+class EvalJobRequest(EvalJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
     acknowledge_warnings: str = Field(
         "",
