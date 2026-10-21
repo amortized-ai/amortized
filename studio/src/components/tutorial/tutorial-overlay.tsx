@@ -181,9 +181,19 @@ export function TutorialOverlay() {
   )
 
   useEffect(() => {
-    if (!active || !step) return
+    if (!active) {
+      // Reset transient visual state when the tour closes, so re-opening
+      // starts hidden instead of flashing the previous run's final frame
+      // (open → effect fades out → re-opens).
+      clearTimers()
+      /* eslint-disable-next-line react-hooks/set-state-in-effect -- reset on close */
+      setTooltipVisible(false)
+      setRect(null)
+      setDisplayedStepIndex(0)
+      return
+    }
+    if (!step) return
     clearTimers()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: kick off fade-out before timer swaps content
     setTooltipVisible(false)
 
     // Wait for fade-out to finish, THEN switch displayed content and position.
