@@ -8,6 +8,7 @@ import { useDragResize } from "@/hooks/use-drag-resize"
 import { cn } from "@/lib/utils"
 import { MessageList } from "./components/message-list"
 import { ChatInput } from "./components/chat-input"
+import { ChatAttach } from "./components/chat-attach"
 import { ConversationList } from "./components/conversation-list"
 import { PlanProgress } from "./components/plan-progress"
 import { DeleteConversationDialog } from "./components/delete-conversation-dialog"
@@ -86,6 +87,12 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
       <ChatInput
         onSend={(msg) => void sendMessage(msg)}
         disabled={isStreaming || !!sendBlockedReason}
+        leftSlot={
+          <ChatAttach
+            onReference={(text) => void sendMessage(text)}
+            disabled={isStreaming || !!sendBlockedReason}
+          />
+        }
         placeholder={
           jobInFlight
             ? "A job is running — Morty will continue when it finishes…"

@@ -63,8 +63,28 @@ function extractErrorMessage(err: unknown): { message: string; hint?: string } {
   return { message: raw || "Upload failed" }
 }
 
-export function UploadDocumentDialog() {
-  const [open, setOpen] = useState(false)
+interface UploadDocumentDialogProps {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  showTrigger?: boolean
+  // When set, the dialog hands the accepted upload job back and closes instead of
+  // tracking it inline — used by in-chat attach, which owns the tracking.
+  onUploaded?: (jobId: string, filename: string) => void
+}
+
+export function UploadDocumentDialog({
+  open: openProp,
+  onOpenChange,
+  showTrigger = true,
+  onUploaded,
+}: UploadDocumentDialogProps = {}) {
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : internalOpen
+  function setOpen(v: boolean) {
+    if (!isControlled) setInternalOpen(v)
+    onOpenChange?.(v)
+  }
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [outputFormat, setOutputFormat] = useState("md")
@@ -151,15 +171,28 @@ export function UploadDocumentDialog() {
     chunk_overlap: chunkOverlap,
   }
 
+  // When driven from chat (onUploaded set), hand the accepted job back and close;
+  // otherwise track it inline — the Documents page behavior.
+  function handleAccepted(jobId: string, filename: string) {
+    if (onUploaded) {
+      onUploaded(jobId, filename)
+      setOpen(false)
+      reset()
+    } else {
+      setJobId(jobId)
+    }
+  }
+
   function handleFileSubmit() {
     if (!file) return
+    const fname = file.name
     setError(null)
     setJobId(null)
-    setJobFilename(file.name)
+    setJobFilename(fname)
     uploadMutation.mutate(
       { file, options: chunkOptions },
       {
-        onSuccess: (data) => setJobId(data.job_id),
+        onSuccess: (data) => handleAccepted(data.job_id, fname),
         onError: (err) => {
           const { message, hint } = extractErrorMessage(err)
           setError(hint ? `${message}. ${hint}` : message)
@@ -170,13 +203,14 @@ export function UploadDocumentDialog() {
 
   function handleUrlSubmit() {
     if (!url.trim()) return
+    const fname = url.trim().split("/").pop() || "document"
     setError(null)
     setJobId(null)
-    setJobFilename(url.trim().split("/").pop() || "document")
+    setJobFilename(fname)
     urlMutation.mutate(
       { url: url.trim(), options: chunkOptions },
       {
-        onSuccess: (data) => setJobId(data.job_id),
+        onSuccess: (data) => handleAccepted(data.job_id, fname),
         onError: (err) => {
           const { message, hint } = extractErrorMessage(err)
           setError(hint ? `${message}. ${hint}` : message)
@@ -187,12 +221,14 @@ export function UploadDocumentDialog() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm" data-testid="upload-document">
-          <Upload className="h-4 w-4 mr-1" />
-          Upload Document
-        </Button>
-      </DialogTrigger>
+      {showTrigger && (
+        <DialogTrigger asChild>
+          <Button size="sm" data-testid="upload-document">
+            <Upload className="h-4 w-4 mr-1" />
+            Upload Document
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Upload Document</DialogTitle>
