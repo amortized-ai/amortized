@@ -165,7 +165,11 @@ export function TutorialOverlay() {
         }
         attempts++
         if (attempts >= maxAttempts) {
+          // Target never appeared (e.g. missing data-tutorial anchor).
+          // Fall back to a centered, clickable tooltip so the tour can't
+          // hang behind an opaque, unclickable overlay.
           setRect(null)
+          addTimer(() => setTooltipVisible(true), 150)
           return
         }
         requestAnimationFrame(poll)
