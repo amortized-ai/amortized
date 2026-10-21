@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest"
 
 vi.mock("@/features/settings/api/use-settings", () => ({
   useHealth: () => ({ data: { status: "ok", gpu: null }, isError: false, isLoading: false }),
+  useConfig: () => ({ data: undefined, isLoading: false }),
 }))
 
 vi.mock("@/features/jobs/api/use-jobs", () => ({

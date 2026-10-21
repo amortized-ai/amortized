@@ -7,6 +7,7 @@ import { AppLayout } from "@/app/layout"
 
 vi.mock("@/features/settings/api/use-settings", () => ({
   useHealth: () => ({ data: { status: "ok" }, isError: false, isLoading: false }),
+  useConfig: () => ({ data: undefined, isLoading: false }),
 }))
 
 vi.mock("@/features/jobs/api/use-jobs", () => ({
