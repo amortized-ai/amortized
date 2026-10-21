@@ -20,7 +20,9 @@ import {
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
 import { RecipeConfigForm } from "./recipe-config-form"
 import { stripPlaceholders } from "../lib/placeholders"
+import { collectMissingRequired } from "../lib/recipe-validation"
 import { useCreateJobFromConfig, useConfigSchemas } from "../api/use-recipes"
+import type { JsonSchema } from "../api/use-recipes"
 import {
   formatRecipeType,
   recipeTypeClassName,
@@ -38,15 +40,19 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
   const { data: schemas } = useConfigSchemas()
-  // Strip placeholder tokens (e.g. "<doc-id-from-list_documents>") on load so they
-  // are never carried as values — pickers show an empty state and nothing bogus is
-  // submitted. The tokens are an agent-resolution signal, not real config values.
+  // Strip placeholder tokens (agent-resolution hints, e.g. "<from-list_models>") on
+  // load so they are never a value and never submitted; pickers show an empty state.
   const [config, setConfig] = useState<Record<string, unknown>>(
     () => stripPlaceholders(structuredClone(job.config ?? {})),
   )
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<"form" | "json">("form")
+
+  // Block execution while any schema-required field is empty (the schema is the
+  // single source of truth for required-ness).
+  const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
+  const missingRequired = collectMissingRequired(config, typeSchema)
 
   const handleExecute = useCallback(() => {
     createMutation.mutate(
@@ -183,6 +189,17 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
             </DialogDescription>
           </DialogHeader>
 
+          {!submittedJobId && missingRequired.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <p className="font-medium text-destructive">Fill required fields before running:</p>
+              <ul className="mt-1 list-disc pl-5 text-destructive/90">
+                {missingRequired.map((field) => (
+                  <li key={field}>{field}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {!submittedJobId && (
             <div className="max-h-[300px] overflow-auto rounded-lg border bg-muted/30 p-3">
               <JsonTreeViewer data={config} collapsed={2} />
@@ -214,7 +231,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                 </Button>
                 <Button
                   onClick={handleExecute}
-                  disabled={createMutation.isPending}
+                  disabled={createMutation.isPending || missingRequired.length > 0}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {createMutation.isPending ? "Submitting..." : "Submit Job"}

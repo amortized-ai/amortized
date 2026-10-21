@@ -8,12 +8,17 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+from amortized.core.jobs import InvalidJobStateError, create_job
 from amortized.core.placeholders import (
     PLACEHOLDER_DOCUMENT_ID,
     PLACEHOLDER_MODEL,
     PLACEHOLDER_PARENT_JOB_ID,
+    find_unresolved_placeholders,
 )
 from amortized.core.recipes import list_starter_templates
+from amortized.models import JobType
 
 
 def _configs_by_name() -> dict[str, dict[str, Any]]:
@@ -40,3 +45,26 @@ def test_template_parent_job_id_is_canonical_or_empty() -> None:
     for cfg in _configs_by_name().values():
         parent_job_id = cfg.get("parent_job_id", "")
         assert parent_job_id in ("", PLACEHOLDER_PARENT_JOB_ID)
+
+
+def test_find_unresolved_placeholders_walks_nested_structures() -> None:
+    config = {
+        "document_ids": [PLACEHOLDER_DOCUMENT_ID],
+        "model_configs": [{"model": PLACEHOLDER_MODEL, "provider": PLACEHOLDER_MODEL}],
+        "num_records": 100,
+    }
+    assert find_unresolved_placeholders(config) == sorted(
+        {PLACEHOLDER_DOCUMENT_ID, PLACEHOLDER_MODEL}
+    )
+    assert find_unresolved_placeholders({"document_ids": ["abc123"]}) == []
+
+
+@pytest.mark.asyncio
+async def test_create_job_rejects_unresolved_placeholders() -> None:
+    # The rejection happens before the repository is touched, so a dummy repo is fine.
+    with pytest.raises(InvalidJobStateError, match="placeholder"):
+        await create_job(
+            object(),  # type: ignore[arg-type]
+            job_type=JobType.sdg,
+            config={"model_configs": [{"model": PLACEHOLDER_MODEL}]},
+        )

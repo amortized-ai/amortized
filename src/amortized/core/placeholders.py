@@ -21,3 +21,26 @@ PLACEHOLDER_TOKENS: frozenset[str] = frozenset(
 
 def is_placeholder(value: str) -> bool:
     return value in PLACEHOLDER_TOKENS
+
+
+def find_unresolved_placeholders(config: object) -> list[str]:
+    """Distinct placeholder tokens still present anywhere in a config subtree.
+
+    A token is an agent-resolution hint, never a valid value; a non-empty result
+    means the config was submitted (e.g. by the agent) without resolving one.
+    """
+    found: set[str] = set()
+
+    def walk(value: object) -> None:
+        if isinstance(value, str):
+            if value in PLACEHOLDER_TOKENS:
+                found.add(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                walk(item)
+
+    walk(config)
+    return sorted(found)
