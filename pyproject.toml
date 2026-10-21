@@ -25,7 +25,7 @@ dependencies = [
     "fastapi-mcp>=0.1",
     "mcp>=1.0,<2.0",
 
-    "data-designer-config>=0.8",
+    "data-designer-config>=0.9.4,<0.10",  # pinned: its persona-sampler schema (locale list) flows into openapi/v1.json; a floating minor can drift the spec and break the CI "openapi up to date" check
     "asynth>=0.1.10",
     "asyncssh>=2.14",
     "kubernetes_asyncio>=30.1",
