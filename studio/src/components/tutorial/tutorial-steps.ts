@@ -55,7 +55,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: "recipe-browser",
     title: "Recipes",
     description:
-      "Pre-built pipelines for each stage — data generation, training, and evaluation. Follow the 5 steps on this page, or let Morty guide you in the chat.",
+      "Reusable configs from your successful jobs, plus curated starter templates. Click any recipe to edit and re-run it — or let Morty set one up for you in the chat.",
     placement: "left",
   },
   {

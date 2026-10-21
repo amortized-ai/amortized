@@ -380,9 +380,8 @@ export function TutorialOverlay() {
     ? Math.min(rect.height + pad * 2, window.innerHeight - st - EDGE)
     : 0
 
-  const isRecipeStep = displayedStep.id.startsWith("recipe-step")
   const isRecipeBrowser = displayedStep.id === "recipes"
-  const tooltipWidth = isRecipeStep || isRecipeBrowser ? RECIPE_TOOLTIP_W : TOOLTIP_W
+  const tooltipWidth = isRecipeBrowser ? RECIPE_TOOLTIP_W : TOOLTIP_W
 
   let tooltipPos: { top: number; left: number }
 
@@ -390,12 +389,6 @@ export function TutorialOverlay() {
     tooltipPos = {
       top: Math.max(MARGIN, st + sh / 2 - 110),
       left: MARGIN,
-    }
-  } else if (isRecipeStep && rect) {
-    const stepCenterY = st + sh / 2
-    tooltipPos = {
-      top: Math.max(MARGIN, stepCenterY - 110),
-      left: Math.max(MARGIN, sl - GAP - RECIPE_TOOLTIP_W),
     }
   } else if (rect) {
     tooltipPos = computeTooltipPos(st, sl, sw, sh, displayedStep.placement, tooltipH)
