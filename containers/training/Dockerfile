@@ -1,12 +1,12 @@
 # Training container — universal (all algorithms, CUDA-enabled)
 # Supports: lora_sft, lora_grpo, sft, osft, dpo, kto, gkd, gepa, embedding_sft
 #
-# Built from the official training-hub v0.11.0 release (PyPI) — the first release
-# to ship the CLI (#103), parquet/CSV support (#151), the embedding-sft subcommand
-# (#152), and the embedding_sft parquet int-label fix (#154). Pinned (not @main) for
-# reproducible builds. The [embedding] extra pulls sentence-transformers, which both
-# `thub embedding-sft` training and the classification eval (classify_eval.py)
-# import at runtime.
+# Built from the official training-hub v0.11.1 release (PyPI) — ships the CLI (#103),
+# parquet/CSV support (#151), the embedding-sft subcommand (#152), the embedding_sft
+# parquet int-label fix (#154), and sft parquet/CSV support via the shared
+# ensure_messages_jsonl conversion (#155). Pinned (not @main) for reproducible builds.
+# The [embedding] extra pulls sentence-transformers, which both `thub embedding-sft`
+# training and the classification eval (classify_eval.py) import at runtime.
 #
 # The torch/CUDA stack is pinned to a reproducible, CUDA-13-aligned set (torch 2.13.0+cu130,
 # the versions vLLM 0.32.0 pins) via a pip constraints file + the cu130 extra index applied to
@@ -41,15 +41,15 @@ ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130
 # Skip lora extra — it pulls unsloth which caps transformers<5
 # --ignore-installed needed to bypass distutils system packages
 RUN pip install --no-cache-dir --ignore-installed --break-system-packages \
-    "training-hub[grpo,gepa,embedding]==0.11.0"
+    "training-hub[grpo,gepa,embedding]==0.11.1"
 
 # Install CUDA extensions (flash-attn, mamba-ssm, causal-conv1d) — torch is already installed above
 RUN pip install --no-cache-dir --no-build-isolation --break-system-packages \
-    "training-hub[grpo,gepa,cuda,embedding]==0.11.0"
+    "training-hub[grpo,gepa,cuda,embedding]==0.11.1"
 
 # Reinstall training-hub cleanly (first install with --ignore-installed may be partial)
 RUN pip install --no-cache-dir --force-reinstall --no-deps --break-system-packages \
-    "training-hub[grpo,gepa,embedding]==0.11.0"
+    "training-hub[grpo,gepa,embedding]==0.11.1"
 
 # Extend the constraints file for the HF/NLP stack. vLLM below installs with --ignore-installed,
 # which re-resolves transformers/huggingface-hub against vLLM's own (looser) ranges; without these
@@ -72,7 +72,7 @@ RUN pip install --no-cache-dir --no-deps --break-system-packages "unsloth==2026.
 # Qwen3.5 attention kernels: flash-linear-attention (pure triton, no CUDA ext)
 RUN pip install --no-cache-dir --break-system-packages "flash-linear-attention[cuda]"
 
-# Pin transformers to 5.17.0 (the training-hub v0.11.0 GA lockfile version): it satisfies vLLM
+# Pin transformers to 5.17.0 (the training-hub v0.11.x GA lockfile version): it satisfies vLLM
 # 0.32.0 (>=5.16.1,<5.20.0) AND unsloth 2026.10.7 (<=5.17.0), and crucially requires
 # huggingface-hub<2.0 — newer transformers (5.19.x) allow hub<3.0, pulling hub 2.x, which breaks
 # sentence-transformers (needs hub<2.0.0), the embedding-classifier path. Also covers Qwen3.5.
@@ -101,7 +101,7 @@ print(f'trl {trl.__version__}'); \
 print(f'torch {torch.__version__}'); \
 print(f'sentence-transformers {sentence_transformers.__version__}'); \
 print(f'huggingface-hub {huggingface_hub.__version__}'); \
-assert thv == '0.11.0', f'expected training-hub 0.11.0, got {thv}'; \
+assert thv == '0.11.1', f'expected training-hub 0.11.1, got {thv}'; \
 assert torch.__version__.startswith('2.13.0'), f'expected torch 2.13.0, got {torch.__version__}'; \
 assert '+cu13' in torch.__version__, f'expected a cu13 torch build, got {torch.__version__}'; \
 assert int(huggingface_hub.__version__.split('.')[0]) < 2, f'sentence-transformers needs huggingface-hub<2.0, got {huggingface_hub.__version__}'; \
