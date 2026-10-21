@@ -68,6 +68,14 @@ describe("collectMissingRequired", () => {
     expect(collectMissingRequired(config, schema)).toEqual(["Columns[0] › Model Alias"])
   })
 
+  it("flags an empty per-recipe requiredKey (document_ids)", () => {
+    // document_ids is optional in the schema but required for this recipe.
+    expect(collectMissingRequired({ document_ids: [] }, null, ["document_ids"])).toEqual([
+      "Document Ids",
+    ])
+    expect(collectMissingRequired({ document_ids: ["abc123"] }, null, ["document_ids"])).toEqual([])
+  })
+
   it("returns [] when everything required is filled", () => {
     const schema = {
       required: ["columns"],

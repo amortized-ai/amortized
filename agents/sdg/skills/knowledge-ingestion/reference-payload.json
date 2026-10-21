@@ -1,7 +1,8 @@
 {
   "_meta": {
     "name": "Knowledge Ingestion",
-    "description": "Generate QA training data from uploaded documents for FAQ bots, QA assistants, and doc-grounded chat."
+    "description": "Generate QA training data from uploaded documents for FAQ bots, QA assistants, and doc-grounded chat.",
+    "required": ["document_ids"]
   },
   "num_records": 500,
   "document_ids": [

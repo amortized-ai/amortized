@@ -173,6 +173,22 @@ describe("RecipeConfigForm", () => {
     expect(screen.getByText("topic")).toBeInTheDocument()
   })
 
+  it("marks a per-recipe requiredKey (document_ids) as required", () => {
+    const config = { document_ids: [] }
+    render(
+      <RecipeConfigForm
+        type="sdg"
+        config={config}
+        onChange={vi.fn()}
+        requiredKeys={["document_ids"]}
+      />,
+    )
+    // Document Ids section header shows the required marker (from requiredKeys,
+    // not the schema).
+    expect(screen.getAllByLabelText("required").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Document Ids").length).toBeGreaterThan(0)
+  })
+
   it("opens a required section when the schema loads after mount (cold load)", () => {
     const config = { columns: [{ column_type: "sampler", name: "topic" }] }
     // Mount before the schema is available (async useQuery not yet resolved).
@@ -240,6 +256,9 @@ describe("RecipeConfigForm", () => {
     )
     // model_configs section opened (required) → the model picker renders
     expect(screen.getByText("Model")).toBeInTheDocument()
+    // the derived provider is shown read-only (no separate editable field)
+    expect(screen.getByText("Provider:")).toBeInTheDocument()
+    expect(screen.getByText("openai")).toBeInTheDocument()
   })
 
   it("renders a model_alias dropdown for columns", () => {

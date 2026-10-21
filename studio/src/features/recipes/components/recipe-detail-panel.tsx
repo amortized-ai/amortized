@@ -34,9 +34,11 @@ interface RecipeDetailPanelProps {
   job: Job
   recipeName: string
   onBack: () => void
+  // Per-recipe required top-level fields (from a starter template's _meta.required).
+  requiredKeys?: string[]
 }
 
-export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanelProps) {
+export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: RecipeDetailPanelProps) {
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
   const { data: schemas } = useConfigSchemas()
@@ -49,10 +51,10 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<"form" | "json">("form")
 
-  // Block execution while any schema-required field is empty (the schema is the
-  // single source of truth for required-ness).
+  // Block execution while any required field is empty: schema-required (the schema
+  // is the source of truth) plus any per-recipe required fields (requiredKeys).
   const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
-  const missingRequired = collectMissingRequired(config, typeSchema)
+  const missingRequired = collectMissingRequired(config, typeSchema, requiredKeys)
 
   const handleExecute = useCallback(() => {
     createMutation.mutate(
@@ -161,6 +163,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                     config={config}
                     onChange={setConfig}
                     schema={schemas}
+                    requiredKeys={requiredKeys}
                   />
                 </div>
               </ScrollArea>

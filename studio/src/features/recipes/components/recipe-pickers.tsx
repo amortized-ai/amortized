@@ -263,6 +263,13 @@ export function ModelPickerField({
           ))}
         </SelectContent>
       </Select>
+      {/* Read-only: the provider is derived from the selected model (not separately
+          editable), but surfaced so the user knows which provider will be used. */}
+      {provider && (
+        <p className="text-xs text-muted-foreground">
+          Provider: <span className="font-medium text-foreground">{provider}</span>
+        </p>
+      )}
       <FieldDescription text={description} />
     </div>
   )

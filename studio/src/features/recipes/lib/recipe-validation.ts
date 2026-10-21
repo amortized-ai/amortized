@@ -109,10 +109,24 @@ function walk(
   }
 }
 
-export function collectMissingRequired(config: unknown, typeSchema?: JsonSchema | null): string[] {
-  if (!typeSchema) return []
-  const defs = ((typeSchema.$defs ?? typeSchema.definitions) ?? {}) as Record<string, Schema>
+export function collectMissingRequired(
+  config: unknown,
+  typeSchema?: JsonSchema | null,
+  requiredKeys: string[] = [],
+): string[] {
   const acc: string[] = []
-  walk(config, typeSchema as Schema, defs, "", acc)
+  if (typeSchema) {
+    const defs = ((typeSchema.$defs ?? typeSchema.definitions) ?? {}) as Record<string, Schema>
+    walk(config, typeSchema as Schema, defs, "", acc)
+  }
+  // Per-recipe required top-level fields (declared on the recipe, not the shared
+  // schema — e.g. Knowledge Ingestion requires document_ids).
+  const obj =
+    config && typeof config === "object" && !Array.isArray(config)
+      ? (config as Record<string, unknown>)
+      : {}
+  for (const key of requiredKeys) {
+    if (isEmpty(obj[key])) acc.push(formatLabel(key))
+  }
   return [...new Set(acc)]
 }

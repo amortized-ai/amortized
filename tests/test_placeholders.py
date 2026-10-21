@@ -25,11 +25,21 @@ def _configs_by_name() -> dict[str, dict[str, Any]]:
     return {t["name"]: t["config"] for t in list_starter_templates()}
 
 
+def _required_by_name(name: str) -> list[str]:
+    return {t["name"]: t.get("required", []) for t in list_starter_templates()}[name]
+
+
 def test_knowledge_ingestion_uses_canonical_tokens() -> None:
     cfg = _configs_by_name()["Knowledge Ingestion"]
     assert cfg["document_ids"] == [PLACEHOLDER_DOCUMENT_ID]
     assert cfg["model_configs"][0]["model"] == PLACEHOLDER_MODEL
     assert cfg["model_configs"][0]["provider"] == PLACEHOLDER_MODEL
+
+
+def test_knowledge_ingestion_declares_document_ids_required() -> None:
+    assert _required_by_name("Knowledge Ingestion") == ["document_ids"]
+    # Recipes that don't consume a document seed must not require it.
+    assert _required_by_name("Task Distillation") == []
 
 
 def test_template_model_refs_use_canonical_token() -> None:

@@ -39,6 +39,9 @@ interface RecipeConfigFormProps {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  // Per-recipe required top-level fields (declared on the recipe, not the shared
+  // schema — e.g. Knowledge Ingestion requires document_ids).
+  requiredKeys?: string[]
 }
 
 // --- Schema helpers ---
@@ -818,10 +821,12 @@ function SdgConfigForm({
   config,
   onChange,
   schema,
+  requiredKeys = [],
 }: {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  requiredKeys?: string[]
 }) {
   const primitiveKeys: string[] = []
   const complexKeys: string[] = []
@@ -862,7 +867,7 @@ function SdgConfigForm({
           const value = config[key]
           // Skip empty arrays, except document_ids (a picker, usable when empty).
           if (Array.isArray(value) && value.length === 0 && key !== "document_ids") return null
-          const isRequired = requiredTop.includes(key)
+          const isRequired = requiredTop.includes(key) || requiredKeys.includes(key)
           const open = isRequired || key === "document_ids"
           // Key on `open` so the section remounts (re-seeding its open state) when
           // `open` flips false→true as the schema loads async after mount.
@@ -883,10 +888,17 @@ function SdgConfigForm({
   )
 }
 
-export function RecipeConfigForm({ type, config, onChange, schema }: RecipeConfigFormProps) {
+export function RecipeConfigForm({ type, config, onChange, schema, requiredKeys }: RecipeConfigFormProps) {
   const typeSchema = schema ? (schema[type] as JsonSchema | undefined) : null
   if (type === "training") {
     return <TrainingConfigForm config={config} onChange={onChange} schema={typeSchema} />
   }
-  return <SdgConfigForm config={config} onChange={onChange} schema={typeSchema} />
+  return (
+    <SdgConfigForm
+      config={config}
+      onChange={onChange}
+      schema={typeSchema}
+      requiredKeys={requiredKeys}
+    />
+  )
 }
