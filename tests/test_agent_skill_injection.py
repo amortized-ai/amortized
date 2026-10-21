@@ -145,10 +145,10 @@ def test_inject_is_resident_aware_and_does_not_advance() -> None:
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
 
-    out1 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    out1 = agent._active_skill_step_block(state, "sdg", "phase-2-gather") or ""
     assert "### Step 2" in out1 and "### Step 1" not in out1
     assert "still to gather" not in out1.lower()  # nothing covered yet → no holes behind
-    out2 = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    out2 = agent._active_skill_step_block(state, "sdg", "phase-2-gather") or ""
     assert "### Step 2" in out2  # unchanged: injection never records coverage itself
     assert state.skill_steps_done.get("sdg") is None  # no write from injection
 
@@ -160,7 +160,7 @@ def test_coverage_tracks_reported_step() -> None:
     state.active_skill_by_target["sdg"] = PILOT
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])
     assert state.skill_steps_done["sdg"] == {1}
-    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    out = agent._active_skill_step_block(state, "sdg", "phase-2-gather") or ""
     assert "### Step 3" in out
 
 
@@ -173,7 +173,7 @@ def test_jump_ahead_leaves_holes_filled_lowest_first() -> None:
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("examples")])  # index 1
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("variation-dimensions")])  # 4
     assert state.skill_steps_done["sdg"] == {1, 4}
-    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    out = agent._active_skill_step_block(state, "sdg", "phase-2-gather") or ""
     assert "### Step 3" in out  # pulled BACK to the lowest hole, not forward to step 6
     assert "still to gather" in out.lower()
     assert "Task criteria" in out  # step 4 (index 3) flagged as still outstanding
@@ -218,8 +218,8 @@ def test_all_covered_injects_nothing() -> None:
     state.skill_steps_done["sdg"] = set(range(9))  # every step covered (count == 9)
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("generate-outputs")])
     assert state.skill_steps_done["sdg"] == set(range(9))  # unchanged
-    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert out == "u"  # nothing left to inject
+    out = agent._active_skill_step_block(state, "sdg", "phase-2-gather")
+    assert out is None  # nothing left to inject
 
 
 def test_optional_step_never_blocks_or_lists() -> None:
@@ -229,7 +229,7 @@ def test_optional_step_never_blocks_or_lists() -> None:
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
     state.skill_steps_done["sdg"] = set(range(8))  # indices 0-7 (all required) covered; 8 optional
-    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
+    out = agent._active_skill_step_block(state, "sdg", "phase-2-gather") or ""
     assert "### Step 9" in out  # the optional step is still offered
     assert "still to gather" not in out.lower()  # but never flagged as an outstanding hole
 
@@ -238,16 +238,16 @@ def test_no_injection_outside_gather_phase() -> None:
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = PILOT
     # building/validating: step detail must not bleed in, coverage must not change
-    out = agent._with_active_skill_step(state, "sdg", "phase-3-validate", "u")
-    assert out == "u"
+    out = agent._active_skill_step_block(state, "sdg", "phase-3-validate")
+    assert out is None
     assert "sdg" not in state.skill_steps_done
 
 
 def test_non_stepped_skill_is_noop() -> None:
     state = agent.SessionState(orchestrator_id="o")
     state.active_skill_by_target["sdg"] = NON_STEPPED  # inline list, no steps/ dir
-    out = agent._with_active_skill_step(state, "sdg", "phase-2-gather", "u")
-    assert out == "u"
+    out = agent._active_skill_step_block(state, "sdg", "phase-2-gather")
+    assert out is None
     assert "sdg" not in state.skill_steps_done
     agent._advance_skill_cursor(state, "sdg", [_present_options_part("whatever")])
     assert "sdg" not in state.skill_steps_done  # non-stepped → nothing to track
