@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { Bot } from "lucide-react"
-import type { ChatMessage, OptionCard } from "../types"
+import type { ChatMessage, OptionCard, ToolResult } from "../types"
 import { ToolActivity } from "./tool-badge"
 import { ActionCard } from "./action-card"
 import { OptionCards } from "./option-cards"
@@ -21,6 +21,34 @@ const JOB_TOOL_NAMES = new Set(["submit_recipe_job", "create_sdg_job", "create_t
 
 function stripToolXml(text: string): string {
   return text.replace(TOOL_XML_RE, "").replace(/\n{3,}/g, "\n\n").trim()
+}
+
+// The agent may call present_options twice in one turn — a corrupted-args error
+// (weak models leak stray XML into the JSON) then a clean retry — so walk
+// backwards and use the most recent result that parses with options. An earlier
+// ERRORED result must not shadow the later successful card.
+function extractStructuredOptions(
+  toolResults: ToolResult[],
+): { question: string | null; options: OptionCard[] } | null {
+  for (let i = toolResults.length - 1; i >= 0; i--) {
+    const tool = toolResults[i]!
+    if (tool.name !== "present_options" || !tool.result) continue
+    try {
+      const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+      if (parsed?.options && Array.isArray(parsed.options)) {
+        const options = (parsed.options as OptionCard[]).map((opt) => ({
+          ...opt,
+          value: opt.value ?? (opt.description ? `${opt.title} — ${opt.description}` : opt.title),
+        }))
+        const question =
+          typeof parsed.question === "string" && parsed.question.trim()
+            ? (parsed.question as string)
+            : null
+        return { question, options }
+      }
+    } catch { /* ignore parse errors, keep walking */ }
+  }
+  return null
 }
 
 interface MessageBubbleProps {
@@ -49,26 +77,10 @@ export function MessageBubble({
     [isUser, message.content],
   )
 
-  const structuredOptions = useMemo(() => {
-    if (isUser) return null
-    const tool = message.toolResults.find(t => t.name === "present_options")
-    if (!tool?.result) return null
-    try {
-      const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-      if (parsed?.options && Array.isArray(parsed.options)) {
-        const options = (parsed.options as OptionCard[]).map((opt) => ({
-          ...opt,
-          value: opt.value ?? (opt.description ? `${opt.title} — ${opt.description}` : opt.title),
-        }))
-        const question =
-          typeof parsed.question === "string" && parsed.question.trim()
-            ? (parsed.question as string)
-            : null
-        return { question, options }
-      }
-    } catch { /* ignore parse errors */ }
-    return null
-  }, [isUser, message.toolResults])
+  const structuredOptions = useMemo(
+    () => (isUser ? null : extractStructuredOptions(message.toolResults)),
+    [isUser, message.toolResults],
+  )
 
   const jobSubmissions = useMemo(() => {
     if (isUser) return []
