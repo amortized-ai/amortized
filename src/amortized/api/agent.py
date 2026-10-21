@@ -32,6 +32,17 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
+from amortized.api.phases import (
+    phase_block,
+    skill_optional_step_indices,
+    skill_step_block,
+    skill_step_count,
+    skill_step_index_for_slug,
+    skill_step_title,
+    subagent_phase,
+    system_reminder,
+    with_block,
+)
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -106,6 +117,15 @@ class SessionState:
     # signal_phase the server can backfill the UI progress bar at the right step
     # instead of snapping it back to the start of the phase.
     last_signal_step: str = ""
+    # Per-target stepped-skill injection state (phase-injection). active_skill_by_target:
+    # the opencode-native skill a target loaded (whose per-step detail is injected one step
+    # per gather turn). skill_steps_done: the step indices already covered, so the lowest
+    # UNCOVERED step is injected next (a hole left by a jumped-ahead driver is filled first).
+    # skill_last_asked: the last present_options.step label seen, so an interaction rerun
+    # re-observing the same card does not advance the cursor twice.
+    active_skill_by_target: dict[str, str] = field(default_factory=dict)
+    skill_steps_done: dict[str, set[int]] = field(default_factory=dict)
+    skill_last_asked: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -378,6 +398,113 @@ _PHASE_FOR_TARGET = {"sdg": "sdg", "training": "training", "eval": "eval"}
 # it) while dropping the other fetched tool parts it must not ship to the client (issue #505).
 _BACKFILL_PHASE_TOOL = "mcp_amortized__signal_phase"
 
+# The phase during which a stepped skill's per-step detail is surfaced: requirement
+# gathering. Per-step injection is confined to this phase so leftover step slices can't
+# bleed into the later config-building/validate turns (whose detail stays in the SKILL.md
+# body). Matches the `signal_phase.step` slug the sdg/training gather phase reports.
+_GATHER_PHASE = "phase-2-gather"
+
+# How many leading steps of a stepped skill ship INSIDE the served SKILL.md (appended by
+# gen_native_skills), hence are already present at load and must NOT be re-injected. Keep in
+# sync with the Makefile append (currently the first step only).
+_RESIDENT_SKILL_STEPS = 1
+
+
+def _next_skill_step(skill: str | None, done: set[int], count: int) -> int:
+    """The index of the next step to inject: the lowest UNCOVERED step, so a hole left by a
+    driver that jumped ahead is filled before any later step is re-surfaced. Resident step(s)
+    (baked into SKILL.md at build time) are skipped. Required steps come first; an optional step
+    is only offered once every required step is covered (it never blocks). Returns `count` when
+    nothing is left to inject."""
+    optional = skill_optional_step_indices(skill)
+    injectable = range(_RESIDENT_SKILL_STEPS, count)
+    required_gap = [i for i in injectable if i not in done and i not in optional]
+    if required_gap:
+        return min(required_gap)
+    optional_gap = [i for i in injectable if i not in done and i in optional]
+    return min(optional_gap) if optional_gap else count
+
+
+def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
+    """Prepend the active stepped skill's next step-detail block — plus a short list of the
+    steps still outstanding — to a gather turn.
+
+    "Next" is the lowest UNCOVERED step (see _next_skill_step), so a driver that jumped ahead is
+    pulled back to fill the skipped step rather than losing it. Inject-only: it reads the coverage
+    set but never mutates it — advancing is content-driven and happens when the model's RESPONSE
+    is processed (_advance_skill_cursor).
+
+    No-op outside the gather phase, when no skill is active, or when the active skill is not
+    stepped (opt-in by `steps/` presence) — so callers wrap every gather turn without first
+    checking skill state."""
+    if phase != _GATHER_PHASE:
+        return text
+    skill = state.active_skill_by_target.get(target)
+    count = skill_step_count(skill)
+    if not count:
+        return text
+    done = state.skill_steps_done.get(target, set())
+    nxt = _next_skill_step(skill, done, count)
+    block = skill_step_block(skill, nxt)
+    # The HOLES a driver left by jumping ahead: required steps it skipped (uncovered and below
+    # the furthest step it reached), excluding the one being injected now. Future steps it simply
+    # hasn't reached yet are NOT listed (the resident outline already shows those) — only the
+    # ones it owes. So a jumped-ahead driver is told exactly what to come back for.
+    optional = skill_optional_step_indices(skill)
+    frontier = max(done) if done else _RESIDENT_SKILL_STEPS - 1
+    outstanding: list[str] = []
+    for i in range(_RESIDENT_SKILL_STEPS, frontier):
+        if i == nxt or i in done or i in optional:
+            continue
+        title = skill_step_title(skill, i)
+        if title:
+            outstanding.append(title)
+    if not block and not outstanding:
+        return text
+    sections: list[str] = []
+    if outstanding:
+        sections.append("Steps still to gather before building: " + "; ".join(outstanding) + ".")
+    if block:
+        sections.append(block)
+    injected = system_reminder("\n\n".join(sections))
+    return f"{injected}\n\n{text}" if text else injected
+
+
+def _advance_skill_cursor(state: SessionState, target: str, parts: list[dict[str, Any]]) -> None:
+    """Mark the steps the model actually reached this turn as covered.
+
+    The driver stamps each gather question's `present_options.step` with the current step's slug
+    (the step blocks instruct it to). Resolve those slugs to indices and add them to the coverage
+    set — so a bundled turn marks several, a jumped-to step is recorded (leaving the skipped ones
+    uncovered for re-injection), and a stall/re-ask is a no-op (adding an index already present).
+
+    Fallback: when a stamped value matches no step slug (the driver used its own label), degrade
+    to marking the step we were injecting as covered — but only on a NEW label, so the interaction
+    rerun loop re-observing the same card does not advance twice."""
+    skill = state.active_skill_by_target.get(target)
+    count = skill_step_count(skill)
+    if not count:
+        return
+    asked = [
+        str(_get_tool_input(p).get("step") or "").strip()
+        for p in parts
+        if _tool_name(p) == "present_options"
+    ]
+    asked = [s for s in asked if s]
+    if not asked:
+        return  # no question posed → no evidence of progress; coverage unchanged
+    done = state.skill_steps_done.setdefault(target, set())
+    recognized = {i for s in asked if (i := skill_step_index_for_slug(skill, s)) >= 0}
+    if recognized:
+        done.update(recognized)  # crisp content anchor: record exactly the steps reached
+    elif asked[-1] != state.skill_last_asked.get(target):
+        # unrecognized NEW label → cover the step currently being injected
+        nxt = _next_skill_step(skill, done, count)
+        if nxt < count:
+            done.add(nxt)
+    # else: unrecognized label already counted (rerun / unchanged) → hold
+    state.skill_last_asked[target] = asked[-1]
+
 
 def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[str, Any]:
     """Guarantee the UI progress bar reflects the active subagent's phase.
@@ -392,12 +519,30 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
     if not phase:
         return result
     parts = result.get("parts") or []
+    signalled = False
     for part in parts:
-        if _tool_name(part) == "signal_phase":
+        name = _tool_name(part)
+        if name == "signal_phase":
             step = _get_tool_input(part).get("step")
             if step:
                 state.last_signal_step = str(step)
-            return result  # model signalled this turn; nothing to backfill
+            signalled = True
+        elif name == "skill":
+            # opencode-native skill load: record which skill this target has active so the
+            # proxy can inject that skill's per-step detail. Scanned in the same pass (not an
+            # early return) because the skill call often trails a signal_phase in the turn.
+            # Idempotent — safe if this runs twice in a turn (the interaction rerun loop).
+            skill_name = _get_tool_input(part).get("name")
+            if skill_name and state.subagent_target:
+                state.active_skill_by_target[state.subagent_target] = str(skill_name)
+    # Bind the stepped-skill cursor to the step this turn reached, from the question cards'
+    # stamped step id. Only in the gather phase (where steps are injected), and after the loop
+    # so a skill loaded / phase signalled in the same turn is already recorded.
+    target = state.subagent_target
+    if target and subagent_phase(target, state.last_signal_step) == _GATHER_PHASE:
+        _advance_skill_cursor(state, target, parts)
+    if signalled:
+        return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
     result["parts"] = [
         *parts,
@@ -1048,6 +1193,19 @@ async def _handle_subagent_message(
             steer_system = _SUBAGENT_PREVIEW_DONE_PROMPT
         else:
             steer_system = _SUBAGENT_JOB_DONE_PROMPT
+    else:
+        # Re-inject the current phase's block each ongoing turn (not just at the first
+        # handoff), so the active step's full instructions stay in the freshest position —
+        # the thin workflow.md carries only the phase titles. Skipped on job_complete, which
+        # carries its own terminal hand-back steer on the system channel above.
+        target_for_phase = state.subagent_target or ""
+        phase_for_turn = subagent_phase(target_for_phase, state.last_signal_step)
+        # During gathering, surface the active stepped skill's current step detail (one step
+        # per turn) just under the phase block, then the cursor advances when this turn's
+        # response is processed (_advance_skill_cursor). The skill's titles + body stay
+        # resident, so this only moves the freshest detail forward — it never hides the outline.
+        user_text = _with_active_skill_step(state, target_for_phase, phase_for_turn, user_text)
+        user_text = with_block(target_for_phase, phase_for_turn, user_text)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1128,7 +1286,9 @@ async def _handle_subagent_message(
                 "already expressed intent) or call present_options with next "
                 "steps. Do NOT respond with only text."
             )
-            morty_result = await _orchestrator_turn(state, resume_prompt, body)
+            morty_result = await _orchestrator_turn(
+                state, with_block("orchestrator", "resume", resume_prompt), body
+            )
             delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
             resume_result = await _maybe_delegate(
                 state, session_id, delegation, resume_prompt, morty_result, body
@@ -1152,7 +1312,11 @@ async def _handle_subagent_message(
         state.completed_subagents[target] = state.subagent_id
         state.subagent_id = None
         state.subagent_target = None
-        seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
+        # The fulfill_help phase block is the orchestrator's seed template when present (it
+        # carries the same {target}/{need}/{context} placeholders); fall back to the inline
+        # prompt for an un-migrated orchestrator.
+        seed_tmpl = phase_block("orchestrator", "fulfill_help") or _SUBAGENT_HELP_PROMPT
+        seed = seed_tmpl.format(target=target, need=need, context=help_context)
         morty_result = await _orchestrator_turn(state, seed, body)
         delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
         # The leaf's [USER MESSAGE] is the dataset ask (need), NOT the orchestrator seed —
@@ -1212,7 +1376,13 @@ async def _maybe_delegate(
 
     if stashed_id:
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
+        # Inject the block for the phase the subagent last signalled, so a resume lands it
+        # back on the right step with that step's full instructions in the turn (the thin
+        # workflow.md carries only titles).
+        resume_phase = subagent_phase(target, state.last_signal_step)
         handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        handoff_msg = _with_active_skill_step(state, target, resume_phase, handoff_msg)
+        handoff_msg = with_block(target, resume_phase, handoff_msg)
         sub_result = await _proxy_send_message(
             stashed_id, handoff_msg, agent=target, model=body.model
         )
@@ -1220,7 +1390,17 @@ async def _maybe_delegate(
     else:
         logger.info("New subagent: target=%s session=%s", target, session_id)
         sub_id = await _proxy_create_session()
+        # A fresh subagent starts at its entry phase: clear any step/skill state carried over
+        # from a previous subagent so subagent_phase() resolves to the first section, then
+        # inject that section's block as the lead of the handoff.
+        state.last_signal_step = ""
+        state.active_skill_by_target.pop(target, None)
+        state.skill_steps_done.pop(target, None)
+        state.skill_last_asked.pop(target, None)
         handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        handoff_msg = with_block(
+            target, subagent_phase(target, state.last_signal_step), handoff_msg
+        )
         sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
         state.subagent_id = sub_id
 
@@ -1234,7 +1414,18 @@ async def _handle_orchestrator_message(
     user_text: str,
     body: MessageRequest,
 ) -> dict[str, Any]:
-    morty_result = await _orchestrator_turn(state, user_text, body)
+    # The orchestrator never calls signal_phase (it is a primary agent); the proxy picks its
+    # phase by control-flow path. A fresh user turn is intake→delegate; a job-status event with
+    # no active subagent is the monitor case. Inject the block ONLY into the text the
+    # orchestrator reads — the clean user_text still flows to _maybe_delegate as the subagent's
+    # user text, so orchestrator-only guidance never leaks downstream.
+    if body.event == "job_complete":
+        orch_text = with_block("orchestrator", "monitor", user_text)
+    else:
+        orch_text = with_block(
+            "orchestrator", "delegate", with_block("orchestrator", "intake", user_text)
+        )
+    morty_result = await _orchestrator_turn(state, orch_text, body)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 
