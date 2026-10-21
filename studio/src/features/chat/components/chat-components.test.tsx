@@ -126,6 +126,48 @@ describe("ActionCard", () => {
     fireEvent.click(screen.getByText("Cancel"))
     expect(onReject).toHaveBeenCalledOnce()
   })
+
+  it("shows Device: CPU (default) for an embedding classifier job", () => {
+    const embAction = {
+      action: "Submit training job",
+      description: "Train embedding classifier",
+      params: {},
+      jobType: "training" as const,
+      config: {
+        algorithm: "embedding_sft",
+        model_name_or_path: "sentence-transformers/all-MiniLM-L6-v2",
+        num_train_epochs: 25,
+      },
+    }
+    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    expect(screen.getByText("Device")).toBeInTheDocument()
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
+  it("shows Device: GPU when an embedding classifier opts into train_on_gpu", () => {
+    const embAction = {
+      action: "Submit training job",
+      description: "Train embedding classifier",
+      params: {},
+      jobType: "training" as const,
+      config: { algorithm: "embedding_sft", num_train_epochs: 25, train_on_gpu: true },
+    }
+    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    expect(screen.getByText("Device")).toBeInTheDocument()
+    expect(screen.getByText("GPU (1)")).toBeInTheDocument()
+  })
+
+  it("does not add a Device row for a generative (non-embedding) training job", () => {
+    const sftAction = {
+      action: "Submit training job",
+      description: "Train sft",
+      params: {},
+      jobType: "training" as const,
+      config: { algorithm: "sft", model_name_or_path: "Qwen/Qwen3.5-0.8B", nproc_per_node: 1 },
+    }
+    render(<ActionCard action={sftAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    expect(screen.queryByText("Device")).not.toBeInTheDocument()
+  })
 })
 
 describe("PlanProgress", () => {
