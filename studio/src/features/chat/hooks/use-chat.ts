@@ -229,7 +229,10 @@ function extractSessionData(
         //  - show_prompt: the agent may review several DISTINCT prompts in one
         //    turn (e.g. a ticket prompt and an assessor prompt); each must be
         //    rendered, not collapsed to the first.
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name === "merge_datasets" || name === "show_prompt" || name.startsWith("validate_")
+        //  - present_options: same retry pattern as validate — a corrupted-args
+        //    error (weak models emit stray XML in the JSON) then a clean retry;
+        //    keeping only the errored result drops the options card.
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name === "merge_datasets" || name === "show_prompt" || name === "present_options" || name.startsWith("validate_")
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -293,21 +296,27 @@ function extractPhase(toolResults: ToolResult[]): string | undefined {
 // present_options. Lets us tell "the model re-asked the exact same thing" apart
 // from a legitimately different prompt.
 function presentOptionsSignature(toolResults: ToolResult[]): string | null {
-  const tool = toolResults.find((t) => t.name === "present_options")
-  if (!tool?.result) return null
-  try {
-    const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
-    if (!parsed?.options || !Array.isArray(parsed.options)) return null
-    const values = (parsed.options as { title?: string; value?: string }[])
-      .map((o) => (o.value ?? o.title ?? "").trim().toLowerCase())
-      .filter(Boolean)
-      .sort()
-    if (values.length === 0) return null
-    const question = typeof parsed.question === "string" ? parsed.question.trim().toLowerCase() : ""
-    return `${question}||${values.join("|")}`
-  } catch {
-    return null
+  // Walk backwards: a turn may carry an errored present_options (empty result)
+  // followed by a clean retry, so the signature must come from the last result
+  // that parses with options — not the leading error.
+  for (let i = toolResults.length - 1; i >= 0; i--) {
+    const tool = toolResults[i]!
+    if (tool.name !== "present_options" || !tool.result) continue
+    try {
+      const parsed = typeof tool.result === "string" ? JSON.parse(tool.result) : tool.result
+      if (!parsed?.options || !Array.isArray(parsed.options)) continue
+      const values = (parsed.options as { title?: string; value?: string }[])
+        .map((o) => (o.value ?? o.title ?? "").trim().toLowerCase())
+        .filter(Boolean)
+        .sort()
+      if (values.length === 0) continue
+      const question = typeof parsed.question === "string" ? parsed.question.trim().toLowerCase() : ""
+      return `${question}||${values.join("|")}`
+    } catch {
+      continue
+    }
   }
+  return null
 }
 
 // Morty under protocol stress sometimes re-asks a question it just asked, with the
