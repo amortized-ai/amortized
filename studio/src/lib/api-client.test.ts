@@ -23,6 +23,7 @@ import {
   getJobs,
   getJob,
   cancelJob,
+  createSdgJob,
   getHealth,
   getConfig,
   getJobLogs,
@@ -210,6 +211,32 @@ describe("API Client", () => {
         expect(apiErr.status).toBe(404)
         expect(apiErr.body).toEqual({ detail: "not found" })
       }
+    })
+
+    it("surfaces the server message and field details on a 422 (app envelope)", async () => {
+      mockFetch.mockReturnValue(
+        errorResponse(422, {
+          code: "validation_error",
+          message: "Validation failed with 1 error(s)",
+          details: [{ field: "columns", error: "Field required" }],
+        }),
+      )
+      const err = (await createSdgJob({}).catch((e) => e)) as InstanceType<typeof ApiError>
+      expect(err).toBeInstanceOf(ApiError)
+      expect(err.message).toContain("Validation failed with 1 error(s)")
+      expect(err.message).toContain("columns: Field required")
+    })
+
+    it("formats FastAPI validation errors (loc/msg)", async () => {
+      mockFetch.mockReturnValue(
+        errorResponse(422, {
+          detail: [
+            { loc: ["body", "num_records"], msg: "Input should be a valid integer", type: "int_parsing" },
+          ],
+        }),
+      )
+      const err = (await getJobs().catch((e) => e)) as InstanceType<typeof ApiError>
+      expect(err.message).toContain("num_records: Input should be a valid integer")
     })
   })
 
