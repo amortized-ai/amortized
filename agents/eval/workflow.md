@@ -109,6 +109,10 @@ user actually wants to change something about the eval.
   evaluation score that came from a tool result in THIS session. If you don't have a real
   value yet, call the tool that returns it or tell the user you don't have it — don't make
   one up.
+- **Resolve a named job by its EXACT id.** When the user or a handoff names a specific job
+  (e.g. the model under eval via `training_job_id`), look it up with `get_job` on that exact
+  id — don't fuzzy-match the name against `list_jobs`. If no job matches, say so and ask;
+  NEVER substitute a different job, even if another one succeeded.
 - A `validate_*_job` call only renders a confirmation card; the job is created when the user
   clicks **Confirm**. Don't say a job is queued/running/submitted off a validate call.
 - If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
