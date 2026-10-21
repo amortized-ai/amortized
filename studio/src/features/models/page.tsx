@@ -67,7 +67,7 @@ export default function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div data-tutorial="models-header" className="space-y-6">
+      <div className="space-y-6">
         <PageHeader title="Models" description="Manage your fine-tuned models and track versions" />
 
         <div className="animate-message-in rounded-xl border bg-card p-4">

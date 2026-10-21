@@ -116,7 +116,7 @@ export default function RecipesPage() {
   }
 
   return (
-    <div data-tutorial="recipe-browser" className="space-y-6">
+    <div className="space-y-6">
       <PageHeader
         title="Recipes"
         description="Reusable configs from previously successful jobs. Click a recipe to edit and re-execute."
