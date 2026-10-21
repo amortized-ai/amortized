@@ -474,9 +474,14 @@ class TestJobCompleteHandback:
         assert router.sent[0][3] == agent._SUBAGENT_JOB_DONE_PROMPT
 
     def test_normal_message_not_rewritten(self, router: _Router) -> None:
+        # A normal (non job_complete) turn gets the active phase block injected but the clean
+        # user text is preserved (not rewritten), and no job-done hand-back steer fires — that
+        # steer is delivered on the system channel only for a job_complete event.
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
-        assert router.sent[0][1] == "confirm"
+        sent = router.sent[0][1]
+        assert sent.endswith("confirm")  # user text preserved, not rewritten
+        assert "phase-1-route" in sent  # entry phase block injected
         assert router.sent[0][3] is None  # no system steer on an ordinary turn
 
 

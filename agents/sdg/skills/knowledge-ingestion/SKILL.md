@@ -28,76 +28,18 @@ for confirmation — do not narrate your reasoning.
 
 ## Requirement Gathering
 
-Ask the user these questions (one at a time, using `present_options`):
+Ask the user these questions (one at a time, using `present_options`).
+Work these steps in order, ONE question per turn. Each step's detailed
+instructions arrive as you reach it — the titles below are the outline so
+you always know where you are and what's next; do not run ahead of the
+step whose detail is in front of you.
 
-### Step 1 — What documents?
-
-Check if they've already uploaded documents via the Documents page. Use
-`list_documents` to show available documents with their IDs. If not
-uploaded yet, guide them to upload first.
-
-### Step 2 — Question types
-
-What kinds of questions should it handle?
-Default: factual (25%), procedural (35%), troubleshooting (25%),
-comparison (15%). Adapt to the domain — a troubleshooting guide
-needs more troubleshooting questions, a reference manual needs more
-factual ones.
-
-### Step 3 — Difficulty levels
-
-Default: basic (35%), intermediate (45%), advanced (20%).
-
-### Step 4 — Which teacher model?
-
-Call `list_models` to get the available teacher models (each entry has a
-`name` and a `provider`). Present ONLY those models as options. Do NOT
-suggest models that aren't returned by `list_models` — they won't work.
-If no models are returned, stop — no teacher-model provider is configured
-on the server.
-
-### Step 5 — How many samples?
-
-Documents are chunked at upload time. Use
-`get_document_chunks(doc_id)` to get the chunk count and token
-statistics.
-
-Use ALL chunks in the calculation — the worker sends every chunk
-to DataDesigner, so do not filter or exclude any chunks here.
-
-The goal is for total training tokens to be a multiple of total
-source tokens. Research suggests ~5x source coverage as a good
-target. Compute the per-chunk multiplier from the document's
-actual chunk statistics:
-
-```
-avg_qa_tokens ≈ 200  (empirical median across past runs; ranges 80-300
-                      depending on prompt style and answer depth)
-mean_chunk_tokens = mean of num_tokens across ALL chunks
-multiplier = coverage × mean_chunk_tokens / avg_qa_tokens
-num_samples = multiplier × num_chunks  (num_chunks = total, not filtered)
-```
-
-Present three coverage tiers and show the computed sample counts:
-
-1) 3x source coverage — Good starting point
-2) 5x source coverage — Recommended (research-backed default)
-3) 8x source coverage — Best quality, thorough coverage
-
-For example, a document with 50 chunks of mean 400 tokens:
-- 3x: multiplier = 3 × 400 / 200 = 6x → 300 samples
-- 5x: multiplier = 5 × 400 / 200 = 10x → 500 samples
-- 8x: multiplier = 8 × 400 / 200 = 16x → 800 samples
-
-Show the user the actual numbers, the multiplier, and the coverage
-tier so they understand the reasoning.
-
-### Step 6 — System prompt for the trained model
-
-Do NOT ask the user to write a system prompt. Generate a domain-specific
-default based on the document content and include it in the config.
-Only mention it in the confirmation table so the user can adjust if
-they want to.
+1. **What documents?**
+2. **Question types**
+3. **Difficulty levels**
+4. **Which teacher model?**
+5. **How many samples?**
+6. **System prompt for the trained model**
 
 ## Tool Parameters
 

@@ -23,6 +23,9 @@ export interface ProposedAction {
   parentJobId?: string
   recipe?: string
   dataRecordCount?: number | null
+  // Tunable training hyperparameters the config left unset (trainer default applies),
+  // rendered as "trainer default" rows so a narrated-but-unset value can't look effective.
+  trainerDefaultFields?: string[]
   // Backend-resolved assessor/system prompt for an SDG job (null when none was
   // confidently identified). Rendered verbatim instead of the client guessing it.
   // Mirrors the "assessor"-role entry in `prompts`; kept for back-compat.
@@ -87,6 +90,10 @@ export interface PhasePlan {
 export interface OpenCodePartText {
   type: "text"
   text: string
+  // Set by the amortized proxy on a gate's visible caveat (provenance/job-claim warning),
+  // so the client surfaces it separately and appends it to the GET-derived content instead
+  // of losing it to the `session.text || parsed.content` selection.
+  amortized_caveat?: boolean
 }
 
 export interface OpenCodePartToolInvocation {
