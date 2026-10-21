@@ -7,13 +7,6 @@ id), the job pod starts vLLM on a GPU, waits for it to be healthy, runs
 the eval, and exits when scores are done — no separate serving step,
 nothing to poll, no endpoint URLs involved.
 
-**Resolve the named model by its EXACT id — never substitute.** When the handoff
-or user named a specific training job as the model under eval, look it up with
-`get_job` on that exact id and use THAT job's id as `training_job_id`. If no job
-matches that id, tell the user it wasn't found and ask — do NOT fuzzy-match the name
-against `list_jobs` and do NOT fall back to a different job just because it succeeded.
-Evaluating the wrong model is worse than pausing to confirm.
-
 **If Step 0 already settled the subject, do NOT re-ask the model source.**
 When the user picked a training job or named their fine-tuned model, the
 source is resolved: set `training_job_id` (or `model_name_or_path` for a
