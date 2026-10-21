@@ -46,10 +46,14 @@ Follow the workflow's one-question-per-turn rules. Gather:
 3. **Epochs** — default 25 for a few-hundred-example dataset; more for small
    datasets, fewer for large ones. Don't ask about learning rate / batch size /
    loss unless the user brings them up.
-4. **Device** — defaults to CPU (`train_on_gpu=False`). Estimate the CPU runtime
-   (`samples × epochs ÷ 25 ≈ seconds`); if it's more than a few minutes, offer to
-   run on a GPU (`train_on_gpu=True`, ~100x faster) so the user can choose speed vs.
-   leaving the GPU quota free. For small/quick runs just use the CPU default silently.
+4. **Device** — defaults to CPU (`train_on_gpu=False`). To decide whether to offer a
+   GPU, estimate the CPU runtime: read the dataset's sample count from the SDG run /
+   dataset's `num_samples` tag (or `num_samples_generated` metric) and compute
+   `num_samples × epochs ÷ 25 ≈ seconds` (CPU trains ~25 samples/s). If that's more
+   than a few minutes, offer to run on a GPU (`train_on_gpu=True`, ~100x faster) so the
+   user can choose speed vs. leaving the GPU quota free. If the sample count is unknown
+   or the estimate is small/quick, just use the CPU default silently — don't guess a
+   count or ask the user for it.
 
 ## Config
 

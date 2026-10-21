@@ -92,9 +92,19 @@ async def create_job(
     # instead of letting it sit silently queued.
     demand = estimate_gpu_demand({"type": job_type.value, "config": config})
     if demand > _settings.gpu_budget:
+        # Name the knob that actually drove the demand so the error is actionable:
+        # embedding_sft/classifier reach it via train_on_gpu (a single GPU), every other
+        # training algorithm (and embedded-serving eval) via nproc_per_node.
+        if (
+            job_type == JobType.training
+            and str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS
+        ):
+            knob, remedy = "train_on_gpu", "set train_on_gpu=false to train on CPU"
+        else:
+            knob, remedy = "nproc_per_node", "reduce nproc_per_node"
         raise InvalidJobStateError(
-            f"job requests {demand} GPU(s) (nproc_per_node) but the per-user GPU budget is"
-            f" {_settings.gpu_budget} — reduce nproc_per_node or raise the budget"
+            f"job requests {demand} GPU(s) ({knob}) but the per-user GPU budget is"
+            f" {_settings.gpu_budget} — {remedy} or raise the budget"
             " (GPU_PER_USER / AMORTIZED_GPU_BUDGET)"
         )
 

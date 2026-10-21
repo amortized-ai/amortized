@@ -91,7 +91,8 @@ class TestCreateJob:
     async def test_create_rejects_job_over_gpu_budget(self, repo: Repository) -> None:
         # Default gpu_budget is 1, so a 2-GPU training could never be admitted — reject
         # it at creation with a clear error rather than letting it sit silently queued.
-        with pytest.raises(InvalidJobStateError, match="GPU budget"):
+        # The message names the nproc_per_node knob for generative algorithms.
+        with pytest.raises(InvalidJobStateError, match="reduce nproc_per_node") as exc:
             await create_job(
                 repo,
                 job_type=JobType.training,
@@ -102,6 +103,29 @@ class TestCreateJob:
                     "nproc_per_node": 2,
                 },
             )
+        assert "train_on_gpu" not in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_embedding_gpu_over_budget_names_train_on_gpu(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # embedding_sft reaches the budget via train_on_gpu (1 GPU), not nproc_per_node, so the
+        # rejection must point at train_on_gpu/CPU — not advise "reduce nproc_per_node".
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="train_on_gpu") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={
+                    "algorithm": "embedding_sft",
+                    "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                    "data_path": "t.parquet",
+                    "train_on_gpu": True,
+                },
+            )
+        assert "nproc_per_node" not in str(exc.value)
 
 
 class TestGetJob:
