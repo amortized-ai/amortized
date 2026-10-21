@@ -61,6 +61,9 @@ class _Router:
     def text_to(self, session_id: str) -> str:
         return next(t for sid, t, _agent, _system in self.sent if sid == session_id)
 
+    def system_to(self, session_id: str) -> str:
+        return next(s or "" for sid, _t, _agent, s in self.sent if sid == session_id)
+
 
 @pytest.fixture()
 def router(monkeypatch: pytest.MonkeyPatch) -> _Router:
@@ -97,15 +100,15 @@ class TestSubagentInjection:
             )
         )
 
+        # entry phase block (step-0), not the stale step-3, rides the SYSTEM channel
+        system = router.system_to(new_sid)
+        assert "step-0-what-to-eval" in system
+        assert "Confirm WHAT to evaluate" in system
+        # the user part carries the handoff framing + clean user text only — no phase block
         sent = router.text_to(new_sid)
-        # entry phase block (step-0), not the stale step-3, leads the handoff
-        assert "step-0-what-to-eval" in sent
-        assert "Confirm WHAT to evaluate" in sent
-        # injected framing is wrapped as a system-reminder; the clean user text trails
-        # outside it (and is the end of the message), so it reads as the user's own words
-        assert "<system-reminder>" in sent
         assert "[CONTEXT]" in sent
         assert sent.endswith("evaluate it")
+        assert "step-0-what-to-eval" not in sent
         # a fresh subagent's cursor is reset to its entry phase
         assert state.last_signal_step == ""
 
@@ -121,9 +124,10 @@ class TestSubagentInjection:
             )
         )
 
+        assert "step-1_5-how-much" in router.system_to(stashed)
         sent = router.text_to(stashed)
-        assert "step-1_5-how-much" in sent
         assert "[RESUMED]" in sent
+        assert "step-1_5-how-much" not in sent
 
 class TestOrchestratorInjection:
     def test_fresh_turn_injects_intake_and_delegate(self, router: _Router) -> None:
@@ -132,10 +136,12 @@ class TestOrchestratorInjection:
 
         _run(agent._handle_orchestrator_message(state, "s", "help me", _body()))
 
+        system = router.system_to(orch)
+        assert "Phase 1 — Identify Intent" in system
+        assert "Phase 2 — Delegate" in system
         sent = router.text_to(orch)
-        assert "Phase 1 — Identify Intent" in sent
-        assert "Phase 2 — Delegate" in sent
         assert "help me" in sent
+        assert "Phase 1 — Identify Intent" not in sent
 
     def test_job_complete_turn_injects_monitor(self, router: _Router) -> None:
         orch = router.add([[_text_part("Here are next steps")]])
@@ -147,9 +153,9 @@ class TestOrchestratorInjection:
             )
         )
 
-        sent = router.text_to(orch)
-        assert "Phase 4 — Monitor" in sent
-        assert "Phase 1 — Identify Intent" not in sent
+        system = router.system_to(orch)
+        assert "Phase 4 — Monitor" in system
+        assert "Phase 1 — Identify Intent" not in system
 
     def test_clean_user_text_flows_downstream(self, router: _Router) -> None:
         # The orchestrator delegates to sdg; the sdg handoff must carry the clean
@@ -163,5 +169,8 @@ class TestOrchestratorInjection:
         sdg_text = router.text_to(sdg)
         assert "make data" in sdg_text
         assert "Phase 1 — Identify Intent" not in sdg_text  # orchestrator-only guidance
-        # sdg gets its OWN entry phase block instead
-        assert "phase-1-route" in sdg_text
+        # the orchestrator's intake/delegate blocks never reach the producer, on any channel
+        assert "Phase 1 — Identify Intent" not in router.system_to(sdg)
+        # sdg gets its OWN entry phase block on the system channel instead
+        assert "phase-1-route" in router.system_to(sdg)
+        assert "phase-1-route" not in sdg_text

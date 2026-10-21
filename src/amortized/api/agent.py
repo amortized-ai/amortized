@@ -40,8 +40,6 @@ from amortized.api.phases import (
     skill_step_index_for_slug,
     skill_step_title,
     subagent_phase,
-    system_reminder,
-    with_block,
 )
 from amortized.config import settings
 
@@ -425,24 +423,24 @@ def _next_skill_step(skill: str | None, done: set[int], count: int) -> int:
     return min(optional_gap) if optional_gap else count
 
 
-def _with_active_skill_step(state: SessionState, target: str, phase: str | None, text: str) -> str:
-    """Prepend the active stepped skill's next step-detail block — plus a short list of the
-    steps still outstanding — to a gather turn.
+def _active_skill_step_block(state: SessionState, target: str, phase: str | None) -> str | None:
+    """The active stepped skill's next step-detail block — plus a short list of the steps still
+    outstanding — for the current gather turn, or None when there is nothing to inject.
 
-    "Next" is the lowest UNCOVERED step (see _next_skill_step), so a driver that jumped ahead is
-    pulled back to fill the skipped step rather than losing it. Inject-only: it reads the coverage
-    set but never mutates it — advancing is content-driven and happens when the model's RESPONSE
-    is processed (_advance_skill_cursor).
+    Returned as PLAIN text for delivery on the SYSTEM channel (following 509's principle that
+    platform instructions ride `system`, never the user text). "Next" is the lowest UNCOVERED
+    step (see _next_skill_step), so a driver that jumped ahead is pulled back to fill the skipped
+    step rather than losing it. Read-only on coverage: it never mutates the set — advancing is
+    content-driven and happens when the model's RESPONSE is processed (_advance_skill_cursor).
 
-    No-op outside the gather phase, when no skill is active, or when the active skill is not
-    stepped (opt-in by `steps/` presence) — so callers wrap every gather turn without first
-    checking skill state."""
+    None outside the gather phase, when no skill is active, or when the active skill is not
+    stepped (opt-in by `steps/` presence) — so callers can compose it unconditionally."""
     if phase != _GATHER_PHASE:
-        return text
+        return None
     skill = state.active_skill_by_target.get(target)
     count = skill_step_count(skill)
     if not count:
-        return text
+        return None
     done = state.skill_steps_done.get(target, set())
     nxt = _next_skill_step(skill, done, count)
     block = skill_step_block(skill, nxt)
@@ -460,14 +458,29 @@ def _with_active_skill_step(state: SessionState, target: str, phase: str | None,
         if title:
             outstanding.append(title)
     if not block and not outstanding:
-        return text
+        return None
     sections: list[str] = []
     if outstanding:
         sections.append("Steps still to gather before building: " + "; ".join(outstanding) + ".")
     if block:
         sections.append(block)
-    injected = system_reminder("\n\n".join(sections))
-    return f"{injected}\n\n{text}" if text else injected
+    return "\n\n".join(sections)
+
+
+def _join_system(*parts: str | None) -> str | None:
+    """Join non-empty system-channel fragments with blank lines, or None when all are empty.
+    Lets callers compose a turn's phase block + skill-step block (+ any steer) into the single
+    `system` string opencode accepts, without prepending anything to the user text."""
+    kept = [p for p in parts if p]
+    return "\n\n".join(kept) if kept else None
+
+
+def _phase_system(state: SessionState, agent: str, phase: str | None) -> str | None:
+    """The system-channel instruction for a subagent turn: the active phase block plus, in the
+    gather phase, the current stepped-skill detail. Delivered via opencode's `system` field (see
+    _proxy_send_message), never prepended to the user text."""
+    block = phase_block(agent, phase) if phase else None
+    return _join_system(block, _active_skill_step_block(state, agent, phase))
 
 
 def _advance_skill_cursor(state: SessionState, target: str, parts: list[dict[str, Any]]) -> None:
@@ -1194,18 +1207,16 @@ async def _handle_subagent_message(
         else:
             steer_system = _SUBAGENT_JOB_DONE_PROMPT
     else:
-        # Re-inject the current phase's block each ongoing turn (not just at the first
-        # handoff), so the active step's full instructions stay in the freshest position —
-        # the thin workflow.md carries only the phase titles. Skipped on job_complete, which
-        # carries its own terminal hand-back steer on the system channel above.
+        # Re-inject the current phase's block each ongoing turn (not just at the first handoff),
+        # so the active step's full instructions stay in the turn — the thin workflow.md carries
+        # only the phase titles. Delivered on the SYSTEM channel (not prepended to the user text),
+        # following 509's principle. During gathering it also carries the active stepped skill's
+        # current step detail (one step per turn); the cursor advances when this turn's response
+        # is processed (_advance_skill_cursor). Skipped on job_complete, which carries its own
+        # terminal hand-back steer on the system channel above.
         target_for_phase = state.subagent_target or ""
         phase_for_turn = subagent_phase(target_for_phase, state.last_signal_step)
-        # During gathering, surface the active stepped skill's current step detail (one step
-        # per turn) just under the phase block, then the cursor advances when this turn's
-        # response is processed (_advance_skill_cursor). The skill's titles + body stay
-        # resident, so this only moves the freshest detail forward — it never hides the outline.
-        user_text = _with_active_skill_step(state, target_for_phase, phase_for_turn, user_text)
-        user_text = with_block(target_for_phase, phase_for_turn, user_text)
+        steer_system = _phase_system(state, target_for_phase, phase_for_turn)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1286,8 +1297,10 @@ async def _handle_subagent_message(
                 "already expressed intent) or call present_options with next "
                 "steps. Do NOT respond with only text."
             )
+            # resume_prompt is the turn-driver (user-role, like [CONTEXT]/[RESUMED]); the resume
+            # phase block rides the system channel alongside it.
             morty_result = await _orchestrator_turn(
-                state, with_block("orchestrator", "resume", resume_prompt), body
+                state, resume_prompt, body, system=phase_block("orchestrator", "resume")
             )
             delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
             resume_result = await _maybe_delegate(
@@ -1376,32 +1389,38 @@ async def _maybe_delegate(
 
     if stashed_id:
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
-        # Inject the block for the phase the subagent last signalled, so a resume lands it
-        # back on the right step with that step's full instructions in the turn (the thin
+        # The handoff framing + user text is the turn-driver (user-role, like [CONTEXT]); the
+        # block for the phase the subagent last signalled rides the SYSTEM channel, so a resume
+        # lands it back on the right step with that step's full instructions (the thin
         # workflow.md carries only titles).
         resume_phase = subagent_phase(target, state.last_signal_step)
         handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-        handoff_msg = _with_active_skill_step(state, target, resume_phase, handoff_msg)
-        handoff_msg = with_block(target, resume_phase, handoff_msg)
         sub_result = await _proxy_send_message(
-            stashed_id, handoff_msg, agent=target, model=body.model
+            stashed_id,
+            handoff_msg,
+            agent=target,
+            model=body.model,
+            system=_phase_system(state, target, resume_phase),
         )
         state.subagent_id = stashed_id
     else:
         logger.info("New subagent: target=%s session=%s", target, session_id)
         sub_id = await _proxy_create_session()
         # A fresh subagent starts at its entry phase: clear any step/skill state carried over
-        # from a previous subagent so subagent_phase() resolves to the first section, then
-        # inject that section's block as the lead of the handoff.
+        # from a previous subagent so subagent_phase() resolves to the first section, then deliver
+        # that section's block on the system channel alongside the [CONTEXT] handoff.
         state.last_signal_step = ""
         state.active_skill_by_target.pop(target, None)
         state.skill_steps_done.pop(target, None)
         state.skill_last_asked.pop(target, None)
         handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-        handoff_msg = with_block(
-            target, subagent_phase(target, state.last_signal_step), handoff_msg
+        sub_result = await _proxy_send_message(
+            sub_id,
+            handoff_msg,
+            agent=target,
+            model=body.model,
+            system=_phase_system(state, target, subagent_phase(target, state.last_signal_step)),
         )
-        sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
         state.subagent_id = sub_id
 
     state.subagent_target = target
@@ -1416,16 +1435,16 @@ async def _handle_orchestrator_message(
 ) -> dict[str, Any]:
     # The orchestrator never calls signal_phase (it is a primary agent); the proxy picks its
     # phase by control-flow path. A fresh user turn is intake→delegate; a job-status event with
-    # no active subagent is the monitor case. Inject the block ONLY into the text the
-    # orchestrator reads — the clean user_text still flows to _maybe_delegate as the subagent's
-    # user text, so orchestrator-only guidance never leaks downstream.
+    # no active subagent is the monitor case. The phase block rides the SYSTEM channel, so the
+    # user_text stays clean — and that same clean user_text flows to _maybe_delegate as the
+    # subagent's user text, so orchestrator-only guidance never leaks downstream.
     if body.event == "job_complete":
-        orch_text = with_block("orchestrator", "monitor", user_text)
+        orch_system = phase_block("orchestrator", "monitor")
     else:
-        orch_text = with_block(
-            "orchestrator", "delegate", with_block("orchestrator", "intake", user_text)
+        orch_system = _join_system(
+            phase_block("orchestrator", "intake"), phase_block("orchestrator", "delegate")
         )
-    morty_result = await _orchestrator_turn(state, orch_text, body)
+    morty_result = await _orchestrator_turn(state, user_text, body, system=orch_system)
     delegation = _detect_delegation(await _fetch_all_assistant_parts(state.orchestrator_id))
     return await _maybe_delegate(state, session_id, delegation, user_text, morty_result, body)
 
