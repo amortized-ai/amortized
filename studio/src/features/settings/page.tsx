@@ -186,7 +186,9 @@ function AgentProviderSection() {
 export default function SettingsPage() {
   const { data: config, isLoading: configLoading } = useConfig()
   const { data: healthData } = useHealth({ refetchInterval: 30000 })
-  const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes()
+  const { data: routes = [], isLoading: routesLoading } = useGatewayRoutes({
+    enabled: !!config?.mlflow_gateway_uri,
+  })
   const { data: modelProvider } = useModelProvider()
   const [routeSearch, setRouteSearch] = useState("")
   // In the hybrid gateway deployment the per-user BYOK "Model Provider" card is the
@@ -247,6 +249,7 @@ export default function SettingsPage() {
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
 
+        {config?.mlflow_gateway_uri && (
         <button
           type="button"
           onClick={() => document.getElementById("section-gateway")?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -261,6 +264,7 @@ export default function SettingsPage() {
           </div>
           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/0 transition-all duration-200 group-hover:text-muted-foreground group-hover:translate-x-0.5" />
         </button>
+        )}
 
       </div>
 
@@ -377,7 +381,11 @@ export default function SettingsPage() {
           section-model) is the Agent nav target instead. */}
       {gatewayAbsent && <AgentProviderSection />}
 
-      {/* AI Gateway */}
+      {/* AI Gateway — only shown when an MLflow gateway is actually configured
+          (KIND/local). On enterprise-MLflow (RHOAI) gateway_url is empty and SDG/eval
+          route through the BYOK Model Providers, so this whole section is vestigial and
+          its "Add Endpoint" / gateway links would 404. */}
+      {config?.mlflow_gateway_uri && (
       <Card id="section-gateway" className="scroll-mt-6">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -388,7 +396,6 @@ export default function SettingsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {config?.mlflow_gateway_uri && (
             <div className="rounded-lg border border-[#95d58e] bg-[#e9f5e8] px-4 py-3 dark:border-[#163b11] dark:bg-[#0d2009]/40">
               <p className="text-xs text-[#1e4f18] dark:text-[#5ba352]">
                 SDG and evaluation jobs auto-route through the gateway. Manage endpoints in the{" "}
@@ -402,7 +409,6 @@ export default function SettingsPage() {
                 </a>.
               </p>
             </div>
-          )}
 
           {/* Endpoints */}
           <div>
@@ -470,6 +476,7 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
     </div>
   )

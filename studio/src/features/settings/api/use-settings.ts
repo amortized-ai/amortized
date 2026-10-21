@@ -26,12 +26,15 @@ export function useConfig() {
   })
 }
 
-export function useGatewayRoutes() {
+export function useGatewayRoutes(options?: { enabled?: boolean }) {
   return useQuery<MlflowGatewayRoute[]>({
     queryKey: ["mlflow", "gateway", "routes"],
     queryFn: async () => {
       const resp = await getMlflowGatewayRoutes()
       return resp.routes ?? []
     },
+    // Skip the fetch when no MLflow gateway is configured (enterprise-MLflow / RHOAI),
+    // otherwise it 404s against a gateway that isn't served.
+    enabled: options?.enabled ?? true,
   })
 }
