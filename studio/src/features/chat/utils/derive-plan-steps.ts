@@ -51,7 +51,8 @@ const PHASE_STEP_LABELS: Record<string, string> = {
   // eval
   "step-0-what-to-eval": "Confirming the model",
   "step-1-dataset": "Choosing the eval dataset",
-  "held-out-eval-set": "Choosing the eval dataset",
+  "held-out-ask-count": "Choosing the eval dataset",
+  "held-out-request-help": "Choosing the eval dataset",
   "step-1_5-how-much": "Confirming the sample size",
   "step-2-model-source": "Choosing the model source",
   "step-3-metrics": "Designing metrics",
@@ -172,7 +173,10 @@ const TRAINING_STEPS: StepDef[] = [
 
 const EVAL_STEPS: StepDef[] = [
   { label: "Confirming the model", matchSteps: ["step-0-what-to-eval"] },
-  { label: "Choosing the eval dataset", matchSteps: ["step-1-dataset", "held-out-eval-set"] },
+  {
+    label: "Choosing the eval dataset",
+    matchSteps: ["step-1-dataset", "held-out-ask-count", "held-out-request-help"],
+  },
   { label: "Confirming the sample size", matchSteps: ["step-1_5-how-much"] },
   { label: "Choosing the model source", matchSteps: ["step-2-model-source"] },
   { label: "Designing metrics", matchSteps: ["step-3-metrics"] },

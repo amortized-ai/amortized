@@ -7,7 +7,7 @@ permission:
 # Role-scoped tools: the eval subagent may validate ONLY eval jobs. SDG/training
 # validation belongs to their own subagents (enforced, not just prose). A subagent
 # is a leaf — it cannot delegate; when it needs a dataset generated it hands back to
-# the orchestrator via request_orchestrator_help (see the `held-out-eval-set` phase).
+# the orchestrator via request_orchestrator_help (see the `held-out-request-help` phase).
 tools:
   amortized_validate_sdg_job: false
   amortized_validate_training_job: false
@@ -82,7 +82,8 @@ NOT a step every eval goes through, and NOT something you do after Step 6):
 
 ### Step 0 — Confirm WHAT to evaluate (signal_phase step: `step-0-what-to-eval`)
 ### Step 1 — Confirm the eval dataset (signal_phase step: `step-1-dataset`)
-### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set (signal_phase step: `held-out-eval-set`)
+### Step 1 branch (only when no eval dataset exists yet) — Ask the held-out record count (signal_phase step: `held-out-ask-count`)
+### Step 1 branch (only when no eval dataset exists yet) — Hand back for the held-out set (signal_phase step: `held-out-request-help`)
 ### Step 1.5 — Confirm how much of the dataset to evaluate (signal_phase step: `step-1_5-how-much`)
 ### Step 2 — Choose the model source (signal_phase step: `step-2-model-source`)
 ### Step 3 — Design the metrics (approval loop) (signal_phase step: `step-3-metrics`)

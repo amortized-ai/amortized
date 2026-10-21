@@ -12,7 +12,7 @@ eval→SDG handback (glm-flash, N=6) lifted `request_orchestrator_help` from 1/6
 Design: each agent's workflow.md is thinned to the phase TITLES only (an outline);
 the full body of each phase lives in `agents/<agent>/phases/<phase>.md` and is
 prepended to the turn message by the proxy (agent.py). Phases are keyed one-per-
-section (the workflow's own `Step 0`, `Phase 2`, `held-out-eval-set`, …), so the key
+section (the workflow's own `Step 0`, `Phase 2`, `held-out-request-help`, …), so the key
 IS the section slug the agent reports via `signal_phase.step` (subagents) or that the
 proxy selects by control-flow path (the orchestrator, which never signals).
 
@@ -27,6 +27,8 @@ was split from stay side by side and version together.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -274,6 +276,19 @@ def skill_step_title(skill_name: str | None, idx: int) -> str | None:
     return _step_heading(block) if block is not None else None
 
 
+def skill_step_slug(skill_name: str | None, idx: int) -> str | None:
+    """The slug of a skill's `idx`-th (0-based) step — the inverse of
+    `skill_step_index_for_slug` — or None when the skill is not stepped or `idx` is out
+    of range. Lets a caller holding the step cursor (an index) name the active step for
+    `adjudicate`'s `active_skill_step`."""
+    if not skill_name or idx < 0:
+        return None
+    entries = _skill_step_entries(skill_name)
+    if idx >= len(entries):
+        return None
+    return entries[idx][0]
+
+
 def skill_optional_step_indices(skill_name: str | None) -> frozenset[int]:
     """Indices of steps marked OPTIONAL — their heading contains "(optional)". These are
     injectable if the driver reaches them, but never counted as a required gap (so coverage
@@ -308,3 +323,211 @@ def with_skill_step_block(skill_name: str | None, idx: int, text: str) -> str:
         return text
     wrapped = system_reminder(block)
     return f"{wrapped}\n\n{text}" if text else wrapped
+
+
+# --------------------------------------------------------------------------- #
+# Phase liveness adjudication (pure library)
+# --------------------------------------------------------------------------- #
+#
+# A weak driver (GLM-flash) sometimes substitutes PROSE for a required transition —
+# it narrates "I'll have the eval set generated" and yields without calling
+# `request_orchestrator_help`, and the pipeline stalls (nobody is driving). The
+# phase-injection blocks above push the driver to emit the right tool; this section
+# is the *detector* for when it did not.
+#
+# It is deliberately a PURE library — a map plus functions over a turn's tool-call
+# set — with NO live consumer here. The proxy has no gate/correction layer by design
+# (docs/agent-gates-proposal.md: in-band correction induces servility in frontier
+# models; invariants live at the tool boundary). An offline consumer (the monitor)
+# scores each logged turn with `adjudicate`; a future live use must stay tier-aware
+# and off the user role.
+#
+# The model: scan a turn's tool-call *multiset* and classify it with three checks —
+#   - stall      : a tool-owed phase yielded on bare prose (no edge at all)
+#   - wrong_edge : an interactive card appeared, but not the one the phase owes
+#                  (e.g. `present_options` used as a submit control in a validate
+#                  phase, where only `validate_*` counts)
+#   - not_solo   : a control-transfer hand-off carried text or other tool calls
+#                  (a pure hand-off must be solo)
+# Phases absent from the map are LENIENT (a genuine free-text question is expected,
+# so bare prose is fine). See the per-phase rationale in docs and the design notes.
+#
+# The map is SUBAGENT-only (sdg/training/eval). The orchestrator is not adjudicated:
+# its phase is proxy control-flow, not a signalled step, so there is no reliable
+# (role, step) key for it. The one live consumer (feat/glm's subagent-turn nudge)
+# only ever adjudicates subagent turns.
+
+# Tools that transfer control to someone else (so the turn is never a stall) …
+_CONTROL_TRANSFER: frozenset[str] = frozenset(
+    {"delegate_to_subagent", "request_orchestrator_help", "signal_subagent_completion"}
+)
+# … and tools that render an interactive card the user acts on.
+_CARDS: frozenset[str] = frozenset(
+    {
+        "present_options",
+        "show_prompt",
+        "validate_sdg_job",
+        "validate_training_job",
+        "validate_eval_job",
+    }
+)
+# Any of these means control is accounted for (not a bare-prose stall).
+_EDGES: frozenset[str] = _CONTROL_TRANSFER | _CARDS
+
+
+@dataclass(frozen=True)
+class Owed:
+    """What a tool-owed phase must emit in a turn.
+
+    `any_of`  — at least one must appear (the common case: a single required edge, or
+                a small disjunction like resume's delegate-or-present_options).
+    `all_of`  — every one must appear (a conjunction; today only the task-distillation
+                system-prompt review step, which owes BOTH `show_prompt` and the
+                approval `present_options`).
+    `solo`    — the turn must be ONLY the required tool, no text or other tool calls
+                (a pure control-transfer hand-off: "NO other tool calls" / no prose —
+                e.g. eval's held-out-request-help, whose phase file forbids narrating
+                the hand-off).
+    """
+
+    any_of: frozenset[str] = frozenset()
+    all_of: frozenset[str] = frozenset()
+    solo: bool = False
+
+
+# Tool-owed phases, keyed (role, phase_step). `role` is the signalling subagent
+# (sdg/training/eval). A (role, step) NOT here is lenient. `phase-2-gather` is absent
+# on purpose — its obligation is per skill step, resolved by `_skill_owed`.
+_REQUIRED: dict[tuple[str, str], Owed] = {
+    # sdg
+    ("sdg", "phase-1-route"): Owed(
+        any_of=frozenset({"skill", "present_options", "clone_sdg_config_for_eval"})
+    ),
+    ("sdg", "phase-3-validate"): Owed(any_of=frozenset({"validate_sdg_job"})),
+    ("sdg", "phase-4-complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+    # training
+    ("training", "phase-1-route"): Owed(any_of=frozenset({"skill", "present_options"})),
+    ("training", "phase-3-validate"): Owed(any_of=frozenset({"validate_training_job"})),
+    ("training", "phase-4-complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+    # eval
+    ("eval", "step-1-dataset"): Owed(any_of=frozenset({"present_options"})),
+    ("eval", "step-4-validate"): Owed(any_of=frozenset({"validate_eval_job"})),
+    ("eval", "step-5-report"): Owed(any_of=frozenset({"present_options"})),
+    ("eval", "step-6-complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+    ("eval", "held-out-request-help"): Owed(
+        any_of=frozenset({"request_orchestrator_help"}), solo=True
+    ),
+}
+
+
+def _skill_owed(skill_name: str | None, step_value: str | None) -> Owed | None:
+    """The obligation for an active stepped-skill gather step, or None when the slug is
+    not a step of the skill. Every gather step owes `present_options`; a review step
+    (its block drives `show_prompt`) owes BOTH `show_prompt` and `present_options`."""
+    if skill_step_index_for_slug(skill_name, step_value) < 0:
+        return None
+    if skill_step_is_review(skill_name, step_value):
+        return Owed(all_of=frozenset({"show_prompt", "present_options"}))
+    return Owed(any_of=frozenset({"present_options"}))
+
+
+def owed_for(
+    role: str,
+    phase_step: str,
+    *,
+    skill: str | None = None,
+    active_skill_step: str | None = None,
+) -> Owed | None:
+    """Resolve what a (role, phase_step) turn owes, or None when the phase is lenient.
+
+    Phase-level entries win; the gather phase delegates to the active skill step
+    (caller supplies `skill` + `active_skill_step`, which it tracks via the
+    skill-step cursor — a stalling turn emits no step slug of its own)."""
+    owed = _REQUIRED.get((role, phase_step))
+    if owed is not None:
+        return owed
+    if phase_step == "phase-2-gather":
+        return _skill_owed(skill, active_skill_step)
+    return None
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Outcome of adjudicating one turn. `kind` is one of: "ok", "stall",
+    "wrong_edge", "not_solo", "batching". `owed` is the obligation that was checked
+    (None for a lenient phase), for building a diagnostic message."""
+
+    kind: str
+    owed: Owed | None = None
+    detail: str = ""
+
+
+_OK = Verdict("ok")
+
+
+def requires_phase_signal(role: str) -> bool:
+    """Subagents must stamp `signal_phase` every turn (it keys the phase); the
+    orchestrator never signals (its phase is control-flow). A missing signal on a
+    subagent turn means the phase is unattributable — a separate failure, upstream of
+    `adjudicate`, which the caller can check with this."""
+    return role in {"sdg", "training", "eval"}
+
+
+def adjudicate(
+    role: str,
+    phase_step: str,
+    tools: Collection[str],
+    *,
+    skill: str | None = None,
+    active_skill_step: str | None = None,
+    awaiting_job: bool = False,
+    has_text: bool = False,
+    present_steps: Sequence[str] = (),
+) -> Verdict:
+    """Classify one turn from its emitted tool-call set.
+
+    `tools` — tool names the turn emitted (the caller should EXCLUDE errored calls;
+      see `agent_parts._part_errored`). `awaiting_job` — a non-terminal job is in
+      scope being awaited (edge #4: waiting is not a stall). `has_text` — the turn
+      also emitted assistant prose, for the `solo` hand-off rule. `present_steps` —
+      the `step` slugs of each `present_options`/`signal_phase` card this turn, to
+      catch batching (>1 distinct step signalled in one turn: "do not batch or skip").
+
+    Returns a `Verdict`; a lenient phase (or an unknown slug) is always "ok"."""
+    tool_set = set(tools)
+
+    # Batching is orthogonal to the owed-edge check and applies in any phase.
+    if len({s for s in present_steps if s}) > 1:
+        return Verdict("batching", detail="multiple step slugs signalled in one turn")
+
+    owed = owed_for(role, phase_step, skill=skill, active_skill_step=active_skill_step)
+    if owed is None:
+        return _OK  # lenient phase: bare prose is a legitimate free-text question
+
+    # Solo hand-off: the turn must be ONLY the required call — no prose, no other tool
+    # calls. The mandatory per-turn `signal_phase` is NOT a co-tool (every subagent turn
+    # stamps it; requiring its absence would make `solo` unsatisfiable), so it is excluded.
+    if owed.solo and (owed.any_of & tool_set):
+        extraneous = tool_set - owed.any_of - {"signal_phase"}
+        if has_text or extraneous:
+            return Verdict("not_solo", owed, "hand-off turn carried text or other tool calls")
+
+    # Obligation satisfied?
+    if owed.all_of and owed.all_of <= tool_set:
+        return Verdict("ok", owed)
+    if owed.any_of & tool_set:
+        return Verdict("ok", owed)
+
+    # A control transfer (completion/help/delegate) always accounts for control — even
+    # when it is not THIS phase's owed edge it is a bail, not a stall. (Whether such a
+    # handback is premature is a STATE question for the tool-boundary gate, not here.)
+    if _CONTROL_TRANSFER & tool_set:
+        return Verdict("ok", owed)
+
+    # A card appeared but not the owed one (e.g. present_options as a submit control in
+    # a validate phase) → wrong edge. No edge at all, and no job awaited → stall.
+    if _EDGES & tool_set:
+        return Verdict("wrong_edge", owed, "an interactive card appeared but not the owed one")
+    if awaiting_job:
+        return _OK  # edge #4: a job is in flight and the agent is waiting on it
+    return Verdict("stall", owed, "tool-owed phase yielded with no edge")

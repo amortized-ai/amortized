@@ -1,16 +1,10 @@
-### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set
-Call `signal_phase` this response with the step for the phase you are in — this phase: `held-out-eval-set`.
+### Step 1 branch (only when no eval dataset exists yet) — Hand back for the held-out set
+Call `signal_phase` this response with the step for the phase you are in — this phase: `held-out-request-help`.
 
-When a held-out eval dataset does not exist yet (see the `step-1-dataset`
-phase), you cannot generate one yourself — generating data is the SDG
-agent's job, and you are a leaf: you do not delegate. Instead, hand back to
-the orchestrator with `request_orchestrator_help`. CALL the tool — do NOT
-describe handing off in prose. The SDG job runs, and you are resumed here
+You have the record count (settled in the `held-out-ask-count` phase). Hand
+back to the orchestrator with `request_orchestrator_help`. CALL the tool — do
+NOT describe handing off in prose. The SDG job runs, and you are resumed here
 with the finished dataset, so you never leave the eval workflow.
-
-First ask the user how many eval records to generate (offer a sensible
-default, e.g. 100) — the SDG agent must not pick the count on its own.
-Carry that number into the request below so it generates exactly that many.
 
 Call `request_orchestrator_help` with:
 

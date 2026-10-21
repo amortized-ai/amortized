@@ -99,7 +99,8 @@ class TestRealCatalog:
                 "step-4-validate",
                 "step-5-report",
                 "step-6-complete",
-                "held-out-eval-set",
+                "held-out-ask-count",
+                "held-out-request-help",
             ],
             "sdg": ["phase-1-route", "phase-2-gather", "phase-3-validate", "phase-4-complete"],
             "training": [
@@ -113,6 +114,13 @@ class TestRealCatalog:
         for agent, keys in expected.items():
             for key in keys:
                 assert phases.phase_block(agent, key), f"missing/empty: {agent}/{key}"
+
+    def test_skill_step_slug_round_trips(self) -> None:
+        idx = phases.skill_step_index_for_slug("sdg-task-distillation", "examples")
+        assert idx >= 0
+        assert phases.skill_step_slug("sdg-task-distillation", idx) == "examples"
+        assert phases.skill_step_slug("sdg-task-distillation", -1) is None
+        assert phases.skill_step_slug("sdg-task-distillation", 9999) is None
 
     def test_fulfill_help_has_only_known_placeholders(self) -> None:
         # fulfill_help.md is .format()'d by the proxy, so it must carry exactly the

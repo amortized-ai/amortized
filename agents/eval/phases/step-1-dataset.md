@@ -59,7 +59,8 @@ model (tuned or not):
 
 If none of these exist, a held-out eval set must be generated with an SDG
 job — you don't do this yourself; hand back to the orchestrator via
-`request_orchestrator_help` (see the `held-out-eval-set` phase). CALL the
+`request_orchestrator_help` (see the `held-out-ask-count` then
+`held-out-request-help` phases). CALL the
 tool — do NOT narrate handing off in prose. It runs SDG and resumes you
 with the new SDG job ID as `parent_job_id`; resume at Step 1.5
 (`step-1_5-how-much`) to confirm how much of the fresh set to score (a
