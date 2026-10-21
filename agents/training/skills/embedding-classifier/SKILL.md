@@ -63,21 +63,27 @@ that schema and set `algorithm="embedding_sft"`; sensible defaults apply
 leave the optional knobs unset. No VRAM card is needed for this sub-skill — the
 VRAM/model-size estimator is for generative LLM training (sft/lora/qlora/osft) only.
 
-**Always surface the CPU-vs-GPU choice when you present the config for confirmation —
-never go to the confirm card silently on device.** Estimate the CPU runtime from the
-training-set size: read `num_samples` from the SDG run / dataset (`num_samples` tag or
-`num_samples_generated` metric) and compute `num_samples × epochs ÷ 25 ≈ seconds`
-(CPU trains ~25 samples/s). Then, alongside the config card:
+**The device note goes in the message that carries the confirm card — as plain text,
+not a second card.** The confirmable config card is the one interactive element of that
+turn; do NOT also raise a separate `present_options` device card (that would be two
+interactions at once). Just add a one-line device note to the same message so the user
+can confirm (CPU) or reply to switch to GPU.
+
+To write that note, estimate the CPU runtime from the training-set size: read
+`num_samples` from the SDG run / dataset (`num_samples` tag or `num_samples_generated`
+metric) and compute `num_samples × epochs ÷ 25 ≈ seconds` (CPU trains ~25 samples/s):
 
 - **If the estimate exceeds ~a few minutes** (or the dataset is clearly large and the
-  count is unavailable): state the approximate CPU time and **explicitly offer
-  `train_on_gpu=True`** (~100x faster; reserves one GPU from the quota) as the faster
-  alternative before the user confirms.
-- **If it's quick/small:** just note it will train on CPU (no GPU needed).
+  count is unavailable): state the approximate CPU time and tell the user they can
+  **reply to switch to `train_on_gpu=True`** (~100x faster; reserves one GPU from the
+  quota) before confirming — e.g. *"This trains on CPU (~20 min). Reply if you'd rather
+  run it on a GPU (~100x faster); otherwise click Confirm."*
+- **If it's quick/small:** just note it will train on CPU (no GPU needed) and let them
+  confirm.
 
-Only set `train_on_gpu=True` after the user opts in; otherwise leave it unset (CPU
-default). Don't guess a sample count or ask the user for one — if it's genuinely
-unknown, present the CPU default and mention the GPU opt-in is available.
+Set `train_on_gpu=True` (and re-present the card) only after the user opts in; otherwise
+leave it unset (CPU default). Don't guess a sample count or ask the user for one — if
+it's genuinely unknown, present the CPU default and mention the GPU opt-in is available.
 
 ## Hold-out for evaluation
 
