@@ -425,10 +425,8 @@ function RecursiveField({
   if (fieldKey === "parent_job_id") {
     return (
       <DatasetPickerField
-        label={fieldKey}
         value={value}
         onChange={onChange}
-        description={meta?.description}
         required={meta?.required}
         valueKey="job_id"
       />
@@ -437,10 +435,8 @@ function RecursiveField({
   if (fieldKey === "data_run_id" || fieldKey === "eval_data_run_id") {
     return (
       <DatasetPickerField
-        label={fieldKey}
         value={value}
         onChange={onChange}
-        description={meta?.description}
         required={meta?.required}
         valueKey="run_id"
       />

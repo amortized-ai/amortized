@@ -156,45 +156,65 @@ export function DocumentPickerField({
 // contributes: its amortized job id (parent_job_id) or its MLflow run id
 // (data_run_id / eval_data_run_id, which also reach job-less uploads & splits).
 
+function datasetSubtitle(topic: string, samples: string): string {
+  const n = Number(samples)
+  const samplesLabel = samples && Number.isFinite(n) ? `${n.toLocaleString()} samples` : ""
+  return [topic, samplesLabel].filter(Boolean).join(" · ")
+}
+
 export function DatasetPickerField({
-  label,
   value,
   onChange,
   description,
   required,
   valueKey = "job_id",
-}: PickerFieldProps & { valueKey?: "job_id" | "run_id" }) {
+}: Omit<PickerFieldProps, "label"> & { valueKey?: "job_id" | "run_id" }) {
   const { data: datasets = [] } = useDatasets()
   const options = datasets
     .map((d) => ({
       key: valueKey === "run_id" ? d.run_id : (d.tags.job_id ?? ""),
       name: d.name,
+      subtitle: datasetSubtitle(d.tags.dataset_topic ?? "", d.tags.num_samples ?? ""),
     }))
     .filter((o) => o.key)
   const current = typeof value === "string" ? value : ""
-  const known = options.some((o) => o.key === current)
+  const selected = options.find((o) => o.key === current)
 
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} required={required} />
+      {/* Always labelled "Dataset" — the user is picking a dataset, not the raw
+          parent_job_id / data_run_id field it's stored in. */}
+      <FieldLabel label="Dataset" required={required} />
       <Select value={current || undefined} onValueChange={(v) => onChange(v)}>
         <SelectTrigger className="h-9">
-          <SelectValue placeholder="Select a dataset..." />
+          {/* Custom trigger content so it stays single-line (the items are two-line). */}
+          {selected ? (
+            <span className="truncate">{selected.name}</span>
+          ) : current ? (
+            <span className="truncate text-muted-foreground">Unknown dataset ({current.slice(0, 8)})</span>
+          ) : (
+            <span className="text-muted-foreground">Select a dataset...</span>
+          )}
         </SelectTrigger>
         <SelectContent>
-          {current && !known && (
+          {current && !selected && (
             <SelectItem value={current} disabled className="text-muted-foreground">
-              {current} (not found)
+              Unknown dataset ({current.slice(0, 8)})
             </SelectItem>
           )}
           {options.map((o) => (
-            <SelectItem key={o.key} value={o.key}>
-              {o.name}
+            <SelectItem key={o.key} value={o.key} textValue={o.name}>
+              <div className="flex flex-col">
+                <span>{o.name}</span>
+                {o.subtitle && (
+                  <span className="text-xs text-muted-foreground">{o.subtitle}</span>
+                )}
+              </div>
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <FieldDescription text={description} />
+      <FieldDescription text={description ?? "The dataset to use (produced by a previous SDG job)."} />
     </div>
   )
 }

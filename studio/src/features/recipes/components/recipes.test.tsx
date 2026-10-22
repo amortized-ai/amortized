@@ -222,12 +222,14 @@ describe("RecipeConfigForm", () => {
     expect(onChange).toHaveBeenCalledWith({ document_ids: [] })
   })
 
-  it("renders a dataset picker for parent_job_id", () => {
+  it("renders a dataset picker for parent_job_id, labelled 'Dataset'", () => {
     const config = { parent_job_id: "" }
     render(
       <RecipeConfigForm type="sdg" config={config} onChange={vi.fn()} />,
     )
-    expect(screen.getByText("Parent Job Id")).toBeInTheDocument()
+    // Labelled "Dataset", not the raw "Parent Job Id" field name.
+    expect(screen.getByText("Dataset")).toBeInTheDocument()
+    expect(screen.queryByText("Parent Job Id")).not.toBeInTheDocument()
     expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
   })
 
@@ -244,7 +246,7 @@ describe("RecipeConfigForm", () => {
     render(
       <RecipeConfigForm type="training" config={config} onChange={vi.fn()} schema={schema} />,
     )
-    expect(screen.getByText("Data Run Id")).toBeInTheDocument()
+    expect(screen.getByText("Dataset")).toBeInTheDocument()
     expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
   })
 
