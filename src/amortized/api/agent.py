@@ -22,7 +22,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
     _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
 )
@@ -32,7 +32,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
-from amortized.api.phases import subagent_pointer
+from amortized.api.phases import Verdict, adjudicate, subagent_pointer
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -990,6 +990,113 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     }
 
 
+# A bracketed UPPERCASE tag, matching the PR509 system-channel convention ([SYSTEM EVENT],
+# [SUBAGENT NEEDS HELP], [ACTIVE PHASE], …) — delivered raw on opencode's `system` field, never
+# wrapped in <system-reminder>.
+_STALL_NUDGE_INTRO = "[WORKFLOW STALL] Your last turn did not advance the workflow."
+
+
+def _adjudicate_subagent_turn(
+    state: SessionState, target: str, parts: list[dict[str, Any]]
+) -> Verdict:
+    """Classify the just-finished subagent turn with the pure adjudicator. `parts` is the turn's
+    fetched assistant parts; errored tool calls are excluded (a dead call renders no edge). The
+    active stepped-skill step is the present_options stamp the turn-scan tracked (a stalling turn
+    emits no step slug of its own)."""
+    tools = [_tool_name(p) for p in parts if _tool_name(p) and not _part_errored(p)]
+    skill = state.active_skill_by_target.get(target)
+    active_step = state.skill_last_step.get(target)
+    present_steps = [
+        str(_get_tool_input(p).get("step") or "").strip()
+        for p in parts
+        if _tool_name(p) in {"present_options", "signal_phase"}
+    ]
+    has_text = any(p.get("type") == "text" and str(p.get("text") or "").strip() for p in parts)
+    return adjudicate(
+        target,
+        state.last_signal_step,
+        tools,
+        skill=skill,
+        active_skill_step=active_step,
+        has_text=has_text,
+        present_steps=[s for s in present_steps if s],
+    )
+
+
+def _stall_nudge_text(step: str, verdict: Verdict) -> str | None:
+    """The system-channel nudge for a non-ok verdict, or None when nothing is owed (ok /
+    lenient). Names the owed tool(s) so the driver self-corrects by calling them."""
+    where = f"`{step}`" if step else "the current step"
+    if verdict.kind == "batching":
+        return (
+            f"{_STALL_NUDGE_INTRO} You signalled more than one step in a single turn. "
+            "Handle ONE step per turn: signal the current step, take only its action, "
+            "then wait for the user before moving on."
+        )
+    if verdict.owed is None:
+        return None
+    owed = sorted(verdict.owed.all_of or verdict.owed.any_of)
+    owed_str = "` / `".join(owed)
+    if verdict.kind == "stall":
+        return (
+            f"{_STALL_NUDGE_INTRO} Phase {where} requires calling `{owed_str}` to proceed, "
+            f"but you called no such tool. CALL `{owed_str}` now — do not describe doing it "
+            "in prose."
+        )
+    if verdict.kind == "wrong_edge":
+        return (
+            f"{_STALL_NUDGE_INTRO} Phase {where} requires `{owed_str}`, not the card you "
+            f"emitted. CALL `{owed_str}` to proceed."
+        )
+    if verdict.kind == "not_solo":
+        return (
+            f"{_STALL_NUDGE_INTRO} The hand-off `{owed_str}` must be the ONLY action this "
+            "turn — no prose and no other tool calls. CALL it alone."
+        )
+    return None
+
+
+async def _maybe_nudge_subagent_stall(
+    state: SessionState,
+    session_id: str,
+    body: MessageRequest,
+    latest_parts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """If the just-finished subagent turn stalled on an owed tool edge, re-prompt ONCE on the
+    system channel and return the re-fetched parts; otherwise return `latest_parts` unchanged. Runs
+    BEFORE completion/help detection so a nudged request_orchestrator_help flows through the normal
+    hand-off path (not stripped as prose). One nudge per user turn — the re-driven turn is not
+    re-adjudicated, so it can never loop. This is the live consumer of the pure `adjudicate`
+    library (api/phases.py)."""
+    if body.event == "job_complete":
+        return latest_parts  # carries its own terminal hand-back steer; not a stall
+    if not state.subagent_id or not state.subagent_target:
+        return latest_parts
+    verdict = _adjudicate_subagent_turn(state, state.subagent_target, latest_parts)
+    nudge = _stall_nudge_text(state.last_signal_step, verdict)
+    if nudge is None:
+        return latest_parts
+    logger.info(
+        "Stall nudge: session=%s target=%s kind=%s step=%s",
+        session_id,
+        state.subagent_target,
+        verdict.kind,
+        state.last_signal_step,
+    )
+    try:
+        await _proxy_send_message(
+            state.subagent_id,
+            "",
+            agent=state.subagent_target,
+            model=body.model,
+            system=nudge,
+        )
+    except Exception:
+        logger.warning("Stall nudge send failed: session=%s", session_id, exc_info=True)
+        return latest_parts
+    return await _fetch_all_assistant_parts(state.subagent_id)
+
+
 async def _handle_subagent_message(
     state: SessionState,
     session_id: str,
@@ -1041,6 +1148,11 @@ async def _handle_subagent_message(
         raise
 
     latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
+    # If the turn stalled on an owed tool edge (prose instead of the transition), re-prompt ONCE
+    # on the system channel and re-fetch, so the corrected turn flows through the completion/help/
+    # ordinary handling below (a nudged request_orchestrator_help becomes a real hand-off, not
+    # stripped prose). The live consumer of the pure adjudicator — see _maybe_nudge_subagent_stall.
+    latest_parts = await _maybe_nudge_subagent_stall(state, session_id, body, latest_parts)
     # Completion is checked before a help request: if a turn somehow carries both
     # signals, "I'm done" wins and the help ask is ignored (a subagent that is
     # finishing has nothing left to be helped with).
