@@ -73,7 +73,13 @@ class PresentOptionsRequest(BaseModel):
     question: str = Field("", description="The question being asked")
     options: list[OptionItem] = Field(
         ...,
-        description="Options to present as clickable cards. Maximum 4 options, prefer 3.",
+        description=(
+            "Options to present as clickable cards. Maximum 4 options, prefer 3. "
+            "The UI renders the tiles in this exact array order (first-seen, no "
+            "re-sort), so when you list these options in your prose you MUST list "
+            "them in the SAME order as this array — otherwise the user reads one "
+            "order and sees another."
+        ),
         min_length=1,
         max_length=4,
     )
@@ -108,7 +114,9 @@ class PresentOptionsResponse(BaseModel):
     operation_id="present_options",
     summary=(
         "Render clickable option cards in the chat UI. EVERY message that asks a question "
-        "or offers choices MUST use this tool — do NOT write numbered lists. Call once per "
+        "or offers choices MUST use this tool — do NOT write numbered lists. The UI renders "
+        "the tiles in your `options` array order; if your message also lists the options in "
+        "prose, list them in that SAME order. Call once per "
         "message, then STOP and wait for the user to respond. Do NOT call this tool after "
         "submitting a job — the UI renders a job monitor card automatically. Do NOT call it "
         "after validate_* either — the confirmation card already has its own Confirm/Cancel, "
