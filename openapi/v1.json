@@ -7096,6 +7096,13 @@
             },
             "type": "array",
             "title": "Prompts"
+          },
+          "trainer_default_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Trainer Default Fields"
           }
         },
         "type": "object",
