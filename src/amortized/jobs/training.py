@@ -56,6 +56,9 @@ _TRAINING_HUB_SKIP_KEYS = {
     "training_job_id",
     "data_run_id",
     "resume_model_name",
+    # amortized-side scheduling knob (CPU vs 1 GPU for embedding_sft); consumed by the
+    # builder's Resources(), not a thub parameter — keep it out of the generated config.yaml.
+    "train_on_gpu",
 }
 
 
@@ -79,17 +82,25 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
         thub_config.setdefault("ckpt_output_dir", output_dir)
         thub_config.setdefault("data_output_dir", output_dir + "/processed_data")
 
-    if algorithm in ("sft", "lora_sft"):
-        batch = thub_config.pop("micro_batch_size", 2)
-        thub_config.setdefault("effective_batch_size", batch * 4)
-        thub_config.setdefault("max_seq_len", 2048)
-        thub_config.setdefault("max_batch_len", 60000)
-    elif algorithm == "osft":
+    if algorithm in ("sft", "osft"):
+        # sft and osft share the instructlab-training path, so `thub sft`/`thub osft` take the
+        # same knobs: effective_batch_size, max_seq_len, max_tokens_per_gpu, and a *required*
+        # learning_rate. (`thub sft` rejects max_batch_len — "not a recognized sft parameter" —
+        # and errors on a missing learning_rate.) A caller-provided learning_rate is preserved;
+        # osft's unfreeze_rank_ratio flows through the generic field map from the job config.
         batch = thub_config.pop("micro_batch_size", 2)
         thub_config.setdefault("effective_batch_size", batch * 4)
         thub_config.setdefault("max_seq_len", 2048)
         thub_config.setdefault("max_tokens_per_gpu", 4096)
         thub_config.setdefault("learning_rate", 2e-5)
+    elif algorithm == "lora_sft":
+        # `thub lora-sft` uses micro_batch_size + its own learning_rate default (2e-4) and has no
+        # max_tokens_per_gpu knob. Kept as-is (incl. the harmless, ignored max_batch_len) to avoid
+        # changing the established lora_sft behavior.
+        batch = thub_config.pop("micro_batch_size", 2)
+        thub_config.setdefault("effective_batch_size", batch * 4)
+        thub_config.setdefault("max_seq_len", 2048)
+        thub_config.setdefault("max_batch_len", 60000)
     elif algorithm == "embedding_sft":
         # Contrastive embedding fine-tuning (classifiers/routers). It uses
         # ``batch_size`` (not micro_batch_size) and has none of the SFT/OSFT
@@ -126,7 +137,10 @@ async def build(
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
-    algorithm = config.get("algorithm", "sft")
+    # Strip before alias resolution so a whitespace-padded value (e.g. " embedding_sft ")
+    # resolves the same way the admission estimator does (estimate_gpu_demand strips too) —
+    # otherwise the builder could request a GPU for a job the estimator admitted as CPU-only.
+    algorithm = config.get("algorithm", "sft").strip()
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
 
     model_pre_commands: list[str] = []
@@ -177,12 +191,22 @@ async def build(
         f"mlflow artifacts log-artifacts -l {shlex.quote(output_dir)} -r $MLFLOW_RUN_ID -a model"
     )
 
+    # embedding_sft trains in-process via SentenceTransformerTrainer (single device, no torchrun;
+    # CUDA only if available), so it's CPU by DEFAULT (0 GPUs → no nvidia nodeSelector/runtimeclass,
+    # schedules anywhere, frees the quota) with an explicit 1-GPU opt-in via train_on_gpu (a GPU is
+    # ~100x faster — matters for many epochs / large datasets; see issue #486). nproc_per_node is
+    # ignored here (single-device). All other algorithms scale with nproc_per_node. Keep in sync
+    # with estimate_gpu_demand() in core/jobs.py.
+    if algorithm == "embedding_sft":
+        gpus = 1 if config.get("train_on_gpu") else 0
+    else:
+        gpus = config.get("nproc_per_node", 1)
     return JobBuildResult(
         command=cmd,
         config_files=config_files,
         pre_commands=model_pre_commands,
         post_commands=[post_cmd],
-        resources=Resources(gpus=config.get("nproc_per_node", 1)),
+        resources=Resources(gpus=gpus),
         image=config_mod.job_image("training", config_mod.settings.resolved_training_image_tag),
         resolved_config=dict(config),
     )

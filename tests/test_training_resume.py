@@ -158,6 +158,85 @@ class TestBuildResumeFromFinetuned:
         assert "merge_lora.py" not in result.config_files
 
 
+class TestBuildGpuResources:
+    """embedding_sft trains in-process on a single device: CPU by default (0 GPUs), 1-GPU opt-in
+    via train_on_gpu, nproc_per_node ignored. Other algorithms scale with nproc_per_node.
+    See issue #486."""
+
+    @pytest.mark.asyncio
+    async def test_embedding_sft_defaults_to_cpu(self) -> None:
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "emb1", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+    @pytest.mark.asyncio
+    async def test_embedding_sft_opts_into_one_gpu(self) -> None:
+        # train_on_gpu=True reserves exactly one GPU (single-device, not a count).
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+            "train_on_gpu": True,
+        }
+        result = await training_builder.build({"id": "emb_gpu", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
+    @pytest.mark.asyncio
+    async def test_embedding_sft_ignores_nproc_per_node(self) -> None:
+        # nproc_per_node (torchrun semantics) is ignored by embedding_sft: even a large value
+        # with train_on_gpu stays at one GPU, and without the opt-in it stays on CPU.
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+            "nproc_per_node": 4,
+        }
+        result = await training_builder.build({"id": "emb2", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+        config["train_on_gpu"] = True
+        result = await training_builder.build({"id": "emb2g", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
+    @pytest.mark.asyncio
+    async def test_classifier_alias_defaults_to_cpu(self) -> None:
+        config = {
+            "algorithm": "classifier",  # alias -> embedding_sft
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "emb3", "type": "training"}, config, {})
+        assert result.resources.gpus == 0
+
+    @pytest.mark.asyncio
+    async def test_whitespace_padded_algorithm_resolves_to_cpu(self) -> None:
+        # A padded value (" embedding_sft ") must resolve like the admission estimator, which
+        # strips before matching — otherwise the builder would request a GPU for a job the
+        # estimator admitted as CPU-only.
+        for algo in (" embedding_sft ", " classifier "):
+            config = {
+                "algorithm": algo,
+                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "data_path": "/data/train.jsonl",
+            }
+            result = await training_builder.build({"id": "embp", "type": "training"}, config, {})
+            assert result.resources.gpus == 0, f"{algo!r} should resolve to CPU"
+
+    @pytest.mark.asyncio
+    async def test_sft_still_requests_gpu(self) -> None:
+        config = {
+            "algorithm": "sft",
+            "model_name_or_path": "meta-llama/Llama-3.1-8B",
+            "data_path": "/data/train.jsonl",
+        }
+        result = await training_builder.build({"id": "sft1", "type": "training"}, config, {})
+        assert result.resources.gpus == 1
+
+
 class TestDataRunIdSkipped:
     def test_data_run_id_not_in_training_hub_config(self) -> None:
         config = {
