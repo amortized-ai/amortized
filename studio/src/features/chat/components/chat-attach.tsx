@@ -12,7 +12,8 @@ import { useAttachUpload } from "../hooks/use-attach-upload"
 
 interface ChatAttachProps {
   // Posts a reference to the uploaded artifact into the conversation (usually sendMessage).
-  onReference: (text: string) => void
+  // Returns whether the chat accepted it (false = deferred) so the hook can re-queue.
+  onReference: (text: string) => unknown
   // Whether the chat can accept a new turn now; a reference that resolves while the
   // chat is busy is queued and flushed when this goes true.
   canSend?: boolean

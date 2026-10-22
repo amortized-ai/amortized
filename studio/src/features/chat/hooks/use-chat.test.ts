@@ -247,7 +247,7 @@ describe("useChat", () => {
 
     const { result } = renderHook(() => useChat())
 
-    let sendPromise: Promise<void>
+    let sendPromise: Promise<boolean>
     act(() => {
       sendPromise = result.current.sendMessage("First")
     })
