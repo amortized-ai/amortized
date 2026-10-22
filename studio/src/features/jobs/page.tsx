@@ -96,7 +96,7 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6">
-      <div data-tutorial="job-header" className="space-y-6">
+      <div className="space-y-6">
         <PageHeader title="Jobs" description="Track your training, data generation, and upload runs" />
 
         <div className="animate-message-in rounded-xl border bg-card p-4">

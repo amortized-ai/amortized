@@ -214,7 +214,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 overflow-x-hidden max-w-full">
-      <div data-tutorial="settings-nav" className="space-y-6">
+      <div className="space-y-6">
         <PageHeader title="Settings" description="Manage connections, compute backends, and API keys" />
 
         {/* Jump-to nav */}

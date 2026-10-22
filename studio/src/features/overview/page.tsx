@@ -3,12 +3,11 @@ import { SectionCards } from "./components/section-cards"
 import { RecentJobs } from "./components/recent-jobs"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Sparkles, Compass } from "lucide-react"
+import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Sparkles } from "lucide-react"
 import { Link } from "react-router"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import { useJobs } from "@/features/jobs/api/use-jobs"
-import { useUIStore } from "@/stores/ui-store"
 
 export default function OverviewPage() {
   const { data: datasets, isLoading: datasetsLoading } = useDatasets()
@@ -50,13 +49,6 @@ export default function OverviewPage() {
               <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> On-prem deployment</span>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-4">
-              <button
-                onClick={() => useUIStore.getState().startTutorial()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#0066cc]/25 bg-[#e0f0ff]/40 px-3.5 py-2 text-xs font-medium text-[#0066cc] transition-all duration-200 hover:bg-[#e0f0ff] hover:border-[#0066cc]/40 hover:shadow-sm dark:border-[#4394e5]/25 dark:bg-[#003366]/30 dark:text-[#4394e5] dark:hover:bg-[#003366]/50"
-              >
-                <Compass className="h-3.5 w-3.5" />
-                Take a Tour
-              </button>
               <Link
                 to="/chat"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[#ee0000]/20 bg-[#fce3e3]/40 px-3.5 py-2 text-xs font-medium text-[#ee0000] transition-all duration-200 hover:bg-[#fce3e3] hover:border-[#ee0000]/35 hover:shadow-sm dark:border-[#f56e6e]/20 dark:bg-[#731f00]/25 dark:text-[#f56e6e] dark:hover:bg-[#731f00]/40"
