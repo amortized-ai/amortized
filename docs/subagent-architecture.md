@@ -114,6 +114,31 @@ location ~ ^/agent/(.*)$ {
 | `AMORTIZED_AGENT_UPSTREAM_URL` | `http://opencode:4096` | OpenCode URL for proxy |
 | `AMORTIZED_AGENT_SERVER_URL` | `http://amortized-server:8000` | What Studio uses (configmap) |
 
+### 7. Signal-slug markers (resident-workflow pointer)
+
+Each leaf subagent's `workflow.md` is **resident** in its system prompt, and every turn a short
+`[ACTIVE PHASE]` pointer (`api/phases.py`) re-anchors a weaker driver to the section it is on. The
+pointer can only name that section if the slug the agent signals maps to a heading — so the slug is
+authored **once**, as an HTML-comment marker in the heading itself:
+
+```markdown
+### Step 2 — Choose the model source <!--signal:model-source-->
+```
+
+Convention for authoring agent prompts:
+
+- Every `### ` heading under a workflow.md `## Workflow` section carries a `<!--signal:slug-->`
+  marker. The agent's `## Progress Signal` list names those same slugs (one bullet per slug), and
+  `signal_phase(step="…")` sends one of them each turn.
+- A skill's `### Step N — …` headings follow the same convention. The slug comes from a
+  `<!--signal:slug-->` marker (preferred), or falls back to the `present_options(step="…")` stamp
+  the step instructs — so an existing stamped skill needs no edit, but a new one should mark its
+  headings. Reference headings (`### columns`, `### document_ids`, …) are not steps and carry no
+  marker.
+- Keep the three in sync: Progress-Signal bullet ↔ heading marker ↔ `present_options`/`signal_phase`
+  step. `tests/test_phase_marker_drift.py` fails loudly if a heading loses its marker or an
+  instructed slug resolves to no section (which would silently degrade the pointer to generic).
+
 ## Key Design Decisions
 
 **Ephemeral subagents.** Every delegation creates a fresh OpenCode

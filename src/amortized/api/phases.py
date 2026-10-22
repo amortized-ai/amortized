@@ -100,11 +100,14 @@ def _resolve_title(agent: str, step: str | None) -> str | None:
 
 # ── Skill-step resolution (for the in-gather skill clause of the pointer) ─────────────────
 # A subagent's gather phase is driven by a resident SKILL.md with a numbered `### Step N — …`
-# sequence. Each step pairs its heading with the `present_options(step="…")` stamp the driver is
-# told to emit for that question — so the stamp the agent ALREADY sends is enough to name the
-# current step, with no new slug markers in the SKILL.md (the user's "skills don't need slugs").
-# This resolves that stamp → the step's heading title; the agent.py scan records the active skill
-# (from the `skill` tool call) and the latest stamp (from present_options) per turn.
+# sequence. A step's slug comes from a `<!--signal:…-->` heading marker — the preferred convention,
+# identical to the `## Workflow` sections — and, for a skill that carries none, falls back to the
+# `present_options(step="…")` stamp the driver is already told to emit for that question (so an
+# existing stamped skill needs no edit, while a new one should mark its headings like the workflow
+# sections do). Either way the agent sends that stamp per turn; this resolves slug → the step's
+# heading title, and the agent.py scan records the active skill (from the `skill` tool call) and
+# the latest stamp (from present_options) per turn. `tests/test_phase_marker_drift.py` fails loudly
+# if an instructed slug no longer resolves.
 
 _STEP_STAMP_RE = re.compile(
     r"present_options[^\n]*?\bstep\s*[=:]\s*[\"']([^\"']+)[\"']", re.IGNORECASE
