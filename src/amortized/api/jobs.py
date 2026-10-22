@@ -219,8 +219,14 @@ async def _validate_training_data(
 
     # parent_job_id is an alternative data source to data_path: only gate the SDG
     # chain edge when it's the source in play (no direct data_path override). Any other
-    # upstream-job reference on the config is gated too (field-driven).
-    refs = {**config, "parent_job_id": parent_job_id if not data_path else ""}
+    # upstream-job reference on the config is gated too (field-driven) — except
+    # training_job_id, which _validate_model_source (always run alongside this for
+    # training jobs) validates more richly; gating it here too would double the 422.
+    refs = {
+        **config,
+        "parent_job_id": parent_job_id if not data_path else "",
+        "training_job_id": "",
+    }
     errors += await _gate_upstream_refs(Repository(db), refs)
 
     # Only inspect the dataset once availability + lineage are clean: upstream is then
@@ -465,6 +471,7 @@ def _trainer_default_fields(config: dict[str, Any]) -> list[str]:
     embedding knobs for embedding runs — so we never claim a knob is "defaulted" that the
     algorithm doesn't even use."""
     algorithm = str(config.get("algorithm") or "").replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
     candidates = list(_GENERIC_TUNABLE_FIELDS)
     if algorithm in _EMBEDDING_ALGORITHMS:
         candidates += _EMBEDDING_TUNABLE_FIELDS
@@ -542,6 +549,12 @@ async def create_sdg_job(
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
+    # Fail-closed dependency gate (same invariant as training/eval): any upstream job
+    # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
+    # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
+    gate_errors = await _gate_upstream_refs(repo, {**config, "parent_job_id": parent_job_id})
+    if gate_errors:
+        raise HTTPException(status_code=422, detail=gate_errors)
     try:
         row = await core_create_job(
             repo,

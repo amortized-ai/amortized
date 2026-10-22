@@ -87,6 +87,25 @@ class TestAncestry:
         sdg = _run(lineage.nearest_ancestor(self._JOBS["eval1"], "sdg", fetch))
         assert sdg is not None and sdg["id"] == "sdg2"
 
+    def test_nearest_ancestor_is_breadth_first(self) -> None:
+        # parent_job_id (the first gated field) reaches an sdg in TWO hops; another gated
+        # field reaches one DIRECTLY. "nearest" must return the one-hop match — a
+        # depth-first walk would recurse the first field to completion and return the
+        # deeper sdg instead.
+        jobs = {
+            "sdg_near": {"id": "sdg_near", "type": "sdg"},
+            "sdg_far": {"id": "sdg_far", "type": "sdg"},
+            "train_mid": {"id": "train_mid", "type": "training", "parent_job_id": "sdg_far"},
+            "node": {
+                "id": "node",
+                "type": "eval",
+                "parent_job_id": "train_mid",
+                "config": {"training_job_id": "sdg_near"},
+            },
+        }
+        sdg = _run(lineage.nearest_ancestor(jobs["node"], "sdg", _fetch_from(jobs)))
+        assert sdg is not None and sdg["id"] == "sdg_near"
+
     def test_nearest_ancestor_multi_hop_through_training(self) -> None:
         # an eval chained ONLY to the model (no dataset parent) still finds the SDG
         # by walking eval → training → sdg.

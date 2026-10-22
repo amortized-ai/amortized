@@ -126,3 +126,14 @@ class TestValidateTrainingData:
             jobs_mod._validate_training_data({"data_path": "/data/x.jsonl"}, "p1", None)  # type: ignore[arg-type]
         )
         assert errs == []
+
+    def test_training_job_id_not_double_gated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # training_job_id (resume-from-finetuned) is validated richly by
+        # _validate_model_source, which the endpoint always runs alongside this. The
+        # data gate must NOT also flag it, or the 422 would list the same job twice.
+        store = {"p1": _succeeded(), "t1": {"status": "running", "mlflow_run_id": "r"}}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(
+            jobs_mod._validate_training_data({"training_job_id": "t1"}, "p1", None)  # type: ignore[arg-type]
+        )
+        assert not any("training_job_id" in e for e in errs)
