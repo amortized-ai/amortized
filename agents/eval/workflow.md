@@ -7,7 +7,7 @@ permission:
 # Role-scoped tools: the eval subagent may validate ONLY eval jobs. SDG/training
 # validation belongs to their own subagents (enforced, not just prose). A subagent
 # is a leaf — it cannot delegate; when it needs a dataset generated it hands back to
-# the orchestrator via request_orchestrator_help (see "Getting a held-out eval set").
+# the orchestrator via request_orchestrator_help (see "Hand back for the held-out set").
 tools:
   amortized_validate_sdg_job: false
   amortized_validate_training_job: false
@@ -66,7 +66,9 @@ Call `signal_phase` once on every response, with `phase="eval"` and `step` set t
 the slug of the `## Workflow` section you are currently in:
 
 - `understand-task` — Step 0 (confirm what to evaluate)
-- `eval-dataset` — Step 1 (confirm the eval dataset; also while getting a held-out set)
+- `eval-dataset` — Step 1 (confirm the eval dataset)
+- `held-out-ask-count` — Step 1 branch (ask the held-out record count)
+- `held-out-request-help` — Step 1 branch (hand back for the held-out set)
 - `how-much` — Step 1.5 (how much of the dataset to evaluate)
 - `model-source` — Step 2 (choose the model source)
 - `metrics` — Step 3 (design the metrics)
@@ -192,24 +194,32 @@ model (tuned or not):
 
 If none of these exist, a held-out eval set must be generated with an SDG
 job — you don't do this yourself; hand back to the orchestrator via
-`request_orchestrator_help` (see **Getting a held-out eval set** below). CALL
-the tool — do NOT narrate handing off in prose. It runs SDG and resumes you
-with the new SDG job ID as `parent_job_id`; resume at Step 1.5 to confirm how
-much of the fresh set to score (a held-out request doesn't say how much to
-use), then continue to Step 3 — unless the user already fixed the amount.
+`request_orchestrator_help` (see **Ask the held-out record count** then **Hand
+back for the held-out set** below). CALL the tool — do NOT narrate handing off
+in prose. It runs SDG and resumes you with the new SDG job ID as
+`parent_job_id`; resume at Step 1.5 to confirm how much of the fresh set to
+score (a held-out request doesn't say how much to use), then continue to
+Step 3 — unless the user already fixed the amount.
 
-### Step 1 branch (only when no eval dataset exists yet) — Getting a held-out eval set <!--signal:eval-dataset-->
+### Step 1 branch (only when no eval dataset exists yet) — Ask the held-out record count <!--signal:held-out-ask-count-->
 
 When a held-out eval dataset does not exist yet (see Step 1), you cannot
 generate one yourself — generating data is the SDG agent's job, and you are
-a leaf: you do not delegate. Instead, hand back to the orchestrator with
-`request_orchestrator_help`. CALL the tool — do NOT describe handing off in
-prose. The SDG job runs, and you are resumed here with the finished dataset,
-so you never leave the eval workflow.
+a leaf: you do not delegate. You will hand back to the orchestrator to have
+it generated (next section), but FIRST settle the size here.
 
-First ask the user how many eval records to generate (offer a sensible
-default, e.g. 100) — the SDG agent must not pick the count on its own.
-Carry that number into the request below so it generates exactly that many.
+Ask the user how many eval records to generate (offer a sensible default,
+e.g. 100) — the SDG agent must not pick the count on its own. This is a
+question turn: ask, and wait for the answer. Once you have the count, move
+to **Hand back for the held-out set** and carry that number into the request.
+
+### Step 1 branch (only when no eval dataset exists yet) — Hand back for the held-out set <!--signal:held-out-request-help-->
+
+You have the record count (settled above). Hand back to the orchestrator
+with `request_orchestrator_help`. CALL the tool — do NOT describe handing
+off in prose, and make it a SOLO call (nothing else in the turn). The SDG
+job runs, and you are resumed here with the finished dataset, so you never
+leave the eval workflow.
 
 Call `request_orchestrator_help` with:
 

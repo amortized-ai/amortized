@@ -18,8 +18,9 @@ class TestSections:
             ("route", "Phase 1 — Route to Sub-Skill"),
             ("gather", "Phase 2 — Gather Requirements"),
         )
-        # 8 distinct eval slugs (the held-out branch reuses the `eval-dataset` slug).
-        assert len({slug for slug, _t in phases._sections("eval")}) == 8
+        # 10 distinct eval slugs: the 8-step sequence + the held-out branch's two own slugs
+        # (held-out-ask-count, held-out-request-help).
+        assert len({slug for slug, _t in phases._sections("eval")}) == 10
         assert phases._sections("eval")[0] == (
             "understand-task",
             "Step 0 — Confirm WHAT to evaluate",

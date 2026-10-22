@@ -50,6 +50,9 @@ const PHASE_STEP_LABELS: Record<string, string> = {
   // eval fine steps
   "understand-task": "Understanding your task",
   "eval-dataset": "Confirming the eval dataset",
+  // held-out branch (no eval dataset yet): both parts show as the dataset stage
+  "held-out-ask-count": "Confirming the eval dataset",
+  "held-out-request-help": "Confirming the eval dataset",
   "how-much": "Choosing how much to evaluate",
   "model-source": "Choosing the model",
   "metrics": "Designing the metrics",
@@ -165,7 +168,10 @@ const TRAINING_STEPS: StepDef[] = [
 
 const EVAL_STEPS: StepDef[] = [
   { label: "Understanding your task", matchSteps: ["understand-task"] },
-  { label: "Confirming the eval dataset", matchSteps: ["eval-dataset"] },
+  {
+    label: "Confirming the eval dataset",
+    matchSteps: ["eval-dataset", "held-out-ask-count", "held-out-request-help"],
+  },
   { label: "Choosing how much to evaluate", matchSteps: ["how-much"] },
   { label: "Choosing the model", matchSteps: ["model-source"] },
   { label: "Designing the metrics", matchSteps: ["metrics"] },
