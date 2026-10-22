@@ -284,6 +284,64 @@ class TestRequestOrchestratorHelp:
         # The orchestrator was NOT consulted for the resume (backend-driven).
         assert all(m[0] != state.orchestrator_id for m in router.sent[sent_before:])
 
+    def test_resume_pointer_keeps_consumers_own_step(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 526-4 repro: last_signal_step is a SINGLE shared field. The help detour delegates
+        # a fresh sdg producer, which resets it; when eval is auto-resumed it must be pointed
+        # back at ITS own last step (model source), not sdg's residue / eval's entry section.
+        async def _no_advisory(*_a: Any, **_k: Any) -> None:
+            return None
+
+        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+            ],
+        )
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    )
+                ],
+                [_text_part("resumed — back to the metrics.")],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        state.last_signal_step = "model-source"  # where eval actually is before the detour
+        router.queue_session(
+            [
+                [_text_part("What format?")],
+                [
+                    _tool_part(
+                        "signal_subagent_completion",
+                        {"summary": "SDG job sdg-1 done; 40 records"},
+                    )
+                ],
+            ]
+        )
+
+        _run(agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body()))
+        _run(agent._handle_subagent_message(state, "s1", "json, please", _body()))
+
+        assert state.subagent_target == "eval"  # eval is back
+        resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
+        pointer = resume_msg[3]
+        assert pointer is not None
+        # eval's model-source section — NOT its entry ("Confirm WHAT to evaluate").
+        assert "model source" in pointer.lower()
+        assert "confirm what to evaluate" not in pointer.lower()
+
     def test_completion_wins_over_simultaneous_help(self, router: _Router) -> None:
         # A turn carrying BOTH signal_subagent_completion AND request_orchestrator_help:
         # completion wins (a finishing subagent has nothing left to be helped with), so
