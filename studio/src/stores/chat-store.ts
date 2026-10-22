@@ -29,7 +29,7 @@ export interface PersistedMessage {
   // captured from the send-time selection. Absent on legacy messages and user turns.
   model?: string
   // Set on a job-completion continuation turn so the plan deriver can mark the phase
-  // terminal even when the driver never emits a "review" signal_phase (see ChatMessage).
+  // terminal even when the driver never emits a "complete" signal_phase (see ChatMessage).
   terminal?: boolean
 }
 

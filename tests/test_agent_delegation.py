@@ -442,47 +442,65 @@ class TestJobCompleteHandback:
         assert "signal_subagent_completion" in (forwarded_system or "")
         assert "d6be24ce" in forwarded_text  # job id KEPT in the user part
 
-    def test_preview_completion_steers_to_full_run_not_handback(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # A PREVIEW (10-row sample) completing is NOT the deliverable: steer the producer to run
-        # the full create run, not hand back — else the orchestrator advances to training on a
-        # preview. The preview steer rides the system channel (like the generic hand-back).
-        async def _fetch(token: str) -> dict[str, Any]:
-            return {"type": "sdg", "status": "succeeded", "config": {"mode": "preview"}}
-
-        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
-        state = self._active_sdg(router)
-        text = "Job d6be24ce (sdg) finished with status: succeeded."
-        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
-        forwarded_system = router.sent[0][3]
-        assert forwarded_system == agent._SUBAGENT_PREVIEW_DONE_PROMPT  # run the full create run
-        assert forwarded_system != agent._SUBAGENT_JOB_DONE_PROMPT  # NOT a completion hand-back
-        assert "d6be24ce" in router.sent[0][1]  # job id kept in the user part
-
-    def test_create_completion_still_hands_back(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # The full create run (no preview mode) completing IS a real completion → hand back.
-        async def _fetch(token: str) -> dict[str, Any]:
-            return {"type": "sdg", "status": "succeeded", "config": {"mode": "create"}}
-
-        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
-        state = self._active_sdg(router)
-        text = "Job d6be24ce (sdg) finished with status: succeeded."
-        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
-        assert router.sent[0][3] == agent._SUBAGENT_JOB_DONE_PROMPT
-
-    def test_normal_message_not_rewritten(self, router: _Router) -> None:
-        # A normal (non job_complete) turn keeps the clean user text verbatim (not rewritten);
-        # the active phase block rides the SYSTEM channel rather than being prepended to the user
-        # text. (The job-done hand-back steer, also system-channel, fires only on job_complete.)
+    def test_normal_message_carries_pointer_not_steer(self, router: _Router) -> None:
+        # An ordinary (non job_complete) turn: the user text is untouched, and the system channel
+        # now carries the resident-workflow POINTER (not a job-done steer).
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
-        sent = router.sent[0][1]
-        assert sent == "confirm"  # user text preserved verbatim, no injection prepended
-        system = router.sent[0][3]
-        assert system is not None and "phase-1-route" in system  # phase block on system channel
+        assert router.sent[0][1] == "confirm"  # user text unchanged
+        forwarded_system = router.sent[0][3]
+        assert forwarded_system is not None
+        assert forwarded_system.startswith("[ACTIVE PHASE]")
+        assert agent._SUBAGENT_JOB_DONE_PROMPT not in forwarded_system
+
+
+class TestSubagentPointer:
+    """A leaf subagent is re-anchored to its RESIDENT workflow section via a short pointer on
+    the system channel (api/phases.subagent_pointer), delivered on the delegation handoff and on
+    every ordinary turn — but never on a job_complete turn (the hand-back steer owns it there)."""
+
+    def _delegate_and_get_system(self, router: _Router, target: str, resume: bool) -> str | None:
+        sub_id = router.queue_session([[_text_part("ok")]])
+        state = _make_state(router)
+        if resume:
+            state.completed_subagents[target] = sub_id
+            state.last_signal_step = "confirm"  # a prior step is remembered across a resume
+        _run(
+            agent._maybe_delegate(
+                state, "s1", (target, "ctx", resume), "go", {"info": {}, "parts": []}, _body()
+            )
+        )
+        return next(sysm for sid, _t, _ag, sysm in router.sent if sid == sub_id)
+
+    def test_fresh_delegation_handoff_carries_entry_pointer(self, router: _Router) -> None:
+        sysm = self._delegate_and_get_system(router, "eval", resume=False)
+        assert sysm is not None
+        assert sysm.startswith("[ACTIVE PHASE]")
+        assert "Step 0 — Confirm WHAT to evaluate" in sysm  # entry section named
+
+    def test_fresh_delegation_resets_last_signal_step(self, router: _Router) -> None:
+        router.queue_session([[_text_part("ok")]])
+        state = _make_state(router)
+        state.last_signal_step = "review"  # stale from a prior subagent
+        _run(
+            agent._maybe_delegate(
+                state, "s1", ("sdg", "ctx", False), "go", {"info": {}, "parts": []}, _body()
+            )
+        )
+        assert state.last_signal_step == ""  # cleared so the pointer/backfill start at entry
+
+    def test_resume_handoff_carries_pointer(self, router: _Router) -> None:
+        sysm = self._delegate_and_get_system(router, "eval", resume=True)
+        assert sysm is not None and sysm.startswith("[ACTIVE PHASE]")
+
+    def test_job_complete_turn_keeps_handback_steer_not_pointer(self, router: _Router) -> None:
+        sdg_id = router.add_session([[_text_part("ok")]])
+        state = _make_state(router)
+        state.subagent_id = sdg_id
+        state.subagent_target = "sdg"
+        text = "Job a1 (sdg) finished with status: succeeded."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        assert router.sent[0][3] == agent._SUBAGENT_JOB_DONE_PROMPT  # steer, not the pointer
 
 
 def _signal_phase_results(parts: list[dict[str, Any]]) -> list[dict[str, Any]]:
