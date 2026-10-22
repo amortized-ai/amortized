@@ -107,6 +107,13 @@ class SessionState:
     # signal_phase the server can backfill the UI progress bar at the right step
     # instead of snapping it back to the start of the phase.
     last_signal_step: str = ""
+    # last_signal_step is a single field tracking the CURRENTLY active subagent (so the backfill,
+    # adjudicator, and mid-pipeline routing all read one source of truth). A help detour or a
+    # later delegation resets it, so stash each stepped-out subagent's own last step here, keyed
+    # by target, and restore it when that subagent is resumed — otherwise the resumed consumer is
+    # pointed at the wrong section (the detour producer's residue, or its entry). Stash-and-restore
+    # rather than making last_signal_step itself per-target: that regressed mid-training routing.
+    completed_last_step: dict[str, str] = field(default_factory=dict)
     # Per-target skill state, so the resident-workflow pointer can also name the current SKILL.md
     # step during gathering: the skill the target loaded (via the `skill` tool) and the latest
     # `present_options.step` stamp it emitted. Observed from the turn, used on the next send.
@@ -1051,6 +1058,7 @@ async def _handle_subagent_message(
         completer = state.subagent_target
         if completer and state.subagent_id:
             state.completed_subagents[completer] = state.subagent_id
+            state.completed_last_step[completer] = state.last_signal_step
         state.subagent_id = None
         state.subagent_target = None
 
@@ -1121,6 +1129,7 @@ async def _handle_subagent_message(
         target = state.subagent_target
         logger.info("Subagent help request: session=%s target=%s", session_id, target)
         state.completed_subagents[target] = state.subagent_id
+        state.completed_last_step[target] = state.last_signal_step
         state.subagent_id = None
         state.subagent_target = None
         seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
@@ -1184,7 +1193,10 @@ async def _maybe_delegate(
     if stashed_id:
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
         handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-        # A resume picks up where it left off, so the pointer names the last signalled section.
+        # A resume picks up where it left off, so restore THIS target's own last signalled step
+        # (a help detour / later delegation overwrote the shared field) before the pointer names
+        # the section. Falls back to "" (entry) when nothing was stashed.
+        state.last_signal_step = state.completed_last_step.pop(target, "")
         sub_result = await _proxy_send_message(
             stashed_id,
             handoff_msg,
@@ -1201,6 +1213,7 @@ async def _maybe_delegate(
         # the UI progress backfill) start at this agent's entry section, not wherever the last one
         # stopped.
         state.last_signal_step = ""
+        state.completed_last_step.pop(target, None)
         state.active_skill_by_target.pop(target, None)
         state.skill_last_step.pop(target, None)
         sub_result = await _proxy_send_message(
