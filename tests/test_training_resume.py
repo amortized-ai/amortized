@@ -213,6 +213,20 @@ class TestBuildGpuResources:
         assert result.resources.gpus == 0
 
     @pytest.mark.asyncio
+    async def test_whitespace_padded_algorithm_resolves_to_cpu(self) -> None:
+        # A padded value (" embedding_sft ") must resolve like the admission estimator, which
+        # strips before matching — otherwise the builder would request a GPU for a job the
+        # estimator admitted as CPU-only.
+        for algo in (" embedding_sft ", " classifier "):
+            config = {
+                "algorithm": algo,
+                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "data_path": "/data/train.jsonl",
+            }
+            result = await training_builder.build({"id": "embp", "type": "training"}, config, {})
+            assert result.resources.gpus == 0, f"{algo!r} should resolve to CPU"
+
+    @pytest.mark.asyncio
     async def test_sft_still_requests_gpu(self) -> None:
         config = {
             "algorithm": "sft",

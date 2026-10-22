@@ -571,6 +571,20 @@ class TestTrainingHubConfig:
         assert "effective_batch_size" not in parsed
         assert "data_output_dir" not in parsed
 
+    def test_thub_config_omits_train_on_gpu(self) -> None:
+        # train_on_gpu is an amortized-side scheduling knob (CPU vs 1 GPU), not a thub
+        # parameter — it must not leak into the generated config.yaml.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.parquet",
+            "train_on_gpu": True,
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("embedding_sft", config))
+        assert "train_on_gpu" not in parsed
+
     async def test_embedding_sft_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build
 

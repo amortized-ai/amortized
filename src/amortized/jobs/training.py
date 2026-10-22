@@ -56,6 +56,9 @@ _TRAINING_HUB_SKIP_KEYS = {
     "training_job_id",
     "data_run_id",
     "resume_model_name",
+    # amortized-side scheduling knob (CPU vs 1 GPU for embedding_sft); consumed by the
+    # builder's Resources(), not a thub parameter — keep it out of the generated config.yaml.
+    "train_on_gpu",
 }
 
 
@@ -134,7 +137,10 @@ async def build(
     config: dict[str, Any],
     config_files: dict[str, str],
 ) -> JobBuildResult:
-    algorithm = config.get("algorithm", "sft")
+    # Strip before alias resolution so a whitespace-padded value (e.g. " embedding_sft ")
+    # resolves the same way the admission estimator does (estimate_gpu_demand strips too) —
+    # otherwise the builder could request a GPU for a job the estimator admitted as CPU-only.
+    algorithm = config.get("algorithm", "sft").strip()
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
 
     model_pre_commands: list[str] = []
