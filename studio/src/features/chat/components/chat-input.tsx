@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Send } from "lucide-react"
 import { useChatStore } from "@/stores/chat-store"
@@ -7,12 +7,14 @@ interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
   placeholder?: string
+  leftSlot?: ReactNode
 }
 
 export function ChatInput({
   onSend,
   disabled = false,
   placeholder = "Type a message...",
+  leftSlot,
 }: ChatInputProps) {
   const convId = useChatStore((s) => s.currentConversationId)
   const value = useChatStore((s) => s.drafts[s.currentConversationId ?? ""] ?? "")
@@ -55,6 +57,7 @@ export function ChatInput({
   return (
     <div className="border-t bg-background/80 backdrop-blur-sm p-4">
       <div className="mx-auto max-w-3xl flex items-end gap-2">
+        {leftSlot}
         <textarea
           ref={textareaRef}
           value={value}
