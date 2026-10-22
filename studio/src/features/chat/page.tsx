@@ -90,6 +90,7 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
         leftSlot={
           <ChatAttach
             onReference={(text) => void sendMessage(text)}
+            canSend={!isStreaming && !jobInFlight && !sendBlockedReason}
             disabled={isStreaming || !!sendBlockedReason}
           />
         }

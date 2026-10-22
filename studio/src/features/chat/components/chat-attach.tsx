@@ -13,13 +13,16 @@ import { useAttachUpload } from "../hooks/use-attach-upload"
 interface ChatAttachProps {
   // Posts a reference to the uploaded artifact into the conversation (usually sendMessage).
   onReference: (text: string) => void
+  // Whether the chat can accept a new turn now; a reference that resolves while the
+  // chat is busy is queued and flushed when this goes true.
+  canSend?: boolean
   disabled?: boolean
 }
 
-export function ChatAttach({ onReference, disabled = false }: ChatAttachProps) {
+export function ChatAttach({ onReference, canSend = true, disabled = false }: ChatAttachProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [docOpen, setDocOpen] = useState(false)
-  const { attachDataset, attachDocument, isUploading } = useAttachUpload(onReference)
+  const { attachDataset, attachDocument, isUploading } = useAttachUpload(onReference, canSend)
 
   function handleDatasetFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]

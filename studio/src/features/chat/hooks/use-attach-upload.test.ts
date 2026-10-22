@@ -125,4 +125,55 @@ describe("useAttachUpload", () => {
     expect(msg).toContain("spec.pdf")
     expect(msg).toContain("document_id: doc-run")
   })
+
+  it("tracks concurrent dataset and document attaches without dropping either", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("/datasets/upload")) return jsonResponse(makeJob({ id: "ds-job" }), 202)
+      if (url.includes("/jobs/ds-job"))
+        return jsonResponse(makeJob({ id: "ds-job", status: "succeeded", mlflow_run_id: "ds-run" }))
+      if (url.includes("/jobs/doc-job"))
+        return jsonResponse(makeJob({ id: "doc-job", status: "succeeded", mlflow_run_id: "doc-run" }))
+      return jsonResponse({})
+    })
+    const onReference = vi.fn()
+    const { result } = renderHook(() => useAttachUpload(onReference), { wrapper: createWrapper() })
+
+    act(() => {
+      result.current.attachDataset(new File(["{}"], "d.jsonl"))
+      result.current.attachDocument("doc-job", "s.pdf")
+    })
+
+    await waitFor(() => expect(onReference).toHaveBeenCalledTimes(2))
+    const msgs = onReference.mock.calls.map((c) => c[0] as string).join("\n")
+    expect(msgs).toContain("run_id: ds-run")
+    expect(msgs).toContain("document_id: doc-run")
+  })
+
+  it("queues a reference while the chat is busy and flushes it when idle", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("/jobs/doc-job"))
+        return jsonResponse(makeJob({ id: "doc-job", status: "succeeded", mlflow_run_id: "doc-run" }))
+      return jsonResponse({})
+    })
+    const onReference = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ canSend }: { canSend: boolean }) => useAttachUpload(onReference, canSend),
+      { wrapper: createWrapper(), initialProps: { canSend: false } },
+    )
+
+    act(() => {
+      result.current.attachDocument("doc-job", "spec.pdf")
+    })
+
+    // The job resolves, but the chat is busy -> the reference is queued, not sent.
+    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled())
+    expect(onReference).not.toHaveBeenCalled()
+
+    // Chat goes idle -> the queued reference flushes.
+    act(() => {
+      rerender({ canSend: true })
+    })
+    await waitFor(() => expect(onReference).toHaveBeenCalledTimes(1))
+    expect(onReference.mock.calls[0]![0] as string).toContain("document_id: doc-run")
+  })
 })
