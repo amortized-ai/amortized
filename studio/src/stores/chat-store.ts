@@ -47,6 +47,13 @@ export interface PersistedConversation {
 
 export type SessionStatus = "unknown" | "connected" | "reconnecting" | "rebuilt" | "restored"
 
+// Transient in-flight attach progress, keyed by conversation so it survives the keyed
+// ChatContent remount on conversation switch (not persisted — it reflects live uploads).
+export interface AttachStatus {
+  id: number
+  message: string
+}
+
 interface ChatStoreState {
   currentConversationId: string | null
   panelOpen: boolean
@@ -57,6 +64,7 @@ interface ChatStoreState {
   notifiedJobs: Record<string, string[]>
   jobInFlight: Record<string, boolean>
   drafts: Record<string, string>
+  attachStatuses: Record<string, AttachStatus[]>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
   setPanelOpen: (open: boolean) => void
@@ -83,6 +91,8 @@ interface ChatStoreState {
   getJobInFlight: (conversationId: string) => boolean
   setDraft: (conversationId: string, text: string) => void
   getDraft: (conversationId: string) => string
+  addAttachStatus: (conversationId: string, status: AttachStatus) => void
+  removeAttachStatus: (conversationId: string, id: number) => void
 }
 
 export const useChatStore = create<ChatStoreState>()(
@@ -97,6 +107,7 @@ export const useChatStore = create<ChatStoreState>()(
       notifiedJobs: {},
       jobInFlight: {},
       drafts: {},
+      attachStatuses: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
       setPanelOpen: (open) => set({ panelOpen: open }),
@@ -112,6 +123,7 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _as, ...restAttachStatuses } = s.attachStatuses  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
@@ -119,6 +131,7 @@ export const useChatStore = create<ChatStoreState>()(
             notifiedJobs: restNotifiedJobs,
             jobInFlight: restJobInFlight,
             drafts: restDrafts,
+            attachStatuses: restAttachStatuses,
             currentConversationId:
               s.currentConversationId === id
                 ? (remaining[0]?.id ?? null)
@@ -225,6 +238,22 @@ export const useChatStore = create<ChatStoreState>()(
             : Object.fromEntries(Object.entries(s.drafts).filter(([k]) => k !== conversationId)),
         })),
       getDraft: (conversationId) => get().drafts[conversationId] ?? "",
+      addAttachStatus: (conversationId, status) =>
+        set((s) => ({
+          attachStatuses: {
+            ...s.attachStatuses,
+            [conversationId]: [...(s.attachStatuses[conversationId] ?? []), status],
+          },
+        })),
+      removeAttachStatus: (conversationId, id) =>
+        set((s) => {
+          const next = (s.attachStatuses[conversationId] ?? []).filter((x) => x.id !== id)
+          if (next.length === 0) {
+            const { [conversationId]: _drop, ...rest } = s.attachStatuses  // eslint-disable-line @typescript-eslint/no-unused-vars
+            return { attachStatuses: rest }
+          }
+          return { attachStatuses: { ...s.attachStatuses, [conversationId]: next } }
+        }),
     }),
     {
       name: "amortized-chat",

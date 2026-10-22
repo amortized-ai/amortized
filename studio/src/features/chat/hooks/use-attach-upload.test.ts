@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { createElement, type ReactNode } from "react"
 import { toast } from "sonner"
 import { useAttachUpload } from "./use-attach-upload"
+import { useChatStore } from "@/stores/chat-store"
 
 vi.mock("sonner", () => ({
   toast: {
@@ -22,6 +23,8 @@ beforeEach(() => {
   vi.mocked(toast.loading).mockClear()
   vi.mocked(toast.success).mockClear()
   vi.mocked(toast.error).mockClear()
+  // Status is stored keyed by the active conversation; give tests one.
+  useChatStore.setState({ currentConversationId: "test-conv", attachStatuses: {} })
 })
 
 afterEach(() => {

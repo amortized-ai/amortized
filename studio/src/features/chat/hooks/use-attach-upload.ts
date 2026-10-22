@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
 import { getJob, uploadDataset } from "@/lib/api-client"
+import { useChatStore } from "@/stores/chat-store"
+import type { AttachStatus } from "@/stores/chat-store"
 import type { Job } from "@/types/api"
+
+export type { AttachStatus }
 
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
-type AttachKind = "dataset" | "document"
+// Module-level so ids stay unique across hook remounts (ChatContent remounts per conversation).
+let statusIdCounter = 0
 
-export interface AttachStatus {
-  id: number
-  message: string
-}
+// Stable empty reference so the store selector doesn't return a fresh array each render.
+const EMPTY_STATUSES: AttachStatus[] = []
+
+type AttachKind = "dataset" | "document"
 
 async function pollJobUntilTerminal(jobId: string): Promise<Job> {
   const deadline = Date.now() + POLL_TIMEOUT_MS
@@ -42,9 +47,10 @@ function referenceText(kind: AttachKind, filename: string, runId: string): strin
  * existing dataset/document tools. Both upload endpoints are 202-async, so the
  * artifact id (the completed job's mlflow_run_id) is only known after the job lands.
  *
- * Progress is reported via `statuses` (rendered inline, non-blocking) rather than a
- * toast that would cover the composer; success needs no toast because the posted
- * reference turn is the confirmation; only failures toast (brief + obvious).
+ * Progress is kept in the chat store keyed by conversation (not component state), so it
+ * survives the keyed ChatContent remount on conversation switch and shows in the
+ * conversation the upload started in. Success needs no toast (the posted reference turn
+ * is the confirmation); only failures toast (brief + obvious).
  *
  * References are delivered one at a time by a drain driven off each send's completion.
  * `onReference` returns whether it delivered (false = the chat couldn't accept it): an
@@ -53,10 +59,12 @@ function referenceText(kind: AttachKind, filename: string, runId: string): strin
  */
 export function useAttachUpload(onReference: (text: string) => unknown, canSend = true) {
   const queryClient = useQueryClient()
-  const [statuses, setStatuses] = useState<AttachStatus[]>([])
   const pendingRefs = useRef<string[]>([])
   const drainingRef = useRef(false)
-  const idRef = useRef(0)
+
+  const statuses = useChatStore(
+    (s) => s.attachStatuses[s.currentConversationId ?? ""] ?? EMPTY_STATUSES,
+  )
 
   // Read latest props at dispatch time (which can be minutes after a track starts)
   // without re-creating callbacks; synced after render, never during it.
@@ -117,18 +125,20 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
     [postReference, queryClient],
   )
 
-  // Inline, non-blocking progress (see `statuses`); errors stay as a toast. No
+  // Progress goes to the conversation the upload started in (captured now), so it is
+  // attributed correctly even if the user switches conversations mid-upload. No
   // single-slot guard — dataset and document attaches track concurrently.
   const run = useCallback(
     async (message: string, work: () => Promise<void>) => {
-      const id = idRef.current++
-      setStatuses((s) => [...s, { id, message }])
+      const convId = useChatStore.getState().currentConversationId
+      const id = statusIdCounter++
+      if (convId) useChatStore.getState().addAttachStatus(convId, { id, message })
       try {
         await work()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Attachment failed", { duration: 4000 })
       } finally {
-        setStatuses((s) => s.filter((x) => x.id !== id))
+        if (convId) useChatStore.getState().removeAttachStatus(convId, id)
       }
     },
     [],
