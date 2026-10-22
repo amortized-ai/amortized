@@ -38,32 +38,25 @@ const TOOL_LABELS: Record<string, string> = {
   "get_job_logs": "Reading job logs",
 }
 
-// signal_phase now reports the workflow's own section slug (one file per section),
-// not the old coarse 7-step enum. Map each slug to the bar label its section rolls up
-// to; sibling eval sections (dataset / held-out, report / complete) share a label so
-// they collapse to one bar stage.
+// Step slugs match the `<!--signal:slug-->` markers in each agent's workflow.md `## Workflow`
+// headings (sdg/training are 4-phase; eval is a finer 8-step sequence). "complete" is the
+// terminal step for every agent.
 const PHASE_STEP_LABELS: Record<string, string> = {
-  // sdg / training
-  "phase-1-route": "Routing to the right guide",
-  "phase-2-gather": "Gathering requirements",
-  "phase-3-validate": "Reviewing configuration",
-  "phase-4-complete": "Checking results",
-  // eval
-  "step-0-what-to-eval": "Confirming the model",
-  "step-1-dataset": "Choosing the eval dataset",
-  "held-out-eval-set": "Choosing the eval dataset",
-  "step-1_5-how-much": "Confirming the sample size",
-  "step-2-model-source": "Choosing the model source",
-  "step-3-metrics": "Designing metrics",
-  "step-4-validate": "Reviewing configuration",
-  "step-5-report": "Checking results",
-  "step-6-complete": "Checking results",
+  // sdg / training phases
+  "route": "Routing to sub-skill",
+  "gather": "Gathering requirements",
+  "validate": "Reviewing configuration",
+  "complete": "Completing",
+  // eval fine steps
+  "understand-task": "Understanding your task",
+  "eval-dataset": "Confirming the eval dataset",
+  "how-much": "Choosing how much to evaluate",
+  "model-source": "Choosing the model",
+  "metrics": "Designing the metrics",
+  "report": "Reporting results",
 }
 
-// The phase slugs that mean the workflow has reached its end — once signalled, every
-// bar step is marked complete so the bar doesn't spin. "review" is kept for back-compat
-// with any transcript signalled under the old enum.
-const TERMINAL_STEPS = new Set(["review", "phase-4-complete", "step-6-complete"])
+const TERMINAL_STEP = "complete"
 
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
@@ -125,7 +118,7 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
     const cfg = STATIC_PHASE_CONFIG[latestPhase]
     if (!cfg) return null
     const activeIdx = resolveStepIndex(cfg.steps, latestStep)
-    const done = TERMINAL_STEPS.has(latestStep) || terminalSeen
+    const done = latestStep === TERMINAL_STEP || terminalSeen
     return {
       phase: latestPhase,
       label: cfg.label,
@@ -136,10 +129,10 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
     }
   }
 
-  // When the last signalled step is a terminal phase — or a job-completion turn made the
+  // When the last signalled step is the terminal step — or a job-completion turn made the
   // phase terminal — the workflow has finished; mark every step complete so the bar
   // isn't left spinning.
-  const done = TERMINAL_STEPS.has(latestStep) || terminalSeen
+  const done = latestStep === TERMINAL_STEP || terminalSeen
 
   return {
     phase: latestPhase,
@@ -157,27 +150,28 @@ interface StepDef {
 }
 
 const SDG_STEPS: StepDef[] = [
-  { label: "Routing to the right guide", matchSteps: ["phase-1-route"] },
-  { label: "Gathering requirements", matchSteps: ["phase-2-gather"] },
-  { label: "Reviewing configuration", matchSteps: ["phase-3-validate"] },
-  { label: "Checking results", matchSteps: ["phase-4-complete"] },
+  { label: "Routing to sub-skill", matchSteps: ["route"] },
+  { label: "Gathering requirements", matchSteps: ["gather"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const TRAINING_STEPS: StepDef[] = [
-  { label: "Routing to the right guide", matchSteps: ["phase-1-route"] },
-  { label: "Gathering requirements", matchSteps: ["phase-2-gather"] },
-  { label: "Reviewing configuration", matchSteps: ["phase-3-validate"] },
-  { label: "Checking results", matchSteps: ["phase-4-complete"] },
+  { label: "Routing to sub-skill", matchSteps: ["route"] },
+  { label: "Gathering requirements", matchSteps: ["gather"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const EVAL_STEPS: StepDef[] = [
-  { label: "Confirming the model", matchSteps: ["step-0-what-to-eval"] },
-  { label: "Choosing the eval dataset", matchSteps: ["step-1-dataset", "held-out-eval-set"] },
-  { label: "Confirming the sample size", matchSteps: ["step-1_5-how-much"] },
-  { label: "Choosing the model source", matchSteps: ["step-2-model-source"] },
-  { label: "Designing metrics", matchSteps: ["step-3-metrics"] },
-  { label: "Reviewing configuration", matchSteps: ["step-4-validate"] },
-  { label: "Checking results", matchSteps: ["step-5-report", "step-6-complete"] },
+  { label: "Understanding your task", matchSteps: ["understand-task"] },
+  { label: "Confirming the eval dataset", matchSteps: ["eval-dataset"] },
+  { label: "Choosing how much to evaluate", matchSteps: ["how-much"] },
+  { label: "Choosing the model", matchSteps: ["model-source"] },
+  { label: "Designing the metrics", matchSteps: ["metrics"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Reporting results", matchSteps: ["report"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const STATIC_PHASE_CONFIG: Partial<Record<PlanPhase, { label: string; steps: StepDef[] }>> = {
@@ -203,7 +197,7 @@ export function derivePhasePlan(messages: ChatMessage[]): PhasePlan | null {
   const config = STATIC_PHASE_CONFIG[parsed.phase]
   if (!config) return null
   const activeIdx = resolveStepIndex(config.steps, parsed.step)
-  const isCompleted = TERMINAL_STEPS.has(parsed.step)
+  const isCompleted = parsed.step === TERMINAL_STEP
 
   const planSteps: PlanStep[] = config.steps.map((def, i): PlanStep => {
     if (isCompleted) return { label: def.label, status: "completed" }
