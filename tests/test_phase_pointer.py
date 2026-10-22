@@ -103,3 +103,18 @@ class TestSubagentPointer:
         p = phases.subagent_pointer("sdg", "gather")
         assert p is not None
         assert "skill loaded" not in p
+
+    def test_skill_clause_shows_on_route_before_gather(self) -> None:
+        # The skill is loaded during 'route'; the first gathering turn may still carry the
+        # 'route' signal, so the clause must appear there too (not only on 'gather').
+        p = phases.subagent_pointer("sdg", "route", "sdg-knowledge-ingestion", "samples")
+        assert p is not None and "skill loaded" in p
+
+    def test_skill_clause_suppressed_after_gathering(self) -> None:
+        # Once the subagent moves to validate/complete the loaded skill is still tracked, but
+        # the pointer must stop steering it back through the SKILL.md gathering steps.
+        for step in ("validate", "complete"):
+            p = phases.subagent_pointer("sdg", step, "sdg-knowledge-ingestion", "samples")
+            assert p is not None
+            assert "skill loaded" not in p
+            assert "ONE question per turn" not in p

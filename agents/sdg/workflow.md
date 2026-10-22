@@ -130,7 +130,8 @@ the job fails. Omit it and the provider default is used.
 
 ALWAYS preview first by default: call the validation tool with
 `mode: "preview"` for a ~10 sample test run, let the user eyeball the
-output, then call again with `mode: "create"` for the full run. The
+output AND decide whether to proceed; only on their go-ahead call
+again with `mode: "create"` for the full run. The
 preview is cheap and catches a bad recipe before a full generation, so
 strongly prefer it. The ONE exception: if the user EXPLICITLY asks to
 skip the preview (e.g. "just create it", "no preview, create directly"),
@@ -249,12 +250,15 @@ and retry.
 
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 
-If the job that finished was the `preview` run, you are NOT done: show the user
-the sample so they can eyeball quality, then call the validation tool again with
-`mode: "create"` to launch the FULL dataset run. Do NOT signal completion and do
-NOT let the flow advance to a later step (e.g. training) on a preview — only the
-full create run produces the dataset. Only once the create run finishes do you
-move to Phase 4 and present next steps.
+If the job that finished was the `preview` run, you are NOT done — but you are
+also not cleared to launch the full run yet: show the user the sample so they can
+eyeball quality and ask, with `present_options`, whether to proceed with the full
+dataset run or adjust the recipe first. WAIT for their decision. Only once they
+approve do you call the validation tool again with `mode: "create"` to launch the
+FULL dataset run. Do NOT signal completion and do NOT let the flow advance to a
+later step (e.g. training) on a preview — only the full create run produces the
+dataset. Only once the create run finishes do you move to Phase 4 and present
+next steps.
 
 ### Phase 4 — Signal Completion <!--signal:complete-->
 

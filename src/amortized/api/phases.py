@@ -205,6 +205,13 @@ def skill_step_title(skill_name: str | None, stamp: str | None) -> str | None:
     return None
 
 
+# Workflow phases AFTER the skill-driven gathering is done (shared by the skill-loading
+# subagents, sdg + training). Once a subagent signals one of these, it is confirming or
+# finishing, not gathering — so the pointer must stop steering it back through the SKILL.md
+# gathering steps even though the loaded skill is still tracked for the rest of its life.
+_POST_GATHER_STEPS = frozenset({"validate", "complete"})
+
+
 def subagent_pointer(
     agent: str | None,
     step: str | None,
@@ -225,7 +232,7 @@ def subagent_pointer(
     wf_at = f" — your current step is **{wf_title}**" if wf_title else ""
 
     skill_clause = ""
-    if skill:
+    if skill and (_norm(step) if step else "") not in _POST_GATHER_STEPS:
         step_title = skill_step_title(skill, skill_step)
         on = f", and you are on **{step_title}**" if step_title else ""
         skill_clause = (
