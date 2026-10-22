@@ -68,7 +68,7 @@ model name from `list_models` in `model_configs`.
 
 Key parameters for classification:
 - `columns` — a category sampler, an LLM column to generate text, an LLM column to generate labels
-- `model_configs` — `[{"alias": "text", "model": "<from list_models>", "provider": "<from list_models>", "skip_health_check": true}]`
+- `model_configs` — `[{"alias": "text", "model": "<from-list_models>", "provider": "<from-list_models>", "skip_health_check": true}]`
 - `processors` — schema_transform to produce SFT `messages` format
 - `num_records` — based on category count (see sample count step)
 

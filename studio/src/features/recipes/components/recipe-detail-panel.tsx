@@ -19,7 +19,10 @@ import {
 } from "@/components/ui/resizable"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
 import { RecipeConfigForm } from "./recipe-config-form"
+import { stripPlaceholders } from "../lib/placeholders"
+import { collectMissingRequired } from "../lib/recipe-validation"
 import { useCreateJobFromConfig, useConfigSchemas } from "../api/use-recipes"
+import type { JsonSchema } from "../api/use-recipes"
 import {
   formatRecipeType,
   recipeTypeClassName,
@@ -31,18 +34,31 @@ interface RecipeDetailPanelProps {
   job: Job
   recipeName: string
   onBack: () => void
+  // Per-recipe required top-level fields (from a starter template's _meta.required).
+  requiredKeys?: string[]
 }
 
-export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanelProps) {
+export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: RecipeDetailPanelProps) {
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
   const { data: schemas } = useConfigSchemas()
+  // Strip placeholder tokens (agent-resolution hints, e.g. "<from-list_models>") on
+  // load so they are never a value and never submitted; pickers show an empty state.
   const [config, setConfig] = useState<Record<string, unknown>>(
-    () => structuredClone(job.config ?? {}),
+    () => stripPlaceholders(structuredClone(job.config ?? {})),
   )
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<"form" | "json">("form")
+
+  // Block execution while any required field is empty: schema-required (the schema
+  // is the source of truth) plus any per-recipe required fields (requiredKeys).
+  // While the schema is still loading we can't evaluate schema-required fields, so
+  // block execution rather than letting an incomplete config submit (→ backend 422).
+  const schemasLoading = schemas === undefined
+  const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
+  const missingRequired = collectMissingRequired(config, typeSchema, requiredKeys)
+  const canExecute = !schemasLoading && missingRequired.length === 0
 
   const handleExecute = useCallback(() => {
     createMutation.mutate(
@@ -105,6 +121,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
           <Button
             size="sm"
             onClick={() => setExecuteDialogOpen(true)}
+            disabled={schemasLoading}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Play className="mr-1.5 h-3.5 w-3.5" />
@@ -151,6 +168,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                     config={config}
                     onChange={setConfig}
                     schema={schemas}
+                    requiredKeys={requiredKeys}
                   />
                 </div>
               </ScrollArea>
@@ -178,6 +196,17 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                 : `This will create a new ${formatRecipeType(job.type)} job with the current configuration.`}
             </DialogDescription>
           </DialogHeader>
+
+          {!submittedJobId && missingRequired.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <p className="font-medium text-destructive">Fill required fields before running:</p>
+              <ul className="mt-1 list-disc pl-5 text-destructive/90">
+                {missingRequired.map((field) => (
+                  <li key={field}>{field}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {!submittedJobId && (
             <div className="max-h-[300px] overflow-auto rounded-lg border bg-muted/30 p-3">
@@ -210,7 +239,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                 </Button>
                 <Button
                   onClick={handleExecute}
-                  disabled={createMutation.isPending}
+                  disabled={createMutation.isPending || !canExecute}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {createMutation.isPending ? "Submitting..." : "Submit Job"}

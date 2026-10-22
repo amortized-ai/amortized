@@ -37,6 +37,7 @@ interface SelectedConfig {
   name: string
   config: Record<string, unknown>
   type: JobType
+  requiredKeys?: string[]
 }
 
 export default function RecipesPage() {
@@ -110,6 +111,7 @@ export default function RecipesPage() {
           job={job}
           recipeName={selected.name}
           onBack={() => setSelected(null)}
+          requiredKeys={selected.requiredKeys}
         />
       </div>
     )
@@ -201,6 +203,7 @@ export default function RecipesPage() {
                     name: t.name,
                     config: t.config,
                     type: t.type as JobType,
+                    requiredKeys: t.required,
                   })
                 }
               />
