@@ -1,27 +1,19 @@
-"""Per-phase instruction blocks injected into the turn message at run time.
+"""A short per-turn POINTER that re-anchors a subagent to its RESIDENT workflow.
 
-The problem: a weaker driver (e.g. GLM-flash) reads a long system prompt and then
-substitutes prose for a required transition tool — it narrates "I'll have a dataset
-generated" instead of actually calling `request_orchestrator_help`, and the pipeline
-stalls. Surfacing the current phase's instructions in the *freshest* position — the
-turn message itself — instead of buried in a 400-line workflow.md makes the driver
-reliably emit the transition tool it otherwise only narrates. An A/B on the
-eval→SDG handback (glm-flash, N=6) lifted `request_orchestrator_help` from 1/6 to
-6/6 with the block injected; see memory `phase-injection-lifts-glm-handback`.
+The full step-by-step workflow lives resident in each agent's `workflow.md` (= main; no
+thinning, no `phases/` slices). A weaker driver (e.g. GLM-5.3-flash) reading a long resident
+prompt sometimes substitutes prose for a required transition tool — it narrates "I'll have a
+dataset generated" instead of calling `request_orchestrator_help` — or works ahead out of
+order. A SHORT pointer on the system channel ("you're in the <agent> workflow; your
+instructions are in `## Workflow`; CALL the transition tool, don't narrate it; don't work
+ahead") re-anchors the driver each turn without injecting a second copy of the workflow.
 
-Design: each agent's workflow.md is thinned to the phase TITLES only (an outline);
-the full body of each phase lives in `agents/<agent>/phases/<phase>.md` and is
-prepended to the turn message by the proxy (agent.py). Phases are keyed one-per-
-section (the workflow's own `Step 0`, `Phase 2`, `held-out-eval-set`, …), so the key
-IS the section slug the agent reports via `signal_phase.step` (subagents) or that the
-proxy selects by control-flow path (the orchestrator, which never signals).
-
-Opt-in by file presence: an agent with no `phases/` dir, or an unknown key, gets no
-injection and its workflow.md still drives it — so agents migrate one at a time.
-
-Content is authored under `agents/` (the single source of truth, baked into the
-server image via `COPY agents/ agents/`) so phase text and the thinned workflow.md it
-was split from stay side by side and version together.
+Validated at N=6 (memory `pr526-resident-inject-flash`): un-thinned/resident content fixes the
+out-of-order formula probe, and resident+pointer holds the eval→SDG handback (6/6, matching the
+full-block inject). This is the SLICE-FREE form of that result — the pointer derives the current
+section title from the resident `workflow.md` headings themselves (no `phases/` files), and it is
+delivered via opencode's message-level `system` field (the PR509 system-channel machinery), never
+prepended to the user text.
 """
 
 from __future__ import annotations
@@ -32,92 +24,91 @@ from pathlib import Path
 
 from amortized.core.recipes import _get_base_dir
 
-# The phase a freshly delegated subagent starts at, before it has signalled anything
-# of its own (state.last_signal_step is still ""). The key is the first section slug
-# in that agent's workflow. Keep in sync with the agents/<agent>/phases/ filenames and
-# the thinned workflow.md outline. The orchestrator is absent: it never signals — the
-# proxy picks its phase by control-flow path (see agent.py).
-_FIRST_PHASE: dict[str, str] = {
-    "sdg": "phase-1-route",
-    "training": "phase-1-route",
-    "eval": "step-0-what-to-eval",
-}
+# Only leaf workflow subagents get a pointer. The orchestrator drives on its resident
+# workflow.md exactly like main (it never signals a phase; its turns are not re-anchored).
+_SUBAGENTS = frozenset({"sdg", "training", "eval"})
 
 
-def _phase_path(agent: str, phase: str) -> Path:
-    return _get_base_dir() / "agents" / agent / "phases" / f"{phase}.md"
+def _workflow_path(agent: str) -> Path:
+    return _get_base_dir() / "agents" / agent / "workflow.md"
 
 
-@lru_cache(maxsize=256)
-def _load(agent: str, phase: str) -> str | None:
-    """Read `agents/<agent>/phases/<phase>.md`, or None if absent/empty.
+def _norm(value: str) -> str:
+    """Normalize a signalled step to a comparable slug: drop a leading numeric ordering prefix
+    (`03-`) and collapse every run of non-alphanumeric characters (spaces, em dashes,
+    underscores, …) to a single hyphen."""
+    out = re.sub(r"^\d+[-_.) ]*", "", value.strip().lower())
+    return re.sub(r"[^a-z0-9]+", "-", out).strip("-")
 
-    Cached: phase files are baked at build time and never change within a process.
-    Tests that write phase files on the fly must call `_load.cache_clear()`.
-    """
+
+# A section's canonical signal slug is authored right in its heading as an HTML-comment marker —
+# `### Step 0 — Confirm what to evaluate <!--signal:understand-task-->` — so the slug the agent
+# signals (`signal_phase.step`) and the slug the pointer resolves against live in ONE place (the
+# resident workflow.md), and a human-readable title can carry a short, stable slug that isn't just
+# the slugified title. Headings with no marker fall back to the normalized title.
+_SIGNAL_MARKER = re.compile(r"<!--\s*signal:\s*([a-z0-9-]+)\s*-->")
+
+
+@lru_cache(maxsize=16)
+def _sections(agent: str) -> tuple[tuple[str, str], ...]:
+    """Ordered `(slug, title)` for each `### ` heading under the resident workflow.md's
+    `## Workflow` section. `slug` is the heading's `<!--signal:…-->` marker, else the normalized
+    title. `()` when the file is absent or has no Workflow section. Cached: workflow.md is baked at
+    build time; tests that write it on the fly call `_sections.cache_clear()`."""
     try:
-        text = _phase_path(agent, phase).read_text(encoding="utf-8").strip()
+        text = _workflow_path(agent).read_text(encoding="utf-8")
     except OSError:
+        return ()
+    out: list[tuple[str, str]] = []
+    in_workflow = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            in_workflow = s[3:].strip().lower() == "workflow"
+            continue
+        if in_workflow and s.startswith("### "):
+            raw = s[4:].strip()
+            marker = _SIGNAL_MARKER.search(raw)
+            title = _SIGNAL_MARKER.sub("", raw).strip()
+            out.append((marker.group(1) if marker else _norm(title), title))
+    return tuple(out)
+
+
+def _resolve_title(agent: str, step: str | None) -> str | None:
+    """The resident section title to name in the pointer.
+
+    - No step yet (fresh delegation) → the entry (first) section, so a just-delegated subagent
+      is pointed at where to start.
+    - A signalled step that matches a section heading (exact or prefix, both normalized) → that
+      section.
+    - A signalled step that matches no heading (e.g. the coarse UI progress vocabulary like
+      `gather_requirements`, which is not a section slug) → None, so the pointer stays generic
+      rather than naming a WRONG section."""
+    sections = _sections(agent)
+    if not sections:
         return None
-    return text or None
+    if not step:
+        return sections[0][1]
+    target = _norm(step)
+    if not target:
+        return sections[0][1]
+    for slug, title in sections:
+        if slug == target or slug.startswith(f"{target}-") or target.startswith(f"{slug}-"):
+            return title
+    return None
 
 
-def phase_block(agent: str, phase: str) -> str | None:
-    """The instruction block for (agent, phase), or None when the agent has no such
-    phase file (not migrated yet, or an unknown phase key)."""
-    if not agent or not phase:
-        return None
-    return _load(agent, phase)
+# ── Skill-step resolution (for the in-gather skill clause of the pointer) ─────────────────
+# A subagent's gather phase is driven by a resident SKILL.md with a numbered `### Step N — …`
+# sequence. Each step pairs its heading with the `present_options(step="…")` stamp the driver is
+# told to emit for that question — so the stamp the agent ALREADY sends is enough to name the
+# current step, with no new slug markers in the SKILL.md (the user's "skills don't need slugs").
+# This resolves that stamp → the step's heading title; the agent.py scan records the active skill
+# (from the `skill` tool call) and the latest stamp (from present_options) per turn.
 
-
-def subagent_phase(agent: str, step: str | None) -> str | None:
-    """The phase key for a subagent turn, given the last step it signalled.
-
-    Empty/unknown step → the agent's entry phase, so a freshly delegated subagent gets
-    its starting block. None when the agent has no entry phase registered (not
-    migrated), so callers inject nothing for it."""
-    if step:
-        return step
-    return _FIRST_PHASE.get(agent or "")
-
-
-def system_reminder(text: str) -> str:
-    """Wrap platform-injected steering in a `<system-reminder>` block so the model reads
-    it as a system directive, not as words the user typed. Used for every prepended or
-    appended turn-message injection (phase blocks, steers, hand-off framing) so the clean
-    user text stays the only user-authored part of the turn."""
-    return f"<system-reminder>\n{text}\n</system-reminder>"
-
-
-def with_block(agent: str, phase: str | None, text: str) -> str:
-    """Prepend the (agent, phase) block to a turn message, if one exists.
-
-    The block is wrapped in a `<system-reminder>` so it does not read as user text.
-    No-op when phase is None or the agent/phase has no block, so callers can wrap every
-    handoff unconditionally without first checking migration state."""
-    block = phase_block(agent, phase) if phase else None
-    if not block:
-        return text
-    wrapped = system_reminder(block)
-    return f"{wrapped}\n\n{text}" if text else wrapped
-
-
-# ── Per-step SKILL slices ──────────────────────────────────────────────────────
-# Same idea as workflow phase injection, one level down and finer-grained. When a subagent
-# loads a skill, opencode dumps the whole SKILL.md into its context. For a skill with a clear
-# numbered-step gathering sequence, that whole body at once is more than a weak driver tracks.
-# Fix: the SKILL.md keeps everything — routing, rules, the Step N TITLES (as an outline), and
-# every non-step section (column pipeline, model config, checklist, …) — but each step's
-# DETAIL body moves to `agents/<agent>/skills/<skill>/steps/<NN>-<slug>.md`, and the proxy
-# injects one step's detail at a time as the subagent advances through gathering. The outline
-# of titles stays resident so the driver is always oriented; the injected block surfaces the
-# current step's detail in the freshest position.
-#
-# Opt-in by file presence: a skill with no `steps/` dir gets nothing injected and its full
-# SKILL.md drives it as before. The `steps/` subdir sits one level below the skill dir, so
-# `gen_native_skills` (maxdepth-1 copy) never ships it into opencode's skill tree; it lives
-# only in the server image (COPY agents/) for injection here. Skills are keyed by their
-# frontmatter `name` (what the `skill` tool call reports), resolved to a dir via the index.
+_STEP_STAMP_RE = re.compile(
+    r"present_options[^\n]*?\bstep\s*[=:]\s*[\"']([^\"']+)[\"']", re.IGNORECASE
+)
 
 
 def _frontmatter_name(text: str) -> str | None:
@@ -135,9 +126,9 @@ def _frontmatter_name(text: str) -> str | None:
 
 @lru_cache(maxsize=1)
 def _skill_index() -> dict[str, tuple[str, str]]:
-    """Map each skill's frontmatter `name` → (agent, skill-dir relative to the agent's
-    skills/ root). Built once by scanning agents/*/skills/**/SKILL.md; the skill tool call
-    reports the name, and this resolves it to where the step slices live."""
+    """Map each skill's frontmatter `name` → (agent, skill-dir relative to that agent's `skills/`
+    root), by scanning `agents/*/skills/**/SKILL.md`. The `skill` tool call reports the name; this
+    resolves it to where the SKILL.md lives."""
     base = _get_base_dir() / "agents"
     index: dict[str, tuple[str, str]] = {}
     for skill_md in base.glob("*/skills/**/SKILL.md"):
@@ -153,158 +144,101 @@ def _skill_index() -> dict[str, tuple[str, str]]:
     return index
 
 
-# A step's canonical slug is the value it already tells the driver to stamp onto
-# `present_options.step` — e.g. `Call present_options with step="sdg-domain"` → `sdg-domain`. The
-# step block is the SINGLE source of truth, so the value the driver emits and the value the proxy
-# resolves can never drift (deriving the slug from the filename instead silently broke skills whose
-# in-file stamp used a different vocabulary). A block with no explicit stamp falls back to its
-# filename stem minus the ordering prefix (`03-output-format.md` → `output-format`). _norm_step
-# normalizes both sides so a driver emitting `Output Format`/`output_format`/`03-output-format`
-# still resolves.
-_STEP_PREFIX = re.compile(r"^\d+[-_ ]*")
-_STEP_STAMP_RE = re.compile(
-    r"present_options[^\n]*?\bstep\s*[=:]\s*[\"']([^\"']+)[\"']",
-    re.IGNORECASE,
-)
-
-
-def _norm_step(value: str) -> str:
-    out = _STEP_PREFIX.sub("", value.strip().lower())
-    out = re.sub(r"[\s_]+", "-", out)
-    return out.strip("-")
-
-
-def _step_slug(path: Path, text: str) -> str:
-    """The step id the driver is told to stamp on `present_options.step` for this step: the value
-    from the block's own present_options instruction, else the filename stem (both normalized)."""
-    match = _STEP_STAMP_RE.search(text)
-    return _norm_step(match.group(1) if match else path.stem)
-
-
-@lru_cache(maxsize=256)
-def _skill_step_entries(skill_name: str) -> tuple[tuple[str, str], ...]:
-    """The ordered `(slug, detail-block)` pairs for a skill, or () when it is unknown or has no
-    `steps/` dir (not a stepped skill — no injection). `slug` is the step id the driver stamps on
-    `present_options.step` (see _step_slug); the block is the file body. Files are ordered by name,
-    so they must carry a zero-padded numeric prefix (01-, 02-, …). Empty files are skipped, so slug
-    and block indices stay aligned. Cached like `_load`."""
+@lru_cache(maxsize=64)
+def _skill_steps(skill_name: str) -> tuple[tuple[str, str], ...]:
+    """Ordered `(slug, title)` for each `### ` step heading in a skill's resident SKILL.md that
+    carries a slug — a heading `<!--signal:…-->` marker (preferred; the same convention workflow
+    sections use) or, failing that, a `present_options(step="…")` stamp in its body. Headings with
+    neither (reference sections like `### columns`, or a generate-only step) are skipped. `()` for
+    an unknown skill. Cached like `_sections`; tests writing SKILL.md on the fly call
+    `_skill_steps.cache_clear()`."""
     entry = _skill_index().get(skill_name)
     if entry is None:
         return ()
     agent, reldir = entry
-    steps_dir = _get_base_dir() / "agents" / agent / "skills" / reldir / "steps"
+    path = _get_base_dir() / "agents" / agent / "skills" / reldir / "SKILL.md"
     try:
-        files = sorted(steps_dir.glob("*.md"))
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return ()
     out: list[tuple[str, str]] = []
-    for path in files:
-        try:
-            text = path.read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        if text:
-            out.append((_step_slug(path, text), text))
+    title: str | None = None
+    marker: str | None = None
+    body: list[str] = []
+
+    def _flush() -> None:
+        if title is None:
+            return
+        if marker:
+            out.append((marker, title))
+            return
+        stamp = _STEP_STAMP_RE.search("\n".join(body))
+        if stamp:
+            out.append((_norm(stamp.group(1)), title))
+
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("### "):
+            _flush()
+            raw = s[4:].strip()
+            found = _SIGNAL_MARKER.search(raw)
+            title, marker, body = _SIGNAL_MARKER.sub("", raw).strip(), (
+                found.group(1) if found else None
+            ), []
+        else:
+            body.append(line)
+    _flush()
     return tuple(out)
 
 
-def _skill_steps(skill_name: str) -> tuple[str, ...]:
-    """The ordered step-detail blocks for a skill (see _skill_step_entries)."""
-    return tuple(block for _slug, block in _skill_step_entries(skill_name))
-
-
-def skill_step_index_for_slug(skill_name: str | None, value: str | None) -> int:
-    """Resolve a `present_options.step` value the driver reported to the 0-based index of the
-    matching step, or -1 when the skill is not stepped or the value matches no step. Matching
-    is on the normalized slug, so prefix/case/separator drift still resolves."""
-    if not skill_name or not value:
-        return -1
-    target = _norm_step(value)
-    if not target:
-        return -1
-    for idx, (slug, _block) in enumerate(_skill_step_entries(skill_name)):
-        if slug == target:
-            return idx
-    return -1
-
-
-def skill_step_count(skill_name: str | None) -> int:
-    """How many step slices a skill has (0 if it is not a stepped skill)."""
-    if not skill_name:
-        return 0
-    return len(_skill_steps(skill_name))
-
-
-# The review-card tool a step's detail drives (a prompt the user must review/approve). Kept as a
-# literal here rather than imported from agent_confirm so phases.py stays free of the api.agent
-# layer; the two must agree (there is only this one review tool today).
-_REVIEW_TOOL_IN_STEP = "show_prompt"
-
-
-def skill_step_is_review(skill_name: str | None, step_value: str | None) -> bool:
-    """True when `step_value` (a present_options.step the driver stamped) names a step whose
-    detail block drives a review card (a show_prompt). The approval question for a prompt carries
-    that step's own slug, so a review card legitimately shares a turn only with a question on such
-    a step — the gate defers review cards stacked under a question on any OTHER step."""
-    if not skill_name or not step_value:
-        return False
-    target = _norm_step(step_value)
-    if not target:
-        return False
-    return any(
-        slug == target and _REVIEW_TOOL_IN_STEP in block
-        for slug, block in _skill_step_entries(skill_name)
-    )
-
-
-def _step_heading(block: str) -> str:
-    """The step block's first heading line, stripped of leading `#`/space (e.g.
-    `### Step 3 — Output format` → `Step 3 — Output format`), or "" if none."""
-    for line in block.splitlines():
-        s = line.strip()
-        if s:
-            return s.lstrip("#").strip()
-    return ""
-
-
-def skill_step_title(skill_name: str | None, idx: int) -> str | None:
-    """The heading text of a skill's `idx`-th step (for a 'still to gather' list), or None
-    when the skill is not stepped or `idx` is out of range."""
-    block = skill_step_block(skill_name, idx)
-    return _step_heading(block) if block is not None else None
-
-
-def skill_optional_step_indices(skill_name: str | None) -> frozenset[int]:
-    """Indices of steps marked OPTIONAL — their heading contains "(optional)". These are
-    injectable if the driver reaches them, but never counted as a required gap (so coverage
-    tracking neither lists them as outstanding nor pulls the driver back to them)."""
-    if not skill_name:
-        return frozenset()
-    return frozenset(
-        idx
-        for idx, block in enumerate(_skill_steps(skill_name))
-        if "optional" in _step_heading(block).lower()
-    )
-
-
-def skill_step_block(skill_name: str | None, idx: int) -> str | None:
-    """The `idx`-th (0-based) step-detail block for a skill, or None when the skill is not
-    stepped or `idx` is out of range (past the last step — nothing more to inject)."""
-    if not skill_name or idx < 0:
+def skill_step_title(skill_name: str | None, stamp: str | None) -> str | None:
+    """The SKILL.md step title for the `present_options.step` stamp the agent last emitted, matched
+    on the normalized stamp (exact or prefix). None when the skill or stamp is unknown."""
+    if not skill_name or not stamp:
         return None
-    steps = _skill_steps(skill_name)
-    if idx >= len(steps):
+    target = _norm(stamp)
+    if not target:
         return None
-    return steps[idx]
+    for slug, title in _skill_steps(skill_name):
+        if slug == target or slug.startswith(f"{target}-") or target.startswith(f"{slug}-"):
+            return title
+    return None
 
 
-def with_skill_step_block(skill_name: str | None, idx: int, text: str) -> str:
-    """Prepend a skill's `idx`-th step-detail block to a turn message, if one exists.
+def subagent_pointer(
+    agent: str | None,
+    step: str | None,
+    skill: str | None = None,
+    skill_step: str | None = None,
+) -> str | None:
+    """A SHORT system-channel pointer re-anchoring a subagent to its RESIDENT instructions.
 
-    Wrapped in a `<system-reminder>` like `with_block`. No-op when the skill is not stepped
-    or `idx` is out of range, so callers wrap unconditionally."""
-    block = skill_step_block(skill_name, idx)
-    if not block:
-        return text
-    wrapped = system_reminder(block)
-    return f"{wrapped}\n\n{text}" if text else wrapped
+    Names the current `## Workflow` section (from the signalled step) and, when a skill is loaded
+    during gathering, the current SKILL.md step (from the `present_options` stamp). None for a
+    non-subagent (the orchestrator) or an agent with no workflow.md (no-op, so callers can compose
+    it unconditionally). Delivered via opencode's `system` field — a raw, tagged instruction like
+    the other system-channel steers (`[SYSTEM EVENT]`, …), NOT wrapped in `<system-reminder>` and
+    never prepended to the user text."""
+    if not agent or agent not in _SUBAGENTS or not _sections(agent):
+        return None
+    wf_title = _resolve_title(agent, step)
+    wf_at = f" — your current step is **{wf_title}**" if wf_title else ""
+
+    skill_clause = ""
+    if skill:
+        step_title = skill_step_title(skill, skill_step)
+        on = f", and you are on **{step_title}**" if step_title else ""
+        skill_clause = (
+            f" You have the **{skill}** skill loaded; its gathering steps are resident in the "
+            f"SKILL.md{on}. Work that `### Step` sequence IN ORDER — ask ONE question per turn "
+            "with `present_options` and do not skip or batch steps."
+        )
+
+    return (
+        f"[ACTIVE PHASE] You are in the {agent} workflow{wf_at}. Your full step-by-step "
+        "instructions are resident in the `## Workflow` section of your system prompt."
+        f"{skill_clause} Find your current step there and follow it now, in order. When a step "
+        "calls for a transition tool (e.g. `request_orchestrator_help`, "
+        "`signal_subagent_completion`), CALL the tool — do NOT describe the action in prose. Do "
+        "not work ahead to a later step."
+    )

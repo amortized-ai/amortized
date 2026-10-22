@@ -55,17 +55,6 @@ find $(AGENTS_DIR) -path '*/skills/*/SKILL.md' | while read skill; do \
 	if [ -z "$$n" ]; then echo "ERROR: no frontmatter name in $$skill" >&2; exit 1; fi; \
 	mkdir -p "$(1)/$$n"; \
 	find "$$d" -maxdepth 1 -type f ! -name reference-payload.json -exec cp {} "$(1)/$$n/" \; ; \
-	: '# A stepped skill (one with a steps/ dir) gets its FIRST step appended to the served'; \
-	: '# SKILL.md, wrapped in the same <system-reminder> the proxy uses for later steps, so'; \
-	: '# step 1 detail is present the moment the skill loads (not a turn later). The proxy'; \
-	: '# injects steps 2..N at runtime (_RESIDENT_SKILL_STEPS=1); steps/ itself is never copied'; \
-	: '# (maxdepth 1) — only step 1 text rides along, inside SKILL.md.'; \
-	first=$$(ls "$$d"/steps/*.md 2>/dev/null | sort | head -1); \
-	if [ -n "$$first" ]; then \
-		printf '\n\n<system-reminder>\n' >> "$(1)/$$n/SKILL.md"; \
-		cat "$$first" >> "$(1)/$$n/SKILL.md"; \
-		printf '</system-reminder>\n' >> "$(1)/$$n/SKILL.md"; \
-	fi; \
 done
 endef
 
