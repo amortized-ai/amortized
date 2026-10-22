@@ -47,75 +47,81 @@ function referenceText(kind: AttachKind, filename: string, runId: string): strin
  * existing dataset/document tools. Both upload endpoints are 202-async, so the
  * artifact id (the completed job's mlflow_run_id) is only known after the job lands.
  *
- * Progress is kept in the chat store keyed by conversation (not component state), so it
- * survives the keyed ChatContent remount on conversation switch and shows in the
- * conversation the upload started in. Success needs no toast (the posted reference turn
- * is the confirmation); only failures toast (brief + obvious).
- *
- * References are delivered one at a time by a drain driven off each send's completion.
- * `onReference` returns whether it delivered (false = the chat couldn't accept it): an
- * undelivered reference stays queued and a later idle transition resumes the drain, so
- * none is lost or stuck. Attaches track concurrently, so a second is never dropped.
+ * Progress (statuses) and the pending-reference queue both live in the chat store keyed
+ * by conversation, so they survive the keyed ChatContent remount on conversation switch.
+ * A reference is bound to the conversation the upload STARTED in and delivered only when
+ * that conversation is active and idle — so it is never lost on a switch and never lands
+ * in a different conversation. Delivery is one-at-a-time, driven off each send's
+ * completion; `onReference` returns false when the chat can't accept it, leaving the
+ * reference queued to retry. Success needs no toast (the posted turn is the
+ * confirmation); only failures toast.
  */
 export function useAttachUpload(onReference: (text: string) => unknown, canSend = true) {
   const queryClient = useQueryClient()
-  const pendingRefs = useRef<string[]>([])
-  const drainingRef = useRef(false)
-
+  const myConvId = useChatStore((s) => s.currentConversationId)
   const statuses = useChatStore(
     (s) => s.attachStatuses[s.currentConversationId ?? ""] ?? EMPTY_STATUSES,
   )
+  const drainingRef = useRef(false)
 
-  // Read latest props at dispatch time (which can be minutes after a track starts)
+  // Read latest values at dispatch time (which can be minutes after a track starts)
   // without re-creating callbacks; synced after render, never during it.
   const onReferenceRef = useRef(onReference)
   const canSendRef = useRef(canSend)
+  const myConvIdRef = useRef(myConvId)
   useEffect(() => {
     onReferenceRef.current = onReference
     canSendRef.current = canSend
+    myConvIdRef.current = myConvId
   })
 
-  // Deliver queued references one at a time. Await each send and advance only once it
-  // reports delivery; a send that reports false (chat busy / couldn't accept) leaves
-  // the reference queued and stops the drain — the idle effect below resumes it.
+  // Deliver THIS conversation's queued references (kept in the store) one at a time while
+  // idle, via this conversation's onReference. Advance only once a send reports delivery;
+  // a send that reports false leaves the reference queued for the next idle tick.
   const drain = useCallback(async () => {
     if (drainingRef.current) return
+    const convId = myConvIdRef.current
+    if (!convId) return
     drainingRef.current = true
     try {
-      while (canSendRef.current && pendingRefs.current.length > 0) {
-        const next = pendingRefs.current[0]!
-        const delivered = await onReferenceRef.current(next)
+      while (canSendRef.current) {
+        const queue = useChatStore.getState().pendingReferences[convId] ?? []
+        if (queue.length === 0) break
+        const delivered = await onReferenceRef.current(queue[0]!)
         if (delivered === false) break
-        pendingRefs.current.shift()
+        useChatStore.getState().shiftReference(convId)
       }
     } finally {
       drainingRef.current = false
     }
   }, [])
 
+  // Enqueue to the conversation the upload started in (not the current one), then try to
+  // deliver.
   const postReference = useCallback(
-    (text: string) => {
-      pendingRefs.current.push(text)
+    (convId: string, text: string) => {
+      useChatStore.getState().enqueueReference(convId, text)
       void drain()
     },
     [drain],
   )
 
-  // Resume draining when the chat returns to idle — a reference may have been deferred
-  // because the chat was busy, or a prior send reported it couldn't be delivered.
+  // Resume draining when this conversation becomes active or the chat returns to idle.
   useEffect(() => {
     if (canSend) void drain()
-  }, [canSend, drain])
+  }, [canSend, myConvId, drain])
 
   const track = useCallback(
-    async (jobId: string, kind: AttachKind, filename: string) => {
+    async (jobId: string, kind: AttachKind, filename: string, convId: string | null) => {
       const job = await pollJobUntilTerminal(jobId)
       if (job.status === "succeeded" && job.mlflow_run_id) {
         void queryClient.invalidateQueries({ queryKey: ["jobs"] })
         void queryClient.invalidateQueries({
           queryKey: kind === "dataset" ? ["mlflow", "datasets"] : ["documents"],
         })
-        postReference(referenceText(kind, filename, job.mlflow_run_id))
+        // Bind the reference to the originating conversation; if there wasn't one, don't
+        // deliver (rather than risk delivering to whichever conversation is current now).
+        if (convId) postReference(convId, referenceText(kind, filename, job.mlflow_run_id))
       } else {
         toast.error(`${filename} failed: ${job.error ?? "processing did not complete"}`, {
           duration: 4000,
@@ -125,16 +131,15 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
     [postReference, queryClient],
   )
 
-  // Progress goes to the conversation the upload started in (captured now), so it is
-  // attributed correctly even if the user switches conversations mid-upload. No
-  // single-slot guard — dataset and document attaches track concurrently.
+  // Progress goes to the conversation the upload started in (captured now). No single-slot
+  // guard — dataset and document attaches track concurrently.
   const run = useCallback(
-    async (message: string, work: () => Promise<void>) => {
+    async (message: string, work: (convId: string | null) => Promise<void>) => {
       const convId = useChatStore.getState().currentConversationId
       const id = statusIdCounter++
       if (convId) useChatStore.getState().addAttachStatus(convId, { id, message })
       try {
-        await work()
+        await work(convId)
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Attachment failed", { duration: 4000 })
       } finally {
@@ -147,9 +152,9 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
   // Dataset has no reusable upload component, so upload here then track the job.
   const attachDataset = useCallback(
     (file: File) => {
-      void run(`Uploading ${file.name}`, async () => {
+      void run(`Uploading ${file.name}`, async (convId) => {
         const job = await uploadDataset(file)
-        await track(job.id, "dataset", file.name)
+        await track(job.id, "dataset", file.name, convId)
       })
     },
     [run, track],
@@ -158,8 +163,8 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
   // Document reuses UploadDocumentDialog, which already submitted; just track the job.
   const attachDocument = useCallback(
     (jobId: string, filename: string) => {
-      void run(`Processing ${filename}`, async () => {
-        await track(jobId, "document", filename)
+      void run(`Processing ${filename}`, async (convId) => {
+        await track(jobId, "document", filename, convId)
       })
     },
     [run, track],

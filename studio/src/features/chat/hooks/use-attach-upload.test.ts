@@ -23,8 +23,8 @@ beforeEach(() => {
   vi.mocked(toast.loading).mockClear()
   vi.mocked(toast.success).mockClear()
   vi.mocked(toast.error).mockClear()
-  // Status is stored keyed by the active conversation; give tests one.
-  useChatStore.setState({ currentConversationId: "test-conv", attachStatuses: {} })
+  // Status + pending references are stored keyed by the active conversation; give tests one.
+  useChatStore.setState({ currentConversationId: "test-conv", attachStatuses: {}, pendingReferences: {} })
 })
 
 afterEach(() => {
@@ -235,5 +235,39 @@ describe("useAttachUpload", () => {
     await waitFor(() =>
       expect(result.current.statuses.map((s) => s.message)).toContain("Processing spec.pdf"),
     )
+  })
+
+  it("delivers a queued reference after switching conversations away and back", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("/jobs/doc-job"))
+        return jsonResponse(makeJob({ id: "doc-job", status: "succeeded", mlflow_run_id: "doc-run" }))
+      return jsonResponse({})
+    })
+    useChatStore.setState({ currentConversationId: "conv-A", attachStatuses: {}, pendingReferences: {} })
+    const onReference = vi.fn().mockReturnValue(true)
+    const { result, rerender } = renderHook(
+      ({ canSend }: { canSend: boolean }) => useAttachUpload(onReference, canSend),
+      { wrapper: createWrapper(), initialProps: { canSend: false } },
+    )
+
+    // Attach in conv-A while the chat is busy -> the reference is queued, not delivered.
+    act(() => {
+      result.current.attachDocument("doc-job", "spec.pdf")
+    })
+    await waitFor(() => expect(useChatStore.getState().pendingReferences["conv-A"]?.length).toBe(1))
+    expect(onReference).not.toHaveBeenCalled()
+
+    // Switch to another conversation -> the queued reference survives (still keyed to A).
+    act(() => useChatStore.setState({ currentConversationId: "conv-B" }))
+    expect(useChatStore.getState().pendingReferences["conv-A"]?.length).toBe(1)
+
+    // Switch back to A and go idle -> delivered, and only to A.
+    act(() => {
+      useChatStore.setState({ currentConversationId: "conv-A" })
+      rerender({ canSend: true })
+    })
+    await waitFor(() => expect(onReference).toHaveBeenCalledTimes(1))
+    expect(onReference.mock.calls[0]![0] as string).toContain("document_id: doc-run")
+    expect(useChatStore.getState().pendingReferences["conv-A"]).toBeUndefined()
   })
 })

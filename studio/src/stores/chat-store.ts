@@ -65,6 +65,7 @@ interface ChatStoreState {
   jobInFlight: Record<string, boolean>
   drafts: Record<string, string>
   attachStatuses: Record<string, AttachStatus[]>
+  pendingReferences: Record<string, string[]>
   _hasHydrated: boolean
   setCurrentConversationId: (id: string | null) => void
   setPanelOpen: (open: boolean) => void
@@ -93,6 +94,8 @@ interface ChatStoreState {
   getDraft: (conversationId: string) => string
   addAttachStatus: (conversationId: string, status: AttachStatus) => void
   removeAttachStatus: (conversationId: string, id: number) => void
+  enqueueReference: (conversationId: string, text: string) => void
+  shiftReference: (conversationId: string) => void
 }
 
 export const useChatStore = create<ChatStoreState>()(
@@ -108,6 +111,7 @@ export const useChatStore = create<ChatStoreState>()(
       jobInFlight: {},
       drafts: {},
       attachStatuses: {},
+      pendingReferences: {},
       _hasHydrated: false,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
       setPanelOpen: (open) => set({ panelOpen: open }),
@@ -124,6 +128,7 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _as, ...restAttachStatuses } = s.attachStatuses  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _pr, ...restPendingReferences } = s.pendingReferences  // eslint-disable-line @typescript-eslint/no-unused-vars
           return {
             conversations: remaining,
             sessionMap: restSessionMap,
@@ -132,6 +137,7 @@ export const useChatStore = create<ChatStoreState>()(
             jobInFlight: restJobInFlight,
             drafts: restDrafts,
             attachStatuses: restAttachStatuses,
+            pendingReferences: restPendingReferences,
             currentConversationId:
               s.currentConversationId === id
                 ? (remaining[0]?.id ?? null)
@@ -253,6 +259,22 @@ export const useChatStore = create<ChatStoreState>()(
             return { attachStatuses: rest }
           }
           return { attachStatuses: { ...s.attachStatuses, [conversationId]: next } }
+        }),
+      enqueueReference: (conversationId, text) =>
+        set((s) => ({
+          pendingReferences: {
+            ...s.pendingReferences,
+            [conversationId]: [...(s.pendingReferences[conversationId] ?? []), text],
+          },
+        })),
+      shiftReference: (conversationId) =>
+        set((s) => {
+          const next = (s.pendingReferences[conversationId] ?? []).slice(1)
+          if (next.length === 0) {
+            const { [conversationId]: _drop, ...rest } = s.pendingReferences  // eslint-disable-line @typescript-eslint/no-unused-vars
+            return { pendingReferences: rest }
+          }
+          return { pendingReferences: { ...s.pendingReferences, [conversationId]: next } }
         }),
     }),
     {
