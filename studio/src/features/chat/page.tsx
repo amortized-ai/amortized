@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { useChat } from "./hooks/use-chat"
+import { useAttachUpload } from "./hooks/use-attach-upload"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { useUIStore } from "@/stores/ui-store"
@@ -8,7 +9,7 @@ import { useDragResize } from "@/hooks/use-drag-resize"
 import { cn } from "@/lib/utils"
 import { MessageList } from "./components/message-list"
 import { ChatInput } from "./components/chat-input"
-import { ChatAttach } from "./components/chat-attach"
+import { ChatAttach, ChatAttachStatus } from "./components/chat-attach"
 import { ConversationList } from "./components/conversation-list"
 import { PlanProgress } from "./components/plan-progress"
 import { DeleteConversationDialog } from "./components/delete-conversation-dialog"
@@ -67,6 +68,12 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
     [sendMessage, selectOption, navigate, sendBlockedReason],
   )
 
+  const canSend = !isStreaming && !jobInFlight && !sendBlockedReason
+  const { attachDataset, attachDocument, statuses, isUploading } = useAttachUpload(
+    (text) => sendMessage(text),
+    canSend,
+  )
+
   return (
     <>
       <PlanProgress plan={phasePlan} />
@@ -89,11 +96,12 @@ function ChatContent({ sendBlockedReason }: { sendBlockedReason?: string }) {
         disabled={isStreaming || !!sendBlockedReason}
         leftSlot={
           <ChatAttach
-            onReference={(text) => sendMessage(text)}
-            canSend={!isStreaming && !jobInFlight && !sendBlockedReason}
-            disabled={isStreaming || !!sendBlockedReason}
+            onDataset={attachDataset}
+            onDocument={attachDocument}
+            disabled={isStreaming || !!sendBlockedReason || isUploading}
           />
         }
+        aboveSlot={<ChatAttachStatus statuses={statuses} />}
         placeholder={
           jobInFlight
             ? "A job is running — Morty will continue when it finishes…"

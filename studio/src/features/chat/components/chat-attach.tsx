@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { Database, FileText, Paperclip } from "lucide-react"
+import { Database, FileText, Loader2, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -8,27 +8,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { UploadDocumentDialog } from "@/features/documents/components/upload-document-dialog"
-import { useAttachUpload } from "../hooks/use-attach-upload"
+import type { AttachStatus } from "../hooks/use-attach-upload"
 
 interface ChatAttachProps {
-  // Posts a reference to the uploaded artifact into the conversation (usually sendMessage).
-  // Returns whether the chat accepted it (false = deferred) so the hook can re-queue.
-  onReference: (text: string) => unknown
-  // Whether the chat can accept a new turn now; a reference that resolves while the
-  // chat is busy is queued and flushed when this goes true.
-  canSend?: boolean
+  onDataset: (file: File) => void
+  onDocument: (jobId: string, filename: string) => void
   disabled?: boolean
 }
 
-export function ChatAttach({ onReference, canSend = true, disabled = false }: ChatAttachProps) {
+export function ChatAttach({ onDataset, onDocument, disabled = false }: ChatAttachProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [docOpen, setDocOpen] = useState(false)
-  const { attachDataset, attachDocument, isUploading } = useAttachUpload(onReference, canSend)
 
   function handleDatasetFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ""
-    if (file) attachDataset(file)
+    if (file) onDataset(file)
   }
 
   return (
@@ -39,7 +34,7 @@ export function ChatAttach({ onReference, canSend = true, disabled = false }: Ch
             type="button"
             size="icon"
             variant="ghost"
-            disabled={disabled || isUploading}
+            disabled={disabled}
             aria-label="Attach data"
             className="h-11 w-11 rounded-xl shrink-0 text-muted-foreground hover:text-foreground"
           >
@@ -69,8 +64,24 @@ export function ChatAttach({ onReference, canSend = true, disabled = false }: Ch
         open={docOpen}
         onOpenChange={setDocOpen}
         showTrigger={false}
-        onUploaded={(jobId, filename) => attachDocument(jobId, filename)}
+        onUploaded={(jobId, filename) => onDocument(jobId, filename)}
       />
     </>
+  )
+}
+
+// Inline, non-blocking upload progress shown above the composer (one row per in-flight
+// attach). Replaces the loading/success toasts, which covered the composer's Send button.
+export function ChatAttachStatus({ statuses }: { statuses: AttachStatus[] }) {
+  if (statuses.length === 0) return null
+  return (
+    <div className="space-y-1" data-testid="chat-attach-status">
+      {statuses.map((s) => (
+        <div key={s.id} className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+          <span className="truncate">{s.message}…</span>
+        </div>
+      ))}
+    </div>
   )
 }

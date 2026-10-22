@@ -9,6 +9,11 @@ const POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 type AttachKind = "dataset" | "document"
 
+export interface AttachStatus {
+  id: number
+  message: string
+}
+
 async function pollJobUntilTerminal(jobId: string): Promise<Job> {
   const deadline = Date.now() + POLL_TIMEOUT_MS
   for (;;) {
@@ -37,17 +42,21 @@ function referenceText(kind: AttachKind, filename: string, runId: string): strin
  * existing dataset/document tools. Both upload endpoints are 202-async, so the
  * artifact id (the completed job's mlflow_run_id) is only known after the job lands.
  *
- * References are delivered one at a time by a drain driven off each send's completion,
- * not off a `canSend` side-effect. `onReference` returns whether it delivered (false =
- * the chat couldn't accept it right now): a deferred/undelivered reference stays queued
- * and a later idle transition resumes the drain, so none is lost or stuck. Attaches
- * themselves track concurrently, so a second attach is never dropped.
+ * Progress is reported via `statuses` (rendered inline, non-blocking) rather than a
+ * toast that would cover the composer; success needs no toast because the posted
+ * reference turn is the confirmation; only failures toast (brief + obvious).
+ *
+ * References are delivered one at a time by a drain driven off each send's completion.
+ * `onReference` returns whether it delivered (false = the chat couldn't accept it): an
+ * undelivered reference stays queued and a later idle transition resumes the drain, so
+ * none is lost or stuck. Attaches track concurrently, so a second is never dropped.
  */
 export function useAttachUpload(onReference: (text: string) => unknown, canSend = true) {
   const queryClient = useQueryClient()
-  const [activeCount, setActiveCount] = useState(0)
+  const [statuses, setStatuses] = useState<AttachStatus[]>([])
   const pendingRefs = useRef<string[]>([])
   const drainingRef = useRef(false)
+  const idRef = useRef(0)
 
   // Read latest props at dispatch time (which can be minutes after a track starts)
   // without re-creating callbacks; synced after render, never during it.
@@ -91,10 +100,9 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
   }, [canSend, drain])
 
   const track = useCallback(
-    async (jobId: string, kind: AttachKind, filename: string, toastId: string | number) => {
+    async (jobId: string, kind: AttachKind, filename: string) => {
       const job = await pollJobUntilTerminal(jobId)
       if (job.status === "succeeded" && job.mlflow_run_id) {
-        toast.success(`Attached ${filename}`, { id: toastId, duration: 4000 })
         void queryClient.invalidateQueries({ queryKey: ["jobs"] })
         void queryClient.invalidateQueries({
           queryKey: kind === "dataset" ? ["mlflow", "datasets"] : ["documents"],
@@ -102,7 +110,6 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
         postReference(referenceText(kind, filename, job.mlflow_run_id))
       } else {
         toast.error(`${filename} failed: ${job.error ?? "processing did not complete"}`, {
-          id: toastId,
           duration: 4000,
         })
       }
@@ -110,22 +117,18 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
     [postReference, queryClient],
   )
 
-  // No single-slot guard: dataset and document attaches track concurrently, so a
-  // document upload that completes while a dataset attach is active is still tracked
-  // and referenced (and vice versa).
+  // Inline, non-blocking progress (see `statuses`); errors stay as a toast. No
+  // single-slot guard — dataset and document attaches track concurrently.
   const run = useCallback(
-    async (loadingMessage: string, work: (toastId: string | number) => Promise<void>) => {
-      setActiveCount((n) => n + 1)
-      const toastId = toast.loading(loadingMessage)
+    async (message: string, work: () => Promise<void>) => {
+      const id = idRef.current++
+      setStatuses((s) => [...s, { id, message }])
       try {
-        await work(toastId)
+        await work()
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Attachment failed", {
-          id: toastId,
-          duration: 4000,
-        })
+        toast.error(err instanceof Error ? err.message : "Attachment failed", { duration: 4000 })
       } finally {
-        setActiveCount((n) => n - 1)
+        setStatuses((s) => s.filter((x) => x.id !== id))
       }
     },
     [],
@@ -134,9 +137,9 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
   // Dataset has no reusable upload component, so upload here then track the job.
   const attachDataset = useCallback(
     (file: File) => {
-      void run(`Uploading ${file.name}...`, async (toastId) => {
+      void run(`Uploading ${file.name}`, async () => {
         const job = await uploadDataset(file)
-        await track(job.id, "dataset", file.name, toastId)
+        await track(job.id, "dataset", file.name)
       })
     },
     [run, track],
@@ -145,12 +148,12 @@ export function useAttachUpload(onReference: (text: string) => unknown, canSend 
   // Document reuses UploadDocumentDialog, which already submitted; just track the job.
   const attachDocument = useCallback(
     (jobId: string, filename: string) => {
-      void run(`Processing ${filename}...`, async (toastId) => {
-        await track(jobId, "document", filename, toastId)
+      void run(`Processing ${filename}`, async () => {
+        await track(jobId, "document", filename)
       })
     },
     [run, track],
   )
 
-  return { attachDataset, attachDocument, isUploading: activeCount > 0 }
+  return { attachDataset, attachDocument, statuses, isUploading: statuses.length > 0 }
 }

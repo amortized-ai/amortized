@@ -194,8 +194,8 @@ describe("useAttachUpload", () => {
       result.current.attachDocument("doc-job", "spec.pdf")
     })
 
-    // The job resolves, but the chat is busy -> the reference is queued, not sent.
-    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalled())
+    // The job resolves (upload finishes), but the chat is busy -> queued, not sent.
+    await waitFor(() => expect(result.current.isUploading).toBe(false))
     expect(onReference).not.toHaveBeenCalled()
 
     // Chat goes idle -> the queued reference flushes.
