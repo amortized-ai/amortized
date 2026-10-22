@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react"
+import { useContext, useEffect, useId, useRef, useState } from "react"
 import { Check, ChevronDown, X } from "lucide-react"
 import {
   Select,
@@ -50,6 +50,7 @@ export function DocumentPickerField({
   required,
 }: PickerFieldProps) {
   const [open, setOpen] = useState(false)
+  const triggerId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const { data: documents = [] } = useDocuments()
   const selected = Array.isArray(value)
@@ -87,7 +88,7 @@ export function DocumentPickerField({
         if (e.key === "Escape") setOpen(false)
       }}
     >
-      <FieldLabel label={label} required={required} />
+      <FieldLabel label={label} htmlFor={triggerId} required={required} />
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {selected.map((id) => (
@@ -109,7 +110,7 @@ export function DocumentPickerField({
         </div>
       )}
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors hover:border-border">
+        <CollapsibleTrigger id={triggerId} className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors hover:border-border">
           <span className="text-muted-foreground">
             {selected.length > 0 ? `${selected.length} selected` : "Select documents..."}
           </span>
@@ -169,6 +170,7 @@ export function DatasetPickerField({
   required,
   valueKey = "job_id",
 }: Omit<PickerFieldProps, "label"> & { valueKey?: "job_id" | "run_id" }) {
+  const triggerId = useId()
   const { data: datasets = [] } = useDatasets()
   const options = datasets
     .map((d) => ({
@@ -184,9 +186,9 @@ export function DatasetPickerField({
     <div className="space-y-1">
       {/* Always labelled "Dataset" — the user is picking a dataset, not the raw
           parent_job_id / data_run_id field it's stored in. */}
-      <FieldLabel label="Dataset" required={required} />
+      <FieldLabel label="Dataset" htmlFor={triggerId} required={required} />
       <Select value={current || undefined} onValueChange={(v) => onChange(v)}>
-        <SelectTrigger className="h-9">
+        <SelectTrigger id={triggerId} className="h-9">
           {/* Custom trigger content so it stays single-line (the items are two-line). */}
           {selected ? (
             <span className="truncate">{selected.name}</span>
@@ -236,6 +238,7 @@ export function ModelPickerField({
   description?: string
   required?: boolean
 }) {
+  const triggerId = useId()
   const { data } = useGatewayModels()
   const models = data?.models ?? []
   const known = models.some((m) => m.name === model && m.provider === provider)
@@ -251,7 +254,7 @@ export function ModelPickerField({
 
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} required={required} />
+      <FieldLabel label={label} htmlFor={triggerId} required={required} />
       <Select
         value={current || undefined}
         onValueChange={(v) => {
@@ -259,7 +262,7 @@ export function ModelPickerField({
           onChange(v.slice(idx + 1), v.slice(0, idx))
         }}
       >
-        <SelectTrigger className="h-9">
+        <SelectTrigger id={triggerId} className="h-9">
           <SelectValue placeholder="Select a model..." />
         </SelectTrigger>
         <SelectContent>
@@ -304,15 +307,16 @@ export function ModelAliasField({
   description,
   required,
 }: PickerFieldProps) {
+  const triggerId = useId()
   const aliases = useContext(SdgModelAliasesContext).filter(Boolean)
   const current = typeof value === "string" ? value : ""
   const known = aliases.includes(current)
 
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} required={required} />
+      <FieldLabel label={label} htmlFor={triggerId} required={required} />
       <Select value={current || undefined} onValueChange={(v) => onChange(v)}>
-        <SelectTrigger className="h-9">
+        <SelectTrigger id={triggerId} className="h-9">
           <SelectValue placeholder="Select a model alias..." />
         </SelectTrigger>
         <SelectContent>

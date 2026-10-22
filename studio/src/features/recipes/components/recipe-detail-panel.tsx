@@ -53,8 +53,12 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
 
   // Block execution while any required field is empty: schema-required (the schema
   // is the source of truth) plus any per-recipe required fields (requiredKeys).
+  // While the schema is still loading we can't evaluate schema-required fields, so
+  // block execution rather than letting an incomplete config submit (→ backend 422).
+  const schemasLoading = schemas === undefined
   const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
   const missingRequired = collectMissingRequired(config, typeSchema, requiredKeys)
+  const canExecute = !schemasLoading && missingRequired.length === 0
 
   const handleExecute = useCallback(() => {
     createMutation.mutate(
@@ -117,6 +121,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
           <Button
             size="sm"
             onClick={() => setExecuteDialogOpen(true)}
+            disabled={schemasLoading}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Play className="mr-1.5 h-3.5 w-3.5" />
@@ -234,7 +239,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
                 </Button>
                 <Button
                   onClick={handleExecute}
-                  disabled={createMutation.isPending || missingRequired.length > 0}
+                  disabled={createMutation.isPending || !canExecute}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {createMutation.isPending ? "Submitting..." : "Submit Job"}
