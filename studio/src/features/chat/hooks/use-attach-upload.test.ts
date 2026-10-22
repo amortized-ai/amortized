@@ -208,4 +208,32 @@ describe("useAttachUpload", () => {
     await waitFor(() => expect(onReference).toHaveBeenCalledTimes(1))
     expect(onReference.mock.calls[0]![0] as string).toContain("document_id: doc-run")
   })
+
+  it("keeps a conversation's status when switching away and back (survives the remount)", async () => {
+    // getJob never resolves, so the upload stays in-flight and the status persists.
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("/jobs/doc-job")) return new Promise<Response>(() => {})
+      return jsonResponse({})
+    })
+    useChatStore.setState({ currentConversationId: "conv-A", attachStatuses: {} })
+    const onReference = vi.fn()
+    const { result } = renderHook(() => useAttachUpload(onReference), { wrapper: createWrapper() })
+
+    act(() => {
+      result.current.attachDocument("doc-job", "spec.pdf")
+    })
+    await waitFor(() =>
+      expect(result.current.statuses.map((s) => s.message)).toContain("Processing spec.pdf"),
+    )
+
+    // Switch to another conversation -> this conversation shows no status.
+    act(() => useChatStore.setState({ currentConversationId: "conv-B" }))
+    await waitFor(() => expect(result.current.isUploading).toBe(false))
+
+    // Switch back -> the original conversation's status is still there.
+    act(() => useChatStore.setState({ currentConversationId: "conv-A" }))
+    await waitFor(() =>
+      expect(result.current.statuses.map((s) => s.message)).toContain("Processing spec.pdf"),
+    )
+  })
 })
