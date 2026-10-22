@@ -37,44 +37,43 @@ function referenceText(kind: AttachKind, filename: string, runId: string): strin
  * existing dataset/document tools. Both upload endpoints are 202-async, so the
  * artifact id (the completed job's mlflow_run_id) is only known after the job lands.
  *
- * `canSend` reflects whether the chat can accept a new turn right now. A reference
- * that resolves while the chat is busy (streaming, locked, or a job in flight) is
- * queued and flushed when it goes idle, so a completed upload never loses its
- * back-reference. Attaches also track concurrently — a second attach is never
- * dropped while another is still in flight.
+ * References go through a one-at-a-time queue, dispatched only while the chat is idle
+ * (`canSend`). That both defers a reference that resolves while the chat is busy
+ * (streaming / locked / job in flight) AND serializes references that resolve
+ * together — handing them straight to `sendMessage` would let the send lock silently
+ * drop all but the first. Attaches themselves track concurrently, so none is dropped.
  */
 export function useAttachUpload(onReference: (text: string) => void, canSend = true) {
   const queryClient = useQueryClient()
   const [activeCount, setActiveCount] = useState(0)
   const pendingRefs = useRef<string[]>([])
+  const [flushTick, setFlushTick] = useState(0)
+  const dispatchingRef = useRef(false)
 
-  // Latest values, read at completion time (which can be minutes later for a
-  // document conversion) without re-creating callbacks or capturing stale props.
-  // Synced after render (not during) so ref access stays out of the render phase.
+  // Read onReference at dispatch time (which can be minutes after a track starts)
+  // without re-creating callbacks; synced after render, never during it.
   const onReferenceRef = useRef(onReference)
-  const canSendRef = useRef(canSend)
   useEffect(() => {
     onReferenceRef.current = onReference
-    canSendRef.current = canSend
   })
 
   const postReference = useCallback((text: string) => {
-    if (canSendRef.current) {
-      onReferenceRef.current(text)
-    } else {
-      pendingRefs.current.push(text)
-    }
+    pendingRefs.current.push(text)
+    setFlushTick((t) => t + 1)
   }, [])
 
-  // Flush one queued reference when the chat goes idle. Sending re-enters streaming,
-  // so the next one waits for the following idle tick — references stay ordered and
-  // none collide with the send lock.
+  // Dispatch at most one queued reference per idle window. While the chat is busy,
+  // clear the in-flight flag so the next reference waits for the following idle tick —
+  // keeping references ordered and clear of the send lock.
   useEffect(() => {
-    if (canSend && pendingRefs.current.length > 0) {
-      const next = pendingRefs.current.shift()!
-      onReferenceRef.current(next)
+    if (!canSend) {
+      dispatchingRef.current = false
+      return
     }
-  }, [canSend])
+    if (dispatchingRef.current || pendingRefs.current.length === 0) return
+    dispatchingRef.current = true
+    onReferenceRef.current(pendingRefs.current.shift()!)
+  }, [canSend, flushTick])
 
   const track = useCallback(
     async (jobId: string, kind: AttachKind, filename: string, toastId: string | number) => {

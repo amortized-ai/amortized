@@ -126,7 +126,7 @@ describe("useAttachUpload", () => {
     expect(msg).toContain("document_id: doc-run")
   })
 
-  it("tracks concurrent dataset and document attaches without dropping either", async () => {
+  it("tracks concurrent attaches and serializes their references (no send-lock drop)", async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes("/datasets/upload")) return jsonResponse(makeJob({ id: "ds-job" }), 202)
       if (url.includes("/jobs/ds-job"))
@@ -136,14 +136,27 @@ describe("useAttachUpload", () => {
       return jsonResponse({})
     })
     const onReference = vi.fn()
-    const { result } = renderHook(() => useAttachUpload(onReference), { wrapper: createWrapper() })
+    const { result, rerender } = renderHook(
+      ({ canSend }: { canSend: boolean }) => useAttachUpload(onReference, canSend),
+      { wrapper: createWrapper(), initialProps: { canSend: true } },
+    )
 
     act(() => {
       result.current.attachDataset(new File(["{}"], "d.jsonl"))
       result.current.attachDocument("doc-job", "s.pdf")
     })
 
+    // Both attaches track to success (neither dropped by a single-slot guard)...
+    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalledTimes(2))
+    // ...but only one reference dispatches while idle — the other is queued, not sent
+    // straight to a locked sendMessage.
+    expect(onReference).toHaveBeenCalledTimes(1)
+
+    // Simulate the dispatched send streaming then finishing; the queued one flushes.
+    act(() => rerender({ canSend: false }))
+    act(() => rerender({ canSend: true }))
     await waitFor(() => expect(onReference).toHaveBeenCalledTimes(2))
+
     const msgs = onReference.mock.calls.map((c) => c[0] as string).join("\n")
     expect(msgs).toContain("run_id: ds-run")
     expect(msgs).toContain("document_id: doc-run")
