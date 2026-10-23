@@ -1,11 +1,54 @@
 """Pydantic models for the Amortized v1 API."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class _ConfigJsonMixin(BaseModel):
+    """Single-string escape hatch for weak models whose tool-call encoder corrupts large
+    multi-argument calls.
+
+    Observed with GLM-5.3-Flash: its native ``<arg_key>/<arg_value>`` tool-call format is
+    mis-parsed for configs ≳5KB — the nested arguments get merged into the first field, so
+    ``validate_sdg_job`` never parses and the agent spins (session ses_ea63dced…, 27 failed
+    attempts). A SINGLE string argument round-trips intact (the ``write`` tool proves this),
+    so letting the agent pass the ENTIRE config as one ``config_json`` string sidesteps the
+    bug for any model. When ``config_json`` is set it FULLY REPLACES the flat arguments.
+    """
+
+    config_json: str | None = Field(
+        default=None,
+        description=(
+            "The entire job config as ONE JSON-string argument. PREFER THIS for any "
+            "non-trivial config: put every field inside this single string instead of "
+            "passing columns/model_configs/etc. as separate arguments. When set, all other "
+            "arguments are ignored. Avoids a tool-call corruption some models hit on large "
+            "multi-field calls."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_config_json(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw = data.get("config_json")
+            if raw not in (None, ""):
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError) as e:
+                    msg = f"config_json must be a valid JSON object string: {e}"
+                    raise ValueError(msg) from e
+                if not isinstance(parsed, dict):
+                    msg = "config_json must decode to a JSON object (the config fields)"
+                    raise ValueError(msg)
+                parsed.pop("config_json", None)
+                return parsed
+        return data
 
 
 class JobType(StrEnum):
@@ -169,8 +212,33 @@ class TrainingJobConfig(BaseModel):
         return self
 
 
-class TrainingJobRequest(TrainingJobConfig):
+class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
+
+    # Override the base (where algorithm is required) so a config_json-only call passes
+    # MCP input validation; the real requirement is enforced after config_json expansion.
+    algorithm: str = Field(
+        "",
+        description=(
+            "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd). "
+            "Required unless the whole config is passed via config_json."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_algorithm_key(cls, data: Any) -> Any:
+        # Mirror the base's key-required contract (algorithm was required there) while
+        # keeping the field schema-optional so a config_json-only call passes MCP input
+        # validation. Only the KEY is enforced — not non-emptiness — so this does not
+        # change what the base accepted. config_json counts as providing it.
+        if isinstance(data, dict) and not data.get("config_json") and "algorithm" not in data:
+            msg = (
+                "algorithm is a required property — provide it, "
+                "or pass the entire config as a single config_json string"
+            )
+            raise ValueError(msg)
+        return data
 
 
 class Job(BaseModel):
@@ -352,14 +420,15 @@ from data_designer.config.processor_types import ProcessorConfigT as SDGProcesso
 from data_designer.config.sampler_constraints import ColumnConstraintInputT  # noqa: E402
 
 
-class SDGJobRequest(BaseModel):
+class SDGJobRequest(_ConfigJsonMixin):
     model_config = ConfigDict(extra="forbid")
 
     columns: list[SDGColumn] = Field(
-        ...,
+        default_factory=list,
         description=(
             "Generation pipeline columns. Evaluated in order; "
-            "later columns reference earlier ones via {{ column_name }}"
+            "later columns reference earlier ones via {{ column_name }}. "
+            "Required (non-empty) unless the whole config is passed via config_json."
         ),
     )
     model_configs: list[DDModelConfig] = Field(
@@ -416,6 +485,22 @@ class SDGJobRequest(BaseModel):
             "~10 samples and verify config before committing"
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_columns_key(cls, data: Any) -> Any:
+        # columns is schema-optional so a config_json-only call passes MCP input
+        # validation (which checks the schema's required list before pydantic runs).
+        # Preserve the original contract otherwise: the columns KEY must be present
+        # (an EMPTY list stays allowed — DD permits it, see test_empty_columns_list).
+        # config_json counts as providing it (it expands to the config, columns and all).
+        if isinstance(data, dict) and not data.get("config_json") and "columns" not in data:
+            msg = (
+                "columns is a required property — provide it (an empty list is allowed), "
+                "or pass the entire config as a single config_json string"
+            )
+            raise ValueError(msg)
+        return data
 
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":
@@ -678,7 +763,7 @@ class EvalJobConfig(BaseModel):
         return self
 
 
-class EvalJobRequest(EvalJobConfig):
+class EvalJobRequest(EvalJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
     acknowledge_warnings: str = Field(
         "",

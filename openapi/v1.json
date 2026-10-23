@@ -3503,6 +3503,18 @@
       },
       "EvalJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "rubric": {
             "items": {
               "$ref": "#/components/schemas/EvalRubricCriterion"
@@ -5186,7 +5198,7 @@
           "locale": {
             "type": "string",
             "title": "Locale",
-            "description": "Locale that determines the language and geographic location that a synthetic person will be sampled from. Must be a locale supported by a managed Nemotron Personas dataset. Managed datasets exist for the following locales: en_US, en_IN, en_SG, fr_FR, hi_Deva_IN, hi_Latn_IN, ja_JP, ko_KR, pt_BR.",
+            "description": "Locale that determines the language and geographic location that a synthetic person will be sampled from. Must be a locale supported by a managed Nemotron Personas dataset. Managed datasets exist for the following locales: en_GB, de_DE, en_US, en_IN, en_SG, fr_FR, hi_Deva_IN, hi_Latn_IN, ja_JP, ko_KR, pt_BR.",
             "default": "en_US"
           },
           "sex": {
@@ -5505,6 +5517,18 @@
       },
       "SDGJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "columns": {
             "items": {
               "anyOf": [
@@ -5545,7 +5569,7 @@
             },
             "type": "array",
             "title": "Columns",
-            "description": "Generation pipeline columns. Evaluated in order; later columns reference earlier ones via {{ column_name }}"
+            "description": "Generation pipeline columns. Evaluated in order; later columns reference earlier ones via {{ column_name }}. Required (non-empty) unless the whole config is passed via config_json."
           },
           "model_configs": {
             "items": {
@@ -5646,9 +5670,6 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "columns"
-        ],
         "title": "SDGJobRequest"
       },
       "SamplerColumnConfig": {
@@ -6555,10 +6576,23 @@
       },
       "TrainingJobRequest": {
         "properties": {
+          "config_json": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Json",
+            "description": "The entire job config as ONE JSON-string argument. PREFER THIS for any non-trivial config: put every field inside this single string instead of passing columns/model_configs/etc. as separate arguments. When set, all other arguments are ignored. Avoids a tool-call corruption some models hit on large multi-field calls."
+          },
           "algorithm": {
             "type": "string",
             "title": "Algorithm",
-            "description": "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd)"
+            "description": "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd). Required unless the whole config is passed via config_json.",
+            "default": ""
           },
           "model_name_or_path": {
             "type": "string",
@@ -6876,9 +6910,6 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "algorithm"
-        ],
         "title": "TrainingJobRequest"
       },
       "UUIDSamplerParams": {
