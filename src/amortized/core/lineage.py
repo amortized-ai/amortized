@@ -96,32 +96,43 @@ def job_ref(job: Mapping[str, Any], field: str) -> str:
 
 
 async def ancestors(
-    job: Mapping[str, Any], fetch: JobFetch, *, _seen: set[str] | None = None
+    job: Mapping[str, Any], fetch: JobFetch
 ) -> AsyncIterator[Mapping[str, Any]]:
     """Yield each upstream job once, following every gated reference field each job
-    carries (``GATED_FIELDS``), depth-first and cycle-safe. Replaces the one-hop,
-    per-call-site parent walks: the chain (eval → training → sdg) is traversed in full.
-    ``job`` is a job row; ``fetch(id)`` resolves an id to a row (or None)."""
-    seen = _seen if _seen is not None else set()
-    for field in GATED_FIELDS:
-        up_id = job_ref(job, field)
-        if not up_id or up_id in seen:
-            continue
-        seen.add(up_id)
-        parent = await fetch(up_id)
-        if parent is None:
-            continue
-        yield parent
-        async for a in ancestors(parent, fetch, _seen=seen):
-            yield a
+    carries (``GATED_FIELDS``), breadth-first (nearest first) and cycle-safe. Replaces the
+    one-hop, per-call-site parent walks: the chain (eval -> training -> sdg) is traversed in
+    full. ``job`` is a job row; ``fetch(id)`` resolves an id to a row (or None).
+
+    Breadth-first so a consumer that wants the *closest* match of some type can stop at the
+    first hit - see ``nearest_ancestor``."""
+    seen: set[str] = set()
+    frontier: list[Mapping[str, Any]] = [job]
+    while frontier:
+        next_frontier: list[Mapping[str, Any]] = []
+        for node in frontier:
+            for field in GATED_FIELDS:
+                up_id = job_ref(node, field)
+                if not up_id or up_id in seen:
+                    continue
+                seen.add(up_id)
+                parent = await fetch(up_id)
+                if parent is None:
+                    continue
+                yield parent
+                next_frontier.append(parent)
+        frontier = next_frontier
 
 
 async def nearest_ancestor(
     job: Mapping[str, Any], job_types: str | Collection[str], fetch: JobFetch
 ) -> Mapping[str, Any] | None:
     """The closest upstream job whose type is in ``job_types`` (multi-hop), or None.
-    e.g. ``nearest_ancestor(eval, "sdg", fetch)`` finds the eval's dataset SDG even if
-    it is reached through the training job."""
+    e.g. ``nearest_ancestor(eval, "sdg", fetch)`` finds the eval's dataset SDG even if it is
+    reached through the training job.
+
+    Reuses the breadth-first ``ancestors`` walk and stops at the first hit, so "closest" is
+    by hop distance: a one-hop match (e.g. an SDG referenced directly via ``data_run_id``)
+    wins over a two-hop match reached through a parent."""
     wanted = {job_types} if isinstance(job_types, str) else set(job_types)
     async for a in ancestors(job, fetch):
         if str(a.get("type") or "") in wanted:

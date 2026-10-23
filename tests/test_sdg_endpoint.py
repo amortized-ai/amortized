@@ -155,17 +155,34 @@ class TestSDGEndpointHappyPath:
 
     @pytest.mark.asyncio
     async def test_with_topic_and_parent(self, client: httpx.AsyncClient) -> None:
+        # The fail-closed dependency gate requires the parent to have succeeded, so seed a
+        # finished (non-preview, MLflow-backed) parent SDG and chain from it.
+        parent = await client.post(
+            "/api/v1/jobs/sdg",
+            json={"columns": [VALID_SAMPLER_COLUMN], "num_records": 10},
+        )
+        assert parent.status_code == 201, parent.text
+        parent_id = parent.json()["id"]
+        import amortized.db.connection as _db_conn
+
+        async with _db_conn._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE jobs SET status = 'succeeded', mlflow_run_id = 'run-parent-123'"
+                " WHERE id = $1",
+                parent_id,
+            )
+
         response = await client.post(
             "/api/v1/jobs/sdg",
             json={
                 "columns": [VALID_SAMPLER_COLUMN],
                 "topic": "OpenShift QA",
-                "parent_job_id": "parent-123",
+                "parent_job_id": parent_id,
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 201, response.text
         data = response.json()
-        assert data["parent_job_id"] == "parent-123"
+        assert data["parent_job_id"] == parent_id
 
 
 # ---------------------------------------------------------------------------

@@ -76,6 +76,19 @@ class Repository:
             return None
         return _row_to_job(row)
 
+    async def get_job_by_mlflow_run(self, run_id: str) -> dict[str, Any] | None:
+        """The job that produced a given MLflow run (its stored `mlflow_run_id`), or None.
+        Resolves a `data_run_id` / `eval_data_run_id` reference back to its producing job -
+        e.g. to reject a preview SDG run used as training/eval data. Newest match wins (a run
+        id is effectively unique, but ORDER BY keeps it deterministic)."""
+        if not run_id:
+            return None
+        row = await self.conn.fetchrow(
+            "SELECT * FROM jobs WHERE mlflow_run_id = $1 ORDER BY created_at DESC LIMIT 1",
+            run_id,
+        )
+        return _row_to_job(row) if row else None
+
     async def find_job_by_id_prefix(self, prefix: str) -> dict[str, Any] | None:
         """A job whose id starts with `prefix` — the UI and model routinely cite an
         8-char id prefix. None when nothing matches OR the prefix is ambiguous

@@ -286,6 +286,10 @@ class ValidatedJobConfig(BaseModel):
     # future ones), in generation order, so the card can render all of them instead of
     # just the assessor. Empty when none are confidently identifiable.
     prompts: list[PromptView] = Field(default_factory=list)
+    # Tunable hyperparameters the config left unset, so the trainer's own default applies —
+    # rendered as "trainer default" on the confirmation card. Kept out of `config` (never
+    # re-submitted to the create endpoint). Empty for non-training validate paths.
+    trainer_default_fields: list[str] = Field(default_factory=list)
 
 
 class RecipeSummary(BaseModel):

@@ -198,6 +198,20 @@ async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[st
     return errors
 
 
+async def _gate_data_run_producer(repo: Repository, data_run_id: str, label: str) -> list[str]:
+    """A data_run_id / eval_data_run_id names an MLflow *run*, not a job, so the field-driven
+    gate (GATED_FIELDS) skips it. Resolve the run back to its producing job and apply the SAME
+    job-id guard, so a preview / in-flight / artifact-less producer is rejected exactly as it
+    would be via parent_job_id - no bespoke run-route rule. An uploaded dataset has no
+    producing job behind its run, so there is nothing to gate."""
+    if not data_run_id:
+        return []
+    producer = await repo.get_job_by_mlflow_run(data_run_id)
+    if producer is None:
+        return []
+    return await _require_dependency_succeeded(repo, str(producer.get("id") or ""), label)
+
+
 async def _validate_training_data(
     config: dict[str, Any],
     parent_job_id: str,
@@ -220,8 +234,13 @@ async def _validate_training_data(
     # parent_job_id is an alternative data source to data_path: only gate the SDG
     # chain edge when it's the source in play (no direct data_path override). Any other
     # upstream-job reference on the config is gated too (field-driven).
-    refs = {**config, "parent_job_id": parent_job_id if not data_path else ""}
+    refs = {
+        **config,
+        "parent_job_id": parent_job_id if not data_path else "",
+        "training_job_id": "",
+    }
     errors += await _gate_upstream_refs(Repository(db), refs)
+    errors += await _gate_data_run_producer(Repository(db), data_run_id, "data_run_id")
 
     # Only inspect the dataset once availability + lineage are clean: upstream is then
     # succeeded, so the dataset is materialized and a read reflects the real shape.
@@ -419,6 +438,9 @@ async def _validate_eval_data(
     # plus any other upstream-job reference present on the config.
     refs = {**config, "parent_job_id": parent_job_id, "training_job_id": training_job_id}
     errors += await _gate_upstream_refs(Repository(db), refs)
+    errors += await _gate_data_run_producer(
+        Repository(db), str(data_run_id or ""), "eval_data_run_id"
+    )
 
     return errors
 
@@ -542,6 +564,12 @@ async def create_sdg_job(
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
+    # Fail-closed dependency gate (same invariant as training/eval): any upstream job
+    # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
+    # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
+    gate_errors = await _gate_upstream_refs(repo, {**config, "parent_job_id": parent_job_id})
+    if gate_errors:
+        raise HTTPException(status_code=422, detail=gate_errors)
     try:
         row = await core_create_job(
             repo,
