@@ -32,12 +32,12 @@ benchmark/eval target: generate a FRESH training set for the same task
 user explicitly confirms it (and accepts the leakage trade-off). Fresh,
 separately-generated inputs are what keep the eval honest.
 
-### Step 1 — What is the task?
+### Step 1 — What is the task? <!--signal:task-->
 
 Identify the task type (assessment, classification, extraction,
 summarization, routing).
 
-### Step 2 — Examples
+### Step 2 — Examples <!--signal:examples-->
 
 Ask for examples first to extract format, criteria, and task-specific details
 from them.
@@ -59,7 +59,7 @@ generation column (Section 3) and wire the corpus directly into the
 output column via a data-source column. Only the output half of the
 pipeline is needed.
 
-### Step 3 — Output format
+### Step 3 — Output format <!--signal:output-format-->
 
 Extract the output format from demonstration examples. If the user
 provided only raw inputs (no outputs), ask for the desired format.
@@ -68,12 +68,12 @@ Verify your format against any given example to check correctness.
 Output a complete demo using placeholder content so the user can
 confirm the format before proceeding.
 
-### Step 4 — Task criteria
+### Step 4 — Task criteria <!--signal:criteria-->
 
 Extract from demonstration examples if available. If the user provided only raw inputs, ask explicitly.
 Need: what makes a correct/good output for this task.
 
-### Step 5 — Variation dimensions
+### Step 5 — Variation dimensions <!--signal:variation-dimensions-->
 
 Infer axes of diversity from the user's examples:
 - **Domain/topic** — ask the user what content domains or categories
@@ -83,21 +83,23 @@ Infer axes of diversity from the user's examples:
 
 Each becomes a sampler column. Only ask if ambiguous.
 
-### Step 6 — Teacher model
+### Step 6 — Teacher model <!--signal:teacher-model-->
 
 Call `list_models` to get the available teacher models. Each entry has
 a `name` and a `provider`. Copy both values exactly as returned — do
 not shorten, re-prefix, or modify the `name` string (e.g., if
 `list_models` returns `openai/openai/gpt-oss-120b`, use that full
 string, not `openai/gpt-oss-120b`). Present ONLY those models as
-options. If no models are returned, stop — no teacher-model provider
-is configured on the server.
+options, with `present_options` using `step="teacher-model"`. If no
+models are returned, stop — no teacher-model provider is configured on
+the server.
 
-### Step 7 — Sample count
+### Step 7 — Sample count <!--signal:samples-->
 
 Default 2000. Prototype: 500-1000. Production: 2000-5000.
+Ask with `present_options` using `step="samples"`.
 
-### Step 8 — Generate the system prompt
+### Step 8 — Generate the system prompt <!--signal:system-prompt-->
 
 Compose the task system prompt combining:
 1. **Role** — task performer identity
@@ -116,7 +118,17 @@ is the only way the user sees the prompt, so render it before asking them to
 review or approve it. The same prompt is used in both the output-generating
 column `system_prompt` and the SFT processor system message.
 
-### Step 9 — Generate outputs for raw inputs (optional)
+If the user asks to CHANGE the prompt — any edit to its wording, rules, or
+content, however small — fold the change into the full prompt text and render
+the UPDATED prompt with `show_prompt` AGAIN for re-approval. Repeat this
+render → approve loop, staying on this step, until they approve the prompt as
+shown. (A question about the prompt, or any reply that is not a change to it,
+is not an edit — answer it, but keep the current prompt.) A requested change is
+not an approval: do NOT advance to the confirm card (`validate_sdg_job`) on an
+edit, and do NOT respond to one by writing or editing a file — the prompt
+exists only in the `show_prompt` tool call.
+
+### Step 9 — Generate outputs for raw inputs (optional) <!--signal:generate-outputs-->
 
 If the user provided only raw inputs (without outputs) in Step 2,
 use the system prompt from Step 8 to generate outputs for each raw

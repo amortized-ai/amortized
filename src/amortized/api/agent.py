@@ -32,6 +32,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
+from amortized.api.phases import subagent_pointer
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,18 @@ class SessionState:
     # signal_phase the server can backfill the UI progress bar at the right step
     # instead of snapping it back to the start of the phase.
     last_signal_step: str = ""
+    # last_signal_step is a single field tracking the CURRENTLY active subagent (so the backfill,
+    # adjudicator, and mid-pipeline routing all read one source of truth). A help detour or a
+    # later delegation resets it, so stash each stepped-out subagent's own last step here, keyed
+    # by target, and restore it when that subagent is resumed — otherwise the resumed consumer is
+    # pointed at the wrong section (the detour producer's residue, or its entry). Stash-and-restore
+    # rather than making last_signal_step itself per-target: that regressed mid-training routing.
+    completed_last_step: dict[str, str] = field(default_factory=dict)
+    # Per-target skill state, so the resident-workflow pointer can also name the current SKILL.md
+    # step during gathering: the skill the target loaded (via the `skill` tool) and the latest
+    # `present_options.step` stamp it emitted. Observed from the turn, used on the next send.
+    active_skill_by_target: dict[str, str] = field(default_factory=dict)
+    skill_last_step: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -230,20 +243,6 @@ _SUBAGENT_JOB_FAILED_PROMPT = (
     "hand control back now."
 )
 
-# A finished SDG job in PREVIEW mode is only the cheap ~10-row sample, NOT the deliverable.
-# The generic done-prompt above would (wrongly) tell the producer its task is complete, so it
-# hands back and the orchestrator advances to training on a 10-row preview — the full create
-# run never happens. For a preview completion, steer the producer to run the FULL create run
-# instead of handing back. Only a create (full) SDG run — or any training/eval job — is a real
-# completion. See _handle_subagent_message and _completed_job_is_sdg_preview.
-_SUBAGENT_PREVIEW_DONE_PROMPT = (
-    "[SYSTEM EVENT] Your PREVIEW sample finished successfully — this was only a small test "
-    "run, NOT the full dataset. Show the user the preview output so they can eyeball quality, "
-    'then call validate_sdg_job with mode "create" to launch the FULL dataset run. Do NOT call '
-    "signal_subagent_completion and do NOT hand control back: your task is NOT complete until "
-    "the full create run succeeds."
-)
-
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
 # a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
 # The orchestrator is the sole delegator, so its one job is to run the producing
@@ -273,53 +272,6 @@ def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
     if body.outcome is not None:
         return body.outcome.strip().lower() == "succeeded"
     return "status: succeeded" in user_text.lower()
-
-
-_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}")
-
-
-def _extract_id_candidates(text: str) -> set[str]:
-    out: set[str] = set()
-    for tok in _ID_RE.findall(text.lower()):
-        if "-" in tok:
-            out.add(tok)  # dash-structured UUID — unambiguously an identifier
-            continue
-        # A bare hex run is only id-like if it mixes digits AND hex letters. This excludes
-        # both pure-decimal counts ("12345678" records) and pure-hex English words
-        # ("deadbeef") that would otherwise be false-flagged as ids.
-        if any(c in "0123456789" for c in tok) and any(c in "abcdef" for c in tok):
-            out.add(tok)
-    return out
-
-
-async def _fetch_job_by_token(token: str) -> dict[str, Any] | None:
-    """The DB job a stated id-token resolves to (by id prefix), or None. Best-effort —
-    any DB issue returns None so the caller simply falls back to default behavior."""
-    try:
-        from amortized.db.connection import get_pool
-        from amortized.db.repository import Repository
-
-        async with get_pool().acquire() as conn:
-            return await Repository(conn).find_job_by_id_prefix(token)
-    except Exception:
-        return None
-
-
-async def _completed_job_is_sdg_preview(user_text: str) -> bool:
-    """Whether the job named in a job_complete event is an SDG job run in `preview` mode.
-
-    The event text carries the job id; resolve it and read its config mode. A preview is the
-    cheap sample, not the deliverable, so its completion must NOT hand control back (see
-    _SUBAGENT_PREVIEW_DONE_PROMPT). Best-effort — any lookup miss returns False, so the normal
-    done-prompt applies (fail toward the existing behavior)."""
-    for token in sorted(_extract_id_candidates(user_text)):
-        job = await _fetch_job_by_token(token)
-        if not job or str(job.get("type") or "") != "sdg":
-            continue
-        cfg = job.get("config")
-        if isinstance(cfg, dict) and str(cfg.get("mode") or "").lower() == "preview":
-            return True
-    return False
 
 
 _VALID_TARGETS = {"sdg", "training", "eval"}
@@ -391,13 +343,30 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
     phase = _PHASE_FOR_TARGET.get(state.subagent_target or "")
     if not phase:
         return result
+    target = state.subagent_target or ""
     parts = result.get("parts") or []
+    # One pass over the turn's tool parts: remember the signalled workflow step AND the skill
+    # context (which skill is loaded, the latest present_options stamp) so the next turn's pointer
+    # can name both the resident workflow section and the current SKILL.md step. Scanned fully (no
+    # early return) because a skill load / question card often trails the signal_phase in a turn.
+    signalled = False
     for part in parts:
-        if _tool_name(part) == "signal_phase":
+        name = _tool_name(part)
+        if name == "signal_phase":
             step = _get_tool_input(part).get("step")
             if step:
                 state.last_signal_step = str(step)
-            return result  # model signalled this turn; nothing to backfill
+            signalled = True
+        elif name == "skill":
+            skill_name = _get_tool_input(part).get("name")
+            if skill_name and target:
+                state.active_skill_by_target[target] = str(skill_name)
+        elif name == "present_options":
+            stamp = _get_tool_input(part).get("step")
+            if stamp and target:
+                state.skill_last_step[target] = str(stamp)
+    if signalled:
+        return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
     result["parts"] = [
         *parts,
@@ -409,6 +378,20 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
         },
     ]
     return result
+
+
+def _pointer_for(state: SessionState, target: str | None) -> str | None:
+    """The resident-workflow pointer for a subagent turn: the workflow section (from the last
+    signalled step) plus the current SKILL.md step (from the tracked skill + stamp). None for a
+    non-subagent, so callers compose it unconditionally. See phases.subagent_pointer."""
+    if not target:
+        return None
+    return subagent_pointer(
+        target,
+        state.last_signal_step,
+        state.active_skill_by_target.get(target),
+        state.skill_last_step.get(target),
+    )
 
 
 async def _fetch_all_assistant_parts(opencode_session_id: str) -> list[dict[str, Any]]:
@@ -1038,16 +1021,11 @@ async def _handle_subagent_message(
         # system note only reinforces it. See docs/agent-gates-proposal.md.
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
-        if not succeeded:
-            steer_system = _SUBAGENT_JOB_FAILED_PROMPT
-        elif await _completed_job_is_sdg_preview(user_text):
-            # A PREVIEW completion is not a real completion — the full create run hasn't
-            # happened. Steer the producer to run it instead of handing back (which would
-            # advance the orchestrator to training on the ~10-row preview). Any other success
-            # (create SDG, training, eval) is a genuine hand-back.
-            steer_system = _SUBAGENT_PREVIEW_DONE_PROMPT
-        else:
-            steer_system = _SUBAGENT_JOB_DONE_PROMPT
+        steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT
+    # On a job_complete turn the terminal hand-back steer owns the system channel (it tells the
+    # finishing subagent to signal completion now). On every other turn, re-anchor the driver to
+    # its resident workflow section with the pointer (see phases.subagent_pointer).
+    system = steer_system or _pointer_for(state, state.subagent_target)
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1055,7 +1033,7 @@ async def _handle_subagent_message(
             user_text,
             agent=state.subagent_target,
             model=body.model,
-            system=steer_system,
+            system=system,
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
@@ -1080,6 +1058,7 @@ async def _handle_subagent_message(
         completer = state.subagent_target
         if completer and state.subagent_id:
             state.completed_subagents[completer] = state.subagent_id
+            state.completed_last_step[completer] = state.last_signal_step
         state.subagent_id = None
         state.subagent_target = None
 
@@ -1150,6 +1129,7 @@ async def _handle_subagent_message(
         target = state.subagent_target
         logger.info("Subagent help request: session=%s target=%s", session_id, target)
         state.completed_subagents[target] = state.subagent_id
+        state.completed_last_step[target] = state.last_signal_step
         state.subagent_id = None
         state.subagent_target = None
         seed = _SUBAGENT_HELP_PROMPT.format(target=target, need=need, context=help_context)
@@ -1213,15 +1193,36 @@ async def _maybe_delegate(
     if stashed_id:
         logger.info("Resuming subagent: target=%s session=%s → %s", target, session_id, stashed_id)
         handoff_msg = f"[RESUMED]\n{context}\n\n[USER MESSAGE]\n{user_text}"
+        # A resume picks up where it left off, so restore THIS target's own last signalled step
+        # (a help detour / later delegation overwrote the shared field) before the pointer names
+        # the section. Falls back to "" (entry) when nothing was stashed.
+        state.last_signal_step = state.completed_last_step.pop(target, "")
         sub_result = await _proxy_send_message(
-            stashed_id, handoff_msg, agent=target, model=body.model
+            stashed_id,
+            handoff_msg,
+            agent=target,
+            model=body.model,
+            system=_pointer_for(state, target),
         )
         state.subagent_id = stashed_id
     else:
         logger.info("New subagent: target=%s session=%s", target, session_id)
         sub_id = await _proxy_create_session()
         handoff_msg = f"[CONTEXT]\n{context}\n\n[USER MESSAGE]\n{user_text}"
-        sub_result = await _proxy_send_message(sub_id, handoff_msg, agent=target, model=body.model)
+        # Fresh delegation: clear any prior subagent's phase and skill state so the pointer (and
+        # the UI progress backfill) start at this agent's entry section, not wherever the last one
+        # stopped.
+        state.last_signal_step = ""
+        state.completed_last_step.pop(target, None)
+        state.active_skill_by_target.pop(target, None)
+        state.skill_last_step.pop(target, None)
+        sub_result = await _proxy_send_message(
+            sub_id,
+            handoff_msg,
+            agent=target,
+            model=body.model,
+            system=_pointer_for(state, target),
+        )
         state.subagent_id = sub_id
 
     state.subagent_target = target

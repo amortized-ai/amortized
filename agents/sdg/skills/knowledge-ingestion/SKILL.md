@@ -30,33 +30,35 @@ for confirmation — do not narrate your reasoning.
 
 Ask the user these questions (one at a time, using `present_options`):
 
-### Step 1 — What documents?
+### Step 1 — What documents? <!--signal:documents-->
 
 Check if they've already uploaded documents via the Documents page. Use
 `list_documents` to show available documents with their IDs. If not
-uploaded yet, guide them to upload first.
+uploaded yet, guide them to upload first. Present the choice with
+`present_options` using `step="documents"`.
 
-### Step 2 — Question types
+### Step 2 — Question types <!--signal:question-types-->
 
 What kinds of questions should it handle?
 Default: factual (25%), procedural (35%), troubleshooting (25%),
 comparison (15%). Adapt to the domain — a troubleshooting guide
 needs more troubleshooting questions, a reference manual needs more
-factual ones.
+factual ones. Ask with `present_options` using `step="question-types"`.
 
-### Step 3 — Difficulty levels
+### Step 3 — Difficulty levels <!--signal:difficulty-->
 
 Default: basic (35%), intermediate (45%), advanced (20%).
+Ask with `present_options` using `step="difficulty"`.
 
-### Step 4 — Which teacher model?
+### Step 4 — Which teacher model? <!--signal:teacher-model-->
 
 Call `list_models` to get the available teacher models (each entry has a
-`name` and a `provider`). Present ONLY those models as options. Do NOT
-suggest models that aren't returned by `list_models` — they won't work.
-If no models are returned, stop — no teacher-model provider is configured
-on the server.
+`name` and a `provider`). Present ONLY those models as options, with
+`present_options` using `step="teacher-model"`. Do NOT suggest models that
+aren't returned by `list_models` — they won't work. If no models are
+returned, stop — no teacher-model provider is configured on the server.
 
-### Step 5 — How many samples?
+### Step 5 — How many samples? <!--signal:samples-->
 
 Documents are chunked at upload time. Use
 `get_document_chunks(doc_id)` to get the chunk count and token
@@ -78,7 +80,7 @@ multiplier = coverage × mean_chunk_tokens / avg_qa_tokens
 num_samples = multiplier × num_chunks  (num_chunks = total, not filtered)
 ```
 
-Present three coverage tiers and show the computed sample counts:
+Present three coverage tiers with `present_options` (`step="samples"`) and show the computed sample counts:
 
 1) 3x source coverage — Good starting point
 2) 5x source coverage — Recommended (research-backed default)
@@ -92,7 +94,7 @@ For example, a document with 50 chunks of mean 400 tokens:
 Show the user the actual numbers, the multiplier, and the coverage
 tier so they understand the reasoning.
 
-### Step 6 — System prompt for the trained model
+### Step 6 — System prompt for the trained model <!--signal:system-prompt-->
 
 Do NOT ask the user to write a system prompt. Generate a domain-specific
 default based on the document content and include it in the config.

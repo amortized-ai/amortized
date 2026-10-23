@@ -68,7 +68,7 @@ class OptionItem(BaseModel):
 
 class PresentOptionsRequest(BaseModel):
     step: str = Field(
-        ..., description="Workflow step identifier (e.g. 'sdg-domain', 'training-method')"
+        ..., description="Workflow step identifier (e.g. 'domain', 'categories', 'teacher-model')"
     )
     question: str = Field("", description="The question being asked")
     options: list[OptionItem] = Field(

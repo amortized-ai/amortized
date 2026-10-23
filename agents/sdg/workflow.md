@@ -127,7 +127,8 @@ the job fails. Omit it and the provider default is used.
 
 ALWAYS preview first by default: call the validation tool with
 `mode: "preview"` for a ~10 sample test run, let the user eyeball the
-output, then call again with `mode: "create"` for the full run. The
+output AND decide whether to proceed; only on their go-ahead call
+again with `mode: "create"` for the full run. The
 preview is cheap and catches a bad recipe before a full generation, so
 strongly prefer it. The ONE exception: if the user EXPLICITLY asks to
 skip the preview (e.g. "just create it", "no preview, create directly"),
@@ -147,6 +148,10 @@ cost context.
 - **Never invent identifiers or metrics.** Only report a job ID, run ID, dataset ID, or
   score that came from a tool result in THIS session. If you don't have a real value yet,
   call the tool that returns it or tell the user you don't have it — don't make one up.
+- **Resolve a named job by its EXACT id.** When the user or a handoff names a specific job,
+  look it up with `get_job` on that exact id — don't fuzzy-match the name against `list_jobs`.
+  If no job matches, say so and ask; NEVER substitute a different job, even if another one
+  succeeded.
 - A `validate_*_job` call only renders a confirmation card; the job is created when the user
   clicks **Confirm**. Don't say a job is queued/running/submitted off a validate call.
 - If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
@@ -166,9 +171,22 @@ change. Do NOT restart from Phase 1.
 
 ---
 
+## Progress Signal
+
+Call `signal_phase` once on every response, with `phase="sdg"` and `step` set to the
+slug of the `## Workflow` phase you are currently in:
+
+- `route` — Phase 1 (route to the right sub-skill)
+- `gather` — Phase 2 (gather requirements)
+- `validate` — Phase 3 (validate and confirm)
+- `complete` — Phase 4 (signal completion)
+
+Each slug is shown in its phase heading. While gathering (Phase 2), keep signalling
+`gather`; the skill you load tracks its own sub-steps.
+
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill
+### Phase 1 — Route to Sub-Skill <!--signal:route-->
 
 **Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
 training job ID, don't pick a sub-skill or design a new recipe — ask only the record
@@ -192,7 +210,7 @@ Once determined, load the matching skill with the `skill` tool (e.g.
 `skill({ name: "sdg-task-distillation" })`). You MUST load it before
 Phase 2 — it contains the exact requirement-gathering steps and config rules.
 
-### Phase 2 — Gather Requirements
+### Phase 2 — Gather Requirements <!--signal:gather-->
 
 Follow the loaded guide's requirement-gathering steps exactly.
 
@@ -201,7 +219,7 @@ sensible defaults for technical parameters the user is unlikely to
 care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
-### Phase 3 — Validate and Confirm
+### Phase 3 — Validate and Confirm <!--signal:validate-->
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
@@ -212,17 +230,41 @@ Preview Flow** — unless the user explicitly asked to skip it, in which
 case validate directly with mode "create". The UI renders a
 confirmation card — the user clicks confirm to submit the job.
 
+**HOW TO CALL `validate_sdg_job` — pass the whole config as ONE argument.**
+Build the complete config, then call `validate_sdg_job` with a SINGLE
+`config_json` argument whose value is the entire config serialized as a JSON
+string (every field — columns, model_configs, processors, num_records, mode,
+topic, parent_job_id — goes INSIDE that one string). Do NOT pass columns /
+model_configs / processors as separate arguments: a large multi-argument call
+can be corrupted in transit and fail validation. One `config_json` string
+round-trips reliably. Example shape:
+`validate_sdg_job(config_json="{\"columns\": [...], \"model_configs\": [...], \"mode\": \"preview\", ...}")`.
+
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries. If validation fails, read the error,
 ask a natural follow-up to get the missing information, fix the config,
 and retry.
 
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
-Only then present next steps.
 
-### Phase 4 — Signal Completion
+If the job that finished was the `preview` run, you are NOT done — but you are
+also not cleared to launch the full run yet: show the user the sample so they can
+eyeball quality and ask, with `present_options`, whether to proceed with the full
+dataset run or adjust the recipe first. WAIT for their decision. Only once they
+approve do you call the validation tool again with `mode: "create"` to launch the
+FULL dataset run. Do NOT signal completion and do NOT let the flow advance to a
+later step (e.g. training) on a preview — only the full create run produces the
+dataset. Only once the create run finishes do you move to Phase 4 and present
+next steps.
 
-When the job succeeds, preview the generated data using the job's
+### Phase 4 — Signal Completion <!--signal:complete-->
+
+Only reach this phase once the FULL run (mode "create") has succeeded. A
+`preview` job finishing is NOT completion — it is only the small sample. If the
+job that just finished was a preview, do NOT complete: show the sample, then run
+the full `mode: "create"` job and wait for IT to finish first.
+
+When the full (create) job succeeds, preview the generated data using the job's
 `mlflow_run_id` so the user can verify quality.
 
 Then call `signal_subagent_completion` to hand control back to the
