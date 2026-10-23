@@ -146,6 +146,41 @@ def test_lenient_phase_is_not_nudged(router: _Router) -> None:
     assert not any(sid == sub for sid, *_ in router.sent)
 
 
+def test_skipped_signal_is_nudged_to_signal_not_off_the_stale_key(router: _Router) -> None:
+    # The turn emits a work tool but NO signal_phase, so last_signal_step ("validate") is a PRIOR
+    # turn's step. The signalled-guard must re-prompt for the signal rather than adjudicate off the
+    # stale key (which would wrongly owe `validate_eval_job` for this report-looking turn).
+    corrected = [[_signal("report"), _tool_part("present_options", {"step": "report"})]]
+    sub = router.add(corrected)
+    state = _state(router, sub, "validate")
+    skipped = [
+        _text_part("Here are the results."),
+        _tool_part("present_options", {"step": "report"}),
+    ]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), skipped))
+
+    system = router.system_to(sub)
+    assert "PHASE SIGNAL MISSING" in system
+    assert "signal_phase" in system
+    assert "validate_eval_job" not in system  # not nudged off the stale phase's owed tool
+    assert any(agent._tool_name(p) == "signal_phase" for p in out)  # re-fetched corrected turn
+
+
+def test_orchestrator_missing_signal_is_not_guarded(router: _Router) -> None:
+    # Only subagents stamp signal_phase; a non-subagent target must fall through to normal
+    # adjudication (which is lenient for an unknown key) with no missing-signal nudge.
+    sub = router.add()
+    state = _state(router, sub, "validate")
+    state.subagent_target = "morty"
+    parts = [_text_part("What would you like to do next?")]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), parts))
+
+    assert out is parts
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
 def test_job_complete_event_skips_nudge(router: _Router) -> None:
     sub = router.add()
     state = _state(router, sub, "held-out-request-help")
