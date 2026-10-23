@@ -61,6 +61,18 @@ const PHASE_STEP_LABELS: Record<string, string> = {
 
 const TERMINAL_STEP = "complete"
 
+// sdg/training gathering (Phase 2) is driven by a loaded skill whose `### Step`s now signal
+// through `signal_phase` with their own slugs (e.g. `task`, `teacher-model`). The bar shows only
+// the coarse workflow phases, so fold any such skill-step slug back to the `gather` phase it
+// belongs to. eval has no skills; its finer steps pass through unchanged.
+const SDG_TRAINING_PHASE_SLUGS = new Set(["route", "gather", "validate", "complete"])
+function collapseSkillStep(phase: string, step: string): string {
+  if ((phase === "sdg" || phase === "training") && step && !SDG_TRAINING_PHASE_SLUGS.has(step)) {
+    return "gather"
+  }
+  return step
+}
+
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
   let latestStep = ""
@@ -76,7 +88,7 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
         if (!data) continue
         const phase = String(data.phase ?? "")
         if (!isValidPhase(phase)) continue
-        const step = String(data.step ?? "")
+        const step = collapseSkillStep(phase, String(data.step ?? ""))
 
         if (latestPhase && (phase !== latestPhase || terminalSeen)) {
           // Reset on a phase change OR a new run in the SAME phase after a terminal one —
@@ -202,8 +214,9 @@ export function derivePhasePlan(messages: ChatMessage[]): PhasePlan | null {
 
   const config = STATIC_PHASE_CONFIG[parsed.phase]
   if (!config) return null
-  const activeIdx = resolveStepIndex(config.steps, parsed.step)
-  const isCompleted = parsed.step === TERMINAL_STEP
+  const step = collapseSkillStep(parsed.phase, parsed.step)
+  const activeIdx = resolveStepIndex(config.steps, step)
+  const isCompleted = step === TERMINAL_STEP
 
   const planSteps: PlanStep[] = config.steps.map((def, i): PlanStep => {
     if (isCompleted) return { label: def.label, status: "completed" }

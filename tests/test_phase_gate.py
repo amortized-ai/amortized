@@ -137,19 +137,13 @@ def test_single_step_slug_is_not_batching() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_gather_step_owes_present_options() -> None:
-    # task-distillation "examples" step owes present_options.
-    v = adjudicate(
-        "sdg", "gather", [], skill="sdg-task-distillation", active_skill_step="examples"
-    )
+def test_skill_step_owes_present_options() -> None:
+    # The skill step is now signalled directly (signal_phase.step == the skill slug); its obligation
+    # resolves from that one cursor, scoped by the loaded skill. task-distillation "examples" owes
+    # present_options.
+    v = adjudicate("sdg", "examples", [], skill="sdg-task-distillation")
     assert v.kind == "stall"
-    ok = adjudicate(
-        "sdg",
-        "gather",
-        ["present_options"],
-        skill="sdg-task-distillation",
-        active_skill_step="examples",
-    )
+    ok = adjudicate("sdg", "examples", ["present_options"], skill="sdg-task-distillation")
     assert ok.kind == "ok"
 
 
@@ -158,26 +152,30 @@ def test_review_step_owes_both_show_prompt_and_present_options() -> None:
     assert owed is not None and owed.all_of == frozenset({"show_prompt", "present_options"})
     # present_options alone is NOT enough on the review step.
     only_po = adjudicate(
-        "sdg",
-        "gather",
-        ["present_options"],
-        skill="sdg-task-distillation",
-        active_skill_step="system-prompt",
+        "sdg", "system-prompt", ["present_options"], skill="sdg-task-distillation"
     )
     assert only_po.kind in {"wrong_edge", "stall"}
     both = adjudicate(
-        "sdg",
-        "gather",
-        ["show_prompt", "present_options"],
-        skill="sdg-task-distillation",
-        active_skill_step="system-prompt",
+        "sdg", "system-prompt", ["show_prompt", "present_options"], skill="sdg-task-distillation"
     )
     assert both.kind == "ok"
 
 
-def test_gather_without_active_step_is_lenient() -> None:
-    # No cursor info → cannot adjudicate the gather turn.
+def test_skill_slug_scoped_by_active_skill() -> None:
+    # `teacher-model` recurs across sdg skills; the obligation is resolved WITHIN the loaded skill,
+    # so the same signalled slug is adjudicated against whichever skill is active (no global clash).
+    for skill in ("sdg-task-distillation", "sdg-knowledge-ingestion", "sdg-classification"):
+        assert adjudicate("sdg", "teacher-model", [], skill=skill).kind == "stall"
+        assert (
+            adjudicate("sdg", "teacher-model", ["present_options"], skill=skill).kind == "ok"
+        )
+
+
+def test_coarse_gather_umbrella_is_lenient() -> None:
+    # A non-stepped skill (or no cursor) signals the coarse `gather` umbrella: not a workflow phase
+    # and not a skill step → lenient, so bare prose is allowed.
     assert adjudicate("sdg", "gather", []).kind == "ok"
+    assert adjudicate("sdg", "gather", [], skill="sdg-embedding-classifier").kind == "ok"
 
 
 # --------------------------------------------------------------------------- #

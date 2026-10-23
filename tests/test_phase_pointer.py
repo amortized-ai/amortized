@@ -92,9 +92,10 @@ class TestSubagentPointer:
         assert "Phase 2 — Gather Requirements" in p
 
     def test_skill_clause_names_current_skill_step(self) -> None:
-        # When a skill is loaded during gathering, the pointer also names the resident SKILL.md step
-        # the agent is on (resolved from the present_options stamp it emits — no new slugs needed).
-        p = phases.subagent_pointer("sdg", "gather", "sdg-knowledge-ingestion", "samples")
+        # A skill step rides the SAME cursor as a workflow phase: the driver signals the step's own
+        # slug via signal_phase, and the pointer resolves that slug against the loaded skill (not a
+        # second cursor). A slug that is not a workflow section falls back to the skill's steps.
+        p = phases.subagent_pointer("sdg", "samples", "sdg-knowledge-ingestion")
         assert p is not None
         assert "sdg-knowledge-ingestion" in p
         assert "Step 5 — How many samples?" in p
@@ -104,3 +105,29 @@ class TestSubagentPointer:
         p = phases.subagent_pointer("sdg", "gather")
         assert p is not None
         assert "skill loaded" not in p
+
+    def test_route_names_workflow_section_not_skill(self) -> None:
+        # On the 'route' turn the signalled slug IS a workflow section, so it resolves there first
+        # and no skill clause shows — the clause appears once a skill-step slug is signalled.
+        p = phases.subagent_pointer("sdg", "route", "sdg-knowledge-ingestion")
+        assert p is not None
+        assert "Phase 1 — Route to Sub-Skill" in p
+        assert "skill loaded" not in p
+
+    def test_unknown_skill_step_stays_generic(self) -> None:
+        # A slug that is neither a workflow section nor a loaded-skill step → generic pointer,
+        # no wrong section named and no clause (the deterministic lenient rung).
+        p = phases.subagent_pointer("sdg", "not-a-real-step", "sdg-knowledge-ingestion")
+        assert p is not None
+        assert "current step is" not in p
+        assert "skill loaded" not in p
+
+    def test_skill_clause_suppressed_after_gathering(self) -> None:
+        # Once the subagent signals validate/complete, those resolve as workflow sections (rung 1),
+        # so the skill clause falls away even though the loaded skill is still tracked — no
+        # hardcoded post-gather set needed.
+        for step in ("validate", "complete"):
+            p = phases.subagent_pointer("sdg", step, "sdg-knowledge-ingestion")
+            assert p is not None
+            assert "skill loaded" not in p
+            assert "ONE question per turn" not in p
