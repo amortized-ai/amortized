@@ -40,7 +40,6 @@ import { useUIStore } from "@/stores/ui-store"
 import { useChatStore } from "@/stores/chat-store"
 import { Button } from "@/components/ui/button"
 import { CommandPalette } from "@/components/command-palette"
-import { TutorialOverlay } from "@/components/tutorial"
 import { ChatSidebar } from "@/features/chat/components/chat-sidebar"
 
 import type { LucideIcon } from "lucide-react"
@@ -112,25 +111,6 @@ function ThemeToggle() {
   )
 }
 
-function TourButton() {
-  const startTutorial = useUIStore((s) => s.startTutorial)
-  const tutorialActive = useUIStore((s) => s.tutorialActive)
-
-  if (tutorialActive) return null
-
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      onClick={startTutorial}
-      data-testid="tour-button"
-    >
-      Take a Tour
-    </Button>
-  )
-}
-
 function ChatToggle() {
   const panelOpen = useChatStore((s) => s.panelOpen)
   const togglePanel = useChatStore((s) => s.togglePanel)
@@ -189,7 +169,7 @@ export function AppLayout() {
           </Link>
         </SidebarHeader>
         <SidebarContent>
-          <SidebarGroup data-tutorial="sidebar-nav">
+          <SidebarGroup>
             <SidebarGroupLabel>Navigation</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -218,7 +198,6 @@ export function AppLayout() {
           <Separator orientation="vertical" className="mx-2 h-4" />
           <Breadcrumbs />
           <div className="ml-auto flex items-center gap-3">
-            <TourButton />
             <ActiveJobsBadge />
             <CreateMenu />
             <ChatToggle />
@@ -247,7 +226,6 @@ export function AppLayout() {
         </div>
       </SidebarInset>
       <CommandPalette />
-      <TutorialOverlay />
     </SidebarProvider>
   )
 }

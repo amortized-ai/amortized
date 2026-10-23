@@ -72,6 +72,16 @@ function extractTrainingSummary(config: Record<string, unknown>): [string, strin
   if (config.unfreeze_rank_ratio) rows.push(["Unfreeze ratio", String(config.unfreeze_rank_ratio)])
   if (config.nproc_per_node) rows.push(["GPUs", String(config.nproc_per_node)])
 
+  // Embedding classifiers run on CPU by default (no nproc_per_node), with an optional
+  // single-GPU opt-in via train_on_gpu. Always show the device so the choice is visible
+  // on the card regardless of what the assistant wrote in the message.
+  // Match the backend's check (estimate_gpu_demand / _CPU_TRAINING_ALGORITHMS), which
+  // compares the stripped — not lowercased — value against these canonical algorithm names,
+  // so a non-canonical casing renders and schedules consistently (both treat it as generative).
+  const algo = String(config.algorithm ?? "").trim()
+  if (["embedding_sft", "embedding", "classifier"].includes(algo))
+    rows.push(["Device", config.train_on_gpu ? "GPU (1)" : "CPU (default)"])
+
   return rows
 }
 

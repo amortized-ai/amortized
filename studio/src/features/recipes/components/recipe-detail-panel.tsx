@@ -24,6 +24,7 @@ import {
   formatRecipeType,
   recipeTypeClassName,
 } from "../lib/format"
+import { missingRequiredFields } from "../lib/validate-config"
 import { ArrowLeft, Play, Code2, FormInput } from "lucide-react"
 import type { Job, JobType } from "@/types/api"
 
@@ -45,6 +46,14 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
   const [activeView, setActiveView] = useState<"form" | "json">("form")
 
   const handleExecute = useCallback(() => {
+    const missing = missingRequiredFields(config, schemas?.[job.type])
+    if (missing.length > 0) {
+      toast.error(
+        `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+      )
+      setExecuteDialogOpen(false)
+      return
+    }
     createMutation.mutate(
       { type: job.type as JobType, config },
       {
@@ -57,7 +66,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
         },
       },
     )
-  }, [config, job.type, createMutation])
+  }, [config, job.type, createMutation, schemas])
 
   return (
     <div className="flex flex-col h-full">
