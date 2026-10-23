@@ -442,6 +442,37 @@ class TestJobCompleteHandback:
         assert "signal_subagent_completion" in (forwarded_system or "")
         assert "d6be24ce" in forwarded_text  # job id KEPT in the user part
 
+    def test_preview_completion_steers_to_full_run_not_handback(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A PREVIEW (10-row sample) completing is NOT the deliverable: steer the producer to run
+        # the full create run, not hand back — else the orchestrator advances to training on a
+        # preview. The preview steer rides the system channel (like the generic hand-back).
+        async def _fetch(token: str) -> dict[str, Any]:
+            return {"type": "sdg", "status": "succeeded", "config": {"mode": "preview"}}
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        state = self._active_sdg(router)
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        forwarded_system = router.sent[0][3]
+        assert forwarded_system == agent._SUBAGENT_PREVIEW_DONE_PROMPT  # run the full create run
+        assert forwarded_system != agent._SUBAGENT_JOB_DONE_PROMPT  # NOT a completion hand-back
+        assert "d6be24ce" in router.sent[0][1]  # job id kept in the user part
+
+    def test_create_completion_still_hands_back(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The full create run (no preview mode) completing IS a real completion → hand back.
+        async def _fetch(token: str) -> dict[str, Any]:
+            return {"type": "sdg", "status": "succeeded", "config": {"mode": "create"}}
+
+        monkeypatch.setattr(agent, "_fetch_job_by_token", _fetch)
+        state = self._active_sdg(router)
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
+        _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
+        assert router.sent[0][3] == agent._SUBAGENT_JOB_DONE_PROMPT
+
     def test_normal_message_not_rewritten(self, router: _Router) -> None:
         state = self._active_sdg(router)
         _run(agent._handle_subagent_message(state, "s1", "confirm", _body()))
