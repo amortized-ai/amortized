@@ -32,7 +32,12 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
-from amortized.api.phases import Verdict, adjudicate, subagent_pointer
+from amortized.api.phases import (
+    Verdict,
+    adjudicate,
+    requires_phase_signal,
+    subagent_pointer,
+)
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -1002,6 +1007,42 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
 # wrapped in <system-reminder>.
 _STALL_NUDGE_INTRO = "[WORKFLOW STALL] Your last turn did not advance the workflow."
 
+# The signalled-guard nudge (Option B): a subagent turn that skips `signal_phase` leaves
+# `last_signal_step` pinned to a PRIOR turn's step, so the adjudicator would check the wrong phase's
+# obligation. Rather than nudge off a stale key, re-prompt ONCE to emit the signal — the re-driven
+# turn carries a fresh step the next adjudication can key on. Same bracketed system-channel
+# convention as _STALL_NUDGE_INTRO.
+_MISSING_SIGNAL_NUDGE = (
+    "[PHASE SIGNAL MISSING] You did not call `signal_phase` this turn. It is required on every "
+    "turn — it stamps which `## Workflow` section you are in (each heading in your resident "
+    "workflow carries its slug). Do BOTH now, in order: (1) CALL `signal_phase` with your current "
+    "step's slug; (2) then carry out that step's instructions from your resident workflow — do "
+    "the action it specifies (ask the next gather question, call the tool, surface the card), do "
+    "not merely describe it in prose and do not skip ahead to a later step."
+)
+
+
+def _turn_hands_off(parts: list[dict[str, Any]]) -> bool:
+    """True when the turn carries a terminal hand-off — `request_orchestrator_help` or
+    `signal_subagent_completion`. Such a turn is LEAVING its phase (handled by the hand-off /
+    resume path), not working inside one, so the signalled-guard must not nudge it to re-signal:
+    that would intercept the hand-off and strand the resume pointer."""
+    return any(
+        _tool_name(p) in ("request_orchestrator_help", "signal_subagent_completion")
+        for p in parts
+    )
+
+
+def _turn_emitted_signal(parts: list[dict[str, Any]]) -> bool:
+    """True when the turn stamped `signal_phase` with a non-empty step — i.e. it updated
+    `last_signal_step`. Mirrors the turn-scan at the top of this module so the signalled-guard and
+    the phase key stay in lock-step: a turn that only emits an empty/bare signal_phase (which leaves
+    the key stale) counts as unsignalled here too."""
+    return any(
+        _tool_name(p) == "signal_phase" and str(_get_tool_input(p).get("step") or "").strip()
+        for p in parts
+    )
+
 
 def _adjudicate_subagent_turn(
     state: SessionState, target: str, parts: list[dict[str, Any]]
@@ -1079,7 +1120,34 @@ async def _maybe_nudge_subagent_stall(
         return latest_parts  # carries its own terminal hand-back steer; not a stall
     if not state.subagent_id or not state.subagent_target:
         return latest_parts
-    verdict = _adjudicate_subagent_turn(state, state.subagent_target, latest_parts)
+    target = state.subagent_target
+    # Signalled-guard: a subagent must stamp `signal_phase` every turn — it is the KEY the
+    # adjudicator (and the per-turn pointer) resolve against. A measured ~33% of GLM-flash turns
+    # skip it, leaving `last_signal_step` one phase stale; adjudicating that stale key mis-nudges
+    # (false wrong_edge / misdirected stall / missed stall). So when the turn emitted no signal,
+    # re-prompt ONCE to emit it instead — the re-driven turn carries a fresh key for the NEXT
+    # adjudication. One nudge per user turn (not re-adjudicated), so it can never loop.
+    if (
+        requires_phase_signal(target)
+        and not _turn_emitted_signal(latest_parts)
+        and not _turn_hands_off(latest_parts)
+    ):
+        logger.info("Phase-signal-missing nudge: session=%s target=%s", session_id, target)
+        try:
+            await _proxy_send_message(
+                state.subagent_id,
+                "",
+                agent=target,
+                model=body.model,
+                system=_MISSING_SIGNAL_NUDGE,
+            )
+        except Exception:
+            logger.warning(
+                "Phase-signal nudge send failed: session=%s", session_id, exc_info=True
+            )
+            return latest_parts
+        return await _fetch_all_assistant_parts(state.subagent_id)
+    verdict = _adjudicate_subagent_turn(state, target, latest_parts)
     nudge = _stall_nudge_text(state.last_signal_step, verdict)
     if nudge is None:
         return latest_parts
