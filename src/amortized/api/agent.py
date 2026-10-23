@@ -119,11 +119,12 @@ class SessionState:
     # pointed at the wrong section (the detour producer's residue, or its entry). Stash-and-restore
     # rather than making last_signal_step itself per-target: that regressed mid-training routing.
     completed_last_step: dict[str, str] = field(default_factory=dict)
-    # Per-target skill state, so the resident-workflow pointer can also name the current SKILL.md
-    # step during gathering: the skill the target loaded (via the `skill` tool) and the latest
-    # `present_options.step` stamp it emitted. Observed from the turn, used on the next send.
+    # Which skill each target has loaded (via the `skill` tool), so the resident-workflow pointer
+    # and the adjudicator can SCOPE a signalled skill-step slug to the right SKILL.md (step slugs
+    # are unique only within a skill). The step cursor itself is `last_signal_step` — a skill step
+    # is signalled via `signal_phase` exactly like a workflow phase. Observed from the turn, used on
+    # the next send.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
-    skill_last_step: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -350,10 +351,10 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
         return result
     target = state.subagent_target or ""
     parts = result.get("parts") or []
-    # One pass over the turn's tool parts: remember the signalled workflow step AND the skill
-    # context (which skill is loaded, the latest present_options stamp) so the next turn's pointer
-    # can name both the resident workflow section and the current SKILL.md step. Scanned fully (no
-    # early return) because a skill load / question card often trails the signal_phase in a turn.
+    # One pass over the turn's tool parts: remember the signalled step (`signal_phase` — which now
+    # carries the current workflow section OR the current skill step, one cursor) and which skill is
+    # loaded (`skill` tool) so the next turn's pointer can name the step and scope it to the right
+    # SKILL.md. Scanned fully (no early return) because a skill load often trails signal_phase.
     signalled = False
     for part in parts:
         name = _tool_name(part)
@@ -366,10 +367,6 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
             skill_name = _get_tool_input(part).get("name")
             if skill_name and target:
                 state.active_skill_by_target[target] = str(skill_name)
-        elif name == "present_options":
-            stamp = _get_tool_input(part).get("step")
-            if stamp and target:
-                state.skill_last_step[target] = str(stamp)
     if signalled:
         return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
@@ -386,16 +383,16 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
 
 
 def _pointer_for(state: SessionState, target: str | None) -> str | None:
-    """The resident-workflow pointer for a subagent turn: the workflow section (from the last
-    signalled step) plus the current SKILL.md step (from the tracked skill + stamp). None for a
-    non-subagent, so callers compose it unconditionally. See phases.subagent_pointer."""
+    """The resident-workflow pointer for a subagent turn: names the current step (from the last
+    signalled slug — a workflow section or, when a skill is loaded, one of its SKILL.md steps),
+    scoped by the tracked skill. None for a non-subagent, so callers compose it unconditionally.
+    See phases.subagent_pointer."""
     if not target:
         return None
     return subagent_pointer(
         target,
         state.last_signal_step,
         state.active_skill_by_target.get(target),
-        state.skill_last_step.get(target),
     )
 
 
@@ -1049,11 +1046,10 @@ def _adjudicate_subagent_turn(
 ) -> Verdict:
     """Classify the just-finished subagent turn with the pure adjudicator. `parts` is the turn's
     fetched assistant parts; errored tool calls are excluded (a dead call renders no edge). The
-    active stepped-skill step is the present_options stamp the turn-scan tracked (a stalling turn
-    emits no step slug of its own)."""
+    signalled step (`last_signal_step`) is the one cursor — a workflow section or, scoped by the
+    loaded skill, a SKILL.md step; `adjudicate` resolves its obligation either way."""
     tools = [_tool_name(p) for p in parts if _tool_name(p) and not _part_errored(p)]
     skill = state.active_skill_by_target.get(target)
-    active_step = state.skill_last_step.get(target)
     present_steps = [
         str(_get_tool_input(p).get("step") or "").strip()
         for p in parts
@@ -1065,7 +1061,6 @@ def _adjudicate_subagent_turn(
         state.last_signal_step,
         tools,
         skill=skill,
-        active_skill_step=active_step,
         has_text=has_text,
         present_steps=[s for s in present_steps if s],
     )
@@ -1395,7 +1390,6 @@ async def _maybe_delegate(
         state.last_signal_step = ""
         state.completed_last_step.pop(target, None)
         state.active_skill_by_target.pop(target, None)
-        state.skill_last_step.pop(target, None)
         sub_result = await _proxy_send_message(
             sub_id,
             handoff_msg,

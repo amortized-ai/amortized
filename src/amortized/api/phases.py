@@ -100,16 +100,16 @@ def _resolve_title(agent: str, step: str | None) -> str | None:
     return None
 
 
-# ── Skill-step resolution (for the in-gather skill clause of the pointer) ─────────────────
+# ── Skill-step resolution (skill steps ride the same signal_phase cursor as workflow phases) ──
 # A subagent's gather phase is driven by a resident SKILL.md with a numbered `### Step N — …`
-# sequence. A step's slug comes from a `<!--signal:…-->` heading marker — the preferred convention,
-# identical to the `## Workflow` sections — and, for a skill that carries none, falls back to the
-# `present_options(step="…")` stamp the driver is already told to emit for that question (so an
-# existing stamped skill needs no edit, while a new one should mark its headings like the workflow
-# sections do). Either way the agent sends that stamp per turn; this resolves slug → the step's
-# heading title, and the agent.py scan records the active skill (from the `skill` tool call) and
-# the latest stamp (from present_options) per turn. `tests/test_phase_marker_drift.py` fails loudly
-# if an instructed slug no longer resolves.
+# sequence. A step's slug comes from a `<!--signal:…-->` heading marker — the SAME convention the
+# `## Workflow` sections use — and the driver signals it exactly like a workflow phase:
+# `signal_phase(step=<skill-step-slug>)` each turn. So ONE cursor (`last_signal_step`) spans both
+# workflow sections and the active skill's steps; the agent.py scan records which skill is loaded
+# (from the `skill` tool call) to SCOPE the lookup, because step slugs are unique only WITHIN a
+# skill (e.g. `teacher-model`/`samples` recur across skills). A legacy `present_options(step="…")`
+# stamp still resolves a slug for a skill whose heading carries no marker (none today).
+# `tests/test_phase_marker_drift.py` fails loudly if an instructed slug no longer resolves.
 
 _STEP_STAMP_RE = re.compile(
     r"present_options[^\n]*?\bstep\s*[=:]\s*[\"']([^\"']+)[\"']", re.IGNORECASE
@@ -197,8 +197,8 @@ def _skill_steps(skill_name: str) -> tuple[tuple[str, str], ...]:
 
 
 def skill_step_title(skill_name: str | None, stamp: str | None) -> str | None:
-    """The SKILL.md step title for the `present_options.step` stamp the agent last emitted, matched
-    on the normalized stamp (exact or prefix). None when the skill or stamp is unknown."""
+    """The SKILL.md step title for the slug the agent signalled (`signal_phase.step`), matched on
+    the normalized slug (exact or prefix). None when the skill or slug is unknown."""
     if not skill_name or not stamp:
         return None
     target = _norm(stamp)
@@ -210,44 +210,39 @@ def skill_step_title(skill_name: str | None, stamp: str | None) -> str | None:
     return None
 
 
-# Workflow phases AFTER the skill-driven gathering is done (shared by the skill-loading
-# subagents, sdg + training). Once a subagent signals one of these, it is confirming or
-# finishing, not gathering — so the pointer must stop steering it back through the SKILL.md
-# gathering steps even though the loaded skill is still tracked for the rest of its life.
-_POST_GATHER_STEPS = frozenset({"validate", "complete"})
-
-
 def subagent_pointer(
     agent: str | None,
     step: str | None,
     skill: str | None = None,
-    skill_step: str | None = None,
 ) -> str | None:
     """A SHORT system-channel pointer re-anchoring a subagent to its RESIDENT instructions.
 
-    Names the current `## Workflow` section (from the signalled step) and, when a skill is loaded
-    during gathering, the current SKILL.md step (from the `present_options` stamp). None for a
-    non-subagent (the orchestrator) or an agent with no workflow.md (no-op, so callers can compose
-    it unconditionally). Delivered via opencode's `system` field — a raw, tagged instruction like
-    the other system-channel steers (`[SYSTEM EVENT]`, …), NOT wrapped in `<system-reminder>` and
-    never prepended to the user text."""
+    Resolves the single signalled `step` against ONE cursor: a `## Workflow` section wins; else,
+    when a skill is loaded, one of its `### Step`s (so a skill step is named just like a workflow
+    phase); else nothing (generic pointer). The skill clause shows IFF the current step is a skill
+    step — once the driver signals `validate`/`complete` it resolves as a workflow section, so the
+    clause falls away with no hardcoded post-gather set. None for a non-subagent (the orchestrator)
+    or an agent with no workflow.md (no-op, so callers can compose it unconditionally). Delivered
+    via opencode's `system` field — a raw, tagged instruction like the other system-channel steers
+    (`[SYSTEM EVENT]`, …), NOT wrapped in `<system-reminder>` and never prepended to the user
+    text."""
     if not agent or agent not in _SUBAGENTS or not _sections(agent):
         return None
     wf_title = _resolve_title(agent, step)
-    wf_at = f" — your current step is **{wf_title}**" if wf_title else ""
+    skill_title = None if wf_title else skill_step_title(skill, step)
+    at_title = wf_title or skill_title
+    at = f" — your current step is **{at_title}**" if at_title else ""
 
     skill_clause = ""
-    if skill and (_norm(step) if step else "") not in _POST_GATHER_STEPS:
-        step_title = skill_step_title(skill, skill_step)
-        on = f", and you are on **{step_title}**" if step_title else ""
+    if skill_title:
         skill_clause = (
             f" You have the **{skill}** skill loaded; its gathering steps are resident in the "
-            f"SKILL.md{on}. Work that `### Step` sequence IN ORDER — ask ONE question per turn "
-            "with `present_options` and do not skip or batch steps."
+            "SKILL.md. Work that `### Step` sequence IN ORDER — ask ONE question per turn with "
+            "`present_options` and do not skip or batch steps."
         )
 
     return (
-        f"[ACTIVE PHASE] You are in the {agent} workflow{wf_at}. Your full step-by-step "
+        f"[ACTIVE PHASE] You are in the {agent} workflow{at}. Your full step-by-step "
         "instructions are resident in the `## Workflow` section of your system prompt."
         f"{skill_clause} Find your current step there and follow it now, in order. When a step "
         "calls for a transition tool (e.g. `request_orchestrator_help`, "
@@ -377,8 +372,9 @@ class Owed:
     solo: bool = False
 
 
-# Tool-owed phases, keyed (role, signal slug). A (role, slug) NOT here is lenient. `gather` is
-# absent on purpose — its obligation is per skill step, resolved by `_skill_owed`.
+# Tool-owed phases, keyed (role, signal slug). A (role, slug) NOT here is lenient. The coarse
+# `gather` umbrella is absent on purpose — during gathering the driver signals the loaded skill's
+# `### Step` slug (not `gather`), whose obligation is resolved by `_skill_owed`.
 _REQUIRED: dict[tuple[str, str], Owed] = {
     # sdg
     ("sdg", "route"): Owed(
@@ -417,18 +413,18 @@ def owed_for(
     phase_step: str,
     *,
     skill: str | None = None,
-    active_skill_step: str | None = None,
 ) -> Owed | None:
     """Resolve what a (role, phase_step) turn owes, or None when the phase is lenient.
 
-    Phase-level entries win; the `gather` phase delegates to the active skill step (caller supplies
-    `skill` + `active_skill_step`, which it tracks via the skill-step cursor — a stalling turn
-    emits no step slug of its own)."""
+    Workflow-phase entries win; otherwise, when a skill is loaded, a signalled slug that names one
+    of its `### Step`s owes what that step owes (`_skill_owed`). A slug that is neither a workflow
+    phase nor a step of the loaded skill — the coarse `gather` umbrella, a non-stepped skill, or an
+    unknown slug — is lenient (None)."""
     owed = _REQUIRED.get((role, phase_step))
     if owed is not None:
         return owed
-    if phase_step == "gather":
-        return _skill_owed(skill, active_skill_step)
+    if skill:
+        return _skill_owed(skill, phase_step)
     return None
 
 
@@ -459,7 +455,6 @@ def adjudicate(
     tools: Collection[str],
     *,
     skill: str | None = None,
-    active_skill_step: str | None = None,
     awaiting_job: bool = False,
     has_text: bool = False,
     present_steps: Sequence[str] = (),
@@ -478,7 +473,7 @@ def adjudicate(
     if len({s for s in present_steps if s}) > 1:
         return Verdict("batching", detail="multiple step slugs signalled in one turn")
 
-    owed = owed_for(role, phase_step, skill=skill, active_skill_step=active_skill_step)
+    owed = owed_for(role, phase_step, skill=skill)
     if owed is None:
         return _OK  # lenient phase: bare prose is a legitimate free-text question
 

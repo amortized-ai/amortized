@@ -157,16 +157,16 @@ change. Do NOT restart from Phase 1.
 
 ## Progress Signal
 
-Call `signal_phase` once on every response, with `phase="training"` and `step` set to
-the slug of the `## Workflow` phase you are currently in:
+Call `signal_phase` once on every response, with `phase="training"` and `step` = the slug of
+the heading for your current step (each heading shows its slug as `<!--signal:…-->`):
 
-- `route` — Phase 1 (route to the right sub-skill)
-- `gather` — Phase 2 (gather requirements)
-- `validate` — Phase 3 (validate and confirm)
-- `complete` — Phase 4 (signal completion)
+- in Phase 1 / 3 / 4, the `## Workflow` phase slug — `route`, `validate`, or `complete`;
+- in Phase 2 (gathering), once you have loaded a skill, the skill's CURRENT `### Step` slug if
+  it has numbered steps. A skill with no numbered steps (the training skills today) has no
+  sub-step slug; signal `gather`.
 
-Each slug is shown in its phase heading. While gathering (Phase 2), keep signalling
-`gather`; the skill you load tracks its own sub-steps.
+Signal exactly one step per response — signalling two different slugs in one turn is a
+batching error.
 
 ## Workflow
 
