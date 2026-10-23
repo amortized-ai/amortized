@@ -59,6 +59,18 @@ describe("derivePlan", () => {
     expect(plan?.steps.every((s) => s.status === "completed")).toBe(false)
   })
 
+  it("collapses sdg/training skill-step signals to the gather phase", () => {
+    // Skill steps now signal via signal_phase with their own slugs (`task`, `teacher-model`, …);
+    // the coarse bar must fold them into "Gathering requirements", not drop them or name a wrong
+    // step. route → a skill step should land on the gather row (index 1), active.
+    const plan = derivePlan([sig("sdg", "route"), sig("sdg", "task"), sig("sdg", "teacher-model")])
+    expect(plan?.phase).toBe("sdg")
+    const active = plan?.steps.find((s) => s.status === "active")
+    expect(active?.label).toBe("Gathering requirements")
+    // route is behind us (completed), gather is active, later phases pending.
+    expect(plan?.steps[0]?.status).toBe("completed")
+  })
+
   it("resets completion when a new run starts in the same phase", () => {
     // SDG run 1 finishes (terminal), then a second SDG run begins — the bar must reflect the
     // new run in progress, not inherit run 1's completed steps.
