@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react"
 import { useNavigate } from "react-router"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -27,7 +26,6 @@ import {
   formatRecipeType,
   recipeTypeClassName,
 } from "../lib/format"
-import { missingRequiredFields } from "../lib/validate-config"
 import { ArrowLeft, Play, Code2, FormInput } from "lucide-react"
 import type { Job, JobType } from "@/types/api"
 
@@ -63,27 +61,21 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
   const canExecute = !schemasLoading && missingRequired.length === 0
 
   const handleExecute = useCallback(() => {
-    const missing = missingRequiredFields(config, schemas?.[job.type])
-    if (missing.length > 0) {
-      toast.error(
-        `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
-      )
-      setExecuteDialogOpen(false)
-      return
-    }
+    // Required fields are enforced by the Submit gate (disabled while
+    // `missingRequired` is non-empty) and listed in the dialog; no separate
+    // pre-check needed here.
     createMutation.mutate(
       { type: job.type as JobType, config },
       {
         onSuccess: (newJob) => {
           setSubmittedJobId(newJob.id)
         },
-        onError: (err) => {
-          toast.error(`Failed to create job: ${err.message}`)
+        onError: () => {
           setExecuteDialogOpen(false)
         },
       },
     )
-  }, [config, job.type, createMutation, schemas])
+  }, [config, job.type, createMutation])
 
   return (
     <div className="flex flex-col h-full">

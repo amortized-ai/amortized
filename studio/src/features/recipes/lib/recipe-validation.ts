@@ -11,7 +11,7 @@ type Schema = Record<string, unknown>
 
 function isEmpty(v: unknown): boolean {
   if (v === null || v === undefined) return true
-  if (typeof v === "string") return v === ""
+  if (typeof v === "string") return v.trim() === ""
   if (Array.isArray(v)) return v.length === 0
   if (typeof v === "object") return Object.keys(v).length === 0
   return false // numbers (incl. 0) and booleans (incl. false) are filled
