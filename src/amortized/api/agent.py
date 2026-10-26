@@ -1041,13 +1041,31 @@ def _turn_emitted_signal(parts: list[dict[str, Any]]) -> bool:
     )
 
 
+def _effective_signal_step(state: SessionState, parts: list[dict[str, Any]]) -> str:
+    """The step to adjudicate a subagent turn against: the step THIS turn signalled (its own
+    `signal_phase`), falling back to `state.last_signal_step` only when the turn skipped signalling.
+
+    `state.last_signal_step` is written by `_ensure_phase_signal`, which runs in `_run_turn` AFTER
+    the handler's in-turn stall adjudication — so reading it here lags by exactly one turn and
+    mis-keys the just-emitted edge (e.g. a `validate` preview card judged against the prior gather
+    step -> a false `wrong_edge` whose nudge then drops the card). The turn's own signal is the
+    fresh cursor; the skip case is already handled by the signalled-guard."""
+    for part in reversed(parts):
+        if _tool_name(part) == "signal_phase" and not _part_errored(part):
+            step = str(_get_tool_input(part).get("step") or "").strip()
+            if step:
+                return step
+    return state.last_signal_step
+
+
 def _adjudicate_subagent_turn(
     state: SessionState, target: str, parts: list[dict[str, Any]]
 ) -> Verdict:
     """Classify the just-finished subagent turn with the pure adjudicator. `parts` is the turn's
     fetched assistant parts; errored tool calls are excluded (a dead call renders no edge). The
-    signalled step (`last_signal_step`) is the one cursor — a workflow section or, scoped by the
-    loaded skill, a SKILL.md step; `adjudicate` resolves its obligation either way."""
+    cursor is the step THIS turn signalled (`_effective_signal_step`, not the one-turn-stale
+    `state.last_signal_step`) — a workflow section or, scoped by the loaded skill, a SKILL.md step;
+    `adjudicate` resolves its obligation either way."""
     tools = [_tool_name(p) for p in parts if _tool_name(p) and not _part_errored(p)]
     skill = state.active_skill_by_target.get(target)
     present_steps = [
@@ -1058,7 +1076,7 @@ def _adjudicate_subagent_turn(
     has_text = any(p.get("type") == "text" and str(p.get("text") or "").strip() for p in parts)
     return adjudicate(
         target,
-        state.last_signal_step,
+        _effective_signal_step(state, parts),
         tools,
         skill=skill,
         has_text=has_text,
@@ -1143,7 +1161,7 @@ async def _maybe_nudge_subagent_stall(
             return latest_parts
         return await _fetch_all_assistant_parts(state.subagent_id)
     verdict = _adjudicate_subagent_turn(state, target, latest_parts)
-    nudge = _stall_nudge_text(state.last_signal_step, verdict)
+    nudge = _stall_nudge_text(_effective_signal_step(state, latest_parts), verdict)
     if nudge is None:
         return latest_parts
     logger.info(
@@ -1151,7 +1169,7 @@ async def _maybe_nudge_subagent_stall(
         session_id,
         state.subagent_target,
         verdict.kind,
-        state.last_signal_step,
+        _effective_signal_step(state, latest_parts),
     )
     try:
         await _proxy_send_message(

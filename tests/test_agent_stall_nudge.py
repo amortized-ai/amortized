@@ -181,6 +181,22 @@ def test_orchestrator_missing_signal_is_not_guarded(router: _Router) -> None:
     assert not any(sid == sub for sid, *_ in router.sent)
 
 
+def test_adjudicates_on_this_turns_signal_not_the_lagging_state(router: _Router) -> None:
+    # Regression: state.last_signal_step is written by _ensure_phase_signal AFTER this in-turn
+    # adjudication, so it lags one turn. Here the prior turn left it on a gather step
+    # ("eval-dataset", owes present_options) while THIS turn moves to "validate" and emits the
+    # preview card (validate_eval_job). Keying on the stale state field would judge the card a
+    # wrong_edge and nudge it away (dropping it); keying on the turn's own signal → ok, no nudge.
+    sub = router.add()
+    state = _state(router, sub, "eval-dataset")  # stale prior-turn cursor
+    turn = [_signal("validate"), _tool_part("validate_eval_job", {})]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn  # no nudge: the preview card is preserved, not dropped
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
 def test_job_complete_event_skips_nudge(router: _Router) -> None:
     sub = router.add()
     state = _state(router, sub, "held-out-request-help")
