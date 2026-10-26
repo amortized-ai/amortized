@@ -147,15 +147,16 @@ def test_lenient_phase_is_not_nudged(router: _Router) -> None:
 
 
 def test_skipped_signal_is_nudged_to_signal_not_off_the_stale_key(router: _Router) -> None:
-    # The turn emits a work tool but NO signal_phase, so last_signal_step ("validate") is a PRIOR
+    # A NON-CARD work turn that skips signal_phase, so last_signal_step ("validate") is a PRIOR
     # turn's step. The signalled-guard must re-prompt for the signal rather than adjudicate off the
-    # stale key (which would wrongly owe `validate_eval_job` for this report-looking turn).
+    # stale key (which would wrongly owe `validate_eval_job`). A card-bearing skip is exempt (it did
+    # its owed work) — see test_card_turn_missing_signal_is_not_nudged_away.
     corrected = [[_signal("report"), _tool_part("present_options", {"step": "report"})]]
     sub = router.add(corrected)
     state = _state(router, sub, "validate")
     skipped = [
-        _text_part("Here are the results."),
-        _tool_part("present_options", {"step": "report"}),
+        _text_part("Let me check the memory footprint."),
+        _tool_part("show_vram_estimate", {}),
     ]
 
     out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), skipped))
