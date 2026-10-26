@@ -91,6 +91,145 @@ def _macro_f1(confusion: dict, labels: list) -> tuple[float, dict]:
     return macro, per_class
 
 
+def _is_head_classifier(model_path: str) -> bool:
+    """A classifier_sft head model ships a label_mapping.json and/or a *ForSequenceClassification
+    architecture in config.json; an embedding model ships sentence-transformers modules instead."""
+    if os.path.exists(os.path.join(model_path, "label_mapping.json")):
+        return True
+    cfg_path = os.path.join(model_path, "config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path) as f:
+                arch = " ".join(json.load(f).get("architectures", []) or [])
+            heads = ("ForSequenceClassification", "ForMultipleChoice", "ForTokenClassification")
+            return any(h in arch for h in heads)
+        except (ValueError, OSError):
+            return False
+    return False
+
+
+def _ece(probs, correct, bins: int = 15) -> float:
+
+    conf = probs.max(1)
+    e = 0.0
+    for b in range(bins):
+        m = (conf > b / bins) & (conf <= (b + 1) / bins)
+        if m.sum() > 0:
+            e += abs(correct[m].mean() - conf[m].mean()) * m.mean()
+    return float(e)
+
+
+def _head_classifier_eval(cfg: dict, rows: list[dict], output_dir: str) -> None:
+    """Evaluate a classifier_sft head model: argmax predictions on the held-out set, with
+    accuracy / macro-F1 / per-class F1 / confusion + temperature-scaled calibration (ECE).
+
+    Unlike the embedding centroid proxy, this is a *true* held-out classifier accuracy."""
+    import numpy as np
+    import torch
+    from sklearn.metrics import accuracy_score, f1_score
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    mp = cfg["model_path"]
+    max_len = int(cfg.get("max_length") or 512)
+    tok = AutoTokenizer.from_pretrained(mp)
+    model = AutoModelForSequenceClassification.from_pretrained(mp).eval()
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(dev)
+    id2label = {int(k): v for k, v in model.config.id2label.items()}
+
+    texts = [r["text"] for r in rows]
+    true = [str(r["label"]) for r in rows]
+    logits_list = []
+    for i in range(0, len(texts), 128):
+        enc = tok(
+            texts[i : i + 128],
+            truncation=True,
+            max_length=max_len,
+            padding=True,
+            return_tensors="pt",
+        ).to(dev)
+        with torch.no_grad():
+            logits_list.append(model(**enc).logits.float().cpu().numpy())
+    logits = np.concatenate(logits_list)
+    pred_idx = logits.argmax(1)
+    pred = [str(id2label.get(int(i), i)) for i in pred_idx]
+
+    accuracy = accuracy_score(true, pred)
+    labels_sorted = sorted(set(true) | set(pred))
+    macro_f1 = f1_score(true, pred, average="macro", labels=labels_sorted, zero_division=0)
+    per_class = f1_score(true, pred, average=None, labels=labels_sorted, zero_division=0)
+
+    # Temperature-scaled calibration on a split of the eval set (ECE before/after).
+    def _softmax(x):
+        e = np.exp(x - x.max(1, keepdims=True))
+        return e / e.sum(1, keepdims=True)
+
+    y_idx = np.array([model.config.label2id.get(t, -1) for t in true])
+    correct = (pred_idx == y_idx).astype(float)
+    ece_before = _ece(_softmax(logits), correct)
+    cut = min(1500, len(logits) // 2) or len(logits)
+    temp = 1.0
+    if cut and (y_idx[:cut] >= 0).all():
+        temp_param = torch.ones(1, requires_grad=True)
+        cal_logits = torch.tensor(logits[:cut])
+        cal_labels = torch.tensor(y_idx[:cut])
+        opt = torch.optim.LBFGS([temp_param], lr=0.1, max_iter=60)
+
+        def _closure():
+            opt.zero_grad()
+            loss = torch.nn.functional.cross_entropy(cal_logits / temp_param, cal_labels)
+            loss.backward()
+            return loss
+
+        opt.step(_closure)
+        temp = float(temp_param.detach())
+    ece_after = _ece(_softmax(logits / temp), correct)
+
+    confusion = {t: {p: 0 for p in labels_sorted} for t in labels_sorted}
+    for t, p in zip(true, pred, strict=False):
+        confusion[t][p] += 1
+
+    metrics = {
+        "eval_mode": "classification",
+        "results": {
+            "scores": {
+                "accuracy": round(float(accuracy), 4),
+                "macro_f1": round(float(macro_f1), 4),
+            },
+            "model": {"num_samples": len(rows)},
+            "accuracy": round(float(accuracy), 4),
+            "macro_f1": round(float(macro_f1), 4),
+            "per_class_f1": {
+                lbl: round(float(f), 4)
+                for lbl, f in zip(labels_sorted, per_class, strict=False)
+            },
+            "confusion": confusion,
+            "num_classes": len(labels_sorted),
+            "num_samples": len(rows),
+            "calibration": {
+                "ece_before": round(ece_before, 4),
+                "ece_after": round(ece_after, 4),
+                "temperature": round(temp, 3),
+            },
+            "metric_meaning": (
+                "True held-out classifier accuracy: argmax of a trained classification head on "
+                "the held-out set (not a separability proxy). Calibration = temperature-scaled ECE."
+            ),
+        },
+    }
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+    with open(os.path.join(output_dir, "results.jsonl"), "w") as f:
+        for t, p in zip(true, pred, strict=False):
+            f.write(json.dumps({"actual_name": t, "predicted_name": p, "correct": t == p}) + "\n")
+    print(
+        f"classification eval (head): accuracy={accuracy:.2%} macro_f1={macro_f1:.4f} "
+        f"over {len(rows)} examples in {len(labels_sorted)} classes; "
+        f"ECE {ece_before:.3f} -> {ece_after:.3f} (T={temp:.2f})"
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -116,6 +255,12 @@ def main() -> None:
 
     rng = random.Random(seed)
     rows = _load_rows(cfg["eval_data_path"], text_col, label_col)
+
+    # A classifier_sft head model is evaluated by direct argmax (true held-out accuracy +
+    # calibration); an embedding model falls through to the nearest-centroid separability proxy.
+    if _is_head_classifier(cfg["model_path"]):
+        _head_classifier_eval(cfg, rows, output_dir)
+        return
 
     by_label: dict[int, list[str]] = {}
     for r in rows:
