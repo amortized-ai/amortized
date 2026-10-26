@@ -1,5 +1,51 @@
 import { describe, it, expect } from "vitest"
-import { collectMissingRequired } from "./recipe-validation"
+import { collectMissingRequired, collectRequiredPaths } from "./recipe-validation"
+
+describe("collectRequiredPaths (branch-aware markers)", () => {
+  // Mirrors the real schema: tool_alias is required in one $def but OPTIONAL in the
+  // LLM column branch. A name-keyed union would wrongly mark it required everywhere.
+  const schema = {
+    required: ["columns"],
+    properties: { columns: { type: "array", items: { $ref: "#/$defs/Column" } } },
+    $defs: {
+      Column: {
+        oneOf: [{ $ref: "#/$defs/LLMText" }, { $ref: "#/$defs/Tool" }],
+        discriminator: { propertyName: "column_type" },
+      },
+      LLMText: {
+        type: "object",
+        required: ["column_type", "name", "model_alias"],
+        properties: {
+          column_type: { const: "llm-text" },
+          name: { type: "string" },
+          model_alias: { type: "string" },
+          tool_alias: { type: "string" }, // optional here
+        },
+      },
+      Tool: {
+        type: "object",
+        required: ["column_type", "tool_alias"], // required here
+        properties: { column_type: { const: "tool" }, tool_alias: { type: "string" } },
+      },
+    },
+  }
+
+  it("marks a field required only in the branch that requires it", () => {
+    const config = {
+      columns: [{ column_type: "llm-text", name: "q", model_alias: "text", tool_alias: "" }],
+    }
+    const paths = collectRequiredPaths(config, schema)
+    expect(paths.has("columns/0/model_alias")).toBe(true) // required in the llm-text branch
+    expect(paths.has("columns/0/tool_alias")).toBe(false) // optional in llm-text (no false positive)
+    expect(paths.has("columns")).toBe(true) // top-level required
+  })
+
+  it("includes per-recipe requiredKeys as top-level paths", () => {
+    expect(collectRequiredPaths({ document_ids: [] }, null, ["document_ids"]).has("document_ids")).toBe(
+      true,
+    )
+  })
+})
 
 describe("collectMissingRequired", () => {
   it("returns [] when no schema is provided", () => {

@@ -41,7 +41,7 @@ interface RecipeDetailPanelProps {
 export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: RecipeDetailPanelProps) {
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
-  const { data: schemas } = useConfigSchemas()
+  const { data: schemas, isLoading: schemasLoading } = useConfigSchemas()
   // Strip placeholder tokens (agent-resolution hints, e.g. "<from-list_models>") on
   // load so they are never a value and never submitted; pickers show an empty state.
   const [config, setConfig] = useState<Record<string, unknown>>(
@@ -54,8 +54,9 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
   // Block execution while any required field is empty: schema-required (the schema
   // is the source of truth) plus any per-recipe required fields (requiredKeys).
   // While the schema is still loading we can't evaluate schema-required fields, so
-  // block execution rather than letting an incomplete config submit (→ backend 422).
-  const schemasLoading = schemas === undefined
+  // block rather than let an incomplete config submit. On a schema *fetch error*
+  // `isLoading` is false (fail-open): we can't validate, so allow submit and let the
+  // backend's required-field validation (422) be the backstop — never block forever.
   const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
   const missingRequired = collectMissingRequired(config, typeSchema, requiredKeys)
   const canExecute = !schemasLoading && missingRequired.length === 0

@@ -33,6 +33,7 @@ import {
   ModelPickerField,
   ModelAliasField,
 } from "./recipe-pickers"
+import { collectRequiredPaths, joinPath } from "../lib/recipe-validation"
 
 interface RecipeConfigFormProps {
   type: JobType
@@ -403,13 +404,20 @@ function RecursiveField({
   onChange,
   meta,
   schema,
+  path,
+  requiredPaths,
 }: {
   fieldKey: string
   value: unknown
   onChange: (v: unknown) => void
   meta?: FieldMeta
   schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
+  // Required-ness is branch-aware (same walk as the Submit-block), looked up by the
+  // field's position — not the name-keyed meta — so markers can't diverge from it.
+  const required = requiredPaths.has(path)
   // Data-wired pickers take precedence over the value-type dispatch below.
   if (fieldKey === "document_ids") {
     return (
@@ -418,7 +426,7 @@ function RecursiveField({
         value={value}
         onChange={onChange}
         description={meta?.description}
-        required={meta?.required}
+        required={required}
       />
     )
   }
@@ -427,7 +435,7 @@ function RecursiveField({
       <DatasetPickerField
         value={value}
         onChange={onChange}
-        required={meta?.required}
+        required={required}
         valueKey="job_id"
       />
     )
@@ -437,7 +445,7 @@ function RecursiveField({
       <DatasetPickerField
         value={value}
         onChange={onChange}
-        required={meta?.required}
+        required={required}
         valueKey="run_id"
       />
     )
@@ -449,7 +457,7 @@ function RecursiveField({
         value={value}
         onChange={onChange}
         description={meta?.description}
-        required={meta?.required}
+        required={required}
       />
     )
   }
@@ -461,12 +469,12 @@ function RecursiveField({
         options={meta.enumValues}
         onChange={onChange}
         description={meta.description}
-        required={meta.required}
+        required={required}
       />
     )
   }
   if (typeof value === "boolean") {
-    return <BooleanField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={meta?.required} />
+    return <BooleanField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
   }
   if (typeof value === "number") {
     return (
@@ -476,24 +484,24 @@ function RecursiveField({
         onChange={(v) => onChange(v)}
         step={fieldKey.includes("rate") || fieldKey.includes("temperature") ? "0.00001" : undefined}
         description={meta?.description}
-        required={meta?.required}
+        required={required}
       />
     )
   }
   if (typeof value === "string") {
     if (value.length > 80 || fieldKey === "prompt" || fieldKey === "system_prompt" || fieldKey === "content") {
-      return <LongTextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={meta?.required} />
+      return <LongTextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
     }
-    return <TextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={meta?.required} />
+    return <TextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
   }
   if (Array.isArray(value)) {
     if (value.length > 0 && typeof value[0] === "object" && value[0] !== null) {
-      return <ArrayOfObjectsField label={fieldKey} items={value as Record<string, unknown>[]} onChange={onChange} schema={schema} />
+      return <ArrayOfObjectsField label={fieldKey} items={value as Record<string, unknown>[]} onChange={onChange} schema={schema} path={path} requiredPaths={requiredPaths} />
     }
-    return <JsonField label={fieldKey} value={value} onChange={onChange} required={meta?.required} />
+    return <JsonField label={fieldKey} value={value} onChange={onChange} required={required} />
   }
   if (typeof value === "object" && value !== null) {
-    return <NestedObjectField label={fieldKey} value={value as Record<string, unknown>} onChange={onChange} schema={schema} />
+    return <NestedObjectField label={fieldKey} value={value as Record<string, unknown>} onChange={onChange} schema={schema} path={path} requiredPaths={requiredPaths} />
   }
   return null
 }
@@ -511,11 +519,15 @@ function ArrayOfObjectsField({
   items,
   onChange,
   schema,
+  path,
+  requiredPaths,
 }: {
   label: string
   items: Record<string, unknown>[]
   onChange: (v: unknown) => void
   schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
   function updateItem(index: number, key: string, value: unknown) {
     const updated = items.map((item, i) => (i === index ? { ...item, [key]: value } : item))
@@ -544,6 +556,8 @@ function ArrayOfObjectsField({
               onFieldChange={(k, v) => updateItem(i, k, v)}
               onBatchChange={(updates) => updateItemBatch(i, updates)}
               schema={schema}
+              path={joinPath(path, i)}
+              requiredPaths={requiredPaths}
             />
           </div>
         )
@@ -557,11 +571,15 @@ function NestedObjectField({
   value,
   onChange,
   schema,
+  path,
+  requiredPaths,
 }: {
   label: string
   value: Record<string, unknown>
   onChange: (v: unknown) => void
   schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
   return (
     <div className="space-y-2 rounded-md border-l-2 border-border/50 pl-3">
@@ -571,6 +589,8 @@ function NestedObjectField({
         onFieldChange={(k, v) => onChange({ ...value, [k]: v })}
         onBatchChange={(updates) => onChange({ ...value, ...updates })}
         schema={schema}
+        path={path}
+        requiredPaths={requiredPaths}
       />
     </div>
   )
@@ -581,12 +601,29 @@ function ObjectFields({
   onFieldChange,
   onBatchChange,
   schema,
+  path,
+  requiredPaths,
 }: {
   obj: Record<string, unknown>
   onFieldChange: (key: string, value: unknown) => void
   onBatchChange?: (updates: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
+  const renderField = (key: string) => (
+    <RecursiveField
+      key={key}
+      fieldKey={key}
+      value={obj[key]}
+      onChange={(v) => onFieldChange(key, v)}
+      meta={getFieldMeta(key, schema)}
+      schema={schema}
+      path={joinPath(path, key)}
+      requiredPaths={requiredPaths}
+    />
+  )
+
   // A data_designer model config: render the catalog picker for `model` (which
   // also sets the sibling `provider`) in place of the two free-text fields.
   const isModelConfig = "alias" in obj && "model" in obj && "provider" in obj
@@ -608,18 +645,9 @@ function ObjectFields({
           provider={String(obj.provider ?? "")}
           onChange={setModelProvider}
           description={modelMeta.description}
-          required={modelMeta.required}
+          required={requiredPaths.has(joinPath(path, "model"))}
         />
-        {restKeys.map((key) => (
-          <RecursiveField
-            key={key}
-            fieldKey={key}
-            value={obj[key]}
-            onChange={(v) => onFieldChange(key, v)}
-            meta={getFieldMeta(key, schema)}
-            schema={schema}
-          />
-        ))}
+        {restKeys.map(renderField)}
       </>
     )
   }
@@ -645,34 +673,12 @@ function ObjectFields({
             }
           }}
         />
-        {otherKeys.map((key) => (
-          <RecursiveField
-            key={key}
-            fieldKey={key}
-            value={obj[key]}
-            onChange={(v) => onFieldChange(key, v)}
-            meta={getFieldMeta(key, schema)}
-            schema={schema}
-          />
-        ))}
+        {otherKeys.map(renderField)}
       </>
     )
   }
 
-  return (
-    <>
-      {Object.entries(obj).map(([key, val]) => (
-        <RecursiveField
-          key={key}
-          fieldKey={key}
-          value={val}
-          onChange={(v) => onFieldChange(key, v)}
-          meta={getFieldMeta(key, schema)}
-          schema={schema}
-        />
-      ))}
-    </>
-  )
+  return <>{Object.keys(obj).map(renderField)}</>
 }
 
 // --- Training Form ---
@@ -714,7 +720,22 @@ function TrainingConfigForm({
   const advancedKeys = TRAINING_ADVANCED_KEYS.filter((k) => hasKey(config, k))
   const otherKeys = Object.keys(config).filter((k) => !ALL_TRAINING_KNOWN.has(k))
 
-  const hasRequired = (keys: string[]) => keys.some((k) => getFieldMeta(k, schema).required)
+  // Branch-aware required paths — same source as the Submit-block, so markers match.
+  const requiredPaths = collectRequiredPaths(config, schema)
+  const hasRequired = (keys: string[]) => keys.some((k) => requiredPaths.has(k))
+
+  const tField = (key: string) => (
+    <RecursiveField
+      key={key}
+      fieldKey={key}
+      value={config[key]}
+      onChange={(v) => onChange({ ...config, [key]: v })}
+      meta={getFieldMeta(key, schema)}
+      schema={schema}
+      path={key}
+      requiredPaths={requiredPaths}
+    />
+  )
 
   return (
     <div className="space-y-2">
@@ -726,7 +747,7 @@ function TrainingConfigForm({
             options={algoMeta.enumValues}
             onChange={(v) => onChange({ ...config, algorithm: v })}
             description={algoMeta.description}
-            required={algoMeta.required}
+            required={requiredPaths.has("algorithm")}
           />
         ) : (
           <TextField
@@ -734,7 +755,7 @@ function TrainingConfigForm({
             value={algorithm}
             onChange={(v) => onChange({ ...config, algorithm: v })}
             description={algoMeta.description}
-            required={algoMeta.required}
+            required={requiredPaths.has("algorithm")}
           />
         )}
         <RecursiveField
@@ -743,68 +764,32 @@ function TrainingConfigForm({
           onChange={(v) => onChange({ ...config, model_name_or_path: v })}
           meta={getFieldMeta("model_name_or_path", schema)}
           schema={schema}
+          path="model_name_or_path"
+          requiredPaths={requiredPaths}
         />
       </Section>
 
       {paramKeys.length > 0 && (
         <Section title="Training Parameters" defaultOpen>
-          <div className="grid grid-cols-2 gap-4">
-            {paramKeys.map((key) => (
-              <RecursiveField
-                key={key}
-                fieldKey={key}
-                value={config[key]}
-                onChange={(v) => onChange({ ...config, [key]: v })}
-                meta={getFieldMeta(key, schema)}
-                schema={schema}
-              />
-            ))}
-          </div>
+          <div className="grid grid-cols-2 gap-4">{paramKeys.map(tField)}</div>
         </Section>
       )}
 
       {(isLora || loraKeys.length > 0) && (
         <Section title="LoRA Settings" defaultOpen>
-          {loraKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-              schema={schema}
-            />
-          ))}
+          {loraKeys.map(tField)}
         </Section>
       )}
 
       {advancedKeys.length > 0 && (
         <Section key={`advanced:${hasRequired(advancedKeys)}`} title="Advanced" defaultOpen={hasRequired(advancedKeys)}>
-          {advancedKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-              schema={schema}
-            />
-          ))}
+          {advancedKeys.map(tField)}
         </Section>
       )}
 
       {otherKeys.length > 0 && (
         <Section key={`other:${hasRequired(otherKeys)}`} title="Other Parameters" defaultOpen={hasRequired(otherKeys)}>
-          {otherKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-              schema={schema}
-            />
-          ))}
+          {otherKeys.map(tField)}
         </Section>
       )}
     </div>
@@ -833,7 +818,9 @@ function SdgConfigForm({
     else primitiveKeys.push(key)
   }
 
-  const requiredTop = (schema?.required as string[] | undefined) ?? []
+  // Branch-aware required paths (schema + per-recipe requiredKeys) — the single
+  // source the markers, section-open, and the Submit-block all derive from.
+  const requiredPaths = collectRequiredPaths(config, schema, requiredKeys)
   // Aliases declared here so a column's model_alias can be picked from them.
   const aliases = Array.isArray(config.model_configs)
     ? (config.model_configs as Record<string, unknown>[]).map((c) => String(c.alias ?? ""))
@@ -853,6 +840,8 @@ function SdgConfigForm({
                   onChange={(v) => onChange({ ...config, [key]: v })}
                   meta={getFieldMeta(key, schema)}
                   schema={schema}
+                  path={key}
+                  requiredPaths={requiredPaths}
                 />
               ))}
             </div>
@@ -861,9 +850,17 @@ function SdgConfigForm({
 
         {complexKeys.map((key) => {
           const value = config[key]
-          // Skip empty arrays, except document_ids (a picker, usable when empty).
-          if (Array.isArray(value) && value.length === 0 && key !== "document_ids") return null
-          const isRequired = requiredTop.includes(key) || requiredKeys.includes(key)
+          const isRequired = requiredPaths.has(key)
+          // Skip empty arrays, except document_ids (a picker, usable when empty) and
+          // required keys (hiding them would block Submit with no way to re-add).
+          if (
+            Array.isArray(value) &&
+            value.length === 0 &&
+            key !== "document_ids" &&
+            !isRequired
+          ) {
+            return null
+          }
           const open = isRequired || key === "document_ids"
           // Key on `open` so the section remounts (re-seeding its open state) when
           // `open` flips false→true as the schema loads async after mount.
@@ -875,6 +872,8 @@ function SdgConfigForm({
                 onChange={(v) => onChange({ ...config, [key]: v })}
                 meta={getFieldMeta(key, schema)}
                 schema={schema}
+                path={key}
+                requiredPaths={requiredPaths}
               />
             </Section>
           )

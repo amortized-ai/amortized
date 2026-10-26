@@ -64,12 +64,24 @@ function pickBranch(value: unknown, node: Schema, defs: Record<string, Schema>):
   return null
 }
 
+// Join a raw path segment. Raw paths (e.g. "columns/0/model_alias") are what the
+// form builds while rendering, so required markers can be looked up by position.
+// Keep this in sync with the path building in recipe-config-form.tsx.
+export function joinPath(path: string, seg: string | number): string {
+  return path ? `${path}/${seg}` : String(seg)
+}
+
+// One required field, with a raw path (for markers) and a display path (for the
+// "fill these" list) — so markers and the Submit-block derive from the same walk.
+type RequiredField = { raw: string; display: string; empty: boolean }
+
 function walk(
   value: unknown,
   schema: Schema | undefined,
   defs: Record<string, Schema>,
-  path: string,
-  acc: string[],
+  raw: string,
+  display: string,
+  out: RequiredField[],
 ): void {
   if (!schema) return
   let node = resolveRef(schema, defs)
@@ -86,18 +98,17 @@ function walk(
       value && typeof value === "object" && !Array.isArray(value)
         ? (value as Record<string, unknown>)
         : {}
+    const displayFor = (key: string) =>
+      display ? `${display} › ${formatLabel(key)}` : formatLabel(key)
     if (Array.isArray(required)) {
       for (const key of required) {
-        if (isEmpty(obj[key])) {
-          acc.push(path ? `${path} › ${formatLabel(key)}` : formatLabel(key))
-        }
+        out.push({ raw: joinPath(raw, key), display: displayFor(key), empty: isEmpty(obj[key]) })
       }
     }
     if (props) {
       for (const [key, childSchema] of Object.entries(props)) {
         if (key in obj && !isEmpty(obj[key])) {
-          const childPath = path ? `${path} › ${formatLabel(key)}` : formatLabel(key)
-          walk(obj[key], childSchema, defs, childPath, acc)
+          walk(obj[key], childSchema, defs, joinPath(raw, key), displayFor(key), out)
         }
       }
     }
@@ -105,19 +116,19 @@ function walk(
 
   const items = node.items as Schema | undefined
   if (items && Array.isArray(value)) {
-    value.forEach((item, i) => walk(item, items, defs, `${path}[${i}]`, acc))
+    value.forEach((item, i) => walk(item, items, defs, joinPath(raw, i), `${display}[${i}]`, out))
   }
 }
 
-export function collectMissingRequired(
+function walkAll(
   config: unknown,
-  typeSchema?: JsonSchema | null,
-  requiredKeys: string[] = [],
-): string[] {
-  const acc: string[] = []
+  typeSchema: JsonSchema | null | undefined,
+  requiredKeys: string[],
+): RequiredField[] {
+  const out: RequiredField[] = []
   if (typeSchema) {
     const defs = ((typeSchema.$defs ?? typeSchema.definitions) ?? {}) as Record<string, Schema>
-    walk(config, typeSchema as Schema, defs, "", acc)
+    walk(config, typeSchema as Schema, defs, "", "", out)
   }
   // Per-recipe required top-level fields (declared on the recipe, not the shared
   // schema — e.g. Knowledge Ingestion requires document_ids).
@@ -126,7 +137,26 @@ export function collectMissingRequired(
       ? (config as Record<string, unknown>)
       : {}
   for (const key of requiredKeys) {
-    if (isEmpty(obj[key])) acc.push(formatLabel(key))
+    out.push({ raw: key, display: formatLabel(key), empty: isEmpty(obj[key]) })
   }
-  return [...new Set(acc)]
+  return out
+}
+
+// Readable paths of required fields that are empty — blocks Submit until filled.
+export function collectMissingRequired(
+  config: unknown,
+  typeSchema?: JsonSchema | null,
+  requiredKeys: string[] = [],
+): string[] {
+  return [...new Set(walkAll(config, typeSchema, requiredKeys).filter((f) => f.empty).map((f) => f.display))]
+}
+
+// Raw paths of ALL required fields (branch-aware) — drives the form's required
+// markers so they match exactly what blocks Submit (no name-keyed false positives).
+export function collectRequiredPaths(
+  config: unknown,
+  typeSchema?: JsonSchema | null,
+  requiredKeys: string[] = [],
+): Set<string> {
+  return new Set(walkAll(config, typeSchema, requiredKeys).map((f) => f.raw))
 }
