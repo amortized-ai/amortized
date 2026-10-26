@@ -197,6 +197,39 @@ def test_adjudicates_on_this_turns_signal_not_the_lagging_state(router: _Router)
     assert not any(sid == sub for sid, *_ in router.sent)
 
 
+def test_card_stamp_differing_from_signalled_phase_is_not_batching(router: _Router) -> None:
+    # Regression: the subagent signals the workflow phase on signal_phase (coarse slug,
+    # "gather") but stamps the present_options card with the finer skill-step slug
+    # ("training-method"). These are two vocabularies for ONE logical place. Unioning the
+    # signal_phase step into present_steps made this read as two steps → false `batching`
+    # → the owed method-options card was nudged away and never rendered. Only CARD stamps
+    # (present_options) count toward batching.
+    sub = router.add()
+    state = _state(router, sub, "gather")
+    turn = [_signal("gather"), _tool_part("present_options", {"step": "training-method"})]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn  # no nudge: the options card is preserved, not dropped
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
+def test_two_distinct_option_cards_in_one_turn_is_still_batching(router: _Router) -> None:
+    # The real batching case still fires: two present_options cards for DIFFERENT steps in
+    # one turn (the model racing two asks) → nudge to present one step at a time.
+    sub = router.add([[_signal("gather"), _tool_part("present_options", {"step": "a"})]])
+    state = _state(router, sub, "gather")
+    turn = [
+        _tool_part("present_options", {"step": "a"}),
+        _tool_part("present_options", {"step": "b"}),
+    ]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert any(sid == sub for sid, *_ in router.sent)  # nudged
+    assert out is not turn  # re-fetched
+
+
 def test_job_complete_event_skips_nudge(router: _Router) -> None:
     sub = router.add()
     state = _state(router, sub, "held-out-request-help")

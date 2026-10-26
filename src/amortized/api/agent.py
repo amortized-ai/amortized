@@ -1068,10 +1068,15 @@ def _adjudicate_subagent_turn(
     `adjudicate` resolves its obligation either way."""
     tools = [_tool_name(p) for p in parts if _tool_name(p) and not _part_errored(p)]
     skill = state.active_skill_by_target.get(target)
+    # Batching is >1 distinct CARD step in one turn — so collect stamps from the cards
+    # (`present_options`) only. `signal_phase` is NOT a card: its step is the workflow-phase
+    # slug (e.g. "gather") while a card carries the finer skill-step slug (e.g.
+    # "training-method"). Unioning the two vocabularies made a single legitimate card read as
+    # two steps → false `batching` → the owed card was nudged away (never rendered).
     present_steps = [
         str(_get_tool_input(p).get("step") or "").strip()
         for p in parts
-        if _tool_name(p) in {"present_options", "signal_phase"}
+        if _tool_name(p) == "present_options"
     ]
     has_text = any(p.get("type") == "text" and str(p.get("text") or "").strip() for p in parts)
     return adjudicate(
