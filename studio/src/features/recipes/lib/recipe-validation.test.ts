@@ -81,7 +81,7 @@ describe("collectMissingRequired", () => {
     }
     const config = { model_configs: [{ alias: "text", model: "", provider: "" }] }
     expect(collectMissingRequired(config, schema).sort()).toEqual(
-      ["Model Configs[0] › Model", "Model Configs[0] › Provider"].sort(),
+      ["Model Configs › Model", "Model Configs › Provider"].sort(),
     )
   })
 
@@ -111,7 +111,7 @@ describe("collectMissingRequired", () => {
       },
     }
     const config = { columns: [{ column_type: "llm-text", name: "q", model_alias: "" }] }
-    expect(collectMissingRequired(config, schema)).toEqual(["Columns[0] › Model Alias"])
+    expect(collectMissingRequired(config, schema)).toEqual(["Columns › Model Alias"])
   })
 
   it("flags an empty per-recipe requiredKey (document_ids)", () => {

@@ -116,7 +116,7 @@ function walk(
 
   const items = node.items as Schema | undefined
   if (items && Array.isArray(value)) {
-    value.forEach((item, i) => walk(item, items, defs, joinPath(raw, i), `${display}[${i}]`, out))
+    value.forEach((item, i) => walk(item, items, defs, joinPath(raw, i), display, out))
   }
 }
 
