@@ -148,13 +148,17 @@ class TrainingJobConfig(BaseModel):
     # parameters — otherwise the agent can't pass e.g. label_column and the worker
     # falls back to a 'label' column that a {text, category} dataset doesn't have.
     text_column: str | None = Field(
-        None, description="embedding_sft: text column name in the dataset (default 'text')"
+        None,
+        description=(
+            "classifier_sft/embedding_sft: text column name in the dataset"
+            " (default 'text')"
+        ),
     )
     label_column: str | None = Field(
         None,
         description=(
-            "embedding_sft: label/category column name (default 'label'). Set to"
-            " 'category' for the embedding-classifier SDG datasets."
+            "classifier_sft/embedding_sft: label/category column name (default"
+            " 'label'). Set to 'category' for the classification SDG datasets."
         ),
     )
     loss_type: Literal["batch_all_triplet", "batch_hard_triplet", "mnrl"] | None = (

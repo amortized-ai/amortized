@@ -7139,7 +7139,7 @@
               }
             ],
             "title": "Text Column",
-            "description": "embedding_sft: text column name in the dataset (default 'text')"
+            "description": "classifier_sft/embedding_sft: text column name in the dataset (default 'text')"
           },
           "label_column": {
             "anyOf": [
@@ -7151,7 +7151,7 @@
               }
             ],
             "title": "Label Column",
-            "description": "embedding_sft: label/category column name (default 'label'). Set to 'category' for the embedding-classifier SDG datasets."
+            "description": "classifier_sft/embedding_sft: label/category column name (default 'label'). Set to 'category' for the classification SDG datasets."
           },
           "loss_type": {
             "anyOf": [

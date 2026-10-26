@@ -149,6 +149,23 @@ describe("ActionCard", () => {
     expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })
 
+  it("shows Device: CPU (default) for a head classifier job", () => {
+    const clsAction = {
+      action: "Submit training job",
+      description: "Train classifier",
+      params: {},
+      jobType: "training" as const,
+      config: {
+        algorithm: "classifier_sft",
+        model_name_or_path: "answerdotai/ModernBERT-base",
+        num_train_epochs: 10,
+      },
+    }
+    render(<ActionCard action={clsAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    expect(screen.getByText("Device")).toBeInTheDocument()
+    expect(screen.getByText("CPU (default)")).toBeInTheDocument()
+  })
+
   it("shows Device: GPU when an embedding classifier opts into train_on_gpu", () => {
     const embAction = {
       action: "Submit training job",
