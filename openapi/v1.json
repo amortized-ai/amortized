@@ -6563,7 +6563,7 @@
           "model_name_or_path": {
             "type": "string",
             "title": "Model Name Or Path",
-            "description": "HuggingFace model ID or local path. Required unless training_job_id is set (resume from a previously finetuned model). Do NOT set both this and training_job_id \u2014 when training_job_id is set, the model is resolved from the parent job's checkpoint.",
+            "description": "HuggingFace model ID or local path.",
             "default": ""
           },
           "training_job_id": {
