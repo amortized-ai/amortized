@@ -261,6 +261,41 @@ def test_prose_only_missing_signal_is_still_nudged(router: _Router) -> None:
     assert "PHASE SIGNAL MISSING" in router.system_to(sub)  # guard nudged
 
 
+def test_off_vocab_signal_prose_only_is_nudged_like_a_skip(router: _Router) -> None:
+    # #1a: a prose-only turn that signals a slug which is NOT a recognized `## Workflow` section or
+    # skill `### Step` (here "gather-requirements" vs a real eval slug) keys to no obligation and
+    # names no section — the adjudicator is as blind to it as to a skipped signal — so the
+    # signalled-guard re-drives it ONCE to the exact vocabulary.
+    sub = router.add(
+        [[_signal("eval-dataset"), _tool_part("present_options", {"step": "eval-dataset"})]]
+    )
+    state = _state(router, sub, "eval-dataset")
+    prose = [
+        _text_part("Let me gather the requirements for your eval."),
+        _signal("gather-requirements"),  # off-vocab: not an eval section slug
+    ]
+
+    _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
+
+    assert "PHASE SIGNAL MISSING" in router.system_to(sub)  # guard nudged, like a skip
+
+
+def test_off_vocab_signal_with_a_card_is_preserved(router: _Router) -> None:
+    # #1a is still gated on the card rules: an off-vocab signal that nonetheless rendered a card is
+    # NOT re-driven (that would strand the card) — the lenient turn is left exactly as-is.
+    sub = router.add()
+    state = _state(router, sub, "eval-dataset")
+    turn = [
+        _signal("gather-requirements"),  # off-vocab
+        _tool_part("present_options", {"step": "eval-dataset"}),
+    ]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn  # card preserved, no guard/stall nudge
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
 def test_card_on_wrong_edge_is_preserved_not_dropped(router: _Router) -> None:
     # Even when a stale key makes a card-bearing turn look like a wrong_edge, the card is kept —
     # only genuine `batching` is worth dropping a card to re-ask.

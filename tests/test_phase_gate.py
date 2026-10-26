@@ -10,7 +10,7 @@ plus the held-out-ask-count / held-out-request-help branch).
 from __future__ import annotations
 
 import amortized.api.phases as phases
-from amortized.api.phases import Owed, adjudicate, owed_for
+from amortized.api.phases import Owed, adjudicate, owed_for, signal_is_known
 
 # --------------------------------------------------------------------------- #
 # Lenient phases — bare prose is a legitimate free-text question
@@ -27,6 +27,30 @@ def test_lenient_phase_bare_prose_is_ok() -> None:
 def test_unknown_slug_is_lenient() -> None:
     assert adjudicate("eval", "no-such-step", []).kind == "ok"
     assert owed_for("eval", "no-such-step") is None
+
+
+# --------------------------------------------------------------------------- #
+# signal_is_known — the #1a vocabulary predicate (keys the signalled-guard, NOT adjudicate)
+# --------------------------------------------------------------------------- #
+
+
+def test_signal_is_known_accepts_required_and_section_slugs() -> None:
+    # _REQUIRED keys and `## Workflow` section slugs are recognized (exact, normalized).
+    assert signal_is_known("eval", "validate")  # _REQUIRED
+    assert signal_is_known("eval", "held-out-ask-count")  # section-only (lenient but keyed)
+    assert signal_is_known("training", "gather")  # the coarse umbrella IS a real section slug
+    assert signal_is_known("sdg", "route")
+    assert signal_is_known("eval", "Validate")  # normalization applies
+
+
+def test_signal_is_known_rejects_off_vocab_and_prefix_variants() -> None:
+    # The driver inventing a slug (or an off-by-prefix one) is NOT keyed — the guard treats it
+    # like a skipped signal even though the pointer would prefix-resolve "gather-requirements".
+    assert not signal_is_known("training", "gather-requirements")
+    assert not signal_is_known("eval", "no-such-step")
+    assert not signal_is_known("eval", "")
+    # A real slug for the WRONG role is still unknown for this role.
+    assert not signal_is_known("training", "eval-dataset")
 
 
 # --------------------------------------------------------------------------- #

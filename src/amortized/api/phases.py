@@ -187,9 +187,11 @@ def _skill_steps(skill_name: str) -> tuple[tuple[str, str], ...]:
             _flush()
             raw = s[4:].strip()
             found = _SIGNAL_MARKER.search(raw)
-            title, marker, body = _SIGNAL_MARKER.sub("", raw).strip(), (
-                found.group(1) if found else None
-            ), []
+            title, marker, body = (
+                _SIGNAL_MARKER.sub("", raw).strip(),
+                (found.group(1) if found else None),
+                [],
+            )
         else:
             body.append(line)
     _flush()
@@ -416,6 +418,31 @@ def _skill_owed(skill_name: str | None, step_value: str | None) -> Owed | None:
     if skill_step_is_review(skill_name, step_value):
         return Owed(all_of=frozenset({"show_prompt", "present_options"}))
     return Owed(any_of=frozenset({"present_options"}))
+
+
+def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
+    """True when the signalled `step` is a slug the phase machinery can key on for this role — a
+    `_REQUIRED` phase, a `## Workflow` section, or a `### Step` of the loaded skill — matched
+    EXACTLY on the normalized slug.
+
+    An unrecognized slug (the driver invented one, e.g. `gather_requirements` instead of the real
+    `gather`) keys to no obligation (`owed_for` is lenient) and names no section (the pointer stays
+    generic), so the adjudicator and the pointer are both blind to it. For the signalled-guard such
+    a turn is therefore EQUIVALENT to a skipped signal — the key it leaves behind is unusable.
+    Matching is exact (not the pointer's lenient prefix in `_resolve_title`/`skill_step_title`) on
+    purpose: an off-by-prefix slug like `gather-requirements` would prefix-resolve to `gather` for
+    the pointer yet still leave the adjudicator mis-keyed, so the guard re-drives it to the exact
+    vocabulary."""
+    if not step:
+        return False
+    target = _norm(step)
+    if not target:
+        return False
+    if (role, target) in _REQUIRED:
+        return True
+    if role in _SUBAGENTS and any(slug == target for slug, _ in _sections(role)):
+        return True
+    return bool(skill) and any(slug == target for slug, _ in _skill_steps(skill))
 
 
 def owed_for(
