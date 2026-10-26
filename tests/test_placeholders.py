@@ -42,6 +42,11 @@ def test_knowledge_ingestion_declares_document_ids_required() -> None:
     assert _required_by_name("Task Distillation") == []
 
 
+def test_training_templates_require_model_and_dataset() -> None:
+    assert _required_by_name("Embedding Classifier") == ["model_name_or_path", "parent_job_id"]
+    assert _required_by_name("Knowledge Ingestion OSFT") == ["model_name_or_path", "parent_job_id"]
+
+
 def test_template_model_refs_use_canonical_token() -> None:
     for cfg in _configs_by_name().values():
         for mc in cfg.get("model_configs", []):

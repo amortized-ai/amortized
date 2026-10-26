@@ -1,7 +1,8 @@
 {
   "_meta": {
     "name": "Knowledge Ingestion OSFT",
-    "description": "Fine-tune a model on document QA data using OSFT. Pair with the Knowledge Ingestion SDG template."
+    "description": "Fine-tune a model on document QA data using OSFT. Pair with the Knowledge Ingestion SDG template.",
+    "required": ["model_name_or_path", "parent_job_id"]
   },
   "algorithm": "osft",
   "model_name_or_path": "Qwen/Qwen3.5-4B",

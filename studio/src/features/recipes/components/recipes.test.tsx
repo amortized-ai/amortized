@@ -233,21 +233,22 @@ describe("RecipeConfigForm", () => {
     expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
   })
 
-  it("renders a dataset picker for data_run_id (run-id mode)", () => {
-    // data_run_id lands in Training's "Other Parameters"; mark it required so
-    // that section opens and the picker renders.
-    const schema = {
-      training: {
-        required: ["data_run_id"],
-        properties: { data_run_id: { description: "MLflow run holding the dataset" } },
-      },
-    }
-    const config = { data_run_id: "" }
+  it("flags the training dataset (parent_job_id) required via requiredKeys", () => {
+    // The dataset lives in the existing parent_job_id picker ("Other Parameters");
+    // requiredKeys from the template _meta flags it required and opens the section.
+    const config = { algorithm: "osft", model_name_or_path: "Qwen/Qwen3.5-4B", parent_job_id: "" }
     render(
-      <RecipeConfigForm type="training" config={config} onChange={vi.fn()} schema={schema} />,
+      <RecipeConfigForm
+        type="training"
+        config={config}
+        onChange={vi.fn()}
+        requiredKeys={["parent_job_id"]}
+      />,
     )
+    // The dataset picker is shown (labelled "Dataset") and marked required.
     expect(screen.getByText("Dataset")).toBeInTheDocument()
     expect(screen.getByText("Select a dataset...")).toBeInTheDocument()
+    expect(screen.getAllByLabelText("required").length).toBeGreaterThan(0)
   })
 
   it("renders a catalog model picker for model_configs entries", () => {

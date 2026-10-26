@@ -706,10 +706,12 @@ function TrainingConfigForm({
   config,
   onChange,
   schema,
+  requiredKeys = [],
 }: {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  requiredKeys?: string[]
 }) {
   const algorithm = (config.algorithm as string) || "sft"
   const isLora = algorithm.includes("lora")
@@ -720,8 +722,10 @@ function TrainingConfigForm({
   const advancedKeys = TRAINING_ADVANCED_KEYS.filter((k) => hasKey(config, k))
   const otherKeys = Object.keys(config).filter((k) => !ALL_TRAINING_KNOWN.has(k))
 
-  // Branch-aware required paths — same source as the Submit-block, so markers match.
-  const requiredPaths = collectRequiredPaths(config, schema)
+  // Branch-aware required paths (schema + per-recipe requiredKeys) — same source as
+  // the Submit-block, so markers match. requiredKeys carries e.g. parent_job_id for
+  // training templates that require a dataset.
+  const requiredPaths = collectRequiredPaths(config, schema, requiredKeys)
   const hasRequired = (keys: string[]) => keys.some((k) => requiredPaths.has(k))
 
   const tField = (key: string) => (
@@ -886,7 +890,14 @@ function SdgConfigForm({
 export function RecipeConfigForm({ type, config, onChange, schema, requiredKeys }: RecipeConfigFormProps) {
   const typeSchema = schema ? (schema[type] as JsonSchema | undefined) : null
   if (type === "training") {
-    return <TrainingConfigForm config={config} onChange={onChange} schema={typeSchema} />
+    return (
+      <TrainingConfigForm
+        config={config}
+        onChange={onChange}
+        schema={typeSchema}
+        requiredKeys={requiredKeys}
+      />
+    )
   }
   return (
     <SdgConfigForm

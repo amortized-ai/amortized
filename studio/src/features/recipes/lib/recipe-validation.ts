@@ -137,9 +137,16 @@ function walkAll(
       ? (config as Record<string, unknown>)
       : {}
   for (const key of requiredKeys) {
-    out.push({ raw: key, display: formatLabel(key), empty: isEmpty(obj[key]) })
+    out.push({ raw: key, display: requiredKeyLabel(key), empty: isEmpty(obj[key]) })
   }
   return out
+}
+
+// The dataset-reference keys render as a single "Dataset" picker, so show "Dataset"
+// in the block list rather than the raw field name ("Parent Job Id").
+const DATASET_REF_KEYS = new Set(["parent_job_id", "data_run_id", "eval_data_run_id"])
+function requiredKeyLabel(key: string): string {
+  return DATASET_REF_KEYS.has(key) ? "Dataset" : formatLabel(key)
 }
 
 // Readable paths of required fields that are empty — blocks Submit until filled.

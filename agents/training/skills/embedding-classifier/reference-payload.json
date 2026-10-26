@@ -1,7 +1,8 @@
 {
   "_meta": {
     "name": "Embedding Classifier",
-    "description": "Train a compact embedding classifier / router with embedding_sft. Pair with the Embedding Classifier SDG template."
+    "description": "Train a compact embedding classifier / router with embedding_sft. Pair with the Embedding Classifier SDG template.",
+    "required": ["model_name_or_path", "parent_job_id"]
   },
   "algorithm": "embedding_sft",
   "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",

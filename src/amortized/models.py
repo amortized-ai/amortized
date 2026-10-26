@@ -45,12 +45,7 @@ class TrainingJobConfig(BaseModel):
     )
     model_name_or_path: str = Field(
         "",
-        description=(
-            "HuggingFace model ID or local path. Required unless training_job_id"
-            " is set (resume from a previously finetuned model)."
-            " Do NOT set both this and training_job_id — when training_job_id"
-            " is set, the model is resolved from the parent job's checkpoint."
-        ),
+        description="HuggingFace model ID or local path.",
     )
     training_job_id: str = Field(
         "",
