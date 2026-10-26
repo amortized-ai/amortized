@@ -204,6 +204,9 @@ export function DatasetPickerField({
               Unknown dataset ({current.slice(0, 8)})
             </SelectItem>
           )}
+          {options.length === 0 && !current && (
+            <div className="px-2 py-1.5 text-sm text-muted-foreground">No datasets found.</div>
+          )}
           {options.map((o) => (
             <SelectItem key={o.key} value={o.key} textValue={o.name}>
               <div className="flex flex-col">
