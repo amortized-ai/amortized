@@ -353,17 +353,6 @@
   animation: overlay-out 0.16s ease-in both;
 }
 
-/* Tutorial walkthrough */
-
-@keyframes tutorial-ring-breathe {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-.tutorial-ring {
-  animation: tutorial-ring-breathe 3s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animate-message-in,
   .animate-welcome {
@@ -377,9 +366,6 @@
   .dialog-panel-content[data-state="closed"],
   .dialog-panel-overlay[data-state="open"],
   .dialog-panel-overlay[data-state="closed"] {
-    animation: none;
-  }
-  .tutorial-ring {
     animation: none;
   }
 }

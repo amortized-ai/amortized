@@ -185,6 +185,79 @@ class TestCreateJob:
         assert response.status_code == 201
 
 
+class TestUpstreamDependencyPrecondition:
+    """The 'don't advance past a non-succeeded upstream' invariant is enforced at the TOOL
+    boundary: validate_*/create_* call _require_dependency_succeeded and return HTTP 422, which
+    fastapi-mcp surfaces to the agent as a readable tool error it self-corrects from. This is
+    the structural home of the invariant (it replaces the former agent.py prose stage-gate —
+    see docs/agent-gates-proposal.md), so it is enforced for every driver tier."""
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_nonexistent_parent(self, client: httpx.AsyncClient) -> None:
+        # parent_job_id as the data source (no data_path) referencing a job that doesn't exist.
+        resp = await _create_training(client, parent_job_id="no-such-job", data_path="")
+        assert resp.status_code == 422
+        assert "parent_job_id" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_training_rejects_unsucceeded_parent(self, client: httpx.AsyncClient) -> None:
+        # A freshly-created SDG job is 'queued', not 'succeeded' — training on it must be rejected.
+        sdg = await _create_sdg(client)
+        assert sdg.status_code == 201
+        parent_id = sdg.json()["id"]
+        resp = await _create_training(client, parent_job_id=parent_id, data_path="")
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_validate_training_also_rejects_unsucceeded_parent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # The same invariant fires on the AGENT-facing validate_* tool (the model sees this 422
+        # as a tool error), not only on the frontend create_* path.
+        sdg = await _create_sdg(client)
+        parent_id = sdg.json()["id"]
+        body = {**TRAINING_BODY, "data_path": "", "parent_job_id": parent_id}
+        resp = await client.post("/api/v1/jobs/training/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unsucceeded_dataset_parent(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Eval has TWO upstream deps; the dataset parent (parent_job_id) must be 'succeeded'.
+        sdg = await _create_sdg(client)
+        parent_id = sdg.json()["id"]
+        body = {
+            "model_name_or_path": "Qwen/Qwen3.5-0.8B",
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "parent_job_id": parent_id,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+    @pytest.mark.asyncio
+    async def test_validate_eval_rejects_unsucceeded_training_model(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        # Eval's other upstream dep: the model under eval (training_job_id) must be 'succeeded'.
+        # A fresh training job is 'queued', so evaluating it must be rejected at validate time.
+        tr = await _create_training(client)
+        tr_id = tr.json()["id"]
+        body = {
+            "training_job_id": tr_id,
+            "judge": {"base_url": "http://x/v1", "model": "gpt-oss"},
+            "rubric": [{"name": "acc", "description": "Is the answer correct?"}],
+            "eval_data_run_id": "d" * 32,
+        }
+        resp = await client.post("/api/v1/jobs/eval/validate", json=body)
+        assert resp.status_code == 422
+        assert "succeeded" in str(resp.json()).lower()
+
+
 class TestListJobs:
     @pytest.mark.asyncio
     async def test_list_empty(self, client: httpx.AsyncClient) -> None:

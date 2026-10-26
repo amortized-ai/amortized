@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("amortized.core.jobs")
 
+# embedding_sft (and its classifier/embedding aliases) trains in-process via
+# SentenceTransformerTrainer — CPU-only, no torchrun, nproc_per_node ignored — so it requests
+# 0 GPUs. Kept in sync with the embedding_sft branch in jobs/training.py (issue #486) and the
+# ALGO_ALIASES there.
+_CPU_TRAINING_ALGORITHMS = frozenset({"embedding_sft", "classifier", "embedding"})
+
 
 def estimate_gpu_demand(job: dict[str, Any]) -> int:
     """Best-effort count of GPUs a job's pod will request, from its (type, config).
@@ -27,7 +33,9 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     count is only known after the (async, side-effecting) builder runs. This mirrors
     the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
     building. Keep in sync with ``amortized.jobs.*``:
-      - training        -> nproc_per_node (default 1)
+      - training, embedding_sft/classifier -> train_on_gpu ? 1 : 0 (single-device, in-process;
+                                              CPU by default, 1-GPU opt-in; nproc_per_node ignored)
+      - training, other algorithms         -> nproc_per_node (default 1)
       - sdg / upload     -> 0
       - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
       - eval, embedded serving (training_job_id / model_name_or_path, no endpoint)
@@ -49,6 +57,10 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
 
     job_type = job.get("type")
     if job_type == JobType.training.value:
+        if str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS:
+            # embedding_sft trains in-process on a single device: CPU by default,
+            # 1-GPU opt-in via train_on_gpu. nproc_per_node is ignored (no torchrun).
+            return 1 if config.get("train_on_gpu") else 0
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":
@@ -92,9 +104,19 @@ async def create_job(
     # instead of letting it sit silently queued.
     demand = estimate_gpu_demand({"type": job_type.value, "config": config})
     if demand > _settings.gpu_budget:
+        # Name the knob that actually drove the demand so the error is actionable:
+        # embedding_sft/classifier reach it via train_on_gpu (a single GPU), every other
+        # training algorithm (and embedded-serving eval) via nproc_per_node.
+        if (
+            job_type == JobType.training
+            and str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS
+        ):
+            knob, remedy = "train_on_gpu", "set train_on_gpu=false to train on CPU"
+        else:
+            knob, remedy = "nproc_per_node", "reduce nproc_per_node"
         raise InvalidJobStateError(
-            f"job requests {demand} GPU(s) (nproc_per_node) but the per-user GPU budget is"
-            f" {_settings.gpu_budget} — reduce nproc_per_node or raise the budget"
+            f"job requests {demand} GPU(s) ({knob}) but the per-user GPU budget is"
+            f" {_settings.gpu_budget} — {remedy} or raise the budget"
             " (GPU_PER_USER / AMORTIZED_GPU_BUDGET)"
         )
 

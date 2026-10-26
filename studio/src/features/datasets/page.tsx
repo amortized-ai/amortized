@@ -90,7 +90,7 @@ export default function DatasetsPage() {
 
   return (
     <div className="space-y-6">
-      <div data-tutorial="datasets-header" className="space-y-4">
+      <div className="space-y-4">
         <PageHeader title="Datasets" description="Browse and inspect your generated training data" />
 
         <div className="animate-message-in rounded-xl border bg-card p-4">

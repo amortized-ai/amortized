@@ -3658,6 +3658,12 @@
             "title": "Parent Job Id",
             "description": "Parent SDG/upload job ID holding the eval dataset",
             "default": ""
+          },
+          "acknowledge_warnings": {
+            "type": "string",
+            "title": "Acknowledge Warnings",
+            "description": "Acknowledgment TOKEN for validation warnings. Leave empty on the first validate: any warning (leakage, rubric drift, recipe mismatch) returns a 422 whose message contains a token. Relay the warning(s) to the user; only if they choose to proceed, re-validate with this set to that exact token. The token is tied to the specific warnings, so changing the config yields a new warning set and a new token - forcing a fresh decision, never suppressing it.",
+            "default": ""
           }
         },
         "additionalProperties": true,
@@ -5180,7 +5186,7 @@
           "locale": {
             "type": "string",
             "title": "Locale",
-            "description": "Locale that determines the language and geographic location that a synthetic person will be sampled from. Must be a locale supported by a managed Nemotron Personas dataset. Managed datasets exist for the following locales: en_US, en_IN, en_SG, fr_FR, hi_Deva_IN, hi_Latn_IN, ja_JP, ko_KR, pt_BR.",
+            "description": "Locale that determines the language and geographic location that a synthetic person will be sampled from. Must be a locale supported by a managed Nemotron Personas dataset. Managed datasets exist for the following locales: en_GB, de_DE, en_US, en_IN, en_SG, fr_FR, hi_Deva_IN, hi_Latn_IN, ja_JP, ko_KR, pt_BR.",
             "default": "en_US"
           },
           "sex": {
@@ -6846,8 +6852,14 @@
             "type": "integer",
             "minimum": 1.0,
             "title": "Nproc Per Node",
-            "description": "GPUs for this single training job (single-node multi-GPU). Training Hub launches torchrun across this many GPUs, and the pod requests that many nvidia.com/gpu \u2014 so it needs ONE node with >= nproc_per_node GPUs. Default 1. Must be <= the per-user GPU budget.",
+            "description": "GPUs for this single training job (single-node multi-GPU). Training Hub launches torchrun across this many GPUs, and the pod requests that many nvidia.com/gpu \u2014 so it needs ONE node with >= nproc_per_node GPUs. Default 1. Must be <= the per-user GPU budget. IGNORED for embedding_sft (single-device, no torchrun) \u2014 use train_on_gpu instead.",
             "default": 1
+          },
+          "train_on_gpu": {
+            "type": "boolean",
+            "title": "Train On Gpu",
+            "description": "embedding_sft ONLY: train the embedding classifier on a GPU (1) instead of the CPU default (0). embedding_sft trains in-process on a single device, so this is a boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is ~100x faster (benchmark: all-MiniLM ~24 samples/s CPU vs ~2800/s on an H100), which matters for many epochs or large datasets. Ignored for all other algorithms (they use nproc_per_node).",
+            "default": false
           },
           "topic": {
             "type": "string",

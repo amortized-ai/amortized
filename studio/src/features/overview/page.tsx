@@ -3,12 +3,11 @@ import { SectionCards } from "./components/section-cards"
 import { RecentJobs } from "./components/recent-jobs"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Server, Layers, Zap, Settings, Sparkles, Compass } from "lucide-react"
+import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Sparkles } from "lucide-react"
 import { Link } from "react-router"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import { useJobs } from "@/features/jobs/api/use-jobs"
-import { useUIStore } from "@/stores/ui-store"
 
 export default function OverviewPage() {
   const { data: datasets, isLoading: datasetsLoading } = useDatasets()
@@ -50,13 +49,6 @@ export default function OverviewPage() {
               <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> On-prem deployment</span>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-4">
-              <button
-                onClick={() => useUIStore.getState().startTutorial()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#0066cc]/25 bg-[#e0f0ff]/40 px-3.5 py-2 text-xs font-medium text-[#0066cc] transition-all duration-200 hover:bg-[#e0f0ff] hover:border-[#0066cc]/40 hover:shadow-sm dark:border-[#4394e5]/25 dark:bg-[#003366]/30 dark:text-[#4394e5] dark:hover:bg-[#003366]/50"
-              >
-                <Compass className="h-3.5 w-3.5" />
-                Take a Tour
-              </button>
               <Link
                 to="/chat"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[#ee0000]/20 bg-[#fce3e3]/40 px-3.5 py-2 text-xs font-medium text-[#ee0000] transition-all duration-200 hover:bg-[#fce3e3] hover:border-[#ee0000]/35 hover:shadow-sm dark:border-[#f56e6e]/20 dark:bg-[#731f00]/25 dark:text-[#f56e6e] dark:hover:bg-[#731f00]/40"
@@ -71,80 +63,6 @@ export default function OverviewPage() {
                 <BookOpen className="h-3.5 w-3.5" />
                 Browse Recipes
               </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Setup section */}
-        <div className="px-4 lg:px-6 space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="h-px flex-1 bg-border/50" />
-            <h2 className="text-sm font-semibold text-muted-foreground/70 uppercase tracking-wider shrink-0">Setup</h2>
-            <div className="h-px flex-1 bg-border/50" />
-          </div>
-          <div
-            className="animate-message-in rounded-xl border bg-card p-5 space-y-4"
-            style={{ animationDelay: "300ms" }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Before you start</p>
-                <h3 className="text-sm font-semibold">Connect your services</h3>
-              </div>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/settings" className="gap-1.5">
-                  <Settings className="h-3.5 w-3.5" />
-                  Check Settings
-                </Link>
-              </Button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <Link to="/settings" className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 transition-all duration-300 hover:border-[#b9dafc] hover:bg-[#e0f0ff]/30 dark:hover:border-[#003366] dark:hover:bg-[#003366]/20 cursor-pointer">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#e0f0ff] text-[#0066cc] transition-colors duration-300 group-hover:bg-[#b9dafc] dark:bg-[#003366]/40 dark:text-[#4394e5]">
-                  <Server className="h-3.5 w-3.5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">Backend API</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Runs jobs and manages recipes. Start with <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">amortized serve</code></p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-300 mt-1" />
-              </Link>
-              <Link to="/settings" className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 transition-all duration-300 hover:border-[#d0c5f4] hover:bg-[#ece6ff]/30 dark:hover:border-[#21134d] dark:hover:bg-[#1b0d33]/20 cursor-pointer">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#ece6ff] text-[#5e40be] transition-colors duration-300 group-hover:bg-[#d0c5f4] dark:bg-[#1b0d33]/40 dark:text-[#876fd4]">
-                  <Layers className="h-3.5 w-3.5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">MLflow</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Tracks experiments, stores datasets and models</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-300 mt-1" />
-              </Link>
-              <Link to="/settings" className="group flex items-start gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 transition-all duration-300 hover:border-[#ffe072] hover:bg-[#fff4cc]/30 dark:hover:border-[#73480b] dark:hover:bg-[#54330b]/20 cursor-pointer">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#fff4cc] text-[#b98412] transition-colors duration-300 group-hover:bg-[#ffe072] dark:bg-[#54330b]/40 dark:text-[#dca614]">
-                  <Zap className="h-3.5 w-3.5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">AI Gateway</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">Routes to local models or cloud LLMs for data generation</p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground transition-all duration-300 mt-1" />
-              </Link>
-            </div>
-
-            <div className="flex items-center justify-between border-t pt-3">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground/80">All three are required</span> for the full workflow.
-              </p>
-              <Button asChild variant="outline" size="sm" className="h-7 text-xs gap-1.5">
-                <a
-                  href="https://github.com/amortized-ai/amortized#readme"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Full setup guide <ArrowRight className="h-3 w-3" />
-                </a>
-              </Button>
             </div>
           </div>
         </div>

@@ -466,9 +466,41 @@ class TestTrainingHubConfig:
         assert parsed["effective_batch_size"] == 8
         assert parsed["ckpt_output_dir"] == "/output"
         assert parsed["max_seq_len"] == 2048
-        assert parsed["max_batch_len"] == 60000
+        # thub sft takes max_tokens_per_gpu (like osft), not max_batch_len, and requires a
+        # learning_rate; the caller-provided learning_rate is preserved.
+        assert parsed["max_tokens_per_gpu"] == 4096
+        assert parsed["learning_rate"] == 0.0002
+        assert "max_batch_len" not in parsed
         assert "algorithm" not in parsed
         assert "micro_batch_size" not in parsed
+
+    def test_thub_config_yaml_sft_defaults_match_osft(self) -> None:
+        # sft previously failed on thub because it sent max_batch_len and omitted learning_rate.
+        # It must now produce the same instructlab-training knobs as osft (max_tokens_per_gpu +
+        # a default learning_rate), so a plain sft job (no explicit lr) runs on the thub sft path.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        base = {"model_name_or_path": "Qwen/Qwen3-0.6B", "data_path": "/d.jsonl"}
+        sft = yaml.safe_load(_training_hub_config_yaml("sft", {**base, "algorithm": "sft"}))
+        osft = yaml.safe_load(_training_hub_config_yaml("osft", {**base, "algorithm": "osft"}))
+        assert sft["max_tokens_per_gpu"] == osft["max_tokens_per_gpu"] == 4096
+        assert sft["learning_rate"] == osft["learning_rate"] == 2e-5
+        assert "max_batch_len" not in sft
+
+    def test_thub_config_yaml_lora_sft_unchanged(self) -> None:
+        # lora_sft behavior is intentionally preserved: effective_batch_size + max_seq_len +
+        # the (thub-ignored) max_batch_len, and NO amortized-set learning_rate (thub lora-sft
+        # applies its own 2e-4 default).
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        parsed = yaml.safe_load(_training_hub_config_yaml(
+            "lora_sft", {"algorithm": "lora_sft", "model_name_or_path": "m", "data_path": "/d"}
+        ))
+        assert parsed["effective_batch_size"] == 8
+        assert parsed["max_seq_len"] == 2048
+        assert parsed["max_batch_len"] == 60000
+        assert "max_tokens_per_gpu" not in parsed
+        assert "learning_rate" not in parsed
 
     def test_thub_config_yaml_gepa_output_dir(self) -> None:
         from amortized.jobs.training import _training_hub_config_yaml
@@ -538,6 +570,20 @@ class TestTrainingHubConfig:
         assert "max_seq_len" not in parsed
         assert "effective_batch_size" not in parsed
         assert "data_output_dir" not in parsed
+
+    def test_thub_config_omits_train_on_gpu(self) -> None:
+        # train_on_gpu is an amortized-side scheduling knob (CPU vs 1 GPU), not a thub
+        # parameter — it must not leak into the generated config.yaml.
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "embedding_sft",
+            "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+            "data_path": "/data/train.parquet",
+            "train_on_gpu": True,
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("embedding_sft", config))
+        assert "train_on_gpu" not in parsed
 
     async def test_embedding_sft_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build

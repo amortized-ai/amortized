@@ -91,7 +91,8 @@ class TestCreateJob:
     async def test_create_rejects_job_over_gpu_budget(self, repo: Repository) -> None:
         # Default gpu_budget is 1, so a 2-GPU training could never be admitted — reject
         # it at creation with a clear error rather than letting it sit silently queued.
-        with pytest.raises(InvalidJobStateError, match="GPU budget"):
+        # The message names the nproc_per_node knob for generative algorithms.
+        with pytest.raises(InvalidJobStateError, match="reduce nproc_per_node") as exc:
             await create_job(
                 repo,
                 job_type=JobType.training,
@@ -102,6 +103,29 @@ class TestCreateJob:
                     "nproc_per_node": 2,
                 },
             )
+        assert "train_on_gpu" not in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_embedding_gpu_over_budget_names_train_on_gpu(
+        self, repo: Repository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # embedding_sft reaches the budget via train_on_gpu (1 GPU), not nproc_per_node, so the
+        # rejection must point at train_on_gpu/CPU — not advise "reduce nproc_per_node".
+        from amortized.core import jobs as jobs_mod
+
+        monkeypatch.setattr(jobs_mod._settings, "gpu_budget", 0)
+        with pytest.raises(InvalidJobStateError, match="train_on_gpu") as exc:
+            await create_job(
+                repo,
+                job_type=JobType.training,
+                config={
+                    "algorithm": "embedding_sft",
+                    "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                    "data_path": "t.parquet",
+                    "train_on_gpu": True,
+                },
+            )
+        assert "nproc_per_node" not in str(exc.value)
 
 
 class TestGetJob:
@@ -211,6 +235,29 @@ class TestEstimateGpuDemand:
 
     def test_training_respects_nproc_per_node(self) -> None:
         assert estimate_gpu_demand({"type": "training", "config": {"nproc_per_node": 2}}) == 2
+
+    def test_embedding_sft_training_defaults_to_cpu(self) -> None:
+        # embedding_sft (and its classifier/embedding aliases) trains in-process on a single
+        # device: CPU (0 GPUs) by default, regardless of nproc_per_node — matches the builder
+        # (issue #486).
+        for algo in ("embedding_sft", "classifier", "embedding"):
+            assert estimate_gpu_demand({"type": "training", "config": {"algorithm": algo}}) == 0
+        assert estimate_gpu_demand(
+            {"type": "training", "config": {"algorithm": "embedding_sft", "nproc_per_node": 4}}
+        ) == 0
+
+    def test_embedding_sft_training_gpu_opt_in(self) -> None:
+        # train_on_gpu reserves exactly one GPU (single-device), even with a large nproc_per_node.
+        for algo in ("embedding_sft", "classifier", "embedding"):
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "train_on_gpu": True}}
+            ) == 1
+        assert estimate_gpu_demand(
+            {
+                "type": "training",
+                "config": {"algorithm": "embedding_sft", "train_on_gpu": True, "nproc_per_node": 4},
+            }
+        ) == 1
 
     def test_sdg_and_upload_need_no_gpu(self) -> None:
         assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0

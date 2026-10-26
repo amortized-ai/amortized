@@ -17,6 +17,54 @@ import type {
   PaginationParams,
 } from "@/types/api"
 
+// Pull a human-readable message out of an API error body. Handles the app's
+// canonical envelope ({ message, details: [{ field, error }] }), FastAPI's
+// { detail } (a string, or a validation array of { loc, msg }), and a short
+// plain-text body. Returns undefined when nothing useful can be extracted.
+function formatErrorBody(body: unknown): string | undefined {
+  if (typeof body === "string") {
+    return body.length > 0 && body.length < 2000 && !body.includes("<html") ? body : undefined
+  }
+  if (typeof body !== "object" || body === null) return undefined
+  const o = body as Record<string, unknown>
+
+  let base: string | undefined
+  if (typeof o.message === "string" && o.message) base = o.message
+  else if (typeof o.detail === "string" && o.detail) base = o.detail
+
+  const rawItems = Array.isArray(o.details)
+    ? o.details
+    : Array.isArray(o.detail)
+      ? o.detail
+      : []
+  const items = rawItems
+    .map((item): string | undefined => {
+      if (!item || typeof item !== "object") return undefined
+      const it = item as Record<string, unknown>
+      // app envelope: { field, error }
+      if ("field" in it || "error" in it) {
+        const field = it.field != null ? String(it.field) : ""
+        const msg = it.error != null ? String(it.error) : ""
+        return field && msg ? `${field}: ${msg}` : msg || field || undefined
+      }
+      // pydantic / FastAPI: { loc, msg, type }
+      if ("loc" in it || "msg" in it) {
+        const loc = Array.isArray(it.loc)
+          ? it.loc.filter((p) => p !== "body").join(".")
+          : it.loc != null ? String(it.loc) : ""
+        const msg = it.msg != null ? String(it.msg) : ""
+        return loc && msg ? `${loc}: ${msg}` : msg || loc || undefined
+      }
+      return undefined
+    })
+    .filter((x): x is string => Boolean(x))
+
+  if (base && items.length) return `${base}\n${items.map((i) => `- ${i}`).join("\n")}`
+  if (base) return base
+  if (items.length) return items.map((i) => `- ${i}`).join("\n")
+  return undefined
+}
+
 class ApiError extends Error {
   declare status: number
   declare statusText: string
@@ -27,13 +75,7 @@ class ApiError extends Error {
   declare code?: string
 
   constructor(status: number, statusText: string, body: unknown, code?: string) {
-    let detail: string | undefined
-    if (typeof body === "object" && body !== null && "detail" in body) {
-      detail = String((body as Record<string, unknown>).detail)
-    } else if (typeof body === "string" && body.length > 0 && body.length < 200 && !body.includes("<html")) {
-      detail = body
-    }
-    const friendly = detail ?? `API error: ${status} ${statusText}`
+    const friendly = formatErrorBody(body) ?? `API error: ${status} ${statusText}`
     super(friendly)
     this.name = "ApiError"
     this.status = status

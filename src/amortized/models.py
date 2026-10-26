@@ -131,7 +131,19 @@ class TrainingJobConfig(BaseModel):
             "GPUs for this single training job (single-node multi-GPU). Training Hub"
             " launches torchrun across this many GPUs, and the pod requests that many"
             " nvidia.com/gpu — so it needs ONE node with >= nproc_per_node GPUs. Default 1."
-            " Must be <= the per-user GPU budget."
+            " Must be <= the per-user GPU budget. IGNORED for embedding_sft (single-device,"
+            " no torchrun) — use train_on_gpu instead."
+        ),
+    )
+    train_on_gpu: bool = Field(
+        False,
+        description=(
+            "embedding_sft ONLY: train the embedding classifier on a GPU (1) instead of the"
+            " CPU default (0). embedding_sft trains in-process on a single device, so this is a"
+            " boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is ~100x faster"
+            " (benchmark: all-MiniLM ~24 samples/s CPU vs ~2800/s on an H100), which matters for"
+            " many epochs or large datasets. Ignored for all other algorithms (they use"
+            " nproc_per_node)."
         ),
     )
     topic: str = Field(
@@ -664,6 +676,17 @@ class EvalJobConfig(BaseModel):
 
 class EvalJobRequest(EvalJobConfig):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
+    acknowledge_warnings: str = Field(
+        "",
+        description=(
+            "Acknowledgment TOKEN for validation warnings. Leave empty on the first"
+            " validate: any warning (leakage, rubric drift, recipe mismatch) returns a 422"
+            " whose message contains a token. Relay the warning(s) to the user; only if"
+            " they choose to proceed, re-validate with this set to that exact token. The"
+            " token is tied to the specific warnings, so changing the config yields a new"
+            " warning set and a new token - forcing a fresh decision, never suppressing it."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
