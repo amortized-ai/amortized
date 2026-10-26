@@ -179,6 +179,35 @@ class TrainingJobConfig(BaseModel):
         description="embedding_sft: warmup fraction of total steps (0.0-1.0)",
     )
     seed: int | None = Field(None, ge=0, description="embedding_sft: random seed")
+    # --- classifier_sft (decision/classification head) ---
+    task: Literal["sequence_classification", "multiple_choice", "token_classification"] | None = (
+        Field(
+            None,
+            description=(
+                "classifier_sft decision primitive: sequence_classification (default; fixed-label"
+                " classification / yes-no), multiple_choice (pick-one-of-K per example;"
+                " encoder backbones only), or token_classification (span/entity extraction)."
+            ),
+        )
+    )
+    options_column: str | None = Field(
+        None, description="classifier_sft multiple_choice: options-list column (default 'options')"
+    )
+    tokens_column: str | None = Field(
+        None,
+        description="classifier_sft token_classification: pre-split tokens column (default tokens)",
+    )
+    trust_remote_code: bool | None = Field(
+        None,
+        description=(
+            "classifier_sft: allow custom architectures that ship an HF auto_map (opt-in;"
+            " security-sensitive — pin 'revision'). Needed for some custom decision models."
+        ),
+    )
+    revision: str | None = Field(
+        None,
+        description="classifier_sft: pin the model repo to a commit/branch/tag (custom archs)",
+    )
     nproc_per_node: int = Field(
         1,
         ge=1,
@@ -199,12 +228,11 @@ class TrainingJobConfig(BaseModel):
     train_on_gpu: bool = Field(
         False,
         description=(
-            "embedding_sft ONLY: train the embedding classifier on a GPU (1) instead of the"
-            " CPU default (0). embedding_sft trains in-process on a single device, so this is a"
-            " boolean, not a GPU count. CPU is fine for small/quick runs; a GPU is ~100x faster"
-            " (benchmark: all-MiniLM ~24 samples/s CPU vs ~2800/s on an H100), which matters for"
-            " many epochs or large datasets. Ignored for all other algorithms (they use"
-            " nproc_per_node)."
+            "embedding_sft / classifier_sft (single-device, in-process): train on a GPU (1)"
+            " instead of the CPU default (0). A boolean, not a GPU count. CPU is fine for"
+            " small/quick runs; a GPU is much faster for many epochs / large datasets. (For a"
+            " classifier_sft decoder backbone, use_peft forces 1 GPU regardless.) Ignored for"
+            " the torchrun algorithms (sft/osft/lora), which use nproc_per_node."
         ),
     )
     topic: str = Field(

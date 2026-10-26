@@ -630,17 +630,57 @@ class TestTrainingHubConfig:
         parsed = yaml.safe_load(_training_hub_config_yaml("embedding_sft", config))
         assert "train_on_gpu" not in parsed
 
-    async def test_embedding_sft_aliases_map_to_subcommand(self) -> None:
+    def test_thub_config_yaml_classifier_sft(self) -> None:
+        from amortized.jobs.training import _training_hub_config_yaml
+
+        config = {
+            "algorithm": "classifier_sft",
+            "model_name_or_path": "answerdotai/ModernBERT-base",
+            "data_path": "/data/train.parquet",
+            "num_train_epochs": 5,
+            "per_device_train_batch_size": 32,
+            "max_length": 64,
+            "text_column": "text",
+            "label_column": "category",
+            "task": "sequence_classification",
+            "use_peft": True,
+            "trust_remote_code": True,
+            "output_dir": "/output",
+        }
+        parsed = yaml.safe_load(_training_hub_config_yaml("classifier_sft", config))
+        assert parsed["model_path"] == "answerdotai/ModernBERT-base"
+        assert parsed["num_epochs"] == 5
+        assert parsed["batch_size"] == 32  # micro_batch_size -> batch_size
+        assert parsed["max_seq_len"] == 64
+        assert parsed["task"] == "sequence_classification"
+        assert parsed["label_column"] == "category"
+        # use_peft is globally skip-keyed but classifier_sft re-adds it; trust_remote_code flows through
+        assert parsed["use_peft"] is True
+        assert parsed["trust_remote_code"] is True
+        # no sequence-packing / data_output_dir / train_on_gpu leakage
+        assert "max_tokens_per_gpu" not in parsed
+        assert "max_batch_len" not in parsed
+        assert "data_output_dir" not in parsed
+        assert "train_on_gpu" not in parsed
+
+    async def test_algorithm_aliases_map_to_subcommand(self) -> None:
         from amortized.jobs.training import build
 
-        for alias in ("embedding_sft", "classifier", "embedding"):
+        # embedding/embedding_sft -> thub embedding-sft; classifier/classifier_sft -> classifier-sft
+        cases = {
+            "embedding_sft": "embedding-sft",
+            "embedding": "embedding-sft",
+            "classifier_sft": "classifier-sft",
+            "classifier": "classifier-sft",
+        }
+        for alias, subcmd in cases.items():
             cfg = {
                 "algorithm": alias,
-                "model_name_or_path": "sentence-transformers/all-MiniLM-L6-v2",
+                "model_name_or_path": "answerdotai/ModernBERT-base",
                 "data_path": "/data/train.parquet",
             }
             result = await build({"id": "job1234abcd", "config": cfg}, dict(cfg), {})
-            assert result.command == ["thub", "embedding-sft", "--config", "/amortized/config.yaml"]
+            assert result.command == ["thub", subcmd, "--config", "/amortized/config.yaml"]
 
     async def test_embedding_sft_normalizes_data_before_training(self) -> None:
         from amortized.jobs.training import build

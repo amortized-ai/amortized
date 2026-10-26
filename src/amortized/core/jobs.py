@@ -19,11 +19,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("amortized.core.jobs")
 
-# embedding_sft (and its classifier/embedding aliases) trains in-process via
-# SentenceTransformerTrainer — CPU-only, no torchrun, nproc_per_node ignored — so it requests
-# 0 GPUs. Kept in sync with the embedding_sft branch in jobs/training.py (issue #486) and the
-# ALGO_ALIASES there.
-_CPU_TRAINING_ALGORITHMS = frozenset({"embedding_sft", "classifier", "embedding"})
+# embedding_sft and classifier_sft (and their classifier/embedding aliases) train in-process on a
+# single device (no torchrun, nproc_per_node ignored): CPU by default, 1-GPU opt-in via
+# train_on_gpu (classifier_sft also forces 1 GPU for a decoder backbone fine-tuned with use_peft).
+# Kept in sync with the per-algorithm branches in jobs/training.py build() + the ALGO_ALIASES there.
+_CPU_TRAINING_ALGORITHMS = frozenset(
+    {"embedding_sft", "classifier_sft", "classifier", "embedding"}
+)
 
 
 def estimate_gpu_demand(job: dict[str, Any]) -> int:
@@ -33,8 +35,9 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     count is only known after the (async, side-effecting) builder runs. This mirrors
     the per-builder ``Resources(gpus=...)`` so the worker can decide what fits WITHOUT
     building. Keep in sync with ``amortized.jobs.*``:
-      - training, embedding_sft/classifier -> train_on_gpu ? 1 : 0 (single-device, in-process;
-                                              CPU by default, 1-GPU opt-in; nproc_per_node ignored)
+      - training, embedding_sft / classifier_sft (+ classifier/embedding aliases)
+                 -> (train_on_gpu or use_peft) ? 1 : 0 (single-device, in-process; CPU by
+                    default, 1-GPU opt-in; nproc_per_node ignored)
       - training, other algorithms         -> nproc_per_node (default 1)
       - sdg / upload     -> 0
       - eval, classification mode        -> 0 (CPU-only; nproc_per_node ignored)
@@ -58,9 +61,9 @@ def estimate_gpu_demand(job: dict[str, Any]) -> int:
     job_type = job.get("type")
     if job_type == JobType.training.value:
         if str(config.get("algorithm", "")).strip() in _CPU_TRAINING_ALGORITHMS:
-            # embedding_sft trains in-process on a single device: CPU by default,
-            # 1-GPU opt-in via train_on_gpu. nproc_per_node is ignored (no torchrun).
-            return 1 if config.get("train_on_gpu") else 0
+            # Single-device in-process training: CPU by default, 1 GPU via train_on_gpu (or, for a
+            # classifier_sft decoder backbone, use_peft). nproc_per_node is ignored (no torchrun).
+            return 1 if (config.get("train_on_gpu") or config.get("use_peft")) else 0
         return _nproc(1)
     if job_type == JobType.eval.value:
         if config.get("eval_mode") == "classification":

@@ -276,6 +276,18 @@ class TestEstimateGpuDemand:
             }
         ) == 1
 
+    def test_classifier_sft_gpu_demand(self) -> None:
+        # classifier_sft: CPU default (0); 1 GPU via train_on_gpu OR use_peft (decoder LoRA).
+        for algo in ("classifier_sft", "classifier"):
+            base = {"type": "training", "config": {"algorithm": algo}}
+            assert estimate_gpu_demand(base) == 0
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "train_on_gpu": True}}
+            ) == 1
+            assert estimate_gpu_demand(
+                {"type": "training", "config": {"algorithm": algo, "use_peft": True}}
+            ) == 1
+
     def test_sdg_and_upload_need_no_gpu(self) -> None:
         assert estimate_gpu_demand({"type": "sdg", "config": {}}) == 0
         assert estimate_gpu_demand({"type": "upload", "config": {"source": "document"}}) == 0

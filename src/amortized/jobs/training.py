@@ -32,7 +32,9 @@ ALGO_ALIASES: dict[str, str] = {
     "lora": "lora_sft",
     "qlora": "lora_sft",
     "qlora_sft": "lora_sft",
-    "classifier": "embedding_sft",
+    # "classifier" now means the dedicated classification-head path (best accuracy + calibration
+    # for fixed-label classification). "embedding" stays the contrastive embedding/router path.
+    "classifier": "classifier_sft",
     "embedding": "embedding_sft",
 }
 
@@ -120,6 +122,18 @@ def _training_hub_config_yaml(algorithm: str, config: dict[str, Any]) -> str:
             thub_config.setdefault("batch_size", batch)
         for irrelevant in ("max_seq_len", "data_output_dir"):
             thub_config.pop(irrelevant, None)
+    elif algorithm == "classifier_sft":
+        # Classification-head fine-tuning (`thub classifier-sft`): uses ``batch_size`` (not
+        # micro_batch_size) and has no sequence-packing knobs. ``use_peft`` is globally skipped
+        # (it means LoRA-marker for the generative path), but classifier_sft consumes it, so
+        # re-add it here. max_seq_len (from max_length) and task/trust_remote_code/revision/
+        # options_column/tokens_column flow through the generic map.
+        batch = thub_config.pop("micro_batch_size", None)
+        if batch is not None:
+            thub_config.setdefault("batch_size", batch)
+        thub_config.pop("data_output_dir", None)
+        if config.get("use_peft") is not None:
+            thub_config["use_peft"] = config["use_peft"]
 
     result: str = yaml.dump(thub_config, default_flow_style=False, sort_keys=False)
     return result
@@ -216,10 +230,13 @@ async def build(
     # CUDA only if available), so it's CPU by DEFAULT (0 GPUs → no nvidia nodeSelector/runtimeclass,
     # schedules anywhere, frees the quota) with an explicit 1-GPU opt-in via train_on_gpu (a GPU is
     # ~100x faster — matters for many epochs / large datasets; see issue #486). nproc_per_node is
-    # ignored here (single-device). All other algorithms scale with nproc_per_node. Keep in sync
-    # with estimate_gpu_demand() in core/jobs.py.
+    # ignored here (single-device). classifier_sft is likewise single-device: CPU by default with
+    # a train_on_gpu opt-in, except a decoder backbone fine-tuned via use_peft (LoRA) needs 1 GPU.
+    # All other algorithms scale with nproc_per_node. Keep in sync with estimate_gpu_demand().
     if algorithm == "embedding_sft":
         gpus = 1 if config.get("train_on_gpu") else 0
+    elif algorithm == "classifier_sft":
+        gpus = 1 if (config.get("train_on_gpu") or config.get("use_peft")) else 0
     else:
         gpus = config.get("nproc_per_node", 1)
     return JobBuildResult(
@@ -294,13 +311,16 @@ async def on_success(job: dict[str, Any], mlflow_run_id: str) -> None:
         await set_mlflow_run_tag(mlflow_run_id, "model_display_name", display_name)
         await client.set_registered_model_tag(model_name, "model_display_name", display_name)
 
-        # Tag the model kind so eval steers embedding models to classification
-        # eval (a generative/judge eval would fail on a sentence-transformers model).
-        model_type = (
-            "embedding"
-            if algorithm in ("embedding_sft", "classifier", "embedding")
-            else "generative"
-        )
+        # Tag the model kind so eval routes correctly: embedding -> centroid eval,
+        # classifier -> head-classifier eval, generative -> judge/serving eval. Resolve the
+        # alias first (classifier -> classifier_sft, embedding -> embedding_sft).
+        resolved_algo = ALGO_ALIASES.get(algorithm, algorithm)
+        if resolved_algo == "embedding_sft":
+            model_type = "embedding"
+        elif resolved_algo == "classifier_sft":
+            model_type = "classifier"
+        else:
+            model_type = "generative"
         await set_mlflow_run_tag(mlflow_run_id, "model_type", model_type)
         await client.set_registered_model_tag(model_name, "model_type", model_type)
 
