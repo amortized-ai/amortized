@@ -35,6 +35,7 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.phases import (
     Verdict,
     adjudicate,
+    emits_card,
     requires_phase_signal,
     subagent_pointer,
 )
@@ -1139,6 +1140,13 @@ async def _maybe_nudge_subagent_stall(
     if not state.subagent_id or not state.subagent_target:
         return latest_parts
     target = state.subagent_target
+    # A turn that rendered an interactive card did its owed work: re-driving it (either nudge
+    # below) advances the message boundary past the card and strands it — the user sees no card.
+    # So a card-bearing turn is exempt from the signalled-guard, and from every stall verdict
+    # except genuine `batching` (the one case where dropping a card to re-ask is intended).
+    turn_has_card = emits_card(
+        {_tool_name(p) for p in latest_parts if _tool_name(p) and not _part_errored(p)}
+    )
     # Signalled-guard: a subagent must stamp `signal_phase` every turn — it is the KEY the
     # adjudicator (and the per-turn pointer) resolve against. A measured ~33% of GLM-flash turns
     # skip it, leaving `last_signal_step` one phase stale; adjudicating that stale key mis-nudges
@@ -1149,6 +1157,7 @@ async def _maybe_nudge_subagent_stall(
         requires_phase_signal(target)
         and not _turn_emitted_signal(latest_parts)
         and not _turn_hands_off(latest_parts)
+        and not turn_has_card
     ):
         logger.info("Phase-signal-missing nudge: session=%s target=%s", session_id, target)
         try:
@@ -1168,6 +1177,10 @@ async def _maybe_nudge_subagent_stall(
     verdict = _adjudicate_subagent_turn(state, target, latest_parts)
     nudge = _stall_nudge_text(_effective_signal_step(state, latest_parts), verdict)
     if nudge is None:
+        return latest_parts
+    if turn_has_card and verdict.kind != "batching":
+        # The turn surfaced a user-actionable card; a non-batching verdict here (stale-key
+        # wrong_edge / stall) would strand it. Keep the card, skip the nudge.
         return latest_parts
     logger.info(
         "Stall nudge: session=%s target=%s kind=%s step=%s",

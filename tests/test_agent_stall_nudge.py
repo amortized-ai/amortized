@@ -230,6 +230,49 @@ def test_two_distinct_option_cards_in_one_turn_is_still_batching(router: _Router
     assert out is not turn  # re-fetched
 
 
+def test_card_turn_missing_signal_is_not_nudged_away(router: _Router) -> None:
+    # Regression (live): a review revision turn emitted show_prompt + present_options (the owed
+    # cards) but skipped signal_phase. The signalled-guard fired, re-drove the turn, and stranded
+    # the rendered prompt card ("where is the prompt card?"). A card-bearing turn did its owed
+    # work and is exempt from the guard — the card must survive.
+    sub = router.add()
+    state = _state(router, sub, "report")  # prior-turn cursor (owes present_options)
+    turn = [
+        _tool_part("show_prompt", {}),
+        _tool_part("present_options", {"step": "rubric-review"}),
+    ]
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn  # cards preserved, not re-driven
+    assert not any(sid == sub for sid, *_ in router.sent)  # no guard/stall nudge
+
+
+def test_prose_only_missing_signal_is_still_nudged(router: _Router) -> None:
+    # The signalled-guard still fires for an UNPRODUCTIVE skip (prose, no card) — that is its real
+    # target (a bare turn that leaves the phase key stale).
+    sub = router.add([[_signal("report"), _tool_part("present_options", {"step": "report"})]])
+    state = _state(router, sub, "report")
+    prose = [_text_part("Here is a summary of the results so far.")]  # no signal, no card
+
+    _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), prose))
+
+    assert "PHASE SIGNAL MISSING" in router.system_to(sub)  # guard nudged
+
+
+def test_card_on_wrong_edge_is_preserved_not_dropped(router: _Router) -> None:
+    # Even when a stale key makes a card-bearing turn look like a wrong_edge, the card is kept —
+    # only genuine `batching` is worth dropping a card to re-ask.
+    sub = router.add()
+    state = _state(router, sub, "validate")  # owes validate_eval_job
+    turn = [_signal("validate"), _tool_part("show_prompt", {})]  # a card, not the owed edge
+
+    out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), turn))
+
+    assert out is turn  # card preserved despite wrong_edge
+    assert not any(sid == sub for sid, *_ in router.sent)
+
+
 def test_job_complete_event_skips_nudge(router: _Router) -> None:
     sub = router.add()
     state = _state(router, sub, "held-out-request-help")

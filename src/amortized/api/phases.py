@@ -355,6 +355,16 @@ _CARDS: frozenset[str] = frozenset(
 _EDGES: frozenset[str] = _CONTROL_TRANSFER | _CARDS
 
 
+def emits_card(tools: Collection[str]) -> bool:
+    """True when the turn rendered an interactive card the user acts on (present_options /
+    show_prompt / validate_*). Such a turn did its owed work, so the nudge consumers must not
+    re-drive it: re-driving advances the message boundary past the rendered card and strands it
+    (the user sees no card). The sole exception is genuine `batching` — the caller still handles
+    that — but a missing `signal_phase`, a stale-key `wrong_edge`, or a `stall` on a card-bearing
+    turn is a false drop of a user-actionable card."""
+    return bool(_CARDS & set(tools))
+
+
 @dataclass(frozen=True)
 class Owed:
     """What a tool-owed phase must emit in a turn.
