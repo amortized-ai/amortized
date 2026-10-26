@@ -253,6 +253,28 @@ class TestClassificationEvalModeGuardrail:
         assert config["eval_mode"] == "classification"
 
     @pytest.mark.asyncio
+    async def test_auto_sets_classification_for_head_classifier(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        # Head classifier may be stored under the alias ("classifier") or the
+        # resolved name ("classifier_sft"); both must route to classification eval.
+        for algo in ("classifier", "classifier_sft"):
+            self._patch_training_job(monkeypatch, algo)
+            config = {"training_job_id": "t1"}
+            errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+            assert errors == [], algo
+            assert config["eval_mode"] == "classification", algo
+
+    @pytest.mark.asyncio
+    async def test_rejects_generative_eval_on_head_classifier(self, monkeypatch) -> None:
+        from amortized.api import jobs as jobs_api
+
+        self._patch_training_job(monkeypatch, "classifier_sft")
+        config = {"training_job_id": "t1", "eval_mode": "generative"}
+        errors = await jobs_api._apply_classification_eval_mode(config, db=None)
+        assert errors and "classification" in errors[0]
+
+    @pytest.mark.asyncio
     async def test_rejects_generative_eval_on_embedding_model(self, monkeypatch) -> None:
         from amortized.api import jobs as jobs_api
 

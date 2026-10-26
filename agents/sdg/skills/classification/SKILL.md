@@ -110,6 +110,7 @@ review card; no split is needed here.
   default — e.g. `model_name_or_path="answerdotai/ModernBERT-base"`) or
   `algorithm="embedding"` for the embedding router, `parent_job_id`/`data_run_id` =
   this dataset. See the `training-classifier` skill.
-- **Eval**: `create_eval_job` with `eval_mode="classification"`,
-  `training_job_id` = the training job, and the held-out eval dataset as the
-  parent/`eval_data_run_id`. Reports accuracy / macro-F1 / confusion.
+- **Eval**: evaluating a classifier/router is a **classification eval** (no
+  rubric/judge) — it scores predicted labels against a **held-out labeled
+  `text,category` set** (the second run above) and reports accuracy / macro-F1 /
+  per-class F1 / confusion (plus calibrated ECE for a head classifier).

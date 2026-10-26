@@ -89,10 +89,10 @@ labeled set. Either generate a separate small eval SDG run (same categories), or
 
 ## After training — evaluate
 
-Once training succeeds, offer a **classification eval**: `create_eval_job` with
-`eval_mode="classification"`, `training_job_id` = this job, the held-out dataset as
-`parent_job_id`/`eval_data_run_id`, and `label_column` matching the data. For a head
-classifier it reports **true held-out accuracy / macro-F1 / per-class F1 / confusion +
-calibrated ECE** (argmax); for an embedding router it reports a nearest-centroid
-separability proxy. eval_mode defaults to classification automatically for these models, so
-a generative/judge eval is never offered here.
+Once training succeeds, offer to **evaluate** the model. This is a **classification
+eval** (not a rubric/judge eval) — the eval flow auto-detects the model type and scores
+predicted labels directly: for a head classifier, **held-out accuracy / macro-F1 /
+per-class F1 / confusion + calibrated ECE** (argmax); for an embedding router, a
+nearest-centroid separability proxy. It needs a **held-out labeled `text,category`
+set** with the same categories (a separate classification SDG run, or a split of the
+training data) — NOT a `messages` dataset, and there is no rubric or judge to design.

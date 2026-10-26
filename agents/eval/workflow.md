@@ -81,7 +81,14 @@ always `"eval"`.
 
 ## What an Eval Job Does
 
-An eval job takes an **eval dataset** and **one** OpenAI-compatible
+There are two eval kinds, chosen by the model under evaluation (see Step 0.5): a
+**generative eval** (rubric/judge, described here) for LLMs and endpoints, and a
+**classification eval** for classifier-head / embedding-router models trained on the
+platform, which scores predicted labels directly (accuracy / macro-F1 / per-class F1 /
+confusion, plus calibrated ECE for a head classifier) with no serving, endpoint, or
+judge. The rest of this section describes the generative eval.
+
+A generative eval job takes an **eval dataset** and **one** OpenAI-compatible
 model endpoint, and measures how well that model performs the task by
 scoring its answers against the reference answers:
 
@@ -129,16 +136,48 @@ The model does NOT have to come from training. Any HF model, a model
 from one of the user's configured providers, or an OpenAI-compatible
 endpoint can be evaluated.
 
-**Once the subject is settled, your next step is the eval dataset
-(Step 1).** If no eval dataset exists in this conversation, you cannot
+**Once the subject is settled, determine the eval kind (Step 0.5), then your next
+step is the eval dataset (Step 1).** If no eval dataset exists in this conversation, you cannot
 generate one yourself — you are a leaf and do not delegate. Your move is to
 CALL `request_orchestrator_help`; do NOT describe handing off in prose.
 (Full dataset logic — reuse, split, or hand back — is in Step 1.)
 
+### Step 0.5 — Generative eval vs classification eval <!--signal:eval-kind-->
+
+There are two kinds of eval, and the model under evaluation decides which.
+Determine it BEFORE the dataset and metrics steps:
+
+- **Classification eval** — the subject is a **classifier head** or **embedding
+  router** trained on the platform (a training job whose `algorithm` is
+  `classifier`/`classifier_sft` or `embedding`/`embedding_sft`). These models have
+  no chat endpoint to serve or judge; they are scored directly against labels. If
+  the subject is such a training job, this is a classification eval: set
+  `eval_mode="classification"` and follow the **classification path** noted in
+  Steps 1, 3, 4, and 5. To detect it, call `get_job` on the training job and read
+  `config.algorithm` (the platform also auto-sets `eval_mode="classification"` for
+  these models at validation, but you must still drive the correct dataset/metric
+  flow). An arbitrary HF model or external endpoint can only be a generative eval.
+- **Generative eval** — everything else (a generative/LLM training job, an HF model
+  id, a gateway model, an external endpoint). This is the default rubric/judge flow
+  described in Steps 1–5. Leave `eval_mode` at its default.
+
+Do NOT ask the user which kind — infer it from the model. Everything below is the
+generative flow unless a **classification path** note says otherwise.
+
 ### Step 1 — Confirm the eval dataset <!--signal:eval-dataset owed:present_options-->
 
-The eval dataset needs a `messages` column. The trailing assistant
-message is used as the reference answer.
+**Classification path:** the eval dataset is a **held-out labeled `text,category`
+set** (NOT `messages`) with the SAME categories the model was trained on — e.g. a
+separate classification SDG run, or a split of the labeled training dataset. Reuse a
+held-out classification set if one exists; otherwise split the labeled dataset
+(`split_dataset`) or request a fresh held-out classification set (see **Getting a
+held-out eval set** — the cloned recipe is the classification SDG recipe, so it
+yields `text,category`). Skip the `messages`/recipe-match/`list_reusable_eval_sets`
+framing below (that is generative-only), then go to Step 4 (there are no metrics to
+design — skip Step 3). Note the `text`/`category` column names for Step 4.
+
+**Generative path:** the eval dataset needs a `messages` column. The trailing
+assistant message is used as the reference answer.
 
 **For a tuned model, FIRST offer reusing an existing eval set — do not
 jump to generating a fresh one.** Scoring a model on a set another model
@@ -337,6 +376,12 @@ can relay that error to the user when it happens.
 
 ### Step 3 — Design the metrics (approval loop) <!--signal:metrics-->
 
+**Classification path: SKIP this entire step.** A classification eval has no rubric
+and no judge — accuracy, macro-F1, per-class F1, and the confusion matrix (plus
+calibrated ECE for a head classifier) are computed directly against the labels. Do
+not design criteria, do not pick a judge, do not call anything here. Go straight to
+Step 4.
+
 **First, check for an existing metric set.** Call `get_dataset` with
 the dataset's run ID — the response includes an `eval_metric_set`
 field (`{rubric: [{name, description}]}`) when any
@@ -402,6 +447,16 @@ eval time or judge cost.
 
 ### Step 4 — Validate and submit <!--signal:validate owed:validate_eval_job-->
 
+**Classification path:** assemble the config with `eval_mode="classification"`,
+`training_job_id` = the classifier/embedding training job, the held-out dataset as
+`parent_job_id`/`eval_data_run_id`, and `text_column`/`label_column` matching the
+dataset (e.g. `text`/`category`). Optionally set `class_labels` (human-readable class
+names indexed by integer label) for readable per-class output. Do NOT set `judge`,
+`rubric`, `temperature`, or `max_samples` — they don't apply. Then call
+`validate_eval_job`; after it succeeds, the one-line summary is simply the mode and
+dataset (e.g. `classification eval · all records · model: <name>`) — there is no
+judge/temperature line. Skip the generative-only checks below.
+
 **First, check whether this eval already exists.** Call `list_evaluations`
 — it returns evaluation groups (one per dataset × metric set) with the
 models already scored in each. If THIS model already appears for THIS
@@ -465,8 +520,17 @@ notification arrives in YOUR session; when it does (or on failure),
 you handle it.
 
 When the eval job completes, call `get_eval_results` with the job ID to
-fetch the aggregate metrics. Report a compact table of the model's
-scores:
+fetch the aggregate metrics.
+
+**Classification path:** the results are classification metrics, not rubric scores —
+report **accuracy** and **macro-F1** headline numbers, then per-class F1 (and the
+confusion matrix if the user wants detail). For a head classifier also report the
+**calibrated ECE** (before → after temperature scaling) — lower is better-calibrated
+probabilities. Example: "93.9% accuracy, 0.939 macro-F1 over 77 classes; ECE
+0.036 → 0.017." Then offer next steps (evaluate another model to compare, train again,
+or accept). Skip the rubric table below.
+
+**Generative path:** report a compact table of the model's rubric scores:
 
 | Criterion | Score |
 |---|---|

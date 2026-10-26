@@ -694,10 +694,12 @@ class EvalJobConfig(BaseModel):
         description=(
             "Evaluation mode. 'generative' (default) serves the model and scores"
             " free-form outputs with an LLM judge against a rubric. 'classification'"
-            " evaluates an embedding classifier/router: the held-out labeled dataset"
-            " is split into per-class anchors and query examples, and the tuned"
-            " embedding model routes each query to its nearest class (accuracy /"
-            " macro-F1 / confusion). No judge or rubric is used."
+            " scores a classifier head (classifier_sft) or embedding router"
+            " (embedding_sft) on a held-out labeled text,category dataset — no judge"
+            " or rubric. A head classifier is scored by argmax (accuracy / macro-F1 /"
+            " per-class F1 / confusion + calibrated ECE); an embedding router is split"
+            " into per-class anchors and queries and routes each query to its nearest"
+            " class (accuracy / macro-F1 / confusion). The eval auto-detects which."
         ),
     )
     class_labels: list[str] | None = Field(

@@ -337,14 +337,14 @@ async def _training_shape_violations(
     algorithm = str(config.get("algorithm", "")).replace("-", "_")
     algorithm = ALGO_ALIASES.get(algorithm, algorithm)
     columns = sorted(first.keys())
-    if algorithm in _EMBEDDING_ALGORITHMS:
+    if algorithm in _CLASSIFICATION_ALGORITHMS:
         text_col = str(config.get("text_column") or "text")
         label_col = str(config.get("label_column") or "category")
         missing = [c for c in (text_col, label_col) if c not in first]
         if missing:
             return [
                 f"training data: algorithm '{algorithm}' needs flat columns {missing}, but"
-                f" the dataset has {columns}. Use an embedding-classifier dataset"
+                f" the dataset has {columns}. Use a classification dataset"
                 " (text + category) for this algorithm."
             ]
     elif algorithm in _SFT_MESSAGES_ALGORITHMS and "messages" not in first:
@@ -521,10 +521,23 @@ _GENERIC_TUNABLE_FIELDS = (
 # LoRA adapter knobs — meaningful only when the run uses PEFT/LoRA; irrelevant (and never
 # defaulted) for full fine-tunes or OSFT, so don't surface them there.
 _LORA_TUNABLE_FIELDS = ("lora_r", "lora_alpha", "lora_dropout")
-# Embedding/classifier-specific knobs the trainer defaults; only meaningful for those runs.
+# Embedding-router (contrastive embedding_sft) knobs the trainer defaults; meaningless for a
+# classifier head, so only surfaced for embedding runs.
 _EMBEDDING_TUNABLE_FIELDS = ("loss_type", "batch_sampler")
 
-_EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
+# Embedding-router algorithms (contrastive embedding_sft) — the alias and the resolved name.
+_EMBEDDING_ALGORITHMS = {"embedding_sft", "embedding"}
+
+# Classification-family algorithms: a classifier head (classifier_sft) or an embedding router
+# (embedding_sft). Both train on flat text,category data and are scored with
+# eval_mode="classification" (head -> argmax accuracy/F1/ECE; router -> nearest-anchor routing).
+# Stored configs carry either the alias ("classifier"/"embedding") or the resolved name, so list all four.
+_CLASSIFICATION_ALGORITHMS = {
+    "classifier_sft",
+    "classifier",
+    "embedding_sft",
+    "embedding",
+}
 
 # Algorithms that train LoRA adapters (vs. full-parameter or OSFT); gate LoRA knobs on these.
 _LORA_ALGORITHMS = {"lora_sft", "lora_grpo"}
@@ -559,10 +572,11 @@ async def _apply_classification_eval_mode(
 ) -> list[str]:
     """Keep eval_mode consistent with the model being evaluated.
 
-    An embedding model (trained with embedding_sft) can only be evaluated as a
-    classifier, and the classification eval only works on an embedding model.
-    When a tuned model is referenced, default/validate eval_mode against the
-    training job's algorithm so users don't hit a confusing dispatch-time failure.
+    A classifier head (classifier_sft) or embedding router (embedding_sft) can
+    only be scored with eval_mode="classification", and that mode only works on
+    one of those models (it has no endpoint to serve or judge). When a tuned
+    model is referenced, default/validate eval_mode against the training job's
+    algorithm so users don't hit a confusing dispatch-time failure.
     Mutates ``config`` (may set eval_mode) and returns any errors.
     """
     training_job_id = str(config.get("training_job_id", "") or "").strip()
@@ -578,22 +592,22 @@ async def _apply_classification_eval_mode(
         except (ValueError, TypeError):
             parent_config = {}
     algorithm = str(parent_config.get("algorithm", "")).replace("-", "_")
-    is_embedding = algorithm in _EMBEDDING_ALGORITHMS
+    is_classification_model = algorithm in _CLASSIFICATION_ALGORITHMS
     eval_mode = config.get("eval_mode")
 
-    if is_embedding:
+    if is_classification_model:
         if not eval_mode:
             config["eval_mode"] = "classification"  # the only mode that fits
         elif eval_mode != "classification":
             return [
-                "training_job_id is an embedding model (embedding_sft); its eval_mode"
-                " must be 'classification' (a generative/judge eval cannot score an"
-                " embedding model)"
+                "training_job_id is a classifier/embedding model (classifier_sft or"
+                " embedding_sft); its eval_mode must be 'classification' (a"
+                " generative/judge eval cannot score it)"
             ]
     elif eval_mode == "classification":
         return [
-            "eval_mode='classification' requires an embedding model — train with"
-            " algorithm='embedding_sft' (or 'classifier') first"
+            "eval_mode='classification' requires a classifier or embedding model —"
+            " train with algorithm='classifier' (head) or 'embedding' (router) first"
         ]
     return []
 
