@@ -9,7 +9,7 @@ interface JobMonitorCardProps {
   jobId: string
   jobType?: string
   onDismiss?: () => void
-  onComplete?: (jobId: string, jobType: string, status: string) => void
+  onComplete?: (jobId: string, jobType: string, status: string, mode?: string) => void
 }
 
 const TERMINAL_STATUSES: JobStatus[] = ["succeeded", "failed", "cancelled"]
@@ -158,7 +158,10 @@ export function JobMonitorCard({ jobId, jobType = "SDG", onDismiss, onComplete }
         }
         if (!completeFired.current) {
           completeFired.current = true
-          onCompleteRef.current?.(jobId, jobType, job.status)
+          // Pass the run mode so the server can tell an SDG preview (keep working) from a
+          // create deliverable (hand back); only SDG configs carry a `mode`.
+          const mode = typeof job.config?.mode === "string" ? job.config.mode : undefined
+          onCompleteRef.current?.(jobId, jobType, job.status, mode)
         }
         return
       }

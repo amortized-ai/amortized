@@ -258,8 +258,7 @@ dataset run or adjust the recipe first. WAIT for their decision. Only once they
 approve do you call the validation tool again with `mode: "create"` to launch the
 FULL dataset run. Do NOT signal completion and do NOT let the flow advance to a
 later step (e.g. training) on a preview — only the full create run produces the
-dataset. Only once the create run finishes do you move to Phase 4 and present
-next steps.
+dataset. Only once the create run finishes do you move to Phase 4.
 
 ### Phase 4 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
@@ -269,13 +268,15 @@ job that just finished was a preview, do NOT complete: show the sample, then run
 the full `mode: "create"` job and wait for IT to finish first.
 
 When the full (create) job succeeds, preview the generated data using the job's
-`mlflow_run_id` so the user can verify quality.
+`mlflow_run_id` so the user can verify quality — this data preview is YOUR job.
 
 Then call `signal_subagent_completion` to hand control back to the
-orchestrator. If the user expressed a next intent (e.g. "Train a model
-on this dataset"), include it in the summary as "User selected: ..."
-so the orchestrator can act on it directly. Do NOT instruct the
-orchestrator what to do — just relay the user's choice.
+orchestrator. Do NOT present options or offer next steps yourself: the
+orchestrator presents the menu (e.g. train a model on this dataset) once
+you have handed back. If the user has already expressed a next intent
+(e.g. "Train a model on this dataset"), include it in the summary as
+"User selected: ..." so the orchestrator can act on it directly. Do NOT
+instruct the orchestrator what to do — just relay the user's choice.
 
 ---
 

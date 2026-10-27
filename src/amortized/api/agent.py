@@ -228,27 +228,32 @@ INTERNAL_TOOLS = {
 }
 
 # Injected in place of the generic job-completion nudge when an ACTIVE SUBAGENT's
-# delegated job finishes successfully — a terminal instruction to hand control
-# back now, so a weaker model doesn't keep calling read-only tools (get_job,
-# get_dataset_samples, …) and never signal completion.
+# delegated job finishes successfully. Some subagents owe their deliverable's own result
+# report before handing back (eval must fetch + show the scores; sdg may show a data
+# sample); training has nothing to report and just signals. So this permits reporting THIS
+# job's result ONCE, then mandates the hand-back — while still forbidding present_options,
+# next-steps, or any new/re-verification work (that routing is the orchestrator's job). This
+# keeps a weaker model from either skipping its results report or looping on read-only tools.
 _SUBAGENT_JOB_DONE_PROMPT = (
-    "[SYSTEM EVENT] Your delegated job finished successfully. Your task for this "
-    "delegation is complete. Your ONLY next action is to call "
-    "signal_subagent_completion with a short summary that includes the job ID. "
-    "Do NOT call any other tools (no get_job, list_jobs, get_dataset, "
-    "get_dataset_samples, or present_options) and do NOT inspect or re-verify the "
-    "dataset — hand control back now."
+    "[SYSTEM EVENT] Your delegated job finished successfully. If your workflow calls for "
+    "reporting this job's OWN result before handing back (for example fetching and showing "
+    "the eval scores, or a short sample of the generated data), do that now — once. Then "
+    "call signal_subagent_completion with a short summary that includes the job ID. Do NOT "
+    "present_options, do NOT offer next steps or ask what to do next, and do NOT start any "
+    "new work or re-verify the result repeatedly — the orchestrator routes what comes next. "
+    "Hand control back as soon as you have reported this job's result."
 )
 
 # Counterpart for a FAILED job. Without a defined hand-back, a weak producer keeps control
-# after its job fails (retrying / inspecting) and the flow stalls. Steer it to hand control
-# back immediately with a failure summary, so the proxy can resume the waiting consumer with
-# the bad news instead of hanging.
+# after its job fails (retrying / inspecting) and the flow stalls. Steer it to report the
+# failure and hand control back immediately, so the proxy can resume the waiting consumer
+# with the bad news instead of hanging.
 _SUBAGENT_JOB_FAILED_PROMPT = (
-    "[SYSTEM EVENT] Your delegated job FAILED. Your task for this delegation is over. Your "
-    "ONLY next action is to call signal_subagent_completion with a short summary that states "
-    "the job FAILED and includes the job ID. Do NOT retry and do NOT call any other tools — "
-    "hand control back now."
+    "[SYSTEM EVENT] Your delegated job FAILED. Your task for this delegation is over. Report "
+    "the failure (the job ID and, if readily available, the reason), then call "
+    "signal_subagent_completion with a short summary that states the job FAILED and includes "
+    "the job ID. Do NOT retry, do NOT present_options or offer next steps, and do NOT start "
+    "new work — hand control back now."
 )
 
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
@@ -280,6 +285,43 @@ def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
     if body.outcome is not None:
         return body.outcome.strip().lower() == "succeeded"
     return "status: succeeded" in user_text.lower()
+
+
+# The frontend appends this instruction to the job_complete user-text; it is worded for the
+# ORCHESTRATOR ("suggest next steps"). On a subagent's OWN deliverable it contradicts the
+# hand-back the subagent owes (it obeys this user-text over the system steer ~5/6), so the proxy
+# strips it on a deliverable completion. See the eval-job-never-created handoff.
+_JOB_COMPLETE_PRESENT_OPTIONS_RE = re.compile(
+    r"\s*Use present_options to suggest next steps to the user\.?", re.IGNORECASE
+)
+
+
+def _strip_present_options_clause(text: str) -> str:
+    return _JOB_COMPLETE_PRESENT_OPTIONS_RE.sub("", text).strip()
+
+
+def _completion_job_type(body: MessageRequest, user_text: str) -> str:
+    """Canonical type of the finished job on a job_complete event: the structured
+    `job_type` the client sends, falling back to the "(TYPE)" token in the display text
+    ("Job <id> (TRAINING) finished …") during version skew. Lower-cased to compare with
+    `subagent_target`."""
+    if body.job_type:
+        return body.job_type.strip().lower()
+    match = re.search(r"\(([^)]+)\)", user_text)
+    return match.group(1).strip().lower() if match else ""
+
+
+def _is_deliverable_completion(state: SessionState, body: MessageRequest, user_text: str) -> bool:
+    """Whether a job_complete is the active subagent's own DELIVERABLE — the terminal job it
+    was delegated to produce — vs an intermediate step. Deliverable iff the finished job is the
+    subagent's own type AND a real create run (not a preview or a split/merge it kicked off).
+    Only a deliverable triggers the hand-back (strip the present_options clause + fire the
+    terminal steer); on an intermediate the subagent keeps control and continues its workflow.
+    `job_mode` is absent for job types with no preview (training/eval) — treat as create."""
+    if not state.subagent_target:
+        return False
+    mode = (body.job_mode or "create").strip().lower()
+    return _completion_job_type(body, user_text) == state.subagent_target and mode == "create"
 
 
 _VALID_TARGETS = {"sdg", "training", "eval"}
@@ -782,6 +824,13 @@ class MessageRequest(BaseModel):
     # job_complete). Read instead of sniffing the display text for a "status:
     # succeeded" substring, which silently broke if the card's wording changed.
     outcome: str | None = None
+    # The finished job's canonical type ("sdg"/"training"/"eval"/"split"/…) and run mode
+    # ("preview"/"create") on a job_complete event. The proxy uses them to tell a subagent's
+    # own DELIVERABLE (its type + a create run → hand back) from an intermediate step (a
+    # preview, or a split/merge it kicked off → keep working). Absent on a non-job event or an
+    # older client — the deliverable check then falls back to the display text / create mode.
+    job_type: str | None = None
+    job_mode: str | None = None
 
 
 def _extract_user_text(body: MessageRequest) -> str:
@@ -1252,14 +1301,20 @@ async def _handle_subagent_message(
     # hand-back steer, so the producer kept control and the flow could stall.)
     job_failed = False
     steer_system: str | None = None
-    if body.event == "job_complete":
-        # The neutral event fact (the job id, which the hand-back must report and the grounding
-        # corpus needs) stays in the user part. The hand-back IMPERATIVE ("your task is done —
-        # signal completion now, don't inspect") is delivered on the SYSTEM channel for every
-        # driver, not appended to the user text: it is a system-initiated instruction, so it
-        # belongs in the system channel rather than masquerading as a user turn. The standing
-        # hand-back rule also lives in the subagent persona (agents/*/*.md), so this per-turn
-        # system note only reinforces it. See docs/agent-gates-proposal.md.
+    if body.event == "job_complete" and _is_deliverable_completion(state, body, user_text):
+        # This completion is the subagent's OWN deliverable, so hand control back. Both the
+        # frontend user-text and the proxy must agree on that, or the subagent obeys the user-text
+        # (~5/6) and keeps going:
+        #  - Side 1: strip the frontend's "use present_options" clause (worded for the orchestrator)
+        #    so the user channel no longer countermands the hand-back.
+        #  - Side 2: the hand-back IMPERATIVE rides the SYSTEM channel (a system-initiated
+        #    instruction, not a fake user turn); the neutral event fact — the job id the hand-back
+        #    must report and the grounding corpus needs — stays in the user part.
+        # The standing hand-back rule also lives in the subagent persona (agents/*/*.md). BOTH are
+        # gated on the deliverable check: an intermediate completion (a preview, or a split/merge
+        # the subagent kicked off) falls through to the normal pointer so the subagent CONTINUES
+        # its own workflow instead of handing back. See docs/agent-gates-proposal.md.
+        user_text = _strip_present_options_clause(user_text)
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
         steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT

@@ -450,7 +450,7 @@ export function shouldKeepSessionOnError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 400 || error.status === 429)
 }
 
-export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string, event?: string, outcome?: string): Promise<OpenCodeResponse> {
+export async function sendOpenCodeMessage(conversationId: string, text: string, modelSelection?: string, event?: string, outcome?: string, jobType?: string, jobMode?: string): Promise<OpenCodeResponse> {
   if (!conversationId) {
     throw new ApiError(400, "No active conversation", null)
   }
@@ -471,6 +471,14 @@ export async function sendOpenCodeMessage(conversationId: string, text: string, 
   // substring that breaks if the wording changes.
   if (outcome) {
     body.outcome = outcome
+  }
+  // The finished job's canonical type + run mode, so the server can tell a subagent's own
+  // deliverable (hand back) from an intermediate preview/split (keep working) on a job_complete.
+  if (jobType) {
+    body.job_type = jobType
+  }
+  if (jobMode) {
+    body.job_mode = jobMode
   }
   if (modelSelection) {
     const { parseModelSelection } = await import("@/features/chat/models")
