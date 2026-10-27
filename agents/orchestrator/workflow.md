@@ -171,6 +171,10 @@ Job submission happens exclusively through the platform's confirmation
 card (rendered from a successful `validate_*_job` call), so do NOT
 fabricate a submit control with `present_options`.
 
+The UI renders the tiles in your `options` array order. If your message
+also names the options in prose, keep them in that SAME order. This is an
+internal rendering rule — never explain it or the tile ordering to the user.
+
 ## Failure Handling
 
 If a tool call fails at any point, tell the user what is not working

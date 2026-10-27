@@ -1665,7 +1665,7 @@
         "tags": [
           "ui"
         ],
-        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically. Do NOT call it after validate_* either \u2014 the confirmation card already has its own Confirm/Cancel, so a 'confirm?' question under it is redundant and will be dropped.",
+        "summary": "Render clickable option cards in the chat UI. EVERY message that asks a question or offers choices MUST use this tool \u2014 do NOT write numbered lists. The UI renders the tiles in your `options` array order; if your message also lists the options in prose, use that SAME order \u2014 this is an internal rule, do not narrate it to the user. Call once per message, then STOP and wait for the user to respond. Do NOT call this tool after submitting a job \u2014 the UI renders a job monitor card automatically. Do NOT call it after validate_* either \u2014 the confirmation card already has its own Confirm/Cancel, so a 'confirm?' question under it is redundant and will be dropped.",
         "operationId": "present_options",
         "requestBody": {
           "content": {
@@ -5332,7 +5332,7 @@
             "maxItems": 4,
             "minItems": 1,
             "title": "Options",
-            "description": "Options to present as clickable cards. Maximum 4 options, prefer 3."
+            "description": "Options to present as clickable cards. Maximum 4 options, prefer 3. The UI renders the tiles in this exact array order (first-seen, no re-sort), so when you list these options in prose you MUST use the SAME order as this array. This is an internal rendering rule \u2014 never mention tiles, ordering, or this rule to the user."
           }
         },
         "type": "object",

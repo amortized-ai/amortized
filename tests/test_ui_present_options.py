@@ -15,6 +15,7 @@ from amortized.api.ui import (
     SignalPhaseRequest,
     _dedup_options,
     present_options,
+    router,
     show_model_pricing,
     show_prompt,
     signal_phase,
@@ -58,6 +59,25 @@ def test_distinct_options_preserved_in_order() -> None:
     opts = [_opt("A", "do a"), _opt("B", "do b"), _opt("C", "do c")]
     out = _dedup_options(opts)
     assert [o.title for o in out] == ["A", "B", "C"]
+
+
+def test_dedup_preserves_order_around_a_duplicate() -> None:
+    # The tiles render in the options-array order, and prose is told to match it, so
+    # dedup must not reorder the survivors: a duplicate in the middle drops out without
+    # shuffling the options that remain.
+    opts = [_opt("A", "do a"), _opt("B", "do b"), _opt("B", "do b"), _opt("C", "do c")]
+    out = _dedup_options(opts)
+    assert [o.title for o in out] == ["A", "B", "C"]
+
+
+def test_present_options_contract_states_ordering_guarantee() -> None:
+    # The model must share the UI's option ordering. The guarantee lives in the
+    # shared tool contract (read by every agent); assert both the endpoint summary and
+    # the options field description state it, so the wording can't silently regress.
+    routes = {getattr(r, "operation_id", None): r for r in router.routes}
+    assert "order" in routes["present_options"].summary.lower()
+    options_field = PresentOptionsRequest.model_fields["options"]
+    assert "order" in (options_field.description or "").lower()
 
 
 def test_endpoint_dedups() -> None:
