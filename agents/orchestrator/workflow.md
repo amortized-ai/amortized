@@ -172,8 +172,8 @@ card (rendered from a successful `validate_*_job` call), so do NOT
 fabricate a submit control with `present_options`.
 
 The UI renders the tiles in your `options` array order. If your message
-also names the options in prose, list them in that SAME order so the
-narration and the tiles always agree.
+also names the options in prose, keep them in that SAME order. This is an
+internal rendering rule — never explain it or the tile ordering to the user.
 
 ## Failure Handling
 
