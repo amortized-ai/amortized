@@ -598,7 +598,7 @@ export function useChat() {
   }, [currentConversationId])
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string): Promise<boolean> => {
       // Resolve the conversation id synchronously up front (generate one for a new
       // conversation) so the lock is keyed consistently and acquired BEFORE any await —
       // no check-then-act gap, and the same key is released in `finally`.
@@ -616,7 +616,7 @@ export function useChat() {
         _sendLock.has(convId) ||
         useChatStore.getState().getJobInFlight(convId)
       ) {
-        return
+        return false
       }
       _sendLock.add(convId)
 
@@ -755,6 +755,9 @@ export function useChat() {
       } finally {
         _sendLock.delete(convId)
       }
+      // Reached only when the message was accepted (the guard above returns false
+      // instead). A caught turn error still counts as sent — the user turn was posted.
+      return true
     },
     [
       chatState,

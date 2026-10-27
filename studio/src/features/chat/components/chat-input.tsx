@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Send } from "lucide-react"
 import { useChatStore } from "@/stores/chat-store"
@@ -7,12 +7,16 @@ interface ChatInputProps {
   onSend: (message: string) => void
   disabled?: boolean
   placeholder?: string
+  leftSlot?: ReactNode
+  aboveSlot?: ReactNode
 }
 
 export function ChatInput({
   onSend,
   disabled = false,
   placeholder = "Type a message...",
+  leftSlot,
+  aboveSlot,
 }: ChatInputProps) {
   const convId = useChatStore((s) => s.currentConversationId)
   const value = useChatStore((s) => s.drafts[s.currentConversationId ?? ""] ?? "")
@@ -54,28 +58,32 @@ export function ChatInput({
 
   return (
     <div className="border-t bg-background/80 backdrop-blur-sm p-4">
-      <div className="mx-auto max-w-3xl flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          placeholder={placeholder}
-          disabled={disabled}
-          rows={1}
-          aria-label="Message input"
-          className="flex-1 resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm shadow-sm placeholder:text-muted-foreground/60 hover:shadow-md hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40 focus-visible:shadow-md dark:focus-visible:ring-primary/10 dark:focus-visible:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
-        />
-        <Button
-          size="icon"
-          onClick={handleSubmit}
-          disabled={disabled || !value.trim()}
-          aria-label="Send message"
-          className="h-11 w-11 rounded-xl shrink-0 transition-all duration-200 hover:scale-105 hover:shadow-md"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+      <div className="mx-auto max-w-3xl space-y-2">
+        {aboveSlot}
+        <div className="flex items-end gap-2">
+          {leftSlot}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onInput={handleInput}
+            placeholder={placeholder}
+            disabled={disabled}
+            rows={1}
+            aria-label="Message input"
+            className="flex-1 resize-none rounded-xl border border-input bg-card px-4 py-3 text-sm shadow-sm placeholder:text-muted-foreground/60 hover:shadow-md hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40 focus-visible:shadow-md dark:focus-visible:ring-primary/10 dark:focus-visible:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+          />
+          <Button
+            size="icon"
+            onClick={handleSubmit}
+            disabled={disabled || !value.trim()}
+            aria-label="Send message"
+            className="h-11 w-11 rounded-xl shrink-0 transition-all duration-200 hover:scale-105 hover:shadow-md"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   )
