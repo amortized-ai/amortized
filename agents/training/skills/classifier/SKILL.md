@@ -17,15 +17,15 @@ Use this skill to train a **text classifier / decision model** from labeled
 
 - **Classifier head** (`algorithm="classifier"` → `classifier_sft`) — **the default.** A
   dedicated classification head (on a modern encoder like ModernBERT, or a decoder via
-  LoRA). Best accuracy and **calibrated probabilities** for a *fixed* label set — e.g.
-  ModernBERT scores ~0.94 on Banking77 (77 intents). Use this for the common case:
+  LoRA). Best accuracy and **calibrated probabilities** for a *fixed, known* label set —
+  e.g. ModernBERT scores ~0.94 on Banking77 (77 intents). Use this for the common case:
   "classify text into my N categories."
 - **Embedding router** (`algorithm="embedding"` → `embedding_sft`) — contrastive
-  sentence-transformers; classify by nearest class. Pick this **only** when the user
-  wants embeddings / semantic routing / retrieval / open-set / few-shot. Not the default.
+  sentence-transformers; classifies by nearest class and produces reusable embedding
+  vectors. Pick it when the task *shape* calls for it (see "Path" below), not the default.
 
-Pick the **head classifier** unless the user explicitly wants embeddings/routing. There is
-no generative-LLM classifier path — a dedicated head is faster, cheaper, and more accurate.
+There is no generative-LLM classifier path — a dedicated head is faster, cheaper, and
+more accurate.
 
 This flow differs from the LLM sub-skills (OSFT/SFT/LoRA): there is **no VRAM card /
 model-size comparison** — the VRAM estimator is for generative LLM training only.
@@ -39,8 +39,25 @@ Follow the workflow's one-question-per-turn rules. Gather:
    of the two, never both: to train on a split or an uploaded dataset, set only
    `data_run_id`. Set `text_column` (`text`) and `label_column` (`category` for the SDG skill). String
    categories are label-encoded to integers automatically.
-2. **Path** — default to the **head classifier**. Only offer the embedding router if the
-   user mentions embeddings, semantic similarity, retrieval, routing by vector, or open-set.
+2. **Path (head vs router)** — decide by the task *shape*, not by whether the user used
+   ML jargon (a domain user rarely says "embeddings" or "open-set" for a task that
+   actually needs the router). **Default to the head classifier.** Choose the **embedding
+   router** when either is clearly true:
+   - **Open/growing label set** — the categories will change or new ones get added over
+     time without retraining (a head is tied to the labels it was trained on).
+   - **Reusable embeddings / nearest-match** — the user needs the vectors themselves, or
+     wants to match text to the closest existing item (retrieval, semantic search,
+     dedup/similarity), not just a predicted label.
+
+   If the request shows routing/matching intent but it's **ambiguous** whether the label
+   set is fixed (e.g. "route tickets to the right team", "match questions to our FAQs"),
+   do NOT silently guess — present a one-time choice with `present_options`:
+   - "Fixed set of categories — classifier (recommended): best accuracy, calibrated
+     confidence"
+   - "Categories will grow, or I need embeddings for matching/retrieval — embedding router"
+
+   A plainly fixed-label task ("classify into these N categories") needs no question —
+   just use the head. Set `algorithm` from the resolved choice.
 3. **Base model** — head default `answerdotai/ModernBERT-base` (fast, strong, 8k context);
    embedding default `sentence-transformers/all-MiniLM-L6-v2`. Only surface alternatives if
    asked (any HF encoder/decoder with a classification head works for the head path; custom
