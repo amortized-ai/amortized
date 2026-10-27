@@ -122,8 +122,8 @@ Keep `skip_health_check: true`.
 ```json
 "model_configs": [{
   "alias": "text",
-  "model": "<from list_models>",
-  "provider": "<from list_models>",
+  "model": "<from-list_models>",
+  "provider": "<from-list_models>",
   "skip_health_check": true,
   "inference_parameters": {
     "max_parallel_requests": 32

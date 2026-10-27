@@ -1,6 +1,5 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -26,22 +25,30 @@ import {
 import { ChevronDown } from "lucide-react"
 import type { JobType } from "@/types/api"
 import type { JsonSchema } from "../api/use-recipes"
+import { FieldLabel, FieldDescription } from "./recipe-fields"
+import { formatLabel, SdgModelAliasesContext, type FieldMeta } from "./recipe-field-utils"
+import {
+  DocumentPickerField,
+  DatasetPickerField,
+  ModelPickerField,
+  ModelAliasField,
+} from "./recipe-pickers"
+import { collectRequiredPaths, joinPath } from "../lib/recipe-validation"
 
 interface RecipeConfigFormProps {
   type: JobType
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  // Per-recipe required top-level fields (declared on the recipe, not the shared
+  // schema — e.g. Knowledge Ingestion requires document_ids).
+  requiredKeys?: string[]
 }
 
 // --- Schema helpers ---
-// Flattens all $defs into a fieldName -> {description, enum} map so
-// descriptions are available at any nesting depth, not just top-level.
-
-type FieldMeta = {
-  description?: string
-  enumValues?: string[]
-}
+// Flattens all $defs into a fieldName -> {description, enum, required} map so
+// descriptions, enums and required markers are available at any nesting depth,
+// not just top-level.
 
 const FALLBACK_DESCRIPTIONS: Record<string, string> = {
   drop: "Exclude this column from the final dataset output",
@@ -56,13 +63,24 @@ function buildFieldDescriptionMap(schema: JsonSchema): Map<string, FieldMeta> {
   const map = new Map<string, FieldMeta>()
   const defs = (schema.$defs ?? schema.definitions ?? {}) as Record<string, JsonSchema>
 
+  // A field name is treated as required if it appears in any schema's `required`
+  // array (top-level or any $def). Name-keyed, so acceptable for v1.
+  const requiredNames = new Set<string>()
+  function collectRequired(s: JsonSchema) {
+    const req = s.required as string[] | undefined
+    if (Array.isArray(req)) for (const r of req) requiredNames.add(r)
+  }
+  collectRequired(schema)
+  for (const def of Object.values(defs)) collectRequired(def)
+
   function extractFromProps(props: Record<string, JsonSchema>) {
     for (const [key, fieldSchema] of Object.entries(props)) {
       if (map.has(key)) continue
       const desc = fieldSchema.description as string | undefined
       const enumVals = fieldSchema.enum as string[] | undefined
-      if (desc || enumVals) {
-        map.set(key, { description: desc, enumValues: enumVals })
+      const required = requiredNames.has(key)
+      if (desc || enumVals || required) {
+        map.set(key, { description: desc, enumValues: enumVals, required })
       }
     }
   }
@@ -103,40 +121,25 @@ function getFieldMeta(fieldKey: string, schema?: JsonSchema | null): FieldMeta {
 
 // --- Primitives ---
 
-function formatLabel(label: string): string {
-  return label.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function FieldLabel({ label, htmlFor }: { label: string; htmlFor?: string }) {
-  return (
-    <Label htmlFor={htmlFor} className="text-sm font-medium">
-      {formatLabel(label)}
-    </Label>
-  )
-}
-
-function FieldDescription({ text }: { text?: string }) {
-  if (!text) return null
-  return <p className="text-xs text-muted-foreground">{text}</p>
-}
-
 function NumberField({
   label,
   value,
   onChange,
   step,
   description,
+  required,
 }: {
   label: string
   value: number | undefined
   onChange: (v: number | undefined) => void
   step?: string
   description?: string
+  required?: boolean
 }) {
   const id = `field-${label}`
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} htmlFor={id} />
+      <FieldLabel label={label} htmlFor={id} required={required} />
       <Input
         id={id}
         type="number"
@@ -158,16 +161,18 @@ function TextField({
   value,
   onChange,
   description,
+  required,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   description?: string
+  required?: boolean
 }) {
   const id = `field-${label}`
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} htmlFor={id} />
+      <FieldLabel label={label} htmlFor={id} required={required} />
       <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} className="h-9" />
       <FieldDescription text={description} />
     </div>
@@ -179,15 +184,17 @@ function LongTextField({
   value,
   onChange,
   description,
+  required,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   description?: string
+  required?: boolean
 }) {
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} required={required} />
       <Textarea value={value} onChange={(e) => onChange(e.target.value)} className="min-h-[80px] text-sm" />
       <FieldDescription text={description} />
     </div>
@@ -199,17 +206,19 @@ function BooleanField({
   value,
   onChange,
   description,
+  required,
 }: {
   label: string
   value: boolean
   onChange: (v: boolean) => void
   description?: string
+  required?: boolean
 }) {
   const id = `field-${label}`
   return (
     <div>
       <div className="flex items-center justify-between">
-        <FieldLabel label={label} htmlFor={id} />
+        <FieldLabel label={label} htmlFor={id} required={required} />
         <Switch id={id} checked={value} onCheckedChange={onChange} />
       </div>
       <FieldDescription text={description} />
@@ -223,16 +232,18 @@ function EnumField({
   options,
   onChange,
   description,
+  required,
 }: {
   label: string
   value: string
   options: string[]
   onChange: (v: string) => void
   description?: string
+  required?: boolean
 }) {
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} required={required} />
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -252,10 +263,12 @@ function JsonField({
   label,
   value,
   onChange,
+  required,
 }: {
   label: string
   value: unknown
   onChange: (v: unknown) => void
+  required?: boolean
 }) {
   const [text, setText] = useState(() => JSON.stringify(value, null, 2))
   const [error, setError] = useState<string | null>(null)
@@ -272,7 +285,7 @@ function JsonField({
 
   return (
     <div className="space-y-1">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} required={required} />
       <Textarea value={text} onChange={(e) => handleChange(e.target.value)} className="min-h-[80px] font-mono text-xs" />
       {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
@@ -282,17 +295,26 @@ function JsonField({
 function Section({
   title,
   defaultOpen,
+  required,
   children,
 }: {
   title: string
   defaultOpen?: boolean
+  required?: boolean
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen ?? true)
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg px-1 py-2 text-sm font-semibold hover:bg-muted/50 transition-colors">
-        {title}
+        <span>
+          {title}
+          {required && (
+            <span className="ml-0.5 text-red-500" aria-label="required">
+              *
+            </span>
+          )}
+        </span>
         <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </CollapsibleTrigger>
       <CollapsibleContent>
@@ -381,12 +403,64 @@ function RecursiveField({
   value,
   onChange,
   meta,
+  schema,
+  path,
+  requiredPaths,
 }: {
   fieldKey: string
   value: unknown
   onChange: (v: unknown) => void
   meta?: FieldMeta
+  schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
+  // Required-ness is branch-aware (same walk as the Submit-block), looked up by the
+  // field's position — not the name-keyed meta — so markers can't diverge from it.
+  const required = requiredPaths.has(path)
+  // Data-wired pickers take precedence over the value-type dispatch below.
+  if (fieldKey === "document_ids") {
+    return (
+      <DocumentPickerField
+        label={fieldKey}
+        value={value}
+        onChange={onChange}
+        description={meta?.description}
+        required={required}
+      />
+    )
+  }
+  if (fieldKey === "parent_job_id") {
+    return (
+      <DatasetPickerField
+        value={value}
+        onChange={onChange}
+        required={required}
+        valueKey="job_id"
+      />
+    )
+  }
+  if (fieldKey === "data_run_id" || fieldKey === "eval_data_run_id") {
+    return (
+      <DatasetPickerField
+        value={value}
+        onChange={onChange}
+        required={required}
+        valueKey="run_id"
+      />
+    )
+  }
+  if (fieldKey === "model_alias") {
+    return (
+      <ModelAliasField
+        label={fieldKey}
+        value={value}
+        onChange={onChange}
+        description={meta?.description}
+        required={required}
+      />
+    )
+  }
   if (meta?.enumValues && typeof value === "string") {
     return (
       <EnumField
@@ -395,11 +469,12 @@ function RecursiveField({
         options={meta.enumValues}
         onChange={onChange}
         description={meta.description}
+        required={required}
       />
     )
   }
   if (typeof value === "boolean") {
-    return <BooleanField label={fieldKey} value={value} onChange={onChange} description={meta?.description} />
+    return <BooleanField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
   }
   if (typeof value === "number") {
     return (
@@ -409,23 +484,24 @@ function RecursiveField({
         onChange={(v) => onChange(v)}
         step={fieldKey.includes("rate") || fieldKey.includes("temperature") ? "0.00001" : undefined}
         description={meta?.description}
+        required={required}
       />
     )
   }
   if (typeof value === "string") {
     if (value.length > 80 || fieldKey === "prompt" || fieldKey === "system_prompt" || fieldKey === "content") {
-      return <LongTextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} />
+      return <LongTextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
     }
-    return <TextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} />
+    return <TextField label={fieldKey} value={value} onChange={onChange} description={meta?.description} required={required} />
   }
   if (Array.isArray(value)) {
     if (value.length > 0 && typeof value[0] === "object" && value[0] !== null) {
-      return <ArrayOfObjectsField label={fieldKey} items={value as Record<string, unknown>[]} onChange={onChange} />
+      return <ArrayOfObjectsField label={fieldKey} items={value as Record<string, unknown>[]} onChange={onChange} schema={schema} path={path} requiredPaths={requiredPaths} />
     }
-    return <JsonField label={fieldKey} value={value} onChange={onChange} />
+    return <JsonField label={fieldKey} value={value} onChange={onChange} required={required} />
   }
   if (typeof value === "object" && value !== null) {
-    return <NestedObjectField label={fieldKey} value={value as Record<string, unknown>} onChange={onChange} />
+    return <NestedObjectField label={fieldKey} value={value as Record<string, unknown>} onChange={onChange} schema={schema} path={path} requiredPaths={requiredPaths} />
   }
   return null
 }
@@ -442,13 +518,24 @@ function ArrayOfObjectsField({
   label,
   items,
   onChange,
+  schema,
+  path,
+  requiredPaths,
 }: {
   label: string
   items: Record<string, unknown>[]
   onChange: (v: unknown) => void
+  schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
   function updateItem(index: number, key: string, value: unknown) {
     const updated = items.map((item, i) => (i === index ? { ...item, [key]: value } : item))
+    onChange(updated)
+  }
+
+  function updateItemBatch(index: number, updates: Record<string, unknown>) {
+    const updated = items.map((item, i) => (i === index ? { ...item, ...updates } : item))
     onChange(updated)
   }
 
@@ -464,7 +551,14 @@ function ArrayOfObjectsField({
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{badge}</span>
               )}
             </div>
-            <ObjectFields obj={item} onFieldChange={(k, v) => updateItem(i, k, v)} />
+            <ObjectFields
+              obj={item}
+              onFieldChange={(k, v) => updateItem(i, k, v)}
+              onBatchChange={(updates) => updateItemBatch(i, updates)}
+              schema={schema}
+              path={joinPath(path, i)}
+              requiredPaths={requiredPaths}
+            />
           </div>
         )
       })}
@@ -476,10 +570,16 @@ function NestedObjectField({
   label,
   value,
   onChange,
+  schema,
+  path,
+  requiredPaths,
 }: {
   label: string
   value: Record<string, unknown>
   onChange: (v: unknown) => void
+  schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
   return (
     <div className="space-y-2 rounded-md border-l-2 border-border/50 pl-3">
@@ -488,6 +588,9 @@ function NestedObjectField({
         obj={value}
         onFieldChange={(k, v) => onChange({ ...value, [k]: v })}
         onBatchChange={(updates) => onChange({ ...value, ...updates })}
+        schema={schema}
+        path={path}
+        requiredPaths={requiredPaths}
       />
     </div>
   )
@@ -498,12 +601,57 @@ function ObjectFields({
   onFieldChange,
   onBatchChange,
   schema,
+  path,
+  requiredPaths,
 }: {
   obj: Record<string, unknown>
   onFieldChange: (key: string, value: unknown) => void
   onBatchChange?: (updates: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  path: string
+  requiredPaths: Set<string>
 }) {
+  const renderField = (key: string) => (
+    <RecursiveField
+      key={key}
+      fieldKey={key}
+      value={obj[key]}
+      onChange={(v) => onFieldChange(key, v)}
+      meta={getFieldMeta(key, schema)}
+      schema={schema}
+      path={joinPath(path, key)}
+      requiredPaths={requiredPaths}
+    />
+  )
+
+  // A data_designer model config: render the catalog picker for `model` (which
+  // also sets the sibling `provider`) in place of the two free-text fields.
+  const isModelConfig = "alias" in obj && "model" in obj && "provider" in obj
+  if (isModelConfig) {
+    const modelMeta = getFieldMeta("model", schema)
+    const setModelProvider = (modelId: string, providerId: string) => {
+      if (onBatchChange) onBatchChange({ model: modelId, provider: providerId })
+      else {
+        onFieldChange("model", modelId)
+        onFieldChange("provider", providerId)
+      }
+    }
+    const restKeys = Object.keys(obj).filter((k) => k !== "model" && k !== "provider")
+    return (
+      <>
+        <ModelPickerField
+          label="model"
+          model={String(obj.model ?? "")}
+          provider={String(obj.provider ?? "")}
+          onChange={setModelProvider}
+          description={modelMeta.description}
+          required={requiredPaths.has(joinPath(path, "model"))}
+        />
+        {restKeys.map(renderField)}
+      </>
+    )
+  }
+
   const paired = findPairedArrays(obj)
 
   if (paired) {
@@ -525,32 +673,12 @@ function ObjectFields({
             }
           }}
         />
-        {otherKeys.map((key) => (
-          <RecursiveField
-            key={key}
-            fieldKey={key}
-            value={obj[key]}
-            onChange={(v) => onFieldChange(key, v)}
-            meta={getFieldMeta(key, schema)}
-          />
-        ))}
+        {otherKeys.map(renderField)}
       </>
     )
   }
 
-  return (
-    <>
-      {Object.entries(obj).map(([key, val]) => (
-        <RecursiveField
-          key={key}
-          fieldKey={key}
-          value={val}
-          onChange={(v) => onFieldChange(key, v)}
-          meta={getFieldMeta(key, schema)}
-        />
-      ))}
-    </>
-  )
+  return <>{Object.keys(obj).map(renderField)}</>
 }
 
 // --- Training Form ---
@@ -578,10 +706,12 @@ function TrainingConfigForm({
   config,
   onChange,
   schema,
+  requiredKeys = [],
 }: {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  requiredKeys?: string[]
 }) {
   const algorithm = (config.algorithm as string) || "sft"
   const isLora = algorithm.includes("lora")
@@ -591,6 +721,28 @@ function TrainingConfigForm({
   const loraKeys = TRAINING_LORA_KEYS.filter((k) => hasKey(config, k))
   const advancedKeys = TRAINING_ADVANCED_KEYS.filter((k) => hasKey(config, k))
   const otherKeys = Object.keys(config).filter((k) => !ALL_TRAINING_KNOWN.has(k))
+
+  // Branch-aware required paths (schema + per-recipe requiredKeys) — same source as
+  // the Submit-block, so markers match. requiredKeys carries e.g. parent_job_id for
+  // training templates that require a dataset.
+  const requiredPaths = useMemo(
+    () => collectRequiredPaths(config, schema, requiredKeys),
+    [config, schema, requiredKeys],
+  )
+  const hasRequired = (keys: string[]) => keys.some((k) => requiredPaths.has(k))
+
+  const tField = (key: string) => (
+    <RecursiveField
+      key={key}
+      fieldKey={key}
+      value={config[key]}
+      onChange={(v) => onChange({ ...config, [key]: v })}
+      meta={getFieldMeta(key, schema)}
+      schema={schema}
+      path={key}
+      requiredPaths={requiredPaths}
+    />
+  )
 
   return (
     <div className="space-y-2">
@@ -602,6 +754,7 @@ function TrainingConfigForm({
             options={algoMeta.enumValues}
             onChange={(v) => onChange({ ...config, algorithm: v })}
             description={algoMeta.description}
+            required={requiredPaths.has("algorithm")}
           />
         ) : (
           <TextField
@@ -609,6 +762,7 @@ function TrainingConfigForm({
             value={algorithm}
             onChange={(v) => onChange({ ...config, algorithm: v })}
             description={algoMeta.description}
+            required={requiredPaths.has("algorithm")}
           />
         )}
         <RecursiveField
@@ -616,64 +770,33 @@ function TrainingConfigForm({
           value={config.model_name_or_path ?? ""}
           onChange={(v) => onChange({ ...config, model_name_or_path: v })}
           meta={getFieldMeta("model_name_or_path", schema)}
+          schema={schema}
+          path="model_name_or_path"
+          requiredPaths={requiredPaths}
         />
       </Section>
 
       {paramKeys.length > 0 && (
         <Section title="Training Parameters" defaultOpen>
-          <div className="grid grid-cols-2 gap-4">
-            {paramKeys.map((key) => (
-              <RecursiveField
-                key={key}
-                fieldKey={key}
-                value={config[key]}
-                onChange={(v) => onChange({ ...config, [key]: v })}
-                meta={getFieldMeta(key, schema)}
-              />
-            ))}
-          </div>
+          <div className="grid grid-cols-2 gap-4">{paramKeys.map(tField)}</div>
         </Section>
       )}
 
       {(isLora || loraKeys.length > 0) && (
         <Section title="LoRA Settings" defaultOpen>
-          {loraKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-            />
-          ))}
+          {loraKeys.map(tField)}
         </Section>
       )}
 
       {advancedKeys.length > 0 && (
-        <Section title="Advanced" defaultOpen={false}>
-          {advancedKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-            />
-          ))}
+        <Section key={`advanced:${hasRequired(advancedKeys)}`} title="Advanced" defaultOpen={hasRequired(advancedKeys)}>
+          {advancedKeys.map(tField)}
         </Section>
       )}
 
       {otherKeys.length > 0 && (
-        <Section title="Other Parameters" defaultOpen={false}>
-          {otherKeys.map((key) => (
-            <RecursiveField
-              key={key}
-              fieldKey={key}
-              value={config[key]}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-            />
-          ))}
+        <Section key={`other:${hasRequired(otherKeys)}`} title="Other Parameters" defaultOpen={hasRequired(otherKeys)}>
+          {otherKeys.map(tField)}
         </Section>
       )}
     </div>
@@ -686,10 +809,12 @@ function SdgConfigForm({
   config,
   onChange,
   schema,
+  requiredKeys = [],
 }: {
   config: Record<string, unknown>
   onChange: (config: Record<string, unknown>) => void
   schema?: JsonSchema | null
+  requiredKeys?: string[]
 }) {
   const primitiveKeys: string[] = []
   const complexKeys: string[] = []
@@ -700,46 +825,92 @@ function SdgConfigForm({
     else primitiveKeys.push(key)
   }
 
+  // Branch-aware required paths (schema + per-recipe requiredKeys) — the single
+  // source the markers, section-open, and the Submit-block all derive from.
+  const requiredPaths = useMemo(
+    () => collectRequiredPaths(config, schema, requiredKeys),
+    [config, schema, requiredKeys],
+  )
+  // Aliases declared here so a column's model_alias can be picked from them.
+  const aliases = Array.isArray(config.model_configs)
+    ? (config.model_configs as Record<string, unknown>[]).map((c) => String(c.alias ?? ""))
+    : []
+
   return (
-    <div className="space-y-2">
-      {primitiveKeys.length > 0 && (
-        <Section title="Generation Settings" defaultOpen>
-          <div className="grid grid-cols-2 gap-4">
-            {primitiveKeys.map((key) => (
+    <SdgModelAliasesContext.Provider value={aliases}>
+      <div className="space-y-2">
+        {primitiveKeys.length > 0 && (
+          <Section title="Generation Settings" defaultOpen>
+            <div className="grid grid-cols-2 gap-4">
+              {primitiveKeys.map((key) => (
+                <RecursiveField
+                  key={key}
+                  fieldKey={key}
+                  value={config[key]}
+                  onChange={(v) => onChange({ ...config, [key]: v })}
+                  meta={getFieldMeta(key, schema)}
+                  schema={schema}
+                  path={key}
+                  requiredPaths={requiredPaths}
+                />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {complexKeys.map((key) => {
+          const value = config[key]
+          const isRequired = requiredPaths.has(key)
+          // Skip empty arrays, except document_ids (a picker, usable when empty) and
+          // required keys (hiding them would block Submit with no way to re-add).
+          if (
+            Array.isArray(value) &&
+            value.length === 0 &&
+            key !== "document_ids" &&
+            !isRequired
+          ) {
+            return null
+          }
+          const open = isRequired || key === "document_ids"
+          // Key on `open` so the section remounts (re-seeding its open state) when
+          // `open` flips false→true as the schema loads async after mount.
+          return (
+            <Section key={`${key}:${open}`} title={formatLabel(key)} defaultOpen={open} required={isRequired}>
               <RecursiveField
-                key={key}
                 fieldKey={key}
-                value={config[key]}
+                value={value}
                 onChange={(v) => onChange({ ...config, [key]: v })}
                 meta={getFieldMeta(key, schema)}
+                schema={schema}
+                path={key}
+                requiredPaths={requiredPaths}
               />
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {complexKeys.map((key) => {
-        const value = config[key]
-        if (Array.isArray(value) && value.length === 0) return null
-        return (
-          <Section key={key} title={formatLabel(key)} defaultOpen={false}>
-            <RecursiveField
-              fieldKey={key}
-              value={value}
-              onChange={(v) => onChange({ ...config, [key]: v })}
-              meta={getFieldMeta(key, schema)}
-            />
-          </Section>
-        )
-      })}
-    </div>
+            </Section>
+          )
+        })}
+      </div>
+    </SdgModelAliasesContext.Provider>
   )
 }
 
-export function RecipeConfigForm({ type, config, onChange, schema }: RecipeConfigFormProps) {
+export function RecipeConfigForm({ type, config, onChange, schema, requiredKeys }: RecipeConfigFormProps) {
   const typeSchema = schema ? (schema[type] as JsonSchema | undefined) : null
   if (type === "training") {
-    return <TrainingConfigForm config={config} onChange={onChange} schema={typeSchema} />
+    return (
+      <TrainingConfigForm
+        config={config}
+        onChange={onChange}
+        schema={typeSchema}
+        requiredKeys={requiredKeys}
+      />
+    )
   }
-  return <SdgConfigForm config={config} onChange={onChange} schema={typeSchema} />
+  return (
+    <SdgConfigForm
+      config={config}
+      onChange={onChange}
+      schema={typeSchema}
+      requiredKeys={requiredKeys}
+    />
+  )
 }

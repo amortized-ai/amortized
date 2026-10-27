@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from amortized.backends import BackendHandle
 from amortized.config import settings as _settings
 from amortized.core.compute import get_backend
+from amortized.core.placeholders import find_unresolved_placeholders
 from amortized.models import JobStatus, JobType
 
 if TYPE_CHECKING:
@@ -86,6 +87,17 @@ async def create_job(
 ) -> dict[str, Any]:
     if not parent_job_id:
         parent_job_id = config.get("parent_job_id", "")
+
+    # Placeholder tokens are agent-resolution hints, never valid values. The form
+    # strips them, but the agent/API path could still submit one — reject it here
+    # with a clear error instead of letting the job fail later at runtime.
+    unresolved = find_unresolved_placeholders({**config, "parent_job_id": parent_job_id})
+    if unresolved:
+        raise InvalidJobStateError(
+            "config contains unresolved placeholder token(s): "
+            + ", ".join(unresolved)
+            + " — resolve them (select real documents/models/datasets) before running"
+        )
 
     # A job that needs more GPUs than the entire budget can never be admitted (the
     # worker would skip it forever), so reject it at creation with a clear error

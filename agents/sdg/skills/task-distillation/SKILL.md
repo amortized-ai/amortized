@@ -251,8 +251,8 @@ truncate or re-format it. Keep `skip_health_check: true`.
 ```json
 "model_configs": [{
   "alias": "teacher",
-  "model": "<from list_models>",
-  "provider": "<from list_models>",
+  "model": "<from-list_models>",
+  "provider": "<from-list_models>",
   "skip_health_check": true,
   "inference_parameters": {
     "max_tokens": 16384,

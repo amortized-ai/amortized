@@ -169,7 +169,15 @@ async def api_key_auth(request: Request, call_next):  # type: ignore[no-untyped-
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    # Endpoints may raise `HTTPException(detail=[...])` with a list of messages
+    # (e.g. training-job validation). Join them into a readable message instead of
+    # emitting the list's repr ("['...']"), which leaks into the UI toast.
+    if isinstance(exc.detail, str):
+        detail = exc.detail
+    elif isinstance(exc.detail, (list, tuple)):
+        detail = "; ".join(str(d) for d in exc.detail)
+    else:
+        detail = str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         content={

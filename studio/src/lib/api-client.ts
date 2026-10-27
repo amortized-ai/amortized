@@ -727,6 +727,26 @@ export async function getMlflowGatewayRoutes(): Promise<{ routes: MlflowGatewayR
   return { routes }
 }
 
+// --- Models (gateway / teacher-model catalog) ---
+
+export interface GatewayModel {
+  name: string
+  provider: string
+  model_name: string
+}
+
+export interface ModelsResponse {
+  models: GatewayModel[]
+  gateway_url: string
+}
+
+// The teacher-model catalog (MLflow AI Gateway, or direct providers via dropped-in
+// keys) — this is what the SDG agent's `list_models` tool returns. Distinct from
+// the OpenCode chat providers (/agent/provider) and from MLflow registered models.
+export function listGatewayModels(): Promise<ModelsResponse> {
+  return get<ModelsResponse>("/api/v1/models")
+}
+
 // --- Datasets ---
 
 export interface DatasetListItem {

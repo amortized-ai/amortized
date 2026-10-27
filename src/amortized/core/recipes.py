@@ -46,6 +46,9 @@ def list_starter_templates() -> list[dict[str, Any]]:
             meta = config.pop("_meta", {})
             name = meta.get("name", use_case)
             description = meta.get("description", "")
+            # Per-recipe required fields (e.g. Knowledge Ingestion needs document_ids
+            # — optional on the shared SDG schema, so declared on the recipe here).
+            required = meta.get("required", [])
 
             results.append(
                 {
@@ -53,6 +56,7 @@ def list_starter_templates() -> list[dict[str, Any]]:
                     "type": job_type,
                     "use_case": use_case,
                     "description": description,
+                    "required": required,
                     "config": config,
                 }
             )

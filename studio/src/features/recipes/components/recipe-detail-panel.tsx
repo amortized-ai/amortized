@@ -1,6 +1,5 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -19,12 +18,14 @@ import {
 } from "@/components/ui/resizable"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
 import { RecipeConfigForm } from "./recipe-config-form"
+import { stripPlaceholders } from "../lib/placeholders"
+import { collectMissingRequired } from "../lib/recipe-validation"
 import { useCreateJobFromConfig, useConfigSchemas } from "../api/use-recipes"
+import type { JsonSchema } from "../api/use-recipes"
 import {
   formatRecipeType,
   recipeTypeClassName,
 } from "../lib/format"
-import { missingRequiredFields } from "../lib/validate-config"
 import { ArrowLeft, Play, Code2, FormInput } from "lucide-react"
 import type { Job, JobType } from "@/types/api"
 
@@ -32,41 +33,52 @@ interface RecipeDetailPanelProps {
   job: Job
   recipeName: string
   onBack: () => void
+  // Per-recipe required top-level fields (from a starter template's _meta.required).
+  requiredKeys?: string[]
 }
 
-export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanelProps) {
+export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: RecipeDetailPanelProps) {
   const navigate = useNavigate()
   const createMutation = useCreateJobFromConfig()
-  const { data: schemas } = useConfigSchemas()
+  const { data: schemas, isLoading: schemasLoading } = useConfigSchemas()
+  // Strip placeholder tokens (agent-resolution hints, e.g. "<from-list_models>") on
+  // load so they are never a value and never submitted; pickers show an empty state.
   const [config, setConfig] = useState<Record<string, unknown>>(
-    () => structuredClone(job.config ?? {}),
+    () => stripPlaceholders(structuredClone(job.config ?? {})),
   )
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<"form" | "json">("form")
 
+  // Block execution while any required field is empty: schema-required (the schema
+  // is the source of truth) plus any per-recipe required fields (requiredKeys).
+  // While the schema is still loading we can't evaluate schema-required fields, so
+  // block rather than let an incomplete config submit. On a schema *fetch error*
+  // `isLoading` is false (fail-open): we can't validate, so allow submit and let the
+  // backend's required-field validation (422) be the backstop — never block forever.
+  const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
+  const missingRequired = useMemo(
+    () => collectMissingRequired(config, typeSchema, requiredKeys),
+    [config, typeSchema, requiredKeys],
+  )
+  const canExecute = !schemasLoading && missingRequired.length === 0
+
   const handleExecute = useCallback(() => {
-    const missing = missingRequiredFields(config, schemas?.[job.type])
-    if (missing.length > 0) {
-      toast.error(
-        `Missing required field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
-      )
-      setExecuteDialogOpen(false)
-      return
-    }
+    // Required fields are enforced by the Submit gate (disabled while
+    // `missingRequired` is non-empty) and listed in the dialog; no separate
+    // pre-check needed here.
     createMutation.mutate(
       { type: job.type as JobType, config },
       {
         onSuccess: (newJob) => {
           setSubmittedJobId(newJob.id)
         },
-        onError: (err) => {
-          toast.error(`Failed to create job: ${err.message}`)
+        onError: () => {
           setExecuteDialogOpen(false)
         },
       },
     )
-  }, [config, job.type, createMutation, schemas])
+  }, [config, job.type, createMutation])
 
   return (
     <div className="flex flex-col h-full">
@@ -114,6 +126,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
           <Button
             size="sm"
             onClick={() => setExecuteDialogOpen(true)}
+            disabled={schemasLoading}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Play className="mr-1.5 h-3.5 w-3.5" />
@@ -160,6 +173,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                     config={config}
                     onChange={setConfig}
                     schema={schemas}
+                    requiredKeys={requiredKeys}
                   />
                 </div>
               </ScrollArea>
@@ -187,6 +201,17 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                 : `This will create a new ${formatRecipeType(job.type)} job with the current configuration.`}
             </DialogDescription>
           </DialogHeader>
+
+          {!submittedJobId && missingRequired.length > 0 && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <p className="font-medium text-destructive">Fill required fields before running:</p>
+              <ul className="mt-1 list-disc pl-5 text-destructive/90">
+                {missingRequired.map((field) => (
+                  <li key={field}>{field}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {!submittedJobId && (
             <div className="max-h-[300px] overflow-auto rounded-lg border bg-muted/30 p-3">
@@ -219,7 +244,7 @@ export function RecipeDetailPanel({ job, recipeName, onBack }: RecipeDetailPanel
                 </Button>
                 <Button
                   onClick={handleExecute}
-                  disabled={createMutation.isPending}
+                  disabled={createMutation.isPending || !canExecute}
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {createMutation.isPending ? "Submitting..." : "Submit Job"}

@@ -8,6 +8,11 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   }
 }
 
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  // jsdom doesn't implement scrollIntoView; cmdk (Command) calls it on mount.
+  Element.prototype.scrollIntoView = () => {}
+}
+
 if (typeof globalThis.IntersectionObserver === "undefined") {
   globalThis.IntersectionObserver = class IntersectionObserver {
     readonly root = null

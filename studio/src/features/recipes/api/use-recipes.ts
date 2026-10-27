@@ -17,6 +17,7 @@ export interface StarterTemplate {
   type: string
   use_case: string
   description: string
+  required?: string[]
   config: Record<string, unknown>
 }
 
