@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -57,7 +57,10 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
   // `isLoading` is false (fail-open): we can't validate, so allow submit and let the
   // backend's required-field validation (422) be the backstop — never block forever.
   const typeSchema = schemas ? (schemas[job.type] as JsonSchema | undefined) : null
-  const missingRequired = collectMissingRequired(config, typeSchema, requiredKeys)
+  const missingRequired = useMemo(
+    () => collectMissingRequired(config, typeSchema, requiredKeys),
+    [config, typeSchema, requiredKeys],
+  )
   const canExecute = !schemasLoading && missingRequired.length === 0
 
   const handleExecute = useCallback(() => {

@@ -60,6 +60,21 @@ function pickBranch(value: unknown, node: Schema, defs: Record<string, Schema>):
       const prop = (b.properties as Record<string, Schema> | undefined)?.[disc]
       if (prop && matchesConst(prop, dv)) return b
     }
+    return null
+  }
+
+  // No explicit discriminator: infer the branch by its const tag (e.g. column_type)
+  // matching the value. Only accept a unique match, so we never guess wrong.
+  if (value && typeof value === "object") {
+    const v = value as Record<string, unknown>
+    const matches = nonNull.filter((b) => {
+      const props = b.properties as Record<string, Schema> | undefined
+      return (
+        !!props &&
+        Object.entries(props).some(([k, p]) => "const" in p && (p as Schema).const === v[k])
+      )
+    })
+    if (matches.length === 1) return matches[0] ?? null
   }
   return null
 }

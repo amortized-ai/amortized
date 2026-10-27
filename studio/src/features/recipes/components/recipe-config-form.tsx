@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -725,7 +725,10 @@ function TrainingConfigForm({
   // Branch-aware required paths (schema + per-recipe requiredKeys) — same source as
   // the Submit-block, so markers match. requiredKeys carries e.g. parent_job_id for
   // training templates that require a dataset.
-  const requiredPaths = collectRequiredPaths(config, schema, requiredKeys)
+  const requiredPaths = useMemo(
+    () => collectRequiredPaths(config, schema, requiredKeys),
+    [config, schema, requiredKeys],
+  )
   const hasRequired = (keys: string[]) => keys.some((k) => requiredPaths.has(k))
 
   const tField = (key: string) => (
@@ -824,7 +827,10 @@ function SdgConfigForm({
 
   // Branch-aware required paths (schema + per-recipe requiredKeys) — the single
   // source the markers, section-open, and the Submit-block all derive from.
-  const requiredPaths = collectRequiredPaths(config, schema, requiredKeys)
+  const requiredPaths = useMemo(
+    () => collectRequiredPaths(config, schema, requiredKeys),
+    [config, schema, requiredKeys],
+  )
   // Aliases declared here so a column's model_alias can be picked from them.
   const aliases = Array.isArray(config.model_configs)
     ? (config.model_configs as Record<string, unknown>[]).map((c) => String(c.alias ?? ""))

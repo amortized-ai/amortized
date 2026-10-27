@@ -130,10 +130,8 @@ export function DocumentPickerField({
                     <CommandItem
                       key={doc.document_id}
                       value={`${doc.filename} ${doc.document_id}`}
-                      onSelect={() => {
-                        toggle(doc.document_id)
-                        setOpen(false)
-                      }}
+                      // Multi-select: stay open on pick; close via outside-click / Escape.
+                      onSelect={() => toggle(doc.document_id)}
                     >
                       <Check
                         className={cn("h-4 w-4 shrink-0", isSel ? "opacity-100" : "opacity-0")}

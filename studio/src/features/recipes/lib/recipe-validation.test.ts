@@ -114,6 +114,39 @@ describe("collectMissingRequired", () => {
     expect(collectMissingRequired(config, schema)).toEqual(["Columns › Model Alias"])
   })
 
+  it("resolves an anyOf union with NO discriminator via const tags (real SDG columns)", () => {
+    // The real ColumnConfigT union is an anyOf with no discriminator; each branch is
+    // tagged by a column_type const. Required fields must still be enforced per branch.
+    const schema = {
+      required: ["columns"],
+      properties: {
+        columns: {
+          type: "array",
+          items: { anyOf: [{ $ref: "#/$defs/Sampler" }, { $ref: "#/$defs/LLMText" }] },
+        },
+      },
+      $defs: {
+        Sampler: {
+          type: "object",
+          required: ["name", "sampler_type"],
+          properties: { column_type: { const: "sampler" }, name: {}, sampler_type: {} },
+        },
+        LLMText: {
+          type: "object",
+          required: ["name", "prompt", "model_alias"],
+          properties: { column_type: { const: "llm-text" }, name: {}, prompt: {}, model_alias: {} },
+        },
+      },
+    }
+    const config = {
+      columns: [{ column_type: "llm-text", name: "q", prompt: "", model_alias: "text" }],
+    }
+    expect(collectMissingRequired(config, schema)).toEqual(["Columns › Prompt"])
+    expect(collectRequiredPaths(config, schema).has("columns/0/prompt")).toBe(true)
+    // the sampler branch's required fields must NOT leak onto an llm-text column
+    expect(collectRequiredPaths(config, schema).has("columns/0/sampler_type")).toBe(false)
+  })
+
   it("flags an empty per-recipe requiredKey (document_ids)", () => {
     // document_ids is optional in the schema but required for this recipe.
     expect(collectMissingRequired({ document_ids: [] }, null, ["document_ids"])).toEqual([
