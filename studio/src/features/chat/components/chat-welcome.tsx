@@ -1,19 +1,10 @@
-import { Bot, Cpu, Database, FlaskConical, Rocket } from "lucide-react"
+import { Bot, Cpu, Database, FlaskConical } from "lucide-react"
 
 interface ChatWelcomeProps {
   onPromptClick: (prompt: string) => void
 }
 
 const CAPABILITIES = [
-  {
-    icon: Rocket,
-    label: "Build custom agents",
-    detail: "Classification, extraction, and more",
-    prompt: "I want to build a custom agent",
-    iconBg: "bg-[#fce3e3] dark:bg-[#731f00]/50",
-    iconColor: "text-[#ee0000] dark:text-[#f56e6e]",
-    hoverBorder: "hover:border-[#ee0000]/30 dark:hover:border-[#f56e6e]/30",
-  },
   {
     icon: Database,
     label: "Generate training data",
@@ -44,9 +35,9 @@ const CAPABILITIES = [
 ]
 
 const SUGGESTED_PROMPTS = [
-  "Help me build a support ticket classifier",
-  "Create an agent that extracts invoice data",
-  "I want to train a model for sentiment analysis",
+  "Build a support ticket classifier",
+  "Build a task model that extracts invoice data",
+  "Build a model to answer questions from my documents",
   "Evaluate whether my fine-tuned model improved",
 ]
 
@@ -67,7 +58,7 @@ export function ChatWelcome({ onPromptClick }: ChatWelcomeProps) {
         </div>
 
         <div
-          className="animate-welcome grid grid-cols-2 gap-2"
+          className="animate-welcome grid grid-cols-3 gap-2"
           style={{ animationDelay: "200ms" }}
         >
           {CAPABILITIES.map((cap, i) => (
