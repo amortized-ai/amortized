@@ -564,6 +564,11 @@ function MetricsTab({ job }: { job: Job }) {
     )
   }
 
+  if (data && !data.finalValues["train_runtime"] && job.started_at && job.completed_at) {
+    data.finalValues["train_runtime"] =
+      (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000
+  }
+
   return (
     <div className="pt-2">
       <TrainingMetricsChart data={data} isLoading={isLoading} />

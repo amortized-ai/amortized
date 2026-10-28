@@ -162,8 +162,12 @@ export interface AllMetricsData {
   params: Record<string, string>
 }
 
-/** Metric keys we fetch full step-level history for. */
-const HISTORY_KEYS = ["loss", "train_loss", "grad_norm", "learning_rate", "epoch"]
+/** Metric keys we fetch full step-level history for.
+ * TRL logs: loss, train_loss, grad_norm, learning_rate
+ * torchtune (osft): loss, grad_norm, lr
+ * instructlab-training (sft/FSDP): avg_loss, lr
+ */
+const HISTORY_KEYS = ["loss", "train_loss", "avg_loss", "grad_norm", "learning_rate", "lr", "epoch"]
 
 export function useJobMlflowMetrics(runId: string | null) {
   return useQuery<AllMetricsData>({

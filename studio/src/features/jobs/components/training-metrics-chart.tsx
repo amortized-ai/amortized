@@ -206,11 +206,11 @@ export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartPr
 
   const { histories, finalValues, params } = data
 
-  const lastLoss = finalValues["loss"] ?? finalValues["train_loss"]
-  const lastLr = finalValues["learning_rate"] ?? (params["learning_rate"] ? Number(params["learning_rate"]) : undefined)
+  const lastLoss = finalValues["loss"] ?? finalValues["train_loss"] ?? finalValues["avg_loss"]
+  const lastLr = finalValues["learning_rate"] ?? finalValues["lr"] ?? (params["learning_rate"] ? Number(params["learning_rate"]) : undefined)
   const trainRuntime = finalValues["train_runtime"]
   const lastEpoch = finalValues["epoch"]
-  const lossHistory = histories["loss"] ?? histories["train_loss"]
+  const lossHistory = histories["loss"] ?? histories["train_loss"] ?? histories["avg_loss"]
 
   return (
     <div className="space-y-4">
@@ -252,7 +252,7 @@ export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartPr
         />
         <MetricChart
           title="Learning Rate Schedule"
-          data={histories["learning_rate"]}
+          data={histories["learning_rate"] ?? histories["lr"]}
           config={lrConfig}
           yLabel="LR"
           formatValue={(v: number) => v.toExponential(1)}
