@@ -1399,8 +1399,7 @@ async def _maybe_delegate(
     # unsignalled first clarifying turn is legitimate, so only the owed-edge stall check applies
     # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
     # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
-    # _maybe_delegate exit (fresh, resume, help-producer, data-gate re-drive — the last returns via
-    # the recursive call, nudged once).
+    # _maybe_delegate exit (fresh, resume, help-producer).
     sub_result["parts"] = await _maybe_nudge_subagent_stall(
         state, session_id, body, sub_result.get("parts", []), guard_missing_signal=False
     )
