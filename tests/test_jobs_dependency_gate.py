@@ -54,6 +54,11 @@ def _succeeded(**kw: Any) -> dict[str, Any]:
     return base
 
 
+# A minimal shape-valid training config: carries an algorithm so these tests isolate the
+# dependency gate, not the (separate) algorithm-presence check in _validate_training_data.
+_TRAIN_CFG: dict[str, Any] = {"algorithm": "sft"}
+
+
 class TestRequireDependencySucceeded:
     def _repo(self, store: dict[str, dict[str, Any]]) -> Any:
         return _fake_repo_cls(store)()
@@ -129,22 +134,34 @@ class TestValidateTrainingData:
     def test_inflight_parent_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         store = {"p1": {"status": "provisioning", "mlflow_run_id": "r"}}
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
-        errs = _run(jobs_mod._validate_training_data({}, "p1", None))  # type: ignore[arg-type]
+        errs = _run(jobs_mod._validate_training_data(_TRAIN_CFG, "p1", None))  # type: ignore[arg-type]
         assert any("parent_job_id" in e and "'provisioning'" in e for e in errs)
 
     def test_succeeded_parent_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         store = {"p1": _succeeded()}
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
-        errs = _run(jobs_mod._validate_training_data({}, "p1", None))  # type: ignore[arg-type]
+        errs = _run(jobs_mod._validate_training_data(_TRAIN_CFG, "p1", None))  # type: ignore[arg-type]
         assert errs == []
 
     def test_data_path_skips_parent_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # A direct data_path dispatch does not chain from a parent job.
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls({}))
         errs = _run(
-            jobs_mod._validate_training_data({"data_path": "/data/x.jsonl"}, "p1", None)  # type: ignore[arg-type]
+            jobs_mod._validate_training_data(  # type: ignore[arg-type]
+                {**_TRAIN_CFG, "data_path": "/data/x.jsonl"}, "p1", None
+            )
         )
         assert errs == []
+
+    def test_missing_algorithm_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The key-guard on TrainingJobRequest is gone; the real enforcement is this semantic
+        # check — it catches a missing key, an empty value, and a config_json that omitted it
+        # (none of which a request-layer key-guard covered), with a clean 422.
+        store = {"p1": _succeeded()}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        for cfg in ({}, {"algorithm": ""}, {"algorithm": "  "}):
+            errs = _run(jobs_mod._validate_training_data(cfg, "p1", None))  # type: ignore[arg-type]
+            assert any("algorithm is a required property" in e for e in errs)
 
     def test_training_job_id_not_double_gated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # training_job_id (resume-from-finetuned) is validated richly by
@@ -153,7 +170,9 @@ class TestValidateTrainingData:
         store = {"p1": _succeeded(), "t1": {"status": "running", "mlflow_run_id": "r"}}
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
         errs = _run(
-            jobs_mod._validate_training_data({"training_job_id": "t1"}, "p1", None)  # type: ignore[arg-type]
+            jobs_mod._validate_training_data(  # type: ignore[arg-type]
+                {**_TRAIN_CFG, "training_job_id": "t1"}, "p1", None
+            )
         )
         assert not any("training_job_id" in e for e in errs)
 
@@ -169,7 +188,8 @@ class TestDataRunProducerGated:
     ) -> None:
         store = {"pv": _preview_sdg()}
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
-        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runpv"}, "", None))  # type: ignore[arg-type]
+        cfg = {**_TRAIN_CFG, "data_run_id": "runpv"}
+        errs = _run(jobs_mod._validate_training_data(cfg, "", None))  # type: ignore[arg-type]
         assert any("PREVIEW" in e and "data_run_id" in e for e in errs)
 
     def test_eval_data_run_from_preview_rejected(
@@ -186,7 +206,8 @@ class TestDataRunProducerGated:
         # Reusing the job-id guard means an in-flight producer is gated too, not only preview.
         store = {"j": {"id": "j", "type": "sdg", "status": "running", "mlflow_run_id": "runx"}}
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
-        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runx"}, "", None))  # type: ignore[arg-type]
+        cfg = {**_TRAIN_CFG, "data_run_id": "runx"}
+        errs = _run(jobs_mod._validate_training_data(cfg, "", None))  # type: ignore[arg-type]
         assert any("data_run_id" in e and "'running'" in e for e in errs)
 
     def test_full_sdg_data_run_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -197,11 +218,13 @@ class TestDataRunProducerGated:
             )
         }
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
-        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runpv"}, "", None))  # type: ignore[arg-type]
+        cfg = {**_TRAIN_CFG, "data_run_id": "runpv"}
+        errs = _run(jobs_mod._validate_training_data(cfg, "", None))  # type: ignore[arg-type]
         assert errs == []
 
     def test_uploaded_data_run_has_no_producer(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # An uploaded dataset's run has no producing job -> nothing to reject.
         monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls({}))
-        errs = _run(jobs_mod._validate_training_data({"data_run_id": "upload-run"}, "", None))  # type: ignore[arg-type]
+        cfg = {**_TRAIN_CFG, "data_run_id": "upload-run"}
+        errs = _run(jobs_mod._validate_training_data(cfg, "", None))  # type: ignore[arg-type]
         assert errs == []

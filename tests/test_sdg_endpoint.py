@@ -192,12 +192,11 @@ class TestSDGEndpointHappyPath:
 
 class TestSDGMissingFields:
     @pytest.mark.asyncio
-    async def test_missing_columns(self, client: httpx.AsyncClient) -> None:
-        """Empty body → columns: Field required."""
+    async def test_missing_columns_accepted_as_empty(self, client: httpx.AsyncClient) -> None:
+        """Empty body → columns defaults to []. With the columns key-guard removed, a missing
+        key is treated identically to an explicit empty list, which DD allows → accepted."""
         response = await client.post("/api/v1/jobs/sdg", json={})
-        assert response.status_code == 422
-        assert "columns" in _err_str(response)
-        assert "required" in _err_str(response).lower()
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
     async def test_empty_columns_list(self, client: httpx.AsyncClient) -> None:

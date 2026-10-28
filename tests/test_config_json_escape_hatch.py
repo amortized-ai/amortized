@@ -133,16 +133,18 @@ def test_config_json_only_without_flat_fields(model: Any, cfg: dict[str, Any]) -
 
 def test_empty_columns_list_still_accepted() -> None:
     """Making columns schema-optional must NOT start rejecting an empty columns list —
-    DD allows it and test_sdg_endpoint.test_empty_columns_list expects 201. Only a wholly
-    MISSING columns key (and no config_json) is rejected."""
+    DD allows it and test_sdg_endpoint.test_empty_columns_list expects 201. A wholly MISSING
+    columns key now defaults to the same empty list (the key-guard is gone), so both are
+    accepted identically."""
     SDGJobRequest(columns=[])  # must not raise
+    SDGJobRequest()  # missing key == empty list == allowed
 
 
-def test_empty_call_still_rejected() -> None:
-    """Dropping schema-required does not make an empty config valid: the after-expansion
-    checks still fire. SDG's points the agent at config_json; training is rejected by its
-    inherited model-source check first (still rejected, just a different message)."""
-    with pytest.raises(ValueError, match="config_json"):
-        SDGJobRequest()
-    with pytest.raises(ValueError):
-        TrainingJobRequest()
+def test_request_model_no_longer_guards_missing_algorithm() -> None:
+    """The per-request key-guards are gone: the request model accepts a config with the
+    key omitted (algorithm defaults to ""). The real requirement is enforced SEMANTICALLY
+    at the endpoint (jobs._validate_training_data), which also catches an empty value and a
+    config_json that forgot algorithm — see test_jobs_dependency_gate. So an omitted/empty
+    algorithm no longer raises at model construction (other required fields aside)."""
+    assert TrainingJobRequest(model_name_or_path="m").algorithm == ""
+    assert TrainingJobRequest(model_name_or_path="m", algorithm="").algorithm == ""

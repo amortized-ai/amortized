@@ -211,7 +211,10 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
 
     # Override the base (where algorithm is required) so a config_json-only call passes
-    # MCP input validation; the real requirement is enforced after config_json expansion.
+    # MCP input validation. The real requirement is a SEMANTIC one enforced after
+    # config_json expansion, in _validate_training_data — which catches a missing key,
+    # an empty value, AND a config_json string that forgot algorithm (none of which a
+    # request-layer key-guard could cover), with a clean 422 instead of a dispatch failure.
     algorithm: str = Field(
         "",
         description=(
@@ -219,21 +222,6 @@ class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
             "Required unless the whole config is passed via config_json."
         ),
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _require_algorithm_key(cls, data: Any) -> Any:
-        # Mirror the base's key-required contract (algorithm was required there) while
-        # keeping the field schema-optional so a config_json-only call passes MCP input
-        # validation. Only the KEY is enforced — not non-emptiness — so this does not
-        # change what the base accepted. config_json counts as providing it.
-        if isinstance(data, dict) and not data.get("config_json") and "algorithm" not in data:
-            msg = (
-                "algorithm is a required property — provide it, "
-                "or pass the entire config as a single config_json string"
-            )
-            raise ValueError(msg)
-        return data
 
 
 class Job(BaseModel):
@@ -481,21 +469,10 @@ class SDGJobRequest(_ConfigJsonMixin):
         ),
     )
 
-    @model_validator(mode="before")
-    @classmethod
-    def _require_columns_key(cls, data: Any) -> Any:
-        # columns is schema-optional so a config_json-only call passes MCP input
-        # validation (which checks the schema's required list before pydantic runs).
-        # Preserve the original contract otherwise: the columns KEY must be present
-        # (an EMPTY list stays allowed — DD permits it, see test_empty_columns_list).
-        # config_json counts as providing it (it expands to the config, columns and all).
-        if isinstance(data, dict) and not data.get("config_json") and "columns" not in data:
-            msg = (
-                "columns is a required property — provide it (an empty list is allowed), "
-                "or pass the entire config as a single config_json string"
-            )
-            raise ValueError(msg)
-        return data
+    # columns is schema-optional (so a config_json-only call passes MCP input validation)
+    # and an EMPTY list is deliberately allowed (DD permits it — see test_empty_columns_list).
+    # A wholly missing key defaults to the same empty list, so there is nothing left to
+    # enforce at the request layer: no key-guard, unlike training's algorithm.
 
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":

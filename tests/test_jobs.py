@@ -125,11 +125,14 @@ class TestCreateJob:
 
     @pytest.mark.asyncio
     async def test_training_missing_algorithm(self, client: httpx.AsyncClient) -> None:
+        # The algorithm key-guard moved off the request model into _validate_training_data
+        # (semantic check), so a missing algorithm is still a 422 — now naming algorithm.
         response = await client.post(
             "/api/v1/jobs/training",
             json={"model_name_or_path": "test"},
         )
         assert response.status_code == 422
+        assert "algorithm" in str(response.json())
 
     @pytest.mark.asyncio
     async def test_training_missing_model(self, client: httpx.AsyncClient) -> None:
@@ -140,10 +143,12 @@ class TestCreateJob:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_sdg_missing_columns(self, client: httpx.AsyncClient) -> None:
+    async def test_sdg_missing_columns_accepted_as_empty(self, client: httpx.AsyncClient) -> None:
+        # The columns key-guard is gone: a wholly missing columns key defaults to the empty
+        # list, which DD permits (see test_sdg_empty_columns_accepted), so it is accepted
+        # identically rather than rejected at the request layer.
         response = await client.post("/api/v1/jobs/sdg", json={})
-        assert response.status_code == 422
-        assert "columns" in str(response.json())
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
     async def test_sdg_empty_columns_accepted(self, client: httpx.AsyncClient) -> None:
