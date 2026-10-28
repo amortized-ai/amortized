@@ -22,7 +22,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.api.agent_parts import _get_tool_input, _part_errored, _tool_name
 from amortized.api.agent_sdg_prompt import (
     _bind_prompts_to_config as _bind_prompts_to_config,  # re-export for tests
 )
@@ -32,7 +32,14 @@ from amortized.api.agent_sdg_prompt import (
 from amortized.api.agent_sdg_prompt import (
     _shown_prompts as _shown_prompts,  # re-export for tests
 )
-from amortized.api.phases import subagent_pointer
+from amortized.api.phases import (
+    Verdict,
+    adjudicate,
+    emits_card,
+    requires_phase_signal,
+    signal_is_known,
+    subagent_pointer,
+)
 from amortized.config import settings
 
 logger = logging.getLogger(__name__)
@@ -114,11 +121,12 @@ class SessionState:
     # pointed at the wrong section (the detour producer's residue, or its entry). Stash-and-restore
     # rather than making last_signal_step itself per-target: that regressed mid-training routing.
     completed_last_step: dict[str, str] = field(default_factory=dict)
-    # Per-target skill state, so the resident-workflow pointer can also name the current SKILL.md
-    # step during gathering: the skill the target loaded (via the `skill` tool) and the latest
-    # `present_options.step` stamp it emitted. Observed from the turn, used on the next send.
+    # Which skill each target has loaded (via the `skill` tool), so the resident-workflow pointer
+    # and the adjudicator can SCOPE a signalled skill-step slug to the right SKILL.md (step slugs
+    # are unique only within a skill). The step cursor itself is `last_signal_step` — a skill step
+    # is signalled via `signal_phase` exactly like a workflow phase. Observed from the turn, used on
+    # the next send.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
-    skill_last_step: dict[str, str] = field(default_factory=dict)
 
 
 _sessions: dict[str, SessionState] = {}
@@ -345,10 +353,10 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
         return result
     target = state.subagent_target or ""
     parts = result.get("parts") or []
-    # One pass over the turn's tool parts: remember the signalled workflow step AND the skill
-    # context (which skill is loaded, the latest present_options stamp) so the next turn's pointer
-    # can name both the resident workflow section and the current SKILL.md step. Scanned fully (no
-    # early return) because a skill load / question card often trails the signal_phase in a turn.
+    # One pass over the turn's tool parts: remember the signalled step (`signal_phase` — which now
+    # carries the current workflow section OR the current skill step, one cursor) and which skill is
+    # loaded (`skill` tool) so the next turn's pointer can name the step and scope it to the right
+    # SKILL.md. Scanned fully (no early return) because a skill load often trails signal_phase.
     signalled = False
     for part in parts:
         name = _tool_name(part)
@@ -361,10 +369,6 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
             skill_name = _get_tool_input(part).get("name")
             if skill_name and target:
                 state.active_skill_by_target[target] = str(skill_name)
-        elif name == "present_options":
-            stamp = _get_tool_input(part).get("step")
-            if stamp and target:
-                state.skill_last_step[target] = str(stamp)
     if signalled:
         return result  # model signalled this turn; nothing to backfill
     payload = {"phase": phase, "step": state.last_signal_step}
@@ -381,16 +385,16 @@ def _ensure_phase_signal(state: SessionState, result: dict[str, Any]) -> dict[st
 
 
 def _pointer_for(state: SessionState, target: str | None) -> str | None:
-    """The resident-workflow pointer for a subagent turn: the workflow section (from the last
-    signalled step) plus the current SKILL.md step (from the tracked skill + stamp). None for a
-    non-subagent, so callers compose it unconditionally. See phases.subagent_pointer."""
+    """The resident-workflow pointer for a subagent turn: names the current step (from the last
+    signalled slug — a workflow section or, when a skill is loaded, one of its SKILL.md steps),
+    scoped by the tracked skill. None for a non-subagent, so callers compose it unconditionally.
+    See phases.subagent_pointer."""
     if not target:
         return None
     return subagent_pointer(
         target,
         state.last_signal_step,
         state.active_skill_by_target.get(target),
-        state.skill_last_step.get(target),
     )
 
 
@@ -997,6 +1001,243 @@ async def get_turn(session_id: str, turn_id: str) -> dict[str, Any]:
     }
 
 
+# A bracketed UPPERCASE tag, matching the PR509 system-channel convention ([SYSTEM EVENT],
+# [SUBAGENT NEEDS HELP], [ACTIVE PHASE], …) — delivered raw on opencode's `system` field, never
+# wrapped in <system-reminder>.
+_STALL_NUDGE_INTRO = "[WORKFLOW STALL] Your last turn did not advance the workflow."
+
+
+# Terminal control-transfers a SUBAGENT can emit: the turn is LEAVING its phase (handled by the
+# hand-off / resume path), never working inside one — so it is never a stall and the signalled-guard
+# must not re-drive it (that would intercept the hand-off and strand the resume pointer).
+# `delegate_to_subagent` is orchestrator-only and so excluded.
+_HANDOFF_TOOLS = frozenset({"request_orchestrator_help", "signal_subagent_completion"})
+
+
+@dataclass(frozen=True)
+class TurnObservation:
+    """One scan of a finished subagent turn's assistant parts — the single source every stall /
+    nudge decision derives from, so the two per-turn vocabularies can never cross-contaminate:
+
+    - `signalled_step` is read ONLY from this turn's own `signal_phase` (the fresh cursor), never
+      the one-turn-stale `state.last_signal_step` that `_ensure_phase_signal` writes after
+      adjudication — keying on the stale field mis-judged a just-emitted edge (e.g. a `validate`
+      card scored against the prior gather step → false `wrong_edge` → the card nudged away).
+    - `card_steps` are the `present_options` stamps ONLY (the card vocabulary); the `signal_phase`
+      slug (a coarse workflow phase like `gather`) is NOT a card stamp, so unioning them no longer
+      reads one legitimate card as two steps → false `batching`.
+
+    Errored tool calls are excluded from `tools`/`card_steps`/`has_card` (a dead call rendered no
+    edge); `hands_off` mirrors the legacy all-parts scan so an errored hand-off still counts as a
+    hand-off (exempt from the guard), matching prior behavior."""
+
+    signalled_step: str  # this turn's own non-empty signal_phase step ("" if skipped/empty)
+    tools: frozenset[str]  # non-errored tool names
+    card_steps: tuple[str, ...]  # non-empty present_options step stamps (card vocabulary only)
+    has_text: bool  # emitted non-empty assistant prose
+    hands_off: bool  # a terminal control-transfer (never a stall; leaving the phase)
+    has_card: bool  # rendered an interactive card the user acts on (must not be stranded)
+
+
+def _observe_turn(parts: list[dict[str, Any]]) -> TurnObservation:
+    """Scan a subagent turn's assistant parts ONCE into a `TurnObservation`."""
+    tools: set[str] = set()
+    card_steps: list[str] = []
+    signalled_step = ""
+    has_text = False
+    hands_off = False
+    for part in parts:
+        name = _tool_name(part)
+        if name in _HANDOFF_TOOLS:  # legacy _turn_hands_off scanned all parts (errored included)
+            hands_off = True
+        if part.get("type") == "text" and str(part.get("text") or "").strip():
+            has_text = True
+            continue
+        if not name or _part_errored(part):
+            continue
+        tools.add(name)
+        if name == "signal_phase":
+            step = str(_get_tool_input(part).get("step") or "").strip()
+            if step:
+                signalled_step = step  # last non-empty wins (mirrors the legacy reversed scan)
+        elif name == "present_options":
+            step = str(_get_tool_input(part).get("step") or "").strip()
+            if step:
+                card_steps.append(step)
+    return TurnObservation(
+        signalled_step=signalled_step,
+        tools=frozenset(tools),
+        card_steps=tuple(card_steps),
+        has_text=has_text,
+        hands_off=hands_off,
+        has_card=emits_card(tools),
+    )
+
+
+def _stall_nudge_text(step: str, verdict: Verdict) -> str | None:
+    """The system-channel nudge for a non-ok verdict, or None when nothing is owed (ok /
+    lenient). Names the owed tool(s) so the driver self-corrects by calling them."""
+    where = f"`{step}`" if step else "the current step"
+    if verdict.kind == "batching":
+        return (
+            f"{_STALL_NUDGE_INTRO} You signalled more than one step in a single turn. "
+            "Handle ONE step per turn: signal the current step, take only its action, "
+            "then wait for the user before moving on."
+        )
+    if verdict.owed is None:
+        return None
+    owed = sorted(verdict.owed.all_of or verdict.owed.any_of)
+    owed_str = "` / `".join(owed)
+    if verdict.kind == "stall":
+        return (
+            f"{_STALL_NUDGE_INTRO} Phase {where} requires calling `{owed_str}` to proceed, "
+            f"but you called no such tool. CALL `{owed_str}` now — do not describe doing it "
+            "in prose."
+        )
+    if verdict.kind == "wrong_edge":
+        return (
+            f"{_STALL_NUDGE_INTRO} Phase {where} requires `{owed_str}`, not the card you "
+            f"emitted. CALL `{owed_str}` to proceed."
+        )
+    if verdict.kind == "not_solo":
+        return (
+            f"{_STALL_NUDGE_INTRO} The hand-off `{owed_str}` must be the ONLY action this "
+            "turn — no prose and no other tool calls. CALL it alone."
+        )
+    return None
+
+
+# The signalled-guard nudge: a subagent turn that skips `signal_phase` — or signals an off-vocab
+# slug that resolves to no phase (`signal_is_known` is false) — leaves `last_signal_step` pinned to
+# a PRIOR turn's step or to an unusable key, so the adjudicator would check the wrong phase's
+# obligation (or none). Rather than nudge off a stale/unusable key, re-prompt ONCE to emit a
+# recognized signal — the re-driven turn carries a fresh key the next adjudication can resolve. Same
+# bracketed system-channel convention as _STALL_NUDGE_INTRO.
+_MISSING_SIGNAL_NUDGE = (
+    "[PHASE SIGNAL MISSING] You did not signal a recognized step this turn — you either skipped "
+    "`signal_phase` or sent a slug that is not one of your `## Workflow` section slugs or your "
+    "loaded skill's `### Step` slugs. A valid signal is required on every turn — it stamps which "
+    "step you are in (each heading in your resident workflow / skill carries its slug). Do BOTH "
+    "now, in order: (1) CALL `signal_phase` with your current step's EXACT slug; (2) then carry "
+    "out that step's instructions from your resident workflow — do the action it specifies (ask "
+    "the next gather question, call the tool, surface the card), do not merely describe it in "
+    "prose and do not skip ahead to a later step."
+)
+
+
+async def _redrive_subagent(
+    state: SessionState,
+    session_id: str,
+    body: MessageRequest,
+    system: str,
+    fallback: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Re-prompt the subagent ONCE on the system channel and return its re-fetched parts; on a send
+    failure return `fallback` (the original parts) so one failed nudge never drops the turn.
+
+    This is the card-preserving re-drive helper shared by both nudge paths. The empty-user re-drive
+    advances opencode's message boundary PAST anything the turn already rendered, so a card-bearing
+    turn would be stranded — callers MUST gate it on the card rules (`_maybe_nudge_subagent_stall`:
+    the signalled-guard and every stall verdict except `batching` are skipped when the turn rendered
+    a card). Centralizing the send/refetch keeps that invariant in one place."""
+    assert state.subagent_id is not None  # caller guards this; narrows for the proxy/fetch calls
+    try:
+        await _proxy_send_message(
+            state.subagent_id,
+            "",
+            agent=state.subagent_target,
+            model=body.model,
+            system=system,
+        )
+    except Exception:
+        logger.warning("Nudge send failed: session=%s", session_id, exc_info=True)
+        return fallback
+    return await _fetch_all_assistant_parts(state.subagent_id)
+
+
+async def _maybe_nudge_subagent_stall(
+    state: SessionState,
+    session_id: str,
+    body: MessageRequest,
+    latest_parts: list[dict[str, Any]],
+    *,
+    guard_missing_signal: bool = True,
+) -> list[dict[str, Any]]:
+    """If the just-finished subagent turn stalled on an owed tool edge, re-prompt ONCE on the
+    system channel and return the re-fetched parts; otherwise return `latest_parts` unchanged. Runs
+    BEFORE completion/help detection so a nudged request_orchestrator_help flows through the normal
+    hand-off path (not stripped as prose). One nudge per user turn — the re-driven turn is not
+    re-adjudicated, so it can never loop. This is the live consumer of the pure `adjudicate`
+    library (api/phases.py). Every decision below reads the single `_observe_turn` scan.
+
+    `guard_missing_signal` — whether to apply the signalled-guard (re-drive a turn that stamped
+    no recognized `signal_phase`). Steady-state turns (the ordinary handler) want it; a fresh
+    delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — the subagent is (re)entering,
+    and a first clarifying turn without a signal is legitimate, so only the owed-edge STALL check
+    applies there (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
+    if body.event == "job_complete":
+        return latest_parts  # carries its own terminal hand-back steer; not a stall
+    if not state.subagent_id or not state.subagent_target:
+        return latest_parts
+    target = state.subagent_target
+    skill = state.active_skill_by_target.get(target)
+    obs = _observe_turn(latest_parts)
+    # The cursor is this turn's OWN signal, falling back to the prior step only when it skipped.
+    step = obs.signalled_step or state.last_signal_step
+
+    # Signalled-guard: a subagent must stamp a RECOGNIZED `signal_phase` slug every turn — it is the
+    # KEY the adjudicator (and the per-turn pointer) resolve against. A measured ~33% of GLM-flash
+    # turns skip it, and some signal an off-vocab slug (`signal_is_known` false); either leaves the
+    # key stale/unusable and mis-nudges (false wrong_edge / misdirected stall / missed stall). So
+    # re-prompt ONCE to emit a valid signal — the re-driven turn carries a fresh key for the NEXT
+    # adjudication. A card-bearing turn did its owed work and a handing-off turn is leaving its
+    # phase; both are exempt (re-driving would strand the card / intercept the hand-off). One nudge
+    # per user turn (not re-adjudicated), so it can never loop.
+    if (
+        guard_missing_signal
+        and requires_phase_signal(target)
+        and not signal_is_known(target, obs.signalled_step, skill=skill)
+        and not obs.hands_off
+        and not obs.has_card
+    ):
+        logger.info("Phase-signal-missing nudge: session=%s target=%s", session_id, target)
+        return await _redrive_subagent(state, session_id, body, _MISSING_SIGNAL_NUDGE, latest_parts)
+
+    verdict = adjudicate(
+        target,
+        step,
+        obs.tools,
+        skill=skill,
+        has_text=obs.has_text,
+        present_steps=obs.card_steps,
+    )
+    nudge = _stall_nudge_text(step, verdict)
+    if nudge is None:
+        return latest_parts
+    if _detect_completion(latest_parts) or _detect_help_request(latest_parts):
+        # The turn already carries a routable transition (completion / hand-back). The code just
+        # below (_handle_subagent_message) routes it on the SAME predicates. A re-drive here sends
+        # an empty-user re-prompt that ERASES this turn first — discarding the real
+        # signal_subagent_completion / request_orchestrator_help call. A weak driver (GLM-flash)
+        # bundles prose with the call (so the adjudicator sees `not_solo`/`batching`) and rarely
+        # re-emits the call on the re-drive, stranding the hand-off. Keying the exemption on the
+        # routing predicates — not the step-derived verdict — makes "preserved" == "routed" by
+        # construction. The bundled prose is cleaned off the surfaced turn in the hand-off path.
+        return latest_parts
+    if obs.has_card and verdict.kind != "batching":
+        # The turn surfaced a user-actionable card; a non-batching verdict here (stale-key
+        # wrong_edge / stall) would strand it. Keep the card, skip the nudge.
+        return latest_parts
+    logger.info(
+        "Stall nudge: session=%s target=%s kind=%s step=%s",
+        session_id,
+        state.subagent_target,
+        verdict.kind,
+        step,
+    )
+    return await _redrive_subagent(state, session_id, body, nudge, latest_parts)
+
+
 async def _handle_subagent_message(
     state: SessionState,
     session_id: str,
@@ -1048,6 +1289,21 @@ async def _handle_subagent_message(
         raise
 
     latest_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
+    # If the turn stalled on an owed tool edge (prose instead of the transition), re-prompt ONCE
+    # on the system channel and re-fetch, so the corrected turn flows through the completion/help/
+    # ordinary handling below (a nudged request_orchestrator_help becomes a real hand-off, not
+    # stripped prose). The live consumer of the pure adjudicator — see _maybe_nudge_subagent_stall.
+    latest_parts = await _maybe_nudge_subagent_stall(state, session_id, body, latest_parts)
+    # Refresh the step cursor from THIS turn's own signal_phase BEFORE any completion/help save
+    # below stashes it for the resume pointer. `_ensure_phase_signal` — the other writer of
+    # `last_signal_step` — runs later in `_run_turn`, AFTER this handler may clear
+    # `subagent_target`; by then its phase lookup is empty and the just-signalled step is dropped.
+    # Without this, a turn that BOTH signals its step AND hands back (e.g. eval signals
+    # `eval-dataset` then requests help) stashes the PRIOR step, and the resume pointer sends the
+    # consumer back to an earlier section.
+    turn_signalled_step = _observe_turn(latest_parts).signalled_step
+    if turn_signalled_step:
+        state.last_signal_step = turn_signalled_step
     # Completion is checked before a help request: if a turn somehow carries both
     # signals, "I'm done" wins and the help ask is ignored (a subagent that is
     # finishing has nothing left to be helped with).
@@ -1147,10 +1403,15 @@ async def _handle_subagent_message(
         if state.subagent_id and state.subagent_target and state.subagent_target != target:
             state.pending_help_target = target
             state.pending_help_producer = state.subagent_target
-        response_parts = _strip_internal_tools(result.get("parts", []))
-        help_result["parts"] = response_parts + _strip_internal_tools(
-            help_result.get("parts", [])
-        )
+        # Surface a bundled hand-off like a clean solo one. A weak driver (GLM-flash) narrates the
+        # hand-back ("standing by while the set generates…") alongside the request_orchestrator_help
+        # call; that prose is misleading plumbing — the user should see the hand-off's RESULT (the
+        # orchestrator starting the producer), not the leaf's premature status narration. Drop the
+        # text so a bundled hand-off reads identically to a solo one (which carries no prose).
+        response_parts = [
+            p for p in _strip_internal_tools(result.get("parts", [])) if p.get("type") != "text"
+        ]
+        help_result["parts"] = response_parts + _strip_internal_tools(help_result.get("parts", []))
         return help_result
 
     # Ordinary subagent turn (no completion, no help request). Strip internal tools
@@ -1215,7 +1476,6 @@ async def _maybe_delegate(
         state.last_signal_step = ""
         state.completed_last_step.pop(target, None)
         state.active_skill_by_target.pop(target, None)
-        state.skill_last_step.pop(target, None)
         sub_result = await _proxy_send_message(
             sub_id,
             handoff_msg,
@@ -1226,6 +1486,19 @@ async def _maybe_delegate(
         state.subagent_id = sub_id
 
     state.subagent_target = target
+    # Route this freshly-delegated / resumed turn through the SAME owed-edge stall check the
+    # ordinary handler runs (_handle_subagent_message). Without this, a subagent's FIRST turn (new
+    # delegation) or a resumed consumer's turn could signal its owed edge, narrate instead of
+    # calling the tool, and stop — with no adjudication or nudge, because _maybe_delegate returned
+    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn an
+    # unsignalled first clarifying turn is legitimate, so only the owed-edge stall check applies
+    # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
+    # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
+    # _maybe_delegate exit (fresh, resume, help-producer, data-gate re-drive — the last returns via
+    # the recursive call, nudged once).
+    sub_result["parts"] = await _maybe_nudge_subagent_stall(
+        state, session_id, body, sub_result.get("parts", []), guard_missing_signal=False
+    )
     return sub_result
 
 
@@ -1338,8 +1611,7 @@ async def list_providers() -> dict[str, Any]:
             # convention differs isn't dropped. (Guards against hiding *some* models, not just all.)
             allowed_base = {_strip_date_suffix(a) for a in allowed}
             filtered = [
-                m for m in out
-                if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
+                m for m in out if m["id"] in allowed or _strip_date_suffix(m["id"]) in allowed_base
             ]
             if filtered:
                 out = filtered

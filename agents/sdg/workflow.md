@@ -176,20 +176,21 @@ change. Do NOT restart from Phase 1.
 
 ## Progress Signal
 
-Call `signal_phase` once on every response, with `phase="sdg"` and `step` set to the
-slug of the `## Workflow` phase you are currently in:
+Call `signal_phase` once on every response, with `phase="sdg"` and `step` = the slug of the
+heading for your current step (each heading shows its slug as `<!--signal:…-->`):
 
-- `route` — Phase 1 (route to the right sub-skill)
-- `gather` — Phase 2 (gather requirements)
-- `validate` — Phase 3 (validate and confirm)
-- `complete` — Phase 4 (signal completion)
+- in Phase 1 / 3 / 4, the `## Workflow` phase slug — `route`, `validate`, or `complete`;
+- in Phase 2 (gathering), once you have loaded a skill, the skill's CURRENT `### Step` slug
+  (e.g. `task`, `examples`, `teacher-model`). Advance it as you move through the steps —
+  signal a skill step exactly as you would a workflow phase. A loaded skill with no numbered
+  steps has no sub-step slug; signal `gather`.
 
-Each slug is shown in its phase heading. While gathering (Phase 2), keep signalling
-`gather`; the skill you load tracks its own sub-steps.
+Signal exactly one step per response — signalling two different slugs in one turn is a
+batching error.
 
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill <!--signal:route-->
+### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options,clone_sdg_config_for_eval-->
 
 **Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
 training job ID, don't pick a sub-skill or design a new recipe — ask only the record
@@ -222,7 +223,7 @@ sensible defaults for technical parameters the user is unlikely to
 care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
-### Phase 3 — Validate and Confirm <!--signal:validate-->
+### Phase 3 — Validate and Confirm <!--signal:validate owed:validate_sdg_job-->
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
@@ -260,7 +261,7 @@ later step (e.g. training) on a preview — only the full create run produces th
 dataset. Only once the create run finishes do you move to Phase 4 and present
 next steps.
 
-### Phase 4 — Signal Completion <!--signal:complete-->
+### Phase 4 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
 Only reach this phase once the FULL run (mode "create") has succeeded. A
 `preview` job finishing is NOT completion — it is only the small sample. If the

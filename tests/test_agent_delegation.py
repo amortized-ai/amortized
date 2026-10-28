@@ -342,6 +342,123 @@ class TestRequestOrchestratorHelp:
         assert "model source" in pointer.lower()
         assert "confirm what to evaluate" not in pointer.lower()
 
+    def test_resume_pointer_uses_help_turns_own_fresh_signal(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # P2 repro: when the SAME turn that hands back ALSO signals a fresh step, the resume
+        # pointer must name THAT step, not the one left in last_signal_step from a prior turn.
+        # _ensure_phase_signal (the other writer of last_signal_step) runs later in _run_turn,
+        # after this handler clears subagent_target — so the help-turn's signal would otherwise
+        # be dropped and the stash would capture the stale prior step (sending eval back a section).
+        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+            ],
+        )
+        # eval advances to the eval-dataset step AND hands back in the one turn.
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part("signal_phase", {"phase": "eval", "step": "eval-dataset"}),
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    ),
+                ],
+                # The resumed turn presents its eval-dataset card (its owed edge) — realistic, and
+                # not a stall, so the resume stays focused on the pointer (#534 P2c now stall-checks
+                # resume turns, so a bare-prose resume here would be nudged).
+                [
+                    _tool_part("signal_phase", {"phase": "eval", "step": "eval-dataset"}),
+                    _tool_part("present_options", {"step": "eval-dataset"}),
+                ],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        state.last_signal_step = "understand-task"  # the PRIOR (earlier) step, now stale
+        router.queue_session(
+            [
+                [_text_part("What format?")],
+                [
+                    _tool_part(
+                        "signal_subagent_completion",
+                        {"summary": "SDG job sdg-1 done; 40 records"},
+                    )
+                ],
+            ]
+        )
+
+        _run(agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body()))
+        _run(agent._handle_subagent_message(state, "s1", "json, please", _body()))
+
+        assert state.subagent_target == "eval"  # eval is back
+        resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
+        pointer = resume_msg[3]
+        assert pointer is not None
+        # eval's eval-dataset section (the step it signalled on the hand-back turn) —
+        # NOT the stale prior "Confirm WHAT to evaluate" entry section.
+        assert "confirm the eval dataset" in pointer.lower()
+        assert "confirm what to evaluate" not in pointer.lower()
+
+    def test_bundled_handoff_routes_and_strips_its_prose(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A weak driver (GLM-flash) bundles premature status prose ("standing by while the set
+        # generates…") with the real request_orchestrator_help call. The hand-off must still route
+        # (the nudge consumer exempts it — see test_not_solo_handoff_is_honored), and the misleading
+        # prose must NOT reach the user: the surfaced turn reads like a clean solo hand-off, showing
+        # the hand-off's RESULT (the producer starting), not the leaf's narration.
+        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+            ],
+        )
+        narration = "Standing by while the 100-record held-out set generates."
+        eval_id = router.add_session(
+            [
+                [
+                    _text_part(narration),
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    ),
+                ],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        router.queue_session([[_text_part("What format should the eval set be?")]])
+
+        result = _run(
+            agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body())
+        )
+
+        assert state.subagent_target == "sdg"  # the hand-off routed (producer is now active)
+        texts = [p.get("text", "") for p in result["parts"] if p.get("type") == "text"]
+        assert narration not in texts  # the leaf's premature narration was stripped
+        assert any("What format" in t for t in texts)  # the producer's turn surfaces instead
+
     def test_completion_wins_over_simultaneous_help(self, router: _Router) -> None:
         # A turn carrying BOTH signal_subagent_completion AND request_orchestrator_help:
         # completion wins (a finishing subagent has nothing left to be helped with), so
@@ -680,6 +797,72 @@ class TestNoDataAdvisory:
         monkeypatch.setattr(agent, "_conversation_has_dataset", _boom)
         state = agent.SessionState(orchestrator_id="orch")
         assert _run(agent._no_data_advisory(state, "training")) is None
+
+
+class TestDelegationStallCheck:
+    """#534 P2c: a freshly-delegated or resumed subagent turn is routed through the SAME stall nudge
+    the ordinary handler runs. _maybe_delegate used to return these responses directly, so a turn
+    that signalled its owed edge, narrated the hand-off, and stopped was never adjudicated —
+    stranding the pipeline with no correction. The shared check now runs on every _maybe_delegate
+    exit (fresh, resume, help-producer, data-gate re-drive)."""
+
+    @staticmethod
+    def _signal(step: str) -> dict[str, Any]:
+        return _tool_part("signal_phase", {"phase": "eval", "step": step})
+
+    @staticmethod
+    def _patch_has_data(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def _has(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
+
+    # A stalled hand-off: signals the owed-solo step but narrates instead of calling the tool.
+    _STALL_THEN_CORRECT: ClassVar[list[list[dict[str, Any]]]] = [
+        [_tool_part("signal_phase", {"phase": "eval", "step": "held-out-request-help"}),
+         _text_part("I'll get the held-out set generated.")],
+        [_tool_part("signal_phase", {"phase": "eval", "step": "held-out-request-help"}),
+         _tool_part("request_orchestrator_help", {"need": "n", "context": "c"})],
+    ]
+
+    def test_fresh_delegation_turn_is_stall_nudged(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_has_data(monkeypatch)  # let the fresh eval delegation past the data gate
+        state = _make_state(router)
+        eval_id = router.queue_session([list(t) for t in self._STALL_THEN_CORRECT])
+        out = _run(
+            agent._maybe_delegate(
+                state, "s1", ("eval", "evaluate t1", False), "evaluate t1",
+                {"info": {}, "parts": []}, _body(),
+            )
+        )
+        # The stalled first turn was re-driven on the system channel naming the owed tool …
+        redrive = [
+            sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
+        ]
+        assert redrive and "request_orchestrator_help" in redrive[0]
+        # … and the corrected (re-fetched) turn carrying the real hand-off is what's returned.
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+
+    def test_resumed_turn_is_stall_nudged(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_has_data(monkeypatch)
+        state = _make_state(router)
+        eval_id = router.add_session([list(t) for t in self._STALL_THEN_CORRECT])
+        state.completed_subagents["eval"] = eval_id  # stashed, awaiting resume
+        out = _run(
+            agent._maybe_delegate(
+                state, "s1", ("eval", "resumed", True), "go on",
+                {"info": {}, "parts": []}, _body(),
+            )
+        )
+        redrive = [
+            sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
+        ]
+        assert redrive and "request_orchestrator_help" in redrive[0]
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
 
 
 class TestConversationHasDataset:

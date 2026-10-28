@@ -99,7 +99,7 @@ the server.
 Default 2000. Prototype: 500-1000. Production: 2000-5000.
 Ask with `present_options` using `step="samples"`.
 
-### Step 8 — Generate the system prompt <!--signal:system-prompt-->
+### Step 8 — Generate the system prompt <!--signal:system-prompt all:show_prompt,present_options-->
 
 Compose the task system prompt combining:
 1. **Role** — task performer identity

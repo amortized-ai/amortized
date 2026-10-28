@@ -157,20 +157,20 @@ change. Do NOT restart from Phase 1.
 
 ## Progress Signal
 
-Call `signal_phase` once on every response, with `phase="training"` and `step` set to
-the slug of the `## Workflow` phase you are currently in:
+Call `signal_phase` once on every response, with `phase="training"` and `step` = the slug of
+the heading for your current step (each heading shows its slug as `<!--signal:…-->`):
 
-- `route` — Phase 1 (route to the right sub-skill)
-- `gather` — Phase 2 (gather requirements)
-- `validate` — Phase 3 (validate and confirm)
-- `complete` — Phase 4 (signal completion)
+- in Phase 1 / 3 / 4, the `## Workflow` phase slug — `route`, `validate`, or `complete`;
+- in Phase 2 (gathering), once you have loaded a skill, the skill's CURRENT `### Step` slug if
+  it has numbered steps. A skill with no numbered steps (the training skills today) has no
+  sub-step slug; signal `gather`.
 
-Each slug is shown in its phase heading. While gathering (Phase 2), keep signalling
-`gather`; the skill you load tracks its own sub-steps.
+Signal exactly one step per response — signalling two different slugs in one turn is a
+batching error.
 
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill <!--signal:route-->
+### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options-->
 
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
@@ -239,7 +239,7 @@ that carries the new SDG job id; continue from data confirmation
 (`get_dataset` on the new set) as usual. Only train directly on X if the
 user explicitly confirms it and accepts the leakage trade-off.
 
-### Phase 3 — Validate and Confirm <!--signal:validate-->
+### Phase 3 — Validate and Confirm <!--signal:validate owed:validate_training_job-->
 
 **Precondition — data usage confirmed.** Before `validate_training_job`,
 you MUST have already called `get_dataset` on the training data's run ID
@@ -277,7 +277,7 @@ the missing information, fix the config, and retry.
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 Only then present next steps.
 
-### Phase 4 — Signal Completion <!--signal:complete-->
+### Phase 4 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
 Call `signal_subagent_completion` to hand control back to the
 orchestrator. If the user expressed a next intent (e.g. "Generate more
