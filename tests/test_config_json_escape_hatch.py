@@ -77,12 +77,28 @@ def test_config_json_equals_flat(model: Any, cfg: dict[str, Any]) -> None:
     assert "config_json" not in via.model_dump(exclude_none=True)
 
 
-def test_config_json_overrides_stray_flat_args() -> None:
+def test_config_json_overrides_stray_flat_args(caplog: pytest.LogCaptureFixture) -> None:
     """A weak model that sends config_json AND leftover flat args: config_json wins wholesale,
-    so the flat args can't half-populate a corrupted config."""
-    m = SDGJobRequest(config_json=json.dumps(_SDG), num_records=999, topic="WRONG")
+    so the flat args can't half-populate a corrupted config. The drop is silent to the caller
+    but WARN-logged, naming exactly which keys/values were ignored."""
+    with caplog.at_level("WARNING"):
+        m = SDGJobRequest(config_json=json.dumps(_SDG), num_records=999, topic="WRONG")
     assert m.num_records == 10
     assert m.topic == "RFE"
+    # the warning names each ignored flat arg and the discarded value
+    assert any(
+        "ignoring 2 flat argument(s)" in r.message
+        and "num_records=999" in r.message
+        and "topic='WRONG'" in r.message
+        for r in caplog.records
+    )
+
+
+def test_config_json_only_does_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    """config_json with no stray flat args is the normal case and must not warn."""
+    with caplog.at_level("WARNING"):
+        SDGJobRequest(config_json=json.dumps(_SDG))
+    assert not any("ignoring" in r.message for r in caplog.records)
 
 
 def test_config_json_default_absent() -> None:

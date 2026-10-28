@@ -1,12 +1,15 @@
 """Pydantic models for the Amortized v1 API."""
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class _ConfigJsonMixin(BaseModel):
@@ -47,6 +50,20 @@ class _ConfigJsonMixin(BaseModel):
                     msg = "config_json must decode to a JSON object (the config fields)"
                     raise ValueError(msg)
                 parsed.pop("config_json", None)
+                # config_json fully replaces the flat args; anything also passed alongside it
+                # is dropped. Keep that behavior (the escape hatch must absorb a weak model's
+                # smeared extra keys, not reject them), but make the drop auditable by naming
+                # exactly which keys were ignored and the values discarded.
+                ignored = {
+                    k: v for k, v in data.items() if k != "config_json" and v not in (None, "")
+                }
+                if ignored:
+                    logger.warning(
+                        "config_json is set; ignoring %d flat argument(s) in favor of the "
+                        "config_json contents: %s",
+                        len(ignored),
+                        ", ".join(f"{k}={v!r}" for k, v in sorted(ignored.items())),
+                    )
                 return parsed
         return data
 
