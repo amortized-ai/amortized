@@ -342,6 +342,69 @@ class TestRequestOrchestratorHelp:
         assert "model source" in pointer.lower()
         assert "confirm what to evaluate" not in pointer.lower()
 
+    def test_resume_pointer_uses_help_turns_own_fresh_signal(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # P2 repro: when the SAME turn that hands back ALSO signals a fresh step, the resume
+        # pointer must name THAT step, not the one left in last_signal_step from a prior turn.
+        # _ensure_phase_signal (the other writer of last_signal_step) runs later in _run_turn,
+        # after this handler clears subagent_target — so the help-turn's signal would otherwise
+        # be dropped and the stash would capture the stale prior step (sending eval back a section).
+        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+            ],
+        )
+        # eval advances to the eval-dataset step AND hands back in the one turn.
+        eval_id = router.add_session(
+            [
+                [
+                    _tool_part("signal_phase", {"phase": "eval", "step": "eval-dataset"}),
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    ),
+                ],
+                [_text_part("resumed — I have the dataset now.")],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        state.last_signal_step = "understand-task"  # the PRIOR (earlier) step, now stale
+        router.queue_session(
+            [
+                [_text_part("What format?")],
+                [
+                    _tool_part(
+                        "signal_subagent_completion",
+                        {"summary": "SDG job sdg-1 done; 40 records"},
+                    )
+                ],
+            ]
+        )
+
+        _run(agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body()))
+        _run(agent._handle_subagent_message(state, "s1", "json, please", _body()))
+
+        assert state.subagent_target == "eval"  # eval is back
+        resume_msg = [m for m in router.sent if m[0] == eval_id][-1]
+        pointer = resume_msg[3]
+        assert pointer is not None
+        # eval's eval-dataset section (the step it signalled on the hand-back turn) —
+        # NOT the stale prior "Confirm WHAT to evaluate" entry section.
+        assert "confirm the eval dataset" in pointer.lower()
+        assert "confirm what to evaluate" not in pointer.lower()
+
     def test_completion_wins_over_simultaneous_help(self, router: _Router) -> None:
         # A turn carrying BOTH signal_subagent_completion AND request_orchestrator_help:
         # completion wins (a finishing subagent has nothing left to be helped with), so

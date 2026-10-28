@@ -1275,6 +1275,16 @@ async def _handle_subagent_message(
     # ordinary handling below (a nudged request_orchestrator_help becomes a real hand-off, not
     # stripped prose). The live consumer of the pure adjudicator — see _maybe_nudge_subagent_stall.
     latest_parts = await _maybe_nudge_subagent_stall(state, session_id, body, latest_parts)
+    # Refresh the step cursor from THIS turn's own signal_phase BEFORE any completion/help save
+    # below stashes it for the resume pointer. `_ensure_phase_signal` — the other writer of
+    # `last_signal_step` — runs later in `_run_turn`, AFTER this handler may clear
+    # `subagent_target`; by then its phase lookup is empty and the just-signalled step is dropped.
+    # Without this, a turn that BOTH signals its step AND hands back (e.g. eval signals
+    # `eval-dataset` then requests help) stashes the PRIOR step, and the resume pointer sends the
+    # consumer back to an earlier section.
+    turn_signalled_step = _observe_turn(latest_parts).signalled_step
+    if turn_signalled_step:
+        state.last_signal_step = turn_signalled_step
     # Completion is checked before a help request: if a turn somehow carries both
     # signals, "I'm done" wins and the help ask is ignored (a subagent that is
     # finishing has nothing left to be helped with).
