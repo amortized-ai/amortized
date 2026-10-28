@@ -3,7 +3,7 @@ import { SectionCards } from "./components/section-cards"
 import { RecentJobs } from "./components/recent-jobs"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Sparkles } from "lucide-react"
+import { MessageSquare, BookOpen, Briefcase, Database, ArrowRight, ChevronDown, Bot, Sparkles, FlaskConical } from "lucide-react"
 import { Link } from "react-router"
 import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
@@ -46,7 +46,7 @@ export default function OverviewPage() {
             <div className="flex items-center justify-center gap-6 pt-1 text-xs text-muted-foreground/70">
               <span className="inline-flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-[#5e40be] dark:text-[#876fd4]" /> Synthetic data</span>
               <span className="inline-flex items-center gap-1.5"><BookOpen className="h-3 w-3 text-[#0066cc] dark:text-[#4394e5]" /> Fine-tuning</span>
-              <span className="inline-flex items-center gap-1.5"><Briefcase className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> On-prem deployment</span>
+              <span className="inline-flex items-center gap-1.5"><FlaskConical className="h-3 w-3 text-[#147878] dark:text-[#37a3a3]" /> Evaluation</span>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-4">
               <Link
