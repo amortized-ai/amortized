@@ -170,7 +170,7 @@ batching error.
 
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill <!--signal:route-->
+### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options-->
 
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
@@ -239,7 +239,7 @@ that carries the new SDG job id; continue from data confirmation
 (`get_dataset` on the new set) as usual. Only train directly on X if the
 user explicitly confirms it and accepts the leakage trade-off.
 
-### Phase 3 — Validate and Confirm <!--signal:validate-->
+### Phase 3 — Validate and Confirm <!--signal:validate owed:validate_training_job-->
 
 **Precondition — data usage confirmed.** Before `validate_training_job`,
 you MUST have already called `get_dataset` on the training data's run ID
@@ -277,7 +277,7 @@ the missing information, fix the config, and retry.
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 Only then present next steps.
 
-### Phase 4 — Signal Completion <!--signal:complete-->
+### Phase 4 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
 Call `signal_subagent_completion` to hand control back to the
 orchestrator. If the user expressed a next intent (e.g. "Generate more

@@ -244,3 +244,56 @@ def test_held_out_slugs_have_expected_policies() -> None:
 def test_requires_phase_signal() -> None:
     assert phases.requires_phase_signal("eval")
     assert not phases.requires_phase_signal("orchestrator")
+
+
+# --------------------------------------------------------------------------- #
+# Obligations are declared inline on the signal markers (Option A2) — derived, not hardcoded
+# --------------------------------------------------------------------------- #
+
+
+def test_parse_obligation_grammar() -> None:
+    # owed: → any_of; all: → all_of; solo → solo; empty / obligation-less → lenient (None).
+    assert phases._parse_obligation("") is None
+    assert phases._parse_obligation("owed:a") == Owed(any_of=frozenset({"a"}))
+    assert phases._parse_obligation("owed:a,b") == Owed(any_of=frozenset({"a", "b"}))
+    assert phases._parse_obligation("all:a,b") == Owed(all_of=frozenset({"a", "b"}))
+    assert phases._parse_obligation("owed:a solo") == Owed(any_of=frozenset({"a"}), solo=True)
+
+
+def test_required_catalog_matches_the_former_hardcoded_map() -> None:
+    # Behaviour-preservation snapshot: the catalog now DERIVED from the resident workflow markers
+    # is byte-for-byte the obligations that used to live in the hardcoded `_REQUIRED` dict. If a
+    # marker's `owed:`/`all:`/`solo` suffix is edited this snapshot must be updated in lockstep —
+    # which is the point: the obligation and the slug now live in one place (the heading).
+    assert phases._required() == {
+        ("sdg", "route"): Owed(
+            any_of=frozenset({"skill", "present_options", "clone_sdg_config_for_eval"})
+        ),
+        ("sdg", "validate"): Owed(any_of=frozenset({"validate_sdg_job"})),
+        ("sdg", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+        ("training", "route"): Owed(any_of=frozenset({"skill", "present_options"})),
+        ("training", "validate"): Owed(any_of=frozenset({"validate_training_job"})),
+        ("training", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+        ("eval", "eval-dataset"): Owed(any_of=frozenset({"present_options"})),
+        ("eval", "validate"): Owed(any_of=frozenset({"validate_eval_job"})),
+        ("eval", "report"): Owed(any_of=frozenset({"present_options"})),
+        ("eval", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
+        ("eval", "held-out-request-help"): Owed(
+            any_of=frozenset({"request_orchestrator_help"}), solo=True
+        ),
+    }
+
+
+def test_skill_step_obligation_is_declared_or_defaults() -> None:
+    # A review step declares `all:show_prompt,present_options` on its heading; an ordinary gather
+    # step with no suffix defaults to present_options. (A same-named step in another skill that is
+    # NOT a review stays a plain gather step — the obligation is scoped to the declaring heading.)
+    assert phases._skill_owed("sdg-task-distillation", "system-prompt") == Owed(
+        all_of=frozenset({"show_prompt", "present_options"})
+    )
+    assert phases._skill_owed("sdg-task-distillation", "teacher-model") == Owed(
+        any_of=frozenset({"present_options"})
+    )
+    assert phases._skill_owed("sdg-knowledge-ingestion", "system-prompt") == Owed(
+        any_of=frozenset({"present_options"})
+    )

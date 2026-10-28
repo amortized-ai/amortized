@@ -190,7 +190,7 @@ batching error.
 
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill <!--signal:route-->
+### Phase 1 — Route to Sub-Skill <!--signal:route owed:skill,present_options,clone_sdg_config_for_eval-->
 
 **Eval set for a trained model? Clone, don't redesign.** If the handoff carries a
 training job ID, don't pick a sub-skill or design a new recipe — ask only the record
@@ -223,7 +223,7 @@ sensible defaults for technical parameters the user is unlikely to
 care about — only surface decisions where their domain knowledge
 matters. If the user changes their mind, adapt without restarting.
 
-### Phase 3 — Validate and Confirm <!--signal:validate-->
+### Phase 3 — Validate and Confirm <!--signal:validate owed:validate_sdg_job-->
 
 Before validating, silently verify the platform can execute the job.
 If anything is unreachable or misconfigured, stop and tell the user
@@ -261,7 +261,7 @@ later step (e.g. training) on a preview — only the full create run produces th
 dataset. Only once the create run finishes do you move to Phase 4 and present
 next steps.
 
-### Phase 4 — Signal Completion <!--signal:complete-->
+### Phase 4 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
 Only reach this phase once the FULL run (mode "create") has succeeded. A
 `preview` job finishing is NOT completion — it is only the small sample. If the

@@ -134,7 +134,7 @@ generate one yourself — you are a leaf and do not delegate. Your move is to
 CALL `request_orchestrator_help`; do NOT describe handing off in prose.
 (Full dataset logic — reuse, split, or hand back — is in Step 1.)
 
-### Step 1 — Confirm the eval dataset <!--signal:eval-dataset-->
+### Step 1 — Confirm the eval dataset <!--signal:eval-dataset owed:present_options-->
 
 The eval dataset needs a `messages` column. The trailing assistant
 message is used as the reference answer.
@@ -213,7 +213,7 @@ e.g. 100) — the SDG agent must not pick the count on its own. This is a
 question turn: ask, and wait for the answer. Once you have the count, move
 to **Hand back for the held-out set** and carry that number into the request.
 
-### Step 1 branch (only when no eval dataset exists yet) — Hand back for the held-out set <!--signal:held-out-request-help-->
+### Step 1 branch (only when no eval dataset exists yet) — Hand back for the held-out set <!--signal:held-out-request-help owed:request_orchestrator_help solo-->
 
 You have the record count (settled above). Hand back to the orchestrator
 with `request_orchestrator_help`. CALL the tool — do NOT describe handing
@@ -393,7 +393,7 @@ Use sensible defaults: `temperature` 0. Leave `max_samples` and
 the dataset; only set them (lower) if the user explicitly wants to cap
 eval time or judge cost.
 
-### Step 4 — Validate and submit <!--signal:validate-->
+### Step 4 — Validate and submit <!--signal:validate owed:validate_eval_job-->
 
 **First, check whether this eval already exists.** Call `list_evaluations`
 — it returns evaluation groups (one per dataset × metric set) with the
@@ -450,7 +450,7 @@ After the user clicks Confirm on the platform card, the job is
 submitted and you'll be notified when it completes. Never claim the job
 was submitted — check the job's existence first if in doubt.
 
-### Step 5 — Report results <!--signal:report-->
+### Step 5 — Report results <!--signal:report owed:present_options-->
 
 After the job is submitted, WAIT — do not hand control back to the
 orchestrator while the job runs. Its `[SYSTEM EVENT]` completion
@@ -493,7 +493,7 @@ model evaluated on the same dataset with the same metric set appears
 as a column there — point the user to it when they want to compare
 numbers side by side.
 
-### Step 6 — Signal Completion <!--signal:complete-->
+### Step 6 — Signal Completion <!--signal:complete owed:signal_subagent_completion-->
 
 Do NOT signal yet. After the job is submitted, stay active: the job's
 `[SYSTEM EVENT]` completion notification arrives in YOUR session, and

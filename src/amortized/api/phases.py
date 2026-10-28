@@ -48,7 +48,17 @@ def _norm(value: str) -> str:
 # signals (`signal_phase.step`) and the slug the pointer resolves against live in ONE place (the
 # resident workflow.md), and a human-readable title can carry a short, stable slug that isn't just
 # the slugified title. Headings with no marker fall back to the normalized title.
-_SIGNAL_MARKER = re.compile(r"<!--\s*signal:\s*([a-z0-9-]+)\s*-->")
+#
+# The marker ALSO carries that step's obligation inline (what the server's stall adjudicator keys
+# on), so the signalled vocabulary AND its obligations live in the SAME place the prompt instructs —
+# there is no parallel hardcoded `_REQUIRED` map to drift out of sync. Grammar after the slug:
+#   <!--signal:validate owed:validate_eval_job-->          owed: → Owed.any_of (≥1 must appear)
+#   <!--signal:system-prompt all:show_prompt,present_options-->   all: → Owed.all_of (every one)
+#   <!--signal:held-out-request-help owed:request_orchestrator_help solo-->   solo → Owed.solo
+# A marker with no obligation suffix is a LENIENT phase (bare prose is a legitimate free-text
+# question). `_parse_obligation` reads the suffix; `_workflow_obligations`/`_skill_obligations`
+# build the catalog; `tests/test_phase_marker_drift.py` fails loudly if an owed tool is misspelled.
+_SIGNAL_MARKER = re.compile(r"<!--\s*signal:\s*([a-z0-9-]+)\s*([^>]*?)\s*-->")
 
 
 @lru_cache(maxsize=16)
@@ -253,69 +263,6 @@ def subagent_pointer(
     )
 
 
-# ── Skill-step review detection (for the gather-step obligation) ───────────────────────────
-# A gather step whose resident SKILL.md body drives a review card (`show_prompt`) owes BOTH the
-# review and its approval `present_options` — so the adjudicator can tell a review step apart from
-# an ordinary question step. This mirrors the slug resolution in `_skill_steps` (marker, else the
-# present_options stamp) but keeps the body so it can test for the review tool.
-_REVIEW_TOOL_IN_STEP = "show_prompt"
-
-
-@lru_cache(maxsize=64)
-def _skill_review_slugs(skill_name: str) -> frozenset[str]:
-    """Slugs of a skill's `### ` steps whose SKILL.md body contains a `show_prompt` review. `()`
-    for an unknown skill. Cached like `_skill_steps`; tests writing SKILL.md on the fly call
-    `_skill_review_slugs.cache_clear()`."""
-    entry = _skill_index().get(skill_name)
-    if entry is None:
-        return frozenset()
-    agent, reldir = entry
-    path = _get_base_dir() / "agents" / agent / "skills" / reldir / "SKILL.md"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return frozenset()
-    out: set[str] = set()
-    marker: str | None = None
-    body: list[str] = []
-    seen = False
-
-    def _flush() -> None:
-        joined = "\n".join(body)
-        if marker:
-            slug: str | None = marker
-        else:
-            stamp = _STEP_STAMP_RE.search(joined)
-            slug = _norm(stamp.group(1)) if stamp else None
-        if slug and _REVIEW_TOOL_IN_STEP in joined:
-            out.add(slug)
-
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("### "):
-            if seen:
-                _flush()
-            seen = True
-            found = _SIGNAL_MARKER.search(s[4:].strip())
-            marker = found.group(1) if found else None
-            body = []
-        elif seen:
-            body.append(line)
-    if seen:
-        _flush()
-    return frozenset(out)
-
-
-def skill_step_is_review(skill_name: str | None, step_value: str | None) -> bool:
-    """True when `step_value` (a `present_options.step` the driver stamped) names a skill step
-    whose detail drives a review card (`show_prompt`). The approval question for a prompt carries
-    that step's own slug, so such a step legitimately emits both the review and the question."""
-    if not skill_name or not step_value:
-        return False
-    target = _norm(step_value)
-    return bool(target) and target in _skill_review_slugs(skill_name)
-
-
 # ── Phase-liveness adjudication (pure library) ────────────────────────────────────────────
 #
 # A weak driver (GLM-flash) sometimes substitutes PROSE for a required transition — it narrates
@@ -334,10 +281,10 @@ def skill_step_is_review(skill_name: str | None, step_value: str | None) -> bool
 #   - wrong_edge : an interactive card appeared, but not the one the phase owes
 #   - not_solo   : a control-transfer hand-off carried text or other tool calls (must be solo)
 #   - batching   : >1 distinct step slug signalled in one turn
-# Phases absent from `_REQUIRED` are LENIENT (a genuine free-text question is expected). The map is
-# SUBAGENT-only (sdg/training/eval); the orchestrator's phase is proxy control-flow, not a signalled
-# step, so it has no reliable (role, step) key and is never adjudicated. Keys use the resident
-# `<!--signal:slug-->` vocabulary.
+# Phases absent from the derived catalog (`_required()`) are LENIENT (a genuine free-text question
+# is expected). The catalog is SUBAGENT-only (sdg/training/eval); the orchestrator's phase is proxy
+# control-flow, not a signalled step, so it has no reliable (role, step) key and is never
+# adjudicated. Keys use the resident `<!--signal:slug owed:…-->` vocabulary.
 
 # Tools that transfer control to someone else (so the turn is never a stall) …
 _CONTROL_TRANSFER: frozenset[str] = frozenset(
@@ -384,46 +331,134 @@ class Owed:
     solo: bool = False
 
 
-# Tool-owed phases, keyed (role, signal slug). A (role, slug) NOT here is lenient. The coarse
-# `gather` umbrella is absent on purpose — during gathering the driver signals the loaded skill's
-# `### Step` slug (not `gather`), whose obligation is resolved by `_skill_owed`.
-_REQUIRED: dict[tuple[str, str], Owed] = {
-    # sdg
-    ("sdg", "route"): Owed(
-        any_of=frozenset({"skill", "present_options", "clone_sdg_config_for_eval"})
-    ),
-    ("sdg", "validate"): Owed(any_of=frozenset({"validate_sdg_job"})),
-    ("sdg", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
-    # training
-    ("training", "route"): Owed(any_of=frozenset({"skill", "present_options"})),
-    ("training", "validate"): Owed(any_of=frozenset({"validate_training_job"})),
-    ("training", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
-    # eval
-    ("eval", "eval-dataset"): Owed(any_of=frozenset({"present_options"})),
-    ("eval", "validate"): Owed(any_of=frozenset({"validate_eval_job"})),
-    ("eval", "report"): Owed(any_of=frozenset({"present_options"})),
-    ("eval", "complete"): Owed(any_of=frozenset({"signal_subagent_completion"})),
-    ("eval", "held-out-request-help"): Owed(
-        any_of=frozenset({"request_orchestrator_help"}), solo=True
-    ),
-}
+# The tools a phase may legitimately owe — used ONLY as a test-time typo guard (the runtime parser
+# is lenient: an unknown token is ignored, never crashes the proxy). It is NOT a second obligation
+# catalog — the obligations themselves live solely on the markers — but it IS a tool-name allowlist,
+# so to avoid a new hand-maintained list we derive it from the vocabulary the adjudicator already
+# keeps: the card + control-transfer edges (`_EDGES`), plus the two owable tools that are neither a
+# card nor a control transfer — `skill` (opencode's skill loader) and `clone_sdg_config_for_eval` (a
+# plain action the sdg route step may own). `tests/test_phase_marker_drift.py` asserts every tool a
+# marker owes is in this set, so a typo fails CI instead of silently making the phase unsatisfiable.
+_OWABLE_TOOLS: frozenset[str] = _EDGES | frozenset({"skill", "clone_sdg_config_for_eval"})
+
+# Default obligation for a stepped-skill gather step whose marker declares none: ask one question
+# with present_options (preserves "every gather step owes present_options"). A review step overrides
+# this by declaring `all:show_prompt,present_options` on its heading marker.
+_DEFAULT_SKILL_STEP_OWED = Owed(any_of=frozenset({"present_options"}))
+
+
+def _parse_obligation(spec: str) -> Owed | None:
+    """Parse a signal marker's obligation suffix into an `Owed`, or None for a lenient phase.
+
+    Grammar (whitespace-separated tokens after the slug): `owed:t1,t2` → any_of, `all:t1,t2` →
+    all_of, `solo` → solo. An empty / obligation-less suffix is lenient (None)."""
+    any_of: frozenset[str] = frozenset()
+    all_of: frozenset[str] = frozenset()
+    solo = False
+    for tok in spec.split():
+        if tok == "solo":
+            solo = True
+        elif tok.startswith("owed:"):
+            any_of = frozenset(filter(None, tok[len("owed:") :].split(",")))
+        elif tok.startswith("all:"):
+            all_of = frozenset(filter(None, tok[len("all:") :].split(",")))
+    if not (any_of or all_of or solo):
+        return None
+    return Owed(any_of=any_of, all_of=all_of, solo=solo)
+
+
+def _heading_obligation(raw: str) -> tuple[str, Owed] | None:
+    """(slug, Owed) for a `### ` heading that declares an obligation in its signal marker, or None
+    (no marker, or a marker with no obligation suffix → lenient)."""
+    m = _SIGNAL_MARKER.search(raw)
+    if not m:
+        return None
+    owed = _parse_obligation(m.group(2) or "")
+    return (m.group(1), owed) if owed is not None else None
+
+
+@lru_cache(maxsize=16)
+def _workflow_obligations(agent: str) -> dict[tuple[str, str], Owed]:
+    """`(agent, slug) -> Owed` for each `## Workflow` `### ` heading that declares an obligation in
+    its signal marker. The single source for the tool-owed phases (replaces the old hardcoded
+    `_REQUIRED`): parsed from the SAME markers the pointer/driver use, so it cannot drift from the
+    instructed vocabulary. A heading with no obligation suffix is lenient (absent → `owed_for`
+    returns None). Cached like `_sections`."""
+    try:
+        text = _workflow_path(agent).read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: dict[tuple[str, str], Owed] = {}
+    in_workflow = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            in_workflow = s[3:].strip().lower() == "workflow"
+            continue
+        if in_workflow and s.startswith("### "):
+            parsed = _heading_obligation(s[4:].strip())
+            if parsed is not None:
+                out[(agent, parsed[0])] = parsed[1]
+    return out
+
+
+@lru_cache(maxsize=1)
+def _required() -> dict[tuple[str, str], Owed]:
+    """The tool-owed phase catalog, derived from every subagent's `## Workflow` markers. A
+    (role, slug) NOT here is lenient. The coarse `gather` umbrella declares no obligation on
+    purpose — during gathering the driver signals the loaded skill's `### Step` slug, whose
+    obligation is resolved by `_skill_owed`."""
+    out: dict[tuple[str, str], Owed] = {}
+    for agent in _SUBAGENTS:
+        out.update(_workflow_obligations(agent))
+    return out
+
+
+@lru_cache(maxsize=64)
+def _skill_obligations(skill_name: str) -> dict[str, Owed]:
+    """`slug -> Owed` for each of a skill's `### ` step headings that declares an obligation in its
+    signal marker (e.g. a review step's `all:show_prompt,present_options`). A step with no declared
+    obligation falls back to `_DEFAULT_SKILL_STEP_OWED` in `_skill_owed`. Cached like
+    `_skill_steps`."""
+    entry = _skill_index().get(skill_name)
+    if entry is None:
+        return {}
+    agent, reldir = entry
+    path = _get_base_dir() / "agents" / agent / "skills" / reldir / "SKILL.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: dict[str, Owed] = {}
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("### "):
+            parsed = _heading_obligation(s[4:].strip())
+            if parsed is not None:
+                out[parsed[0]] = parsed[1]
+    return out
 
 
 def _skill_owed(skill_name: str | None, step_value: str | None) -> Owed | None:
     """The obligation for an active stepped-skill gather step, or None when the slug is not a step
-    of the skill. Every gather step owes `present_options`; a review step (its body drives
-    `show_prompt`) owes BOTH `show_prompt` and `present_options`."""
-    if skill_step_title(skill_name, step_value) is None:
+    of the skill. A step's heading marker may declare its obligation (a review step owes BOTH
+    `show_prompt` and `present_options` via `all:…`); an undeclared gather step defaults to
+    `present_options`."""
+    if not skill_name or not step_value:
         return None
-    if skill_step_is_review(skill_name, step_value):
-        return Owed(all_of=frozenset({"show_prompt", "present_options"}))
-    return Owed(any_of=frozenset({"present_options"}))
+    target = _norm(step_value)
+    if not target:
+        return None
+    for slug, _title in _skill_steps(skill_name):
+        if slug == target or slug.startswith(f"{target}-") or target.startswith(f"{slug}-"):
+            return _skill_obligations(skill_name).get(slug, _DEFAULT_SKILL_STEP_OWED)
+    return None
 
 
 def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     """True when the signalled `step` is a slug the phase machinery can key on for this role — a
-    `_REQUIRED` phase, a `## Workflow` section, or a `### Step` of the loaded skill — matched
-    EXACTLY on the normalized slug.
+    tool-owed phase (`_required()`), a `## Workflow` section, or a `### Step` of the loaded skill —
+    matched EXACTLY on the normalized slug.
 
     An unrecognized slug (the driver invented one, e.g. `gather_requirements` instead of the real
     `gather`) keys to no obligation (`owed_for` is lenient) and names no section (the pointer stays
@@ -438,7 +473,7 @@ def signal_is_known(role: str, step: str, skill: str | None = None) -> bool:
     target = _norm(step)
     if not target:
         return False
-    if (role, target) in _REQUIRED:
+    if (role, target) in _required():
         return True
     if role in _SUBAGENTS and any(slug == target for slug, _ in _sections(role)):
         return True
@@ -461,10 +496,10 @@ def owed_for(
     The step is normalized to the canonical slug FIRST — the same `_norm` that `signal_is_known`
     applies — so the two never disagree. Without this, a driver that signals a variant separator
     (`held_out_request_help`) passed the signalled-guard as "known" (which normalizes) yet the raw
-    `_REQUIRED` lookup here missed it → lenient → a prose-only hand-off on an owed-solo step escaped
+    catalog lookup here missed it → lenient → a prose-only hand-off on an owed-solo step escaped
     the nudge entirely (#534 P2b)."""
     step = _norm(phase_step)
-    owed = _REQUIRED.get((role, step))
+    owed = _required().get((role, step))
     if owed is not None:
         return owed
     if skill:

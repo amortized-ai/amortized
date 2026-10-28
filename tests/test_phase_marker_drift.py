@@ -158,3 +158,43 @@ class TestSkillStepMarkers:
                 assert phases.skill_step_title(name, stamp) is not None, (
                     f"{name}: present_options step {stamp!r} resolves to no SKILL.md step"
                 )
+
+
+class TestObligationDrift:
+    """The stall adjudicator's obligations (`_required()` / `_skill_owed`) are DERIVED from the
+    `<!--signal:slug owed:…-->` markers — the same place the prompts instruct — so there is no
+    parallel hardcoded map to drift (Option A2). These guard that the derivation stays well-formed:
+    a misspelled tool in a marker fails here loudly instead of silently making the phase
+    unsatisfiable."""
+
+    def _all_obligations(self) -> list[tuple[str, phases.Owed]]:
+        out: list[tuple[str, phases.Owed]] = []
+        for agent in _SUBAGENTS:
+            for (_a, slug), o in phases._workflow_obligations(agent).items():
+                out.append((f"{agent}:{slug}", o))
+        for name in phases._skill_index():
+            for slug, o in phases._skill_obligations(name).items():
+                out.append((f"{name}:{slug}", o))
+        return out
+
+    def test_every_declared_obligation_names_a_real_tool(self) -> None:
+        bad: list[str] = []
+        for where, owed in self._all_obligations():
+            stray = (owed.any_of | owed.all_of) - phases._OWABLE_TOOLS
+            if stray:
+                bad.append(f"{where}: {sorted(stray)}")
+        assert not bad, f"signal markers owe unknown tool(s) (typo? not in _OWABLE_TOOLS): {bad}"
+
+    def test_every_declared_obligation_is_non_empty(self) -> None:
+        # A marker that declares `solo` (or a stray suffix) but no owed/all tool would parse to an
+        # obligation that can never be satisfied — catch it here.
+        empty = [w for w, o in self._all_obligations() if not (o.any_of or o.all_of)]
+        assert not empty, f"signal markers declare an obligation with no owed tool: {empty}"
+
+    def test_required_catalog_is_fully_derived_from_markers(self) -> None:
+        # The catalog is the union of the per-agent workflow-marker obligations — nothing added in
+        # code. (Behaviour-preservation of the specific entries is pinned in test_phase_gate.)
+        union: dict[tuple[str, str], phases.Owed] = {}
+        for agent in _SUBAGENTS:
+            union.update(phases._workflow_obligations(agent))
+        assert phases._required() == union
