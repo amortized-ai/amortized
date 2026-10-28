@@ -230,6 +230,20 @@ _SUBAGENT_JOB_FAILED_PROMPT = (
     "hand control back now."
 )
 
+# A finished SDG job in PREVIEW mode is only the cheap ~10-row sample, NOT the deliverable.
+# The generic done-prompt above would (wrongly) tell the producer its task is complete, so it
+# hands back and the orchestrator advances to training on a 10-row preview — the full create
+# run never happens. For a preview completion, steer the producer to run the FULL create run
+# instead of handing back. Only a create (full) SDG run — or any training/eval job — is a real
+# completion. See _handle_subagent_message and _completed_job_is_sdg_preview.
+_SUBAGENT_PREVIEW_DONE_PROMPT = (
+    "[SYSTEM EVENT] Your PREVIEW sample finished successfully — this was only a small test "
+    "run, NOT the full dataset. Show the user the preview output so they can eyeball quality, "
+    'then call validate_sdg_job with mode "create" to launch the FULL dataset run. Do NOT call '
+    "signal_subagent_completion and do NOT hand control back: your task is NOT complete until "
+    "the full create run succeeds."
+)
+
 # Seeded into the orchestrator when a subagent hands back via request_orchestrator_help:
 # a subagent (e.g. eval) needs a dataset it can't produce itself (e.g. a held-out set).
 # The orchestrator is the sole delegator, so its one job is to run the producing
@@ -259,6 +273,53 @@ def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
     if body.outcome is not None:
         return body.outcome.strip().lower() == "succeeded"
     return "status: succeeded" in user_text.lower()
+
+
+_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8,}")
+
+
+def _extract_id_candidates(text: str) -> set[str]:
+    out: set[str] = set()
+    for tok in _ID_RE.findall(text.lower()):
+        if "-" in tok:
+            out.add(tok)  # dash-structured UUID — unambiguously an identifier
+            continue
+        # A bare hex run is only id-like if it mixes digits AND hex letters. This excludes
+        # both pure-decimal counts ("12345678" records) and pure-hex English words
+        # ("deadbeef") that would otherwise be false-flagged as ids.
+        if any(c in "0123456789" for c in tok) and any(c in "abcdef" for c in tok):
+            out.add(tok)
+    return out
+
+
+async def _fetch_job_by_token(token: str) -> dict[str, Any] | None:
+    """The DB job a stated id-token resolves to (by id prefix), or None. Best-effort —
+    any DB issue returns None so the caller simply falls back to default behavior."""
+    try:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            return await Repository(conn).find_job_by_id_prefix(token)
+    except Exception:
+        return None
+
+
+async def _completed_job_is_sdg_preview(user_text: str) -> bool:
+    """Whether the job named in a job_complete event is an SDG job run in `preview` mode.
+
+    The event text carries the job id; resolve it and read its config mode. A preview is the
+    cheap sample, not the deliverable, so its completion must NOT hand control back (see
+    _SUBAGENT_PREVIEW_DONE_PROMPT). Best-effort — any lookup miss returns False, so the normal
+    done-prompt applies (fail toward the existing behavior)."""
+    for token in sorted(_extract_id_candidates(user_text)):
+        job = await _fetch_job_by_token(token)
+        if not job or str(job.get("type") or "") != "sdg":
+            continue
+        cfg = job.get("config")
+        if isinstance(cfg, dict) and str(cfg.get("mode") or "").lower() == "preview":
+            return True
+    return False
 
 
 _VALID_TARGETS = {"sdg", "training", "eval"}
@@ -977,7 +1038,16 @@ async def _handle_subagent_message(
         # system note only reinforces it. See docs/agent-gates-proposal.md.
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
-        steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT
+        if not succeeded:
+            steer_system = _SUBAGENT_JOB_FAILED_PROMPT
+        elif await _completed_job_is_sdg_preview(user_text):
+            # A PREVIEW completion is not a real completion — the full create run hasn't
+            # happened. Steer the producer to run it instead of handing back (which would
+            # advance the orchestrator to training on the ~10-row preview). Any other success
+            # (create SDG, training, eval) is a genuine hand-back.
+            steer_system = _SUBAGENT_PREVIEW_DONE_PROMPT
+        else:
+            steer_system = _SUBAGENT_JOB_DONE_PROMPT
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(

@@ -281,7 +281,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Set parent_job_id to chain from a completed SDG job.",
+        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Any hyperparameter you mention to the user must be an explicit field in this config; fields you leave unset use the trainer default and the card shows them as such \u2014 do not state a value you did not set. Set parent_job_id to chain from a completed SDG job.",
         "description": "Validate a training job config without creating it.",
         "operationId": "validate_training_job",
         "requestBody": {
@@ -7096,6 +7096,13 @@
             },
             "type": "array",
             "title": "Prompts"
+          },
+          "trainer_default_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Trainer Default Fields"
           }
         },
         "type": "object",

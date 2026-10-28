@@ -26,7 +26,26 @@ def _fake_repo_cls(store: dict[str, dict[str, Any]]) -> type:
         async def get_job(self, job_id: str) -> dict[str, Any] | None:
             return store.get(job_id)
 
+        async def get_job_by_mlflow_run(self, run_id: str) -> dict[str, Any] | None:
+            if not run_id:
+                return None
+            return next(
+                (j for j in store.values() if j.get("mlflow_run_id") == run_id), None
+            )
+
     return FakeRepo
+
+
+def _preview_sdg(**kw: Any) -> dict[str, Any]:
+    base = {
+        "id": "pv",
+        "type": "sdg",
+        "status": "succeeded",
+        "mlflow_run_id": "runpv",
+        "config": {"mode": "preview"},
+    }
+    base.update(kw)
+    return base
 
 
 def _succeeded(**kw: Any) -> dict[str, Any]:
@@ -125,4 +144,64 @@ class TestValidateTrainingData:
         errs = _run(
             jobs_mod._validate_training_data({"data_path": "/data/x.jsonl"}, "p1", None)  # type: ignore[arg-type]
         )
+        assert errs == []
+
+    def test_training_job_id_not_double_gated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # training_job_id (resume-from-finetuned) is validated richly by
+        # _validate_model_source, which the endpoint always runs alongside this. The
+        # data gate must NOT also flag it, or the 422 would list the same job twice.
+        store = {"p1": _succeeded(), "t1": {"status": "running", "mlflow_run_id": "r"}}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(
+            jobs_mod._validate_training_data({"training_job_id": "t1"}, "p1", None)  # type: ignore[arg-type]
+        )
+        assert not any("training_job_id" in e for e in errs)
+
+
+class TestDataRunProducerGated:
+    """The data_run_id / eval_data_run_id route names a run, not a job, so the field-driven
+    gate skips it. _gate_data_run_producer resolves the run's producer and applies the SAME
+    job-id guard, so preview/in-flight/artifact-less producers are rejected exactly as they
+    would be via parent_job_id — no bespoke run-route rule."""
+
+    def test_training_data_run_from_preview_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store = {"pv": _preview_sdg()}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runpv"}, "", None))  # type: ignore[arg-type]
+        assert any("PREVIEW" in e and "data_run_id" in e for e in errs)
+
+    def test_eval_data_run_from_preview_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        store = {"pv": _preview_sdg()}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(jobs_mod._validate_eval_data({"eval_data_run_id": "runpv"}, "", None))  # type: ignore[arg-type]
+        assert any("PREVIEW" in e and "eval_data_run_id" in e for e in errs)
+
+    def test_inflight_producer_via_run_route_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Reusing the job-id guard means an in-flight producer is gated too, not only preview.
+        store = {"j": {"id": "j", "type": "sdg", "status": "running", "mlflow_run_id": "runx"}}
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runx"}, "", None))  # type: ignore[arg-type]
+        assert any("data_run_id" in e and "'running'" in e for e in errs)
+
+    def test_full_sdg_data_run_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A full-create SDG run (no preview mode) reached via data_run_id is fine.
+        store = {
+            "full": _succeeded(
+                id="full", type="sdg", mlflow_run_id="runpv", config={"mode": "create"}
+            )
+        }
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls(store))
+        errs = _run(jobs_mod._validate_training_data({"data_run_id": "runpv"}, "", None))  # type: ignore[arg-type]
+        assert errs == []
+
+    def test_uploaded_data_run_has_no_producer(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # An uploaded dataset's run has no producing job -> nothing to reject.
+        monkeypatch.setattr(jobs_mod, "Repository", _fake_repo_cls({}))
+        errs = _run(jobs_mod._validate_training_data({"data_run_id": "upload-run"}, "", None))  # type: ignore[arg-type]
         assert errs == []

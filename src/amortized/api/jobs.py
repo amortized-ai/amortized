@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 
-from amortized.core import mirror
+from amortized.core import lineage, mirror
 from amortized.core.compute import get_backend
 from amortized.core.jobs import (
     InvalidJobStateError,
@@ -167,7 +167,50 @@ async def _require_dependency_succeeded(
             f"{label}: job '{job_id}' has no MLflow artifacts — it may not"
             " have finished producing its output"
         ]
+    # A preview SDG run succeeds with artifacts but holds only ~10 rows — it is a
+    # config sanity check, not a dataset. Fail-close any downstream job (training or
+    # eval) that references one so a preview can never silently become training data;
+    # the driver must run a full 'create' and reference that instead.
+    if job.get("type") == "sdg":
+        cfg = job.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except (ValueError, TypeError):
+                cfg = {}
+        if isinstance(cfg, dict) and cfg.get("mode") == "preview":
+            return [
+                f"{label}: job '{job_id}' is a PREVIEW SDG run (~10 rows), not a full"
+                " dataset — run a full 'create' SDG job and reference that instead"
+            ]
     return []
+
+
+async def _gate_data_run_producer(repo: Repository, data_run_id: str, label: str) -> list[str]:
+    """A `data_run_id` / `eval_data_run_id` names an MLflow *run*, not a job, so the
+    field-driven gate (`present_gated_fields`) skips it. Close that route by resolving the
+    run to its producing job and applying the SAME job-id guard — so a preview SDG run
+    (~10 rows), an in-flight producer, or one with no artifacts is rejected here exactly as
+    it would be via parent_job_id. A run with no producing job (e.g. an uploaded dataset) is
+    fine — nothing to gate."""
+    if not data_run_id:
+        return []
+    producer = await repo.get_job_by_mlflow_run(data_run_id)
+    if producer is None:
+        return []
+    return await _require_dependency_succeeded(repo, str(producer.get("id") or ""), label)
+
+
+async def _gate_upstream_refs(repo: Repository, refs: dict[str, Any]) -> list[str]:
+    """Field-driven dependency gate: every upstream *job* this config references
+    (lineage.GATED_FIELDS) must be ``succeeded``. Keys on the fields present, not on
+    the job type, so this is the same rule for any node — including one "beyond the
+    graph". This is the single enforcement point (the ``validate_*`` tool boundary);
+    the reactive proxy stage-gate is gone — the ``422`` is what steers the driver."""
+    errors: list[str] = []
+    for field, job_id, _label in lineage.present_gated_fields(refs):
+        errors += await _require_dependency_succeeded(repo, job_id, field)
+    return errors
 
 
 async def _validate_training_data(
@@ -189,11 +232,99 @@ async def _validate_training_data(
         )
         return errors
 
-    if parent_job_id and not data_path:
-        repo = Repository(db)
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
+    # parent_job_id is an alternative data source to data_path: only gate the SDG
+    # chain edge when it's the source in play (no direct data_path override). Any other
+    # upstream-job reference on the config is gated too (field-driven) — except
+    # training_job_id, which _validate_model_source (always run alongside this for
+    # training jobs) validates more richly; gating it here too would double the 422.
+    refs = {
+        **config,
+        "parent_job_id": parent_job_id if not data_path else "",
+        "training_job_id": "",
+    }
+    repo = Repository(db)
+    errors += await _gate_upstream_refs(repo, refs)
+    # The run route bypasses the job-id gate (a run isn't a job): gate the run's producer.
+    errors += await _gate_data_run_producer(repo, data_run_id, "data_run_id")
+
+    # Only inspect the dataset once availability + lineage are clean: upstream is then
+    # succeeded, so the dataset is materialized and a read reflects the real shape.
+    if not errors:
+        errors += await _training_shape_violations(config, parent_job_id, db)
 
     return errors
+
+
+async def _training_shape_violations(
+    config: dict[str, Any],
+    parent_job_id: str,
+    db: asyncpg.Connection,
+) -> list[str]:
+    """Fail-closed check that the resolved training dataset has the SHAPE the chosen
+    algorithm needs: chat-SFT algorithms consume ``messages``; embedding algorithms consume
+    flat text/label columns.
+
+    Complements the SDG-side processor gate (which guarantees a well-formed SFT *config*) by
+    catching a dataset that is empty or the wrong shape for THIS run — at the layer where the
+    algorithm is actually known. Best-effort on transient MLflow errors (a flaky backend must
+    never block an otherwise-valid confirmation card), but a definitively empty dataset or a
+    confirmed shape mismatch is a hard error. Only MLflow-backed sources are inspectable; a
+    direct ``data_path`` is opaque here and skipped."""
+    if config.get("data_path"):
+        return []
+    data_run_id = str(config.get("data_run_id", "") or "")
+    data_run = data_run_id or await _resolve_data_run(Repository(db), parent_job_id, "")
+    if not data_run:
+        return []
+
+    from amortized.api.datasets import (
+        _find_dataset_artifacts,
+        _mlflow_client,
+        _parse_records,
+    )
+
+    try:
+        mlflow = _mlflow_client()
+        paths = await _find_dataset_artifacts(mlflow, data_run)
+        records = _parse_records(paths[0], await mlflow.get_artifact(data_run, paths[0]))
+        first = records[0] if records else None
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return [
+                f"training data: dataset run '{data_run[:8]}' has no data artifact — the SDG"
+                " job produced an empty dataset. Regenerate the data before training."
+            ]
+        return []  # transient/other → best-effort, don't block the card
+    except Exception:
+        logger.warning("shape check: cannot read dataset %s", data_run[:8], exc_info=True)
+        return []
+
+    if first is None:
+        return [
+            f"training data: dataset run '{data_run[:8]}' has no rows. Regenerate the data"
+            " before training."
+        ]
+
+    algorithm = str(config.get("algorithm", "")).replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
+    columns = sorted(first.keys())
+    if algorithm in _EMBEDDING_ALGORITHMS:
+        text_col = str(config.get("text_column") or "text")
+        label_col = str(config.get("label_column") or "category")
+        missing = [c for c in (text_col, label_col) if c not in first]
+        if missing:
+            return [
+                f"training data: algorithm '{algorithm}' needs flat columns {missing}, but"
+                f" the dataset has {columns}. Use an embedding-classifier dataset"
+                " (text + category) for this algorithm."
+            ]
+    elif algorithm in _SFT_MESSAGES_ALGORITHMS and "messages" not in first:
+        return [
+            f"training data: algorithm '{algorithm}' needs SFT `messages` data, but the"
+            f" dataset rows have {columns} and no `messages`. Regenerate the SDG data with"
+            " an sft_chat schema_transform processor."
+        ]
+    return []
 
 
 async def _validate_model_source(
@@ -307,22 +438,67 @@ async def _validate_eval_data(
         )
         return errors
 
+    # Field-driven gate: the dataset parent (SDG/upload) and training_job_id (the model
+    # under eval — it must have finished training, else there is no adapter to score),
+    # plus any other upstream-job reference present on the config.
+    refs = {**config, "parent_job_id": parent_job_id, "training_job_id": training_job_id}
     repo = Repository(db)
-    if parent_job_id:
-        errors += await _require_dependency_succeeded(repo, parent_job_id, "parent_job_id")
-
-    # The model under eval must itself have finished training — otherwise there is
-    # no adapter to score. This is the training -> eval edge of the dependency
-    # invariant (the SDG -> {training,eval} edge is parent_job_id above).
-    if training_job_id:
-        errors += await _require_dependency_succeeded(repo, training_job_id, "training_job_id")
+    errors += await _gate_upstream_refs(repo, refs)
+    # The run route bypasses the job-id gate (a run isn't a job): gate the run's producer.
+    errors += await _gate_data_run_producer(repo, str(data_run_id or ""), "eval_data_run_id")
 
     return errors
 
 
+# Tunable training hyperparameters that fall back to the trainer's own default when unset
+# (amortized does not inject a value — training-hub does). validate_training_job reports
+# which of these the config left unset so the card can show "trainer default" instead of the
+# user being misled by a value the model narrated but never wrote into the config. Generic
+# across hyperparameters — not a batch-size-specific patch. Which fields are "tunable" depends
+# on the algorithm: the generic optimization knobs always apply; LoRA adapter knobs only when
+# PEFT/LoRA is in play; embedding-specific knobs only for embedding runs.
+_GENERIC_TUNABLE_FIELDS = (
+    "learning_rate",
+    "num_train_epochs",
+    "per_device_train_batch_size",
+    "gradient_accumulation_steps",
+    "max_length",
+    "warmup_ratio",
+    "seed",
+)
+# LoRA adapter knobs — meaningful only when the run uses PEFT/LoRA; irrelevant (and never
+# defaulted) for full fine-tunes or OSFT, so don't surface them there.
+_LORA_TUNABLE_FIELDS = ("lora_r", "lora_alpha", "lora_dropout")
+# Embedding/classifier-specific knobs the trainer defaults; only meaningful for those runs.
+_EMBEDDING_TUNABLE_FIELDS = ("loss_type", "batch_sampler")
+
 _EMBEDDING_ALGORITHMS = {"embedding_sft", "classifier", "embedding"}
 
+# Algorithms that train LoRA adapters (vs. full-parameter or OSFT); gate LoRA knobs on these.
+_LORA_ALGORITHMS = {"lora_sft", "lora_grpo"}
+
 _RESUMABLE_ALGORITHMS = {"sft", "lora_sft", "osft"}
+
+# Chat-SFT algorithms that consume the `messages` column. Preference/RL algorithms
+# (dpo, grpo, kto, gkd) use different schemas, so they are deliberately NOT shape-checked
+# for `messages` — a missing check is safe; a wrong one would false-reject valid data.
+_SFT_MESSAGES_ALGORITHMS = {"sft", "lora_sft", "osft"}
+
+
+def _trainer_default_fields(config: dict[str, Any]) -> list[str]:
+    """The tunable hyperparameters the config left unset, so the trainer's own default
+    applies — surfaced on the confirmation card as 'trainer default'. The candidate set is
+    algorithm-aware: generic optimization knobs always, plus LoRA knobs for PEFT/LoRA runs or
+    embedding knobs for embedding runs — so we never claim a knob is "defaulted" that the
+    algorithm doesn't even use."""
+    algorithm = str(config.get("algorithm") or "").replace("-", "_")
+    algorithm = ALGO_ALIASES.get(algorithm, algorithm)
+    candidates = list(_GENERIC_TUNABLE_FIELDS)
+    if algorithm in _EMBEDDING_ALGORITHMS:
+        candidates += _EMBEDDING_TUNABLE_FIELDS
+    elif algorithm in _LORA_ALGORITHMS or config.get("use_peft"):
+        candidates += _LORA_TUNABLE_FIELDS
+    return [f for f in candidates if config.get(f) is None]
 
 
 async def _apply_classification_eval_mode(
@@ -394,6 +570,12 @@ async def create_sdg_job(
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
+    # Fail-closed dependency gate (same invariant as training/eval): any upstream job
+    # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
+    # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
+    gate_errors = await _gate_upstream_refs(repo, {**config, "parent_job_id": parent_job_id})
+    if gate_errors:
+        raise HTTPException(status_code=422, detail=gate_errors)
     try:
         row = await core_create_job(
             repo,
@@ -493,8 +675,8 @@ async def _persist_metric_set(
             if run.get("info", {}).get("lifecycle_stage") == "deleted":
                 await client.restore_run(dataset_run_id)
                 logger.info(
-                    "Restored soft-deleted dataset run %s to persist its"
-                    " eval metric set", dataset_run_id[:8],
+                    "Restored soft-deleted dataset run %s to persist its eval metric set",
+                    dataset_run_id[:8],
                 )
         except Exception:
             logger.warning(
@@ -503,9 +685,7 @@ async def _persist_metric_set(
                 exc_info=True,
             )
 
-    await set_mlflow_run_tag(
-        dataset_run_id, "eval_metric_set", _json.dumps(metric_set)
-    )
+    await set_mlflow_run_tag(dataset_run_id, "eval_metric_set", _json.dumps(metric_set))
 
 
 @router.post(
@@ -600,9 +780,7 @@ async def retry_job(
     job_type = str(job.get("type") or "")
     spec = mirror.MIRROR_SPECS.get(job_type)
     if spec is None:
-        raise HTTPException(
-            status_code=422, detail=f"job type '{job_type}' cannot be retried"
-        )
+        raise HTTPException(status_code=422, detail=f"job type '{job_type}' cannot be retried")
     if job.get("status") not in (JobStatus.failed.value, JobStatus.cancelled.value):
         raise HTTPException(
             status_code=422,
@@ -910,6 +1088,9 @@ async def clone_sdg_config_for_eval(
         "The UI renders a confirmation card with ALL parameters — do NOT output "
         "a markdown table, parameter list, or config summary before or after this "
         "tool call. Write ONE short sentence, then call this tool. "
+        "Any hyperparameter you mention to the user must be an explicit field in "
+        "this config; fields you leave unset use the trainer default and the card "
+        "shows them as such — do not state a value you did not set. "
         "Set parent_job_id to chain from a completed SDG job."
     ),
 )
@@ -941,6 +1122,7 @@ async def validate_training_job(
         config=config,
         parent_job_id=parent_job_id,
         data_record_count=record_count,
+        trainer_default_fields=_trainer_default_fields(config),
         warnings=model_warnings,
     )
 
@@ -1078,10 +1260,9 @@ async def _rubric_drift_warning(
     submitted = {str(c["name"]): str(c.get("description", "")) for c in inline}
     for job in candidates:
         cfg = _coerce_config(job.get("config"))
-        same_dataset = (
-            data_run_id
-            and str(cfg.get("eval_data_run_id") or "") == data_run_id
-        ) or (parent_job_id and job.get("parent_job_id") == parent_job_id)
+        same_dataset = (data_run_id and str(cfg.get("eval_data_run_id") or "") == data_run_id) or (
+            parent_job_id and job.get("parent_job_id") == parent_job_id
+        )
         if not same_dataset:
             continue
         existing = {
@@ -1093,9 +1274,7 @@ async def _rubric_drift_warning(
             continue
         if existing == submitted:
             return []  # exact reuse — nothing to warn about
-        changed = sorted(
-            n for n in existing if existing[n] != submitted.get(n, existing[n])
-        )
+        changed = sorted(n for n in existing if existing[n] != submitted.get(n, existing[n]))
         return [
             "this dataset already has evals with these rubric criteria"
             f" but different descriptions (changed: {', '.join(changed)})."
@@ -1108,9 +1287,7 @@ async def _rubric_drift_warning(
     return []
 
 
-_SdgSignature = tuple[
-    tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]
-]
+_SdgSignature = tuple[tuple[str, ...], tuple[str, ...], str, tuple[str, ...], tuple[str, ...]]
 
 
 def _sdg_signature(cfg: Any) -> _SdgSignature | None:
@@ -1178,13 +1355,15 @@ async def _training_sdg_mirror_warning(
     training = await repo.get_job(training_job_id)
     if not training:
         return []
-    train_sdg_id = str(training.get("parent_job_id") or "")
-    if not train_sdg_id:
+    # The SDG that produced the model's training data — the nearest SDG ancestor,
+    # following the lineage chain rather than only the direct parent.
+    train_sdg = await lineage.nearest_ancestor(training, "sdg", repo.get_job)
+    if not train_sdg:
         return []  # training data not chained from an SDG job -> nothing to mirror
+    train_sdg_id = str(train_sdg.get("id") or "")
 
-    train_sdg = await repo.get_job(train_sdg_id)
     eval_sdg = await repo.get_job(str(parent_job_id))
-    if not train_sdg or not eval_sdg:
+    if not eval_sdg:
         return []
 
     train_sig = _sdg_signature(train_sdg.get("config"))
@@ -1205,8 +1384,7 @@ async def _training_sdg_mirror_warning(
         diffs.append("assessor/system prompt")
     if train_sig[2] != eval_sig[2]:
         diffs.append(
-            f"topic (training SDG: {train_sig[2] or 'none'};"
-            f" eval SDG: {eval_sig[2] or 'none'})"
+            f"topic (training SDG: {train_sig[2] or 'none'}; eval SDG: {eval_sig[2] or 'none'})"
         )
     if train_sig[3] != eval_sig[3]:
         diffs.append("source documents")
@@ -1276,18 +1454,14 @@ async def _dataset_record_count(run_id: str) -> int | None:
         paths = await _find_dataset_artifacts(mlflow, run_id)
         total = 0
         for path in paths:
-            total += sum(
-                1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path))
-            )
+            total += sum(1 for _ in _parse_records(path, await mlflow.get_artifact(run_id, path)))
         return total if paths else None
     except Exception:
         logger.warning("record count: failed to load dataset %s", run_id[:8], exc_info=True)
         return None
 
 
-async def _resolve_data_run(
-    repo: Repository, parent_job_id: str, data_run_id: str
-) -> str:
+async def _resolve_data_run(repo: Repository, parent_job_id: str, data_run_id: str) -> str:
     """MLflow run holding a dataset, from either a parent job or a direct run id."""
     if parent_job_id:
         job = await repo.get_job(parent_job_id)
@@ -1304,21 +1478,19 @@ async def _resolve_data_run(
 async def _resolve_training_data_run(repo: Repository, training_job_id: str) -> str:
     """MLflow run holding the data a training job actually trained on.
 
-    Prefer the exact `data_run_id` the job used (e.g. a split complement), else
-    the parent SDG job's MLflow run."""
+    Prefer the exact `data_run_id` the job used (e.g. a split complement), else the
+    nearest dataset-producing ancestor's MLflow run — walking the lineage chain, so
+    this resolves even when the dataset producer is more than one hop upstream."""
     training = await repo.get_job(training_job_id)
     if not training:
         return ""
-    cfg = training.get("config") or {}
-    if isinstance(cfg, str):
-        try:
-            cfg = json.loads(cfg)
-        except ValueError:
-            cfg = {}
-    data_run_id = str((cfg or {}).get("data_run_id") or "")
+    data_run_id = str(lineage.job_ref(training, "data_run_id") or "")
     if data_run_id:
         return data_run_id
-    return await _resolve_data_run(repo, str(training.get("parent_job_id") or ""), "")
+    producer = await lineage.nearest_ancestor(
+        training, lineage.DATASET_PRODUCER_TYPES, repo.get_job
+    )
+    return str(producer.get("mlflow_run_id") or "") if producer else ""
 
 
 async def _eval_overlap_warning(
