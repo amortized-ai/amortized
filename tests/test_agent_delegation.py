@@ -375,7 +375,13 @@ class TestRequestOrchestratorHelp:
                         {"need": self._NEED, "context": self._CONTEXT},
                     ),
                 ],
-                [_text_part("resumed — I have the dataset now.")],
+                # The resumed turn presents its eval-dataset card (its owed edge) — realistic, and
+                # not a stall, so the resume stays focused on the pointer (#534 P2c now stall-checks
+                # resume turns, so a bare-prose resume here would be nudged).
+                [
+                    _tool_part("signal_phase", {"phase": "eval", "step": "eval-dataset"}),
+                    _tool_part("present_options", {"step": "eval-dataset"}),
+                ],
             ]
         )
         state.subagent_id = eval_id
@@ -791,6 +797,72 @@ class TestNoDataAdvisory:
         monkeypatch.setattr(agent, "_conversation_has_dataset", _boom)
         state = agent.SessionState(orchestrator_id="orch")
         assert _run(agent._no_data_advisory(state, "training")) is None
+
+
+class TestDelegationStallCheck:
+    """#534 P2c: a freshly-delegated or resumed subagent turn is routed through the SAME stall nudge
+    the ordinary handler runs. _maybe_delegate used to return these responses directly, so a turn
+    that signalled its owed edge, narrated the hand-off, and stopped was never adjudicated —
+    stranding the pipeline with no correction. The shared check now runs on every _maybe_delegate
+    exit (fresh, resume, help-producer, data-gate re-drive)."""
+
+    @staticmethod
+    def _signal(step: str) -> dict[str, Any]:
+        return _tool_part("signal_phase", {"phase": "eval", "step": step})
+
+    @staticmethod
+    def _patch_has_data(monkeypatch: pytest.MonkeyPatch) -> None:
+        async def _has(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
+
+    # A stalled hand-off: signals the owed-solo step but narrates instead of calling the tool.
+    _STALL_THEN_CORRECT: ClassVar[list[list[dict[str, Any]]]] = [
+        [_tool_part("signal_phase", {"phase": "eval", "step": "held-out-request-help"}),
+         _text_part("I'll get the held-out set generated.")],
+        [_tool_part("signal_phase", {"phase": "eval", "step": "held-out-request-help"}),
+         _tool_part("request_orchestrator_help", {"need": "n", "context": "c"})],
+    ]
+
+    def test_fresh_delegation_turn_is_stall_nudged(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_has_data(monkeypatch)  # let the fresh eval delegation past the data gate
+        state = _make_state(router)
+        eval_id = router.queue_session([list(t) for t in self._STALL_THEN_CORRECT])
+        out = _run(
+            agent._maybe_delegate(
+                state, "s1", ("eval", "evaluate t1", False), "evaluate t1",
+                {"info": {}, "parts": []}, _body(),
+            )
+        )
+        # The stalled first turn was re-driven on the system channel naming the owed tool …
+        redrive = [
+            sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
+        ]
+        assert redrive and "request_orchestrator_help" in redrive[0]
+        # … and the corrected (re-fetched) turn carrying the real hand-off is what's returned.
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+
+    def test_resumed_turn_is_stall_nudged(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._patch_has_data(monkeypatch)
+        state = _make_state(router)
+        eval_id = router.add_session([list(t) for t in self._STALL_THEN_CORRECT])
+        state.completed_subagents["eval"] = eval_id  # stashed, awaiting resume
+        out = _run(
+            agent._maybe_delegate(
+                state, "s1", ("eval", "resumed", True), "go on",
+                {"info": {}, "parts": []}, _body(),
+            )
+        )
+        redrive = [
+            sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
+        ]
+        assert redrive and "request_orchestrator_help" in redrive[0]
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
 
 
 class TestConversationHasDataset:

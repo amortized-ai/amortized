@@ -1160,13 +1160,21 @@ async def _maybe_nudge_subagent_stall(
     session_id: str,
     body: MessageRequest,
     latest_parts: list[dict[str, Any]],
+    *,
+    guard_missing_signal: bool = True,
 ) -> list[dict[str, Any]]:
     """If the just-finished subagent turn stalled on an owed tool edge, re-prompt ONCE on the
     system channel and return the re-fetched parts; otherwise return `latest_parts` unchanged. Runs
     BEFORE completion/help detection so a nudged request_orchestrator_help flows through the normal
     hand-off path (not stripped as prose). One nudge per user turn — the re-driven turn is not
     re-adjudicated, so it can never loop. This is the live consumer of the pure `adjudicate`
-    library (api/phases.py). Every decision below reads the single `_observe_turn` scan."""
+    library (api/phases.py). Every decision below reads the single `_observe_turn` scan.
+
+    `guard_missing_signal` — whether to apply the signalled-guard (re-drive a turn that stamped
+    no recognized `signal_phase`). Steady-state turns (the ordinary handler) want it; a fresh
+    delegation or RESUME turn (the `_maybe_delegate` exit) does NOT — the subagent is (re)entering,
+    and a first clarifying turn without a signal is legitimate, so only the owed-edge STALL check
+    applies there (the #534 P2c path: a narrated hand-off on a delegate/resume turn)."""
     if body.event == "job_complete":
         return latest_parts  # carries its own terminal hand-back steer; not a stall
     if not state.subagent_id or not state.subagent_target:
@@ -1186,7 +1194,8 @@ async def _maybe_nudge_subagent_stall(
     # phase; both are exempt (re-driving would strand the card / intercept the hand-off). One nudge
     # per user turn (not re-adjudicated), so it can never loop.
     if (
-        requires_phase_signal(target)
+        guard_missing_signal
+        and requires_phase_signal(target)
         and not signal_is_known(target, obs.signalled_step, skill=skill)
         and not obs.hands_off
         and not obs.has_card
@@ -1477,6 +1486,19 @@ async def _maybe_delegate(
         state.subagent_id = sub_id
 
     state.subagent_target = target
+    # Route this freshly-delegated / resumed turn through the SAME owed-edge stall check the
+    # ordinary handler runs (_handle_subagent_message). Without this, a subagent's FIRST turn (new
+    # delegation) or a resumed consumer's turn could signal its owed edge, narrate instead of
+    # calling the tool, and stop — with no adjudication or nudge, because _maybe_delegate returned
+    # the response directly (#534 P2c). `guard_missing_signal=False`: on a (re)entering turn an
+    # unsignalled first clarifying turn is legitimate, so only the owed-edge stall check applies
+    # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
+    # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
+    # _maybe_delegate exit (fresh, resume, help-producer, data-gate re-drive — the last returns via
+    # the recursive call, nudged once).
+    sub_result["parts"] = await _maybe_nudge_subagent_stall(
+        state, session_id, body, sub_result.get("parts", []), guard_missing_signal=False
+    )
     return sub_result
 
 

@@ -132,6 +132,24 @@ def test_handoff_must_be_solo() -> None:
     assert with_cotool.kind == "not_solo"
 
 
+def test_adjudicate_normalizes_the_step_like_signal_is_known() -> None:
+    # #534 P2b: `signal_is_known` normalizes the slug but `owed_for`/`adjudicate` used to look it up
+    # raw — so a variant-separator slug (`held_out_request_help`) was "known" to the guard yet
+    # lenient to the adjudicator, and a prose-only hand-off on it escaped the nudge. owed_for now
+    # normalizes first, so every separator variant adjudicates identically to the canonical slug.
+    for variant in ("held_out_request_help", "held out request help", "01-held-out-request-help"):
+        assert signal_is_known("eval", variant)  # the guard already accepted these
+        assert owed_for("eval", variant) is not None  # …and owed_for now agrees
+        # bare prose on the owed-solo step is a stall (not lenient ok)
+        assert adjudicate("eval", variant, []).kind == "stall"
+        # the real call + prose is not_solo (not a free pass)
+        assert adjudicate("eval", variant, ["request_orchestrator_help"], has_text=True).kind == (
+            "not_solo"
+        )
+        # the clean solo call is ok
+        assert adjudicate("eval", variant, ["request_orchestrator_help"]).kind == "ok"
+
+
 def test_handoff_missing_is_a_stall_not_not_solo() -> None:
     assert adjudicate("eval", "held-out-request-help", []).kind == "stall"
 

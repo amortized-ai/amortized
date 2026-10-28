@@ -456,12 +456,19 @@ def owed_for(
     Workflow-phase entries win; otherwise, when a skill is loaded, a signalled slug that names one
     of its `### Step`s owes what that step owes (`_skill_owed`). A slug that is neither a workflow
     phase nor a step of the loaded skill — the coarse `gather` umbrella, a non-stepped skill, or an
-    unknown slug — is lenient (None)."""
-    owed = _REQUIRED.get((role, phase_step))
+    unknown slug — is lenient (None).
+
+    The step is normalized to the canonical slug FIRST — the same `_norm` that `signal_is_known`
+    applies — so the two never disagree. Without this, a driver that signals a variant separator
+    (`held_out_request_help`) passed the signalled-guard as "known" (which normalizes) yet the raw
+    `_REQUIRED` lookup here missed it → lenient → a prose-only hand-off on an owed-solo step escaped
+    the nudge entirely (#534 P2b)."""
+    step = _norm(phase_step)
+    owed = _REQUIRED.get((role, step))
     if owed is not None:
         return owed
     if skill:
-        return _skill_owed(skill, phase_step)
+        return _skill_owed(skill, step)
     return None
 
 
