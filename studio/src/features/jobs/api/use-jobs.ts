@@ -18,6 +18,7 @@ import {
 import type { Job, JobFilters, PaginationParams, MlflowRun } from "@/types/api"
 import type { EvalResults } from "@/lib/api-client"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
+import { HISTORY_KEYS } from "../lib/metric-aliases"
 
 const ACTIVE_STATUSES = new Set(["queued", "provisioning", "running"])
 
@@ -161,13 +162,6 @@ export interface AllMetricsData {
   /** Run params (e.g. model_name_or_path, num_train_epochs, …). */
   params: Record<string, string>
 }
-
-/** Metric keys we fetch full step-level history for.
- * TRL logs: loss, train_loss, grad_norm, learning_rate
- * torchtune (osft): loss, grad_norm, lr
- * instructlab-training (sft/FSDP): avg_loss, lr
- */
-const HISTORY_KEYS = ["loss", "train_loss", "avg_loss", "grad_norm", "learning_rate", "lr", "epoch"]
 
 export function useJobMlflowMetrics(runId: string | null) {
   return useQuery<AllMetricsData>({

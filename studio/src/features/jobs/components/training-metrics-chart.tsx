@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/chart"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { AllMetricsData, MetricHistory } from "../api/use-jobs"
+import { resolveMetric, resolveHistory } from "../lib/metric-aliases"
 
 /* ------------------------------------------------------------------ */
 /*  Chart configs using rh-* color tokens                              */
@@ -206,11 +207,19 @@ export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartPr
 
   const { histories, finalValues, params } = data
 
-  const lastLoss = finalValues["loss"] ?? finalValues["train_loss"] ?? finalValues["avg_loss"]
-  const lastLr = finalValues["learning_rate"] ?? finalValues["lr"] ?? (params["learning_rate"] ? Number(params["learning_rate"]) : undefined)
+  const lastLoss = resolveMetric(finalValues, "loss")
+  const lastLr = resolveMetric(finalValues, "learning_rate") ?? (params["learning_rate"] ? Number(params["learning_rate"]) : undefined)
   const trainRuntime = finalValues["train_runtime"]
-  const lastEpoch = finalValues["epoch"]
-  const lossHistory = histories["loss"] ?? histories["train_loss"] ?? histories["avg_loss"]
+  const lastEpoch = resolveMetric(finalValues, "epoch")
+  const lossHistory = resolveHistory(histories, "loss")
+  const lrHistory = resolveHistory(histories, "learning_rate")
+  const gradNormHistory = resolveHistory(histories, "grad_norm")
+
+  const charts = [
+    { title: "Training Loss", data: lossHistory, config: lossConfig, yLabel: "Loss" },
+    { title: "Gradient Norm", data: gradNormHistory, config: gradNormConfig, yLabel: "Grad Norm" },
+    { title: "Learning Rate Schedule", data: lrHistory, config: lrConfig, yLabel: "LR", formatValue: (v: number) => v.toExponential(1) },
+  ].filter(c => c.data && c.data.length > 0)
 
   return (
     <div className="space-y-4">
@@ -237,27 +246,20 @@ export function TrainingMetricsChart({ data, isLoading }: TrainingMetricsChartPr
       </div>
 
       {/* ---- Charts grid ---- */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <MetricChart
-          title="Training Loss"
-          data={lossHistory}
-          config={lossConfig}
-          yLabel="Loss"
-        />
-        <MetricChart
-          title="Gradient Norm"
-          data={histories["grad_norm"]}
-          config={gradNormConfig}
-          yLabel="Grad Norm"
-        />
-        <MetricChart
-          title="Learning Rate Schedule"
-          data={histories["learning_rate"] ?? histories["lr"]}
-          config={lrConfig}
-          yLabel="LR"
-          formatValue={(v: number) => v.toExponential(1)}
-        />
-      </div>
+      {charts.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {charts.map(c => (
+            <MetricChart
+              key={c.title}
+              title={c.title}
+              data={c.data}
+              config={c.config}
+              yLabel={c.yLabel}
+              formatValue={c.formatValue}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
