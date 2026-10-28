@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { getBaseUrl } from "@/lib/api-client"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -564,14 +564,22 @@ function MetricsTab({ job }: { job: Job }) {
     )
   }
 
-  if (data && !data.finalValues["train_runtime"] && job.started_at && job.completed_at) {
-    data.finalValues["train_runtime"] =
-      (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000
-  }
+  const metricsData = useMemo(() => {
+    if (!data) return data
+    if (data.finalValues["train_runtime"] || !job.started_at || !job.completed_at) return data
+    return {
+      ...data,
+      finalValues: {
+        ...data.finalValues,
+        train_runtime:
+          (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000,
+      },
+    }
+  }, [data, job.started_at, job.completed_at])
 
   return (
     <div className="pt-2">
-      <TrainingMetricsChart data={data} isLoading={isLoading} />
+      <TrainingMetricsChart data={metricsData} isLoading={isLoading} />
     </div>
   )
 }
