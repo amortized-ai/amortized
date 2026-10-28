@@ -507,118 +507,6 @@ async def _fetch_all_messages(
     return result
 
 
-# The validate_* tool each job type exposes — used to detect whether a fresh job of that
-# type was set up in this conversation (see _session_has_validate / _conversation_has_dataset).
-_VALIDATE_TOOL_BY_TYPE = {
-    "sdg": "validate_sdg_job",
-    "training": "validate_training_job",
-    "eval": "validate_eval_job",
-}
-
-
-def _session_ids(state: SessionState) -> set[str]:
-    """Every opencode session making up this conversation — the orchestrator plus
-    the active and completed subagents."""
-    sessions = {state.orchestrator_id}
-    if state.subagent_id:
-        sessions.add(state.subagent_id)
-    sessions.update(state.completed_subagents.values())
-    return sessions
-
-
-async def _session_has_validate(
-    state: SessionState,
-    job_type: str,
-    cache: dict[str, list[dict[str, Any]]] | None,
-) -> bool:
-    """Whether a validate_*_job was called anywhere in the conversation so far — the
-    structural signal that a fresh job really was set up this session. Scoped to the
-    type's validate tool when known; an empty/unknown type matches ANY validate."""
-    tool = _VALIDATE_TOOL_BY_TYPE.get(job_type)
-    wanted = {tool} if tool else set(_VALIDATE_TOOL_BY_TYPE.values())
-    for sid in _session_ids(state):
-        for msg in await _fetch_all_messages(sid, cache):
-            for part in msg.get("parts") or []:
-                if part.get("type") == "tool" and _tool_name(part) in wanted:
-                    return True
-    return False
-
-
-# Job types whose subagent can't do anything without a dataset — so a delegation to
-# one when THIS conversation has no data path is premature.
-_DATA_DEPENDENT_TARGETS = {"training": "train on", "eval": "evaluate on"}
-
-# Tools that mean the user has engaged a SPECIFIC existing dataset (inspecting its
-# samples or splitting it) — a de-facto choice of existing data, so the fork is moot.
-# `list_datasets` is deliberately excluded: merely browsing the catalog is not a
-# choice, so the existing-vs-generate fork should still be offered.
-_DATASET_TOOLS = {"get_dataset", "get_dataset_samples", "split_dataset"}
-
-
-async def _conversation_has_dataset(
-    state: SessionState,
-    cache: dict[str, list[dict[str, Any]]] | None,
-) -> bool:
-    """Whether THIS conversation already has, or has engaged, a dataset — so a
-    training/eval delegation is NOT premature. Both signals are structural tool
-    facts (conversation-scoped, never a lifetime "has this user ever" query):
-
-    1. An SDG job was set up here (`validate_sdg_job`) — fresh data in flight.
-    2. A dataset tool was touched here (`get_dataset`/`get_dataset_samples`/
-       `split_dataset`) — the user engaged a SPECIFIC existing dataset.
-
-    Deliberately NOT inferred from message text. The orchestrator's handoff lists
-    the available datasets as platform state, and that handoff is relayed into the
-    subagent session as a user-role message — so scanning text for dataset ids
-    conflates "available/listed" with "chosen" and suppresses the fork when the
-    user has not actually decided. A real choice always surfaces as a tool fact:
-    resolving even a fuzzy name ("the whimsical lark data") routes through
-    get_dataset, which trips signal 2 regardless of how it was phrased.
-    """
-    if await _session_has_validate(state, "sdg", cache):
-        return True
-    for sid in _session_ids(state):
-        for msg in await _fetch_all_messages(sid, cache):
-            for part in msg.get("parts") or []:
-                if part.get("type") == "tool" and _tool_name(part) in _DATASET_TOOLS:
-                    return True
-    return False
-
-
-async def _data_gate_satisfied(state: SessionState) -> bool:
-    """Whether a training/eval delegation is cleared to proceed: a dataset is already engaged
-    in THIS conversation (see _conversation_has_dataset — an SDG job in flight, or an existing
-    dataset touched via get_dataset/get_dataset_samples/split_dataset).
-
-    Fail-OPEN on any fetch error: a transient error must never block a legitimate delegation,
-    and the tool-boundary 422 (_require_dependency_succeeded in api/jobs.py) still backstops a
-    genuinely missing/unready upstream at validate time."""
-    try:
-        return await _conversation_has_dataset(state, {})
-    except Exception:
-        return True
-
-
-# Re-driven into the ORCHESTRATOR when it tries to delegate to a data-dependent subagent
-# (training/eval) before any dataset exists in the conversation. The orchestrator is the sole
-# delegator, so sequencing the data — generate via SDG, or point at an existing dataset — is
-# its job, not the leaf's. The proxy re-drives the orchestrator with this instead of spawning
-# the premature subagent (see the data gate in _maybe_delegate). This replaces the former
-# _no_data_advisory, which injected the fork INTO the training/eval subagent and made that leaf
-# bounce back via request_orchestrator_help.
-_NO_DATASET_PROMPT = (
-    "[NO DATASET]\n"
-    "You tried to delegate to the {target} agent, but no dataset exists in this conversation "
-    "yet — a {target} job needs data to {verb}. Resolve the data FIRST, then delegate:\n"
-    "- If the user already named an existing dataset, resolve it (get_dataset) and then "
-    "delegate to {target}.\n"
-    "- Otherwise ask the user how to provide the data with present_options: (1) use an "
-    "existing dataset, or (2) generate a fresh one. To generate, call delegate_to_subagent "
-    "with target 'sdg' and resume false, giving it ONLY a plain build order for the data.\n"
-    "Do NOT delegate to {target} until a dataset exists."
-)
-
-
 # ---------------------------------------------------------------------------
 # Upstream helpers
 # ---------------------------------------------------------------------------
@@ -1460,44 +1348,11 @@ async def _maybe_delegate(
     user_text: str,
     morty_result: dict[str, Any],
     body: MessageRequest,
-    allow_data_gate: bool = True,
 ) -> dict[str, Any]:
     if not delegation:
         return morty_result
 
     target, context, resume = delegation
-
-    # Orchestrator-side data gate. A training/eval job can't run without data, and sequencing
-    # that data (generate via SDG, or point at an existing dataset) is the orchestrator's job —
-    # it is the sole delegator — not the leaf's. On a FRESH data-dependent delegation with no
-    # dataset engaged in this conversation, don't spawn the subagent: re-drive the orchestrator
-    # to resolve data first (ask the user, or delegate to SDG). Single-shot — allow_data_gate is
-    # cleared on the re-drive so a weak orchestrator that re-delegates can't loop; the
-    # tool-boundary 422 (_require_dependency_succeeded) remains the final backstop at validate
-    # time. Replaces the former _no_data_advisory that made the leaf surface the fork and bounce.
-    if (
-        allow_data_gate
-        and not resume
-        and target in _DATA_DEPENDENT_TARGETS
-        and not await _data_gate_satisfied(state)
-    ):
-        logger.info(
-            "Data gate: no dataset for %s delegation; re-driving orchestrator", target
-        )
-        seed = _NO_DATASET_PROMPT.format(target=target, verb=_DATA_DEPENDENT_TARGETS[target])
-        morty_result = await _orchestrator_turn(state, seed, body)
-        new_delegation = _detect_delegation(
-            await _fetch_all_assistant_parts(state.orchestrator_id)
-        )
-        return await _maybe_delegate(
-            state,
-            session_id,
-            new_delegation,
-            user_text,
-            morty_result,
-            body,
-            allow_data_gate=False,
-        )
 
     stashed_id = state.completed_subagents.pop(target, None) if resume else None
 
