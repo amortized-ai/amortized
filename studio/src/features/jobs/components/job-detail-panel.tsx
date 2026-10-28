@@ -548,6 +548,19 @@ function MetricsTab({ job }: { job: Job }) {
   const runId = job.type === "training" ? job.mlflow_run_id : null
   const { data, isLoading } = useJobMlflowMetrics(runId)
 
+  const metricsData = useMemo(() => {
+    if (!data) return data
+    if (data.finalValues["train_runtime"] || !job.started_at || !job.completed_at) return data
+    return {
+      ...data,
+      finalValues: {
+        ...data.finalValues,
+        train_runtime:
+          (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000,
+      },
+    }
+  }, [data, job.started_at, job.completed_at])
+
   if (job.type !== "training") {
     return (
       <div className="pt-4 text-sm text-muted-foreground text-center">
@@ -563,19 +576,6 @@ function MetricsTab({ job }: { job: Job }) {
       </div>
     )
   }
-
-  const metricsData = useMemo(() => {
-    if (!data) return data
-    if (data.finalValues["train_runtime"] || !job.started_at || !job.completed_at) return data
-    return {
-      ...data,
-      finalValues: {
-        ...data.finalValues,
-        train_runtime:
-          (new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000,
-      },
-    }
-  }, [data, job.started_at, job.completed_at])
 
   return (
     <div className="pt-2">
