@@ -590,10 +590,7 @@ class TestJobCompleteHandback:
         # so it reads as a system instruction rather than a fake user turn. The neutral event
         # fact (the job id) stays in the user part so the hand-back can report it.
         state = self._active_sdg(router)
-        text = (
-            "Job d6be24ce (sdg) finished with status: succeeded."
-            " Use present_options to suggest next steps to the user."
-        )
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
         _run(
             agent._handle_subagent_message(
                 state, "s1", text, _body(event="job_complete")
@@ -613,10 +610,7 @@ class TestJobCompleteHandback:
         # producer kept control and the flow could stall — Shabana review #3) — on the system
         # channel, same as success.
         state = self._active_sdg(router)
-        text = (
-            "Job d6be24ce (sdg) finished with status: failed."
-            " Use present_options to suggest next steps to the user."
-        )
+        text = "Job d6be24ce (sdg) finished with status: failed."
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
         forwarded_text = router.sent[0][1]
         forwarded_system = router.sent[0][3]
@@ -636,38 +630,32 @@ class TestJobCompleteHandback:
         assert forwarded_system.startswith("[ACTIVE PHASE]")
         assert agent._SUBAGENT_JOB_DONE_PROMPT not in forwarded_system
 
-    def test_deliverable_strips_present_options_clause(self, router: _Router) -> None:
-        # Side 1: on the subagent's OWN deliverable the frontend "use present_options" clause
-        # (worded for the orchestrator) is stripped so it stops countermanding the hand-back.
+    def test_deliverable_user_text_carries_no_routing_clause(self, router: _Router) -> None:
+        # The hand-back no longer depends on the proxy stripping an orchestrator-worded clause: the
+        # frontend sends a neutral fact (fixed at source, studio use-chat.ts), so the user part the
+        # subagent sees on its OWN deliverable carries the event fact and nothing that countermands
+        # the system-channel hand-back.
         state = self._active_sdg(router)
-        text = (
-            "Job d6be24ce (sdg) finished with status: succeeded."
-            " Use present_options to suggest next steps to the user."
-        )
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
         _run(agent._handle_subagent_message(state, "s1", text, _body(event="job_complete")))
         forwarded_text = router.sent[0][1]
-        assert "present_options" not in forwarded_text  # clause removed
+        assert "present_options" not in forwarded_text  # no routing clause on the user channel
         assert "d6be24ce" in forwarded_text  # neutral event fact kept
 
     def test_preview_completion_is_not_deliverable(self, router: _Router) -> None:
-        # Side 1 + Side 2 are BOTH gated on deliverable: a preview completion (mode != create)
-        # is an intermediate step — the subagent keeps control (pointer, not the hand-back steer)
-        # and the present_options clause is left intact.
+        # The hand-back steer is gated on deliverable: a preview completion (mode != create) is an
+        # intermediate step — the subagent keeps control (pointer, not the hand-back steer) and
+        # continues its own workflow.
         state = self._active_sdg(router)
-        text = (
-            "Job d6be24ce (sdg) finished with status: succeeded."
-            " Use present_options to suggest next steps to the user."
-        )
+        text = "Job d6be24ce (sdg) finished with status: succeeded."
         _run(
             agent._handle_subagent_message(
                 state, "s1", text, _body(event="job_complete", job_mode="preview")
             )
         )
-        forwarded_text = router.sent[0][1]
         forwarded_system = router.sent[0][3]
         assert forwarded_system is not None and forwarded_system.startswith("[ACTIVE PHASE]")
         assert agent._SUBAGENT_JOB_DONE_PROMPT not in (forwarded_system or "")
-        assert "present_options" in forwarded_text  # clause NOT stripped on a non-deliverable
 
     def test_cross_type_completion_is_not_deliverable(self, router: _Router) -> None:
         # A job of a DIFFERENT type than the active subagent (e.g. a split the training subagent

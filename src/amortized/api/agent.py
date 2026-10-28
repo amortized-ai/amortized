@@ -287,19 +287,6 @@ def _job_succeeded(body: MessageRequest, user_text: str) -> bool:
     return "status: succeeded" in user_text.lower()
 
 
-# The frontend appends this instruction to the job_complete user-text; it is worded for the
-# ORCHESTRATOR ("suggest next steps"). On a subagent's OWN deliverable it contradicts the
-# hand-back the subagent owes (it obeys this user-text over the system steer ~5/6), so the proxy
-# strips it on a deliverable completion. See the eval-job-never-created handoff.
-_JOB_COMPLETE_PRESENT_OPTIONS_RE = re.compile(
-    r"\s*Use present_options to suggest next steps to the user\.?", re.IGNORECASE
-)
-
-
-def _strip_present_options_clause(text: str) -> str:
-    return _JOB_COMPLETE_PRESENT_OPTIONS_RE.sub("", text).strip()
-
-
 def _completion_job_type(body: MessageRequest, user_text: str) -> str:
     """Canonical type of the finished job on a job_complete event: the structured
     `job_type` the client sends, falling back to the "(TYPE)" token in the display text
@@ -315,8 +302,8 @@ def _is_deliverable_completion(state: SessionState, body: MessageRequest, user_t
     """Whether a job_complete is the active subagent's own DELIVERABLE — the terminal job it
     was delegated to produce — vs an intermediate step. Deliverable iff the finished job is the
     subagent's own type AND a real create run (not a preview or a split/merge it kicked off).
-    Only a deliverable triggers the hand-back (strip the present_options clause + fire the
-    terminal steer); on an intermediate the subagent keeps control and continues its workflow.
+    Only a deliverable triggers the hand-back (fire the terminal steer on the system channel);
+    on an intermediate the subagent keeps control and continues its workflow.
     `job_mode` is absent for job types with no preview (training/eval) — treat as create."""
     if not state.subagent_target:
         return False
@@ -1302,19 +1289,17 @@ async def _handle_subagent_message(
     job_failed = False
     steer_system: str | None = None
     if body.event == "job_complete" and _is_deliverable_completion(state, body, user_text):
-        # This completion is the subagent's OWN deliverable, so hand control back. Both the
-        # frontend user-text and the proxy must agree on that, or the subagent obeys the user-text
-        # (~5/6) and keeps going:
-        #  - Side 1: strip the frontend's "use present_options" clause (worded for the orchestrator)
-        #    so the user channel no longer countermands the hand-back.
-        #  - Side 2: the hand-back IMPERATIVE rides the SYSTEM channel (a system-initiated
-        #    instruction, not a fake user turn); the neutral event fact — the job id the hand-back
-        #    must report and the grounding corpus needs — stays in the user part.
-        # The standing hand-back rule also lives in the subagent persona (agents/*/*.md). BOTH are
+        # This completion is the subagent's OWN deliverable, so hand control back. The hand-back
+        # IMPERATIVE rides the SYSTEM channel (a system-initiated instruction, not a fake user
+        # turn); the user part carries only the neutral event fact — the job id the hand-back must
+        # report and the grounding corpus needs. The frontend no longer injects an
+        # orchestrator-worded "use present_options" clause into that user-text (which the subagent
+        # obeyed over the system steer ~5/6); it is gone at source (studio use-chat.ts), so there
+        # is no cross-channel clause left for the proxy to strip.
+        # The standing hand-back rule also lives in the subagent persona (agents/*/*.md). Both are
         # gated on the deliverable check: an intermediate completion (a preview, or a split/merge
         # the subagent kicked off) falls through to the normal pointer so the subagent CONTINUES
         # its own workflow instead of handing back. See docs/agent-gates-proposal.md.
-        user_text = _strip_present_options_clause(user_text)
         succeeded = _job_succeeded(body, user_text)
         job_failed = not succeeded
         steer_system = _SUBAGENT_JOB_DONE_PROMPT if succeeded else _SUBAGENT_JOB_FAILED_PROMPT

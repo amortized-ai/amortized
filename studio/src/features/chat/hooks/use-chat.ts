@@ -919,7 +919,12 @@ export function useChat() {
       try {
         const response = await sendOpenCodeMessage(
           convId,
-          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
+          // hand back on its deliverable) lives in the resident prompts, not in this shared
+          // user-text — which reaches whoever is active, so an orchestrator-worded routing
+          // instruction here reaches subagents too and countermands their hand-back. status /
+          // jobType / mode ride the structured fields below; the proxy reads those, not this text.
+          `Job ${jobId} (${jobType}) finished with status: ${status}.`,
           modelToSend,
           "job_complete",
           status,
