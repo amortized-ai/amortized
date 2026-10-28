@@ -480,6 +480,8 @@ describe("useChat — per-conversation model", () => {
       PINNED,
       "job_complete",
       "succeeded",
+      "sdg",
+      undefined,
     )
     const conv = useChatStore.getState().conversations.find((c) => c.id === "c1")!
     const lastAssistant = [...conv.messages].reverse().find((m) => m.role === "assistant")!
