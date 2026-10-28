@@ -51,7 +51,7 @@ export interface ChatMessage {
   streamStartedAt?: number
   model?: string
   // Set on a job-completion continuation turn, so the plan deriver can mark the
-  // current phase terminal even when the driver never emits a "review" signal_phase
+  // current phase terminal even when the driver never emits a "complete" signal_phase
   // (observed with GLM) — otherwise the progress bar strands on the last step.
   terminal?: boolean
 }

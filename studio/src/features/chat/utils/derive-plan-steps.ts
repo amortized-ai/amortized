@@ -38,13 +38,25 @@ const TOOL_LABELS: Record<string, string> = {
   "get_job_logs": "Reading job logs",
 }
 
+// Step slugs match the `<!--signal:slug-->` markers in each agent's workflow.md `## Workflow`
+// headings (sdg/training are 4-phase; eval is a finer 8-step sequence). "complete" is the
+// terminal step for every agent.
 const PHASE_STEP_LABELS: Record<string, string> = {
-  "understand_task": "Understanding your task",
-  "load_skill": "Loading skill guide",
-  "gather_requirements": "Gathering requirements",
-  "confirm": "Reviewing configuration",
-  "review": "Checking results",
+  // sdg / training phases
+  "route": "Routing to sub-skill",
+  "gather": "Gathering requirements",
+  "validate": "Reviewing configuration",
+  "complete": "Completing",
+  // eval fine steps
+  "understand-task": "Understanding your task",
+  "eval-dataset": "Confirming the eval dataset",
+  "how-much": "Choosing how much to evaluate",
+  "model-source": "Choosing the model",
+  "metrics": "Designing the metrics",
+  "report": "Reporting results",
 }
+
+const TERMINAL_STEP = "complete"
 
 export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
   let latestPhase: PlanPhase | null = null
@@ -106,7 +118,7 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
     const cfg = STATIC_PHASE_CONFIG[latestPhase]
     if (!cfg) return null
     const activeIdx = resolveStepIndex(cfg.steps, latestStep)
-    const done = latestStep === "review" || terminalSeen
+    const done = latestStep === TERMINAL_STEP || terminalSeen
     return {
       phase: latestPhase,
       label: cfg.label,
@@ -117,10 +129,10 @@ export function deriveDynamicPlan(messages: ChatMessage[]): PhasePlan | null {
     }
   }
 
-  // When the last signalled step is "review" — or a job-completion turn made the
+  // When the last signalled step is the terminal step — or a job-completion turn made the
   // phase terminal — the workflow has finished; mark every step complete so the bar
   // isn't left spinning.
-  const done = latestStep === "review" || terminalSeen
+  const done = latestStep === TERMINAL_STEP || terminalSeen
 
   return {
     phase: latestPhase,
@@ -138,33 +150,28 @@ interface StepDef {
 }
 
 const SDG_STEPS: StepDef[] = [
-  { label: "Understanding your task", matchSteps: ["understand_task"] },
-  { label: "Loading skill guide", matchSteps: ["load_skill"] },
-  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
-  { label: "Checking models & estimating cost", matchSteps: ["estimate_cost"] },
-  { label: "Reviewing configuration", matchSteps: ["confirm"] },
-  { label: "Submitting job", matchSteps: ["execute"] },
-  { label: "Checking results", matchSteps: ["review"] },
+  { label: "Routing to sub-skill", matchSteps: ["route"] },
+  { label: "Gathering requirements", matchSteps: ["gather"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const TRAINING_STEPS: StepDef[] = [
-  { label: "Understanding your task", matchSteps: ["understand_task"] },
-  { label: "Loading training guide", matchSteps: ["load_skill"] },
-  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
-  { label: "Selecting model & estimating cost", matchSteps: ["estimate_cost"] },
-  { label: "Reviewing configuration", matchSteps: ["confirm"] },
-  { label: "Submitting training job", matchSteps: ["execute"] },
-  { label: "Checking results", matchSteps: ["review"] },
+  { label: "Routing to sub-skill", matchSteps: ["route"] },
+  { label: "Gathering requirements", matchSteps: ["gather"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const EVAL_STEPS: StepDef[] = [
-  { label: "Understanding your task", matchSteps: ["understand_task"] },
-  { label: "Loading eval guide", matchSteps: ["load_skill"] },
-  { label: "Gathering requirements", matchSteps: ["gather_requirements"] },
-  { label: "Selecting judge & metrics", matchSteps: ["estimate_cost"] },
-  { label: "Reviewing configuration", matchSteps: ["confirm"] },
-  { label: "Submitting eval job", matchSteps: ["execute"] },
-  { label: "Checking results", matchSteps: ["review"] },
+  { label: "Understanding your task", matchSteps: ["understand-task"] },
+  { label: "Confirming the eval dataset", matchSteps: ["eval-dataset"] },
+  { label: "Choosing how much to evaluate", matchSteps: ["how-much"] },
+  { label: "Choosing the model", matchSteps: ["model-source"] },
+  { label: "Designing the metrics", matchSteps: ["metrics"] },
+  { label: "Reviewing configuration", matchSteps: ["validate"] },
+  { label: "Reporting results", matchSteps: ["report"] },
+  { label: "Completing", matchSteps: ["complete"] },
 ]
 
 const STATIC_PHASE_CONFIG: Partial<Record<PlanPhase, { label: string; steps: StepDef[] }>> = {
@@ -190,7 +197,7 @@ export function derivePhasePlan(messages: ChatMessage[]): PhasePlan | null {
   const config = STATIC_PHASE_CONFIG[parsed.phase]
   if (!config) return null
   const activeIdx = resolveStepIndex(config.steps, parsed.step)
-  const isCompleted = parsed.step === "review"
+  const isCompleted = parsed.step === TERMINAL_STEP
 
   const planSteps: PlanStep[] = config.steps.map((def, i): PlanStep => {
     if (isCompleted) return { label: def.label, status: "completed" }

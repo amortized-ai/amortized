@@ -5316,7 +5316,7 @@
           "step": {
             "type": "string",
             "title": "Step",
-            "description": "Workflow step identifier (e.g. 'sdg-domain', 'training-method')"
+            "description": "Workflow step identifier (e.g. 'domain', 'categories', 'teacher-model')"
           },
           "question": {
             "type": "string",

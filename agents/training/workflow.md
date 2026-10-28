@@ -132,6 +132,10 @@ it as the `parent_job_id` without asking.
 - **Never invent identifiers or metrics.** Only report a job ID, run ID, dataset ID, or
   score that came from a tool result in THIS session. If you don't have a real value yet,
   call the tool that returns it or tell the user you don't have it — don't make one up.
+- **Resolve a named job by its EXACT id.** When the user or a handoff names a specific job,
+  look it up with `get_job` on that exact id — don't fuzzy-match the name against `list_jobs`.
+  If no job matches, say so and ask; NEVER substitute a different job, even if another one
+  succeeded.
 - A `validate_*_job` call only renders a confirmation card; the job is created when the user
   clicks **Confirm**. Don't say a job is queued/running/submitted off a validate call.
 - If a tool returns an error (e.g. an upstream job isn't `succeeded` yet), report that
@@ -151,9 +155,22 @@ change. Do NOT restart from Phase 1.
 
 ---
 
+## Progress Signal
+
+Call `signal_phase` once on every response, with `phase="training"` and `step` set to
+the slug of the `## Workflow` phase you are currently in:
+
+- `route` — Phase 1 (route to the right sub-skill)
+- `gather` — Phase 2 (gather requirements)
+- `validate` — Phase 3 (validate and confirm)
+- `complete` — Phase 4 (signal completion)
+
+Each slug is shown in its phase heading. While gathering (Phase 2), keep signalling
+`gather`; the skill you load tracks its own sub-steps.
+
 ## Workflow
 
-### Phase 1 — Route to Sub-Skill
+### Phase 1 — Route to Sub-Skill <!--signal:route-->
 
 Determine which training sub-skill to use based on the handoff context:
 knowledge-ingestion/OSFT for doc-grounded QA, or embedding-classifier for
@@ -167,7 +184,7 @@ Phase 2 — it contains the detailed guidance (the OSFT skill also bundles the
 supported-model list). For the embedding classifier, skip the VRAM/model-size/
 method steps.
 
-### Phase 2 — Gather Requirements
+### Phase 2 — Gather Requirements <!--signal:gather-->
 
 Follow the loaded guide's requirement-gathering steps.
 
@@ -213,16 +230,16 @@ anything already decided.
 asks to "improve performance on <dataset X>", X is the benchmark, not the
 training data — a FRESH training set must be generated for the same task.
 You don't generate data yourself (that is the SDG agent's job and you are a
-leaf): hand back to the orchestrator with `request_orchestrator_help` —
-`need` a fresh training set for the task that does not overlap benchmark
-dataset X; `context` the task and that you resume with the new SDG job's
-dataset as the training data. SDG runs and you are resumed
-with a `[RESUMED]` handoff that carries the new SDG job id; continue from
-data confirmation (`get_dataset` on the new set) as usual. Only train
-directly on X if the user explicitly confirms it and accepts the leakage
-trade-off.
+leaf): hand back to the orchestrator with `request_orchestrator_help` — CALL
+the tool, do NOT describe handing off in prose. Set `need` to a fresh
+training set for the task that does not overlap benchmark dataset X; set
+`context` to the task and that you resume with the new SDG job's dataset as
+the training data. SDG runs and you are resumed with a `[RESUMED]` handoff
+that carries the new SDG job id; continue from data confirmation
+(`get_dataset` on the new set) as usual. Only train directly on X if the
+user explicitly confirms it and accepts the leakage trade-off.
 
-### Phase 3 — Validate and Confirm
+### Phase 3 — Validate and Confirm <!--signal:validate-->
 
 **Precondition — data usage confirmed.** Before `validate_training_job`,
 you MUST have already called `get_dataset` on the training data's run ID
@@ -237,12 +254,22 @@ If anything is unreachable or misconfigured, stop and tell the user
 exactly what is wrong.
 
 Estimate training resources with the final configuration and show the
-VRAM card. Call `validate_training_job` with the assembled config.
-The UI renders a confirmation card — the user clicks confirm to
-submit the job.
+VRAM card. Call `validate_training_job` with the assembled config. Pass
+it as a SINGLE `config_json` argument whose value is the entire config
+serialized as a JSON string (every field inside that one string) — a
+large multi-argument call can be corrupted in transit, one `config_json`
+string round-trips reliably. The UI renders a confirmation card — the
+user clicks confirm to submit the job.
 
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries.
+
+Any hyperparameter you tell the user about (batch size, learning rate,
+epochs, max length, …) MUST be set as an explicit field in the config you
+pass to `validate_training_job` — do NOT state a value you have not written
+into the config. Fields you leave unset use the trainer's default, and the
+confirmation card shows them as "trainer default"; never narrate a specific
+number for a field you did not set.
 
 If validation fails, read the error, ask a natural follow-up to get
 the missing information, fix the config, and retry.
@@ -250,7 +277,7 @@ the missing information, fix the config, and retry.
 Wait for the `[SYSTEM EVENT]` notification when the job finishes.
 Only then present next steps.
 
-### Phase 4 — Signal Completion
+### Phase 4 — Signal Completion <!--signal:complete-->
 
 Call `signal_subagent_completion` to hand control back to the
 orchestrator. If the user expressed a next intent (e.g. "Generate more
