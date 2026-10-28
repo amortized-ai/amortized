@@ -74,7 +74,7 @@ export interface ModelRunData {
   histories: Record<string, Array<{ step: number; value: number }>>
 }
 
-const HISTORY_KEYS = ["loss", "train_loss", "grad_norm", "learning_rate", "epoch"]
+const HISTORY_KEYS = ["loss", "train_loss", "avg_loss", "grad_norm", "learning_rate", "lr", "epoch"]
 
 export function useModelRunData(runId: string | null) {
   return useQuery<ModelRunData | null>({
