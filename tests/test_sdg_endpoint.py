@@ -636,7 +636,19 @@ class TestSDGErrorMessageQuality:
     @pytest.mark.asyncio
     async def test_error_has_field_and_error_keys(self, client: httpx.AsyncClient) -> None:
         """Every error dict has 'field' and 'error' keys."""
-        response = await client.post("/api/v1/jobs/sdg", json={})
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "columns": [
+                    {
+                        "column_type": "llm-text",
+                        "name": "question",
+                        "model_alias": "text",
+                    }
+                ],
+                "model_configs": [VALID_MODEL_CONFIG],
+            },
+        )
         assert response.status_code == 422
         detail = _get_detail(response)
         assert len(detail) > 0, f"Expected errors, got: {response.json()}"
