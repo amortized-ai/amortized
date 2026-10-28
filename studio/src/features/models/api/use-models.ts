@@ -10,6 +10,7 @@ import {
 } from "@/lib/api-client"
 import type { ModelRecord, MlflowRegisteredModel, MlflowRun, Job } from "@/types/api"
 import { useEntityNamesStore } from "@/stores/entity-names-store"
+import { HISTORY_KEYS } from "@/features/jobs/lib/metric-aliases"
 
 function registeredModelToRecord(m: MlflowRegisteredModel): ModelRecord {
   const latest = m.latest_versions?.[0]
@@ -73,8 +74,6 @@ export interface ModelRunData {
   tags: Record<string, string>
   histories: Record<string, Array<{ step: number; value: number }>>
 }
-
-const HISTORY_KEYS = ["loss", "train_loss", "grad_norm", "learning_rate", "epoch"]
 
 export function useModelRunData(runId: string | null) {
   return useQuery<ModelRunData | null>({
