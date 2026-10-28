@@ -405,6 +405,54 @@ class TestRequestOrchestratorHelp:
         assert "confirm the eval dataset" in pointer.lower()
         assert "confirm what to evaluate" not in pointer.lower()
 
+    def test_bundled_handoff_routes_and_strips_its_prose(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A weak driver (GLM-flash) bundles premature status prose ("standing by while the set
+        # generates…") with the real request_orchestrator_help call. The hand-off must still route
+        # (the nudge consumer exempts it — see test_not_solo_handoff_is_honored), and the misleading
+        # prose must NOT reach the user: the surfaced turn reads like a clean solo hand-off, showing
+        # the hand-off's RESULT (the producer starting), not the leaf's narration.
+        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
+            return True
+
+        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
+        state = _make_state(
+            router,
+            orchestrator_script=[
+                [
+                    _tool_part(
+                        "delegate_to_subagent",
+                        {"target": "sdg", "context": "held-out set for t1"},
+                    )
+                ],
+            ],
+        )
+        narration = "Standing by while the 100-record held-out set generates."
+        eval_id = router.add_session(
+            [
+                [
+                    _text_part(narration),
+                    _tool_part(
+                        "request_orchestrator_help",
+                        {"need": self._NEED, "context": self._CONTEXT},
+                    ),
+                ],
+            ]
+        )
+        state.subagent_id = eval_id
+        state.subagent_target = "eval"
+        router.queue_session([[_text_part("What format should the eval set be?")]])
+
+        result = _run(
+            agent._handle_subagent_message(state, "s1", "evaluate t1 on a fresh set", _body())
+        )
+
+        assert state.subagent_target == "sdg"  # the hand-off routed (producer is now active)
+        texts = [p.get("text", "") for p in result["parts"] if p.get("type") == "text"]
+        assert narration not in texts  # the leaf's premature narration was stripped
+        assert any("What format" in t for t in texts)  # the producer's turn surfaces instead
+
     def test_completion_wins_over_simultaneous_help(self, router: _Router) -> None:
         # A turn carrying BOTH signal_subagent_completion AND request_orchestrator_help:
         # completion wins (a finishing subagent has nothing left to be helped with), so

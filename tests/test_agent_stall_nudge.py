@@ -116,10 +116,15 @@ def test_owed_tool_present_sends_no_nudge(router: _Router) -> None:
     assert not any(sid == sub for sid, *_ in router.sent)  # nothing re-sent
 
 
-def test_not_solo_handoff_is_nudged(router: _Router) -> None:
+def test_not_solo_handoff_is_honored(router: _Router) -> None:
+    # A bundled hand-off — the real request_orchestrator_help call PLUS narrating prose (what
+    # GLM-flash emits) — is NOT re-driven. Even though the adjudicator rates it `not_solo`, the
+    # empty-user re-drive would ERASE the turn and discard the real call, which
+    # _handle_subagent_message is about to route. The nudge consumer exempts any turn already
+    # carrying a routable transition (completion / hand-back), so "preserved" == "routed". The
+    # bundled prose is cleaned off in the hand-off path, not here.
     sub = router.add(_CORRECTED)
     state = _state(router, sub, "held-out-request-help")
-    # hand-off call PLUS narrating prose → not_solo
     not_solo = [
         _text_part("Handing this off now."),
         _signal("held-out-request-help"),
@@ -128,8 +133,8 @@ def test_not_solo_handoff_is_nudged(router: _Router) -> None:
 
     out = _run(agent._maybe_nudge_subagent_stall(state, "s", _body(), not_solo))
 
-    assert "ONLY action" in router.system_to(sub)
-    assert out is not not_solo  # re-fetched
+    assert out is not_solo  # returned unchanged — the hand-off is preserved
+    assert not any(sid == sub for sid, *_ in router.sent)  # nothing re-driven
 
 
 def test_lenient_phase_is_not_nudged(router: _Router) -> None:

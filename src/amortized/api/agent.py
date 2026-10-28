@@ -1205,6 +1205,16 @@ async def _maybe_nudge_subagent_stall(
     nudge = _stall_nudge_text(step, verdict)
     if nudge is None:
         return latest_parts
+    if _detect_completion(latest_parts) or _detect_help_request(latest_parts):
+        # The turn already carries a routable transition (completion / hand-back). The code just
+        # below (_handle_subagent_message) routes it on the SAME predicates. A re-drive here sends
+        # an empty-user re-prompt that ERASES this turn first — discarding the real
+        # signal_subagent_completion / request_orchestrator_help call. A weak driver (GLM-flash)
+        # bundles prose with the call (so the adjudicator sees `not_solo`/`batching`) and rarely
+        # re-emits the call on the re-drive, stranding the hand-off. Keying the exemption on the
+        # routing predicates — not the step-derived verdict — makes "preserved" == "routed" by
+        # construction. The bundled prose is cleaned off the surfaced turn in the hand-off path.
+        return latest_parts
     if obs.has_card and verdict.kind != "batching":
         # The turn surfaced a user-actionable card; a non-batching verdict here (stale-key
         # wrong_edge / stall) would strand it. Keep the card, skip the nudge.
@@ -1384,7 +1394,14 @@ async def _handle_subagent_message(
         if state.subagent_id and state.subagent_target and state.subagent_target != target:
             state.pending_help_target = target
             state.pending_help_producer = state.subagent_target
-        response_parts = _strip_internal_tools(result.get("parts", []))
+        # Surface a bundled hand-off like a clean solo one. A weak driver (GLM-flash) narrates the
+        # hand-back ("standing by while the set generates…") alongside the request_orchestrator_help
+        # call; that prose is misleading plumbing — the user should see the hand-off's RESULT (the
+        # orchestrator starting the producer), not the leaf's premature status narration. Drop the
+        # text so a bundled hand-off reads identically to a solo one (which carries no prose).
+        response_parts = [
+            p for p in _strip_internal_tools(result.get("parts", [])) if p.get("type") != "text"
+        ]
         help_result["parts"] = response_parts + _strip_internal_tools(help_result.get("parts", []))
         return help_result
 
