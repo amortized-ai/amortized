@@ -213,13 +213,6 @@ class TestRequestOrchestratorHelp:
     def test_help_flow_auto_resumes_requester_on_producer_completion(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Isolate routing from the data-availability advisory (the harness can't see the
-        # sdg job the resume depends on).
-        async def _no_advisory(*_a: Any, **_k: Any) -> None:
-            return None
-
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
-
         # The orchestrator only makes the FIRST hop (delegate to sdg). It is NOT scripted
         # to resume — the proxy resumes the requester automatically when sdg completes.
         state = _make_state(
@@ -298,10 +291,6 @@ class TestRequestOrchestratorHelp:
         # 526-4 repro: last_signal_step is a SINGLE shared field. The help detour delegates
         # a fresh sdg producer, which resets it; when eval is auto-resumed it must be pointed
         # back at ITS own last step (model source), not sdg's residue / eval's entry section.
-        async def _no_advisory(*_a: Any, **_k: Any) -> None:
-            return None
-
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
         state = _make_state(
             router,
             orchestrator_script=[
@@ -358,10 +347,6 @@ class TestRequestOrchestratorHelp:
         # _ensure_phase_signal (the other writer of last_signal_step) runs later in _run_turn,
         # after this handler clears subagent_target — so the help-turn's signal would otherwise
         # be dropped and the stash would capture the stale prior step (sending eval back a section).
-        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
-            return True
-
-        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
         state = _make_state(
             router,
             orchestrator_script=[
@@ -427,10 +412,6 @@ class TestRequestOrchestratorHelp:
         # (the nudge consumer exempts it — see test_not_solo_handoff_is_honored), and the misleading
         # prose must NOT reach the user: the surfaced turn reads like a clean solo hand-off, showing
         # the hand-off's RESULT (the producer starting), not the leaf's narration.
-        async def _has_dataset(*_a: Any, **_k: Any) -> bool:
-            return True
-
-        monkeypatch.setattr(agent, "_conversation_has_dataset", _has_dataset)
         state = _make_state(
             router,
             orchestrator_script=[
@@ -516,10 +497,6 @@ class TestRequestOrchestratorHelp:
     ) -> None:
         # Review #2: if the resumed consumer finishes right in the resume turn, control must be
         # released — not left assigned to it (with its completion stripped) until a later turn.
-        async def _no_advisory(*_a: Any, **_k: Any) -> None:
-            return None
-
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
         state = _make_state(router)
         eval_id = router.add_session(
             [[_tool_part("signal_subagent_completion", {"summary": "eval done; scored 0.9"})]]
@@ -546,10 +523,6 @@ class TestRequestOrchestratorHelp:
     ) -> None:
         # Review #3: a failed producer job hands back (not stall) and the consumer is resumed
         # with a FAILURE context — never told the data "is ready".
-        async def _no_advisory(*_a: Any, **_k: Any) -> None:
-            return None
-
-        monkeypatch.setattr(agent, "_delegation_advisory", _no_advisory)
         state = _make_state(router)
         eval_id = router.add_session([[_text_part("I'll tell the user the data isn't available.")]])
         state.completed_subagents = {"eval": eval_id}
@@ -697,7 +670,9 @@ class TestSubagentPointer:
     the system channel (api/phases.subagent_pointer), delivered on the delegation handoff and on
     every ordinary turn — but never on a job_complete turn (the hand-back steer owns it there)."""
 
-    def _delegate_and_get_system(self, router: _Router, target: str, resume: bool) -> str | None:
+    def _delegate_and_get_system(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch, target: str, resume: bool
+    ) -> str | None:
         sub_id = router.queue_session([[_text_part("ok")]])
         state = _make_state(router)
         if resume:
@@ -710,8 +685,10 @@ class TestSubagentPointer:
         )
         return next(sysm for sid, _t, _ag, sysm in router.sent if sid == sub_id)
 
-    def test_fresh_delegation_handoff_carries_entry_pointer(self, router: _Router) -> None:
-        sysm = self._delegate_and_get_system(router, "eval", resume=False)
+    def test_fresh_delegation_handoff_carries_entry_pointer(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sysm = self._delegate_and_get_system(router, monkeypatch, "eval", resume=False)
         assert sysm is not None
         assert sysm.startswith("[ACTIVE PHASE]")
         assert "Step 0 — Confirm WHAT to evaluate" in sysm  # entry section named
@@ -727,8 +704,10 @@ class TestSubagentPointer:
         )
         assert state.last_signal_step == ""  # cleared so the pointer/backfill start at entry
 
-    def test_resume_handoff_carries_pointer(self, router: _Router) -> None:
-        sysm = self._delegate_and_get_system(router, "eval", resume=True)
+    def test_resume_handoff_carries_pointer(
+        self, router: _Router, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sysm = self._delegate_and_get_system(router, monkeypatch, "eval", resume=True)
         assert sysm is not None and sysm.startswith("[ACTIVE PHASE]")
 
     def test_job_complete_turn_keeps_handback_steer_not_pointer(self, router: _Router) -> None:
@@ -788,97 +767,16 @@ class TestPhaseBackfill:
         assert agent._get_tool_input(signals[0]).get("step") == "confirm"
 
 
-class TestNoDataAdvisory:
-    """Pre-delegation advisory: when THIS conversation has no dataset path, a
-    training/eval handoff is annotated so the subagent gets data first instead of
-    discovering the gap after it spins up. Scoping lives in _conversation_has_dataset
-    (exercised in TestConversationHasDataset); here we test injection + wording."""
-
-    @staticmethod
-    def _patch(monkeypatch: pytest.MonkeyPatch, *, has_data: bool) -> None:
-        async def _has(*_a: Any, **_k: Any) -> bool:
-            return has_data
-
-        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
-
-    def _delegate(self, router: _Router, target: str) -> tuple[str, list[str]]:
-        sub_id = router.queue_session([[_text_part("ok")]])
-        state = _make_state(router)
-        _run(
-            agent._maybe_delegate(
-                state,
-                "s1",
-                (target, "orig ctx", False),
-                "go",
-                {"info": {}, "parts": []},
-                _body(),
-            )
-        )
-        sent = [text for sid, text, _ag, _sys in router.sent if sid == sub_id]
-        return sub_id, sent
-
-    def test_advisory_prepended_to_training_handoff(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._patch(monkeypatch, has_data=False)
-        _sub_id, sent = self._delegate(router, "training")
-        assert sent
-        assert "[DATA AVAILABILITY]" in sent[0]
-        assert "train on" in sent[0]
-        assert "orig ctx" in sent[0]  # original context preserved
-
-    def test_advisory_for_eval_uses_evaluate_verb(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._patch(monkeypatch, has_data=False)
-        _sub_id, sent = self._delegate(router, "eval")
-        assert "[DATA AVAILABILITY]" in sent[0]
-        assert "evaluate on" in sent[0]
-
-    def test_no_advisory_when_conversation_has_dataset(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._patch(monkeypatch, has_data=True)
-        _sub_id, sent = self._delegate(router, "training")
-        assert "[DATA AVAILABILITY]" not in sent[0]
-
-    def test_no_advisory_for_non_data_dependent_target(
-        self, router: _Router, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # sdg itself produces data — never annotated even with no dataset yet.
-        self._patch(monkeypatch, has_data=False)
-        _sub_id, sent = self._delegate(router, "sdg")
-        assert "[DATA AVAILABILITY]" not in sent[0]
-
-    def test_advisory_suppressed_on_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Fail-safe: any error determining conversation state → no advisory.
-        async def _boom(*_a: Any, **_k: Any) -> bool:
-            raise RuntimeError("opencode unreachable")
-
-        monkeypatch.setattr(agent, "_conversation_has_dataset", _boom)
-        state = agent.SessionState(orchestrator_id="orch")
-        assert _run(agent._no_data_advisory(state, "training")) is None
-
-
 class TestDelegationStallCheck:
     """#534 P2c: a freshly-delegated or resumed subagent turn is routed through the SAME stall nudge
     the ordinary handler runs. _maybe_delegate used to return these responses directly, so a turn
     that signalled its owed edge, narrated the hand-off, and stopped was never adjudicated —
     stranding the pipeline with no correction. The shared check now runs on every _maybe_delegate
-    exit (fresh, resume, help-producer, data-gate re-drive)."""
+    exit (fresh, resume, help-producer)."""
 
     @staticmethod
     def _signal(step: str) -> dict[str, Any]:
         return _tool_part("signal_phase", {"phase": "eval", "step": step})
-
-    @staticmethod
-    def _patch_has_data(monkeypatch: pytest.MonkeyPatch) -> None:
-        async def _has(*_a: Any, **_k: Any) -> bool:
-            return True
-
-        monkeypatch.setattr(agent, "_conversation_has_dataset", _has)
 
     # A stalled hand-off: signals the owed-solo step but narrates instead of calling the tool.
     _STALL_THEN_CORRECT: ClassVar[list[list[dict[str, Any]]]] = [
@@ -891,7 +789,6 @@ class TestDelegationStallCheck:
     def test_fresh_delegation_turn_is_stall_nudged(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._patch_has_data(monkeypatch)  # let the fresh eval delegation past the data gate
         state = _make_state(router)
         eval_id = router.queue_session([list(t) for t in self._STALL_THEN_CORRECT])
         out = _run(
@@ -911,7 +808,6 @@ class TestDelegationStallCheck:
     def test_resumed_turn_is_stall_nudged(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        self._patch_has_data(monkeypatch)
         state = _make_state(router)
         eval_id = router.add_session([list(t) for t in self._STALL_THEN_CORRECT])
         state.completed_subagents["eval"] = eval_id  # stashed, awaiting resume
@@ -926,83 +822,3 @@ class TestDelegationStallCheck:
         ]
         assert redrive and "request_orchestrator_help" in redrive[0]
         assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
-
-
-class TestConversationHasDataset:
-    """The conversation-scoped dataset signals that gate the advisory. Only tool
-    facts count: fresh SDG (`validate_sdg_job`) or engaging a specific existing
-    dataset (`get_dataset`-family). Browsing the catalog, or merely naming a dataset
-    in text (including the orchestrator handoff relayed as user text), must NOT count
-    — that is availability, not a choice, and the fork must still fire."""
-
-    def _setup(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        *,
-        messages: list[dict[str, Any]] | None = None,
-    ) -> None:
-        async def _fetch(_sid: str, _cache: Any = None) -> list[dict[str, Any]]:
-            return messages or []
-
-        monkeypatch.setattr(agent, "_fetch_all_messages", _fetch)
-
-    @staticmethod
-    def _user_msg(text: str) -> dict[str, Any]:
-        return {"info": {"role": "user"}, "parts": [_text_part(text)]}
-
-    def _run_check(self) -> bool:
-        state = agent.SessionState(orchestrator_id="orch")
-        return _run(agent._conversation_has_dataset(state, {}))
-
-    def test_fresh_sdg_this_session_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        self._setup(
-            monkeypatch,
-            messages=[{"info": {}, "parts": [_tool_part("validate_sdg_job", {})]}],
-        )
-        assert self._run_check() is True
-
-    def test_specific_dataset_tool_touched_counts(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._setup(
-            monkeypatch,
-            messages=[{"info": {}, "parts": [_tool_part("get_dataset_samples", {})]}],
-        )
-        assert self._run_check() is True
-
-    def test_merely_listing_datasets_is_not_a_choice(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Browsing the catalog is not choosing a dataset — the fork must still fire.
-        self._setup(
-            monkeypatch,
-            messages=[{"info": {}, "parts": [_tool_part("list_datasets", {})]}],
-        )
-        assert self._run_check() is False
-
-    def test_dataset_id_named_in_text_is_not_a_choice(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Regression: a dataset id merely named in text — including the orchestrator
-        # handoff (relayed into the subagent session as a user-role message, listing
-        # the available datasets as platform state) — is availability, not a choice.
-        # Only a dataset *tool* fact counts, so the fork must still fire.
-        self._setup(
-            monkeypatch,
-            messages=[
-                self._user_msg(
-                    "[CONTEXT] PLATFORM STATE (relevant artifacts): "
-                    "available dataset a1b2c3d4 (sdg, succeeded)"
-                )
-            ],
-        )
-        assert self._run_check() is False
-
-    def test_bare_training_request_has_no_dataset(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        self._setup(
-            monkeypatch,
-            messages=[self._user_msg("train a model to assess RFEs")],
-        )
-        assert self._run_check() is False

@@ -104,6 +104,16 @@ Call `delegate_to_subagent` with:
   completed or failed job (retry, adjust parameters, resubmit).
   `false` (default) if the user wants a fundamentally new job.
 
+**Before delegating to training or eval, a dataset must exist.** Those
+jobs can't run without data. If no dataset has been engaged in this
+conversation yet — no SDG job run here, and the user hasn't selected or
+split an existing dataset — do NOT delegate to training/eval. Resolve the
+data first: if the user named an existing dataset, resolve it
+(`get_dataset`); otherwise ask how they want to provide it (an existing
+dataset, or generate a fresh one), and to generate, delegate to SDG
+(`resume: false`) with a plain build order. Delegate to training/eval only
+once the dataset exists — then they review the generated data and confirm.
+
 ### Fulfilling a subagent's prerequisite request
 
 Subagents are leaves — they cannot delegate. When one needs a prerequisite
