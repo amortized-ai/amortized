@@ -220,6 +220,14 @@ async def _validate_training_data(
 ) -> list[str]:
     """Validate that training data is available (via parent job, run, or path)."""
     errors: list[str] = []
+    # algorithm is schema-optional (so a config_json-only call passes MCP input validation);
+    # enforce it semantically here, post-expansion. Catches a missing key, an empty value, and
+    # a config_json that omitted it — a clean 422 instead of a cryptic `thub ""` dispatch failure.
+    if not str(config.get("algorithm", "")).strip():
+        errors.append(
+            "algorithm is a required property — provide it (sft, lora_sft, osft, dpo, grpo, "
+            "lora_grpo, kto, gkd), or pass the entire config as a single config_json string"
+        )
     data_path = config.get("data_path", "")
     data_run_id = str(config.get("data_run_id", "") or "")
 

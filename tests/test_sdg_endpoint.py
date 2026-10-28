@@ -192,12 +192,11 @@ class TestSDGEndpointHappyPath:
 
 class TestSDGMissingFields:
     @pytest.mark.asyncio
-    async def test_missing_columns(self, client: httpx.AsyncClient) -> None:
-        """Empty body → columns: Field required."""
+    async def test_missing_columns_accepted_as_empty(self, client: httpx.AsyncClient) -> None:
+        """Empty body → columns defaults to []. With the columns key-guard removed, a missing
+        key is treated identically to an explicit empty list, which DD allows → accepted."""
         response = await client.post("/api/v1/jobs/sdg", json={})
-        assert response.status_code == 422
-        assert "columns" in _err_str(response)
-        assert "required" in _err_str(response).lower()
+        assert response.status_code == 201
 
     @pytest.mark.asyncio
     async def test_empty_columns_list(self, client: httpx.AsyncClient) -> None:
@@ -637,7 +636,19 @@ class TestSDGErrorMessageQuality:
     @pytest.mark.asyncio
     async def test_error_has_field_and_error_keys(self, client: httpx.AsyncClient) -> None:
         """Every error dict has 'field' and 'error' keys."""
-        response = await client.post("/api/v1/jobs/sdg", json={})
+        response = await client.post(
+            "/api/v1/jobs/sdg",
+            json={
+                "columns": [
+                    {
+                        "column_type": "llm-text",
+                        "name": "question",
+                        "model_alias": "text",
+                    }
+                ],
+                "model_configs": [VALID_MODEL_CONFIG],
+            },
+        )
         assert response.status_code == 422
         detail = _get_detail(response)
         assert len(detail) > 0, f"Expected errors, got: {response.json()}"

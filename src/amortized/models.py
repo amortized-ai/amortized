@@ -1,11 +1,71 @@
 """Pydantic models for the Amortized v1 API."""
 
+import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
+
+
+class _ConfigJsonMixin(BaseModel):
+    """Single-string escape hatch for weak models whose tool-call encoder corrupts large
+    multi-argument calls.
+
+    Observed with GLM-5.3-Flash: its native ``<arg_key>/<arg_value>`` tool-call format is
+    mis-parsed for configs ≳5KB — the nested arguments get merged into the first field, so
+    ``validate_sdg_job`` never parses and the agent spins (session ses_ea63dced…, 27 failed
+    attempts). A SINGLE string argument round-trips intact (the ``write`` tool proves this),
+    so letting the agent pass the ENTIRE config as one ``config_json`` string sidesteps the
+    bug for any model. When ``config_json`` is set it FULLY REPLACES the flat arguments.
+    """
+
+    config_json: str | None = Field(
+        default=None,
+        description=(
+            "The entire job config as ONE JSON-string argument. PREFER THIS for any "
+            "non-trivial config: put every field inside this single string instead of "
+            "passing columns/model_configs/etc. as separate arguments. When set, all other "
+            "arguments are ignored. Avoids a tool-call corruption some models hit on large "
+            "multi-field calls."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_config_json(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw = data.get("config_json")
+            if raw not in (None, ""):
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError) as e:
+                    msg = f"config_json must be a valid JSON object string: {e}"
+                    raise ValueError(msg) from e
+                if not isinstance(parsed, dict):
+                    msg = "config_json must decode to a JSON object (the config fields)"
+                    raise ValueError(msg)
+                parsed.pop("config_json", None)
+                # config_json fully replaces the flat args; anything also passed alongside it
+                # is dropped. Keep that behavior (the escape hatch must absorb a weak model's
+                # smeared extra keys, not reject them), but make the drop auditable by naming
+                # exactly which keys were ignored and the values discarded.
+                ignored = {
+                    k: v for k, v in data.items() if k != "config_json" and v not in (None, "")
+                }
+                if ignored:
+                    logger.warning(
+                        "config_json is set; ignoring %d flat argument(s) in favor of the "
+                        "config_json contents: %s",
+                        len(ignored),
+                        ", ".join(f"{k}={v!r}" for k, v in sorted(ignored.items())),
+                    )
+                return parsed
+        return data
 
 
 class JobType(StrEnum):
@@ -164,8 +224,21 @@ class TrainingJobConfig(BaseModel):
         return self
 
 
-class TrainingJobRequest(TrainingJobConfig):
+class TrainingJobRequest(TrainingJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG job ID for chaining (SDG -> Training)")
+
+    # Override the base (where algorithm is required) so a config_json-only call passes
+    # MCP input validation. The real requirement is a SEMANTIC one enforced after
+    # config_json expansion, in _validate_training_data — which catches a missing key,
+    # an empty value, AND a config_json string that forgot algorithm (none of which a
+    # request-layer key-guard could cover), with a clean 422 instead of a dispatch failure.
+    algorithm: str = Field(
+        "",
+        description=(
+            "Training algorithm (sft, lora_sft, osft, dpo, grpo, lora_grpo, kto, gkd). "
+            "Required unless the whole config is passed via config_json."
+        ),
+    )
 
 
 class Job(BaseModel):
@@ -347,14 +420,15 @@ from data_designer.config.processor_types import ProcessorConfigT as SDGProcesso
 from data_designer.config.sampler_constraints import ColumnConstraintInputT  # noqa: E402
 
 
-class SDGJobRequest(BaseModel):
+class SDGJobRequest(_ConfigJsonMixin):
     model_config = ConfigDict(extra="forbid")
 
     columns: list[SDGColumn] = Field(
-        ...,
+        default_factory=list,
         description=(
             "Generation pipeline columns. Evaluated in order; "
-            "later columns reference earlier ones via {{ column_name }}"
+            "later columns reference earlier ones via {{ column_name }}. "
+            "Required (non-empty) unless the whole config is passed via config_json."
         ),
     )
     model_configs: list[DDModelConfig] = Field(
@@ -411,6 +485,11 @@ class SDGJobRequest(BaseModel):
             "~10 samples and verify config before committing"
         ),
     )
+
+    # columns is schema-optional (so a config_json-only call passes MCP input validation)
+    # and an EMPTY list is deliberately allowed (DD permits it — see test_empty_columns_list).
+    # A wholly missing key defaults to the same empty list, so there is nothing left to
+    # enforce at the request layer: no key-guard, unlike training's algorithm.
 
     @model_validator(mode="after")
     def check_model_aliases(self) -> "SDGJobRequest":
@@ -673,7 +752,7 @@ class EvalJobConfig(BaseModel):
         return self
 
 
-class EvalJobRequest(EvalJobConfig):
+class EvalJobRequest(EvalJobConfig, _ConfigJsonMixin):
     parent_job_id: str = Field("", description="Parent SDG/upload job ID holding the eval dataset")
     acknowledge_warnings: str = Field(
         "",
