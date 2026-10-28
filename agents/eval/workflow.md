@@ -474,15 +474,18 @@ If `get_eval_results` reports `num_scored` of 0 (or null/empty scores),
 the eval produced no usable results — say so plainly, check the job logs,
 and diagnose the cause.
 
-Report the scores table FIRST (above). Only then interpret the numbers
-plainly and offer next steps: evaluate another model to compare, train
-again with different data or parameters, or accept the model. Do NOT begin
-assembling or re-configuring another eval (e.g. re-asking the judge) before
-you have shown this job's results and the user has chosen to continue.
+Report the scores table FIRST (above), then interpret the numbers
+plainly. This results report is YOUR job — the orchestrator has none of
+the eval context — so always show it before handing back. Do NOT offer
+next steps or ask what to do next: once the results are reported you hand
+control back (Step 6) and the orchestrator presents the options (evaluate
+another model to compare, train again with different data or parameters,
+or accept the model). Do NOT begin assembling or re-configuring another
+eval (e.g. re-asking the judge) before you have shown this job's results.
 
-If they choose to evaluate another model (e.g. the base model for a
-tuned-vs-base comparison), first SAY plainly that you are now evaluating
-that model (name it) for comparison on the same eval set and metric set —
+When you are (re-)delegated to evaluate another model (e.g. the base
+model for a tuned-vs-base comparison), first SAY plainly that you are now
+evaluating that model (name it) for comparison on the same eval set and metric set —
 do not jump straight to the judge or the confirmation card. Then start a
 FRESH eval cycle for it — assemble that model's config and go to Step 4
 (`validate_eval_job` → confirmation card). Do NOT ask the user to submit it
@@ -497,17 +500,19 @@ numbers side by side.
 
 Do NOT signal yet. After the job is submitted, stay active: the job's
 `[SYSTEM EVENT]` completion notification arrives in YOUR session, and
-Step 5 (report the scores table, then offer next steps) is your work —
-handing control back before the job finishes would hand the results
-reporting to the orchestrator, which has none of the eval context.
+Step 5 (report the scores table) is your work — handing control back
+before you have reported the results would hand the results reporting to
+the orchestrator, which has none of the eval context.
 
 Only after you have reported the results (Step 5) — or the job failed
 and you have explained the failure — call `signal_subagent_completion`
-to hand control back to the orchestrator. If the user expressed a next
-intent (e.g. "Evaluate another model" or "Train again"), include it in
-the summary as "User selected: ..." so the orchestrator can act on it
-directly. Do NOT instruct the orchestrator what to do — just relay the
-user's choice.
+to hand control back to the orchestrator. Do NOT present options or offer
+next steps yourself: the orchestrator presents the menu (evaluate another
+model, train again, accept the model) once you have handed back. If the
+user has already expressed a next intent (e.g. "Evaluate another model"
+or "Train again"), include it in the summary as "User selected: ..." so
+the orchestrator can act on it directly. Do NOT instruct the orchestrator
+what to do — just relay the user's choice.
 
 ## Failure Handling
 

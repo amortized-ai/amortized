@@ -89,6 +89,7 @@ describe("JobMonitorCard — eval jobs with embedded serving", () => {
           "34bd1852-e8bd-433c-aca0-4a42181210f4",
           "EVAL",
           "succeeded",
+          undefined,
         ),
       { timeout: 3000 },
     )
@@ -131,6 +132,27 @@ describe("JobMonitorCard — dataset splits", () => {
         "34bd1852-e8bd-433c-aca0-4a42181210f4",
         "SPLIT",
         "succeeded",
+        undefined,
+      ),
+    )
+  })
+
+  it("passes the run mode so the server can tell a preview from a create deliverable", async () => {
+    getJob.mockResolvedValue({ ...job("succeeded", "sdg"), config: { mode: "preview" } })
+    const onComplete = vi.fn()
+    render(
+      <JobMonitorCard
+        jobId="34bd1852-e8bd-433c-aca0-4a42181210f4"
+        jobType="SDG"
+        onComplete={onComplete}
+      />,
+    )
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        "34bd1852-e8bd-433c-aca0-4a42181210f4",
+        "SDG",
+        "succeeded",
+        "preview",
       ),
     )
   })

@@ -859,7 +859,7 @@ export function useChat() {
     setChatState("done")
   }, [currentConversationId, clearProposedActions])
 
-  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string }>>([])
+  const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string; mode?: string }>>([])
   const jobNotifyRunningRef = useRef(false)
   // Per-job attempt count that PERSISTS across notify calls (the in-loop
   // consecutiveFailures resets each drain). A continuation that keeps failing is
@@ -897,7 +897,7 @@ export function useChat() {
         break
       }
 
-      const { jobId, jobType, status, convId } = jobNotifyQueueRef.current.shift()!
+      const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
       useChatStore.getState().setJobInFlight(convId, false)
 
       const placeholderId = generateId()
@@ -919,10 +919,17 @@ export function useChat() {
       try {
         const response = await sendOpenCodeMessage(
           convId,
-          `Job ${jobId} (${jobType}) finished with status: ${status}. Use present_options to suggest next steps to the user.`,
+          // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
+          // hand back on its deliverable) lives in the resident prompts, not in this shared
+          // user-text — which reaches whoever is active, so an orchestrator-worded routing
+          // instruction here reaches subagents too and countermands their hand-back. status /
+          // jobType / mode ride the structured fields below; the proxy reads those, not this text.
+          `Job ${jobId} (${jobType}) finished with status: ${status}.`,
           modelToSend,
           "job_complete",
           status,
+          jobType,
+          mode,
         )
 
         const parsed = parseOpenCodeResponse(response)
@@ -978,14 +985,14 @@ export function useChat() {
     jobNotifyRunningRef.current = false
   }, [addMessage])
 
-  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string) => {
+  const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string, mode?: string) => {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
     if (!convId) return
 
     const notified = useChatStore.getState().getNotifiedJobs(convId)
     if (notified.includes(jobId)) return
 
-    jobNotifyQueueRef.current.push({ jobId, jobType, status, convId })
+    jobNotifyQueueRef.current.push({ jobId, jobType, status, convId, mode })
     await processJobNotifyQueue()
   }, [currentConversationId, processJobNotifyQueue])
 

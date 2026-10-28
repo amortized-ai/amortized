@@ -58,7 +58,7 @@ interface MessageBubbleProps {
   onOptionSelect?: (value: string, messageId?: string) => void
   onConfirmAction?: () => void
   onRejectAction?: () => void
-  onJobComplete?: (jobId: string, jobType: string, status: string) => void
+  onJobComplete?: (jobId: string, jobType: string, status: string, mode?: string) => void
 }
 
 export function MessageBubble({
