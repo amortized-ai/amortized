@@ -58,7 +58,7 @@ export function ChatWelcome({ onPromptClick }: ChatWelcomeProps) {
         </div>
 
         <div
-          className="animate-welcome grid grid-cols-3 gap-2"
+          className="animate-welcome grid grid-cols-1 sm:grid-cols-3 gap-2"
           style={{ animationDelay: "200ms" }}
         >
           {CAPABILITIES.map((cap, i) => (
