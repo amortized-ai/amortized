@@ -33,14 +33,17 @@ Ask the user these questions (one at a time, using `present_options`):
 ### Step 1 — What documents? <!--signal:documents-->
 
 Call `list_documents` to see what's already ingested, and show those
-documents by ID. If they need to add one, present the paths with
-`present_options` using `step="documents"`:
+documents by ID. If they need to add documents, there are exactly two
+ways — you cannot upload files yourself, so present BOTH with
+`present_options` using `step="documents"` and let the user pick:
 
-- **Attach a file** — the user adds it via the paperclip (Attach data) in
-  the chat composer, then picks Document. You cannot upload a file
-  yourself; point them to the paperclip and wait for the attachment to come
-  back as a `document_id` reference.
-- **From a URL** — you can ingest it directly with `convert_document_url`.
+- **Attach in chat** — the paperclip (Attach data) in the composer, then
+  Document. The attachment comes back as a `document_id` reference.
+- **Documents tab** — upload there, then come back and say they're ready.
+
+Offer only these two. Do NOT suggest any other method (no URLs, no pasting
+file contents). After they add documents, re-run `list_documents` to pick
+up the new `document_id`.
 
 ### Step 2 — Question types <!--signal:question-types-->
 

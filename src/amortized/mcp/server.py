@@ -87,12 +87,15 @@ def create_mcp_server(app: FastAPI) -> FastApiMCP:
             "get_turn_agent_session__session_id__turn__turn_id__get",
             "generate_title_agent_title_post",
             "agent_health_agent_health_get",
-            # Multipart file uploads: present in the OpenAPI spec but unusable over
-            # MCP, which is JSON-only (see CONTEXT.md A24). The UI calls these REST
-            # endpoints directly (in-chat attach pin + Documents/Datasets pages), so
-            # excluding them here only stops Morty from advertising a tool it can never
-            # execute. The JSON-bodied convert_document_url stays exposed — it works.
+            # Document/dataset ingestion endpoints are not callable by Morty. The two
+            # multipart uploads (convert_document, upload_dataset) can't run over MCP
+            # anyway (JSON-only; CONTEXT.md A24). convert_document_url IS JSON-runnable
+            # but is excluded by product decision: Morty must offer only the two UI
+            # upload paths (in-chat attach pin + Documents tab), never a URL import.
+            # The UI still calls all of these REST endpoints directly; excluding them
+            # here only hides them from Morty's toolset.
             "convert_document",
+            "convert_document_url",
             "upload_dataset_api_v1_datasets_upload_post",
         ],
     )
