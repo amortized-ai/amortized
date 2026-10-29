@@ -44,10 +44,47 @@ Every parameter is adjustable:
 Ask the user:
 
 1. **What model?** — Read `supported_models.json` (bundled with this
-   skill) for the list of supported models with HuggingFace IDs, sizes,
-   and descriptions. Present ONLY models from that file — do NOT invent
-   other sizes or IDs. The model choice affects all other
-   hyperparameters — set them after.
+   skill) for the list of verified models. **Recommend a model from
+   this list first** — every model in it has been tested with Training
+   Hub (correct chat template, compatible architecture). Present the
+   options with their sizes and descriptions.
+
+   **If the user wants a model that is NOT in the list**, follow this
+   flow:
+
+   a. **Validate the model.** Assess whether it is likely compatible
+      with Training Hub. The key requirement is that the model must
+      include a **chat template** in its tokenizer config (Training Hub
+      relies on this to format conversations). Consider:
+      - Is it from a well-known family (Qwen, Llama, Mistral, Gemma,
+        Phi, DeepSeek, etc.)?
+      - Is the HuggingFace model ID well-formed (`org/model-name`)?
+      - Is it an instruct or chat variant (not a raw base model, and
+        not a community-quantized or otherwise modified checkpoint)?
+
+      If the model looks reasonable — known architecture, instruct
+      variant with a chat template — accept it and proceed. Let the
+      user know it is not in the pre-verified list but appears
+      compatible.
+
+   b. **If the model looks risky** (unknown architecture, base model
+      without a chat template, or an unusual source), warn the user.
+      Explain that Training Hub requires a chat template to format the
+      training data, and the model may not have one — which would cause
+      training to fail at startup. Suggest a similar model from the
+      supported list as an alternative.
+
+   c. **If the user insists** on using a model you warned about, allow
+      it — but state clearly: "This model is not in our verified list
+      and may lack a chat template. Training could fail at startup if
+      Training Hub cannot format the data. We'll proceed with your
+      choice, but if the job fails, consider switching to one of the
+      supported models." Then continue with the rest of the flow
+      normally.
+
+   The model choice affects all downstream hyperparameters — gather
+   them after.
+
 2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
    user how many GPUs they have or offer GPU count options.
 3. **Training data** — Should come from a completed SDG job. Use
@@ -80,7 +117,7 @@ Call `validate_training_job` with these parameters:
 }
 ```
 
-### Key Parameters — Adjust Based on Data and Compute
+### Key Parameters — Adjust Based on Model Size, Data, and Compute
 
 Do NOT use static defaults blindly. Adapt each parameter to the user's
 dataset size, model choice, and GPU count. Explain your reasoning when
@@ -90,12 +127,12 @@ presenting the confirmation table.
 |-------|-----------|
 | `model_name_or_path` | User's chosen model |
 | `num_train_epochs` | 3–5 for <1000 samples, 2–3 for 1000–5000, 1–2 for 5000+. More data needs fewer epochs to avoid overfitting |
-| `learning_rate` | 2e-5 for 9B models, 5e-5 for 4B, 6e-5 for 0.8B–2B. Larger models need lower LR |
+| `learning_rate` | Scale inversely with model size. Guideline: ≤2B → 6e-5, 3B–4B → 5e-5, 7B–9B → 2e-5, 14B+ → 1e-5. Larger models are more sensitive to high learning rates |
 | `effective_batch_size` | Always 32 (1 GPU × 32 per-GPU batch). **Always show in confirmation table.** |
 | `max_length` | Must fit the longest context + question + answer from SDG. For knowledge QA with 15-sentence chunks: ~11000. For simple classification (short label output): ~2048. For task distillation (scoring, assessment, rubric-based evaluation — output is long-form feedback): **~16000**. Check which SDG skill produced the data to decide. Validate by checking the longest example in the SDG dataset. |
 | `unfreeze_rank_ratio` | 0.2 is the OSFT default — fraction of weights trainable. **Always show in confirmation table** even when using the default. This is the key OSFT-specific parameter. |
 | `nproc_per_node` | Always 1 |
-| `max_tokens_per_gpu` | 15000 for H100 (80GB), 8000 for A100 (40GB), 4000 for consumer GPUs. Reduce if OOM |
+| `max_tokens_per_gpu` | Scale by GPU memory and model size. H100 (80GB): 15000 for ≤9B, 10000 for 14B, 4000 for 30B+. A100 (40GB): 8000 for ≤4B, 5000 for 7B–9B, 3000 for 14B+. Consumer GPUs (24GB): 4000 for ≤4B, 2000 for 7B–9B. Reduce if OOM |
 | `warmup_steps` | ~1% of total steps. total_steps = (num_samples / effective_batch_size) × num_epochs |
 | `bf16` | true for Ampere+ GPUs (A100, H100). Use fp16 for older GPUs |
 | `topic` | **Required.** 1–5 word description of what the model does (e.g. "support ticket classification"). Used for tracking in the Models page. Infer from the dataset/task if not explicitly stated. |

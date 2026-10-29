@@ -87,13 +87,16 @@ Method Selection VRAM steps below**; they apply only to the LLM sub-skills.
 ## Student Model Selection
 
 Read `supported_models.json` (bundled with the `training-knowledge-ingestion-osft` skill) for the
-list of candidate models. You MUST show VRAM estimates before presenting model
+list of recommended models. You MUST show VRAM estimates before presenting model
 options.
 
 1. Estimate training resources for EACH model size from the file
 2. Show a VRAM comparison card with ALL collected estimates
 3. THEN present the models as options and wait for the user to choose —
    never auto-select a model, even if you have a recommended default
+
+If the user wants a model not in the list, the loaded skill's
+Requirement Gathering section describes the validation flow — follow it.
 
 ## Training Method Selection
 
