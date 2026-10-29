@@ -63,14 +63,23 @@ Ask the user:
         these families are very likely to work. Models from other
         families may work but have not been tested.
       - **Is a causal language model.** Training Hub loads with
-        `AutoModelForCausalLM` — encoder-only models (e.g. BERT) or
-        multimodal models will fail at loading.
-      - **Has a tokenizer with a `chat_template`.** Training Hub
-        calls `apply_chat_template()` to format the `messages`
-        training data into token IDs — this applies to OSFT, SFT,
-        and LoRA. If the tokenizer lacks a `chat_template` field,
-        data preprocessing fails. Instruct/chat variants include
-        this; raw base models typically do not.
+        `AutoModelForCausalLM` — encoder-only models (e.g. BERT)
+        will fail at loading. Note: some model families (e.g.
+        Qwen3.5, Gemma) have both a multimodal VLM variant
+        (`ForConditionalGeneration`) and a text-only variant
+        (`ForCausalLM`). The text-only variant works; the VLM
+        variant does not. Check the model's `architectures` field.
+      - **Has a tokenizer with a `chat_template` that supports
+        the `system` role.** Training Hub calls
+        `apply_chat_template()` to format the `messages` training
+        data into token IDs — this applies to OSFT, SFT, and LoRA.
+        The chat template must accept `system`, `user`, and
+        `assistant` roles, since SDG output typically includes
+        system messages. Some models (e.g. Gemma 2) have a chat
+        template that explicitly rejects system messages — training
+        on standard SDG data will fail for those models.
+        Instruct/chat variants include a chat template; raw base
+        models typically do not.
       - **Has a valid HuggingFace model ID** (`org/model-name`) so
         `from_pretrained()` can resolve it.
 
@@ -146,7 +155,7 @@ presenting the confirmation table.
 | `max_length` | Must fit the longest context + question + answer from SDG. For knowledge QA with 15-sentence chunks: ~11000. For simple classification (short label output): ~2048. For task distillation (scoring, assessment, rubric-based evaluation — output is long-form feedback): **~16000**. Check which SDG skill produced the data to decide. Validate by checking the longest example in the SDG dataset. |
 | `unfreeze_rank_ratio` | 0.2 is the OSFT default — fraction of weights trainable. **Always show in confirmation table** even when using the default. This is the key OSFT-specific parameter. |
 | `nproc_per_node` | Always 1 |
-| `max_tokens_per_gpu` | Scale by GPU memory and model size. H100 (80GB): 15000 for ≤9B, 10000 for 14B, 4000 for 30B+. A100 (40GB): 8000 for ≤4B, 5000 for 7B–9B, 3000 for 14B+. Consumer GPUs (24GB): 4000 for ≤4B, 2000 for 7B–9B. Reduce if OOM |
+| `max_tokens_per_gpu` | 15000 for H100 (80GB), 8000 for A100 (40GB), 4000 for consumer GPUs. Reduce if OOM |
 | `warmup_steps` | ~1% of total steps. total_steps = (num_samples / effective_batch_size) × num_epochs |
 | `bf16` | true for Ampere+ GPUs (A100, H100). Use fp16 for older GPUs |
 | `topic` | **Required.** 1–5 word description of what the model does (e.g. "support ticket classification"). Used for tracking in the Models page. Infer from the dataset/task if not explicitly stated. |

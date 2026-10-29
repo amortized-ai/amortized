@@ -61,48 +61,6 @@
     "description": "Best accuracy for knowledge tasks"
   },
   {
-    "id": "Qwen/Qwen3.8-0.6B",
-    "family": "qwen3.8",
-    "size": "0.6B",
-    "description": "Latest generation, ultra-lightweight"
-  },
-  {
-    "id": "Qwen/Qwen3.8-1.7B",
-    "family": "qwen3.8",
-    "size": "1.7B",
-    "description": "Latest generation, lightweight"
-  },
-  {
-    "id": "Qwen/Qwen3.8-4B",
-    "family": "qwen3.8",
-    "size": "4B",
-    "description": "Latest generation, balanced"
-  },
-  {
-    "id": "Qwen/Qwen3.8-8B",
-    "family": "qwen3.8",
-    "size": "8B",
-    "description": "Latest generation, strong general-purpose"
-  },
-  {
-    "id": "google/gemma-2-2b-it",
-    "family": "gemma",
-    "size": "2B",
-    "description": "Google's compact model, strong for its size"
-  },
-  {
-    "id": "google/gemma-2-9b-it",
-    "family": "gemma",
-    "size": "9B",
-    "description": "Google's mid-size model, good accuracy"
-  },
-  {
-    "id": "google/gemma-2-27b-it",
-    "family": "gemma",
-    "size": "27B",
-    "description": "Google's large model, high accuracy"
-  },
-  {
     "id": "google/gemma-4-26B-A4B-it",
     "family": "gemma",
     "size": "26B (4B active)",
@@ -125,12 +83,6 @@
     "family": "deepseek",
     "size": "7B",
     "description": "Reasoning-distilled, strong for its size"
-  },
-  {
-    "id": "meta-models/Muse-Glimmer-30B",
-    "family": "muse",
-    "size": "30B",
-    "description": "High-capacity dense model for complex tasks"
   },
   {
     "id": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
