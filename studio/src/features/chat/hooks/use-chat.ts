@@ -19,16 +19,6 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-// Conversations with a send in flight. Module-level so it survives the keyed
-// unmount/remount that happens when navigating between conversations mid-stream:
-// the send closure keeps writing to the store after its component unmounts, and the
-// remounted hook reads this Set to know it should still show "streaming".
-const _activeRequests = new Set<string>()
-
-// Guards concurrent sends to the SAME conversation (double-submit). Keyed by convId and
-// always released under that same key (see sendMessage) so it can never leak.
-const _sendLock = new Set<string>()
-
 // Map a persisted message (the single source of truth) to the ChatMessage the UI renders.
 function toChatMessage(m: PersistedMessage): ChatMessage {
   return {
@@ -417,63 +407,43 @@ export function useChat() {
     [persisted],
   )
 
-  const [error, setError] = useState<string | null>(null)
   const [thinkingStep, setThinkingStep] = useState<string | null>(null)
-  const stopThinkingRef = useRef<(() => void) | null>(null)
 
-  // chatState is per-mount UI state. On mount, if a send for this conversation is still in
-  // flight (the module-level Set survives the keyed remount), start in "streaming".
-  const [chatState, setChatState] = useState<ChatState>(() =>
-    currentConversationId && _activeRequests.has(currentConversationId) ? "streaming" : "idle",
+  const requestInFlight = useChatStore(
+    (s) => s.activeRequests[s.currentConversationId ?? ""] ?? false,
   )
+  const requestError = useChatStore((s) => s.requestErrors[s.currentConversationId ?? ""])
+  const lastMessage = persisted?.[persisted.length - 1]
+  // Busy state follows the request, not the lifetime of a particular chat view.
+  // Read the stored result on completion so a remounted view settles immediately too.
+  // Only transient request errors drive the banner; persisted message.error excludes
+  // failed turns from context replay, including job-completion fallback messages.
+  const chatState: ChatState = requestInFlight
+    ? "streaming"
+    : requestError
+      ? "error"
+      : lastMessage?.proposedAction
+        ? "action_pending"
+        : messages.length > 0 ? "done" : "idle"
+  const error = requestError ?? null
   const [currentToolCall, setCurrentToolCall] = useState<ToolResult | null>(null)
 
-  const chatStateRef = useRef(chatState)
-  useEffect(() => { chatStateRef.current = chatState }, [chatState])
-
-  // Always stop any thinking timer when this hook unmounts, so a send whose component
-  // unmounted mid-stream can't leave the 1s/3s intervals running.
-  useEffect(() => () => {
-    stopThinkingRef.current?.()
-    stopThinkingRef.current = null
-  }, [])
+  // Every mounted view follows the same live request. Navigation only stops its
+  // display timer; the detached request keeps its lock until its finally block.
+  useEffect(() => {
+    if (!requestInFlight || !currentConversationId) return
+    const stored = useChatStore.getState().getConversationMessages(currentConversationId)
+    return startThinkingTimer(currentConversationId, setThinkingStep, stored.at(-1)?.streamStartedAt)
+  }, [currentConversationId, requestInFlight])
 
   const warmupPromiseRef = useRef<Promise<void> | null>(null)
 
   // On mount, reconcile a conversation that was mid-stream.
   useEffect(() => {
     const convId = currentConversationId
-    if (!convId) return
+    if (!convId || useChatStore.getState().activeRequests[convId]) return
 
-    // Case 1 — a send is still in flight (navigated away and back within the app). The
-    // detached send closure keeps writing to the store, so messages are already correct;
-    // we only mirror "streaming" until the request clears, then settle chatState from the
-    // final stored turn. Both the timer and the poll are cleaned up on unmount.
-    if (_activeRequests.has(convId)) {
-      const stored = useChatStore.getState().getConversationMessages(convId)
-      const last = stored[stored.length - 1]
-      stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep, last?.streamStartedAt)
-      let cancelled = false
-      const pollId = setInterval(() => {
-        if (cancelled) return
-        if (_activeRequests.has(convId)) return
-        clearInterval(pollId)
-        stopThinkingRef.current?.()
-        stopThinkingRef.current = null
-        const msgs = useChatStore.getState().getConversationMessages(convId)
-        const lastMsg = msgs[msgs.length - 1]
-        const action = lastMsg ? buildProposedAction(lastMsg.toolResults ?? []) : null
-        setChatState(action ? "action_pending" : "done")
-      }, 500)
-      return () => {
-        cancelled = true
-        clearInterval(pollId)
-        stopThinkingRef.current?.()
-        stopThinkingRef.current = null
-      }
-    }
-
-    // Case 2 — no in-flight send, but the last turn is an empty assistant placeholder with
+    // No in-flight send, but the last turn is an empty assistant placeholder with
     // no tool output: an orphan from a send whose in-memory continuation was lost (a full
     // page reload). Mark it interrupted so the turn reads honestly and the user can resend.
     // A completed tool-only turn has toolResults, so it is left untouched.
@@ -488,9 +458,10 @@ export function useChat() {
   }, [])
 
   // Session warmup: verify the OpenCode session is still live, else rebuild it and replay
-  // context. Recorded in a ref so a send awaits it before firing.
+  // context. Recorded in a ref so a send awaits it before firing. A detached request
+  // already owns its session; returning to that chat must not rebuild it mid-turn.
   useEffect(() => {
-    if (!currentConversationId) return
+    if (!currentConversationId || useChatStore.getState().activeRequests[currentConversationId]) return
     const sessionId = useChatStore.getState().getSessionId(currentConversationId)
     if (!sessionId) return
     const msgs = useChatStore.getState().getConversationMessages(currentConversationId)
@@ -558,7 +529,7 @@ export function useChat() {
     const convId = currentConversationId
 
     const pollPending = async () => {
-      if (chatStateRef.current === "streaming") return
+      if (useChatStore.getState().activeRequests[convId]) return
 
       try {
         const pending = await fetchPendingMessages(convId)
@@ -621,17 +592,14 @@ export function useChat() {
       // so no raced/programmatic send reaches Morty mid-job. The job_complete
       // continuation uses its own path and stays exempt, so it can clear the lock.
       if (
-        chatState === "streaming" ||
-        _sendLock.has(convId) ||
-        useChatStore.getState().getJobInFlight(convId)
+        useChatStore.getState().getJobInFlight(convId) ||
+        !useChatStore.getState().tryStartRequest(convId)
       ) {
         return false
       }
-      _sendLock.add(convId)
 
       const assistantId = generateId()
       try {
-        setError(null)
         setCurrentToolCall(null)
         if (chatState === "action_pending") clearProposedActions()
 
@@ -672,7 +640,6 @@ export function useChat() {
           timestamp: new Date().toISOString(),
           streamStartedAt: streamStart,
         })
-        _activeRequests.add(convId)
 
         // Capture and pin the model BEFORE warmup — if the user changes the picker
         // while warmup is pending, this already-submitted turn must keep its model.
@@ -681,9 +648,6 @@ export function useChat() {
         // Make this conversation current now so the keyed view shows the new turn
         // immediately (the messages selector keys off currentConversationId).
         if (isNewConversation) setCurrentConversationId(convId)
-
-        setChatState("streaming")
-        stopThinkingRef.current = startThinkingTimer(convId, setThinkingStep, streamStart)
 
         if (warmupPromiseRef.current) {
           await warmupPromiseRef.current
@@ -694,8 +658,6 @@ export function useChat() {
           const hadPriorSession = !!useChatStore.getState().getSessionId(convId)
           logger.info("sending to OpenCode", { conversationId: convId })
           const response = await sendOpenCodeMessage(convId, content, modelToSend)
-          stopThinkingRef.current?.()
-          stopThinkingRef.current = null
           logger.info("OpenCode response received", {
             provider: response.info?.providerID,
             model: response.info?.modelID,
@@ -721,13 +683,10 @@ export function useChat() {
             phase: extractPhase(toolResults),
           })
 
-          _activeRequests.delete(convId)
-
           if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
             useChatStore.getState().setJobInFlight(convId, true)
           }
 
-          setChatState(proposedAction ? "action_pending" : "done")
           useChatStore.getState().setSessionStatus(convId, "connected")
 
           if (!hadPriorSession && priorMessageCount > 0) {
@@ -742,9 +701,6 @@ export function useChat() {
             })
           }
         } catch (err) {
-          stopThinkingRef.current?.()
-          stopThinkingRef.current = null
-          _activeRequests.delete(convId)
           const rawMsg = err instanceof Error ? err.message : "Unknown error"
           logger.error("OpenCode error", { error: rawMsg, code: err instanceof ApiError ? err.code : undefined })
           // A model/auth failure shows an abstracted message instead of a raw "Error: …" (the
@@ -758,11 +714,10 @@ export function useChat() {
             content: errMsg ?? `Error: ${rawMsg}`,
             error: true,
           })
-          setError(errMsg ?? rawMsg)
-          setChatState("error")
+          useChatStore.getState().setRequestError(convId, errMsg ?? rawMsg)
         }
       } finally {
-        _sendLock.delete(convId)
+        useChatStore.getState().finishRequest(convId)
       }
       // Reached only when the message was accepted (the guard above returns false
       // instead). A caught turn error still counts as sent — the user turn was posted.
@@ -797,7 +752,7 @@ export function useChat() {
       if (parentJobId) body.parent_job_id = parentJobId
     }
 
-    setChatState("streaming")
+    if (!useChatStore.getState().tryStartRequest(convId)) return
 
     try {
       const job = await createJob(endpoint, body)
@@ -821,11 +776,11 @@ export function useChat() {
       // idle; the user sees the submission via the job-monitor card. The lineage this
       // POST used to carry (the real job id) is folded into the single job_complete
       // wake (processJobNotifyQueue), which is the only point Morty needs it.
-      setChatState("done")
     } catch (err) {
       useChatStore.getState().setJobInFlight(convId, false)
-      setError(err instanceof Error ? err.message : "Failed to submit job")
-      setChatState("error")
+      useChatStore.getState().setRequestError(convId, err instanceof Error ? err.message : "Failed to submit job")
+    } finally {
+      useChatStore.getState().finishRequest(convId)
     }
   }, [currentConversationId])
 
@@ -833,9 +788,10 @@ export function useChat() {
     const convId = currentConversationId ?? useChatStore.getState().currentConversationId
     if (!convId) return
     const hasAction = useChatStore.getState().getConversationMessages(convId).some((m) => m.proposedAction)
-    if (!hasAction) return
+    if (!hasAction || useChatStore.getState().activeRequests[convId]) return
 
     clearProposedActions()
+    useChatStore.getState().setRequestError(convId, null)
 
     const sessionId = useChatStore.getState().getSessionId(convId)
     if (sessionId) {
@@ -855,8 +811,6 @@ export function useChat() {
         logger.warn("morty rejection notification error", { error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr) })
       }
     }
-
-    setChatState("done")
   }, [currentConversationId, clearProposedActions])
 
   const jobNotifyQueueRef = useRef<Array<{ jobId: string; jobType: string; status: string; convId: string; mode?: string }>>([])
@@ -871,7 +825,6 @@ export function useChat() {
     if (jobNotifyRunningRef.current) return
     jobNotifyRunningRef.current = true
 
-    const BLOCKED_STATES = new Set<ChatState>(["streaming", "tool_call", "action_pending"])
     const MAX_WAIT_MS = 60_000
     const MAX_FAILURES = 3
     let consecutiveFailures = 0
@@ -879,7 +832,8 @@ export function useChat() {
 
     while (jobNotifyQueueRef.current.length > 0) {
       const nextConvId = jobNotifyQueueRef.current[0]!.convId
-      if (_sendLock.has(nextConvId) || BLOCKED_STATES.has(chatStateRef.current)) {
+      const nextMessages = useChatStore.getState().getConversationMessages(nextConvId)
+      if (useChatStore.getState().activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
         if (waitedMs >= MAX_WAIT_MS) {
           logger.warn("job notify queue timed out waiting for idle state")
           jobNotifyQueueRef.current.length = 0
@@ -897,12 +851,11 @@ export function useChat() {
         break
       }
 
+      if (!useChatStore.getState().tryStartRequest(nextConvId)) continue
       const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
       useChatStore.getState().setJobInFlight(convId, false)
 
       const placeholderId = generateId()
-      _sendLock.add(convId)
-      setChatState("streaming")
 
       addMessage(convId, {
         id: placeholderId,
@@ -910,7 +863,6 @@ export function useChat() {
         content: "",
         timestamp: new Date().toISOString(),
       })
-      _activeRequests.add(convId)
 
       // Job-completion turns belong to the conversation — use (and stamp) its model
       // too, so they don't silently run on a different model or render unlabeled.
@@ -948,13 +900,10 @@ export function useChat() {
           terminal: true,
         })
 
-        _activeRequests.delete(convId)
         useChatStore.getState().addNotifiedJob(convId, jobId)
         jobNotifyAttemptsRef.current.delete(jobId)
-        setChatState(proposedAction ? "action_pending" : "done")
         consecutiveFailures = 0
       } catch (err) {
-        _activeRequests.delete(convId)
         const rawMsg = err instanceof Error ? err.message : String(err)
         // A job-completion turn runs automatically, so it bypasses the composer's
         // unavailable-model block. A model/auth failure shows the abstracted message;
@@ -966,7 +915,6 @@ export function useChat() {
           // while the chat still shows the persisted text.
           error: true,
         })
-        setChatState("done")
         consecutiveFailures++
         const attempts = (jobNotifyAttemptsRef.current.get(jobId) ?? 0) + 1
         jobNotifyAttemptsRef.current.set(jobId, attempts)
@@ -978,7 +926,7 @@ export function useChat() {
         }
         logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures, error: rawMsg })
       } finally {
-        _sendLock.delete(convId)
+        useChatStore.getState().finishRequest(convId)
       }
     }
 
@@ -1022,7 +970,7 @@ export function useChat() {
     }
   }, [jobInFlight, currentConversationId])
 
-  const isStreaming = chatState === "streaming" || chatState === "tool_call" || jobInFlight
+  const isStreaming = requestInFlight || jobInFlight
 
   const latestAction = [...messages].reverse().find((m) => m.proposedAction !== null)?.proposedAction ?? null
 

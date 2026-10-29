@@ -46,6 +46,8 @@ function resetStore() {
     sessionStatus: {},
     notifiedJobs: {},
     jobInFlight: {},
+    activeRequests: {},
+    requestErrors: {},
     drafts: {},
     _hasHydrated: true,
   })
@@ -199,6 +201,20 @@ describe("useChat", () => {
     expect(result.current.messages[1]!.content).toContain("Session expired")
   })
 
+  it("does not restore an error banner from a persisted context-replay error flag", () => {
+    seedConversation("restored-error", [
+      { id: "u1", role: "user", content: "hi", timestamp: "2026-01-01" },
+      { id: "a1", role: "assistant", content: "Error: Session expired", timestamp: "2026-01-01" },
+    ])
+    useChatStore.getState().updateMessageFields("restored-error", "a1", { error: true })
+
+    const { result } = renderHook(() => useChat())
+    expect(result.current.messages[1]!.content).toBe("Error: Session expired")
+    expect(result.current.chatState).toBe("done")
+    expect(result.current.error).toBeNull()
+    expect(result.current.isStreaming).toBe(false)
+  })
+
   // Regression for findings #2/#3: an orphaned empty placeholder (a send lost to a full
   // reload) is marked interrupted on mount — no infinite poll, no spurious recovery.
   it("marks an orphaned empty assistant placeholder as interrupted on mount", () => {
@@ -262,6 +278,182 @@ describe("useChat", () => {
       resolveMessage?.()
       await sendPromise!
     })
+  })
+
+  it.each(["success", "failure"])("keeps a returning conversation locked until its pending response settles (%s)", async (outcome) => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    let resolve!: (response: OpenCodeResponse) => void
+    let reject!: (error: Error) => void
+    vi.mocked(sendOpenCodeMessage).mockImplementationOnce(() => new Promise((res, rej) => {
+      resolve = res
+      reject = rej
+    }))
+    seedConversation("thinking", [])
+    useChatStore.getState().addConversation({
+      id: "other", title: "Other", created_at: "2026-01-01", updated_at: "2026-01-01", messages: [],
+    })
+    const first = renderHook(() => useChat())
+    let pending!: Promise<boolean>
+    act(() => { pending = first.result.current.sendMessage("First") })
+    first.unmount()
+
+    act(() => { useChatStore.getState().setCurrentConversationId("other") })
+    const other = renderHook(() => useChat())
+    expect(other.result.current.isStreaming).toBe(false)
+    await act(async () => { expect(await other.result.current.sendMessage("Other chat")).toBe(true) })
+    other.unmount()
+
+    act(() => { useChatStore.getState().setCurrentConversationId("thinking") })
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.isStreaming).toBe(true)
+    expect(returned.result.current.thinkingStep).toBeTruthy()
+    await act(async () => { expect(await returned.result.current.sendMessage("Too soon")).toBe(false) })
+    expect(returned.result.current.messages).toHaveLength(2)
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      if (outcome === "failure") reject(new Error("Turn failed"))
+      else resolve({ ...mockResponse, parts: [{ type: "text", text: "Finished" }] })
+      await pending
+    })
+    // Completion must update the newly mounted view without a reconciliation timer.
+    expect(returned.result.current.isStreaming).toBe(false)
+    expect(returned.result.current.thinkingStep).toBeNull()
+    expect(returned.result.current.chatState).toBe(outcome === "failure" ? "error" : "done")
+    expect(returned.result.current.messages[1]!.content).toContain(outcome === "failure" ? "Turn failed" : "Finished")
+    await act(async () => { expect(await returned.result.current.sendMessage("Next")).toBe(true) })
+    expect(returned.result.current.messages).toHaveLength(4)
+  })
+
+  it("shares the thinking state with another mounted view of the same conversation", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    let resolve!: (response: OpenCodeResponse) => void
+    vi.mocked(sendOpenCodeMessage).mockImplementationOnce(() => new Promise((res) => { resolve = res }))
+    seedConversation("shared", [])
+    const sender = renderHook(() => useChat())
+    const observer = renderHook(() => useChat())
+    let pending!: Promise<boolean>
+    act(() => { pending = sender.result.current.sendMessage("First") })
+    try {
+      expect(observer.result.current.isStreaming).toBe(true)
+      await act(async () => { expect(await observer.result.current.sendMessage("Too soon")).toBe(false) })
+      expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    } finally {
+      await act(async () => {
+        resolve({ ...mockResponse, parts: [{ type: "text", text: "Finished" }] })
+        await pending
+      })
+    }
+    expect(observer.result.current.isStreaming).toBe(false)
+  })
+
+  it("keeps a new conversation locked through its first keyed remount and session fetch", async () => {
+    const { fetchSessionMessages, sendOpenCodeMessage } = await import("@/lib/api-client")
+    let resolve!: (response: OpenCodeResponse[]) => void
+    vi.mocked(fetchSessionMessages).mockImplementationOnce(() => new Promise((res) => { resolve = res }))
+    mockResponse.parts = [{ type: "text", text: "Finished" }]
+    const first = renderHook(() => useChat())
+    let pending!: Promise<boolean>
+    await act(async () => { pending = first.result.current.sendMessage("First") })
+    first.unmount()
+
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.isStreaming).toBe(true)
+    await act(async () => { expect(await returned.result.current.sendMessage("Too soon")).toBe(false) })
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolve([])
+      await pending
+    })
+    expect(returned.result.current.isStreaming).toBe(false)
+    expect(returned.result.current.messages[1]!.content).toBe("Finished")
+  })
+
+  it("keeps a job-completion response locked across remounts", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    let resolve!: (response: OpenCodeResponse) => void
+    vi.mocked(sendOpenCodeMessage).mockImplementationOnce(() => new Promise((res) => { resolve = res }))
+    seedConversation("job-complete", [])
+    useChatStore.getState().setJobInFlight("job-complete", true)
+    const first = renderHook(() => useChat())
+    let pending!: Promise<void>
+    act(() => { pending = first.result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    first.unmount()
+
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.jobInFlight).toBe(false)
+    expect(returned.result.current.isStreaming).toBe(true)
+    await act(async () => { expect(await returned.result.current.sendMessage("Too soon")).toBe(false) })
+    await act(async () => {
+      resolve({ ...mockResponse, parts: [{ type: "text", text: "Evaluation complete" }] })
+      await pending
+    })
+    expect(returned.result.current.isStreaming).toBe(false)
+    expect(returned.result.current.messages).toHaveLength(1)
+    expect(returned.result.current.messages[0]!.content).toBe("Evaluation complete")
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it("clears a failed submission's error when cancelling after switching away and back", async () => {
+    const { createJob } = await import("@/lib/api-client")
+    vi.mocked(createJob).mockRejectedValueOnce(new Error("Submission failed"))
+    seedConversation("confirm", [{ id: "action", role: "assistant", content: "Confirm?", timestamp: "2026-01-01" }])
+    useChatStore.getState().updateMessageFields("confirm", "action", {
+      proposedAction: { action: "create_eval_job", description: "Confirm?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" },
+    })
+    useChatStore.getState().addConversation({
+      id: "other", title: "Other", created_at: "2026-01-01", updated_at: "2026-01-01", messages: [],
+    })
+    useChatStore.getState().setRequestError("other", "Unrelated error")
+    const first = renderHook(() => useChat())
+    await act(async () => { await first.result.current.confirmAction() })
+    expect(first.result.current.chatState).toBe("error")
+    first.unmount()
+
+    act(() => { useChatStore.getState().setCurrentConversationId("other") })
+    const other = renderHook(() => useChat())
+    other.unmount()
+    act(() => { useChatStore.getState().setCurrentConversationId("confirm") })
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.error).toBe("Submission failed")
+    await act(async () => { await returned.result.current.rejectAction() })
+
+    expect(returned.result.current.proposedAction).toBeNull()
+    expect(returned.result.current.error).toBeNull()
+    expect(returned.result.current.chatState).toBe("done")
+    expect(returned.result.current.isStreaming).toBe(false)
+    expect(useChatStore.getState().requestErrors).toEqual({ other: "Unrelated error" })
+  })
+
+  it("prevents duplicate submissions and sends after remounting during job confirmation", async () => {
+    const { createJob, sendOpenCodeMessage } = await import("@/lib/api-client")
+    let reject!: (error: Error) => void
+    vi.mocked(createJob).mockImplementationOnce(() => new Promise((_resolve, rej) => { reject = rej }))
+    seedConversation("confirm", [{ id: "action", role: "assistant", content: "Confirm?", timestamp: "2026-01-01" }])
+    useChatStore.getState().updateMessageFields("confirm", "action", {
+      proposedAction: { action: "create_eval_job", description: "Confirm?", params: {}, endpoint: "/api/v1/jobs/eval", config: {}, jobType: "eval" },
+    })
+    const first = renderHook(() => useChat())
+    let pending!: Promise<void>
+    act(() => { pending = first.result.current.confirmAction() })
+    first.unmount()
+
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.isStreaming).toBe(true)
+    await act(async () => {
+      expect(await returned.result.current.sendMessage("Too soon")).toBe(false)
+      await returned.result.current.confirmAction()
+    })
+    expect(createJob).toHaveBeenCalledTimes(1)
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+    await act(async () => {
+      reject(new Error("Submission failed"))
+      await pending
+    })
+    expect(returned.result.current.isStreaming).toBe(false)
+    expect(returned.result.current.error).toBe("Submission failed")
+    await act(async () => { expect(await returned.result.current.sendMessage("Try something else")).toBe(true) })
+    expect(returned.result.current.error).toBeNull()
   })
 })
 
@@ -518,6 +710,8 @@ describe("useChat — per-conversation model", () => {
     expect(last.content).toContain("Claude Sonnet 5")
     expect(last.content).toMatch(/could not be reached/i)
     expect(last.error).toBe(true) // excluded from context replay
+    expect(result.current.chatState).toBe("done")
+    expect(result.current.error).toBeNull()
   })
 
   it("shows a model-named message when a user send fails on an unavailable model", async () => {
@@ -588,7 +782,7 @@ describe("useChat — per-conversation model", () => {
     const { sendOpenCodeMessage } = await import("@/lib/api-client")
     ;(sendOpenCodeMessage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("network timeout"))
 
-    const { result } = renderHook(() => useChat())
+    const { result, unmount } = renderHook(() => useChat())
     await act(async () => {
       await result.current.notifyJobComplete("job-1", "sdg", "succeeded")
     })
@@ -597,5 +791,12 @@ describe("useChat — per-conversation model", () => {
     const last = conv.messages[conv.messages.length - 1]!
     expect(last.content).toBe("I wasn't able to suggest next steps. You can ask me what to do next.")
     expect(last.error).toBe(true) // excluded from context replay
+    expect(result.current.chatState).toBe("done")
+    expect(result.current.error).toBeNull()
+    unmount()
+
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.chatState).toBe("done")
+    expect(returned.result.current.error).toBeNull()
   })
 })

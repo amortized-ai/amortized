@@ -63,6 +63,9 @@ interface ChatStoreState {
   sessionStatus: Record<string, SessionStatus>
   notifiedJobs: Record<string, string[]>
   jobInFlight: Record<string, boolean>
+  // Live requests only: shared by every chat view, but never persisted across reloads.
+  activeRequests: Record<string, boolean>
+  requestErrors: Record<string, string>
   drafts: Record<string, string>
   attachStatuses: Record<string, AttachStatus[]>
   pendingReferences: Record<string, string[]>
@@ -90,6 +93,9 @@ interface ChatStoreState {
   getNotifiedJobs: (conversationId: string) => string[]
   setJobInFlight: (conversationId: string, inFlight: boolean) => void
   getJobInFlight: (conversationId: string) => boolean
+  tryStartRequest: (conversationId: string) => boolean
+  finishRequest: (conversationId: string) => void
+  setRequestError: (conversationId: string, error: string | null) => void
   setDraft: (conversationId: string, text: string) => void
   getDraft: (conversationId: string) => string
   addAttachStatus: (conversationId: string, status: AttachStatus) => void
@@ -109,6 +115,8 @@ export const useChatStore = create<ChatStoreState>()(
       sessionStatus: {},
       notifiedJobs: {},
       jobInFlight: {},
+      activeRequests: {},
+      requestErrors: {},
       drafts: {},
       attachStatuses: {},
       pendingReferences: {},
@@ -126,6 +134,8 @@ export const useChatStore = create<ChatStoreState>()(
           const { [id]: _ss, ...restSessionStatus } = s.sessionStatus  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sn, ...restNotifiedJobs } = s.notifiedJobs  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _jf, ...restJobInFlight } = s.jobInFlight  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _ar, ...restActiveRequests } = s.activeRequests  // eslint-disable-line @typescript-eslint/no-unused-vars
+          const { [id]: _re, ...restRequestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _sd, ...restDrafts } = s.drafts  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _as, ...restAttachStatuses } = s.attachStatuses  // eslint-disable-line @typescript-eslint/no-unused-vars
           const { [id]: _pr, ...restPendingReferences } = s.pendingReferences  // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -135,6 +145,8 @@ export const useChatStore = create<ChatStoreState>()(
             sessionStatus: restSessionStatus,
             notifiedJobs: restNotifiedJobs,
             jobInFlight: restJobInFlight,
+            activeRequests: restActiveRequests,
+            requestErrors: restRequestErrors,
             drafts: restDrafts,
             attachStatuses: restAttachStatuses,
             pendingReferences: restPendingReferences,
@@ -237,6 +249,25 @@ export const useChatStore = create<ChatStoreState>()(
         })),
       getJobInFlight: (conversationId) =>
         get().jobInFlight[conversationId] ?? false,
+      tryStartRequest: (conversationId) => {
+        if (get().activeRequests[conversationId]) return false
+        set((s) => {
+          const { [conversationId]: _error, ...requestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
+          return { activeRequests: { ...s.activeRequests, [conversationId]: true }, requestErrors }
+        })
+        return true
+      },
+      finishRequest: (conversationId) =>
+        set((s) => {
+          const { [conversationId]: _removed, ...rest } = s.activeRequests  // eslint-disable-line @typescript-eslint/no-unused-vars
+          return { activeRequests: rest }
+        }),
+      setRequestError: (conversationId, error) =>
+        set((s) => {
+          if (error !== null) return { requestErrors: { ...s.requestErrors, [conversationId]: error } }
+          const { [conversationId]: _removed, ...requestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
+          return { requestErrors }
+        }),
       setDraft: (conversationId, text) =>
         set((s) => ({
           drafts: text
