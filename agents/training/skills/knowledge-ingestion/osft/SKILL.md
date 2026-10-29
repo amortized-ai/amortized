@@ -53,26 +53,40 @@ Ask the user:
    flow:
 
    a. **Validate the model.** Assess whether it is likely compatible
-      with Training Hub. The key requirement is that the model must
-      include a **chat template** in its tokenizer config (Training Hub
-      relies on this to format conversations). Consider:
-      - Is it from a well-known family (Qwen, Llama, Mistral, Gemma,
-        Phi, DeepSeek, etc.)?
-      - Is the HuggingFace model ID well-formed (`org/model-name`)?
-      - Is it an instruct or chat variant (not a raw base model, and
-        not a community-quantized or otherwise modified checkpoint)?
+      with Training Hub. Training Hub loads models via
+      `AutoModelForCausalLM.from_pretrained()` and tokenizers via
+      `AutoTokenizer.from_pretrained()`. A model must satisfy these
+      requirements:
+      - **From a known model family.** Training Hub has validated
+        these architectures: Qwen, Qwen3, Qwen3.5, Llama, Granite,
+        Phi, Gemma, Mistral, DeepSeek, and Nemotron. Models from
+        these families are very likely to work. Models from other
+        families may work but have not been tested.
+      - **Is a causal language model.** Training Hub loads with
+        `AutoModelForCausalLM` — encoder-only models (e.g. BERT) or
+        multimodal models will fail at loading.
+      - **Has a tokenizer with a `chat_template`.** Training Hub
+        calls `apply_chat_template()` to format the `messages`
+        training data into token IDs — this applies to OSFT, SFT,
+        and LoRA. If the tokenizer lacks a `chat_template` field,
+        data preprocessing fails. Instruct/chat variants include
+        this; raw base models typically do not.
+      - **Has a valid HuggingFace model ID** (`org/model-name`) so
+        `from_pretrained()` can resolve it.
 
-      If the model looks reasonable — known architecture, instruct
-      variant with a chat template — accept it and proceed. Let the
-      user know it is not in the pre-verified list but appears
-      compatible.
+      If the model meets these criteria — known family, causal LM,
+      instruct/chat variant with a chat template — accept it and
+      proceed. Let the user know it is not in the pre-verified list
+      but appears compatible.
 
-   b. **If the model looks risky** (unknown architecture, base model
-      without a chat template, or an unusual source), warn the user.
-      Explain that Training Hub requires a chat template to format the
-      training data, and the model may not have one — which would cause
-      training to fail at startup. Suggest a similar model from the
-      supported list as an alternative.
+   b. **If the model looks risky** (unknown model family, raw base
+      model without a chat template, encoder-only or multimodal
+      architecture, or an unrecognized source), warn the user. Explain
+      that Training Hub has only validated certain model families and
+      requires a causal LM architecture with a functional tokenizer —
+      if the model is outside these, training may fail at startup.
+      Suggest a similar model from the supported list as an
+      alternative.
 
    c. **If the user insists** on using a model you warned about, allow
       it — but state clearly: "This model is not in our verified list
