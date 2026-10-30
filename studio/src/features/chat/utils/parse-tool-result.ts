@@ -81,7 +81,7 @@ export interface ValidatedJobConfig {
   recipe: string
   warnings: string[]
   dataRecordCount: number | null
-  assessorPrompt: string | null
+  outputPrompt: string | null
   prompts: PromptView[]
 }
 
@@ -99,8 +99,8 @@ export function extractValidatedJobConfig(result: string): ValidatedJobConfig | 
       warnings: (obj.warnings as string[]) ?? [],
       dataRecordCount:
         typeof obj.data_record_count === "number" ? obj.data_record_count : null,
-      assessorPrompt:
-        typeof obj.assessor_prompt === "string" ? obj.assessor_prompt : null,
+      outputPrompt:
+        typeof obj.output_prompt === "string" ? obj.output_prompt : null,
       prompts: extractPromptViews(obj.prompts),
     }
   }

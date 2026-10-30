@@ -878,22 +878,22 @@ async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
     prompts = _recipe_prompts(config)
-    assessor = next((p.text for p in prompts if p.role == "assessor"), None)
+    output = next((p.text for p in prompts if p.role == "output"), None)
     return ValidatedJobConfig(
         job_type=JobType.sdg,
         config=config,
         parent_job_id=parent_job_id,
-        assessor_prompt=assessor,
+        output_prompt=output,
         prompts=prompts,
     )
 
 
-def _assessor_column_name(config: dict[str, Any]) -> str | None:
-    """Name of the column whose `system_prompt` is the assessor prompt — the column
+def _output_column_name(config: dict[str, Any]) -> str | None:
+    """Name of the column whose `system_prompt` is the output prompt — the column
     whose output becomes the assistant turn in an SFT processor template (referenced
     via `{{column}}`). Returns None when it can't be identified confidently (no blind
     "last column with a system_prompt" fallback — that risked treating a sampler's
-    prompt as the assessor prompt)."""
+    prompt as the output prompt)."""
     columns = config.get("columns")
     if not isinstance(columns, list):
         return None
@@ -920,10 +920,10 @@ def _assessor_column_name(config: dict[str, Any]) -> str | None:
     return None
 
 
-def _assessor_prompt(config: dict[str, Any]) -> str | None:
-    """The assessor/system prompt the teacher follows, resolved authoritatively from
+def _output_prompt(config: dict[str, Any]) -> str | None:
+    """The output/system prompt the teacher follows, resolved authoritatively from
     the config. Thin wrapper over `_recipe_prompts` kept for existing callers."""
-    return next((p.text for p in _recipe_prompts(config) if p.role == "assessor"), None)
+    return next((p.text for p in _recipe_prompts(config) if p.role == "output"), None)
 
 
 def _prompt_label(column: str) -> str:
@@ -935,15 +935,15 @@ def _prompt_label(column: str) -> str:
 
 def _recipe_prompts(config: dict[str, Any]) -> list[PromptView]:
     """Every reviewable system prompt in an SDG recipe, in generation order (input
-    generators first, assessor last), each tagged with its column and role. This is
+    generators first, output last), each tagged with its column and role. This is
     what the confirmation card renders, so the user reviews ALL prompts the recipe
-    carries — a ticket-generation prompt and an assessor prompt, not just one."""
+    carries — a ticket-generation prompt and an output prompt, not just one."""
     columns = config.get("columns")
     if not isinstance(columns, list):
         return []
-    assessor = _assessor_column_name(config)
+    output_col = _output_column_name(config)
     inputs: list[PromptView] = []
-    assessor_view: PromptView | None = None
+    output_view: PromptView | None = None
     for col in columns:
         if not isinstance(col, dict):
             continue
@@ -952,15 +952,15 @@ def _recipe_prompts(config: dict[str, Any]) -> list[PromptView]:
         if not isinstance(name, str) or not isinstance(prompt, str) or not prompt.strip():
             continue
         text = prompt.strip()
-        if name == assessor:
-            assessor_view = PromptView(
-                role="assessor", label="Assessor system prompt", column=name, text=text
+        if name == output_col:
+            output_view = PromptView(
+                role="output", label=_prompt_label(name), column=name, text=text
             )
         else:
             inputs.append(
                 PromptView(role="input", label=_prompt_label(name), column=name, text=text)
             )
-    return inputs + ([assessor_view] if assessor_view else [])
+    return inputs + ([output_view] if output_view else [])
 
 
 class CloneSdgForEvalRequest(BaseModel):
@@ -1303,7 +1303,7 @@ def _sdg_signature(cfg: Any) -> _SdgSignature | None:
 
     Teacher models + system prompts alone are not enough: `clone_sdg_config_for_eval`
     treats `topic`, `document_ids`, and the sampler columns as recipe-defining too,
-    so two configs with the same teacher+assessor prompt but a different document set
+    so two configs with the same teacher+output prompt but a different document set
     or topic generate a DIFFERENT task. Folding those in stops a different-input eval
     set from being flagged `recipe_match` / passing the mirror check. Returns sorted
     tuples so ordering doesn't matter; `None` when unparseable or carrying no signal."""
@@ -1325,7 +1325,7 @@ def _sdg_signature(cfg: Any) -> _SdgSignature | None:
     topic = str(cfg.get("topic") or "")
     document_ids = tuple(sorted(str(d) for d in (cfg.get("document_ids") or []) if d))
     # Column identity (name/type), so a different sampler set is a different task
-    # even when the assessor system prompt is unchanged.
+    # even when the output system prompt is unchanged.
     columns = tuple(
         sorted(
             str(c.get("name") or c.get("column_type") or "")
@@ -1346,7 +1346,7 @@ async def _training_sdg_mirror_warning(
 
     A tuned model can only be scored fairly on the task it was trained for, so
     the eval-data SDG must reuse the training-data SDG's teacher model and
-    assessor system prompt (regenerating only fresh inputs for held-out
+    output system prompt (regenerating only fresh inputs for held-out
     isolation). We compare the two SDG configs' (teacher models, system prompts)
     signatures and warn — do not block — on divergence.
 
@@ -1389,7 +1389,7 @@ async def _training_sdg_mirror_warning(
             f" eval SDG: {', '.join(eval_sig[0]) or 'none'})"
         )
     if train_sig[1] != eval_sig[1]:
-        diffs.append("assessor/system prompt")
+        diffs.append("output/system prompt")
     if train_sig[2] != eval_sig[2]:
         diffs.append(
             f"topic (training SDG: {train_sig[2] or 'none'}; eval SDG: {eval_sig[2] or 'none'})"
@@ -1403,7 +1403,7 @@ async def _training_sdg_mirror_warning(
         f" pipeline as the model's training data (differs in: {'; '.join(diffs)})."
         " A tuned model should be scored on the task it was trained for — reuse"
         f" the training SDG config (job {train_sdg_id}) verbatim: same teacher"
-        " model and assessor system prompt, regenerating only fresh inputs."
+        " model and output system prompt, regenerating only fresh inputs."
     ]
 
 

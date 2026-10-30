@@ -105,9 +105,8 @@ tier so they understand the reasoning.
 ### Step 6 — System prompt for the trained model <!--signal:system-prompt-->
 
 Do NOT ask the user to write a system prompt. Generate a domain-specific
-default based on the document content and include it in the config.
-Only mention it in the confirmation table so the user can adjust if
-they want to.
+default based on the document content and include it in the config. The
+user reviews and can adjust it via the show_prompt review card.
 
 ## Tool Parameters
 
