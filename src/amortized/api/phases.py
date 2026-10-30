@@ -339,8 +339,9 @@ class Owed:
     """What a tool-owed phase must emit in a turn.
 
     `any_of` — at least one must appear (the common case: a single required edge).
-    `all_of` — every one must appear (today only the task-distillation system-prompt review step,
-               which owes BOTH `show_prompt` and the approval `present_options`).
+    `all_of` — every one must appear (e.g. the task-distillation input-prompt and system-prompt
+               review steps, each of which owes BOTH `show_prompt` and the approval
+               `present_options`).
     `solo`   — the turn must be ONLY the required tool, no text or other tool calls (a pure
                control-transfer hand-off — e.g. eval's held-out-request-help, whose resident
                section forbids narrating the hand-off).

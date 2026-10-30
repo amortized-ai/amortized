@@ -47,10 +47,15 @@ async def client() -> httpx.AsyncClient:  # type: ignore[misc]
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
-        from amortized.db import init_db
+        from amortized.db import close_db, init_db
 
         await init_db()
-        yield c  # type: ignore[misc]
+        try:
+            yield c  # type: ignore[misc]
+        finally:
+            # init_db() swaps in a fresh pool (min_size=2) per test; close it so we
+            # don't leak connections bound to loops pytest-asyncio has torn down.
+            await close_db()
 
 
 def _unique(text: str) -> str:

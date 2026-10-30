@@ -68,6 +68,12 @@ async def list_prompts(
     db: asyncpg.Connection = Depends(_get_db),
 ) -> list[PromptRecord]:
     user_id = http_request.headers.get("X-Forwarded-User", "")
+    if not user_id:
+        # user_id='' also tags the ownerless rows show_prompt writes on the agent
+        # path (MCP has no auth header) before a job's refify claims them. An
+        # unidentified caller must not list those — it would leak every unclaimed
+        # prompt's text + id (and the id is a resolve/get capability token).
+        return []
     repo = Repository(db)
     rows = await repo.list_prompts(user_id)
     return [PromptRecord(**_record(row)) for row in rows]
