@@ -190,6 +190,9 @@ class KubernetesBackend:
             V1EnvVar(name="TRANSFORMERS_CACHE", value="/amortized/work/.cache"),
             V1EnvVar(name="TORCHINDUCTOR_CACHE_DIR", value="/amortized/work/.cache/torchinductor"),
             V1EnvVar(name="USER", value="amortized"),
+            # Unsloth's stall detector kills large model downloads (e.g. 31B+)
+            # before they finish; raise the timeout from 30s to 5 min.
+            V1EnvVar(name="UNSLOTH_XET_STALL_TIMEOUT", value="300"),
         ]
 
         if mount_gcp:
