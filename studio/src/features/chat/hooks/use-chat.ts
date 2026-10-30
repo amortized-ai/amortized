@@ -146,6 +146,7 @@ const UI_TOOLS = new Set([
   "validate_eval_job",
   "validate_recipe_job",
   "create_job",
+  "retry_job",
   "split_dataset",
   "merge_datasets",
 ])
@@ -158,6 +159,7 @@ const JOB_CREATION_TOOLS = new Set([
   "create_eval_job",
   "submit_recipe_job",
   "create_job",
+  "retry_job",
   "split_dataset",
   "merge_datasets",
 ])
