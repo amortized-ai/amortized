@@ -300,6 +300,20 @@ _CARDS: frozenset[str] = frozenset(
         "validate_eval_job",
     }
 )
+# Tools that create async jobs — the subagent must stay alive to handle the
+# job_complete event, so a same-turn signal_subagent_completion is premature.
+_JOBS: frozenset[str] = frozenset(
+    {
+        "create_training_job",
+        "create_sdg_job",
+        "create_eval_job",
+        "create_job",
+        "submit_recipe_job",
+        "retry_job",
+        "split_dataset",
+        "merge_datasets",
+    }
+)
 # Any of these means control is accounted for (not a bare-prose stall).
 _EDGES: frozenset[str] = _CONTROL_TRANSFER | _CARDS
 
@@ -312,6 +326,12 @@ def emits_card(tools: Collection[str]) -> bool:
     that — but a missing `signal_phase`, a stale-key `wrong_edge`, or a `stall` on a card-bearing
     turn is a false drop of a user-actionable card."""
     return bool(_CARDS & set(tools))
+
+
+def emits_job(tools: Collection[str]) -> bool:
+    """True when the turn created an async job. The subagent must stay alive to handle the
+    job_complete event — a same-turn signal_subagent_completion is premature."""
+    return bool(_JOBS & set(tools))
 
 
 @dataclass(frozen=True)

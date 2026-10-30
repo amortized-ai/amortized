@@ -162,6 +162,94 @@ class TestSubagentCompletion:
         assert tools == []
 
 
+class TestPrematureCompletionGuard:
+    """A subagent that renders an await-user card (show_prompt preview / validate_* confirm /
+    approval present_options) OR creates an async job (create_*/retry_job) is NOT done. A
+    signal_subagent_completion fired on that same turn is premature — honoring it clears the
+    subagent, so the handback re-drive strands the card, or the later job_complete routes to the
+    orchestrator instead of the subagent. It must be ignored so the card/job result survives and the
+    subagent stays active. A genuine deliverable completion (a job_complete event for the subagent's
+    own create-mode job) is exempt: a next-steps card there rides a real completion."""
+
+    def test_premature_completion_with_card_is_suppressed(self, router: _Router) -> None:
+        state = _make_state(router)
+        state.subagent_id = router.add_session(
+            [
+                [
+                    _tool_part("show_prompt", {"title": "assessor", "prompt_id": "prm_a"}),
+                    _tool_part(
+                        "present_options", {"step": "review", "options": ["Approve", "Revise"]}
+                    ),
+                    _tool_part("signal_subagent_completion", {"summary": "done"}),
+                ]
+            ]
+        )
+        state.subagent_target = "sdg"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "200", _body()))
+
+        # Subagent keeps control; nothing handed back to the orchestrator.
+        assert state.subagent_id is not None
+        assert state.subagent_target == "sdg"
+        assert not any(m[0] == state.orchestrator_id for m in router.sent)
+        # The card survives; only the internal (premature) completion signal is stripped.
+        tools = [agent._tool_name(p) for p in result["parts"] if p.get("type") == "tool"]
+        assert "show_prompt" in tools
+        assert "present_options" in tools
+        assert "signal_subagent_completion" not in tools
+
+    def test_premature_completion_with_job_is_suppressed(self, router: _Router) -> None:
+        # A job-creation tool (retry_job / create_*) does not render an await-user card, but the
+        # subagent must stay alive so the LATER job_complete event routes back to it (issue #548b).
+        # A same-turn completion is premature on an ordinary (non-job_complete) turn → suppressed.
+        state = _make_state(router)
+        state.subagent_id = router.add_session(
+            [
+                [
+                    _tool_part("signal_phase", {"phase": "training", "step": "validate"}),
+                    _tool_part("retry_job", {"job_id": "job_a"}),
+                    _tool_part("signal_subagent_completion", {"summary": "retried"}),
+                ]
+            ]
+        )
+        state.subagent_target = "training"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "retry it", _body()))
+
+        # Subagent stays active (completion stripped); orchestrator not invoked.
+        assert state.subagent_id is not None
+        assert state.subagent_target == "training"
+        assert not any(m[0] == state.orchestrator_id for m in router.sent)
+        tools = [agent._tool_name(p) for p in result["parts"] if p.get("type") == "tool"]
+        assert "retry_job" in tools
+        assert "signal_subagent_completion" not in tools
+
+    def test_deliverable_completion_with_next_steps_card_is_honored(self, router: _Router) -> None:
+        state = _make_state(router, orchestrator_script=[[_text_part("What next?")]])
+        state.subagent_id = router.add_session(
+            [
+                [
+                    _tool_part("present_options", {"step": "next", "options": ["Train", "Stop"]}),
+                    _tool_part("signal_subagent_completion", {"summary": "sdg done"}),
+                ]
+            ]
+        )
+        state.subagent_target = "sdg"
+
+        _run(
+            agent._handle_subagent_message(
+                state,
+                "s1",
+                "Job j1 (SDG) finished with status: succeeded.",
+                _body(event="job_complete", outcome="succeeded", job_type="sdg", job_mode="create"),
+            )
+        )
+
+        # Real deliverable completion: honored → subagent released, orchestrator resumes.
+        assert state.subagent_id is None
+        assert any(m[0] == state.orchestrator_id for m in router.sent)
+
+
 class TestRequestOrchestratorHelp:
     """A subagent is a leaf: it cannot delegate. When it needs a prerequisite it can't
     produce itself it calls request_orchestrator_help, handing back to the orchestrator.
@@ -791,7 +879,7 @@ class TestDelegationStallCheck:
     ) -> None:
         state = _make_state(router)
         eval_id = router.queue_session([list(t) for t in self._STALL_THEN_CORRECT])
-        out = _run(
+        _run(
             agent._maybe_delegate(
                 state, "s1", ("eval", "evaluate t1", False), "evaluate t1",
                 {"info": {}, "parts": []}, _body(),
@@ -802,8 +890,11 @@ class TestDelegationStallCheck:
             sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
         ]
         assert redrive and "request_orchestrator_help" in redrive[0]
-        # … and the corrected (re-fetched) turn carrying the real hand-off is what's returned.
-        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+        # … and the re-driven turn produced the real hand-off (visible via GET, not in
+        # the POST parts — the POST response contract carries only step markers; leaking
+        # full GET parts causes the frontend's UUID fallback to pick stale IDs).
+        fetched = _run(agent._fetch_all_assistant_parts(eval_id))
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)
 
     def test_resumed_turn_is_stall_nudged(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
@@ -811,7 +902,7 @@ class TestDelegationStallCheck:
         state = _make_state(router)
         eval_id = router.add_session([list(t) for t in self._STALL_THEN_CORRECT])
         state.completed_subagents["eval"] = eval_id  # stashed, awaiting resume
-        out = _run(
+        _run(
             agent._maybe_delegate(
                 state, "s1", ("eval", "resumed", True), "go on",
                 {"info": {}, "parts": []}, _body(),
@@ -821,4 +912,5 @@ class TestDelegationStallCheck:
             sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
         ]
         assert redrive and "request_orchestrator_help" in redrive[0]
-        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+        fetched = _run(agent._fetch_all_assistant_parts(eval_id))
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)

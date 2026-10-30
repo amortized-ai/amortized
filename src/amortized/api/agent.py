@@ -36,6 +36,7 @@ from amortized.api.phases import (
     Verdict,
     adjudicate,
     emits_card,
+    emits_job,
     requires_phase_signal,
     signal_is_known,
     subagent_pointer,
@@ -127,6 +128,10 @@ class SessionState:
     # is signalled via `signal_phase` exactly like a workflow phase. Observed from the turn, used on
     # the next send.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
+    # Set when the proxy suppresses a premature signal_subagent_completion (the subagent's
+    # context already records a successful completion ack). Cleared on the next send so the
+    # system prompt can correct the stale context — keeps AX = UX.
+    suppressed_completion: bool = False
 
 
 _sessions: dict[str, SessionState] = {}
@@ -942,6 +947,7 @@ class TurnObservation:
     has_text: bool  # emitted non-empty assistant prose
     hands_off: bool  # a terminal control-transfer (never a stall; leaving the phase)
     has_card: bool  # rendered an interactive card the user acts on (must not be stranded)
+    has_job: bool  # created an async job (subagent must stay alive for job_complete)
 
 
 def _observe_turn(parts: list[dict[str, Any]]) -> TurnObservation:
@@ -976,6 +982,7 @@ def _observe_turn(parts: list[dict[str, Any]]) -> TurnObservation:
         has_text=has_text,
         hands_off=hands_off,
         has_card=emits_card(tools),
+        has_job=emits_job(tools),
     )
 
 
@@ -1176,6 +1183,22 @@ async def _handle_subagent_message(
     # finishing subagent to signal completion now). On every other turn, re-anchor the driver to
     # its resident workflow section with the pointer (see phases.subagent_pointer).
     system = steer_system or _pointer_for(state, state.subagent_target)
+    if state.suppressed_completion:
+        if not steer_system:
+            # Correct the subagent's stale context: its history records a successful
+            # signal_subagent_completion, but the proxy didn't honor it (it had a pending
+            # card/job). Without this the subagent believes it completed and may re-fire
+            # the signal on resume instead of continuing its workflow.
+            # Skip when steer_system is set (job done/failed hand-back): that steer
+            # already tells the subagent to signal completion for the real event, and
+            # prepending "your completion was not honored" would contradict it.
+            correction = (
+                "Your prior signal_subagent_completion was not honored — you had a"
+                " pending card or job the user needed to act on first. You are still"
+                " active. Continue your workflow from the user's response."
+            )
+            system = f"{correction}\n\n{system}" if system else correction
+        state.suppressed_completion = False
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1210,13 +1233,40 @@ async def _handle_subagent_message(
     # Without this, a turn that BOTH signals its step AND hands back (e.g. eval signals
     # `eval-dataset` then requests help) stashes the PRIOR step, and the resume pointer sends the
     # consumer back to an earlier section.
-    turn_signalled_step = _observe_turn(latest_parts).signalled_step
-    if turn_signalled_step:
-        state.last_signal_step = turn_signalled_step
+    obs = _observe_turn(latest_parts)
+    if obs.signalled_step:
+        state.last_signal_step = obs.signalled_step
     # Completion is checked before a help request: if a turn somehow carries both
     # signals, "I'm done" wins and the help ask is ignored (a subagent that is
     # finishing has nothing left to be helped with).
     summary = _detect_completion(latest_parts)
+
+    # Premature-completion guard. A subagent that rendered an await-user card (a show_prompt
+    # preview, a validate_* confirm, or an approval present_options) OR created an async job (a
+    # create_*/retry_job) is NOT done — it is waiting for the user's decision on the card, or for
+    # the job to reach a terminal state. A weak driver (GLM-flash) sometimes ALSO fires
+    # signal_subagent_completion on that very turn. Honoring it clears subagent_id, so (a) the
+    # handback re-drive advances opencode's message boundary PAST the card and the frontend's turn
+    # window drops it (it never renders, even on hard refresh); or (b) the later job_complete event
+    # routes to the orchestrator instead of the subagent that has the context to present follow-up
+    # options (issue #548). Suppress the premature signal — UNLESS this is a genuine deliverable
+    # completion (a job_complete event for the subagent's own create-mode job, per
+    # _is_deliverable_completion), where a next-steps card legitimately rides the real completion.
+    # With the signal cleared the turn falls through to the ordinary-turn path: the stray signal is
+    # stripped from the UI, the card/job result is preserved, and the subagent stays active (to
+    # receive the user's answer or to be the target of the later job_complete event).
+    genuine_completion = body.event == "job_complete" and _is_deliverable_completion(
+        state, body, user_text
+    )
+    if summary and (obs.has_card or obs.has_job) and not genuine_completion:
+        logger.info(
+            "Suppressing premature completion (%s in same turn): session=%s target=%s",
+            "card" if obs.has_card else "job",
+            session_id,
+            state.subagent_target,
+        )
+        summary = None
+        state.suppressed_completion = True
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
@@ -1400,8 +1450,19 @@ async def _maybe_delegate(
     # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
     # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
     # _maybe_delegate exit (fresh, resume, help-producer).
-    sub_result["parts"] = await _maybe_nudge_subagent_stall(
-        state, session_id, body, sub_result.get("parts", []), guard_missing_signal=False
+    #
+    # Adjudicate the full fetched parts (GET), not the POST response parts: the POST carries only
+    # step markers, not tool-call details (validate_*, retry_job, etc.), so adjudicating the POST
+    # parts yields false stalls whose re-drive pushes a new user message past the real tool call,
+    # stranding the card. This mirrors the steady-state handler (_handle_subagent_message), which
+    # already adjudicates the GET-fetched parts.
+    #
+    # Do NOT store fetched parts in sub_result["parts"]: the POST response contract carries only
+    # step markers. Leaking full GET parts causes the frontend's UUID fallback to pick stale IDs
+    # (e.g. retry_job's input.job_id) while deduplication discards the correctly parsed GET result.
+    fetched_parts = await _fetch_all_assistant_parts(state.subagent_id)
+    await _maybe_nudge_subagent_stall(
+        state, session_id, body, fetched_parts, guard_missing_signal=False
     )
     return sub_result
 

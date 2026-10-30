@@ -871,6 +871,7 @@ async def retry_job(
     summary=(
         "Validate an SDG job config and present it for user confirmation. "
         "The UI renders a confirmation card — the user clicks confirm to submit. "
+        "Do NOT call signal_subagent_completion in this turn — wait for the user. "
         "Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run."
     ),
 )
@@ -1096,6 +1097,7 @@ async def clone_sdg_config_for_eval(
         "The UI renders a confirmation card with ALL parameters — do NOT output "
         "a markdown table, parameter list, or config summary before or after this "
         "tool call. Write ONE short sentence, then call this tool. "
+        "Do NOT call signal_subagent_completion in this turn — wait for the user. "
         "Any hyperparameter you mention to the user must be an explicit field in "
         "this config; fields you leave unset use the trainer default and the card "
         "shows them as such — do not state a value you did not set. "
@@ -1181,6 +1183,7 @@ def _warnings_ack_token(warnings: list[str]) -> str:
     operation_id="validate_eval_job",
     summary=(
         "Validate an eval job config and present it for user confirmation."
+        " Do NOT call signal_subagent_completion in this turn — wait for the user."
         " Set parent_job_id to chain from a completed SDG job, or"
         " eval_data_run_id to use an uploaded dataset."
     ),
