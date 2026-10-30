@@ -825,25 +825,29 @@ export function useChat() {
     if (jobNotifyRunningRef.current) return
     jobNotifyRunningRef.current = true
 
-    const MAX_WAIT_MS = 60_000
     const MAX_FAILURES = 3
     let consecutiveFailures = 0
-    let waitedMs = 0
 
     while (jobNotifyQueueRef.current.length > 0) {
-      const nextConvId = jobNotifyQueueRef.current[0]!.convId
-      const nextMessages = useChatStore.getState().getConversationMessages(nextConvId)
-      if (useChatStore.getState().activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
-        if (waitedMs >= MAX_WAIT_MS) {
-          logger.warn("job notify queue timed out waiting for idle state")
-          jobNotifyQueueRef.current.length = 0
-          break
-        }
-        await new Promise((r) => setTimeout(r, 500))
-        waitedMs += 500
+      const { convId: nextConvId, jobId: nextJobId } = jobNotifyQueueRef.current[0]!
+      const store = useChatStore.getState()
+      // Another mounted view may have delivered the same notification while we waited.
+      if (!store.conversations.some((c) => c.id === nextConvId) || store.getNotifiedJobs(nextConvId).includes(nextJobId)) {
+        jobNotifyQueueRef.current.shift()
         continue
       }
-      waitedMs = 0
+      const nextMessages = store.getConversationMessages(nextConvId)
+      if (store.activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
+        // Keep the entry until the blocker clears, even after this view unmounts or
+        // jobInFlight resets. Store changes wake the queue without a polling timeout.
+        await new Promise<void>((resolve) => {
+          const unsubscribe = useChatStore.subscribe(() => {
+            unsubscribe()
+            resolve()
+          })
+        })
+        continue
+      }
 
       if (consecutiveFailures >= MAX_FAILURES) {
         logger.warn("job notify queue circuit breaker tripped", { failures: consecutiveFailures })

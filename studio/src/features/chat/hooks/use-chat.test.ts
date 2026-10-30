@@ -457,6 +457,90 @@ describe("useChat", () => {
   })
 })
 
+describe("useChat — blocked job notifications", () => {
+  it.each(["action", "request"])("retains a notification blocked by a pending %s for longer than a minute", async (blocker) => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    vi.useFakeTimers()
+    try {
+      seedConversation("blocked-job", [
+        { id: "a1", role: "assistant", content: "Review the next step", timestamp: "2026-01-01" },
+      ])
+      if (blocker === "action") {
+        useChatStore.getState().updateMessageFields("blocked-job", "a1", {
+          proposedAction: { action: "create_eval_job", description: "Confirm?", params: {}, endpoint: "/api/v1/jobs/eval" },
+        })
+      } else {
+        useChatStore.getState().tryStartRequest("blocked-job")
+      }
+      useChatStore.getState().setJobInFlight("blocked-job", true)
+      const first = renderHook(() => useChat())
+      let pending!: Promise<void>
+      act(() => { pending = first.result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+      first.unmount()
+      const returned = renderHook(() => useChat())
+
+      // Focus can clear the job flag while the notification is still blocked.
+      act(() => { window.dispatchEvent(new Event("focus")) })
+      expect(returned.result.current.jobInFlight).toBe(false)
+      await act(async () => { await vi.advanceTimersByTimeAsync(61_000) })
+      expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+
+      await act(async () => {
+        if (blocker === "action") await returned.result.current.rejectAction()
+        else useChatStore.getState().finishRequest("blocked-job")
+        await vi.advanceTimersByTimeAsync(500)
+        await pending
+      })
+      expect(sendOpenCodeMessage).toHaveBeenCalledExactlyOnceWith(
+        "blocked-job", expect.any(String), expect.any(String), "job_complete", "succeeded", "eval", undefined,
+      )
+      expect(useChatStore.getState().getNotifiedJobs("blocked-job")).toEqual(["job-1"])
+      returned.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("delivers a queued job only once when a remounted monitor reports it again", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("blocked-job", [])
+    useChatStore.getState().tryStartRequest("blocked-job")
+    const first = renderHook(() => useChat())
+    let firstPending!: Promise<void>
+    act(() => { firstPending = first.result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    first.unmount()
+
+    const returned = renderHook(() => useChat())
+    let secondPending!: Promise<void>
+    act(() => { secondPending = returned.result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+    await act(async () => {
+      useChatStore.getState().finishRequest("blocked-job")
+      await Promise.all([firstPending, secondPending])
+    })
+
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    expect(useChatStore.getState().getNotifiedJobs("blocked-job")).toEqual(["job-1"])
+  })
+
+  it("stops waiting without sending when the queued conversation is deleted", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("deleted-job", [])
+    useChatStore.getState().tryStartRequest("deleted-job")
+    const first = renderHook(() => useChat())
+    let pending!: Promise<void>
+    act(() => { pending = first.result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    first.unmount()
+
+    await act(async () => {
+      useChatStore.getState().deleteConversation("deleted-job")
+      await pending
+    })
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+    expect(useChatStore.getState().activeRequests).toEqual({})
+  })
+})
+
 describe("useChat — split_dataset monitor flow", () => {
   it("keeps split_dataset tool results from session messages", async () => {
     const { fetchSessionMessages } = await import("@/lib/api-client")
