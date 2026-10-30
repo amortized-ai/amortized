@@ -32,7 +32,7 @@ export function makePromptRef(promptId: string): string {
 export function promptRefId(value: unknown): string | null {
   if (typeof value !== "string") return null
   const match = PROMPT_REF_RE.exec(value)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }
 
 export function isPromptRef(value: unknown): boolean {

@@ -72,8 +72,8 @@ describe("prompt refs", () => {
       columns: [{ system_prompt: makePromptRef("prm_a") }, { system_prompt: makePromptRef("prm_x") }],
     }
     const resolved = resolvePromptRefs(config, { prm_a: "FULL TEXT" })
-    expect(resolved.columns[0].system_prompt).toBe("FULL TEXT")
-    expect(resolved.columns[1].system_prompt).toBe("<prompt:prm_x>")
-    expect(config.columns[0].system_prompt).toBe("<prompt:prm_a>")
+    expect(resolved.columns[0]?.system_prompt).toBe("FULL TEXT")
+    expect(resolved.columns[1]?.system_prompt).toBe("<prompt:prm_x>")
+    expect(config.columns[0]?.system_prompt).toBe("<prompt:prm_a>")
   })
 })
