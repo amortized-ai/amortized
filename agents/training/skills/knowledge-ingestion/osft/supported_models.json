@@ -61,6 +61,12 @@
     "description": "Best accuracy for knowledge tasks"
   },
   {
+    "id": "Qwen/Qwen3.8-27B",
+    "family": "qwen3.8",
+    "size": "27B",
+    "description": "High capacity, strong reasoning and knowledge retention"
+  },
+  {
     "id": "google/gemma-4-26B-A4B-it",
     "family": "gemma",
     "size": "26B (4B active)",
