@@ -890,8 +890,11 @@ class TestDelegationStallCheck:
             sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
         ]
         assert redrive and "request_orchestrator_help" in redrive[0]
-        # … and the corrected (re-fetched) turn carrying the real hand-off is what's returned.
-        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+        # … and the re-driven turn produced the real hand-off (visible via GET, not in
+        # the POST parts — the POST response contract carries only step markers; leaking
+        # full GET parts causes the frontend's UUID fallback to pick stale IDs).
+        fetched = _run(agent._fetch_all_assistant_parts(eval_id))
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)
 
     def test_resumed_turn_is_stall_nudged(
         self, router: _Router, monkeypatch: pytest.MonkeyPatch
@@ -909,4 +912,5 @@ class TestDelegationStallCheck:
             sys for sid, text, _ag, sys in router.sent if sid == eval_id and text == "" and sys
         ]
         assert redrive and "request_orchestrator_help" in redrive[0]
-        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in out["parts"])
+        fetched = _run(agent._fetch_all_assistant_parts(eval_id))
+        assert any(agent._tool_name(p) == "request_orchestrator_help" for p in fetched)

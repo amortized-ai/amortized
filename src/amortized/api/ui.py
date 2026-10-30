@@ -176,10 +176,10 @@ class ShowPromptRequest(BaseModel):
 
 _SHOW_PROMPT_REVIEW = (
     "The prompt is now shown for review. Do NOT submit or confirm a job in this"
-    " same turn (no validate_*/create_*) — the user must review this prompt first,"
-    " because it ships in the training data. Ask them to approve it or request"
-    " edits (present_options), then STOP and wait; build/confirm the job in your"
-    " NEXT turn, after they approve."
+    " same turn (no validate_*/create_*/signal_subagent_completion) — the user"
+    " must review this prompt first, because it ships in the training data. Ask"
+    " them to approve it or request edits (present_options), then STOP and wait;"
+    " build/confirm the job in your NEXT turn, after they approve."
 )
 
 

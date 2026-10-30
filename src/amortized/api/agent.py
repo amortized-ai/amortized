@@ -128,6 +128,10 @@ class SessionState:
     # is signalled via `signal_phase` exactly like a workflow phase. Observed from the turn, used on
     # the next send.
     active_skill_by_target: dict[str, str] = field(default_factory=dict)
+    # Set when the proxy suppresses a premature signal_subagent_completion (the subagent's
+    # context already records a successful completion ack). Cleared on the next send so the
+    # system prompt can correct the stale context — keeps AX = UX.
+    suppressed_completion: bool = False
 
 
 _sessions: dict[str, SessionState] = {}
@@ -1179,6 +1183,21 @@ async def _handle_subagent_message(
     # finishing subagent to signal completion now). On every other turn, re-anchor the driver to
     # its resident workflow section with the pointer (see phases.subagent_pointer).
     system = steer_system or _pointer_for(state, state.subagent_target)
+    if state.suppressed_completion:
+        if not steer_system:
+            # Correct the subagent's stale context: its history records a successful
+            # signal_subagent_completion, but the proxy didn't honor it (it had a pending
+            # card/job). Without this the subagent believes it completed and may re-fire
+            # the signal on resume instead of continuing its workflow.
+            # Skip when steer_system is set (job done/failed hand-back): that steer
+            # already tells the subagent to signal completion for the real event, and
+            # prepending "your completion was not honored" would contradict it.
+            system = (
+                "Your prior signal_subagent_completion was not honored — you had a"
+                " pending card or job the user needed to act on first. You are still"
+                " active. Continue your workflow from the user's response.\n\n" + system
+            )
+        state.suppressed_completion = False
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
         result = await _proxy_send_message(
@@ -1246,6 +1265,7 @@ async def _handle_subagent_message(
             state.subagent_target,
         )
         summary = None
+        state.suppressed_completion = True
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
