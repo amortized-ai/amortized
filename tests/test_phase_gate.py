@@ -286,14 +286,29 @@ def test_required_catalog_matches_the_former_hardcoded_map() -> None:
 
 def test_skill_step_obligation_is_declared_or_defaults() -> None:
     # A review step declares `all:show_prompt,present_options` on its heading; an ordinary gather
-    # step with no suffix defaults to present_options. (A same-named step in another skill that is
-    # NOT a review stays a plain gather step — the obligation is scoped to the declaring heading.)
+    # step with no suffix defaults to present_options. Each SDG skill splits its prompt review into
+    # one review step per prompt, so each declares the `all:` obligation on its own heading.
     assert phases._skill_owed("sdg-task-distillation", "system-prompt") == Owed(
         all_of=frozenset({"show_prompt", "present_options"})
     )
     assert phases._skill_owed("sdg-task-distillation", "teacher-model") == Owed(
         any_of=frozenset({"present_options"})
     )
-    assert phases._skill_owed("sdg-knowledge-ingestion", "system-prompt") == Owed(
+    # knowledge-ingestion splits its prompt review into two review steps (question + answer), each
+    # owing both show_prompt and present_options; a plain gather step still defaults to present_options.
+    assert phases._skill_owed("sdg-knowledge-ingestion", "question-prompt") == Owed(
+        all_of=frozenset({"show_prompt", "present_options"})
+    )
+    assert phases._skill_owed("sdg-knowledge-ingestion", "answer-prompt") == Owed(
+        all_of=frozenset({"show_prompt", "present_options"})
+    )
+    assert phases._skill_owed("sdg-knowledge-ingestion", "teacher-model") == Owed(
         any_of=frozenset({"present_options"})
+    )
+    # classification likewise splits into generation + classifier review steps.
+    assert phases._skill_owed("sdg-classification", "generation-prompt") == Owed(
+        all_of=frozenset({"show_prompt", "present_options"})
+    )
+    assert phases._skill_owed("sdg-classification", "classifier-prompt") == Owed(
+        all_of=frozenset({"show_prompt", "present_options"})
     )
