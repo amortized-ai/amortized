@@ -47,8 +47,8 @@ from them.
 - **Demonstration examples** — 1-2 (input, output) pairs showing the
   desired task behavior. If the user only has raw inputs (without
   outputs), continue to Steps 3–4 to establish the format and
-  task criteria, then generate the system prompt (Step 8), and use
-  it to generate outputs for the raw inputs (Step 9) before
+  task criteria, then generate the task system prompt (Step 9), and
+  use it to generate outputs for the raw inputs (Step 10) before
   building the SDG config.
 
 **Real-input corpus.** If the user's examples reveal they have an
@@ -99,7 +99,31 @@ the server.
 Default 2000. Prototype: 500-1000. Production: 2000-5000.
 Ask with `present_options` using `step="samples"`.
 
-### Step 8 — Generate the system prompt <!--signal:system-prompt all:show_prompt,present_options-->
+**Each prompt gets its OWN review step.** A pipeline that synthesizes its inputs
+has TWO prompts — the input-generation prompt (Step 8) and the task prompt
+(Step 9). Review them in SEPARATE turns, one per step: do NOT compose or
+`show_prompt` both in the same turn. Every prompt field in the config MUST be a
+`<prompt:...>` ref returned by `show_prompt` — never pasted inline.
+
+### Step 8 — Input-generation prompt <!--signal:input-prompt all:show_prompt,present_options-->
+
+**Only when the pipeline synthesizes its own inputs** (the input generation
+column, Section 3, is used). SKIP this step when the user has a real-input corpus
+(detected in Step 2) — there is no generation prompt to review; go to Step 9.
+
+Compose the input-generation `system_prompt` — the content-author role for the
+Section 3 column. It materially shapes the training inputs, so the user reviews it
+too. Do NOT leak the target label / quality signal into it (see Section 3).
+
+Render it with `show_prompt` (pass the complete prompt text), then ask the user to
+approve or adjust it with `present_options`. Handle ONLY this one prompt this turn
+— do not compose or `show_prompt` the task prompt (Step 9) yet. Stay on this step
+through the render → approve loop (on any edit, re-render with `show_prompt` AGAIN
+— each returns a NEW `prompt_ref`, use the latest) until the user approves it as
+shown. Put the returned `<prompt:...>` ref into the Section 3 column
+`system_prompt` — never paste the prompt text inline.
+
+### Step 9 — Task system prompt <!--signal:system-prompt all:show_prompt,present_options-->
 
 Compose the task system prompt combining:
 1. **Role** — task performer identity
@@ -111,20 +135,21 @@ Compose the task system prompt combining:
    follow this exact output format. Do not add, remove, or reorder
    sections."
 
-
 Render the FULL prompt for the user with the `show_prompt` tool (pass the
 complete prompt text), then ask them to approve or adjust it. `show_prompt`
 is the only way the user sees the prompt, so render it before asking them to
 review or approve it. The same prompt is used in both the output-generating
-column `system_prompt` and the SFT processor system message.
+column `system_prompt` and the SFT processor system message. Handle ONLY this one
+prompt this turn — do not re-show the Step 8 generation prompt, and do not bundle
+both prompts into one turn.
 
 **`show_prompt` stores the prompt and returns a `prompt_ref` (a `<prompt:...>`
 token). When you build the config in a later step, put that token as the field
 value — the column `system_prompt` AND the processor system message — instead of
 pasting the full prompt text back into the config. The platform expands the token
 to the exact text you showed. This keeps the config small so it validates
-reliably; a large inline prompt can be corrupted in transit. Never paste the full
-prompt text into the config.**
+reliably; a large inline prompt can be corrupted in transit. Every prompt field
+MUST be a `<prompt:...>` ref. Never paste the full prompt text into the config.**
 
 If the user asks to CHANGE the prompt — any edit to its wording, rules, or
 content, however small — fold the change into the full prompt text and render
@@ -136,10 +161,10 @@ current prompt.) A requested change is not an approval: do NOT advance to the
 confirm card (`validate_sdg_job`) on an edit, and do NOT respond to one by writing
 or editing a file — the prompt exists only in the `show_prompt` tool call.
 
-### Step 9 — Generate outputs for raw inputs (optional) <!--signal:generate-outputs-->
+### Step 10 — Generate outputs for raw inputs (optional) <!--signal:generate-outputs-->
 
 If the user provided only raw inputs (without outputs) in Step 2,
-use the system prompt from Step 8 to generate outputs for each raw
+use the task system prompt from Step 9 to generate outputs for each raw
 input now. Present the generated (input, output) pairs to the user
 for review. These become the demonstration examples used in the SDG
 config.
@@ -218,7 +243,7 @@ per task.
   "column_type": "llm-text",
   "name": "<input_name>",
   "model_alias": "teacher",
-  "system_prompt": "<role as content author>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 8, e.g. <prompt:prm_...>>",
   "prompt": "Create a <type> with these characteristics:\n\nDOMAIN: {{ domain }}\nPROFILE: {{ variant }}\nSTRUCTURE: {{ structure }}\n\nStyle reference:\n{{ icl_example }}\n\nOutput ONLY the content."
 }
 ```
@@ -241,7 +266,7 @@ must include the exact output format template from Step 3.
   "column_type": "llm-text",
   "name": "<output_name>",
   "model_alias": "teacher",
-  "system_prompt": "<prompt_ref returned by show_prompt in Step 8, e.g. <prompt:prm_...>>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 9, e.g. <prompt:prm_...>>",
   "prompt": "Example:\n\n{{ demo_example }}\n\nProcess this:\n\n{{ <input_name> }}"
 }
 ```
@@ -330,8 +355,8 @@ table layout, section headings).
 **Step 2 — Calibration examples.** 1-2 scored (content + assessment)
 pairs for assessor calibration. If the user only has raw examples
 (content without assessments), establish format and rubric first
-(Steps 3–4), build the system prompt (Step 8), then generate
-assessments for the raw examples (Step 9).
+(Steps 3–4), build the task system prompt (Step 9), then generate
+assessments for the raw examples (Step 10).
 
 **Step 5 — quality_profile steers implicitly.** The generation prompt
 receives the quality level, but generated content should not mention
@@ -355,7 +380,7 @@ independently, collapsing the score distribution.
 }
 ```
 
-**Step 8 — Assessment system prompt.** Compose: (1) assessor role,
+**Step 9 — Assessment system prompt.** Compose: (1) assessor role,
 (2) rubric — criteria names, scale, pass/fail rules (keep concise —
 calibration examples teach scoring by demonstration), (3) exact format
 template with strict adherence instruction, (4) constraints (e.g.,
@@ -371,7 +396,7 @@ demonstration-based scoring:
   "column_type": "llm-text",
   "name": "<assessment_name>",
   "model_alias": "teacher",
-  "system_prompt": "<prompt_ref returned by show_prompt in Step 8, e.g. <prompt:prm_...>>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 9, e.g. <prompt:prm_...>>",
   "prompt": "Calibration example:\n\n{{ calibration_example }}\n\nScore this:\n\n{{ <content_name> }}"
 }
 ```

@@ -249,8 +249,8 @@ round-trips reliably. Example shape:
 
 Keep the config SMALL: every system prompt in it MUST be the `<prompt:...>`
 reference token that `show_prompt` returned, NOT the full prompt text pasted
-inline (see the skill's prompt step). Referencing — not inlining — the prompts is
-what keeps the config small enough to round-trip without corruption.
+inline (see the skill's prompt steps — each prompt has its own review step).
+Referencing — not inlining — the prompts is what keeps the config small enough.
 
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries. If validation fails, read the error,
