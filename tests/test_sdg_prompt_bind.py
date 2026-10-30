@@ -1,8 +1,8 @@
 """The SDG prompt binding: the prompts the user approved in show_prompt previews must be
 the ones that end up in the confirm card AND the launched job. A recipe carries more than
-one prompt (an input/ticket generator and an assessor), so each approved prompt is bound
+one prompt (an input/ticket generator and an output), so each approved prompt is bound
 back to the recipe column it most closely matches — not "the last one shown" into the
-assessor slot. With no preview the model's prompts are left untouched."""
+output slot. With no preview the model's prompts are left untouched."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _text_part(text: str) -> dict[str, Any]:
 
 def _config(*, input_prompt: str, output_prompt: str, processor_system: str) -> dict[str, Any]:
     """Mirror the task-distillation reference payload: an input-generator column, an
-    output column whose system_prompt is the assessor prompt, and a processor whose
+    output column whose system_prompt is the output prompt, and a processor whose
     assistant turn emits {{ output }} and whose system message repeats that prompt."""
     return {
         "columns": [
@@ -57,12 +57,12 @@ def _config(*, input_prompt: str, output_prompt: str, processor_system: str) -> 
     }
 
 
-def _validated(cfg: dict[str, Any], assessor_prompt: str) -> dict[str, Any]:
+def _validated(cfg: dict[str, Any], output_prompt: str) -> dict[str, Any]:
     return {
         "job_type": "sdg",
         "config": cfg,
         "parent_job_id": "",
-        "assessor_prompt": assessor_prompt,
+        "output_prompt": output_prompt,
     }
 
 
@@ -80,12 +80,12 @@ class TestShownPrompts:
 
 
 class TestBindPromptsToConfig:
-    def test_single_approved_binds_assessor_column_and_processor_only(self) -> None:
+    def test_single_approved_binds_output_column_and_processor_only(self) -> None:
         cfg = _config(
             input_prompt=INPUT_CFG, output_prompt=ASSESS_CFG, processor_system=ASSESS_CFG
         )
         assert agent._bind_prompts_to_config(cfg, [ASSESS_APPROVED]) is True
-        assert cfg["columns"][1]["system_prompt"] == ASSESS_APPROVED  # output/assessor column
+        assert cfg["columns"][1]["system_prompt"] == ASSESS_APPROVED  # output column
         assert cfg["processors"][0]["template"]["messages"][0]["content"] == ASSESS_APPROVED
         # The input-generator column's own prompt is a DIFFERENT prompt — never touched.
         assert cfg["columns"][0]["system_prompt"] == INPUT_CFG
@@ -94,11 +94,11 @@ class TestBindPromptsToConfig:
         cfg = _config(
             input_prompt=INPUT_CFG, output_prompt=ASSESS_CFG, processor_system=ASSESS_CFG
         )
-        # Shown assessor FIRST, ticket LAST — the old "last shown -> assessor" rule would
-        # have corrupted the assessor with the ticket prompt. Similarity binds correctly.
+        # Shown output FIRST, ticket LAST — the old "last shown -> output" rule would
+        # have corrupted the output with the ticket prompt. Similarity binds correctly.
         assert agent._bind_prompts_to_config(cfg, [ASSESS_APPROVED, INPUT_APPROVED]) is True
         assert cfg["columns"][0]["system_prompt"] == INPUT_APPROVED  # input/ticket column
-        assert cfg["columns"][1]["system_prompt"] == ASSESS_APPROVED  # assessor column
+        assert cfg["columns"][1]["system_prompt"] == ASSESS_APPROVED  # output column
         assert cfg["processors"][0]["template"]["messages"][0]["content"] == ASSESS_APPROVED
 
     def test_no_prompt_columns_returns_false(self) -> None:
@@ -129,13 +129,13 @@ class TestBindSdgPromptToApproved:
         out = json.loads(validate["state"]["output"])
         cols = out["config"]["columns"]
         proc_sys = out["config"]["processors"][0]["template"]["messages"][0]["content"]
-        assert out["assessor_prompt"] == ASSESS_APPROVED  # the card display, refreshed
+        assert out["output_prompt"] == ASSESS_APPROVED  # the card display, refreshed
         assert cols[1]["system_prompt"] == ASSESS_APPROVED  # launched job
         assert proc_sys == ASSESS_APPROVED
         assert cols[0]["system_prompt"] == INPUT_CFG  # input untouched
         # The refreshed prompts list carries both roles.
         roles = {p["role"]: p["text"] for p in out["prompts"]}
-        assert roles["assessor"] == ASSESS_APPROVED
+        assert roles["output"] == ASSESS_APPROVED
         assert roles["input"] == INPUT_CFG
 
     def test_binds_two_prompts_to_their_columns(self) -> None:
@@ -149,7 +149,7 @@ class TestBindSdgPromptToApproved:
         assert out["config"]["columns"][0]["system_prompt"] == INPUT_APPROVED
         assert out["config"]["columns"][1]["system_prompt"] == ASSESS_APPROVED
         roles = {p["role"]: p["text"] for p in out["prompts"]}
-        assert roles == {"input": INPUT_APPROVED, "assessor": ASSESS_APPROVED}
+        assert roles == {"input": INPUT_APPROVED, "output": ASSESS_APPROVED}
 
     def test_binds_when_output_is_dict(self) -> None:
         cfg = _config(input_prompt=INPUT_CFG, output_prompt=ASSESS_CFG, processor_system=ASSESS_CFG)
@@ -158,7 +158,7 @@ class TestBindSdgPromptToApproved:
         )
         agent._bind_sdg_prompt_to_approved(messages)
         out = validate["state"]["output"]
-        assert out["assessor_prompt"] == ASSESS_APPROVED
+        assert out["output_prompt"] == ASSESS_APPROVED
         assert out["config"]["columns"][1]["system_prompt"] == ASSESS_APPROVED
 
     def test_noop_without_preview(self) -> None:
@@ -172,7 +172,7 @@ class TestBindSdgPromptToApproved:
         )
         agent._bind_sdg_prompt_to_approved(messages)
         out = json.loads(validate["state"]["output"])
-        assert out["assessor_prompt"] == ASSESS_CFG
+        assert out["output_prompt"] == ASSESS_CFG
         assert out["config"]["columns"][1]["system_prompt"] == ASSESS_CFG
 
     def test_ignores_non_sdg_validate(self) -> None:

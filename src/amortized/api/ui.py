@@ -161,7 +161,7 @@ def _dedup_options(options: list[OptionItem]) -> list[OptionItem]:
 class ShowPromptRequest(BaseModel):
     title: str = Field(
         "System prompt",
-        description="Short card heading (e.g. 'Assessor system prompt')",
+        description="Short card heading (e.g. 'Output system prompt')",
     )
     prompt: str = Field(
         ...,
@@ -189,7 +189,7 @@ class ShowPromptResponse(BaseModel):
     purpose: str
     rendered: bool = Field(True)
     # Server directive the model reads in the tool result. A weaker driver shows
-    # the assessor prompt and stacks a validate_* confirm card under it in the same
+    # the output prompt and stacks a validate_* confirm card under it in the same
     # turn, so the user confirms the job before reviewing the prompt. A tool result
     # outranks the system prompt, so this directive keeps the prompt on its own turn
     # (the proxy no longer strips a stacked confirm card).
@@ -202,10 +202,11 @@ class ShowPromptResponse(BaseModel):
     operation_id="show_prompt",
     summary=(
         "Render a prompt in a review card in the chat UI. Call this with the "
-        "FULL prompt text WHENEVER you ask the user to review or approve a "
-        "prompt (e.g. a generated system/assessor prompt) — the prompt text is "
-        "otherwise never shown to the user. Never say 'here is the prompt' or "
-        "'the prompt above' without calling this tool in the same response."
+        "FULL prompt text EVERY TIME you compose a prompt that will be written "
+        "into a job config (e.g. an SDG system / output / question / answer "
+        "prompt), before you build the confirm card — the prompt is otherwise "
+        "shown only truncated. Never say 'here is the prompt' or 'the prompt "
+        "above' without calling this tool in the same response."
     ),
 )
 async def show_prompt(body: ShowPromptRequest) -> ShowPromptResponse:

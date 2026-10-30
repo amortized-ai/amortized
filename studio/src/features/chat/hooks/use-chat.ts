@@ -217,7 +217,7 @@ function extractSessionData(
         //    re-validates; keeping only the ERRORED result kills the card
         //    (the card builder below picks the last result that parses).
         //  - show_prompt: the agent may review several DISTINCT prompts in one
-        //    turn (e.g. a ticket prompt and an assessor prompt); each must be
+        //    turn (e.g. a ticket prompt and an output prompt); each must be
         //    rendered, not collapsed to the first.
         //  - present_options: same retry pattern as validate — a corrupted-args
         //    error (weak models emit stray XML in the JSON) then a clean retry;
@@ -260,7 +260,7 @@ function buildProposedAction(toolResults: ToolResult[]): ProposedAction | null {
         parentJobId: validated.parentJobId,
         recipe: validated.recipe,
         dataRecordCount: validated.dataRecordCount,
-        assessorPrompt: validated.assessorPrompt,
+        outputPrompt: validated.outputPrompt,
         prompts: validated.prompts,
       }
     }

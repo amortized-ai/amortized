@@ -5,7 +5,7 @@ export interface OptionCard {
 }
 
 // One reviewable system prompt in an SDG recipe, resolved by the backend. A recipe
-// carries more than one (e.g. a ticket-generation prompt and an assessor prompt).
+// carries more than one (e.g. a ticket-generation prompt and an output prompt).
 export interface PromptView {
   role: string
   label: string
@@ -23,12 +23,12 @@ export interface ProposedAction {
   parentJobId?: string
   recipe?: string
   dataRecordCount?: number | null
-  // Backend-resolved assessor/system prompt for an SDG job (null when none was
+  // Backend-resolved output/system prompt for an SDG job (null when none was
   // confidently identified). Rendered verbatim instead of the client guessing it.
-  // Mirrors the "assessor"-role entry in `prompts`; kept for back-compat.
-  assessorPrompt?: string | null
-  // Every reviewable system prompt in the recipe (input generators + assessor),
-  // rendered verbatim so the user reviews all of them, not just the assessor.
+  // Mirrors the "output"-role entry in `prompts`; kept for back-compat.
+  outputPrompt?: string | null
+  // Every reviewable system prompt in the recipe (input generators + output),
+  // rendered verbatim so the user reviews all of them, not just the output.
   prompts?: PromptView[]
 }
 
