@@ -49,17 +49,22 @@ export function summarizeConversation(messages: PersistedMessage[]): string {
     body = trimmed.join("\n")
   }
 
+  // Framed as a READ-ONLY record, not a transcript to continue. Telling the model to
+  // "continue the conversation" from a role-labeled history induces it to continue the
+  // *transcript* — fabricating the next "[User]" turn and self-answering, which then renders
+  // as an inline "user <option value>" leak inside an assistant bubble (#556). The history is
+  // context, so it is framed as context; the model responds only to the user's next real message.
   return [
-    "[System: This is a restored conversation session. Below is the complete",
-    "message history from before the session was lost. Continue naturally as",
-    "if this is your ongoing conversation — maintain all context about the",
-    "user's task, jobs submitted, choices made, and workflow progress.]",
+    "[System note: you are RESUMING an earlier conversation whose live session was",
+    "lost. The block below is a READ-ONLY record of what was already said, provided",
+    "only so you keep full context (the user's task, jobs submitted, choices made,",
+    "workflow progress). It is NOT a live transcript to continue: do NOT reproduce",
+    "it, do NOT quote it back, and do NOT write any further [User]/[Assistant] turns.",
+    "Read it, then wait for and respond only to the user's next message.]",
     "",
-    "--- Message History ---",
+    "--- Conversation record (read-only) ---",
     "",
     body,
-    "--- End of History ---",
-    "",
-    "Continue the conversation from here.",
+    "--- End of record ---",
   ].join("\n")
 }

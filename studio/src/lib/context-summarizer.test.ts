@@ -12,13 +12,27 @@ describe("summarizeConversation", () => {
     expect(summarizeConversation([])).toBe("")
   })
 
-  it("replays the conversation as [User]/[Assistant] lines", () => {
+  it("includes prior turns as [User]/[Assistant] lines inside a read-only record", () => {
     const out = summarizeConversation([
       msg({ role: "user", content: "train a model" }),
       msg({ role: "assistant", content: "Sure — here is how." }),
     ])
     expect(out).toContain("[User] train a model")
     expect(out).toContain("[Assistant] Sure — here is how.")
+  })
+
+  it("frames the history as read-only context, not a transcript to continue (#556)", () => {
+    const out = summarizeConversation([
+      msg({ role: "user", content: "train a model" }),
+      msg({ role: "assistant", content: "Sure — here is how." }),
+    ])
+    // The model must not be told to continue the conversation — that induces it to
+    // continue the transcript (fabricate the next "[User]" turn and self-answer).
+    expect(out).not.toContain("Continue the conversation from here")
+    expect(out).not.toContain("Continue naturally")
+    // ...it is framed as a read-only record it must not reproduce or extend.
+    expect(out).toContain("READ-ONLY record")
+    expect(out).toContain("respond only to the user's next message")
   })
 
   it("marks a failed (error-flagged) turn without replaying the error text", () => {
