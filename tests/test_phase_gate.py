@@ -294,8 +294,9 @@ def test_skill_step_obligation_is_declared_or_defaults() -> None:
     assert phases._skill_owed("sdg-task-distillation", "teacher-model") == Owed(
         any_of=frozenset({"present_options"})
     )
-    # knowledge-ingestion splits its prompt review into two review steps (question + answer), each
-    # owing both show_prompt and present_options; a plain gather step still defaults to present_options.
+    # knowledge-ingestion splits its prompt review into two review steps (question + answer),
+    # each owing both show_prompt and present_options; a plain gather step still defaults to
+    # present_options.
     assert phases._skill_owed("sdg-knowledge-ingestion", "question-prompt") == Owed(
         all_of=frozenset({"show_prompt", "present_options"})
     )
