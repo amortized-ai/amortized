@@ -162,6 +162,37 @@ class TestSubagentCompletion:
         assert tools == []
 
 
+    def test_premature_completion_stripped_when_card_in_same_turn(self, router: _Router) -> None:
+        # Issue #548: the training agent calls validate_training_job AND
+        # signal_subagent_completion in the same turn. Without the fix, completion
+        # clears subagent_id, so the frontend's GET /message falls back to the
+        # orchestrator session — which doesn't have the validate tool result — and
+        # the confirmation card is lost. The fix strips the premature completion;
+        # the subagent stays active and the card renders.
+        state = _make_state(router)
+        sub_id = router.add_session([
+            [
+                _tool_part("signal_phase", {"phase": "training", "step": "validate"}),
+                _tool_part("validate_training_job", {"config_json": "{}"}),
+                _text_part("Click Confirm on the card above to submit the training job."),
+                _tool_part("signal_subagent_completion", {"summary": "Training validated"}),
+            ]
+        ])
+        state.subagent_id = sub_id
+        state.subagent_target = "training"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "go", _body()))
+
+        # Subagent must still be active (completion was stripped)
+        assert state.subagent_id == sub_id
+        assert state.subagent_target == "training"
+        # Internal tools must not leak to the client
+        parts = result.get("parts", [])
+        tool_names = [agent._tool_name(p) for p in parts if p.get("type") == "tool"]
+        assert "signal_subagent_completion" not in tool_names
+        assert "delegate_to_subagent" not in tool_names
+
+
 class TestRequestOrchestratorHelp:
     """A subagent is a leaf: it cannot delegate. When it needs a prerequisite it can't
     produce itself it calls request_orchestrator_help, handing back to the orchestrator.

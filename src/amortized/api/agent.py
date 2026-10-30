@@ -36,6 +36,7 @@ from amortized.api.phases import (
     Verdict,
     adjudicate,
     emits_card,
+    emits_job,
     requires_phase_signal,
     signal_is_known,
     subagent_pointer,
@@ -942,6 +943,7 @@ class TurnObservation:
     has_text: bool  # emitted non-empty assistant prose
     hands_off: bool  # a terminal control-transfer (never a stall; leaving the phase)
     has_card: bool  # rendered an interactive card the user acts on (must not be stranded)
+    has_job: bool  # created an async job (subagent must stay alive for job_complete)
 
 
 def _observe_turn(parts: list[dict[str, Any]]) -> TurnObservation:
@@ -976,6 +978,7 @@ def _observe_turn(parts: list[dict[str, Any]]) -> TurnObservation:
         has_text=has_text,
         hands_off=hands_off,
         has_card=emits_card(tools),
+        has_job=emits_job(tools),
     )
 
 
@@ -1210,13 +1213,31 @@ async def _handle_subagent_message(
     # Without this, a turn that BOTH signals its step AND hands back (e.g. eval signals
     # `eval-dataset` then requests help) stashes the PRIOR step, and the resume pointer sends the
     # consumer back to an earlier section.
-    turn_signalled_step = _observe_turn(latest_parts).signalled_step
-    if turn_signalled_step:
-        state.last_signal_step = turn_signalled_step
+    obs = _observe_turn(latest_parts)
+    if obs.signalled_step:
+        state.last_signal_step = obs.signalled_step
     # Completion is checked before a help request: if a turn somehow carries both
     # signals, "I'm done" wins and the help ask is ignored (a subagent that is
     # finishing has nothing left to be helped with).
     summary = _detect_completion(latest_parts)
+
+    # A turn that renders a user-actionable card OR creates an async job must not also complete:
+    # completion clears subagent_id, so (a) the frontend's GET /message falls back to the
+    # orchestrator session — which doesn't have the card's tool result — and the card is lost
+    # (issue #548), or (b) the job_complete event routes to the orchestrator instead of the
+    # subagent that has context to present follow-up options. Strip the premature completion;
+    # the subagent stays active and completes at the right time (after user card interaction or
+    # job terminal state).
+    if summary and (obs.has_card or obs.has_job):
+        reason = "card" if obs.has_card else "job"
+        logger.info(
+            "Premature completion stripped (%s in same turn): session=%s target=%s",
+            reason,
+            session_id,
+            state.subagent_target,
+        )
+        result["parts"] = _strip_internal_tools(result.get("parts", []))
+        return result
 
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
@@ -1400,8 +1421,14 @@ async def _maybe_delegate(
     # (not the steady-state signalled-guard). The nudge is idempotent per turn (one re-drive, not
     # re-adjudicated) and self-guards on job_complete / missing subagent, so it is safe on every
     # _maybe_delegate exit (fresh, resume, help-producer).
+    #
+    # Use the full fetched parts (GET) instead of the POST response parts: the POST carries only
+    # step markers, not tool-call details (validate_*, retry_job, etc.), so adjudicating the POST
+    # parts yields false stalls whose re-drive pushes a new user message past the real tool call,
+    # stranding the card. Matches _handle_subagent_message (line ~1200).
+    fetched_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
     sub_result["parts"] = await _maybe_nudge_subagent_stall(
-        state, session_id, body, sub_result.get("parts", []), guard_missing_signal=False
+        state, session_id, body, fetched_parts, guard_missing_signal=False
     )
     return sub_result
 
