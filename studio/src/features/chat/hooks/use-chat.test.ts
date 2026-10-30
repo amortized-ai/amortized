@@ -1,5 +1,5 @@
 import { renderHook, act } from "@testing-library/react"
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { useChatStore } from "@/stores/chat-store"
 import { useSettingsStore } from "@/stores/settings-store"
 import { encodeModelSelection } from "../models"
@@ -454,6 +454,118 @@ describe("useChat", () => {
     expect(returned.result.current.error).toBe("Submission failed")
     await act(async () => { expect(await returned.result.current.sendMessage("Try something else")).toBe(true) })
     expect(returned.result.current.error).toBeNull()
+  })
+})
+
+describe("useChat — storage failure recovery", () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  function failStorage() {
+    const error = new DOMException("Storage quota exceeded", "QuotaExceededError")
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw error })
+    return { error, write }
+  }
+
+  it("rolls back a failed send acquisition while preserving existing locks and errors", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("storage", [])
+    useChatStore.getState().tryStartRequest("other")
+    useChatStore.getState().setRequestError("other", "Other error")
+    useChatStore.getState().setRequestError("storage", "Earlier error")
+    const { result } = renderHook(() => useChat())
+    const { error, write } = failStorage()
+
+    expect(useChatStore.getState().tryStartRequest("other")).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    await act(async () => { await expect(result.current.sendMessage("First")).rejects.toBe(error) })
+    expect(useChatStore.getState().activeRequests).toEqual({ other: true })
+    expect(useChatStore.getState().requestErrors).toEqual({ other: "Other error", storage: "Earlier error" })
+    expect(result.current.isStreaming).toBe(false)
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+
+    write.mockRestore()
+    await act(async () => { expect(await result.current.sendMessage("Retry")).toBe(true) })
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    expect(useChatStore.getState().activeRequests).toEqual({ other: true })
+  })
+
+  it("allows a remounted chat to send after a real storage quota overflow is removed", async () => {
+    seedConversation("storage", [])
+    const first = renderHook(() => useChat())
+    act(() => {
+      expect(() => useChatStore.getState().setDraft("storage", "x".repeat(6_000_000))).toThrow()
+    })
+    await act(async () => {
+      await expect(first.result.current.sendMessage("First")).rejects.toMatchObject({ name: "QuotaExceededError" })
+    })
+    // The overflowing draft is in memory even though persistence failed.
+    act(() => { useChatStore.getState().setDraft("storage", "") })
+    expect(useChatStore.getState().activeRequests).toEqual({})
+    first.unmount()
+
+    const returned = renderHook(() => useChat())
+    expect(returned.result.current.isStreaming).toBe(false)
+    await act(async () => { expect(await returned.result.current.sendMessage("Retry")).toBe(true) })
+  })
+
+  it("releases a failed confirmation acquisition so submission can be retried", async () => {
+    const { createJob } = await import("@/lib/api-client")
+    seedConversation("storage", [{ id: "a1", role: "assistant", content: "Confirm?", timestamp: "2026-01-01" }])
+    useChatStore.getState().updateMessageFields("storage", "a1", {
+      proposedAction: { action: "create_eval_job", description: "Confirm?", params: {}, endpoint: "/api/v1/jobs/eval", jobType: "eval" },
+    })
+    const { result } = renderHook(() => useChat())
+    const { error, write } = failStorage()
+    await act(async () => { await expect(result.current.confirmAction()).rejects.toBe(error) })
+    expect(result.current.isStreaming).toBe(false)
+    expect(createJob).not.toHaveBeenCalled()
+
+    write.mockRestore()
+    await act(async () => { await result.current.confirmAction() })
+    expect(createJob).toHaveBeenCalledTimes(1)
+    expect(useChatStore.getState().activeRequests).toEqual({})
+  })
+
+  it("resets the notification queue after acquisition fails", async () => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("storage", [])
+    const { result } = renderHook(() => useChat())
+    const { error, write } = failStorage()
+    await act(async () => {
+      await expect(result.current.notifyJobComplete("job-1", "eval", "succeeded")).rejects.toBe(error)
+    })
+    expect(useChatStore.getState().activeRequests).toEqual({})
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+
+    write.mockRestore()
+    await act(async () => { await result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    expect(useChatStore.getState().getNotifiedJobs("storage")).toEqual(["job-1"])
+  })
+
+  it.each([2, 3, 4, 5])("releases notification bookkeeping when setup storage write %s fails", async (failureWrite) => {
+    const { sendOpenCodeMessage } = await import("@/lib/api-client")
+    seedConversation("storage", [])
+    const { result } = renderHook(() => useChat())
+    const error = new DOMException("Storage quota exceeded", "QuotaExceededError")
+    const originalWrite = Storage.prototype.setItem
+    let writes = 0
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      // Acquisition succeeds; fail job status, placeholder insertion, or model pinning.
+      // Keep failing through catch/finally to exercise unconditional in-memory cleanup.
+      if (++writes >= failureWrite) throw error
+      originalWrite.call(this, key, value)
+    })
+    await act(async () => {
+      await expect(result.current.notifyJobComplete("job-1", "eval", "succeeded")).rejects.toBe(error)
+    })
+    expect(useChatStore.getState().activeRequests).toEqual({})
+    expect(sendOpenCodeMessage).not.toHaveBeenCalled()
+
+    write.mockRestore()
+    await act(async () => { await result.current.notifyJobComplete("job-1", "eval", "succeeded") })
+    expect(sendOpenCodeMessage).toHaveBeenCalledTimes(1)
+    expect(useChatStore.getState().getNotifiedJobs("storage")).toEqual(["job-1"])
   })
 })
 

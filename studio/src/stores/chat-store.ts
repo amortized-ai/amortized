@@ -251,10 +251,25 @@ export const useChatStore = create<ChatStoreState>()(
         get().jobInFlight[conversationId] ?? false,
       tryStartRequest: (conversationId) => {
         if (get().activeRequests[conversationId]) return false
-        set((s) => {
-          const { [conversationId]: _error, ...requestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
-          return { activeRequests: { ...s.activeRequests, [conversationId]: true }, requestErrors }
-        })
+        const previousError = get().requestErrors[conversationId]
+        try {
+          set((s) => {
+            const { [conversationId]: _error, ...requestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
+            return { activeRequests: { ...s.activeRequests, [conversationId]: true }, requestErrors }
+          })
+        } catch (error) {
+          // Persist updates memory before writing storage. Roll back this acquisition
+          // even if saving the rollback also fails, and propagate the original error.
+          try {
+            set((s) => {
+              const { [conversationId]: _active, ...activeRequests } = s.activeRequests  // eslint-disable-line @typescript-eslint/no-unused-vars
+              const { [conversationId]: _error, ...requestErrors } = s.requestErrors  // eslint-disable-line @typescript-eslint/no-unused-vars
+              if (previousError !== undefined) requestErrors[conversationId] = previousError
+              return { activeRequests, requestErrors }
+            })
+          } catch { /* The in-memory rollback has already completed. */ }
+          throw error
+        }
         return true
       },
       finishRequest: (conversationId) =>

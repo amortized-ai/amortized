@@ -828,113 +828,117 @@ export function useChat() {
     const MAX_FAILURES = 3
     let consecutiveFailures = 0
 
-    while (jobNotifyQueueRef.current.length > 0) {
-      const { convId: nextConvId, jobId: nextJobId } = jobNotifyQueueRef.current[0]!
-      const store = useChatStore.getState()
-      // Another mounted view may have delivered the same notification while we waited.
-      if (!store.conversations.some((c) => c.id === nextConvId) || store.getNotifiedJobs(nextConvId).includes(nextJobId)) {
-        jobNotifyQueueRef.current.shift()
-        continue
-      }
-      const nextMessages = store.getConversationMessages(nextConvId)
-      if (store.activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
-        // Keep the entry until the blocker clears, even after this view unmounts or
-        // jobInFlight resets. Store changes wake the queue without a polling timeout.
-        await new Promise<void>((resolve) => {
-          const unsubscribe = useChatStore.subscribe(() => {
-            unsubscribe()
-            resolve()
-          })
-        })
-        continue
-      }
-
-      if (consecutiveFailures >= MAX_FAILURES) {
-        logger.warn("job notify queue circuit breaker tripped", { failures: consecutiveFailures })
-        jobNotifyQueueRef.current.length = 0
-        break
-      }
-
-      if (!useChatStore.getState().tryStartRequest(nextConvId)) continue
-      const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
-      useChatStore.getState().setJobInFlight(convId, false)
-
-      const placeholderId = generateId()
-
-      addMessage(convId, {
-        id: placeholderId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date().toISOString(),
-      })
-
-      // Job-completion turns belong to the conversation — use (and stamp) its model
-      // too, so they don't silently run on a different model or render unlabeled.
-      const modelToSend = resolveAndPinModel(convId, placeholderId)
-
-      try {
-        const response = await sendOpenCodeMessage(
-          convId,
-          // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
-          // hand back on its deliverable) lives in the resident prompts, not in this shared
-          // user-text — which reaches whoever is active, so an orchestrator-worded routing
-          // instruction here reaches subagents too and countermands their hand-back. status /
-          // jobType / mode ride the structured fields below; the proxy reads those, not this text.
-          `Job ${jobId} (${jobType}) finished with status: ${status}.`,
-          modelToSend,
-          "job_complete",
-          status,
-          jobType,
-          mode,
-        )
-
-        const parsed = parseOpenCodeResponse(response)
-        const sessionMessages = await fetchSessionMessages(convId)
-        const session = extractSessionData(sessionMessages, parsed.toolResults)
-        const notifyToolResults = dedupeConsecutiveOptions(convId, session.tools)
-        // A job-finished turn may self-heal and re-validate (e.g. a failed job
-        // whose config the agent then fixes), so it can carry a confirmation card.
-        const proposedAction = buildProposedAction(notifyToolResults)
-
-        useChatStore.getState().updateMessageFields(convId, placeholderId, {
-          content: session.text || parsed.content,
-          toolResults: notifyToolResults,
-          proposedAction,
-          phase: extractPhase(notifyToolResults),
-          terminal: true,
-        })
-
-        useChatStore.getState().addNotifiedJob(convId, jobId)
-        jobNotifyAttemptsRef.current.delete(jobId)
-        consecutiveFailures = 0
-      } catch (err) {
-        const rawMsg = err instanceof Error ? err.message : String(err)
-        // A job-completion turn runs automatically, so it bypasses the composer's
-        // unavailable-model block. A model/auth failure shows the abstracted message;
-        // otherwise a generic fallback. (We never silently switch the model here.)
-        const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
-        useChatStore.getState().updateMessageFields(convId, placeholderId, {
-          content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
-          // Flag as an error so context replay skips it (a failed turn isn't assistant output),
-          // while the chat still shows the persisted text.
-          error: true,
-        })
-        consecutiveFailures++
-        const attempts = (jobNotifyAttemptsRef.current.get(jobId) ?? 0) + 1
-        jobNotifyAttemptsRef.current.set(jobId, attempts)
-        // Give up on a persistently-failing job: mark it notified so a re-fired
-        // notification (watcher or poll) doesn't re-enqueue and retry it forever.
-        if (attempts >= MAX_JOB_ATTEMPTS) {
-          useChatStore.getState().addNotifiedJob(convId, jobId)
-          jobNotifyAttemptsRef.current.delete(jobId)
+    try {
+      while (jobNotifyQueueRef.current.length > 0) {
+        const { convId: nextConvId, jobId: nextJobId } = jobNotifyQueueRef.current[0]!
+        const store = useChatStore.getState()
+        // Another mounted view may have delivered the same notification while we waited.
+        if (!store.conversations.some((c) => c.id === nextConvId) || store.getNotifiedJobs(nextConvId).includes(nextJobId)) {
+          jobNotifyQueueRef.current.shift()
+          continue
         }
-        logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures, error: rawMsg })
-      } finally {
-        useChatStore.getState().finishRequest(convId)
-      }
-    }
+        const nextMessages = store.getConversationMessages(nextConvId)
+        if (store.activeRequests[nextConvId] || nextMessages.at(-1)?.proposedAction) {
+          // Keep the entry until the blocker clears, even after this view unmounts or
+          // jobInFlight resets. Store changes wake the queue without a polling timeout.
+          await new Promise<void>((resolve) => {
+            const unsubscribe = useChatStore.subscribe(() => {
+              unsubscribe()
+              resolve()
+            })
+          })
+          continue
+        }
 
-    jobNotifyRunningRef.current = false
+        if (consecutiveFailures >= MAX_FAILURES) {
+          logger.warn("job notify queue circuit breaker tripped", { failures: consecutiveFailures })
+          jobNotifyQueueRef.current.length = 0
+          break
+        }
+
+        if (!useChatStore.getState().tryStartRequest(nextConvId)) continue
+        const { jobId, jobType, status, convId, mode } = jobNotifyQueueRef.current.shift()!
+        const placeholderId = generateId()
+
+        try {
+          useChatStore.getState().setJobInFlight(convId, false)
+
+          addMessage(convId, {
+            id: placeholderId,
+            role: "assistant",
+            content: "",
+            timestamp: new Date().toISOString(),
+          })
+
+          // Job-completion turns belong to the conversation — use (and stamp) its model
+          // too, so they don't silently run on a different model or render unlabeled.
+          const modelToSend = resolveAndPinModel(convId, placeholderId)
+
+          try {
+            const response = await sendOpenCodeMessage(
+              convId,
+              // Neutral FACT only. The behaviour (orchestrator → present next steps; subagent →
+              // hand back on its deliverable) lives in the resident prompts, not in this shared
+              // user-text — which reaches whoever is active, so an orchestrator-worded routing
+              // instruction here reaches subagents too and countermands their hand-back. status /
+              // jobType / mode ride the structured fields below; the proxy reads those, not this text.
+              `Job ${jobId} (${jobType}) finished with status: ${status}.`,
+              modelToSend,
+              "job_complete",
+              status,
+              jobType,
+              mode,
+            )
+
+            const parsed = parseOpenCodeResponse(response)
+            const sessionMessages = await fetchSessionMessages(convId)
+            const session = extractSessionData(sessionMessages, parsed.toolResults)
+            const notifyToolResults = dedupeConsecutiveOptions(convId, session.tools)
+            // A job-finished turn may self-heal and re-validate (e.g. a failed job
+            // whose config the agent then fixes), so it can carry a confirmation card.
+            const proposedAction = buildProposedAction(notifyToolResults)
+
+            useChatStore.getState().updateMessageFields(convId, placeholderId, {
+              content: session.text || parsed.content,
+              toolResults: notifyToolResults,
+              proposedAction,
+              phase: extractPhase(notifyToolResults),
+              terminal: true,
+            })
+
+            useChatStore.getState().addNotifiedJob(convId, jobId)
+            jobNotifyAttemptsRef.current.delete(jobId)
+            consecutiveFailures = 0
+          } catch (err) {
+            const rawMsg = err instanceof Error ? err.message : String(err)
+            // A job-completion turn runs automatically, so it bypasses the composer's
+            // unavailable-model block. A model/auth failure shows the abstracted message;
+            // otherwise a generic fallback. (We never silently switch the model here.)
+            const errMsg = modelFailureMessage(err, modelDisplayName(modelToSend))
+            useChatStore.getState().updateMessageFields(convId, placeholderId, {
+              content: errMsg ?? "I wasn't able to suggest next steps. You can ask me what to do next.",
+              // Flag as an error so context replay skips it (a failed turn isn't assistant output),
+              // while the chat still shows the persisted text.
+              error: true,
+            })
+            consecutiveFailures++
+            const attempts = (jobNotifyAttemptsRef.current.get(jobId) ?? 0) + 1
+            jobNotifyAttemptsRef.current.set(jobId, attempts)
+            // Give up on a persistently-failing job: mark it notified so a re-fired
+            // notification (watcher or poll) doesn't re-enqueue and retry it forever.
+            if (attempts >= MAX_JOB_ATTEMPTS) {
+              useChatStore.getState().addNotifiedJob(convId, jobId)
+              jobNotifyAttemptsRef.current.delete(jobId)
+            }
+            logger.error("job completion notification failed", { jobId, attempts, consecutiveFailures, error: rawMsg })
+          }
+        } finally {
+          useChatStore.getState().finishRequest(convId)
+        }
+      }
+    } finally {
+      jobNotifyRunningRef.current = false
+    }
   }, [addMessage])
 
   const notifyJobComplete = useCallback(async (jobId: string, jobType: string, status: string, mode?: string) => {
