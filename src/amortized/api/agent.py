@@ -1426,7 +1426,7 @@ async def _maybe_delegate(
     # step markers, not tool-call details (validate_*, retry_job, etc.), so adjudicating the POST
     # parts yields false stalls whose re-drive pushes a new user message past the real tool call,
     # stranding the card. Matches _handle_subagent_message (line ~1200).
-    fetched_parts = await _fetch_all_assistant_parts(state.subagent_id)  # type: ignore[arg-type]
+    fetched_parts = await _fetch_all_assistant_parts(state.subagent_id)
     sub_result["parts"] = await _maybe_nudge_subagent_stall(
         state, session_id, body, fetched_parts, guard_missing_signal=False
     )
