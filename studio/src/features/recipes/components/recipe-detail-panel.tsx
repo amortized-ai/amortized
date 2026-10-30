@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,8 @@ import {
 } from "@/components/ui/resizable"
 import { JsonTreeViewer } from "@/components/json-tree-viewer"
 import { RecipeConfigForm } from "./recipe-config-form"
-import { stripPlaceholders } from "../lib/placeholders"
+import { stripPlaceholders, findPromptRefs, resolvePromptRefs } from "../lib/placeholders"
+import { resolvePrompts } from "@/lib/api-client"
 import { collectMissingRequired } from "../lib/recipe-validation"
 import { useCreateJobFromConfig, useConfigSchemas } from "../api/use-recipes"
 import type { JsonSchema } from "../api/use-recipes"
@@ -46,6 +48,23 @@ export function RecipeDetailPanel({ job, recipeName, onBack, requiredKeys }: Rec
   const [config, setConfig] = useState<Record<string, unknown>>(
     () => stripPlaceholders(structuredClone(job.config ?? {})),
   )
+  // Prompt store (#541): a new job's config stores prompts as <prompt:...> refs.
+  // Resolve them to text once on load so the editor shows real prompts; an edit then
+  // follows the fresh path (submit sends inline text, which the backend re-stores).
+  const promptRefIds = useMemo(() => findPromptRefs(job.config ?? {}), [job.config])
+  const { data: resolvedPrompts } = useQuery({
+    queryKey: ["resolve-prompts", promptRefIds],
+    queryFn: () => resolvePrompts(promptRefIds),
+    enabled: promptRefIds.length > 0,
+    staleTime: Infinity,
+  })
+  // Hydrate the editable config from the resolved text once, during render (React's
+  // recommended pattern for prop-derived state — avoids an effect + cascading render).
+  const [promptsHydrated, setPromptsHydrated] = useState(false)
+  if (!promptsHydrated && resolvedPrompts?.prompts) {
+    setPromptsHydrated(true)
+    setConfig((prev) => resolvePromptRefs(prev, resolvedPrompts.prompts))
+  }
   const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null)
   const [activeView, setActiveView] = useState<"form" | "json">("form")

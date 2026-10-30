@@ -20,6 +20,57 @@ export function isPlaceholder(value: string): boolean {
   return PLACEHOLDER_TOKENS.has(value)
 }
 
+// Prompt-store references (#541). A reviewed prompt is stored once and cited from
+// a config by an unguessable id as the WHOLE value of a prompt field — so, like the
+// backend's core.placeholders, matching and substitution are full-value.
+const PROMPT_REF_RE = /^<prompt:(prm_[A-Za-z0-9]+)>$/
+
+export function makePromptRef(promptId: string): string {
+  return `<prompt:${promptId}>`
+}
+
+export function promptRefId(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const match = PROMPT_REF_RE.exec(value)
+  return match ? match[1] : null
+}
+
+export function isPromptRef(value: unknown): boolean {
+  return promptRefId(value) !== null
+}
+
+// Distinct prompt ids referenced anywhere in a config subtree.
+export function findPromptRefs(value: unknown): string[] {
+  const found = new Set<string>()
+  const walk = (v: unknown): void => {
+    const ref = promptRefId(v)
+    if (ref !== null) {
+      found.add(ref)
+    } else if (Array.isArray(v)) {
+      v.forEach(walk)
+    } else if (v && typeof v === "object") {
+      Object.values(v).forEach(walk)
+    }
+  }
+  walk(value)
+  return [...found]
+}
+
+// Return a copy of `value` with every <prompt:...> ref replaced by its text from
+// `texts` (id -> text). A ref with no entry is left as-is. Pure (does not mutate).
+export function resolvePromptRefs<T>(value: T, texts: Record<string, string>): T {
+  const walk = (v: unknown): unknown => {
+    const ref = promptRefId(v)
+    if (ref !== null) return ref in texts ? texts[ref] : v
+    if (Array.isArray(v)) return v.map(walk)
+    if (v && typeof v === "object") {
+      return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, walk(val)]))
+    }
+    return v
+  }
+  return walk(value) as T
+}
+
 // Remove placeholder tokens so they are never carried as values: placeholder
 // strings become "" (the field stays, so its picker still renders), placeholder
 // entries are dropped from arrays, and nested objects/arrays are walked. Applied

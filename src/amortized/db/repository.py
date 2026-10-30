@@ -280,6 +280,79 @@ class Repository:
         result: str = await self.conn.execute("DELETE FROM jobs WHERE id = $1", job_id)
         return result == "DELETE 1"
 
+    # --- Prompt store (#541) -------------------------------------------------
+    # A reviewed prompt is persisted once and referenced from SDG configs by id
+    # (<prompt:prm_...>), so configs stay small at emission. content_sha256 is
+    # UNIQUE: identical text dedups to one row, making show_prompt idempotent.
+
+    async def create_prompt(
+        self,
+        *,
+        prompt_id: str,
+        content: str,
+        content_sha256: str,
+        created_at: str | datetime,
+        user_id: str = "",
+        conversation_id: str = "",
+        role: str = "",
+        label: str = "",
+        purpose: str = "",
+    ) -> dict[str, Any]:
+        row = await self.conn.fetchrow(
+            """INSERT INTO prompts
+               (id, user_id, conversation_id, role, label, purpose,
+                content, content_sha256, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+               ON CONFLICT (content_sha256) DO NOTHING
+               RETURNING *""",
+            prompt_id,
+            user_id,
+            conversation_id,
+            role,
+            label,
+            purpose,
+            content,
+            content_sha256,
+            _parse_ts(created_at),
+        )
+        if row is None:
+            # Identical text already stored — reuse that row (idempotent show_prompt).
+            row = await self.conn.fetchrow(
+                "SELECT * FROM prompts WHERE content_sha256 = $1", content_sha256
+            )
+        assert row is not None
+        return dict(row)
+
+    async def get_prompt(self, prompt_id: str) -> dict[str, Any] | None:
+        row = await self.conn.fetchrow("SELECT * FROM prompts WHERE id = $1", prompt_id)
+        return dict(row) if row is not None else None
+
+    async def get_prompt_content(self, prompt_id: str) -> str | None:
+        """The stored text for a prompt id, or None if no such row — the resolver
+        used to expand `<prompt:...>` refs. None drives a fail-closed 422/build error."""
+        content: str | None = await self.conn.fetchval(
+            "SELECT content FROM prompts WHERE id = $1", prompt_id
+        )
+        return content
+
+    async def list_prompts(self, user_id: str) -> list[dict[str, Any]]:
+        rows = await self.conn.fetch(
+            "SELECT * FROM prompts WHERE user_id = $1 ORDER BY created_at DESC", user_id
+        )
+        return [dict(row) for row in rows]
+
+    async def stamp_prompts_user(self, prompt_ids: list[str], user_id: str) -> None:
+        """Claim ownership of unowned prompt rows (user_id='') for a session's user.
+        The MCP show_prompt path has no auth header, so rows are created ownerless;
+        the proxy stamps them from the session once the real user is known."""
+        if not prompt_ids or not user_id:
+            return
+        await self.conn.execute(
+            "UPDATE prompts SET user_id = $2 WHERE id = ANY($1::text[]) AND user_id = ''",
+            prompt_ids,
+            user_id,
+        )
+
 
 def _row_to_job(row: Any) -> dict[str, Any]:
     d = dict(row)

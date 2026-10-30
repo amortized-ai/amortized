@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import uuid
+from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter
+import asyncpg
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
+
+from amortized.core.placeholders import PROMPT_ID_PREFIX, make_prompt_ref
+from amortized.db import get_db as _get_db
+from amortized.db.repository import Repository
 
 router = APIRouter(prefix="/api/v1/ui", tags=["ui"])
 
@@ -174,26 +182,43 @@ class ShowPromptRequest(BaseModel):
     )
 
 
-_SHOW_PROMPT_REVIEW = (
-    "The prompt is now shown for review. Do NOT submit or confirm a job in this"
-    " same turn (no validate_*/create_*/signal_subagent_completion) — the user"
-    " must review this prompt first, because it ships in the training data. Ask"
-    " them to approve it or request edits (present_options), then STOP and wait;"
-    " build/confirm the job in your NEXT turn, after they approve."
-)
+def _show_prompt_review(prompt_id: str) -> str:
+    # Server directive the model reads in the tool result. Two jobs: (1) keep the
+    # prompt on its own turn (a weaker driver otherwise stacks a validate_* confirm
+    # card under it, so the user confirms before reviewing), and (2) make the model
+    # reference the prompt by id instead of pasting its full text back into the SDG
+    # config — pasting a ~20KB prompt inline is what a weak driver corrupts when it
+    # re-serializes the config. A tool result outranks the system prompt.
+    ref = make_prompt_ref(prompt_id)
+    return (
+        "The prompt is now shown for review and stored as "
+        f"{prompt_id}. Do NOT submit or confirm a job in this same turn (no"
+        " validate_*/create_*/signal_subagent_completion) — the user must review this"
+        " prompt first, because it ships in the training data. Ask them to approve it"
+        " or request edits (present_options), then STOP and wait. When you build the"
+        " SDG config in your NEXT turn, put the reference token"
+        f' "{ref}" as this prompt\'s field value (the column\'s system_prompt, or the'
+        " processor's system message) INSTEAD of pasting the full prompt text — the"
+        " platform expands the reference to the exact text shown here. Never paste the"
+        " full prompt text into the config. If the user asks for an edit, call"
+        " show_prompt again with the revised text to get a new reference."
+    )
 
 
 class ShowPromptResponse(BaseModel):
     title: str
     prompt: str
     purpose: str
+    # The id the stored prompt was persisted under. The model MUST cite this from
+    # the SDG config as `<prompt:prompt_id>` so the config stays small at emission;
+    # the platform re-materializes the full text at the container boundary.
+    prompt_id: str = Field("")
+    prompt_ref: str = Field("")
     rendered: bool = Field(True)
-    # Server directive the model reads in the tool result. A weaker driver shows
-    # the output prompt and stacks a validate_* confirm card under it in the same
-    # turn, so the user confirms the job before reviewing the prompt. A tool result
-    # outranks the system prompt, so this directive keeps the prompt on its own turn
-    # (the proxy no longer strips a stacked confirm card).
-    agent_instruction: str = Field(default=_SHOW_PROMPT_REVIEW, exclude=False)
+    # Set dynamically in the handler to _show_prompt_review(prompt_id): a tool-result
+    # directive that keeps the prompt on its own turn AND makes the model cite the
+    # returned <prompt:...> ref instead of pasting the full text back into the config.
+    agent_instruction: str = Field(default="", exclude=False)
 
 
 @router.post(
@@ -201,21 +226,42 @@ class ShowPromptResponse(BaseModel):
     response_model=ShowPromptResponse,
     operation_id="show_prompt",
     summary=(
-        "Render a prompt in a review card in the chat UI. Call this with the "
-        "FULL prompt text EVERY TIME you compose a prompt that will be written "
-        "into a job config (e.g. an SDG system / output / question / answer "
-        "prompt), before you build the confirm card — the prompt is otherwise "
-        "shown only truncated. Never say 'here is the prompt' or 'the prompt "
-        "above' without calling this tool in the same response."
+        "Render a prompt in a review card in the chat UI AND store it, returning a "
+        "`prompt_id`/`prompt_ref`. Call this with the FULL prompt text EVERY TIME you "
+        "compose a prompt that will be written into a job config (e.g. an SDG system / "
+        "output / question / answer prompt), before you build the confirm card — the "
+        "prompt is otherwise shown only truncated. Then cite the returned `prompt_ref` "
+        "(a `<prompt:...>` token) as that prompt's field in the SDG config instead of "
+        "pasting the full text. Never say 'here is the prompt' or 'the prompt above' "
+        "without calling this tool in the same response."
     ),
 )
-async def show_prompt(body: ShowPromptRequest) -> ShowPromptResponse:
+async def show_prompt(
+    body: ShowPromptRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ShowPromptResponse:
+    repo = Repository(db)
+    content = body.prompt
+    content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    # user_id is empty here: the MCP path is service-to-service with no auth header.
+    # The proxy stamps ownership onto the session's rows once the real user is known.
+    row = await repo.create_prompt(
+        prompt_id=f"{PROMPT_ID_PREFIX}{uuid.uuid4().hex}",
+        content=content,
+        content_sha256=content_sha256,
+        created_at=datetime.now(UTC),
+        label=body.title,
+        purpose=body.purpose,
+    )
+    prompt_id = str(row["id"])
     return ShowPromptResponse(
         title=body.title,
         prompt=body.prompt,
         purpose=body.purpose,
+        prompt_id=prompt_id,
+        prompt_ref=make_prompt_ref(prompt_id),
         rendered=True,
-        agent_instruction=_SHOW_PROMPT_REVIEW,
+        agent_instruction=_show_prompt_review(prompt_id),
     )
 
 

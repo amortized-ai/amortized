@@ -15,7 +15,12 @@ from amortized.core.placeholders import (
     PLACEHOLDER_DOCUMENT_ID,
     PLACEHOLDER_MODEL,
     PLACEHOLDER_PARENT_JOB_ID,
+    find_prompt_refs,
     find_unresolved_placeholders,
+    is_prompt_ref,
+    make_prompt_ref,
+    prompt_ref_id,
+    resolve_prompt_refs,
 )
 from amortized.core.recipes import list_starter_templates
 from amortized.models import JobType
@@ -72,6 +77,53 @@ def test_find_unresolved_placeholders_walks_nested_structures() -> None:
         {PLACEHOLDER_DOCUMENT_ID, PLACEHOLDER_MODEL}
     )
     assert find_unresolved_placeholders({"document_ids": ["abc123"]}) == []
+
+
+def test_prompt_ref_roundtrip() -> None:
+    ref = make_prompt_ref("prm_abc123")
+    assert ref == "<prompt:prm_abc123>"
+    assert is_prompt_ref(ref)
+    assert prompt_ref_id(ref) == "prm_abc123"
+    # Only a full-value token is a ref — not embedded text, not a non-prm id.
+    assert not is_prompt_ref("here is <prompt:prm_abc123> inline")
+    assert prompt_ref_id("here is <prompt:prm_abc123> inline") is None
+    assert not is_prompt_ref("<prompt:other>")
+    assert not is_prompt_ref("plain text")
+    assert prompt_ref_id(123) is None
+
+
+def test_find_prompt_refs_walks_config() -> None:
+    config = {
+        "columns": [
+            {"name": "ticket", "system_prompt": make_prompt_ref("prm_a")},
+            {"name": "assess", "system_prompt": make_prompt_ref("prm_b")},
+            {"name": "plain", "system_prompt": "inline text"},
+        ],
+        "processors": [
+            {"template": {"messages": [{"role": "system", "content": make_prompt_ref("prm_a")}]}}
+        ],
+    }
+    assert find_prompt_refs(config) == ["prm_a", "prm_b"]
+    assert find_prompt_refs({"columns": [{"system_prompt": "inline"}]}) == []
+
+
+def test_resolve_prompt_refs_is_pure_and_substitutes() -> None:
+    config = {
+        "columns": [{"name": "t", "system_prompt": make_prompt_ref("prm_a")}],
+        "num_records": 10,
+    }
+    resolved = resolve_prompt_refs(config, {"prm_a": "FULL TEXT"}.get)
+    assert resolved["columns"][0]["system_prompt"] == "FULL TEXT"
+    assert resolved["num_records"] == 10
+    # Source config is not mutated — the persisted ref-form survives.
+    assert config["columns"][0]["system_prompt"] == make_prompt_ref("prm_a")
+
+
+def test_resolve_prompt_refs_leaves_unknown_refs() -> None:
+    config = {"columns": [{"system_prompt": make_prompt_ref("prm_missing")}]}
+    resolved = resolve_prompt_refs(config, {}.get)
+    # An unresolved ref is left verbatim for the caller to reject (fail-closed).
+    assert resolved["columns"][0]["system_prompt"] == make_prompt_ref("prm_missing")
 
 
 @pytest.mark.asyncio

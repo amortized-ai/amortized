@@ -118,15 +118,23 @@ is the only way the user sees the prompt, so render it before asking them to
 review or approve it. The same prompt is used in both the output-generating
 column `system_prompt` and the SFT processor system message.
 
+**`show_prompt` stores the prompt and returns a `prompt_ref` (a `<prompt:...>`
+token). When you build the config in a later step, put that token as the field
+value — the column `system_prompt` AND the processor system message — instead of
+pasting the full prompt text back into the config. The platform expands the token
+to the exact text you showed. This keeps the config small so it validates
+reliably; a large inline prompt can be corrupted in transit. Never paste the full
+prompt text into the config.**
+
 If the user asks to CHANGE the prompt — any edit to its wording, rules, or
 content, however small — fold the change into the full prompt text and render
-the UPDATED prompt with `show_prompt` AGAIN for re-approval. Repeat this
-render → approve loop, staying on this step, until they approve the prompt as
-shown. (A question about the prompt, or any reply that is not a change to it,
-is not an edit — answer it, but keep the current prompt.) A requested change is
-not an approval: do NOT advance to the confirm card (`validate_sdg_job`) on an
-edit, and do NOT respond to one by writing or editing a file — the prompt
-exists only in the `show_prompt` tool call.
+the UPDATED prompt with `show_prompt` AGAIN for re-approval (this returns a NEW
+`prompt_ref` — use the latest one). Repeat this render → approve loop, staying on
+this step, until they approve the prompt as shown. (A question about the prompt,
+or any reply that is not a change to it, is not an edit — answer it, but keep the
+current prompt.) A requested change is not an approval: do NOT advance to the
+confirm card (`validate_sdg_job`) on an edit, and do NOT respond to one by writing
+or editing a file — the prompt exists only in the `show_prompt` tool call.
 
 ### Step 9 — Generate outputs for raw inputs (optional) <!--signal:generate-outputs-->
 
@@ -233,7 +241,7 @@ must include the exact output format template from Step 3.
   "column_type": "llm-text",
   "name": "<output_name>",
   "model_alias": "teacher",
-  "system_prompt": "<from Step 8: role + criteria + format + constraints>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 8, e.g. <prompt:prm_...>>",
   "prompt": "Example:\n\n{{ demo_example }}\n\nProcess this:\n\n{{ <input_name> }}"
 }
 ```
@@ -246,7 +254,7 @@ must include the exact output format template from Step 3.
   "name": "sft_chat",
   "template": {
     "messages": [
-      {"role": "system", "content": "<same system_prompt as output column>"},
+      {"role": "system", "content": "<same prompt_ref as the output column's system_prompt>"},
       {"role": "user", "content": "{{ <input_name> }}"},
       {"role": "assistant", "content": "{{ <output_name> }}"}
     ]
@@ -281,7 +289,8 @@ Set `max_tokens` high enough for long-form content + outputs.
 - [ ] All `{{ column_name }}` references match actual column names
 - [ ] Example columns have `"drop": true`
 - [ ] Generation prompt does not leak target labels into generated input
-- [ ] Processor system message matches output column's system_prompt
+- [ ] Processor system message uses the SAME `prompt_ref` token as the output column's system_prompt
+- [ ] System prompts are `<prompt:...>` ref tokens (from show_prompt), not pasted full text
 - [ ] Sampler values include descriptions after " - "
 - [ ] Variables on labeled lines, not inline
 - [ ] Output column system_prompt includes exact output format template with strict adherence instruction
@@ -362,7 +371,7 @@ demonstration-based scoring:
   "column_type": "llm-text",
   "name": "<assessment_name>",
   "model_alias": "teacher",
-  "system_prompt": "<from Step 8: role + rubric + format + constraints>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 8, e.g. <prompt:prm_...>>",
   "prompt": "Calibration example:\n\n{{ calibration_example }}\n\nScore this:\n\n{{ <content_name> }}"
 }
 ```

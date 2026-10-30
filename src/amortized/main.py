@@ -16,7 +16,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from amortized.api import agent, artifacts, costs, datasets, documents, jobs, recipes, schemas, ui
+from amortized.api import (
+    agent,
+    artifacts,
+    costs,
+    datasets,
+    documents,
+    jobs,
+    prompts,
+    recipes,
+    schemas,
+    ui,
+)
 from amortized.api import eval as eval_api
 from amortized.api import evals as evaluations_api
 from amortized.api import models as models_api
@@ -238,6 +249,7 @@ async def validation_exception_handler(
 
 
 app.include_router(jobs.router)
+app.include_router(prompts.router)
 app.include_router(recipes.router)
 app.include_router(costs.router)
 app.include_router(datasets.router)

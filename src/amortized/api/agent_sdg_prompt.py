@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from amortized.api.agent_parts import _get_tool_input, _tool_name
+from amortized.core.placeholders import is_prompt_ref
 
 _SHOW_PROMPT_TOOL = "show_prompt"
 _VALIDATE_SDG_TOOL = "validate_sdg_job"
@@ -89,12 +90,17 @@ def _bind_prompts_to_config(config: dict[str, Any], shown: list[str]) -> bool:
     columns = config.get("columns")
     if not isinstance(columns, list) or not shown:
         return False
+    # A column whose system_prompt is already a <prompt:...> reference (#541) carries
+    # the approved prompt by id — never overwrite it with inline text (that would both
+    # re-bloat the config and undo the reference). This binding stays as a LEGACY path
+    # for inline-text configs only.
     prompt_cols = [
         c
         for c in columns
         if isinstance(c, dict)
         and isinstance(c.get("system_prompt"), str)
         and c["system_prompt"].strip()
+        and not is_prompt_ref(c["system_prompt"])
     ]
     if not prompt_cols:
         return False

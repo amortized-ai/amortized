@@ -10,6 +10,7 @@ from typing import Any
 import amortized.config as config_mod
 from amortized.backends import Resources
 from amortized.core.model_catalog import enabled_provider_defs, inject_enabled_provider_keys
+from amortized.core.placeholders import find_prompt_refs, resolve_prompt_refs
 from amortized.jobs.base import JobBuildError, JobBuildResult
 from amortized.jobs.common import fetch_document_chunks, set_mlflow_run_tag
 
@@ -123,7 +124,37 @@ async def build(
     mode = config.pop("mode", "create")
     topic = config.pop("topic", None)
 
-    dd_config = {"data_designer": config}
+    # Materialize prompt-store refs (#541) into full text for the container ONLY.
+    # The persisted config (resolved_config below) keeps the <prompt:...> refs so
+    # clones/retries stay small and corruption-safe; the container needs real text.
+    rendered = config
+    prompt_refs = find_prompt_refs(config)
+    if prompt_refs:
+        from amortized.db.connection import get_pool
+        from amortized.db.repository import Repository
+
+        async with get_pool().acquire() as conn:
+            repo = Repository(conn)
+            resolved_text = {ref: await repo.get_prompt_content(ref) for ref in prompt_refs}
+        missing = sorted(ref for ref, text in resolved_text.items() if text is None)
+        if missing:
+            raise SDGBuildError(
+                "SDG config references prompt(s) with no stored text: "
+                + ", ".join(missing)
+                + " — the prompt store row was deleted or never created."
+            )
+        rendered = resolve_prompt_refs(config, resolved_text.get)
+        if chunk_count:
+            # The same {{ text }} -> {{ content }} rewrite applied to inline prompts
+            # above (file_contents seeding exposes `content`, not `text`), now applied
+            # to the just-resolved ref'd prompt text.
+            for col in rendered.get("columns", []):
+                for field in ("prompt", "system_prompt"):
+                    val = col.get(field, "")
+                    if isinstance(val, str) and "{{ text }}" in val:
+                        col[field] = val.replace("{{ text }}", "{{ content }}")
+
+    dd_config = {"data_designer": rendered}
     config_files["config.yaml"] = yaml.dump(dd_config, default_flow_style=False, sort_keys=False)
 
     # Direct-provider stopgap for the absent MLflow AI Gateway: the job image's
