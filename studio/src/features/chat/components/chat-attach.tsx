@@ -36,6 +36,7 @@ export function ChatAttach({ onDataset, onDocument, disabled = false }: ChatAtta
             variant="ghost"
             disabled={disabled}
             aria-label="Attach data"
+            title="Attach data"
             className="h-11 w-11 rounded-xl shrink-0 text-muted-foreground hover:text-foreground"
           >
             <Paperclip className="h-4 w-4" />

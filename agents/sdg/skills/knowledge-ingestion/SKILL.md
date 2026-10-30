@@ -32,10 +32,18 @@ Ask the user these questions (one at a time, using `present_options`):
 
 ### Step 1 — What documents? <!--signal:documents-->
 
-Check if they've already uploaded documents via the Documents page. Use
-`list_documents` to show available documents with their IDs. If not
-uploaded yet, guide them to upload first. Present the choice with
-`present_options` using `step="documents"`.
+Call `list_documents` to see what's already ingested, and show those
+documents by ID. If they need to add documents, there are exactly two
+ways — you cannot upload files yourself, so present BOTH with
+`present_options` using `step="documents"` and let the user pick:
+
+- **Attach in chat** — click the paperclip icon in the composer and choose
+  Document. The attachment comes back as a `document_id` reference.
+- **Documents tab** — upload there, then come back and say they're ready.
+
+Offer only these two. Do NOT suggest any other method (no URLs, no pasting
+file contents). After they add documents, re-run `list_documents` to pick
+up the new `document_id`.
 
 ### Step 2 — Question types <!--signal:question-types-->
 
