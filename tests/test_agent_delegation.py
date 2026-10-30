@@ -162,6 +162,67 @@ class TestSubagentCompletion:
         assert tools == []
 
 
+class TestPrematureCompletionGuard:
+    """A subagent that renders an await-user card (show_prompt preview / validate_* confirm /
+    approval present_options) is NOT done. A signal_subagent_completion fired on that same turn
+    is premature — honoring it hands control back mid-approval and the handback re-drive strands
+    the card. It must be ignored so the card survives and the subagent stays active. A genuine
+    deliverable completion (a job_complete event for the subagent's own create-mode job) is
+    exempt: a next-steps card there rides a real completion."""
+
+    def test_premature_completion_with_card_is_suppressed(self, router: _Router) -> None:
+        state = _make_state(router)
+        state.subagent_id = router.add_session(
+            [
+                [
+                    _tool_part("show_prompt", {"title": "assessor", "prompt_id": "prm_a"}),
+                    _tool_part(
+                        "present_options", {"step": "review", "options": ["Approve", "Revise"]}
+                    ),
+                    _tool_part("signal_subagent_completion", {"summary": "done"}),
+                ]
+            ]
+        )
+        state.subagent_target = "sdg"
+
+        result = _run(agent._handle_subagent_message(state, "s1", "200", _body()))
+
+        # Subagent keeps control; nothing handed back to the orchestrator.
+        assert state.subagent_id is not None
+        assert state.subagent_target == "sdg"
+        assert not any(m[0] == state.orchestrator_id for m in router.sent)
+        # The card survives; only the internal (premature) completion signal is stripped.
+        tools = [agent._tool_name(p) for p in result["parts"] if p.get("type") == "tool"]
+        assert "show_prompt" in tools
+        assert "present_options" in tools
+        assert "signal_subagent_completion" not in tools
+
+    def test_deliverable_completion_with_next_steps_card_is_honored(self, router: _Router) -> None:
+        state = _make_state(router, orchestrator_script=[[_text_part("What next?")]])
+        state.subagent_id = router.add_session(
+            [
+                [
+                    _tool_part("present_options", {"step": "next", "options": ["Train", "Stop"]}),
+                    _tool_part("signal_subagent_completion", {"summary": "sdg done"}),
+                ]
+            ]
+        )
+        state.subagent_target = "sdg"
+
+        _run(
+            agent._handle_subagent_message(
+                state,
+                "s1",
+                "Job j1 (SDG) finished with status: succeeded.",
+                _body(event="job_complete", outcome="succeeded", job_type="sdg", job_mode="create"),
+            )
+        )
+
+        # Real deliverable completion: honored → subagent released, orchestrator resumes.
+        assert state.subagent_id is None
+        assert any(m[0] == state.orchestrator_id for m in router.sent)
+
+
 class TestRequestOrchestratorHelp:
     """A subagent is a leaf: it cannot delegate. When it needs a prerequisite it can't
     produce itself it calls request_orchestrator_help, handing back to the orchestrator.

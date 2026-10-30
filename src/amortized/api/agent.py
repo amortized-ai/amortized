@@ -1218,6 +1218,26 @@ async def _handle_subagent_message(
     # finishing has nothing left to be helped with).
     summary = _detect_completion(latest_parts)
 
+    # Premature-completion guard. A subagent that rendered an await-user card (a show_prompt
+    # preview, a validate_* confirm, or an approval present_options) is NOT done — it is waiting
+    # for the user's decision on that card. A weak driver (GLM-flash) sometimes ALSO fires
+    # signal_subagent_completion on that very turn; honoring it hands control back mid-approval,
+    # and the resulting handback re-drive advances opencode's message boundary PAST the card so the
+    # frontend's turn window drops it (it never renders, even on hard refresh). Suppress the
+    # premature signal — UNLESS this is a genuine deliverable completion (a job_complete event for
+    # the subagent's own create-mode job, per _is_deliverable_completion), where a next-steps card
+    # legitimately rides the real completion. With the signal cleared the turn falls through to the
+    # ordinary-turn path: the stray signal is stripped from the UI, the card is preserved, and the
+    # subagent stays active to receive the user's answer.
+    genuine_completion = body.event == "job_complete" and _is_deliverable_completion(
+        state, body, user_text
+    )
+    if summary and _observe_turn(latest_parts).has_card and not genuine_completion:
+        logger.info(
+            "Suppressing premature completion on a mid-workflow card turn: session=%s", session_id
+        )
+        summary = None
+
     if summary:
         logger.info("Subagent completion signal received: session=%s", session_id)
         completer = state.subagent_target
