@@ -879,7 +879,7 @@ class TestDelegationStallCheck:
     ) -> None:
         state = _make_state(router)
         eval_id = router.queue_session([list(t) for t in self._STALL_THEN_CORRECT])
-        out = _run(
+        _run(
             agent._maybe_delegate(
                 state, "s1", ("eval", "evaluate t1", False), "evaluate t1",
                 {"info": {}, "parts": []}, _body(),
@@ -902,7 +902,7 @@ class TestDelegationStallCheck:
         state = _make_state(router)
         eval_id = router.add_session([list(t) for t in self._STALL_THEN_CORRECT])
         state.completed_subagents["eval"] = eval_id  # stashed, awaiting resume
-        out = _run(
+        _run(
             agent._maybe_delegate(
                 state, "s1", ("eval", "resumed", True), "go on",
                 {"info": {}, "parts": []}, _body(),
