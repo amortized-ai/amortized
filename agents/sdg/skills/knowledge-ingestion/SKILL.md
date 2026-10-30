@@ -37,7 +37,7 @@ documents by ID. If they need to add documents, there are exactly two
 ways — you cannot upload files yourself, so present BOTH with
 `present_options` using `step="documents"` and let the user pick:
 
-- **Attach in chat** — the paperclip (Attach data) in the composer, then
+- **Attach in chat** — click the paperclip icon in the composer and choose
   Document. The attachment comes back as a `document_id` reference.
 - **Documents tab** — upload there, then come back and say they're ready.
 

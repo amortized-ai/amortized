@@ -75,9 +75,9 @@ until you have. In particular, for any **classifier / router / intent / sentimen
 
 - **User has documents they want a model to answer questions about** →
   `sdg-knowledge-ingestion`. If they have not added documents yet, there are
-  exactly two ways to do it — the paperclip (Attach data → Document) in the
-  chat composer, or the Documents tab — offer both and nothing else (never a
-  URL or pasted file contents).
+  exactly two ways to do it — the paperclip icon in the chat composer (choose
+  Document), or the Documents tab — offer both and nothing else (never a URL
+  or pasted file contents).
 - **User wants to sort/label/categorize/route text** → `sdg-embedding-classifier`
   (the default: a small, fast embedding classifier trained with `embedding_sft`,
   producing flat `text,category` data). Only use `sdg-classification` instead when
