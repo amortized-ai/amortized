@@ -24,3 +24,21 @@ CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
 
+-- Prompt store (#541, migration 0004): reviewed prompts persisted once and cited
+-- from SDG configs by an unguessable id (<prompt:prm_...>), so configs stay small at
+-- emission. Full text is re-materialized only at the container boundary (jobs/sdg.py).
+CREATE TABLE IF NOT EXISTS prompts (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL DEFAULT '',
+    role            TEXT NOT NULL DEFAULT '',
+    label           TEXT NOT NULL DEFAULT '',
+    purpose         TEXT NOT NULL DEFAULT '',
+    content         TEXT NOT NULL,
+    content_sha256  TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS prompts_content_sha256_key ON prompts (content_sha256);
+CREATE INDEX IF NOT EXISTS prompts_user_id_idx ON prompts (user_id);
+

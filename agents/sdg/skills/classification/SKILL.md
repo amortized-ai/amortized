@@ -125,6 +125,45 @@ Call `present_options` with step="teacher-model" and each model as an option.
 ALWAYS add as the last option:
 - title: "Configure a model", description: "Configure a teacher-model provider key on the server", value: "Configure a model — Configure a teacher-model provider key on the server"
 
+## Prompt review
+
+**Each prompt gets its OWN review step.** This generative classifier composes TWO
+prompts — the text-generation system prompt (Step 6) and the classifier system
+prompt (Step 7, the SFT processor system message the trained model runs under).
+Review them in SEPARATE turns, one per step: do NOT compose or `show_prompt` both
+in the same turn. Do NOT ask the user to write them — generate domain-specific
+defaults from the chosen domain and categories; the user reviews and adjusts each
+via its `show_prompt` review card. Every prompt field in the config MUST be a
+`<prompt:...>` ref returned by `show_prompt` — never pasted inline. (If your
+pipeline uses more than one `llm-text` generator column, give EACH its own review
+step — one prompt per turn.)
+
+### Step 6 — Text-generation system prompt <!--signal:generation-prompt all:show_prompt,present_options-->
+
+Compose the `llm-text` generation column's `system_prompt` — the role that writes
+a realistic sample of text for the sampled category. Ground it in the domain and
+categories gathered above; instruct it NOT to name the category in the generated
+text. Render it with `show_prompt` (pass the complete prompt text), then ask the
+user to approve or adjust it with `present_options`. Handle ONLY this one prompt
+this turn — do not compose or `show_prompt` the classifier prompt (Step 7) yet.
+Stay on this step through the render → approve loop (on any edit, re-render with
+`show_prompt` AGAIN — each returns a NEW `prompt_ref`, use the latest) until the
+user approves it as shown. Put the returned `<prompt:...>` ref into the generation
+column's `system_prompt` — never paste the prompt text inline.
+
+### Step 7 — Classifier system prompt <!--signal:classifier-prompt all:show_prompt,present_options-->
+
+Compose the classifier `system_prompt` — the SFT processor system message that
+defines how the TRAINED classifier behaves at inference time (classify the input
+into exactly one of the categories; list the allowed labels). Render it with
+`show_prompt` (pass the complete prompt text), then ask the user to approve or
+adjust it with `present_options`. Handle ONLY this one prompt this turn — do not
+re-show the Step 6 generation prompt, and do not bundle both prompts into one
+turn. Stay on this step through the render → approve loop (on any edit, re-render
+with `show_prompt` AGAIN — each returns a NEW `prompt_ref`, use the latest) until
+the user approves it as shown. Put the returned `<prompt:...>` ref into the
+schema_transform processor's system message — never paste the prompt text inline.
+
 ## After SDG — Training
 
 This generative classifier is a normal `messages`-based fine-tune. Recommend

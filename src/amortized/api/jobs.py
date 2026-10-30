@@ -4,6 +4,8 @@ import hashlib
 import json
 import logging
 import re
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
@@ -32,6 +34,14 @@ from amortized.core.jobs import (
 )
 from amortized.core.jobs import (
     list_jobs as core_list_jobs,
+)
+from amortized.core.placeholders import (
+    PROMPT_ID_PREFIX,
+    find_prompt_refs,
+    is_placeholder,
+    make_prompt_ref,
+    prompt_ref_id,
+    resolve_prompt_refs,
 )
 from amortized.db import get_db as _get_db
 from amortized.db.repository import Repository
@@ -578,6 +588,12 @@ async def create_sdg_job(
     user_id = http_request.headers.get("X-Forwarded-User", "")
 
     repo = Repository(db)
+    # Prompt store (#541): store prompt text once and keep only <prompt:...> refs in
+    # the persisted config, so it stays small and clone-safe. The agent path already
+    # emits refs (show_prompt returned them) — those pass through unchanged; the recipe
+    # form path sends inline text, which is refified here deterministically. Either way
+    # this also claims ownership of the referenced rows for the submitting user.
+    await _refify_and_own_prompts(repo, config, user_id=user_id)
     # Fail-closed dependency gate (same invariant as training/eval): any upstream job
     # this SDG chains from (e.g. a dataset-producing parent) must have succeeded before
     # it can be used. Field-driven, so it no-ops for a fresh SDG with no parent.
@@ -875,10 +891,33 @@ async def retry_job(
         "Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run."
     ),
 )
-async def validate_sdg_job(request: SDGJobRequest) -> ValidatedJobConfig:
+async def validate_sdg_job(
+    request: SDGJobRequest,
+    db: asyncpg.Connection = Depends(_get_db),
+) -> ValidatedJobConfig:
     config = request.model_dump(exclude_none=True)
     parent_job_id = config.pop("parent_job_id", "")
-    prompts = _recipe_prompts(config)
+    # The config stores `<prompt:...>` refs (small at emission); resolve them to full
+    # text for the review card only, keeping `config` ref-form for create to store.
+    # Fail closed if a ref has no stored prompt — the card must show real text.
+    refs = find_prompt_refs(config)
+    display_config = config
+    if refs:
+        repo = Repository(db)
+        contents = {rid: await repo.get_prompt_content(rid) for rid in refs}
+        missing = sorted(rid for rid, text in contents.items() if text is None)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "SDG config references prompt(s) with no stored text: "
+                    + ", ".join(missing)
+                    + " — call show_prompt with the full text first, then use the"
+                    " returned <prompt:...> reference in the config."
+                ),
+            )
+        display_config = resolve_prompt_refs(config, contents.get)
+    prompts = _recipe_prompts(display_config)
     output = next((p.text for p in prompts if p.role == "output"), None)
     return ValidatedJobConfig(
         job_type=JobType.sdg,
@@ -962,6 +1001,68 @@ def _recipe_prompts(config: dict[str, Any]) -> list[PromptView]:
                 PromptView(role="input", label=_prompt_label(name), column=name, text=text)
             )
     return inputs + ([output_view] if output_view else [])
+
+
+def _sdg_prompt_slots(config: dict[str, Any]) -> list[tuple[dict[str, Any], str, str, str]]:
+    """Every (container, key, role, label) slot in an SDG config that holds a reviewable
+    prompt: each column's `system_prompt` and each processor template's system message.
+    These are the large, duplicated fields (the output system prompt / rubric / output-format
+    appears in both a column system_prompt and the SFT processor's system turn) that bloat a
+    config."""
+    slots: list[tuple[dict[str, Any], str, str, str]] = []
+    for col in config.get("columns") or []:
+        if isinstance(col, dict) and "system_prompt" in col:
+            slots.append((col, "system_prompt", "system_prompt", str(col.get("name", ""))))
+    for proc in config.get("processors") or []:
+        if not isinstance(proc, dict):
+            continue
+        template = proc.get("template")
+        messages = template.get("messages") if isinstance(template, dict) else None
+        if not isinstance(messages, list):
+            continue
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("role") == "system" and "content" in msg:
+                slots.append((msg, "content", "processor_system", str(proc.get("name", ""))))
+    return slots
+
+
+async def _refify_and_own_prompts(
+    repo: Repository,
+    config: dict[str, Any],
+    *,
+    user_id: str,
+    conversation_id: str = "",
+) -> dict[str, Any]:
+    """Replace inline prompt text in `config` with `<prompt:...>` refs and claim
+    ownership of every referenced row for `user_id`. Mutates `config` in place.
+
+    Idempotent: a field that is already a ref (agent path) is left as-is and its row
+    is just owned; inline text (recipe form path) is stored (content_sha256 dedups to
+    one row) and swapped for its ref. Placeholder tokens and empty strings are skipped.
+    """
+    for container, key, role, label in _sdg_prompt_slots(config):
+        value = container.get(key)
+        if prompt_ref_id(value) is not None:
+            continue  # already a ref — ownership is claimed below
+        if not isinstance(value, str) or not value.strip() or is_placeholder(value):
+            continue
+        content_sha256 = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        row = await repo.create_prompt(
+            prompt_id=f"{PROMPT_ID_PREFIX}{uuid.uuid4().hex}",
+            content=value,
+            content_sha256=content_sha256,
+            created_at=datetime.now(UTC),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            role=role,
+            label=label,
+        )
+        container[key] = make_prompt_ref(str(row["id"]))
+    # Claim ownership of all referenced rows — including rows show_prompt created
+    # ownerless on the agent path (MCP has no auth header), now that the real user is
+    # known at the frontend-called confirm.
+    await repo.stamp_prompts_user(find_prompt_refs(config), user_id)
+    return config
 
 
 class CloneSdgForEvalRequest(BaseModel):

@@ -345,6 +345,16 @@ export function createSdgJob(config: Record<string, unknown>): Promise<Job> {
   return post<Job>("/api/v1/jobs/sdg", config)
 }
 
+// Prompt store (#541): resolve <prompt:...> reference ids in a ref-form config
+// back to their stored text, so the recipe editor shows real prompts, not tokens.
+export function resolvePrompts(
+  promptIds: string[],
+): Promise<{ prompts: Record<string, string> }> {
+  return post<{ prompts: Record<string, string> }>("/api/v1/prompts/resolve", {
+    prompt_ids: promptIds,
+  })
+}
+
 export function createServeJob(config: Record<string, unknown>): Promise<Job> {
   logger.info("createServeJob")
   return post<Job>("/api/v1/jobs/serve", config)

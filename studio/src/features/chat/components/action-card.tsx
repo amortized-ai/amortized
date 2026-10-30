@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2, ChevronDown, ChevronRight, Rocket } from "lucide-react"
+import { useResolvedConfig } from "@/lib/use-resolved-config"
 import type { ProposedAction, PromptView } from "../types"
 
 const PROMPT_PREVIEW_LEN = 220
@@ -146,6 +147,9 @@ interface ActionCardProps {
 export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   const [submitting, setSubmitting] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
+  // Prompt store (#541): the "Full config" dump must show resolved prompt text,
+  // not raw <prompt:...> tokens.
+  const resolvedConfig = useResolvedConfig(action.config)
 
   const handleConfirm = async () => {
     setSubmitting(true)
@@ -206,7 +210,7 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
 
         {showRaw && action.config && (
           <pre className="mt-1 rounded-md bg-muted/50 p-2 text-[11px] font-mono max-h-48 overflow-auto whitespace-pre-wrap break-all">
-            {JSON.stringify(action.config, null, 2)}
+            {JSON.stringify(resolvedConfig, null, 2)}
           </pre>
         )}
       </CardContent>

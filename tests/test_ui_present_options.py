@@ -101,21 +101,39 @@ def test_present_options_carries_halt_directive() -> None:
     assert dumped["agent_instruction"] == resp.agent_instruction  # serialized to the model
 
 
-def test_show_prompt_echoes_full_text() -> None:
+class _FakeConn:
+    """Minimal asyncpg stand-in for show_prompt's single INSERT ... RETURNING."""
+
+    def __init__(self) -> None:
+        self.rows: list[dict] = []
+
+    async def fetchrow(self, _query: str, *args: object) -> dict:
+        row = {"id": args[0], "content_sha256": args[7]}
+        self.rows.append(row)
+        return row
+
+
+def test_show_prompt_echoes_full_text_and_returns_ref() -> None:
     prompt = "You are an RFE assessor.\nScore 5 criteria, 7/10 PASS."
-    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt=prompt)))
+    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt=prompt), _FakeConn()))
     assert resp.rendered is True
     assert resp.prompt == prompt
     assert resp.title == "Assessor prompt"
+    # The stored id is returned so the model can reference it instead of re-pasting text.
+    assert resp.prompt_id.startswith("prm_")
+    assert resp.prompt_ref == f"<prompt:{resp.prompt_id}>"
 
 
 def test_show_prompt_carries_review_first_directive() -> None:
     # The tool result must tell the model to hold the job until the user reviews the
     # prompt — a weaker driver otherwise stacks a validate_*/create_* in the same turn.
-    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt="x")))
+    resp = _run(show_prompt(ShowPromptRequest(title="Assessor prompt", prompt="x"), _FakeConn()))
     assert "review" in resp.agent_instruction.lower()
     assert "validate_" in resp.agent_instruction and "create_" in resp.agent_instruction
     assert "STOP" in resp.agent_instruction
+    # It also steers the model to reference the stored prompt by id.
+    assert resp.prompt_id in resp.agent_instruction
+    assert resp.prompt_ref in resp.agent_instruction
     dumped = resp.model_dump()
     assert dumped["agent_instruction"] == resp.agent_instruction  # serialized to the model
 

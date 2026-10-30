@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { stripPlaceholders } from "./placeholders"
+import {
+  stripPlaceholders,
+  isPromptRef,
+  makePromptRef,
+  promptRefId,
+  findPromptRefs,
+  resolvePromptRefs,
+} from "./placeholders"
 
 describe("stripPlaceholders", () => {
   it("drops placeholder entries from arrays (document_ids)", () => {
@@ -31,5 +38,42 @@ describe("stripPlaceholders", () => {
       model_configs: [{ alias: "text", model: "gpt-oss", provider: "gateway" }],
     }
     expect(stripPlaceholders(config)).toEqual(config)
+  })
+
+  it("does not strip prompt refs (they are valid values)", () => {
+    expect(
+      stripPlaceholders({ columns: [{ system_prompt: makePromptRef("prm_a") }] }),
+    ).toEqual({ columns: [{ system_prompt: "<prompt:prm_a>" }] })
+  })
+})
+
+describe("prompt refs", () => {
+  it("recognizes only a full-value ref token", () => {
+    expect(isPromptRef(makePromptRef("prm_a"))).toBe(true)
+    expect(promptRefId("<prompt:prm_a>")).toBe("prm_a")
+    expect(isPromptRef("see <prompt:prm_a>")).toBe(false)
+    expect(isPromptRef("<prompt:nope>")).toBe(false)
+    expect(promptRefId(123)).toBe(null)
+  })
+
+  it("finds refs across the config tree", () => {
+    const config = {
+      columns: [
+        { system_prompt: makePromptRef("prm_a") },
+        { system_prompt: "inline" },
+      ],
+      processors: [{ template: { messages: [{ content: makePromptRef("prm_b") }] } }],
+    }
+    expect(findPromptRefs(config).sort()).toEqual(["prm_a", "prm_b"])
+  })
+
+  it("resolves refs to text purely (source untouched, unknown left as-is)", () => {
+    const config = {
+      columns: [{ system_prompt: makePromptRef("prm_a") }, { system_prompt: makePromptRef("prm_x") }],
+    }
+    const resolved = resolvePromptRefs(config, { prm_a: "FULL TEXT" })
+    expect(resolved.columns[0]?.system_prompt).toBe("FULL TEXT")
+    expect(resolved.columns[1]?.system_prompt).toBe("<prompt:prm_x>")
+    expect(config.columns[0]?.system_prompt).toBe("<prompt:prm_a>")
   })
 })

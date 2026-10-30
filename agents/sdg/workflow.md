@@ -247,6 +247,11 @@ can be corrupted in transit and fail validation. One `config_json` string
 round-trips reliably. Example shape:
 `validate_sdg_job(config_json="{\"columns\": [...], \"model_configs\": [...], \"mode\": \"preview\", ...}")`.
 
+Keep the config SMALL: every system prompt in it MUST be the `<prompt:...>`
+reference token that `show_prompt` returned, NOT the full prompt text pasted
+inline (see the skill's prompt steps — each prompt has its own review step).
+Referencing — not inlining — the prompts is what keeps the config small enough.
+
 Write ONE short sentence before the tool call, then call it. No tables,
 no parameter lists, no summaries. If validation fails, read the error,
 ask a natural follow-up to get the missing information, fix the config,

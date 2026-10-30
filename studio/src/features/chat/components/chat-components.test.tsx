@@ -104,6 +104,7 @@ describe("ActionCard", () => {
   it("renders action title and description", () => {
     render(
       <ActionCard action={action} onConfirm={vi.fn()} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
     )
     expect(screen.getByText("Submit training job")).toBeInTheDocument()
     expect(screen.getByText(/Train llama-3/)).toBeInTheDocument()
@@ -113,6 +114,7 @@ describe("ActionCard", () => {
     const onConfirm = vi.fn()
     render(
       <ActionCard action={action} onConfirm={onConfirm} onReject={vi.fn()} />,
+      { wrapper: Wrapper },
     )
     fireEvent.click(screen.getByText("Confirm"))
     expect(onConfirm).toHaveBeenCalledOnce()
@@ -122,6 +124,7 @@ describe("ActionCard", () => {
     const onReject = vi.fn()
     render(
       <ActionCard action={action} onConfirm={vi.fn()} onReject={onReject} />,
+      { wrapper: Wrapper },
     )
     fireEvent.click(screen.getByText("Cancel"))
     expect(onReject).toHaveBeenCalledOnce()
@@ -139,7 +142,9 @@ describe("ActionCard", () => {
         num_train_epochs: 25,
       },
     }
-    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
     expect(screen.getByText("Device")).toBeInTheDocument()
     expect(screen.getByText("CPU (default)")).toBeInTheDocument()
   })
@@ -152,7 +157,9 @@ describe("ActionCard", () => {
       jobType: "training" as const,
       config: { algorithm: "embedding_sft", num_train_epochs: 25, train_on_gpu: true },
     }
-    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    render(<ActionCard action={embAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
     expect(screen.getByText("Device")).toBeInTheDocument()
     expect(screen.getByText("GPU (1)")).toBeInTheDocument()
   })
@@ -165,7 +172,9 @@ describe("ActionCard", () => {
       jobType: "training" as const,
       config: { algorithm: "sft", model_name_or_path: "Qwen/Qwen3.5-0.8B", nproc_per_node: 1 },
     }
-    render(<ActionCard action={sftAction} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    render(<ActionCard action={sftAction} onConfirm={vi.fn()} onReject={vi.fn()} />, {
+      wrapper: Wrapper,
+    })
     expect(screen.queryByText("Device")).not.toBeInTheDocument()
   })
 })

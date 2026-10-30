@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from amortized.backends import BackendHandle
 from amortized.config import settings as _settings
 from amortized.core.compute import get_backend
-from amortized.core.placeholders import find_unresolved_placeholders
+from amortized.core.placeholders import find_prompt_refs, find_unresolved_placeholders
 from amortized.models import JobStatus, JobType
 
 if TYPE_CHECKING:
@@ -98,6 +98,22 @@ async def create_job(
             + ", ".join(unresolved)
             + " — resolve them (select real documents/models/datasets) before running"
         )
+
+    # Prompt-store refs (#541) must resolve before the job is stored: a dangling
+    # <prompt:...> ref would fail at the container boundary (build()) where the text
+    # is materialized. Fail closed here with a clear error instead. The config is
+    # stored ref-form (small, clone-safe); refs are expanded only at build time.
+    prompt_refs = find_prompt_refs(config)
+    if prompt_refs:
+        missing = [
+            ref for ref in prompt_refs if await repo.get_prompt_content(ref) is None
+        ]
+        if missing:
+            raise InvalidJobStateError(
+                "config references prompt(s) with no stored text: "
+                + ", ".join(missing)
+                + " — show_prompt stores a prompt and returns its reference"
+            )
 
     # A job that needs more GPUs than the entire budget can never be admitted (the
     # worker would skip it forever), so reject it at creation with a clear error
