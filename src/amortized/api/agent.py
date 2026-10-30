@@ -1192,11 +1192,12 @@ async def _handle_subagent_message(
             # Skip when steer_system is set (job done/failed hand-back): that steer
             # already tells the subagent to signal completion for the real event, and
             # prepending "your completion was not honored" would contradict it.
-            system = (
+            correction = (
                 "Your prior signal_subagent_completion was not honored — you had a"
                 " pending card or job the user needed to act on first. You are still"
-                " active. Continue your workflow from the user's response.\n\n" + system
+                " active. Continue your workflow from the user's response."
             )
+            system = f"{correction}\n\n{system}" if system else correction
         state.suppressed_completion = False
     logger.info("Routing to subagent: session=%s target=%s", session_id, state.subagent_target)
     try:
