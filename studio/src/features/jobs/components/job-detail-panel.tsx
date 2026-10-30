@@ -33,6 +33,7 @@ import { useDatasets } from "@/features/datasets/api/use-datasets"
 import { useModels } from "@/features/models/api/use-models"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { Job } from "@/types/api"
+import { useResolvedConfig } from "@/lib/use-resolved-config"
 
 function formatJobError(raw: string): { summary: string; isTruncated: boolean } {
   if (raw.length > 200) {
@@ -934,6 +935,8 @@ function ConfusionMatrix({ confusion }: { confusion: Record<string, Record<strin
 function ConfigTab({ job }: { job: Job }) {
   const [configOpen, setConfigOpen] = useState(true)
   const [metadataOpen, setMetadataOpen] = useState(false)
+  // Prompt store (#541): render resolved prompt text, never raw <prompt:...> tokens.
+  const resolvedConfig = useResolvedConfig(job.config)
 
   return (
     <div className="space-y-2 pt-2">
@@ -946,7 +949,7 @@ function ConfigTab({ job }: { job: Job }) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
-            <JsonTreeViewer data={job.config} collapsed={2} />
+            <JsonTreeViewer data={resolvedConfig} collapsed={2} />
           </div>
         </CollapsibleContent>
       </Collapsible>

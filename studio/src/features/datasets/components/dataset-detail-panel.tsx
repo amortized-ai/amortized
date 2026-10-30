@@ -34,6 +34,7 @@ import {
 } from "lucide-react"
 import { useDataset, useDatasetSamples, useDeleteDataset } from "../api/use-datasets"
 import { useJob } from "@/features/jobs/api/use-jobs"
+import { useResolvedConfig } from "@/lib/use-resolved-config"
 import { DeleteEntityDialog } from "@/components/delete-entity-dialog"
 import type { DatasetRecord, DatasetSample } from "@/types/api"
 
@@ -596,6 +597,8 @@ function MessageBubble({ role, content }: { role: string; content: unknown }) {
 function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
   const jobId = dataset.tags["job_id"] ?? null
   const { data: job, isError: jobError } = useJob(jobId)
+  // Prompt store (#541): resolve <prompt:...> refs to text for display, never tokens.
+  const resolvedConfig = useResolvedConfig(job?.config)
   const [configOpen, setConfigOpen] = useState(true)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [paramsOpen, setParamsOpen] = useState(false)
@@ -619,7 +622,7 @@ function ConfigTab({ dataset }: { dataset: DatasetRecord }) {
         <CollapsibleContent>
           <div className="mt-1 rounded-lg bg-muted/50 p-4 overflow-x-auto">
             {hasConfig ? (
-              <JsonTreeViewer data={job!.config} collapsed={2} />
+              <JsonTreeViewer data={resolvedConfig} collapsed={2} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 {!jobId
