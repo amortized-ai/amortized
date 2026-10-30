@@ -13,7 +13,7 @@ import type {
   ToolResult,
   OpenCodeResponse,
 } from "../types"
-import { extractValidatedJobConfig, VALIDATE_TO_CREATE_ENDPOINT } from "../utils/parse-tool-result"
+import { extractJobInfo, extractValidatedJobConfig, VALIDATE_TO_CREATE_ENDPOINT } from "../utils/parse-tool-result"
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -224,7 +224,7 @@ function extractSessionData(
         //  - present_options: same retry pattern as validate — a corrupted-args
         //    error (weak models emit stray XML in the JSON) then a clean retry;
         //    keeping only the errored result drops the options card.
-        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "split_dataset" || name === "merge_datasets" || name === "show_prompt" || name === "present_options" || name.startsWith("validate_")
+        const allowDuplicates = name === "create_sdg_job" || name === "create_training_job" || name === "submit_recipe_job" || name === "create_job" || name === "retry_job" || name === "split_dataset" || name === "merge_datasets" || name === "show_prompt" || name === "present_options" || name.startsWith("validate_")
         if (UI_TOOLS.has(name) && !ALL_TURN_TOOLS.has(name) && (allowDuplicates || !seen.has(name.toLowerCase()))) {
           if (!allowDuplicates) seen.add(name.toLowerCase())
           const stateObj = part.state as Record<string, unknown> | undefined
@@ -685,7 +685,7 @@ export function useChat() {
             phase: extractPhase(toolResults),
           })
 
-          if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name))) {
+          if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name) && extractJobInfo(t.result).jobId)) {
             useChatStore.getState().setJobInFlight(convId, true)
           }
 

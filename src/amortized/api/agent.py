@@ -1435,8 +1435,12 @@ async def _maybe_delegate(
     # parts yields false stalls whose re-drive pushes a new user message past the real tool call,
     # stranding the card. This mirrors the steady-state handler (_handle_subagent_message), which
     # already adjudicates the GET-fetched parts.
+    #
+    # Do NOT store fetched parts in sub_result["parts"]: the POST response contract carries only
+    # step markers. Leaking full GET parts causes the frontend's UUID fallback to pick stale IDs
+    # (e.g. retry_job's input.job_id) while deduplication discards the correctly parsed GET result.
     fetched_parts = await _fetch_all_assistant_parts(state.subagent_id)
-    sub_result["parts"] = await _maybe_nudge_subagent_stall(
+    await _maybe_nudge_subagent_stall(
         state, session_id, body, fetched_parts, guard_missing_signal=False
     )
     return sub_result
