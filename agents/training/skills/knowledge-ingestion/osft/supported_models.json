@@ -1,23 +1,99 @@
 [
   {
+    "id": "Qwen/Qwen3-0.6B",
+    "family": "qwen3",
+    "size": "0.6B",
+    "description": "Ultra-lightweight, best for quick prototyping"
+  },
+  {
+    "id": "Qwen/Qwen3-1.7B",
+    "family": "qwen3",
+    "size": "1.7B",
+    "description": "Lightweight, good for simple tasks"
+  },
+  {
+    "id": "Qwen/Qwen3-4B",
+    "family": "qwen3",
+    "size": "4B",
+    "description": "Balanced size and capability"
+  },
+  {
+    "id": "Qwen/Qwen3-8B",
+    "family": "qwen3",
+    "size": "8B",
+    "description": "Strong general-purpose model"
+  },
+  {
+    "id": "Qwen/Qwen3-14B",
+    "family": "qwen3",
+    "size": "14B",
+    "description": "High accuracy for complex tasks"
+  },
+  {
+    "id": "Qwen/Qwen3-32B",
+    "family": "qwen3",
+    "size": "32B",
+    "description": "Very high capacity, needs significant VRAM"
+  },
+  {
     "id": "Qwen/Qwen3.5-0.8B",
+    "family": "qwen3.5",
     "size": "0.8B",
     "description": "Fastest inference, good for prototyping"
   },
   {
     "id": "Qwen/Qwen3.5-2B",
+    "family": "qwen3.5",
     "size": "2B",
     "description": "Small but capable"
   },
   {
     "id": "Qwen/Qwen3.5-4B",
+    "family": "qwen3.5",
     "size": "4B",
     "default": true,
     "description": "Balanced, recommended default"
   },
   {
     "id": "Qwen/Qwen3.5-9B",
+    "family": "qwen3.5",
     "size": "9B",
     "description": "Best accuracy for knowledge tasks"
+  },
+  {
+    "id": "Qwen/Qwen3.8-27B",
+    "family": "qwen3.8",
+    "size": "27B",
+    "description": "High capacity, strong reasoning and knowledge retention"
+  },
+  {
+    "id": "google/gemma-4-26B-A4B-it",
+    "family": "gemma",
+    "size": "26B (4B active)",
+    "description": "MoE model, efficient inference with 4B active parameters"
+  },
+  {
+    "id": "google/gemma-4-31B-it",
+    "family": "gemma",
+    "size": "31B",
+    "description": "Large dense model, highest accuracy"
+  },
+  {
+    "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+    "family": "deepseek",
+    "size": "1.5B",
+    "description": "Reasoning-distilled, compact"
+  },
+  {
+    "id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "family": "deepseek",
+    "size": "7B",
+    "description": "Reasoning-distilled, strong for its size"
+  },
+  {
+    "id": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+    "family": "nvidia",
+    "size": "30B (3B active)",
+    "description": "MoE model, fast inference with 3B active parameters"
   }
 ]

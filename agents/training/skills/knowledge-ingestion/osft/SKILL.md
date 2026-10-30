@@ -44,12 +44,41 @@ Every parameter is adjustable:
 Ask the user:
 
 1. **What model?** — Read `supported_models.json` (bundled with this
-   skill) for the list of supported models with HuggingFace IDs, sizes,
-   and descriptions. Present ONLY models from that file — do NOT invent
-   other sizes or IDs. The model choice affects all other
-   hyperparameters — set them after.
-2. **GPUs** — Always use 1 GPU (`nproc_per_node: 1`). Do NOT ask the
-   user how many GPUs they have or offer GPU count options.
+   skill) for the list of verified models. **Recommend a model from
+   this list first** — every model in it has been tested end-to-end
+   with compatible architecture and configuration. Present the options
+   with their sizes and descriptions.
+
+   **If the user wants a model that is NOT in the list**, follow this
+   flow:
+
+   a. **Validate the model.** Check two things:
+      - **Valid HuggingFace model ID.** The model must have a valid
+        HuggingFace identifier (e.g. `org/model-name`) that can be
+        resolved and downloaded.
+      - **Compatible model architecture.** The model's architecture
+        must be suitable for the intended task. For example, a text
+        generation task requires a generative (decoder) model — an
+        encoder-only model designed for embeddings or classification
+        would not be appropriate. If the model passes both checks,
+        accept it and proceed.
+
+   b. **If the model looks risky** (fails either check, or the
+      architecture cannot be determined), warn the user and suggest a
+      similar model from the supported list. If the user insists,
+      allow it — state clearly: "This model is not in our verified
+      list and may not be compatible. We will proceed with your
+      choice, but if the job fails, consider switching to one of the
+      supported models." Then continue normally.
+
+   The model choice affects all downstream hyperparameters — gather
+   them after.
+
+2. **GPUs** — Estimate the number of GPUs needed based on the model
+   size and available VRAM. Default to 1 GPU (`nproc_per_node: 1`)
+   for models that fit in a single GPU's memory. For larger models
+   (e.g. 14B+ parameters), recommend additional GPUs as needed and
+   explain the reasoning.
 3. **Training data** — Should come from a completed SDG job. Use
    `parent_job_id` to chain SDG → Training automatically. Ask the user
    for the SDG job ID if not already in the conversation.
@@ -80,7 +109,7 @@ Call `validate_training_job` with these parameters:
 }
 ```
 
-### Key Parameters — Adjust Based on Data and Compute
+### Key Parameters — Adjust Based on Model Size, Data, and Compute
 
 Do NOT use static defaults blindly. Adapt each parameter to the user's
 dataset size, model choice, and GPU count. Explain your reasoning when
@@ -90,11 +119,11 @@ presenting the confirmation table.
 |-------|-----------|
 | `model_name_or_path` | User's chosen model |
 | `num_train_epochs` | 3–5 for <1000 samples, 2–3 for 1000–5000, 1–2 for 5000+. More data needs fewer epochs to avoid overfitting |
-| `learning_rate` | 2e-5 for 9B models, 5e-5 for 4B, 6e-5 for 0.8B–2B. Larger models need lower LR |
-| `effective_batch_size` | Always 32 (1 GPU × 32 per-GPU batch). **Always show in confirmation table.** |
+| `learning_rate` | Scale inversely with model size. Guideline: ≤2B → 6e-5, 3B–4B → 5e-5, 7B–9B → 2e-5, 14B+ → 1e-5. Larger models are more sensitive to high learning rates |
+| `effective_batch_size` | 32 (nproc_per_node × per-GPU batch). **Always show in confirmation table.** |
 | `max_length` | Must fit the longest context + question + answer from SDG. For knowledge QA with 15-sentence chunks: ~11000. For simple classification (short label output): ~2048. For task distillation (scoring, assessment, rubric-based evaluation — output is long-form feedback): **~16000**. Check which SDG skill produced the data to decide. Validate by checking the longest example in the SDG dataset. |
 | `unfreeze_rank_ratio` | 0.2 is the OSFT default — fraction of weights trainable. **Always show in confirmation table** even when using the default. This is the key OSFT-specific parameter. |
-| `nproc_per_node` | Always 1 |
+| `nproc_per_node` | Default 1. Increase for large models that exceed single-GPU VRAM |
 | `max_tokens_per_gpu` | 15000 for H100 (80GB), 8000 for A100 (40GB), 4000 for consumer GPUs. Reduce if OOM |
 | `warmup_steps` | ~1% of total steps. total_steps = (num_samples / effective_batch_size) × num_epochs |
 | `bf16` | true for Ampere+ GPUs (A100, H100). Use fp16 for older GPUs |
@@ -121,7 +150,7 @@ the SDG `schema_transform` processor produces:
 
 ## Compute Requirements
 
-- All training runs use 1 GPU
+- Default to 1 GPU; increase based on model size and VRAM estimates
 - Checkpoint saved at each epoch
 
 ## After Training
