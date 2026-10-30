@@ -198,7 +198,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate an SDG job config and present it for user confirmation. The UI renders a confirmation card \u2014 the user clicks confirm to submit. Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run.",
+        "summary": "Validate an SDG job config and present it for user confirmation. The UI renders a confirmation card \u2014 the user clicks confirm to submit. Do NOT call signal_subagent_completion in this turn \u2014 wait for the user. Use mode 'preview' for a ~10 sample test run first, then 'create' for the full run.",
         "operationId": "validate_sdg_job",
         "requestBody": {
           "content": {
@@ -281,7 +281,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Any hyperparameter you mention to the user must be an explicit field in this config; fields you leave unset use the trainer default and the card shows them as such \u2014 do not state a value you did not set. Set parent_job_id to chain from a completed SDG job.",
+        "summary": "Validate a training job config and present it for user confirmation. The UI renders a confirmation card with ALL parameters \u2014 do NOT output a markdown table, parameter list, or config summary before or after this tool call. Write ONE short sentence, then call this tool. Do NOT call signal_subagent_completion in this turn \u2014 wait for the user. Any hyperparameter you mention to the user must be an explicit field in this config; fields you leave unset use the trainer default and the card shows them as such \u2014 do not state a value you did not set. Set parent_job_id to chain from a completed SDG job.",
         "description": "Validate a training job config without creating it.",
         "operationId": "validate_training_job",
         "requestBody": {
@@ -348,7 +348,7 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Validate an eval job config and present it for user confirmation. Set parent_job_id to chain from a completed SDG job, or eval_data_run_id to use an uploaded dataset.",
+        "summary": "Validate an eval job config and present it for user confirmation. Do NOT call signal_subagent_completion in this turn \u2014 wait for the user. Set parent_job_id to chain from a completed SDG job, or eval_data_run_id to use an uploaded dataset.",
         "description": "Validate an eval job config without creating it.",
         "operationId": "validate_eval_job",
         "requestBody": {
@@ -6176,7 +6176,7 @@
           "agent_instruction": {
             "type": "string",
             "title": "Agent Instruction",
-            "default": "The prompt is now shown for review. Do NOT submit or confirm a job in this same turn (no validate_*/create_*) \u2014 the user must review this prompt first, because it ships in the training data. Ask them to approve it or request edits (present_options), then STOP and wait; build/confirm the job in your NEXT turn, after they approve."
+            "default": "The prompt is now shown for review. Do NOT submit or confirm a job in this same turn (no validate_*/create_*/signal_subagent_completion) \u2014 the user must review this prompt first, because it ships in the training data. Ask them to approve it or request edits (present_options), then STOP and wait; build/confirm the job in your NEXT turn, after they approve."
           }
         },
         "type": "object",

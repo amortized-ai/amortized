@@ -13,7 +13,7 @@ import type {
   ToolResult,
   OpenCodeResponse,
 } from "../types"
-import { extractJobInfo, extractValidatedJobConfig, VALIDATE_TO_CREATE_ENDPOINT } from "../utils/parse-tool-result"
+import { unwrapToolResult, extractValidatedJobConfig, VALIDATE_TO_CREATE_ENDPOINT } from "../utils/parse-tool-result"
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -685,7 +685,11 @@ export function useChat() {
             phase: extractPhase(toolResults),
           })
 
-          if (toolResults.some((t) => JOB_CREATION_TOOLS.has(t.name) && extractJobInfo(t.result).jobId)) {
+          if (toolResults.some((t) => {
+            if (!JOB_CREATION_TOOLS.has(t.name)) return false
+            const parsed = unwrapToolResult(t.result) as { id?: unknown } | null
+            return typeof parsed?.id === "string" && parsed.id.length > 0
+          })) {
             useChatStore.getState().setJobInFlight(convId, true)
           }
 
