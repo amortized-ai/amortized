@@ -102,11 +102,42 @@ For example, a document with 50 chunks of mean 400 tokens:
 Show the user the actual numbers, the multiplier, and the coverage
 tier so they understand the reasoning.
 
-### Step 6 — System prompt for the trained model <!--signal:system-prompt-->
+**Each prompt gets its OWN review step.** This pipeline composes TWO prompts —
+the question system prompt (Step 6) and the answer system prompt (Step 7, which
+doubles as the trained model's inference system prompt). Review them in SEPARATE
+turns, one per step: do NOT compose or `show_prompt` both in the same turn. Do
+NOT ask the user to write them — generate domain-specific defaults from the
+document content; the user reviews and adjusts each via its `show_prompt` review
+card. Every prompt field in the config MUST be a `<prompt:...>` ref returned by
+`show_prompt` — never pasted inline. See **Prompt Engineering Rules** below for
+what each prompt must and must not contain.
 
-Do NOT ask the user to write a system prompt. Generate a domain-specific
-default based on the document content and include it in the config. The
-user reviews and can adjust it via the show_prompt review card.
+### Step 6 — Question system prompt <!--signal:question-prompt all:show_prompt,present_options-->
+
+Compose the `question` column's `system_prompt` — the question-generator role. It
+MUST include the answerability constraint (see Prompt Engineering Rules). Render
+it with `show_prompt` (pass the complete prompt text), then ask the user to
+approve or adjust it with `present_options`. Handle ONLY this one prompt this turn
+— do not compose or `show_prompt` the answer prompt (Step 7) yet. Stay on this
+step through the render → approve loop (on any edit, re-render with `show_prompt`
+AGAIN — each returns a NEW `prompt_ref`, use the latest) until the user approves
+it as shown. Put the returned `<prompt:...>` ref into the `question` column's
+`system_prompt` — never paste the prompt text inline.
+
+### Step 7 — Answer system prompt <!--signal:answer-prompt all:show_prompt,present_options-->
+
+Compose the answer `system_prompt` — the answer-generator role, constrained to
+answer ONLY from the provided context (see Prompt Engineering Rules). This same
+prompt is also the trained model's inference system prompt, so its ref goes in
+BOTH the `answer` column's `system_prompt` AND the SFT processor system message.
+Render it with `show_prompt` (pass the complete prompt text), then ask the user to
+approve or adjust it with `present_options`. Handle ONLY this one prompt this turn
+— do not re-show the Step 6 question prompt, and do not bundle both prompts into
+one turn. Stay on this step through the render → approve loop (on any edit,
+re-render with `show_prompt` AGAIN — each returns a NEW `prompt_ref`, use the
+latest) until the user approves it as shown. Put the returned `<prompt:...>` ref
+into BOTH the `answer` column `system_prompt` and the processor system message —
+never paste the prompt text inline.
 
 ## Tool Parameters
 
@@ -178,7 +209,7 @@ answers based on the topic instead.
   "column_type": "llm-text",
   "name": "question",
   "model_alias": "text",
-  "system_prompt": "<domain-specific system prompt with answerability constraint>",
+  "system_prompt": "<prompt_ref returned by show_prompt in Step 6, e.g. <prompt:prm_...>>",
   "prompt": "Documentation context:\n{{ content }}\n\nDifficulty: {{ difficulty }}\nQuestion type: {{ question_type }}"
 }
 ```
@@ -205,7 +236,7 @@ Use `schema_transform` to convert columns into SFT training format:
   "name": "sft_format",
   "template": {
     "messages": [
-      {"role": "system", "content": "<domain-specific system prompt for the trained model>"},
+      {"role": "system", "content": "<same prompt_ref as the answer column's system_prompt (from Step 7)>"},
       {"role": "user", "content": "{{ question }}"},
       {"role": "assistant", "content": "{{ answer }}"}
     ]
@@ -219,9 +250,11 @@ uses `messages`; extra columns are ignored by the trainer but
 preserved in the artifact for inspection. Default to preserving
 rather than dropping.
 
-The system prompt here defines how the TRAINED MODEL should behave at
-inference time. It must be domain-specific and match what the user's
-deployment will use.
+The system prompt here is the Step 7 answer system prompt (the SAME
+`<prompt:...>` ref as the `answer` column's `system_prompt`) — it defines how the
+TRAINED MODEL should behave at inference time, so it must be domain-specific and
+match what the user's deployment will use. Do not compose a separate prompt here;
+reuse the Step 7 ref.
 
 ## Prompt Engineering Rules
 
@@ -259,7 +292,9 @@ Before submitting the job, verify:
 - [ ] Prompt variables (`difficulty`, `question_type`) are on separate lines with labels
 - [ ] Question system prompt includes the answerability constraint
 - [ ] Answer system prompt includes "Answer ONLY using information from the provided documentation context"
-- [ ] System prompt in the SFT processor is domain-specific
+- [ ] Question and answer prompts were each reviewed in their OWN `show_prompt` turn (Steps 6 and 7), not bundled
+- [ ] System prompts are `<prompt:...>` ref tokens (from show_prompt), not pasted full text
+- [ ] Processor system message uses the SAME `<prompt:...>` ref as the answer column's system_prompt
 - [ ] `num_records` computed from chunk statistics (coverage x mean_chunk_tokens / avg_qa_tokens x num_chunks)
 
 ## After SDG — Training

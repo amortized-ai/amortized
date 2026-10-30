@@ -93,6 +93,18 @@ Grounding the generation in the user's real examples (rather than a synthetic
 "style" knob) is what makes the classifier learn the *actual* distribution — and
 it's what lets fine-tuning beat the base model on the messy real phrasings.
 
+## Prompt review
+
+This skill composes exactly ONE prompt — the `text` column's `system_prompt`
+(there is no `schema_transform` processor, so no second system message). Compose
+a domain-specific default from the domain, categories, and seed examples; then
+render it with `show_prompt` (pass the complete prompt text) and ask the user to
+approve or adjust it with `present_options`. On any edit, re-render with
+`show_prompt` AGAIN (each returns a NEW `prompt_ref` — use the latest) until the
+user approves it as shown. Put the returned `<prompt:...>` ref into the `text`
+column's `system_prompt` — never paste the prompt text inline. One prompt, one
+review card; no split is needed here.
+
 ## Downstream
 
 - **Train**: `create_training_job` with `algorithm="embedding_sft"`,
