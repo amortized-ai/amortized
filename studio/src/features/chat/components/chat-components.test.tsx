@@ -424,7 +424,7 @@ describe("MessageBubble — structured option cards", () => {
 
   it("renders every show_prompt review card in a turn, not just the first", () => {
     // The agent may review two distinct prompts in one turn (e.g. a ticket prompt and
-    // an assessor prompt). Both must render — not collapse to the first by tool name.
+    // an output prompt). Both must render — not collapse to the first by tool name.
     const toolResults = [
       {
         name: "show_prompt",
@@ -433,13 +433,13 @@ describe("MessageBubble — structured option cards", () => {
       },
       {
         name: "show_prompt",
-        result: JSON.stringify({ title: "Assessor prompt", prompt: "Score the ticket 0-10." }),
+        result: JSON.stringify({ title: "Output prompt", prompt: "Score the ticket 0-10." }),
         collapsed: true,
       },
     ]
     render(<MessageBubble message={makeMsg("Review these:", toolResults)} />, { wrapper: Wrapper })
     expect(screen.getByText("Ticket prompt")).toBeInTheDocument()
-    expect(screen.getByText("Assessor prompt")).toBeInTheDocument()
+    expect(screen.getByText("Output prompt")).toBeInTheDocument()
     expect(screen.getByText("Generate a support ticket.")).toBeInTheDocument()
     expect(screen.getByText("Score the ticket 0-10.")).toBeInTheDocument()
   })

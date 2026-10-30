@@ -75,29 +75,29 @@ describe("extractJobInfo", () => {
 })
 
 describe("extractValidatedJobConfig", () => {
-  it("extracts all reviewable prompts (ticket + assessor), not just the assessor", () => {
+  it("extracts all reviewable prompts (ticket + output), not just the output", () => {
     const validated = extractValidatedJobConfig(
       JSON.stringify({
         valid: true,
         job_type: "sdg",
         config: { columns: [] },
-        assessor_prompt: "ASSESS",
+        output_prompt: "ASSESS",
         prompts: [
           { role: "input", label: "Ticket prompt", column: "generated_input", text: "TICKET" },
-          { role: "assessor", label: "Assessor system prompt", column: "output", text: "ASSESS" },
+          { role: "output", label: "Output prompt", column: "output", text: "ASSESS" },
         ],
       }),
     )
     expect(validated?.prompts.map((p) => [p.role, p.text])).toEqual([
       ["input", "TICKET"],
-      ["assessor", "ASSESS"],
+      ["output", "ASSESS"],
     ])
-    expect(validated?.assessorPrompt).toBe("ASSESS")
+    expect(validated?.outputPrompt).toBe("ASSESS")
   })
 
   it("defaults prompts to an empty array when the field is absent", () => {
     const validated = extractValidatedJobConfig(
-      JSON.stringify({ valid: true, job_type: "sdg", config: {}, assessor_prompt: "X" }),
+      JSON.stringify({ valid: true, job_type: "sdg", config: {}, output_prompt: "X" }),
     )
     expect(validated?.prompts).toEqual([])
   })
@@ -108,7 +108,7 @@ describe("extractValidatedJobConfig", () => {
         valid: true,
         job_type: "sdg",
         config: {},
-        prompts: [{ role: "input", text: "" }, { role: "assessor", text: "ASSESS" }],
+        prompts: [{ role: "input", text: "" }, { role: "output", text: "ASSESS" }],
       }),
     )
     expect(validated?.prompts.map((p) => p.text)).toEqual(["ASSESS"])

@@ -18,13 +18,13 @@ function promptPreview(text: string): string {
 }
 
 // The reviewable prompts are resolved authoritatively by the backend
-// (validate_sdg_job → prompts / assessorPrompt) and passed in, rather than guessed
+// (validate_sdg_job → prompts / outputPrompt) and passed in, rather than guessed
 // from config internals on the client — guessing could confidently render a sampler's
-// prompt as the assessor prompt. A recipe carries more than one (e.g. a ticket
-// generator and an assessor), so every prompt is shown, not just the assessor.
+// prompt as the output prompt. A recipe carries more than one (e.g. a ticket
+// generator and an output), so every prompt is shown, not just the output.
 function extractSdgSummary(
   config: Record<string, unknown>,
-  assessorPrompt?: string | null,
+  outputPrompt?: string | null,
   prompts?: PromptView[],
 ): [string, string][] {
   const rows: [string, string][] = []
@@ -49,8 +49,8 @@ function extractSdgSummary(
     for (const p of prompts) {
       if (p.text?.trim()) rows.push([p.label || "Prompt", promptPreview(p.text)])
     }
-  } else if (assessorPrompt?.trim()) {
-    rows.push(["Assessor prompt", promptPreview(assessorPrompt)])
+  } else if (outputPrompt?.trim()) {
+    rows.push(["Output prompt", promptPreview(outputPrompt)])
   }
 
   const docIds = config.document_ids as string[] | undefined
@@ -122,10 +122,10 @@ function extractServeSummary(config: Record<string, unknown>): [string, string][
 function extractConfigSummary(
   jobType: string | undefined,
   config: Record<string, unknown>,
-  assessorPrompt?: string | null,
+  outputPrompt?: string | null,
   prompts?: PromptView[],
 ): [string, string][] {
-  if (jobType === "sdg") return extractSdgSummary(config, assessorPrompt, prompts)
+  if (jobType === "sdg") return extractSdgSummary(config, outputPrompt, prompts)
   if (jobType === "training") return extractTrainingSummary(config)
   if (jobType === "eval") return extractEvalSummary(config)
   if (jobType === "serve") return extractServeSummary(config)
@@ -157,7 +157,7 @@ export function ActionCard({ action, onConfirm, onReject }: ActionCardProps) {
   }
 
   const summary = action.config
-    ? extractConfigSummary(action.jobType, action.config, action.assessorPrompt, action.prompts)
+    ? extractConfigSummary(action.jobType, action.config, action.outputPrompt, action.prompts)
     : []
   // The training dataset's record count is resolved by the backend (not in the
   // config), so the user always sees how many records they're about to train on.
