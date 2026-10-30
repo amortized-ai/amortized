@@ -310,6 +310,8 @@ _JOBS: frozenset[str] = frozenset(
         "create_job",
         "submit_recipe_job",
         "retry_job",
+        "split_dataset",
+        "merge_datasets",
     }
 )
 # Any of these means control is accounted for (not a bare-prose stall).
