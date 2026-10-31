@@ -2214,6 +2214,61 @@
         }
       }
     },
+    "/agent/session/{session_id}/monitor/complete": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Mark Run Complete",
+        "description": "Record a human-declared run completion for monitor metrics.\n\nStudio calls this when the tester marks a test run done. It defines the\nboundary for turns-to-complete and total-tokens; the product itself has no\nworkflow-completion signal (the orchestrator loops indefinitely).",
+        "operationId": "mark_run_complete_agent_session__session_id__monitor_complete_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mark Run Complete Agent Session  Session Id  Monitor Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/session/{session_id}/turn/{turn_id}": {
       "get": {
         "tags": [
@@ -2872,6 +2927,39 @@
         ],
         "title": "ColumnInequalityConstraint",
         "description": "Constrain a sampler column to be less/greater than another sampler column.\n\nOnly applies to sampler columns.\n\nAttributes:\n    rhs (required): Name of the other sampler column to compare against.\n    operator (required): Comparison operator (lt, le, gt, ge).\n\nInherited Attributes:\n    target_column (required): Name of the sampler column this constraint applies to."
+      },
+      "CompletionRequest": {
+        "properties": {
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": "success"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "CompletionRequest"
       },
       "ConfigResponse": {
         "properties": {
