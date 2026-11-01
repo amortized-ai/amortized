@@ -52,6 +52,7 @@ async def get_eval_endpoint_suggestions(
                     # underlying provider model is metadata, not the model id
                     # accepted by the gateway's OpenAI-compatible endpoint.
                     "model_name": m.get("name", ""),
+                    "provider_model_name": m.get("model_name", ""),
                     "base_url": gateway_url,
                     "note": "MLflow AI Gateway",
                 }
