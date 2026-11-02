@@ -124,11 +124,31 @@ class TestProviderInjection:
 
     def test_anthropic_def_when_key_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        assert model_catalog._anthropic_provider_def() == {
+            "name": "anthropic",
+            "endpoint": "https://api.anthropic.com/v1",  # native default
+            "provider_type": "anthropic",
+            "api_key": "ANTHROPIC_API_KEY",
+        }
+
+    def test_anthropic_def_custom_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A BYOK anthropic-compatible endpoint (e.g. an internal gateway): ANTHROPIC_BASE_URL
+        # overrides the native endpoint so model_catalog hits it with the x-api-key dialect.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gw.example.com/v1/")
         d = model_catalog._anthropic_provider_def()
         assert d is not None
-        assert d["name"] == "anthropic"
+        assert d["endpoint"] == "https://gw.example.com/v1"  # trailing slash trimmed
         assert d["provider_type"] == "anthropic"
-        assert d["api_key"] == "ANTHROPIC_API_KEY"
+
+    def test_anthropic_def_absent_when_base_url_not_https(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The key is sent to this URL, so a non-HTTPS override is refused (would leak it).
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://gw.example.com/v1")
+        assert model_catalog._anthropic_provider_def() is None
 
     def test_anthropic_def_absent_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

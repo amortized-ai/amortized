@@ -77,14 +77,23 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
 
   const adc = isAdc(providerID)
   const compat = isOpenAICompat(providerID)
-  const valid = compat
-    ? isValidUrl(baseUrlDraft) && draft.trim().length >= 8
+  // Anthropic optionally takes a custom base URL (a BYOK anthropic-compatible endpoint, e.g. an
+  // internal gateway serving Claude); leave it blank for api.anthropic.com. MaaS requires its base URL.
+  const anthropicCompat = providerID === "anthropic"
+  const baseUrlField = compat || anthropicCompat
+  const baseUrlOk = anthropicCompat
+    ? baseUrlDraft.trim() === "" || isValidUrl(baseUrlDraft)
+    : isValidUrl(baseUrlDraft)
+  const valid = baseUrlField
+    ? baseUrlOk && draft.trim().length >= 8
     : isValidCredential(providerID, draft)
   const showInput = editing || !configured
 
   function handleSave() {
-    // MaaS stores a {baseURL, apiKey} blob (two fields); the others store a single credential string.
-    const credential = compat
+    // Providers with a base URL store a {baseURL, apiKey} blob (MaaS always; Anthropic when one is
+    // entered); the others store a single credential string.
+    const withBaseUrl = compat || (anthropicCompat && baseUrlDraft.trim() !== "")
+    const credential = withBaseUrl
       ? JSON.stringify({ baseURL: baseUrlDraft.trim().replace(/\/+$/, ""), apiKey: draft.trim() })
       : draft.trim()
     add.mutate(
@@ -190,12 +199,16 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
               {saveButton}
             </div>
           </div>
-        ) : compat ? (
+        ) : baseUrlField ? (
           <div className="mt-2 flex flex-col gap-2">
             <Input
               value={baseUrlDraft}
               onChange={(e) => setBaseUrlDraft(e.target.value)}
-              placeholder="MaaS base URL, e.g. https://maas.example.com/v1"
+              placeholder={
+                anthropicCompat
+                  ? "Anthropic base URL (optional) — blank for api.anthropic.com"
+                  : "MaaS base URL, e.g. https://maas.example.com/v1"
+              }
               autoComplete="off"
               spellCheck={false}
               className="flex-1 font-mono text-xs h-8"
@@ -205,7 +218,13 @@ function ProviderRow({ providerID, configured }: { providerID: string; configure
               <Input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder={configured ? "Enter a new API key…" : "Paste your MaaS API key…"}
+                placeholder={
+                  configured
+                    ? "Enter a new API key…"
+                    : anthropicCompat
+                      ? "Paste your Anthropic API key…"
+                      : "Paste your MaaS API key…"
+                }
                 type={showKey ? "text" : "password"}
                 autoComplete="off"
                 spellCheck={false}

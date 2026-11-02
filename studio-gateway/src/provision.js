@@ -93,10 +93,20 @@ const PROVIDERS = {
     apiHost: 'api.openai.com',
     model: process.env.MORTY_MODEL_OPENAI || 'openai/gpt-4o',
   },
+  // Anthropic: native Claude (just an API key -> api.anthropic.com) OR a BYOK anthropic-compatible
+  // endpoint. Like MaaS it powers the server catalog + SDG teacher + eval judge, but it speaks the
+  // Anthropic Messages dialect (x-api-key), not OpenAI's. The credential is dual-shape: a plain key
+  // string stays native; a {baseURL, apiKey} JSON blob (the MaaS form) points Claude at a custom
+  // endpoint (e.g. an internal gateway). When a base URL is set, ensureServerKeySecret also writes
+  // ANTHROPIC_BASE_URL (model_catalog reads it) and the sandbox gets an explicit opencode
+  // provider.anthropic (@ai-sdk/anthropic) block whose Claude models are discovered at create time.
   anthropic: {
-    kind: 'key',
+    kind: 'anthropic-compat',
     credentialKey: 'ANTHROPIC_API_KEY',
+    baseUrlEnv: 'ANTHROPIC_BASE_URL',
     apiHost: 'api.anthropic.com',
+    opencodeNpm: '@ai-sdk/anthropic',
+    opencodeProvider: 'anthropic',
     model: process.env.MORTY_MODEL_ANTHROPIC || 'anthropic/claude-opus-4-8',
   },
   // Claude via Google Vertex. ADC-only: the credential is a Google application-default-
@@ -143,10 +153,13 @@ function isAdcProvider(provider) { return PROVIDERS[provider]?.kind === 'adc'; }
 // OpenAI-compatible BYOK endpoints (MaaS): credential is a {baseURL, apiKey} JSON blob, and —
 // like key providers, unlike ADC — they power the server catalog + SDG teacher + eval judge.
 function isOpenAICompatProvider(provider) { return PROVIDERS[provider]?.kind === 'openai-compat'; }
+// Anthropic-dialect provider: native Claude key OR a BYOK {baseURL, apiKey} anthropic-compatible
+// endpoint. Like key/openai-compat it powers the server catalog + SDG teacher + eval judge.
+function isAnthropicCompatProvider(provider) { return PROVIDERS[provider]?.kind === 'anthropic-compat'; }
 // Providers whose credential(s) are written into the server teacher-key secret (model_catalog
-// -> list_models + SDG teacher + eval judge): key providers and OpenAI-compatible ones. ADC
-// (vertex) is Morty-chat-only and contributes nothing server-side.
-function isServerProvider(provider) { const k = PROVIDERS[provider]?.kind; return k === 'key' || k === 'openai-compat'; }
+// -> list_models + SDG teacher + eval judge): key providers, OpenAI-compatible, and anthropic
+// (native or BYOK endpoint). ADC (vertex) is Morty-chat-only and contributes nothing server-side.
+function isServerProvider(provider) { const k = PROVIDERS[provider]?.kind; return k === 'key' || k === 'openai-compat' || k === 'anthropic-compat'; }
 
 // The gateway's own namespace: per-user model-key Secrets live here so a key
 // survives stack/sandbox recreation and is readable before amz-<user> exists.
@@ -300,6 +313,20 @@ function parseOpenAICompatCredential(cred) {
   return { baseURL: String(obj?.baseURL || '').trim().replace(/\/$/, ''), apiKey: String(obj?.apiKey || '').trim() };
 }
 
+// Parse an anthropic credential -> { baseURL, apiKey }. Dual-shape + backward-compatible: a plain
+// key string is native anthropic (empty baseURL); a {baseURL, apiKey} JSON blob (the MaaS form) is a
+// BYOK anthropic-compatible endpoint. The stored form is normalized by validateCredential.
+function parseAnthropicCredential(cred) {
+  const s = String(cred ?? '').trim();
+  if (s.startsWith('{')) {
+    try {
+      const obj = JSON.parse(s);
+      return { baseURL: String(obj?.baseURL || '').trim().replace(/\/$/, ''), apiKey: String(obj?.apiKey || '').trim() };
+    } catch { /* not JSON -> treat as a plain native key */ }
+  }
+  return { baseURL: '', apiKey: s };
+}
+
 // The env entries one provider contributes to the server teacher-key secret (env-var -> value),
 // consumed by the chart's envFrom so they reach the server (model_catalog -> list_models + SDG
 // teacher + eval judge). Key providers contribute their single credential key; OpenAI-compatible
@@ -311,6 +338,12 @@ function serverEnvForProvider(name, credential) {
   if (p.kind === 'openai-compat') {
     const { baseURL, apiKey } = parseOpenAICompatCredential(credential);
     return { [p.credentialKey]: apiKey, [p.baseUrlEnv]: baseURL };
+  }
+  if (p.kind === 'anthropic-compat') {
+    // Native anthropic contributes just the key; a BYOK endpoint also contributes ANTHROPIC_BASE_URL
+    // (model_catalog reads it to hit the custom endpoint with the x-api-key dialect).
+    const { baseURL, apiKey } = parseAnthropicCredential(credential);
+    return baseURL ? { [p.credentialKey]: apiKey, [p.baseUrlEnv]: baseURL } : { [p.credentialKey]: apiKey };
   }
   return {};
 }
@@ -420,6 +453,15 @@ function modelEgressEndpoints(name, credential) {
       const u = new URL(baseURL);
       // Preserve a non-default port (e.g. https://maas.example:8443/v1) so the egress policy
       // opens the port Morty actually reaches; URL.port is '' for the scheme default (443).
+      return [rw(u.hostname, u.port ? Number(u.port) : 443)];
+    } catch { return []; }
+  }
+  if (p.kind === 'anthropic-compat') {
+    // Native anthropic reaches api.anthropic.com; a BYOK endpoint reaches its base URL host.
+    const { baseURL } = parseAnthropicCredential(credential);
+    if (!baseURL) return [rw(p.apiHost)];
+    try {
+      const u = new URL(baseURL);
       return [rw(u.hostname, u.port ? Number(u.port) : 443)];
     } catch { return []; }
   }
@@ -556,6 +598,30 @@ async function discoverOpenAICompatModels(baseURL, apiKey) {
   }
 }
 
+// Best-effort: list model ids from an anthropic-compatible endpoint's /models (x-api-key dialect,
+// not OpenAI's Bearer). Same shape ({"data":[{"id"}]}) + budget as discoverOpenAICompatModels;
+// returns [] on any failure so a flaky/native endpoint never blocks sandbox creation.
+async function discoverAnthropicModels(baseURL, apiKey) {
+  const base = String(baseURL || '').replace(/\/$/, '');
+  if (!base || !apiKey) return [];
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(`${base}/models`, {
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return [];
+    const body = await res.json();
+    const data = Array.isArray(body?.data) ? body.data : [];
+    return data.map((m) => String(m?.id || '')).filter(Boolean);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Create + wire the per-user Morty sandbox through the cluster OpenShell gateway with the
 // user's FULL provider set: every configured provider's credential is delivered via the
 // sandbox env (opencode auto-loads each) and egress to each provider's model API (plus
@@ -577,9 +643,14 @@ async function ensureSandbox(ns, providers) {
   // models.dev, so its opencode.json provider block must declare the models explicitly. name -> [ids].
   const discoveredModels = {};
   for (const n of names) {
-    if (PROVIDERS[n].kind === 'openai-compat') {
+    const kind = PROVIDERS[n].kind;
+    if (kind === 'openai-compat') {
       const { baseURL, apiKey } = parseOpenAICompatCredential(providers[n]);
       discoveredModels[n] = await discoverOpenAICompatModels(baseURL, apiKey);
+    } else if (kind === 'anthropic-compat') {
+      // Only a BYOK endpoint needs discovery; native anthropic resolves via models.dev in opencode.
+      const { baseURL, apiKey } = parseAnthropicCredential(providers[n]);
+      if (baseURL) discoveredModels[n] = await discoverAnthropicModels(baseURL, apiKey);
     }
   }
 
@@ -587,10 +658,15 @@ async function ensureSandbox(ns, providers) {
   // the fallback. Prefer a Claude-capable provider (vertex, then anthropic), then openai, then a
   // discovered MaaS model — matching Studio's catalog ordering.
   const preferred = ['vertex', 'anthropic', 'openai', 'maas'].find((n) => names.includes(n)) || names[0];
-  let defaultModel = PROVIDERS[preferred].model || '';
-  if (PROVIDERS[preferred].kind === 'openai-compat') {
-    const first = (discoveredModels[preferred] || [])[0];
-    defaultModel = first ? `${PROVIDERS[preferred].opencodeProvider}/${first}` : '';
+  const preferredDef = PROVIDERS[preferred];
+  const preferredDiscovered = discoveredModels[preferred] || [];
+  let defaultModel = preferredDef.model || '';
+  if (preferredDef.kind === 'openai-compat') {
+    // MaaS has no models.dev entry: its default must be a discovered id (or none).
+    defaultModel = preferredDiscovered[0] ? `${preferredDef.opencodeProvider}/${preferredDiscovered[0]}` : '';
+  } else if (preferredDef.kind === 'anthropic-compat' && preferredDiscovered.length) {
+    // A BYOK anthropic endpoint's ids aren't on models.dev either; native anthropic keeps its model.
+    defaultModel = `${preferredDef.opencodeProvider}/${preferredDiscovered[0]}`;
   }
   if (!defaultModel) {
     // No usable default — e.g. a MaaS-only user whose /v1/models discovery returned nothing. The
@@ -616,6 +692,11 @@ async function ensureSandbox(ns, providers) {
     'var mm={};JSON.parse(Buffer.from(process.env.MAAS_MODELS_B64||"W10=","base64").toString()).forEach(function(id){mm[id]={};});' +
     'c.provider=c.provider||{};' +
     'c.provider.maas={npm:"@ai-sdk/openai-compatible",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
+    '}' +
+    'if(process.env.ANTHROPIC_BASE_URL&&process.env.ANTHROPIC_API_KEY){' +
+    'var am={};JSON.parse(Buffer.from(process.env.ANTHROPIC_MODELS_B64||"W10=","base64").toString()).forEach(function(id){am[id]={};});' +
+    'c.provider=c.provider||{};' +
+    'c.provider.anthropic={npm:"@ai-sdk/anthropic",name:"Anthropic (BYOK)",options:{baseURL:process.env.ANTHROPIC_BASE_URL,apiKey:process.env.ANTHROPIC_API_KEY},models:am};' +
     '}' +
     'fs.writeFileSync(f,JSON.stringify(c,null,2));' +
     'if(process.env.MORTY_ADC_B64){fs.writeFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,Buffer.from(process.env.MORTY_ADC_B64,"base64"))}';
@@ -659,6 +740,18 @@ async function ensureSandbox(ns, providers) {
           '--env', `${p.baseUrlEnv}=${baseURL}`,
           '--env', `MAAS_MODELS_B64=${Buffer.from(JSON.stringify(discoveredModels[n] || [])).toString('base64')}`,
         );
+      } else if (p.kind === 'anthropic-compat') {
+        // Native anthropic: just the key (opencode's built-in anthropic provider reads it). A BYOK
+        // endpoint: key + base URL + discovered Claude models (base64 JSON) feed the opencode.json
+        // rewrite above, which writes an explicit provider.anthropic (@ai-sdk/anthropic) block.
+        const { baseURL, apiKey } = parseAnthropicCredential(providers[n]);
+        credEnv.push('--env', `${p.credentialKey}=${apiKey}`);
+        if (baseURL) {
+          credEnv.push(
+            '--env', `${p.baseUrlEnv}=${baseURL}`,
+            '--env', `ANTHROPIC_MODELS_B64=${Buffer.from(JSON.stringify(discoveredModels[n] || [])).toString('base64')}`,
+          );
+        }
       } else {
         credEnv.push('--env', `${p.credentialKey}=${providers[n]}`);
       }
@@ -837,6 +930,31 @@ function validateCredential(provider, credential) {
     }
     const baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
     return JSON.stringify({ baseURL, apiKey });
+  } else if (isAnthropicCompatProvider(provider)) {
+    // Dual-shape: a plain key is native anthropic; a {baseURL, apiKey} JSON blob is a BYOK
+    // anthropic-compatible endpoint. Validate + normalize the endpoint form exactly like MaaS.
+    if (cred.startsWith('{')) {
+      let obj;
+      try { obj = JSON.parse(cred); } catch { throw new Error('Anthropic endpoint requires a JSON object with a baseURL and apiKey'); }
+      const apiKey = String(obj?.apiKey || '').trim();
+      let url;
+      try { url = new URL(String(obj?.baseURL || '').trim()); } catch { url = null; }
+      if (!url || url.protocol !== 'https:') {
+        throw new Error('Anthropic base URL must be a valid HTTPS URL (the API key is sent to it)');
+      }
+      if (url.username || url.password || url.search || url.hash) {
+        throw new Error('Anthropic base URL must not embed credentials or query parameters — put the key in the API key field');
+      }
+      if (apiKey.length < 8) {
+        throw new Error('Anthropic API key looks too short');
+      }
+      const baseURL = `${url.origin}${url.pathname}`.replace(/\/$/, '');
+      return JSON.stringify({ baseURL, apiKey });
+    }
+    if (cred.length < 8) {
+      throw new Error('invalid or missing API key');
+    }
+    return cred;
   } else if (cred.length < 8) {
     throw new Error('invalid or missing API key');
   }

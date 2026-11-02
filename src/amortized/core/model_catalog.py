@@ -88,15 +88,24 @@ def _maas_provider_def() -> dict[str, str] | None:
 
 
 def _anthropic_provider_def() -> dict[str, str] | None:
-    """A native Anthropic provider. Data Designer ships the anthropic *adapter* but no
-    predefined anthropic provider, so we register one when ``ANTHROPIC_API_KEY`` is set —
-    unlocking Claude as an SDG teacher + eval judge (not just Morty chat). ``provider_type``
-    'anthropic' routes DD's AnthropicClient and the eval runner to the Messages API."""
+    """A native Anthropic provider, or a BYOK anthropic-compatible endpoint when
+    ``ANTHROPIC_BASE_URL`` is set (e.g. an internal gateway that serves Claude via the Messages
+    API). Data Designer ships the anthropic *adapter* but no predefined anthropic provider, so we
+    register one when ``ANTHROPIC_API_KEY`` is set — unlocking Claude as an SDG teacher + eval
+    judge (not just Morty chat). ``provider_type`` 'anthropic' routes DD's AnthropicClient, the
+    eval runner, and :func:`_fetch_provider_models` to the x-api-key Messages-API dialect.
+
+    ``ANTHROPIC_BASE_URL`` defaults to Anthropic's own API. When set it must be HTTPS (the key is
+    sent to it): a non-HTTPS override is refused rather than send the credential over plaintext."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip().rstrip("/")
+    if base_url and not base_url.lower().startswith("https://"):
+        logger.warning("ignoring non-HTTPS ANTHROPIC_BASE_URL (key would cross plaintext)")
         return None
     return {
         "name": "anthropic",
-        "endpoint": "https://api.anthropic.com/v1",
+        "endpoint": base_url or "https://api.anthropic.com/v1",
         "provider_type": "anthropic",
         "api_key": "ANTHROPIC_API_KEY",
     }
