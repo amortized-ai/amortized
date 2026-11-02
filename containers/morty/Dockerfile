@@ -13,6 +13,17 @@ RUN dnf install -y --nodocs nodejs npm && dnf clean all
 ARG OPENCODE_VERSION=1.18.33
 RUN npm install -g opencode-ai@${OPENCODE_VERSION} && opencode --version
 
+# Baked opencode provider shim for BYOK MaaS. opencode routes a stock @ai-sdk/openai custom provider
+# to /v1/responses, but a MaaS endpoint is chat-completions only; and @ai-sdk/openai-compatible always
+# sends `max_tokens`, which reasoning-era OpenAI models (gpt-5/6) reject (they need
+# `max_completion_tokens`). The shim (maas-openai-chat/index.mjs) wraps @ai-sdk/openai so
+# `.languageModel` delegates to `.chat` (=> /v1/chat/completions) with model-aware token params.
+ARG AI_SDK_OPENAI_VERSION=4.0.107
+RUN mkdir -p /opt/maas-openai-chat && cd /opt/maas-openai-chat \
+    && npm init -y >/dev/null \
+    && npm install @ai-sdk/openai@${AI_SDK_OPENAI_VERSION}
+COPY maas-openai-chat/index.mjs /opt/maas-openai-chat/index.mjs
+
 ARG RIPGREP_VERSION=15.1.0
 RUN curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
       | tar -xz -C /tmp \

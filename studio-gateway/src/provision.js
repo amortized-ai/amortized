@@ -126,13 +126,13 @@ const PROVIDERS = {
   // vertex's ADC JSON occupies the single credential slot. OpenAI-compatible, so (unlike vertex)
   // it ALSO powers the server catalog + SDG teacher + eval judge: ensureServerKeySecret writes
   // MAAS_API_KEY + MAAS_BASE_URL into the server env (model_catalog reads both). In the sandbox
-  // it is injected as an opencode `provider.maas` (@ai-sdk/openai-compatible) block whose models
-  // are discovered from the endpoint's /models at create time (see ensureSandbox).
+  // it is injected as an opencode `provider.maas` block (via a baked @ai-sdk/openai chat shim) whose
+  // models are discovered from the endpoint's /models at create time (see ensureSandbox).
   maas: {
     kind: 'openai-compat',
     credentialKey: 'MAAS_API_KEY',
     baseUrlEnv: 'MAAS_BASE_URL',
-    opencodeNpm: '@ai-sdk/openai-compatible',
+    opencodeNpm: 'file:///opt/maas-openai-chat/index.mjs',
     opencodeProvider: 'maas',
   },
 };
@@ -606,8 +606,12 @@ async function ensureSandbox(ns, providers) {
   // materializes the credentials JSON from its base64 env (MORTY_ADC_B64) to the
   // GOOGLE_APPLICATION_CREDENTIALS path before opencode starts (a no-op for the others). For a
   // MaaS (OpenAI-compatible) provider — which models.dev can't resolve — it writes an explicit
-  // `provider.maas` block (@ai-sdk/openai-compatible) with the per-user base URL and the discovered
-  // models, so opencode reports maas in /provider (connected) and resolves `maas/<model>` turns.
+  // `provider.maas` block with the per-user base URL and the discovered models, so opencode reports
+  // maas in /provider (connected) and resolves `maas/<model>` turns. The npm is a baked shim
+  // (/opt/maas-openai-chat; see containers/morty) that routes to @ai-sdk/openai chat-completions:
+  // a MaaS endpoint is /chat/completions-only, opencode forces a stock @ai-sdk/openai to /responses,
+  // and @ai-sdk/openai-compatible always sends `max_tokens` (which gpt-5/6 reject — they need
+  // `max_completion_tokens`). The shim gives model-aware token params over chat-completions.
   const rewrite =
     'const fs=require("fs"),f="opencode.json",c=JSON.parse(fs.readFileSync(f));' +
     'if(process.env.MORTY_MODEL){c.model=process.env.MORTY_MODEL;}' +
@@ -615,7 +619,7 @@ async function ensureSandbox(ns, providers) {
     'if(process.env.MAAS_BASE_URL&&process.env.MAAS_API_KEY){' +
     'var mm={};JSON.parse(Buffer.from(process.env.MAAS_MODELS_B64||"W10=","base64").toString()).forEach(function(id){mm[id]={};});' +
     'c.provider=c.provider||{};' +
-    'c.provider.maas={npm:"@ai-sdk/openai-compatible",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
+    'c.provider.maas={npm:"file:///opt/maas-openai-chat/index.mjs",name:"MaaS",options:{baseURL:process.env.MAAS_BASE_URL,apiKey:process.env.MAAS_API_KEY},models:mm};' +
     '}' +
     'fs.writeFileSync(f,JSON.stringify(c,null,2));' +
     'if(process.env.MORTY_ADC_B64){fs.writeFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS,Buffer.from(process.env.MORTY_ADC_B64,"base64"))}';
